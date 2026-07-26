@@ -125,4 +125,65 @@ describe("HorizontalStepper", () => {
     expect(screen.getByText("3")).toBeDefined();
     expect(container.querySelector(".bg-blue\\/30")).toBeNull();
   });
+
+  // CL-4569: at high step counts the rail must compress rather than overflow.
+  // Real long labels straight from workflows/*/src/display-steps.ts so this
+  // reproduces the actual clipped-4th-step bug, not a synthetic shape.
+  const TEN_STEPS: WorkflowStep[] = [
+    { number: 1, label: "Fetch the transcript", status: "completed" },
+    { number: 2, label: "Save the raw transcript", status: "completed" },
+    { number: 3, label: "Extract working notes", status: "completed" },
+    { number: 4, label: "Task setup", status: "completed" },
+    { number: 5, label: "Analyze", status: "completed" },
+    { number: 6, label: "Act", status: "completed" },
+    { number: 7, label: "Review", status: "current" },
+    { number: 8, label: "Write back", status: "pending" },
+    { number: 9, label: "Verify and write call notes", status: "pending" },
+    { number: 10, label: "Done", status: "pending" },
+  ];
+
+  describe("overflow behavior at high step counts (CL-4569)", () => {
+    it("keeps every step's label in the DOM even when compressed to numbers-only", () => {
+      render(<HorizontalStepper steps={TEN_STEPS} />);
+      for (const step of TEN_STEPS) {
+        expect(screen.getByText(step.label)).toBeDefined();
+      }
+    });
+
+    it("compresses non-current labels to sr-only past the visible-label threshold, keeping only the current step's label on screen", () => {
+      render(<HorizontalStepper steps={TEN_STEPS} />);
+      const current = screen.getByText("Review");
+      const completed = screen.getByText("Fetch the transcript");
+      const pending = screen.getByText("Write back");
+      expect(current.className).not.toContain("sr-only");
+      expect(completed.className).toContain("sr-only");
+      expect(pending.className).toContain("sr-only");
+    });
+
+    it("does not compress labels below the threshold — every label stays visible", () => {
+      render(<HorizontalStepper steps={buildSteps("generate", LABELS)} />);
+      for (const label of Object.values(LABELS)) {
+        expect(screen.getByText(label).className).not.toContain("sr-only");
+      }
+    });
+
+    it("scrolls the current step into view without user interaction", () => {
+      const scrollIntoView = mock(() => {});
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = scrollIntoView;
+      try {
+        render(<HorizontalStepper steps={TEN_STEPS} />);
+        expect(scrollIntoView).toHaveBeenCalled();
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
+    });
+
+    it("marks the scroll rail with an edge-fade mask, never a bare unaffordanced scroll", () => {
+      const { container } = render(<HorizontalStepper steps={TEN_STEPS} />);
+      const rail = container.querySelector(".overflow-x-auto");
+      expect(rail).not.toBeNull();
+      expect(rail?.className).toContain("mask-image");
+    });
+  });
 });
