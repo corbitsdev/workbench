@@ -68,6 +68,16 @@ describe("ScheduleFieldMetadataSchema (CL-3860)", () => {
     });
     expect(parsed instanceof type.errors).toBe(false);
   });
+
+  it("accepts select-multi", () => {
+    const parsed = ScheduleFieldMetadataSchema({
+      name: "authors",
+      label: "Authors",
+      inputHint: "select-multi",
+      required: false,
+    });
+    expect(parsed instanceof type.errors).toBe(false);
+  });
 });
 
 describe("sortScheduleFields", () => {

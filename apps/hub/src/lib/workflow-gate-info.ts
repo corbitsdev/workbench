@@ -1,17 +1,17 @@
 import { type } from "arktype";
 
 // Serialized intake-field descriptor carried in the embedded workflow def so the
-// Serialized intake-field descriptor carried in the embedded workflow def so the
 // attach UI can render a workflow's first-intake form without importing workflow
-// code (CL-3509 + CL-3860 schedule field metadata). Includes string-array for
-// multi-value schedule fields (prospect-engine verticals).
+// code (CL-3509 + CL-3860 schedule field metadata). The input-kind union here is
+// a hand-duplicate of `ScheduleFieldInputKindSchema` in `@workbench/shared` —
+// keep them identical; `schedule-field-input-kind-parity.test.ts` enforces it.
 export const EmbeddedIntakeFieldSchema = type({
   name: "string > 0",
   label: "string > 0",
   "inputHint?":
-    "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array' | 'number'",
+    "'text' | 'textarea' | 'url' | 'select' | 'select-multi' | 'boolean' | 'string-array' | 'number'",
   "kind?":
-    "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array' | 'number'",
+    "'text' | 'textarea' | 'url' | 'select' | 'select-multi' | 'boolean' | 'string-array' | 'number'",
 
   "required?": "boolean",
   "placeholder?": "string",

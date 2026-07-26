@@ -490,10 +490,23 @@ export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
 // required for an intake field whose resume-payload schema requires `number`
 // (e.g. gtm-scripts-briefs' `days`), which a `text` hint's string value would
 // fail at the /resume boundary.
+// `select-multi` picks a subset of the tenant's people; its value is a
+// `SelectedPerson[]` stored in the schedule/trigger payload (CL-4429).
 export const ScheduleFieldInputKindSchema = type(
-  "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array' | 'number'",
+  "'text' | 'textarea' | 'url' | 'select' | 'select-multi' | 'boolean' | 'string-array' | 'number'",
 );
 export type ScheduleFieldInputKind = typeof ScheduleFieldInputKindSchema.infer;
+
+// A person picked at intake and carried in the trigger payload. `refId` is the
+// bare user id the consuming workflow turns into a `usr_<refId>` mailbox
+// address; `displayName` is cosmetic. The selection is a snapshot — a departed
+// member leaves a dead `refId` until the schedule is edited.
+export const SelectedPersonSchema = type({
+  refId: "string > 0",
+  displayName: "string",
+});
+export type SelectedPerson = typeof SelectedPersonSchema.infer;
+export const SelectedPersonListSchema = SelectedPersonSchema.array();
 
 export const ScheduleFieldOptionSchema = type({
   value: "string",
