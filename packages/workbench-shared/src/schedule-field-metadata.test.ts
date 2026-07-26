@@ -46,6 +46,18 @@ describe("ScheduleFieldMetadataSchema (CL-3860)", () => {
     expect(parsed instanceof type.errors).toBe(false);
   });
 
+  it("accepts defaultValue and numeric bounds (CL-4538)", () => {
+    const parsed = ScheduleFieldMetadataSchema({
+      name: "days",
+      label: "Research window (days)",
+      inputHint: "number",
+      defaultValue: 30,
+      min: 1,
+      step: 1,
+    });
+    expect(parsed instanceof type.errors).toBe(false);
+  });
+
   it("accepts a select field backed by a live optionsSource (CL-4279)", () => {
     const parsed = ScheduleFieldMetadataSchema({
       name: "growthEngineListId",
@@ -140,5 +152,15 @@ describe("buildScheduleTriggerPayload", () => {
 
   it("returns an empty object when there are no fields", () => {
     expect(buildScheduleTriggerPayload([], { topic: "GTM" })).toEqual({});
+  });
+
+  it("submits a field's defaultValue when the member never touched it (CL-4538)", () => {
+    const withDefault: ScheduleFieldMetadata[] = [
+      { name: "topic", label: "Topic" },
+      { name: "days", label: "Days", inputHint: "number", defaultValue: 30 },
+    ];
+    expect(buildScheduleTriggerPayload(withDefault, { topic: "GTM" })).toEqual(
+      { topic: "GTM", days: 30 },
+    );
   });
 });

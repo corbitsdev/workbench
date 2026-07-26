@@ -116,13 +116,18 @@ export function ScheduleFieldForm({
         const fromProfile = Boolean(field.fromProfile);
         const fieldId = `${idPrefix}-${field.name}`;
         const raw = values[field.name];
+        // A field's `defaultValue` (CL-4538) renders as a real initial value —
+        // not a placeholder — so an untouched field still shows, and later
+        // submits, the value the dock's `STEP_UI` form pre-fills.
+        const effective =
+          raw === undefined || raw === null ? field.defaultValue : raw;
         const str =
-          raw === undefined || raw === null
+          effective === undefined || effective === null
             ? ""
-            : typeof raw === "string"
-              ? raw
-              : String(raw);
-        const boolVal = raw === true || raw === "true";
+            : typeof effective === "string"
+              ? effective
+              : String(effective);
+        const boolVal = effective === true || effective === "true";
 
         return (
           <div key={field.name} className="flex flex-col gap-1">
@@ -193,6 +198,25 @@ export function ScheduleFieldForm({
                 }
                 className="w-full rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-60"
               />
+            ) : hint === "number" ? (
+              <input
+                id={fieldId}
+                name={field.name}
+                type="number"
+                value={str}
+                placeholder={field.placeholder}
+                required={field.required}
+                min={field.min}
+                max={field.max}
+                step={field.step}
+                disabled={disabled || fromProfile}
+                readOnly={fromProfile}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setValue(field.name, next === "" ? undefined : Number(next));
+                }}
+                className="w-full rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-60"
+              />
             ) : hint === "boolean" ? (
               <label className="inline-flex items-center gap-2 text-sm text-text">
                 <input
@@ -259,7 +283,11 @@ export function scheduleFieldsComplete(
 ): boolean {
   for (const field of fields) {
     if (!field.required || field.fromProfile) continue;
-    const v = values[field.name];
+    const raw = values[field.name];
+    const v =
+      (raw === undefined || raw === null) && field.defaultValue !== undefined
+        ? field.defaultValue
+        : raw;
     if (v === undefined || v === null) return false;
     if (typeof v === "string" && v.trim() === "") return false;
     if (Array.isArray(v) && v.length === 0) return false;

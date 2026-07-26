@@ -20,6 +20,7 @@
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/blocks": "workspace:*",
+    "@workbench/shared": "workspace:*",
     "@workbench/tool-manifest": "workspace:*",
     "@workbench/workflow-last30days-research": "workspace:*"
   },

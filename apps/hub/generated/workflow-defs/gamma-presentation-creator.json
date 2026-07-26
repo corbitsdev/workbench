@@ -35,6 +35,25 @@
   ],
   "requiresIntake": true,
   "humanGateCount": 1,
+  "intakeFields": [
+    {
+      "name": "deckTitle",
+      "label": "Deck title",
+      "inputHint": "text",
+      "required": true,
+      "placeholder": "e.g. Q3 Product Update",
+      "order": 0
+    },
+    {
+      "name": "gammaId",
+      "label": "Gamma template id",
+      "inputHint": "text",
+      "required": true,
+      "placeholder": "e.g. abc123XYZ",
+      "help": "Find this on the Gamma Templates admin page.",
+      "order": 1
+    }
+  ],
   "definition": {
     "id": "gamma-presentation-creator",
     "triggers": [

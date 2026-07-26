@@ -222,3 +222,29 @@ export function describeResumePayload(
   if (schema === undefined) return undefined;
   return String(schema.expression);
 }
+
+/**
+ * The required top-level keys of a kind's registered `intake` resume-payload
+ * schema (read via arktype's JSON Schema projection). Used to assert a
+ * workflow's declared intake fields (`INTAKE_FIELDS`) actually cover every key
+ * the `/resume` boundary requires — the gap that shipped `gtm-scripts-briefs`
+ * with a schedule form collecting nothing against a schema requiring
+ * `topic`/`days` (CL-4538). Returns `undefined` when the kind has no
+ * registered `intake` schema — nothing to check.
+ */
+export function requiredIntakeSchemaKeys(kind: string): string[] | undefined {
+  const schema = RESUME_PAYLOAD_SCHEMAS[kind]?.intake;
+  if (schema === undefined) return undefined;
+  // Several registered schemas narrow a leaf type with `.narrow(...)` (e.g.
+  // `topic`'s non-empty-string check) — arktype's JSON Schema projection has
+  // no representation for an arbitrary predicate and throws unless a
+  // `fallback` is supplied. Only the required-KEY list is needed here (not
+  // the predicate itself), so the fallback degrades a narrowed leaf to its
+  // unrefined base type.
+  const jsonSchema = schema.toJsonSchema({
+    fallback: { predicate: (ctx) => ctx.base },
+  }) as { required?: unknown };
+  const required = jsonSchema.required;
+  if (!Array.isArray(required)) return [];
+  return required.filter((key): key is string => typeof key === "string");
+}

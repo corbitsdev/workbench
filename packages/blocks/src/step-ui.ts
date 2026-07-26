@@ -91,6 +91,9 @@ function toFormField(field: StepUIInputField): FormField {
         ...(typeof field.defaultValue === "number"
           ? { defaultValue: field.defaultValue }
           : {}),
+        ...(field.min !== undefined ? { min: field.min } : {}),
+        ...(field.max !== undefined ? { max: field.max } : {}),
+        ...(field.step !== undefined ? { step: field.step } : {}),
       };
     case "select":
     case "multiSelect":

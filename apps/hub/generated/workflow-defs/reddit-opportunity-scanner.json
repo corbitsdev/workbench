@@ -68,6 +68,37 @@
   ],
   "requiresIntake": true,
   "humanGateCount": 3,
+  "intakeFields": [
+    {
+      "name": "url",
+      "label": "Website URL",
+      "inputHint": "text",
+      "required": true,
+      "placeholder": "https://example.com",
+      "order": 0
+    },
+    {
+      "name": "brandName",
+      "label": "Brand name (optional)",
+      "inputHint": "text",
+      "placeholder": "Acme",
+      "order": 1
+    },
+    {
+      "name": "targetGeography",
+      "label": "Target geography (optional)",
+      "inputHint": "text",
+      "placeholder": "North America",
+      "order": 2
+    },
+    {
+      "name": "icpHints",
+      "label": "ICP / audience hints (optional)",
+      "inputHint": "textarea",
+      "placeholder": "Who is the ideal customer? What problems do they have?",
+      "order": 3
+    }
+  ],
   "definition": {
     "id": "reddit-opportunity-scanner",
     "triggers": [

@@ -879,6 +879,9 @@ function LeafFieldInput({
         type={field.kind === "number" ? "number" : "text"}
         value={value as string}
         placeholder={field.placeholder}
+        min={field.kind === "number" ? field.min : undefined}
+        max={field.kind === "number" ? field.max : undefined}
+        step={field.kind === "number" ? field.step : undefined}
         onChange={(event) => onChange(event.target.value)}
         className={inputClass}
       />

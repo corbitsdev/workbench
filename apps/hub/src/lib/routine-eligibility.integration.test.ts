@@ -1,12 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { isRoutineEligibleKind } from "@workbench/shared";
 import {
+  loadWorkflowCatalogKinds,
   loadWorkflowEntryTriggerFields,
   loadWorkflowGateInfos,
   loadWorkflowIntakeFields,
 } from "./workflow-catalog";
 import { isKindStructurallyAttachable } from "./workflow-gate-info";
 import { ENRICHED_TRIGGER_KINDS } from "../workflow-executor/trigger-payload-enrichment-registry";
+import { requiredIntakeSchemaKeys } from "../workflow-executor/resume-payload-registry";
 
 // Real end-to-end exercise of the derived routine-eligibility rule (CL-4204)
 // against the actual committed embedded catalog (apps/hub/generated/workflow-defs)
@@ -72,5 +74,43 @@ describe("derived routine eligibility against the real embedded catalog", () => 
   it("still excludes a structurally-unattachable multi-gate kind (unaffected by this derivation)", async () => {
     const kinds = await attachableKinds();
     expect(kinds.has("attio-task-agent")).toBe(false);
+  });
+});
+
+// CL-4538: gtm-scripts-briefs declared its `intake` fields only in the dock's
+// private `blocks.ts` builder, never on the workflow definition — the schedule/
+// attach form (which reads a definition's exported `INTAKE_FIELDS`) rendered no
+// inputs at all, then the `/resume` boundary rejected the hollow payload for
+// missing `topic`/`days`. This checks EVERY real committed workflow kind
+// (deliberately not narrowed to today's schedule-attachable subset — a kind
+// that is not attachable today is still the same authoring defect once
+// attachability gating changes), so a future workflow that registers an
+// `intake` resume-payload schema without declaring matching intake fields
+// fails here instead of shipping the same silent-empty-form bug.
+describe("declared intake fields cover the registered intake resume-payload schema", () => {
+  it("every kind with a registered `intake` schema declares every field that schema requires", async () => {
+    const [kinds, intakeFieldsByKind] = await Promise.all([
+      loadWorkflowCatalogKinds(),
+      loadWorkflowIntakeFields(),
+    ]);
+    const failures: string[] = [];
+    for (const kind of kinds) {
+      const requiredKeys = requiredIntakeSchemaKeys(kind);
+      if (requiredKeys === undefined) continue;
+      const declaredNames = new Set(
+        (intakeFieldsByKind.get(kind) ?? []).map((f) => f.name),
+      );
+      const missing = requiredKeys.filter((key) => !declaredNames.has(key));
+      if (missing.length > 0) {
+        failures.push(`${kind}: missing ${missing.join(", ")}`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it("sanity: gtm-scripts-briefs' registered schema actually requires topic and days", () => {
+    expect(requiredIntakeSchemaKeys("gtm-scripts-briefs")).toEqual(
+      expect.arrayContaining(["topic", "days"]),
+    );
   });
 });
