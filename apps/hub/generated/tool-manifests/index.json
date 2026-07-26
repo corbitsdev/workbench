@@ -1,5 +1,5 @@
 {
-  "generatedAt": "ef5e56daf3c0fe738fa0d31ea40dade2385edc94c318021320d0e28e4b8312c4",
+  "generatedAt": "eead05fadba6aa9be983c9885856bb1f1b5e01c6c1d75ac6f8b4ac39c3f4cf18",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -1720,12 +1720,14 @@
         "sumble_account_intel_format_report_document",
         "sumble_account_intel_list_jobs",
         "sumble_account_intel_list_teams",
+        "sumble_account_intel_prepare_review_gate",
         "sumble_account_intel_resolve_organization",
         "sumble_account_intel_search_people",
         "sumble_account_intel_search_signals"
       ],
       "sideEffects": {
         "sumble_account_intel_format_report_document": "read",
+        "sumble_account_intel_prepare_review_gate": "read",
         "sumble_account_intel_resolve_organization": "read",
         "sumble_account_intel_search_people": "read",
         "sumble_account_intel_list_teams": "read",

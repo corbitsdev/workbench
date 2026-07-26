@@ -6,6 +6,7 @@ import { runTolerantTool } from "@workbench/tool-credentials/tolerance-envelope-
 import { createSumbleTools } from "@workbench/tools-sumble";
 import type { SumbleToolsConfig } from "@workbench/tools-sumble";
 import { createXTools } from "@workbench/tools-x";
+import { parseAccountBrief } from "./parse";
 
 // This workflow's own tool package inlines wrappers around @workbench/tools-sumble
 // and @workbench/tools-x rather than pinning those packages directly, so it can
@@ -128,6 +129,88 @@ function createSumbleAccountIntelFormatReportDocumentTool(): AgentTool {
       return {
         callId: call.id,
         content: { title: organizationDomain.trim(), body: reply },
+      };
+    },
+  };
+}
+
+// -------------------------------------------------------------------------
+// prepare-review-gate — fatal. Shapes the synthesize agent's strict-JSON
+// reply into the `UIBlock`-shaped `choice` the `review` gate's `STEP_UI`
+// entry reads via `gateFromOutput`/`gateSourceStep` (see index.ts + the
+// dock-block derivation in `@workbench/blocks`'s `blocksFromStepUI`). A
+// malformed reply here is a genuine agent-contract violation (the synthesize
+// system prompt REQUIRES strict JSON), not a best-effort data source — it
+// fails the step (and the run) rather than rendering a degraded gate a human
+// could approve into persisting garbage.
+// -------------------------------------------------------------------------
+
+export const SUMBLE_ACCOUNT_INTEL_PREPARE_REVIEW_GATE_DEFINITION: ToolDefinition =
+  {
+    name: "sumble_account_intel_prepare_review_gate",
+    description:
+      "Internal workflow helper. Shapes the synthesize agent's reply into the choice UIBlock the review gate's STEP_UI entry renders via gateFromOutput. Fatal — a malformed reply is a genuine contract violation, not a degraded facet.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        reply: {
+          type: "string",
+          description:
+            "The synthesize agent's account intelligence brief text.",
+        },
+      },
+      required: ["reply"],
+    },
+  };
+
+function reviewGatePrompt(brief: {
+  title: string;
+  content: string;
+  contactsCsv: string;
+  slackDraft: string;
+}): string {
+  const sections = [`# ${brief.title}`, brief.content];
+  if (brief.contactsCsv.trim().length > 0) {
+    sections.push(`## Contacts (CSV)\n${brief.contactsCsv}`);
+  }
+  if (brief.slackDraft.trim().length > 0) {
+    sections.push(`## Slack draft\n${brief.slackDraft}`);
+  }
+  return sections.join("\n\n");
+}
+
+function createPrepareReviewGateTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: SUMBLE_ACCOUNT_INTEL_PREPARE_REVIEW_GATE_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const reply = args.reply;
+      if (typeof reply !== "string" || reply.trim().length === 0) {
+        return { callId: call.id, isError: true, content: "reply is required" };
+      }
+      const decoded = parseAccountBrief({ reply });
+      if (decoded.status !== "ok") {
+        return {
+          callId: call.id,
+          isError: true,
+          content: "synthesize reply did not decode to a valid account brief",
+        };
+      }
+      return {
+        callId: call.id,
+        content: {
+          kind: "choice",
+          prompt: reviewGatePrompt(decoded.value),
+          options: [
+            {
+              id: "approve",
+              label: "Approve & save",
+              payload: { approved: true },
+            },
+            { id: "reject", label: "Reject", payload: { approved: false } },
+          ],
+        },
       };
     },
   };
@@ -428,6 +511,7 @@ export function createSumbleAccountIntelTools(
   const sumbleRunner = createToolRunner(createSumbleTools(config.sumble));
   return [
     createSumbleAccountIntelFormatReportDocumentTool(),
+    createPrepareReviewGateTool(),
     createResolveOrganizationTool(sumbleRunner),
     createSearchPeopleTool(sumbleRunner),
     createFacetTool(

@@ -1,4 +1,13 @@
-import type { DisplayStep } from "@workbench/ui";
+// Structurally identical to `DisplayStep` from `@workbench/ui` (key/label/
+// stepIds/activityLabel?) — declared locally so this module carries no
+// `@workbench/ui` dependency; every consumer (the client stepper, the hub's
+// catalog classifier) reads this shape structurally, not by nominal type.
+export interface DisplayStep {
+  key: string;
+  label: string;
+  stepIds: readonly string[];
+  activityLabel?: string;
+}
 
 // The single, browser-safe declaration of this workflow's user-facing step flow
 // (labels, grouping, order). Consumed by the client panel (ui.tsx) for the live

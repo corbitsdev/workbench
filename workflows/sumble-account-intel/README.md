@@ -10,8 +10,11 @@ approval, persists the brief as a `research` artifact.
 
 ## Flow
 
-Every step after `intake` is a native `action` — there is no `map` and no
-`deterministicToolStep` left in this workflow.
+Every step after `intake` other than `synthesize` is a native `action` — there
+is no `map` and no `deterministicToolStep` left in this workflow. `synthesize`
+is a plain native `step({ agent: defineAgent({...}) })`, inlined directly
+(this package has no `@workbench/agents` dependency at all — no `agentStep`
+sugar, no `canonicalizeStepToolName`).
 
 1. `intake` — human names the account (`organizationDomain`, optional `pushToAttio`).
 2. `resolve` — `sumble_account_intel_resolve_organization` (load-bearing; not best-effort).
@@ -20,9 +23,21 @@ Every step after `intake` is a native `action` — there is no `map` and no
 5. `contacts` — `sumble_account_intel_search_people` (load-bearing; not best-effort).
 6. `signals` — `sumble_account_intel_search_signals`.
 7. `enrichSocial` — `sumble_account_intel_enrich_contacts`, one per-contact `x_search` iterated inside the tool.
-8. `synthesize` — inline inference (`LLM_WRITER_MODEL`) producing strict JSON.
-9. `review` — human approves the brief.
-10. `packageArtifact` — `write_artifact` persists the brief.
+8. `synthesize` — inline inference (writer model) producing strict JSON.
+9. `reviewGate` — `sumble_account_intel_prepare_review_gate` shapes the synthesize reply into the `choice` UIBlock the `review` gate renders (see `src/step-ui.ts`).
+10. `review` — human approves the brief.
+11. `document` — pairs the organization domain with the brief into `{ title, body }`.
+12. `packageArtifact` — `write_artifact` persists the brief.
+
+## UI: `STEP_UI`, not `blocks.ts`/`ui.tsx`
+
+This package has no `blocks.ts` and no `ui.tsx`. `src/step-ui.ts` declares a
+`STEP_UI` map (exported from the `./browser` subpath so `apps/web` never pulls
+`@intx/agent` into the browser bundle) consumed generically by
+`blocksFromStepUI` (`@workbench/blocks`). `intake` is a static `form`; `review`
+is a data-driven gate (`gateFromOutput`/`gateSourceStep: "reviewGate"`) whose
+block is built by this workflow's own `reviewGate` tool, not a hand-written
+builder.
 
 ### Best-effort facets, without `nonFatal`
 

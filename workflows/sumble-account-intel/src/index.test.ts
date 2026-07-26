@@ -11,6 +11,7 @@ import {
   LIST_TEAMS_HANDLER,
   PACKAGE_ARTIFACT_HANDLER,
   RESOLVE_ORGANIZATION_HANDLER,
+  REVIEW_GATE_HANDLER,
   SEARCH_PEOPLE_HANDLER,
   SEARCH_SIGNALS_HANDLER,
   TECH_STACK_HANDLER,
@@ -77,6 +78,13 @@ const SLUG_PROJECTION = (limit: number) => ({
   ],
 });
 
+const BRIEF_JSON = JSON.stringify({
+  title: "Acme — account brief",
+  content: "## Account summary\nAcme builds things.",
+  contactsCsv: "name,title,email,x_handle\nAda Lovelace,,,",
+  slackDraft: "Acme is worth a look.",
+});
+
 describe("sumble-account-intel workflow structure", () => {
   test("declares the expected step keys in order", () => {
     expect(Object.keys(workflow.steps)).toEqual([
@@ -89,6 +97,7 @@ describe("sumble-account-intel workflow structure", () => {
       "signals",
       "enrichSocial",
       "synthesize",
+      "reviewGate",
       "review",
       "document",
       "packageArtifact",
@@ -167,10 +176,18 @@ describe("sumble-account-intel workflow structure", () => {
     }
   });
 
-  test("synthesize is a native reasoning step (agentStep) with a real prompt and no tools", () => {
+  test("synthesize is a native reasoning step (inlined step+defineAgent) with a real prompt and no tools", () => {
     const synth = stepPrimitive("synthesize");
     expect(synth.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(synth.input).toEqual({ from: "steps" });
+  });
+
+  test("reviewGate is a native action shaping the synthesize reply into the review gate's UIBlock", () => {
+    const gate = actionPrimitive("reviewGate");
+    expect(gate.handler).toBe(REVIEW_GATE_HANDLER);
+    expect(gate.input).toEqual({ from: "steps.synthesize.output" });
+    expect(gate.effect).toEqual({ requires: [REVIEW_GATE_HANDLER] });
+    expect("agent" in gate).toBe(false);
   });
 
   test("document is a native action pairing organizationDomain and the synthesize agent's reply into { title, body }", () => {
@@ -209,10 +226,11 @@ describe("sumble-account-intel workflow structure", () => {
     expect(actionPrimitive("signals").after).toEqual(["contacts"]);
     expect(actionPrimitive("enrichSocial").after).toEqual(["signals"]);
     expect(stepPrimitive("synthesize").after).toEqual(["enrichSocial"]);
+    expect(actionPrimitive("reviewGate").after).toEqual(["synthesize"]);
     const review = workflow.steps.review;
     if (!review || review.kind !== "awaitSignal")
       throw new Error("expected review awaitSignal");
-    expect(review.after).toEqual(["synthesize"]);
+    expect(review.after).toEqual(["reviewGate"]);
     expect(actionPrimitive("document").after).toEqual(["synthesize"]);
     expect(actionPrimitive("packageArtifact").after).toEqual([
       "document",
@@ -222,16 +240,9 @@ describe("sumble-account-intel workflow structure", () => {
 });
 
 describe("sumble-account-intel workflow execution", () => {
-  test("runs the full flow intake → research (all native actions) → synthesize → review → packageArtifact", async () => {
+  test("runs the full flow intake → research (all native actions) → synthesize → reviewGate → review → packageArtifact", async () => {
     const { invoker, ran } = makeRecordingInvoker({
-      "sumble-account-intel-synthesize": AGENT_REPLY(
-        JSON.stringify({
-          title: "Acme — account brief",
-          content: "## Account summary\nAcme builds things.",
-          contactsCsv: "name,title,email,x_handle\nAda Lovelace,,,",
-          slackDraft: "Acme is worth a look.",
-        }),
-      ),
+      "sumble-account-intel-synthesize": AGENT_REPLY(BRIEF_JSON),
     });
     const { resolver, ran: actionsRan } = makeRecordingActionResolver({
       [RESOLVE_ORGANIZATION_HANDLER]: {
@@ -251,6 +262,20 @@ describe("sumble-account-intel workflow execution", () => {
       },
       [ENRICH_CONTACTS_HANDLER]: {
         content: { people: [{ ok: true, data: "[]", name: "Ada Lovelace" }] },
+      },
+      [REVIEW_GATE_HANDLER]: {
+        content: {
+          kind: "choice",
+          prompt: "review this",
+          options: [
+            {
+              id: "approve",
+              label: "Approve & save",
+              payload: { approved: true },
+            },
+            { id: "reject", label: "Reject", payload: { approved: false } },
+          ],
+        },
       },
       [DOCUMENT_HANDLER]: {
         content: { title: "acme.com", body: "## Account summary" },
@@ -278,6 +303,7 @@ describe("sumble-account-intel workflow execution", () => {
     expect(actionRefs).toContain(SEARCH_SIGNALS_HANDLER);
     expect(actionRefs).toContain(ENRICH_CONTACTS_HANDLER);
     expect(actionRefs).toContain(TECH_STACK_HANDLER);
+    expect(actionRefs).toContain(REVIEW_GATE_HANDLER);
     expect(actionRefs).toContain(DOCUMENT_HANDLER);
     expect(actionRefs).toContain(PACKAGE_ARTIFACT_HANDLER);
     const ranIds = ran.map((r) => r.id);
@@ -310,6 +336,19 @@ describe("sumble-account-intel workflow execution", () => {
       [SEARCH_PEOPLE_HANDLER]: { content: { people: [], count: 0 } },
       [TECH_STACK_HANDLER]: { content: "{}" },
       [ENRICH_CONTACTS_HANDLER]: { content: { people: [] } },
+      [REVIEW_GATE_HANDLER]: {
+        content: {
+          kind: "choice",
+          options: [
+            {
+              id: "approve",
+              label: "Approve & save",
+              payload: { approved: true },
+            },
+            { id: "reject", label: "Reject", payload: { approved: false } },
+          ],
+        },
+      },
       [DOCUMENT_HANDLER]: { content: { title: "acme.com", body: "c" } },
       [PACKAGE_ARTIFACT_HANDLER]: {
         content: JSON.stringify({ artifactId: "art_1" }),
@@ -329,16 +368,80 @@ describe("sumble-account-intel workflow execution", () => {
     );
   });
 
+  test("a fatal resolve failure fails the whole run rather than continuing", async () => {
+    // `resolve` failing does not by itself halt the DAG: only steps whose OWN
+    // input selector dereferences `steps.resolve.output` (teams/jobs/
+    // techStack/contacts/signals) fail in cascade; `synthesize`'s `{ from:
+    // "steps" }` selector tolerates a missing/failed sibling, so the run
+    // still drains through review and persistence. The runtime settles the
+    // RUN's terminal status only once every step is terminal
+    // (`isRunDone`/`hasFailedStep` in `interchange/packages/workflow/src/
+    // runtime/dag.ts`) — a permanently-`failed` `resolve` step still marks
+    // the whole run `RunFailed` at that point, so the review signal must be
+    // delivered too for the run to actually reach its terminal state.
+    const { invoker } = makeRecordingInvoker({
+      "sumble-account-intel-synthesize": AGENT_REPLY(BRIEF_JSON),
+    });
+    const { resolver } = makeRecordingActionResolver({
+      [REVIEW_GATE_HANDLER]: {
+        content: {
+          kind: "choice",
+          options: [
+            {
+              id: "approve",
+              label: "Approve & save",
+              payload: { approved: true },
+            },
+            { id: "reject", label: "Reject", payload: { approved: false } },
+          ],
+        },
+      },
+      [DOCUMENT_HANDLER]: { content: { title: "explodes.com", body: "c" } },
+      [PACKAGE_ARTIFACT_HANDLER]: {
+        content: JSON.stringify({ artifactId: "art_1" }),
+      },
+    });
+    const failingResolver = (ref: string): ActionHandler => {
+      if (ref === RESOLVE_ORGANIZATION_HANDLER) {
+        return async () => {
+          throw new Error("resolve exploded");
+        };
+      }
+      return resolver(ref);
+    };
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: failingResolver,
+    });
+    await run.signal("intake", { organizationDomain: "explodes.com" });
+    await run.signal("review", { approved: true });
+    const result = await run.complete;
+    expect(result.terminalStatus).toBe("failed");
+    const resolveFailed = result.events.find(
+      (e) => e.kind === "StepFailed" && e.stepId === "resolve",
+    );
+    expect(resolveFailed).toBeDefined();
+    // teams/jobs/techStack/contacts/signals/enrichSocial all cascade-fail
+    // from the missing `steps.resolve.output` their own selectors read —
+    // none of them ever dispatched a real tool call.
+    for (const stepId of [
+      "teams",
+      "jobs",
+      "techStack",
+      "contacts",
+      "signals",
+      "enrichSocial",
+    ]) {
+      const failed = result.events.find(
+        (e) => e.kind === "StepFailed" && e.stepId === stepId,
+      );
+      expect(failed).toBeDefined();
+    }
+  });
+
   test("blocks at the review gate until the review signal arrives", async () => {
     const { invoker, ran } = makeRecordingInvoker({
-      "sumble-account-intel-synthesize": AGENT_REPLY(
-        JSON.stringify({
-          title: "t",
-          content: "c",
-          contactsCsv: "name,title,email,x_handle",
-          slackDraft: "s",
-        }),
-      ),
+      "sumble-account-intel-synthesize": AGENT_REPLY(BRIEF_JSON),
     });
     const { resolver, ran: actionsRan } = makeRecordingActionResolver({
       [RESOLVE_ORGANIZATION_HANDLER]: { content: { slug: "acme" } },
@@ -348,6 +451,19 @@ describe("sumble-account-intel workflow execution", () => {
       [SEARCH_PEOPLE_HANDLER]: { content: { people: [], count: 0 } },
       [TECH_STACK_HANDLER]: { content: "{}" },
       [ENRICH_CONTACTS_HANDLER]: { content: { people: [] } },
+      [REVIEW_GATE_HANDLER]: {
+        content: {
+          kind: "choice",
+          options: [
+            {
+              id: "approve",
+              label: "Approve & save",
+              payload: { approved: true },
+            },
+            { id: "reject", label: "Reject", payload: { approved: false } },
+          ],
+        },
+      },
       [DOCUMENT_HANDLER]: { content: { title: "acme.com", body: "c" } },
     });
     const run = runLocal(workflow, {

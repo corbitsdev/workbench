@@ -147,6 +147,70 @@ describe("sumble_account_intel_format_report_document", () => {
   });
 });
 
+describe("sumble_account_intel_prepare_review_gate", () => {
+  const VALID_REPLY = JSON.stringify({
+    title: "Acme — account brief",
+    content: "## Account summary\nAcme builds things.",
+    contactsCsv: "name,title,email,x_handle\nAda Lovelace,,,",
+    slackDraft: "Acme is worth a look.",
+  });
+
+  test("shapes a valid synthesize reply into a choice UIBlock with Approve/Reject options", async () => {
+    const handler = fullTool("sumble_account_intel_prepare_review_gate");
+    const result = await handler(
+      {
+        id: "g",
+        name: "sumble_account_intel_prepare_review_gate",
+        arguments: { reply: VALID_REPLY },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBeUndefined();
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    const block = result.content as {
+      kind: string;
+      prompt: string;
+      options: { id: string; label: string; payload: unknown }[];
+    };
+    expect(block.kind).toBe("choice");
+    expect(block.prompt).toContain("Acme — account brief");
+    expect(block.prompt).toContain("Account summary");
+    expect(block.prompt).toContain("Slack draft");
+    expect(block.options).toEqual([
+      { id: "approve", label: "Approve & save", payload: { approved: true } },
+      { id: "reject", label: "Reject", payload: { approved: false } },
+    ]);
+  });
+
+  test("returns isError when reply is missing", async () => {
+    const handler = fullTool("sumble_account_intel_prepare_review_gate");
+    const result = await handler(
+      {
+        id: "g",
+        name: "sumble_account_intel_prepare_review_gate",
+        arguments: {},
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+  });
+
+  test("returns isError when the reply is not valid account-brief JSON — a genuine contract violation must fail the step", async () => {
+    const handler = fullTool("sumble_account_intel_prepare_review_gate");
+    const result = await handler(
+      {
+        id: "g",
+        name: "sumble_account_intel_prepare_review_gate",
+        arguments: { reply: "not json" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+  });
+});
+
 describe("sumble_account_intel_resolve_organization — fatal passthrough", () => {
   test("renames organizationDomain to identifier and returns the resolved org verbatim", async () => {
     const handler = fullTool("sumble_account_intel_resolve_organization");

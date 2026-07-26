@@ -167,6 +167,46 @@ describe("blocksFromStepUI - gate", () => {
     });
   });
 
+  test("a gateFromOutput entry whose source is an action step's ToolResult envelope unwraps .content", () => {
+    // Native `action` steps record the whole `ToolResult` (`{ callId, content,
+    // isError }`) as their step output (`apps/sidecar/src/action-tool-handler.ts`
+    // stores `result.output` verbatim) — a workflow's own tool cannot make an
+    // `action` step's LOGGED output a bare `UIBlock`, only its `content` field.
+    const stepUI: StepUI = {
+      select: { gateFromOutput: true, gateSourceStep: "prepare" },
+    };
+    const run: StepUIRunInput = {
+      runId: "run_1",
+      phase: "running",
+      steps: [
+        step({ stepId: "prepare", phase: "completed" }),
+        step({
+          stepId: "select",
+          phase: "awaiting-signal",
+          awaitingSignalName: "note-selection",
+        }),
+      ],
+      stepOutputs: {
+        prepare: {
+          callId: "c1",
+          isError: false,
+          content: {
+            kind: "choice",
+            prompt: "Pick a note",
+            options: [{ id: "n1", label: "Note 1" }],
+          },
+        },
+      },
+    };
+    const blocks = blocksFromStepUI(stepUI, run);
+    expect(blocks[1]).toEqual({
+      kind: "choice",
+      prompt: "Pick a note",
+      signalName: "note-selection",
+      options: [{ id: "n1", label: "Note 1" }],
+    });
+  });
+
   test("a static entry.gate declares a fixed choice with no data dependency", () => {
     const stepUI: StepUI = {
       approve: {

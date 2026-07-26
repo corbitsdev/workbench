@@ -10,6 +10,9 @@ export const toolManifestFile = {
         sumble_account_intel_format_report_document: {
           sideEffect: "read",
         },
+        sumble_account_intel_prepare_review_gate: {
+          sideEffect: "read",
+        },
         sumble_account_intel_resolve_organization: {
           sideEffect: "read",
         },

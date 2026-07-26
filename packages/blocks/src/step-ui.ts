@@ -254,6 +254,30 @@ function stampGateSignalName(block: UIBlock, signalName: string): UIBlock {
  * producing step hasn't completed), so the caller can fall back to the
  * generic redirect rather than render nothing.
  */
+/**
+ * A native `action` step's recorded output is the whole `ToolResult` envelope
+ * (`{ callId, content, isError }`) — `apps/sidecar/src/action-tool-handler.ts`
+ * stores `runDeterministicToolStep`'s `result.output` verbatim, so a workflow's
+ * own tool cannot make its `action` step's LOGGED output be a bare `UIBlock`;
+ * only its `content` field can be. A `step({ agent })` primitive's raw output
+ * (e.g. `{ reply }`) is unaffected — this only unwraps the `ToolResult` shape,
+ * never reshapes an already-bare value. Tried first as-is so a source that is
+ * ALREADY a bare `UIBlock` (any future non-`action` producer) is not forced
+ * through the unwrap.
+ */
+function resolveUIBlockSource(value: unknown): unknown {
+  if (isUIBlock(value)) return value;
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "content" in value &&
+    isUIBlock((value as { content: unknown }).content)
+  ) {
+    return (value as { content: unknown }).content;
+  }
+  return value;
+}
+
 function dynamicGateBlock(
   entry: StepUIEntry,
   gatingStepId: string,
@@ -261,7 +285,7 @@ function dynamicGateBlock(
   run: StepUIRunInput,
 ): UIBlock | undefined {
   const sourceStepId = entry.gateSourceStep ?? gatingStepId;
-  const output = run.stepOutputs?.[sourceStepId];
+  const output = resolveUIBlockSource(run.stepOutputs?.[sourceStepId]);
   if (!isUIBlock(output)) return undefined;
   return stampGateSignalName(output, signalName);
 }

@@ -303,13 +303,30 @@
           "enrichSocial"
         ]
       },
+      "reviewGate": {
+        "kind": "action",
+        "id": "reviewGate",
+        "handler": "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_prepare_review_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.synthesize.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_prepare_review_gate"
+          ]
+        },
+        "after": [
+          "synthesize"
+        ]
+      },
       "review": {
         "kind": "awaitSignal",
         "id": "review",
         "name": "review",
         "drainBehavior": "wait",
         "after": [
-          "synthesize"
+          "reviewGate"
         ]
       },
       "document": {
@@ -378,6 +395,7 @@
       "signals",
       "enrichSocial",
       "synthesize",
+      "reviewGate",
       "review",
       "document",
       "packageArtifact"

@@ -1,10 +1,8 @@
-import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
-import {
-  canonicalizeStepToolName,
-  agentStep,
-  LLM_WRITER_MODEL,
-} from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow, step } from "@intx/workflow";
+import { defineAgent } from "@intx/agent";
 import { buildAccountIntelSystemPrompt } from "./prompts";
+
+export { STEP_UI } from "./step-ui";
 
 // -------------------------------------------------------------------------
 // Workflow metadata
@@ -17,7 +15,7 @@ export const kind = "sumble-account-intel";
 
 export { DISPLAY_STEPS } from "./display-steps";
 
-// Schedule field metadata (CL-3860): organization domain + optional Attio push.
+// Schedule field metadata: organization domain + optional Attio push.
 // Multi-gate workflow — opt into scheduled post-intake drive so it is attachable.
 export const ALLOWS_SCHEDULED_POST_INTAKE_DRIVE = true;
 
@@ -43,58 +41,59 @@ export const INTAKE_FIELDS = [
   },
 ] as const;
 
-// The synthesis turn produces a multi-section brief plus a contacts CSV and a
-// Slack-ready draft as strict JSON; without an explicit ceiling the writer source
+// Corbits terminology guidance every reasoning step's system prompt carries,
+// so the synthesis agent spells Corbits/Corbits.dev/Interchange/Faremeter
+// consistently regardless of how the source material spelled them. Formerly
+// applied automatically by `@workbench/agents`' `agentStep` sugar; inlined
+// here as a plain string join, mirroring `exa-topic-watch`'s own local copy.
+const CORBITS_VOCABULARY =
+  "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.";
+
+// Tag shared with every step class, naming the step in the catalog/run-UI
+// preview in place of the humanized step-map key.
+const STEP_TITLE_TAG = "workbench.title";
+
+// Formerly `LLM_WRITER_MODEL`/`LLM_PROVIDER` from `@workbench/agents`.
+const WRITER_MODEL = "kimi-k2.6";
+const LLM_PROVIDER = "openai-compatible";
+
+// The synthesis turn produces a multi-section brief plus a contacts CSV and
+// a Slack-ready draft as strict JSON; without an explicit ceiling the writer source
 // can truncate mid-object with a clean finish_reason:"length". 8192 comfortably
 // clears the longest brief this workflow warrants.
 const SYNTHESIZE_MAX_TOKENS = 8192;
 
-// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
-// resolved via `canonicalizeStepToolName`'s build-time-checked lookup, so
-// a typo'd or manifest-drifted tool name fails the build instead of
-// deploying a step nothing can dispatch.
-export const TECH_STACK_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-tech-stack",
-  "sumble_get_org_tech_stack",
-);
-export const DOCUMENT_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-document",
-  "sumble_account_intel_format_report_document",
-);
-export const PACKAGE_ARTIFACT_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-package",
-  "write_artifact",
-);
+// Native `action` handler refs — the tool's canonical (factory-prefixed)
+// name, checked against the committed tool manifest by a repo-level test
+// (`packages/tool-manifest/src/resolvable-handlers.test.ts`), so a typo'd or
+// manifest-drifted handler string fails the build instead of deploying a
+// step nothing can dispatch.
+export const TECH_STACK_HANDLER =
+  "@workbench/tools-sumble/sumble:sumble_get_org_tech_stack";
+export const DOCUMENT_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_format_report_document";
+export const PACKAGE_ARTIFACT_HANDLER =
+  "@workbench/tools-artifact/artifact:write_artifact";
 
 // Native `action` handler refs for this workflow's own tolerant/renamed
 // wrappers (see tools.ts) around the underlying Sumble + X tools. Each
 // wrapper names its own input fields to match the field the upstream step
 // already exposes (`organizationDomain`, `slug`, `people`), so no step here
 // needs the argMap escape hatch at all.
-export const RESOLVE_ORGANIZATION_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-resolve",
-  "sumble_account_intel_resolve_organization",
-);
-export const SEARCH_PEOPLE_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-contacts",
-  "sumble_account_intel_search_people",
-);
-export const LIST_TEAMS_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-teams",
-  "sumble_account_intel_list_teams",
-);
-export const LIST_JOBS_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-jobs",
-  "sumble_account_intel_list_jobs",
-);
-export const SEARCH_SIGNALS_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-signals",
-  "sumble_account_intel_search_signals",
-);
-export const ENRICH_CONTACTS_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-enrich-social",
-  "sumble_account_intel_enrich_contacts",
-);
+export const RESOLVE_ORGANIZATION_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_resolve_organization";
+export const SEARCH_PEOPLE_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_search_people";
+export const LIST_TEAMS_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_list_teams";
+export const LIST_JOBS_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_list_jobs";
+export const SEARCH_SIGNALS_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_search_signals";
+export const ENRICH_CONTACTS_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_enrich_contacts";
+export const REVIEW_GATE_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_prepare_review_gate";
 
 export const workflow = defineWorkflow({
   id: kind,
@@ -234,21 +233,51 @@ export const workflow = defineWorkflow({
     // 9. Synthesize the account intelligence brief from every upstream step.
     //    Emits strict JSON containing the brief content, a contacts CSV, and
     //    a Slack-ready draft so the package step can persist all three.
-    synthesize: agentStep({
-      id: "sumble-account-intel-synthesize",
-      title: "Write the account brief",
-      systemPrompt: buildAccountIntelSystemPrompt(),
-      model: LLM_WRITER_MODEL,
-      maxTokens: SYNTHESIZE_MAX_TOKENS,
+    //    Native `step({ agent })`: mirrors what `@workbench/agents`'
+    //    `agentStep` sugar used to wrap — the Corbits vocabulary section is
+    //    joined onto the real prompt inline, matching `exa-topic-watch`'s
+    //    own reasoning step.
+    synthesize: step({
+      agent: defineAgent({
+        id: "sumble-account-intel-synthesize",
+        description: "Reasoning step: sumble-account-intel-synthesize",
+        systemPrompt: [
+          CORBITS_VOCABULARY,
+          buildAccountIntelSystemPrompt(),
+        ].join("\n\n"),
+        tools: [],
+        capabilities: [],
+        inference: {
+          sources: [
+            {
+              provider: LLM_PROVIDER,
+              model: WRITER_MODEL,
+              parameters: { maxTokens: SYNTHESIZE_MAX_TOKENS },
+            },
+          ],
+        },
+        tags: { [STEP_TITLE_TAG]: "Write the account brief" },
+      }),
       input: { from: "steps" },
       after: ["enrichSocial"],
     }),
 
-    // 10. Human reviews and approves the brief before it is persisted.
-    review: awaitSignal({ name: "review", after: ["synthesize"] }),
+    // 10. Shape the synthesize agent's strict-JSON reply into the `choice`
+    // UIBlock the `review` gate's `STEP_UI` entry renders via
+    // `gateFromOutput`/`gateSourceStep` — a data-driven gate built by this
+    // workflow's own tool (see tools.ts), never a hand-written `blocks.ts`.
+    reviewGate: action({
+      handler: REVIEW_GATE_HANDLER,
+      input: { from: "steps.synthesize.output" },
+      effect: { requires: [REVIEW_GATE_HANDLER] },
+      after: ["synthesize"],
+    }),
 
-    // 11. Pairs the organization domain with the synthesize agent's reply into
-    // { title, body } (CL-4232) — the one place the agent's `reply` output
+    // 11. Human reviews and approves the brief before it is persisted.
+    review: awaitSignal({ name: "review", after: ["reviewGate"] }),
+
+    // 12. Pairs the organization domain with the synthesize agent's reply into
+    // { title, body } — the one place the agent's `reply` output
     // field is read, so persist never reshapes it. Native `action`:
     // `sumble_account_intel_format_report_document` requires exactly
     // `organizationDomain` and `reply`, both already top-level fields on
@@ -267,7 +296,7 @@ export const workflow = defineWorkflow({
       after: ["synthesize"],
     }),
 
-    // 12. Persist the brief as a research artifact. `body` carries the full
+    // 13. Persist the brief as a research artifact. `body` carries the full
     // synthesized brief (summary + contacts CSV + Slack draft); write_artifact's
     // optional structured `content` field is omitted — the synthesize step
     // emits a single `reply`, not a separate Report object, so mapping a
