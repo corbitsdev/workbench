@@ -13,6 +13,7 @@ import {
   STEP_UI,
 } from "./step-ui";
 
+import { loadCommittedToolManifestFactories } from "@workbench/tool-manifest";
 import {
   workflow,
   heartbeatIntakeStepKey,
@@ -23,9 +24,32 @@ import {
   HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER,
   MAIL_SEND_HANDLER,
   HEARTBEAT_INTAKE_SOURCE_HANDLER,
+  sourceToolHandler,
 } from "./index";
 
 const STEP_TITLE_TAG = "workbench.title";
+
+// Independent of `sourceToolHandler` — a wrong package prefix in the
+// production map still pins nothing and reproduces the silent-403, so the
+// expected sibling strings live here rather than being read back from the
+// function under test.
+const EXPECTED_SOURCE_SIBLING_HANDLERS: Readonly<Record<string, string>> = {
+  granola_list_notes: "@workbench/tools-granola/granola:granola_list_notes",
+  linear_list_issues: "@workbench/tools-linear/linear:linear_list_issues",
+  attio_recent_activity: "@workbench/tools-attio/attio:attio_recent_activity",
+  vercel_list_deployments:
+    "@workbench/tools-vercel/vercel:vercel_list_deployments",
+};
+
+function knownCanonicalHandlers(): Set<string> {
+  const out = new Set<string>();
+  for (const factory of loadCommittedToolManifestFactories()) {
+    for (const bare of factory.bareToolNames) {
+      out.add(`${factory.factoryId}:${bare}`);
+    }
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -280,11 +304,22 @@ describe("heartbeat native workflow", () => {
   });
 
   test("each generated intake step is a native action calling heartbeat_intake_source, parameterized by its source's tool", () => {
+    const known = knownCanonicalHandlers();
     for (const source of WIRED_BRIEF_SOURCES) {
       const intake = actionPrimitive(heartbeatIntakeStepKey(source.key));
       expect(intake.handler).toBe(HEARTBEAT_INTAKE_SOURCE_HANDLER);
+      // The sibling pins the source's package, which is what puts its
+      // credential provider in the deploy's allow-list. Expected strings are
+      // independent of `sourceToolHandler` so a wrong package prefix fails
+      // here rather than echoing the broken map; the committed-manifest check
+      // catches a string that is well-formed but names no real tool.
+      const sibling = EXPECTED_SOURCE_SIBLING_HANDLERS[source.tool];
+      expect(sibling).toBeDefined();
+      expect(known.has(sibling!)).toBe(true);
+      expect(sourceToolHandler(source.tool)).toBe(sibling);
       expect(intake.effect?.requires).toEqual([
         HEARTBEAT_INTAKE_SOURCE_HANDLER,
+        sibling,
       ]);
       expect(intake.input).toEqual({
         merge: [

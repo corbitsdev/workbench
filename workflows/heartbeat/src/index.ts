@@ -50,6 +50,32 @@ export const MAIL_SEND_HANDLER = "mail_send";
 export const HEARTBEAT_INTAKE_SOURCE_HANDLER =
   "@workbench/workflow-heartbeat/core:heartbeat_intake_source";
 
+// The real underlying tool's own canonical name, per source — never
+// dispatched (the wrapper calls the source's handler in-process), but
+// declared in each intake step's `effect.requires` alongside
+// HEARTBEAT_INTAKE_SOURCE_HANDLER so the deploy's capability walk also pins
+// the source's own package, whose manifest legitimately declares the
+// credential provider this workflow's wrapper package cannot claim for
+// itself. See the last30days-research workflow's `tool-manifest.ts` for the
+// same pattern.
+const SOURCE_TOOL_HANDLERS: Record<string, string> = {
+  granola_list_notes: "@workbench/tools-granola/granola:granola_list_notes",
+  linear_list_issues: "@workbench/tools-linear/linear:linear_list_issues",
+  attio_recent_activity: "@workbench/tools-attio/attio:attio_recent_activity",
+  vercel_list_deployments:
+    "@workbench/tools-vercel/vercel:vercel_list_deployments",
+};
+
+export function sourceToolHandler(tool: string): string {
+  const handler = SOURCE_TOOL_HANDLERS[tool];
+  if (handler === undefined) {
+    throw new Error(
+      `heartbeat workflow: no canonical handler registered for source tool "${tool}"`,
+    );
+  }
+  return handler;
+}
+
 // -------------------------------------------------------------------------
 // Workflow definition — gate-free, unattended
 //
@@ -91,11 +117,11 @@ export const HEARTBEAT_INTAKE_SOURCE_HANDLER =
 //
 // The intake steps are generated from this package's own `WIRED_BRIEF_
 // SOURCES` (`./heartbeat-shared`, a static local list — no shared credential
-// catalog dependency) — adding a source is adding a row there and
-// registering its `create*Tools` builder in `tools.ts`'s
-// `SOURCE_TOOL_BUILDERS`, never editing this file. The generated graph is one
-// concurrent intake per `WIRED_BRIEF_SOURCES` entry, then merge-sources →
-// brief (see `index.test.ts`).
+// catalog dependency) — adding a source means: a row there, a
+// `SOURCE_TOOL_BUILDERS` entry in `tools.ts`, a `SOURCE_TOOL_HANDLERS` entry
+// here, and the matching expected sibling in `index.test.ts`. The generated
+// graph is one concurrent intake per `WIRED_BRIEF_SOURCES` entry, then
+// merge-sources → brief (see `index.test.ts`).
 //
 // v0 reasons over the note summaries each source's list returns (no
 // per-note transcript fan-out): a `map` over `steps.intake-granola.output.notes`
@@ -129,7 +155,12 @@ const intakeStepEntries: [string, ActionPrimitive][] = WIRED_BRIEF_SOURCES.map(
           { literal: { tool: source.tool } },
         ],
       },
-      effect: { requires: [HEARTBEAT_INTAKE_SOURCE_HANDLER] },
+      effect: {
+        requires: [
+          HEARTBEAT_INTAKE_SOURCE_HANDLER,
+          sourceToolHandler(source.tool),
+        ],
+      },
     }),
   ],
 );

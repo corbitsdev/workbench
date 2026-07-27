@@ -38,7 +38,8 @@
         },
         "effect": {
           "requires": [
-            "@workbench/workflow-heartbeat/core:heartbeat_intake_source"
+            "@workbench/workflow-heartbeat/core:heartbeat_intake_source",
+            "@workbench/tools-granola/granola:granola_list_notes"
           ]
         }
       },
@@ -67,7 +68,8 @@
         },
         "effect": {
           "requires": [
-            "@workbench/workflow-heartbeat/core:heartbeat_intake_source"
+            "@workbench/workflow-heartbeat/core:heartbeat_intake_source",
+            "@workbench/tools-linear/linear:linear_list_issues"
           ]
         }
       },
@@ -96,7 +98,8 @@
         },
         "effect": {
           "requires": [
-            "@workbench/workflow-heartbeat/core:heartbeat_intake_source"
+            "@workbench/workflow-heartbeat/core:heartbeat_intake_source",
+            "@workbench/tools-attio/attio:attio_recent_activity"
           ]
         }
       },
@@ -125,7 +128,8 @@
         },
         "effect": {
           "requires": [
-            "@workbench/workflow-heartbeat/core:heartbeat_intake_source"
+            "@workbench/workflow-heartbeat/core:heartbeat_intake_source",
+            "@workbench/tools-vercel/vercel:vercel_list_deployments"
           ]
         }
       },
