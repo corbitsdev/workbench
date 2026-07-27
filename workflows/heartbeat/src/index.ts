@@ -50,6 +50,32 @@ export const MAIL_SEND_HANDLER = "mail_send";
 export const HEARTBEAT_INTAKE_SOURCE_HANDLER =
   "@workbench/workflow-heartbeat/core:heartbeat_intake_source";
 
+// The real underlying tool's own canonical name, per source — never
+// dispatched (the wrapper calls the source's handler in-process), but
+// declared in each intake step's `effect.requires` alongside
+// HEARTBEAT_INTAKE_SOURCE_HANDLER so the deploy's capability walk also pins
+// the source's own package, whose manifest legitimately declares the
+// credential provider this workflow's wrapper package cannot claim for
+// itself. See the last30days-research workflow's `tool-manifest.ts` for the
+// same pattern.
+const SOURCE_TOOL_HANDLERS: Record<string, string> = {
+  granola_list_notes: "@workbench/tools-granola/granola:granola_list_notes",
+  linear_list_issues: "@workbench/tools-linear/linear:linear_list_issues",
+  attio_recent_activity: "@workbench/tools-attio/attio:attio_recent_activity",
+  vercel_list_deployments:
+    "@workbench/tools-vercel/vercel:vercel_list_deployments",
+};
+
+function sourceToolHandler(tool: string): string {
+  const handler = SOURCE_TOOL_HANDLERS[tool];
+  if (handler === undefined) {
+    throw new Error(
+      `heartbeat workflow: no canonical handler registered for source tool "${tool}"`,
+    );
+  }
+  return handler;
+}
+
 // -------------------------------------------------------------------------
 // Workflow definition — gate-free, unattended
 //
@@ -129,7 +155,17 @@ const intakeStepEntries: [string, ActionPrimitive][] = WIRED_BRIEF_SOURCES.map(
           { literal: { tool: source.tool } },
         ],
       },
-      effect: { requires: [HEARTBEAT_INTAKE_SOURCE_HANDLER] },
+      // The sibling real tool name is never dispatched — the wrapper calls the
+      // source's handler in-process — but declaring it makes the deploy's
+      // capability walk pin that source's package, whose manifest carries the
+      // provider. Without the pin the credential route allows nothing and 403s
+      // the whole request, so every source reports itself unconfigured.
+      effect: {
+        requires: [
+          HEARTBEAT_INTAKE_SOURCE_HANDLER,
+          sourceToolHandler(source.tool),
+        ],
+      },
     }),
   ],
 );
