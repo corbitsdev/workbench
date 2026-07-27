@@ -23,6 +23,7 @@ import {
   HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER,
   MAIL_SEND_HANDLER,
   HEARTBEAT_INTAKE_SOURCE_HANDLER,
+  sourceToolHandler,
 } from "./index";
 
 const STEP_TITLE_TAG = "workbench.title";
@@ -283,10 +284,17 @@ describe("heartbeat native workflow", () => {
     for (const source of WIRED_BRIEF_SOURCES) {
       const intake = actionPrimitive(heartbeatIntakeStepKey(source.key));
       expect(intake.handler).toBe(HEARTBEAT_INTAKE_SOURCE_HANDLER);
+      // The sibling pins the source's package, which is what puts its
+      // credential provider in the deploy's allow-list. Asserting the whole
+      // canonical string, not just the tool half: a wrong package prefix
+      // pins nothing and reproduces the silent-403 this guards against.
       expect(intake.effect?.requires).toEqual([
         HEARTBEAT_INTAKE_SOURCE_HANDLER,
-        expect.stringContaining(`:${source.tool}`),
+        sourceToolHandler(source.tool),
       ]);
+      expect(sourceToolHandler(source.tool)).toMatch(
+        new RegExp(`^@workbench/tools-[a-z-]+/[a-z-]+:${source.tool}$`),
+      );
       expect(intake.input).toEqual({
         merge: [
           {
@@ -769,24 +777,5 @@ describe("heartbeat native workflow", () => {
     expect(persistInput.body).toBe(briefReply);
     expect(persistInput.kind).toBe("morning-brief");
     expect(persistInput.title).toBe("Jordan Lee's Morning Brief - 04/07/26");
-  });
-});
-
-describe("intake steps authorize their source package", () => {
-  // The wrapper resolves each source's credential at runtime, but a step is
-  // only granted a provider whose PACKAGE the deploy's capability walk pinned.
-  // Declaring the sibling real tool name is what pins it — without that the
-  // credential route 403s the whole request and every source reports itself
-  // unconfigured. See `last30days-research/src/tool-manifest.ts` for the
-  // pattern this follows.
-  test("each intake step requires the sibling source tool, not only the wrapper", () => {
-    for (const source of WIRED_BRIEF_SOURCES) {
-      const stepId = heartbeatIntakeStepKey(source.key);
-      const step = workflow.steps[stepId];
-      const requires = step?.effect?.requires ?? [];
-      expect(
-        requires.some((name: string) => name.endsWith(`:${source.tool}`)),
-      ).toBe(true);
-    }
   });
 });

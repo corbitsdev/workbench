@@ -66,7 +66,7 @@ const SOURCE_TOOL_HANDLERS: Record<string, string> = {
     "@workbench/tools-vercel/vercel:vercel_list_deployments",
 };
 
-function sourceToolHandler(tool: string): string {
+export function sourceToolHandler(tool: string): string {
   const handler = SOURCE_TOOL_HANDLERS[tool];
   if (handler === undefined) {
     throw new Error(
@@ -155,11 +155,6 @@ const intakeStepEntries: [string, ActionPrimitive][] = WIRED_BRIEF_SOURCES.map(
           { literal: { tool: source.tool } },
         ],
       },
-      // The sibling real tool name is never dispatched — the wrapper calls the
-      // source's handler in-process — but declaring it makes the deploy's
-      // capability walk pin that source's package, whose manifest carries the
-      // provider. Without the pin the credential route allows nothing and 403s
-      // the whole request, so every source reports itself unconfigured.
       effect: {
         requires: [
           HEARTBEAT_INTAKE_SOURCE_HANDLER,
