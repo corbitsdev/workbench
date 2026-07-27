@@ -203,36 +203,17 @@
         ]
       },
       "persist": {
-        "kind": "map",
+        "kind": "action",
         "id": "persist",
-        "over": {
-          "from": "steps.review.output.approvedPieces"
+        "handler": "@workbench/workflow-pain-point-collateral/persist:pain_point_collateral_persist_pieces",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.review.output"
         },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "pain-point-collateral-persist",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-artifact/artifact:artifact_create"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"format\"},\"content\":{\"from\":\"content\"}}",
-              "workbench.title": "Save the collateral"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
+        "effect": {
+          "requires": [
+            "@workbench/workflow-pain-point-collateral/persist:pain_point_collateral_persist_pieces"
+          ]
         },
         "after": [
           "review"

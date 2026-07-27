@@ -1,0 +1,138 @@
+{
+  "kind": "scrape-for-stories",
+  "version": "0.1.0",
+  "label": "Scrape for stories",
+  "description": "On a schedule, search the web for configured topics, rank story candidates, and save a shared story-bucket artifact for Daily LinkedIn — no mid-run human gates.",
+  "requiresIntake": true,
+  "humanGateCount": 1,
+  "intakeFields": [
+    {
+      "name": "topics",
+      "label": "Topics",
+      "inputHint": "string-array",
+      "required": true,
+      "help": "Topic queries to scrape each run. Each entry is searched; the agent ranks across them into one story bucket.",
+      "placeholder": "AI coding agents for GTM",
+      "order": 0
+    }
+  ],
+  "definition": {
+    "id": "scrape-for-stories",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "intake": {
+        "kind": "awaitSignal",
+        "id": "intake",
+        "name": "intake",
+        "drainBehavior": "wait"
+      },
+      "collect": {
+        "kind": "step",
+        "id": "collect",
+        "agent": {
+          "id": "scrape-for-stories-collect",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou build an unattended weekly story bucket for a GTM content team.\n\nYou receive intake with a \"topics\" array (one or more search queries).\n\nFor each topic, call exa_search once (query = that topic string). Prefer recent, linkable public items. If a search fails or returns nothing, skip that topic and continue — never invent results.\n\nThen write ONE markdown story bucket as your final reply (no tool calls in the final message):\n\n# Story bucket\nBrief one-line window summary.\n\n## Ranked stories\nFor each of 5–12 stories (or fewer if thin week), a bullet with:\n- **Headline** — link\n- Why it matters for GTM / content (one sentence)\n- Source topic tag if multi-topic\n\n## Thin / empty\nIf almost nothing landed, say so plainly under a short section and list what was attempted. Still produce valid markdown.\n\nRules:\n- No mid-run human selection — pick and rank yourself.\n- No preamble, no JSON, no tool-call narration in the final body.\n- Prefer primary sources and concrete claims over fluff.\n- Degrade cleanly: empty or partial search still yields a short honest bucket.",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-exa/exa:exa_search"
+          ],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6"
+              }
+            ]
+          },
+          "description": "Searches configured topics via Exa and ranks a story-bucket markdown digest.",
+          "tags": {
+            "credentialName": "opencode-zen",
+            "workbench.title": "Search and rank stories"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.intake.output"
+        },
+        "after": [
+          "intake"
+        ]
+      },
+      "document": {
+        "kind": "action",
+        "id": "document",
+        "handler": "@workbench/tools-last30days/core:last30days_format_report_document",
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "literal": {
+                "topic": "Story bucket"
+              }
+            },
+            {
+              "project": {
+                "from": "steps.collect.output"
+              },
+              "fields": [
+                "reply"
+              ]
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-last30days/core:last30days_format_report_document"
+          ]
+        },
+        "after": [
+          "collect"
+        ]
+      },
+      "persist": {
+        "kind": "action",
+        "id": "persist",
+        "handler": "@workbench/tools-artifact/artifact:write_artifact",
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "project": {
+                "from": "steps.document.output.content"
+              },
+              "fields": [
+                "title",
+                "body"
+              ]
+            },
+            {
+              "literal": {
+                "kind": "story-bucket",
+                "jobLabel": "Scrape for stories",
+                "sourceRef": "story-bucket-latest"
+              }
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ]
+        },
+        "after": [
+          "document"
+        ]
+      }
+    },
+    "stepOrder": [
+      "intake",
+      "collect",
+      "document",
+      "persist"
+    ]
+  }
+}

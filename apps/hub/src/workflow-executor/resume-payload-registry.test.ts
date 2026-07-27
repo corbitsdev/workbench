@@ -334,18 +334,18 @@ describe("validateResumePayload", () => {
   test("accepts a reddit intake with an http(s) URL and optional hints", () => {
     expect(
       validateResumePayload("reddit-opportunity-scanner", "intake", {
-        inputUrl: "https://example.com",
+        url: "https://example.com",
         brandName: "Acme",
       }),
     ).toEqual({ ok: true });
   });
 
-  test("rejects a reddit intake with a non-URL inputUrl (CL-2769)", () => {
-    // The scrape step fetches inputUrl; the panel enforced the http(s) shape
+  test("rejects a reddit intake with a non-URL url (CL-2769)", () => {
+    // The scrape action fetches url; the panel enforced the http(s) shape
     // client-side, and the boundary enforces it for the block form too.
     expect(
       validateResumePayload("reddit-opportunity-scanner", "intake", {
-        inputUrl: "not a url",
+        url: "not a url",
       }).ok,
     ).toBe(false);
   });
@@ -401,6 +401,26 @@ describe("validateResumePayload", () => {
           selected: [{ title: "Alerting is broken", content: "" }],
         },
       ).ok,
+    ).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // competitor-analysis (CL-4029)
+  // -------------------------------------------------------------------------
+  test("accepts a competitor-analysis intake with an http(s) url and optional fields", () => {
+    expect(
+      validateResumePayload("competitor-analysis", "intake", {
+        url: "https://example.com",
+        companyName: "Acme",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a competitor-analysis intake with a non-URL url", () => {
+    expect(
+      validateResumePayload("competitor-analysis", "intake", {
+        url: "not a url",
+      }).ok,
     ).toBe(false);
   });
 
@@ -568,76 +588,55 @@ describe("validateResumePayload", () => {
     ).toBe(false);
   });
 
-  test("accepts multi-source-collateral sources with mixed picks (CL-4034)", () => {
+  test("accepts multi-source-collateral sources with mixed picks", () => {
     expect(
       validateResumePayload("multi-source-collateral", "sources", {
-        artifactItems: [{ artifactId: "art_1" }],
-        noteItems: [],
-        issueItems: [{ id: "CL-1" }],
-        text: "extra brief",
+        sourceIds: ["artifact:art_1", "issue:CL-1"],
+        freeText: "extra brief",
       }),
     ).toEqual({ ok: true });
   });
 
   test("rejects multi-source-collateral sources with nothing selected", () => {
     const result = validateResumePayload("multi-source-collateral", "sources", {
-      artifactItems: [],
-      noteItems: [],
-      issueItems: [],
-      text: "   ",
+      sourceIds: [],
+      freeText: "   ",
     });
     expect(result.ok).toBe(false);
   });
 
-  test("accepts multi-source-collateral options with generate items", () => {
+  test("accepts multi-source-collateral options with content types", () => {
     expect(
       validateResumePayload("multi-source-collateral", "options", {
-        items: [
-          {
-            contentType: "linkedin-post",
-            sourceContext: "Call notes…",
-            systemPrompt: "Write short.",
-            tone: "direct",
-          },
-        ],
+        contentTypes: ["linkedin-post"],
+        tone: "direct",
       }),
     ).toEqual({ ok: true });
   });
 
-  test("rejects multi-source-collateral options with empty items", () => {
+  test("rejects multi-source-collateral options with no content types", () => {
     expect(
       validateResumePayload("multi-source-collateral", "options", {
-        items: [],
+        contentTypes: [],
       }).ok,
     ).toBe(false);
   });
 
-  test("accepts multi-source-collateral review with regenerate path", () => {
+  test("accepts multi-source-collateral review with decisions", () => {
     expect(
       validateResumePayload("multi-source-collateral", "review", {
         approvedPieces: [{ format: "blog-short", title: "T", content: "Body" }],
-        shouldRegenerate: true,
-        regenerateItems: [
+        decisions: [
+          { approved: true, format: "blog-short", title: "T", content: "Body" },
           {
-            contentType: "linkedin-post",
-            sourceContext: "ctx",
-            systemPrompt: "p",
-            previousContent: "old",
-            feedback: "make punchier",
+            approved: false,
+            format: "linkedin-post",
+            title: "V1",
+            content: "old",
           },
         ],
       }),
     ).toEqual({ ok: true });
-  });
-
-  test("rejects multi-source-collateral review shouldRegenerate without items", () => {
-    expect(
-      validateResumePayload("multi-source-collateral", "review", {
-        approvedPieces: [],
-        shouldRegenerate: true,
-        regenerateItems: [],
-      }).ok,
-    ).toBe(false);
   });
 
   test("accepts multi-source-collateral review-final", () => {

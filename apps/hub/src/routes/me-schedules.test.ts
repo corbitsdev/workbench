@@ -1,6 +1,11 @@
 import { describe, expect, it, mock } from "bun:test";
 import { Hono } from "hono";
+import { type } from "arktype";
 import type { HubDb } from "../db";
+
+const SchedulesResponse = type({
+  items: type({ nextFireAt: "string" }, "[]"),
+});
 
 // Caller identity: userId -> membership. user-none has no membership.
 const memberByUser: Record<
@@ -35,13 +40,12 @@ mock.module("../lib/workflow-run-gate", () => ({
     runnableKinds.some((k) => k.kind === kind),
 }));
 
-// Attach gate (CL-3508/CL-3509/CL-3528) + derived routine eligibility
-// (CL-4204): the route reads gate shapes from the embedded catalog.
-// "deck"/"heartbeat"/"granola-call"/"unattended-eligible" are unattended;
-// "last30days-research" is intake-only; "multi-gate" has intake plus a
-// post-intake human gate and is structurally attachable only when
-// allowsScheduledPostIntakeDrive is set (CL-3528). A kind absent from this
-// map is treated as not-attachable. The real intake payload validation
+// Every runnable kind is schedulable (CL-4514) — no eligibility gate reads
+// gate shape at create time anymore. `loadWorkflowGateInfos` is still used by
+// the PATCH handler to decide whether to re-validate an updated payload
+// against a kind's registered `intake` schema (a delivery detail, not
+// eligibility) — "last30days-research" requiresIntake so its payload is
+// re-validated on update; the real intake payload validation
 // (resume-payload-registry) is NOT mocked — last30days requires a non-empty topic.
 const gateInfos = new Map<
   string,
@@ -52,40 +56,10 @@ const gateInfos = new Map<
   ["granola-call", { requiresIntake: false, humanGateCount: 0 }],
   ["unattended-eligible", { requiresIntake: false, humanGateCount: 0 }],
   ["last30days-research", { requiresIntake: true, humanGateCount: 1 }],
-  [
-    "multi-gate",
-    {
-      requiresIntake: true,
-      humanGateCount: 2,
-      allowsScheduledPostIntakeDrive: true,
-    },
-  ],
-]);
-// Entry-step required trigger fields per kind (CL-4204 derivation). "deck"
-// requires a field that is neither a declared intake field nor enriched, so
-// it fails eligibility on the correctness rule alone (not a bare allowlist
-// miss). "granola-call" requires `noteId` off the raw trigger payload with
-// no intake field and no registered enricher — the real-world bug this
-// derivation exists to catch. "unattended-eligible" and "heartbeat" require
-// nothing beyond what a registered enricher supplies (heartbeat) or require
-// nothing at all.
-const entryTriggerFieldsByKind = new Map<string, string[]>([
-  ["heartbeat", ["enabledSources", "createdAfter"]],
-  ["deck", ["missingField"]],
-  ["granola-call", ["noteId"]],
-  ["multi-gate", ["missingField"]],
-  ["unattended-eligible", []],
-]);
-const intakeFieldsByKind = new Map<string, { name: string }[]>([
-  ["last30days-research", [{ name: "topic" }, { name: "focus" }]],
+  ["multi-gate", { requiresIntake: true, humanGateCount: 2 }],
 ]);
 mock.module("../lib/workflow-catalog", () => ({
   loadWorkflowGateInfos: async () => gateInfos,
-  loadWorkflowEntryTriggerFields: async () => entryTriggerFieldsByKind,
-  loadWorkflowIntakeFields: async () => intakeFieldsByKind,
-}));
-mock.module("../workflow-executor/trigger-payload-enrichment-registry", () => ({
-  ENRICHED_TRIGGER_KINDS: new Set(["heartbeat"]),
 }));
 
 const DAILY_9 = { intervalMinutes: 1440, anchorMinuteUtc: 9 * 60 };
@@ -277,7 +251,8 @@ describe("GET /me/schedules", () => {
       req("/me/schedules", { user: "user-a" }),
     );
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = SchedulesResponse(await res.json());
+    if (body instanceof type.errors) throw new Error(body.summary);
     expect(body.items).toHaveLength(1);
     expect(body.items[0]).toMatchObject({
       id: "sch-1",
@@ -287,7 +262,7 @@ describe("GET /me/schedules", () => {
       triggerPayload: { reason: "scheduled-heartbeat" },
       createdAt: "2026-01-01T00:00:00.000Z",
     });
-    expect(body.items[0].nextFireAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(body.items[0]!.nextFireAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(storeCalls[0]).toMatchObject({
       fn: "list",
       args: { tenantId: "tenant-root", ownerPrincipalId: "principal-a" },
@@ -328,7 +303,7 @@ describe("GET /me/schedules", () => {
   });
 });
 
-describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
+describe("POST /me/schedules intake payload validation (CL-3508/CL-3509)", () => {
   it("rejects a kind whose only intake is missing", async () => {
     storeCalls.length = 0;
     const res = await mountApp().fetch(
@@ -375,7 +350,7 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     });
   });
 
-  it("rejects a multi-gate kind without post-intake drive allowance (CL-3528)", async () => {
+  it("accepts a multi-gate kind — every workflow is schedulable (CL-4514)", async () => {
     gateInfos.set("blocked-multi", {
       requiresIntake: true,
       humanGateCount: 2,
@@ -395,69 +370,11 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
     );
     runnableKinds = runnableKinds.filter((k) => k.kind !== "blocked-multi");
     gateInfos.delete("blocked-multi");
-    expect(res.status).toBe(400);
-    expect(storeCalls.find((c) => c.fn === "create")).toBeUndefined();
+    expect(res.status).toBe(201);
+    expect(storeCalls.find((c) => c.fn === "create")).toBeDefined();
   });
 
-  it("rejects a multi-gate kind that is structurally attachable but has an unsatisfiable required trigger field (CL-4204)", async () => {
-    // multi-gate has allowsScheduledPostIntakeDrive so structural attach passes;
-    // its entry step still requires a trigger field no intake field or
-    // enricher supplies.
-    storeCalls.length = 0;
-    const res = await mountApp().fetch(
-      req("/me/schedules", {
-        method: "POST",
-        user: "user-a",
-        body: JSON.stringify({
-          kind: "multi-gate",
-          recurrence: DAILY_9,
-          payload: { topic: "x" },
-        }),
-      }),
-    );
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
-      error: 'workflow "multi-gate" is not available for Routines schedules',
-    });
-    expect(storeCalls.find((c) => c.fn === "create")).toBeUndefined();
-  });
-
-  it("rejects a structurally attachable kind whose required trigger field is neither declared intake nor enriched (CL-4204)", async () => {
-    // deck is unattended (structurally attachable) but its entry step needs
-    // `missingField` straight from the trigger payload, which no intake field
-    // or enricher supplies.
-    storeCalls.length = 0;
-    const res = await mountApp().fetch(
-      req("/me/schedules", {
-        method: "POST",
-        user: "user-a",
-        body: JSON.stringify({ kind: "deck", recurrence: DAILY_9 }),
-      }),
-    );
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
-      error: 'workflow "deck" is not available for Routines schedules',
-    });
-    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
-  });
-
-  it("rejects granola-call: it reads noteId off the raw trigger payload with no intake field and no enricher (CL-4204)", async () => {
-    storeCalls.length = 0;
-    const res = await mountApp().fetch(
-      req("/me/schedules", {
-        method: "POST",
-        user: "user-a",
-        body: JSON.stringify({ kind: "granola-call", recurrence: DAILY_9 }),
-      }),
-    );
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
-      error: 'workflow "granola-call" is not available for Routines schedules',
-    });
-    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
-  });
-
-  it("rejects a runnable kind that has no embedded gate info", async () => {
+  it("accepts a runnable kind with no embedded gate info — no eligibility gate applies (CL-4514)", async () => {
     storeCalls.length = 0;
     runnableKinds = [...runnableKinds, { kind: "ghost" }];
     const res = await mountApp().fetch(
@@ -468,8 +385,8 @@ describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
       }),
     );
     runnableKinds = runnableKinds.filter((k) => k.kind !== "ghost");
-    expect(res.status).toBe(400);
-    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+    expect(res.status).toBe(201);
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(true);
   });
 });
 

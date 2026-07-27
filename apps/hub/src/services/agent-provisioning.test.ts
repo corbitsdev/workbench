@@ -17,6 +17,7 @@ mock.module("../config", () => ({
     // (CL-2804); it reads this TTL.
     workflowDeploy: { modelSourceCacheTtlMs: 45_000 },
   }),
+  enabledUserOAuthInferenceProviders: () => [],
 }));
 
 // Launch outcome is driven by resolveModelSources: tests set `sourcesImpl` to

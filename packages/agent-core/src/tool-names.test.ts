@@ -336,7 +336,7 @@ describe("providersForToolPackages", () => {
 });
 
 describe("workflow tools round-trip to a package pin (CL-3074 regression)", () => {
-  // A deterministicToolStep names a tool by its bare name; the deploy canonicalizes
+  // A workflow step names a tool by its bare name; the deploy canonicalizes
   // it and derives the package pin from the capability. A tool missing from the
   // registry stays bare, resolves to NO pin, and the sidecar never loads its
   // package — the step then throws "tool not found" at run time. Guard every tool

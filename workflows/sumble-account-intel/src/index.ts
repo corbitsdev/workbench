@@ -1,11 +1,8 @@
-import { action, awaitSignal, defineWorkflow, map } from "@intx/workflow";
-import {
-  canonicalizeStepToolName,
-  deterministicToolStep,
-  agentStep,
-  LLM_WRITER_MODEL,
-} from "@workbench/agents";
+import { action, awaitSignal, defineWorkflow, step } from "@intx/workflow";
+import { defineAgent } from "@intx/agent";
 import { buildAccountIntelSystemPrompt } from "./prompts";
+
+export { STEP_UI } from "./step-ui";
 
 // -------------------------------------------------------------------------
 // Workflow metadata
@@ -18,7 +15,7 @@ export const kind = "sumble-account-intel";
 
 export { DISPLAY_STEPS } from "./display-steps";
 
-// Schedule field metadata (CL-3860): organization domain + optional Attio push.
+// Schedule field metadata: organization domain + optional Attio push.
 // Multi-gate workflow — opt into scheduled post-intake drive so it is attachable.
 export const ALLOWS_SCHEDULED_POST_INTAKE_DRIVE = true;
 
@@ -44,54 +41,59 @@ export const INTAKE_FIELDS = [
   },
 ] as const;
 
-// The synthesis turn produces a multi-section brief plus a contacts CSV and a
-// Slack-ready draft as strict JSON; without an explicit ceiling the writer source
+// Corbits terminology guidance every reasoning step's system prompt carries,
+// so the synthesis agent spells Corbits/Corbits.dev/Interchange/Faremeter
+// consistently regardless of how the source material spelled them. Formerly
+// applied automatically by `@workbench/agents`' `agentStep` sugar; inlined
+// here as a plain string join, mirroring `exa-topic-watch`'s own local copy.
+const CORBITS_VOCABULARY =
+  "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.";
+
+// Tag shared with every step class, naming the step in the catalog/run-UI
+// preview in place of the humanized step-map key.
+const STEP_TITLE_TAG = "workbench.title";
+
+// Formerly `LLM_WRITER_MODEL`/`LLM_PROVIDER` from `@workbench/agents`.
+const WRITER_MODEL = "kimi-k2.6";
+const LLM_PROVIDER = "openai-compatible";
+
+// The synthesis turn produces a multi-section brief plus a contacts CSV and
+// a Slack-ready draft as strict JSON; without an explicit ceiling the writer source
 // can truncate mid-object with a clean finish_reason:"length". 8192 comfortably
 // clears the longest brief this workflow warrants.
 const SYNTHESIZE_MAX_TOKENS = 8192;
 
-// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
-// resolved via the same build-time-checked lookup `deterministicToolStep`
-// uses, so a typo'd or manifest-drifted tool name fails the build instead of
-// deploying a step nothing can dispatch.
-export const TECH_STACK_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-tech-stack",
-  "sumble_get_org_tech_stack",
-);
-export const DOCUMENT_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-document",
-  "sumble_account_intel_format_report_document",
-);
-export const PACKAGE_ARTIFACT_HANDLER = canonicalizeStepToolName(
-  "sumble-account-intel-package",
-  "write_artifact",
-);
+// Native `action` handler refs — the tool's canonical (factory-prefixed)
+// name, checked against the committed tool manifest by a repo-level test
+// (`packages/tool-manifest/src/resolvable-handlers.test.ts`), so a typo'd or
+// manifest-drifted handler string fails the build instead of deploying a
+// step nothing can dispatch.
+export const TECH_STACK_HANDLER =
+  "@workbench/tools-sumble/sumble:sumble_get_org_tech_stack";
+export const DOCUMENT_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_format_report_document";
+export const PACKAGE_ARTIFACT_HANDLER =
+  "@workbench/tools-artifact/artifact:write_artifact";
 
-// One X search per contact enriches the LinkedIn-only people Sumble returns with
-// an X handle. Best-effort: a dead xAI call for one contact must not fail the run.
-//
-// NOT migrated to a native `action` — two independent blockers, either one
-// sufficient on its own (mirrors pain-point-collateral's `persistStep`):
-//   1. Field rename: `x_search` requires `query`, but the map item (a Sumble
-//      contact) carries the same value under `name`. The native selector
-//      vocabulary (`from`/`project`/`merge`/`literal`) can only pick fields
-//      through, never rename one.
-//   2. `MapPrimitive.step` is typed `StepPrimitive`, not `Primitive` — an
-//      `action` cannot be a map's inner step at all (see
-//      `interchange/packages/workflow/src/definition/primitives.ts`).
-const enrichSocialStep = deterministicToolStep({
-  id: "sumble-account-intel-enrich-social",
-  title: "Find the contact on X",
-  tool: "x_search",
-  // The map passes each contact object as `trigger.payload`; the argMap pulls the
-  // contact's name as the X query and caps the result set.
-  input: { from: "trigger.payload" },
-  argMap: {
-    query: { from: "name" },
-    limit: { literal: 5 },
-  },
-  nonFatal: true,
-});
+// Native `action` handler refs for this workflow's own tolerant/renamed
+// wrappers (see tools.ts) around the underlying Sumble + X tools. Each
+// wrapper names its own input fields to match the field the upstream step
+// already exposes (`organizationDomain`, `slug`, `people`), so no step here
+// needs the argMap escape hatch at all.
+export const RESOLVE_ORGANIZATION_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_resolve_organization";
+export const SEARCH_PEOPLE_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_search_people";
+export const LIST_TEAMS_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_list_teams";
+export const LIST_JOBS_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_list_jobs";
+export const SEARCH_SIGNALS_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_search_signals";
+export const ENRICH_CONTACTS_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_enrich_contacts";
+export const REVIEW_GATE_HANDLER =
+  "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_prepare_review_gate";
 
 export const workflow = defineWorkflow({
   id: kind,
@@ -101,59 +103,54 @@ export const workflow = defineWorkflow({
     intake: awaitSignal({ name: "intake" }),
 
     // 2. Resolve the account to a Sumble organization (domain or slug).
-    //
-    // NOT migrated to a native `action` — `sumble_resolve_organization`'s only
-    // matching argument is `identifier`, but the intake field carries the
-    // value under `organizationDomain` (the required, user-facing trigger
-    // field declared above, matching `SumbleIntakePayloadSchema` in
-    // `@workbench/shared`). The native selector vocabulary can pick a field
-    // through unrenamed but has no rename shape, so this reshape needs the
-    // argMap escape hatch.
-    resolve: deterministicToolStep({
-      id: "sumble-account-intel-resolve",
-      title: "Resolve the organization",
-      tool: "sumble_resolve_organization",
+    // Native `action`, fatal: the workflow-owned wrapper's own arg is named
+    // `organizationDomain` (the intake field's own name), so `input` passes
+    // the whole intake output through verbatim — no rename, no argMap. The
+    // wrapper still calls the underlying `sumble_resolve_organization` with
+    // `identifier`, but that rename now happens in TypeScript inside the
+    // tool, not in the step's selector.
+    resolve: action({
+      handler: RESOLVE_ORGANIZATION_HANDLER,
       input: { from: "steps.intake.output" },
-      // One intake field carries a domain OR a slug; the tool classifies it by
-      // shape and routes it to the right Sumble org-ref field.
-      argMap: {
-        identifier: { from: "organizationDomain" },
-      },
+      effect: { requires: [RESOLVE_ORGANIZATION_HANDLER] },
       after: ["intake"],
     }),
 
     // 3. List the org's teams (org shape, part 1). Downstream steps read the
     //    RESOLVED org record (structured content), keyed on its slug.
     //
-    // NOT migrated to a native `action` — `sumble_list_teams` requires
-    // `organizationSlug`, but the resolved org's own field is `slug`; no
-    // selector shape can rename it (same blocker as `resolve`).
-    teams: deterministicToolStep({
-      id: "sumble-account-intel-teams",
-      title: "List the teams",
-      tool: "sumble_list_teams",
-      input: { from: "steps.resolve.output.content" },
-      argMap: {
-        organizationSlug: { from: "slug" },
-        limit: { literal: 25 },
+    // Native `action`, best-effort: the wrapper's own arg is named `slug`
+    // (matching the resolved org's own field, no rename needed at the step
+    // level) and never propagates a tool failure as `isError` — see tools.ts.
+    teams: action({
+      handler: LIST_TEAMS_HANDLER,
+      input: {
+        merge: [
+          {
+            project: { from: "steps.resolve.output.content" },
+            fields: ["slug"],
+          },
+          { literal: { limit: 25 } },
+        ],
       },
+      effect: { requires: [LIST_TEAMS_HANDLER] },
       after: ["resolve"],
-      nonFatal: true,
     }),
 
-    // 4. List the org's open jobs (org shape, part 2). Same rename blocker as
-    // `teams` — `sumble_list_jobs` also requires `organizationSlug`.
-    jobs: deterministicToolStep({
-      id: "sumble-account-intel-jobs",
-      title: "List the open jobs",
-      tool: "sumble_list_jobs",
-      input: { from: "steps.resolve.output.content" },
-      argMap: {
-        organizationSlug: { from: "slug" },
-        limit: { literal: 25 },
+    // 4. List the org's open jobs (org shape, part 2). Same shape as `teams`.
+    jobs: action({
+      handler: LIST_JOBS_HANDLER,
+      input: {
+        merge: [
+          {
+            project: { from: "steps.resolve.output.content" },
+            fields: ["slug"],
+          },
+          { literal: { limit: 25 } },
+        ],
       },
+      effect: { requires: [LIST_JOBS_HANDLER] },
       after: ["teams"],
-      nonFatal: true,
     }),
 
     // 5. Pull the org's technology stack (keyed on the resolved slug). Native
@@ -178,62 +175,109 @@ export const workflow = defineWorkflow({
       after: ["jobs"],
     }),
 
-    // 6. Find people at the org. Load-bearing (the enrichment map iterates this
-    //    step's structured `people` array) — NOT non-fatal, so a failed people
-    //    lookup stops the run rather than feeding the map a non-array. Same
-    //    organizationSlug-from-slug rename blocker as `teams`/`jobs`.
-    contacts: deterministicToolStep({
-      id: "sumble-account-intel-contacts",
-      title: "Find the contacts",
-      tool: "sumble_search_people",
-      input: { from: "steps.resolve.output.content" },
-      argMap: {
-        organizationSlug: { from: "slug" },
-        limit: { literal: 10 },
+    // 6. Find people at the org. Load-bearing (the enrichment step iterates
+    //    this step's structured `people` array) — the wrapper passes the
+    //    underlying tool's `isError` straight through (see tools.ts), so a
+    //    failed lookup still fails the run rather than feeding the
+    //    enrichment step a non-array.
+    contacts: action({
+      handler: SEARCH_PEOPLE_HANDLER,
+      input: {
+        merge: [
+          {
+            project: { from: "steps.resolve.output.content" },
+            fields: ["slug"],
+          },
+          { literal: { limit: 10 } },
+        ],
       },
+      effect: { requires: [SEARCH_PEOPLE_HANDLER] },
       after: ["techStack"],
     }),
 
-    // 7. Pull buying/intent signals for the org. Same rename blocker.
-    signals: deterministicToolStep({
-      id: "sumble-account-intel-signals",
-      title: "Scan the buying signals",
-      tool: "sumble_search_signals",
-      input: { from: "steps.resolve.output.content" },
-      argMap: {
-        organizationSlug: { from: "slug" },
-        limit: { literal: 25 },
+    // 7. Pull buying/intent signals for the org. Same best-effort shape as
+    // `teams`/`jobs`.
+    signals: action({
+      handler: SEARCH_SIGNALS_HANDLER,
+      input: {
+        merge: [
+          {
+            project: { from: "steps.resolve.output.content" },
+            fields: ["slug"],
+          },
+          { literal: { limit: 25 } },
+        ],
       },
+      effect: { requires: [SEARCH_SIGNALS_HANDLER] },
       after: ["contacts"],
-      nonFatal: true,
     }),
 
     // 8. Enrich each contact with an X search (Sumble gives LinkedIn only).
-    //    Iterates the structured `people` array the contacts step exposes.
-    enrichSocial: map({
-      over: { from: "steps.contacts.output.content.people" },
-      step: enrichSocialStep,
+    // Native `action`: the former `map` over a per-contact `x_search` step
+    // is gone — `sumble_account_intel_enrich_contacts` iterates the
+    // `people` array INTERNALLY (mirroring `granola_spawn_call_runs`'s
+    // in-tool fan-out), because `MapPrimitive.step` is typed `StepPrimitive`
+    // (not the `Primitive` union `action` belongs to) and the deploy
+    // capability walk only reads `primitive.step.agent` for a map node — an
+    // `action` cannot be a map's inner step at all. Folding the loop into
+    // the tool also drops the `x_search`-vs-contact `query`/`name` rename:
+    // the wrapper's own input field is `people`, matching the contacts
+    // step's own structured content shape verbatim.
+    enrichSocial: action({
+      handler: ENRICH_CONTACTS_HANDLER,
+      input: { from: "steps.contacts.output.content" },
+      effect: { requires: [ENRICH_CONTACTS_HANDLER] },
       after: ["signals"],
     }),
 
     // 9. Synthesize the account intelligence brief from every upstream step.
     //    Emits strict JSON containing the brief content, a contacts CSV, and
     //    a Slack-ready draft so the package step can persist all three.
-    synthesize: agentStep({
-      id: "sumble-account-intel-synthesize",
-      title: "Write the account brief",
-      systemPrompt: buildAccountIntelSystemPrompt(),
-      model: LLM_WRITER_MODEL,
-      maxTokens: SYNTHESIZE_MAX_TOKENS,
+    //    Native `step({ agent })`: mirrors what `@workbench/agents`'
+    //    `agentStep` sugar used to wrap — the Corbits vocabulary section is
+    //    joined onto the real prompt inline, matching `exa-topic-watch`'s
+    //    own reasoning step.
+    synthesize: step({
+      agent: defineAgent({
+        id: "sumble-account-intel-synthesize",
+        description: "Reasoning step: sumble-account-intel-synthesize",
+        systemPrompt: [
+          CORBITS_VOCABULARY,
+          buildAccountIntelSystemPrompt(),
+        ].join("\n\n"),
+        tools: [],
+        capabilities: [],
+        inference: {
+          sources: [
+            {
+              provider: LLM_PROVIDER,
+              model: WRITER_MODEL,
+              parameters: { maxTokens: SYNTHESIZE_MAX_TOKENS },
+            },
+          ],
+        },
+        tags: { [STEP_TITLE_TAG]: "Write the account brief" },
+      }),
       input: { from: "steps" },
       after: ["enrichSocial"],
     }),
 
-    // 10. Human reviews and approves the brief before it is persisted.
-    review: awaitSignal({ name: "review", after: ["synthesize"] }),
+    // 10. Shape the synthesize agent's strict-JSON reply into the `choice`
+    // UIBlock the `review` gate's `STEP_UI` entry renders via
+    // `gateFromOutput`/`gateSourceStep` — a data-driven gate built by this
+    // workflow's own tool (see tools.ts), never a hand-written `blocks.ts`.
+    reviewGate: action({
+      handler: REVIEW_GATE_HANDLER,
+      input: { from: "steps.synthesize.output" },
+      effect: { requires: [REVIEW_GATE_HANDLER] },
+      after: ["synthesize"],
+    }),
 
-    // 11. Pairs the organization domain with the synthesize agent's reply into
-    // { title, body } (CL-4232) — the one place the agent's `reply` output
+    // 11. Human reviews and approves the brief before it is persisted.
+    review: awaitSignal({ name: "review", after: ["reviewGate"] }),
+
+    // 12. Pairs the organization domain with the synthesize agent's reply into
+    // { title, body } — the one place the agent's `reply` output
     // field is read, so persist never reshapes it. Native `action`:
     // `sumble_account_intel_format_report_document` requires exactly
     // `organizationDomain` and `reply`, both already top-level fields on
@@ -252,7 +296,7 @@ export const workflow = defineWorkflow({
       after: ["synthesize"],
     }),
 
-    // 12. Persist the brief as a research artifact. `body` carries the full
+    // 13. Persist the brief as a research artifact. `body` carries the full
     // synthesized brief (summary + contacts CSV + Slack draft); write_artifact's
     // optional structured `content` field is omitted — the synthesize step
     // emits a single `reply`, not a separate Report object, so mapping a

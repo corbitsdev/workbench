@@ -164,11 +164,7 @@ export function NowCardsStrip({
           >
             {cards.map((card, index) => {
               const href = cardHref(card);
-              const selected = isSelected(
-                card,
-                selectedMailId,
-                selectedTaskId,
-              );
+              const selected = isSelected(card, selectedMailId, selectedTaskId);
               const body = (
                 <>
                   <div className="flex items-center gap-2">

@@ -101,11 +101,7 @@ import {
   markScheduleFired,
   recordScheduleRunStarted,
 } from "./lib/scheduled-triggers";
-import {
-  extractStoredIntake,
-  queueScheduledIntakeSignal,
-} from "./lib/scheduled-intake";
-import { loadWorkflowGateInfos } from "./lib/workflow-catalog";
+import { createSchedulerStartWorkflowRun } from "./services/scheduler-run-starter";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import {
   createMailWakeMiddleware,
@@ -1766,6 +1762,7 @@ const runStarter = createWorkflowRunStarter({
   cryptoProvider,
   resolveUserIdentity,
   reclaimDeployment,
+  mailboxEventBus,
 });
 
 // Public webhook firing surface: no session, authenticated only by
@@ -2040,11 +2037,6 @@ const listMyraTargets = async () => {
   return rows.map((row) => ({ memberPrincipalId: row.memberPrincipalId }));
 };
 
-// Gate shapes per kind (CL-3509), loaded once from the committed embedded
-// catalog — static for the process lifetime. The scheduler auto-delivers a
-// stored intake only for kinds whose entry gate is `intake`.
-const schedulerGateInfos = await loadWorkflowGateInfos();
-
 const scheduler = createScheduler({
   isTenantEnabled: (tenantId) =>
     isFeatureEnabledForTenantCached(
@@ -2056,59 +2048,7 @@ const scheduler = createScheduler({
   listSchedules: () => listAllEnabledSchedules(db),
   markFired: (id, dayUtc) => markScheduleFired(db, id, dayUtc),
   recordRunStarted: (args) => recordScheduleRunStarted(db, args),
-  startWorkflowRun: async (fire) => {
-    // Trigger-payload enrichment (member identity, current brief-source
-    // preferences, the incremental since-last-fire lookback) happens INSIDE
-    // runStarter.startRun now — the one shared application point every start
-    // door funnels through (trigger-payload-enrichment-registry.ts). This
-    // closure's only job is forwarding the schedule's real fire-time window
-    // so the registry's heartbeat enricher computes the real "since
-    // yesterday" createdAfter instead of the flat 7-day fallback every other
-    // (non-scheduler) start door gets. Heartbeat is always a daily
-    // (intervalMinutes=1440) cadence, and for that cadence the window index
-    // IS the UTC day index (see scheduler.test.ts), so `lastFiredWindowIndex`
-    // maps directly onto the enricher's day-granularity `lastFiredDayUtc`.
-    // `anchorMinuteUtc` is forwarded at its real minute precision (CL-4278) —
-    // it used to be truncated to `Math.floor(.../60)` here, silently
-    // discarding up to 59 minutes of the member's chosen "starting at" time
-    // and skewing the enricher's since-last-fire lookback by the same amount.
-    const result = await runStarter.startRun({
-      kind: fire.kind,
-      tenantId: fire.tenantId,
-      input: fire.triggerPayload,
-      creatorPrincipalId: fire.creatorPrincipalId,
-      source: "scheduler",
-      heartbeatFire: {
-        lastFiredDayUtc: fire.lastFiredWindowIndex,
-        anchorMinuteUtc: fire.anchorMinuteUtc,
-      },
-    });
-    if (!result.ok) {
-      throw new Error(`run-start ${result.reason}: ${result.message}`);
-    }
-    // Auto-deliver the stored intake so the scheduled run passes its first gate
-    // without a human (CL-3509). Only for kinds whose entry gate is `intake`; the
-    // intake is the stored trigger payload minus server-owned identity keys.
-    if (schedulerGateInfos.get(fire.kind)?.requiresIntake === true) {
-      const intake = extractStoredIntake(fire.triggerPayload);
-      await queueScheduledIntakeSignal(db, {
-        runId: result.runId,
-        kind: fire.kind,
-        intake,
-      }).catch((err) => {
-        log.error("scheduler: intake auto-delivery failed", {
-          scheduleKind: fire.kind,
-          runId: result.runId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-      });
-    }
-    return {
-      deploymentId: result.deploymentId,
-      accepted: true,
-      runId: result.runId,
-    };
-  },
+  startWorkflowRun: createSchedulerStartWorkflowRun({ db, runStarter }),
 });
 scheduler.start();
 

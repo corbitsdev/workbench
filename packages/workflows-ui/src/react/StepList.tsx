@@ -94,9 +94,7 @@ export function StepList({
     <div className={cn(className)}>
       {title ? <InspectorPanelTitle>{title}</InspectorPanelTitle> : null}
       {steps.length === 0 ? (
-        empty ?? (
-          <p className="text-[12.5px] text-text-3">No steps yet.</p>
-        )
+        (empty ?? <p className="text-[12.5px] text-text-3">No steps yet.</p>)
       ) : (
         <div className="flex flex-col" role="list">
           {steps.map((step) => (
@@ -113,7 +111,9 @@ export function StepList({
  */
 export function stepListFromDisplayFlow(
   steps: readonly DisplayFlowStep[],
-  statusById?: ReadonlyMap<string, StepDisplayStatus> | Record<string, StepDisplayStatus>,
+  statusById?:
+    | ReadonlyMap<string, StepDisplayStatus>
+    | Record<string, StepDisplayStatus>,
 ): StepListItem[] {
   const lookup =
     statusById instanceof Map

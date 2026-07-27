@@ -2320,7 +2320,10 @@ export function createSidecarWorkflowSupervisor(
       ? { readyTimeoutMs: opts.readyTimeoutMs }
       : {}),
     ...(Object.keys(recyclePolicy).length > 0
-      ? { recyclePolicy, ...(wantsRssTracking ? { readRssBytes } : {}) }
+      ? {
+          recyclePolicy,
+          ...(readRssBytes === undefined ? {} : { readRssBytes }),
+        }
       : {}),
   });
   return {

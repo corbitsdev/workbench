@@ -5,6 +5,8 @@ export * from "./gate-mail-copy";
 export * from "./myra-thread";
 export * from "./active-context";
 export * from "./attio-task-agent";
+export * from "./daily-linkedin";
+export * from "./selected-person";
 export * from "./ab-compare";
 export * from "./gamma-presentation";
 export * from "./gtm-scripts-briefs";
@@ -16,6 +18,7 @@ export * from "./mentions";
 export * from "./now-feed";
 export * from "./reddit-opportunity-scanner";
 export * from "./scheduled-trigger";
+export * from "./scrape-for-stories";
 export * from "./schedule-next-fire";
 export * from "./routine-eligible";
 export * from "./webhook-trigger";
@@ -27,6 +30,8 @@ export * from "./granola-call";
 export * from "./sumble-account-intel";
 export * from "./competitor-analysis";
 export * from "./prospect-engine";
+export * from "./tolerance-envelope";
+export * from "./step-ui";
 
 export * from "./web-site";
 export * from "./preferences-registry";
@@ -484,10 +489,27 @@ export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
 // enriched for schema-driven schedule forms (CL-3860). Input kinds cover the
 // form renderer; `fromProfile` marks fire-time profile-supplied fields.
 // `string-array` supports multi-value verticals (prospect-engine schedule intake).
+// `number` (CL-4538) renders a numeric input and submits a real JS number —
+// required for an intake field whose resume-payload schema requires `number`
+// (e.g. gtm-scripts-briefs' `days`), which a `text` hint's string value would
+// fail at the /resume boundary.
+// `select-multi` picks a subset of the tenant's people; its value is a
+// `SelectedPerson[]` stored in the schedule/trigger payload (CL-4429).
 export const ScheduleFieldInputKindSchema = type(
-  "'text' | 'textarea' | 'url' | 'select' | 'boolean' | 'string-array'",
+  "'text' | 'textarea' | 'url' | 'select' | 'select-multi' | 'boolean' | 'string-array' | 'number'",
 );
 export type ScheduleFieldInputKind = typeof ScheduleFieldInputKindSchema.infer;
+
+// A person picked at intake and carried in the trigger payload. `refId` is the
+// bare user id the consuming workflow turns into a `usr_<refId>` mailbox
+// address; `displayName` is cosmetic. The selection is a snapshot — a departed
+// member leaves a dead `refId` until the schedule is edited.
+export const SelectedPersonSchema = type({
+  refId: "string > 0",
+  displayName: "string",
+});
+export type SelectedPerson = typeof SelectedPersonSchema.infer;
+export const SelectedPersonListSchema = SelectedPersonSchema.array();
 
 export const ScheduleFieldOptionSchema = type({
   value: "string",
@@ -527,6 +549,20 @@ export const ScheduleFieldMetadataSchema = type({
    * form renders the field read-only with a "from your profile" chip.
    */
   "fromProfile?": "string > 0",
+  /**
+   * Pre-fills the schedule form's initial value (CL-4538) — mirrors the
+   * live dock's `STEP_UI` `defaultValue` so the two intake surfaces agree on
+   * a field's default instead of the schedule form silently dropping it.
+   * Rendered as a real initial value, not a placeholder, and submitted as-is
+   * when the member never touches the field.
+   */
+  "defaultValue?": "string | number",
+  /** Bounds a `number`/`inputHint` field enforces on the rendered input
+   * (CL-4538) — mirrors the dock's `STEP_UI` bounds so a schedule-fired run
+   * cannot submit a value the live form would have refused. */
+  "min?": "number",
+  "max?": "number",
+  "step?": "number",
 });
 export type ScheduleFieldMetadata = typeof ScheduleFieldMetadataSchema.infer;
 
@@ -603,7 +639,16 @@ export function buildScheduleTriggerPayload(
   const payload: Record<string, unknown> = {};
   for (const field of fields) {
     if (field.fromProfile) continue;
-    const v = values[field.name];
+    const raw = values[field.name];
+    const blank =
+      raw === undefined ||
+      raw === null ||
+      (typeof raw === "string" && raw.trim() === "");
+    // A member who never touches a defaulted field still submits its default
+    // (CL-4538) — the schedule form pre-fills it visually, so the value it
+    // fires with must match what the member saw, not silently drop it.
+    const v =
+      blank && field.defaultValue !== undefined ? field.defaultValue : raw;
     if (v === undefined || v === null) continue;
     if (typeof v === "string" && v.trim() === "") continue;
     payload[field.name] = v;

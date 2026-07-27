@@ -206,9 +206,7 @@ function tokens(
   };
 }
 
-function isTokenUsage(
-  value: unknown,
-): value is {
+function isTokenUsage(value: unknown): value is {
   input: number;
   output: number;
   cacheRead: number;

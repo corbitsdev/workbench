@@ -1,32 +1,22 @@
 import { type } from "arktype";
 
-// Resume-boundary contracts for multi-source-collateral HITL gates (CL-4034).
+// Resume-boundary contracts for multi-source-collateral HITL gates.
+//
+// Native-primitives cutover: every gate is now a data-driven `form`/
+// `reviewList` UIBlock built by the workflow's own tools (see that package's
+// `tools.ts`/`step-ui.ts`), so the resume payload shapes are the generic
+// dock-block submit shapes (`multiSelect` → `string[]`, `reviewList` →
+// `{ approvedPieces, decisions }`) rather than the former workflow-specific
+// `{ artifactItems, noteItems, issueItems, text }` / `{ items }` shapes.
 
-export const MultiSourceArtifactItemSchema = type({
-  artifactId: "string >= 1",
-});
-export type MultiSourceArtifactItem =
-  typeof MultiSourceArtifactItemSchema.infer;
-
-export const MultiSourceNoteItemSchema = type({
-  noteId: "string >= 1",
-});
-export type MultiSourceNoteItem = typeof MultiSourceNoteItemSchema.infer;
-
-export const MultiSourceIssueItemSchema = type({
-  id: "string >= 1",
-});
-export type MultiSourceIssueItem = typeof MultiSourceIssueItemSchema.infer;
-
-// `sources`: multi-select mix. At least one of artifactItems / noteItems /
-// issueItems / non-empty text must be present — enforced by a custom check in
-// the registry (arktype alone cannot express cross-field OR easily without
-// unions of many shapes). Schema still requires the array fields.
+// `sources`: a `form` block submit — a multiSelect of "artifact:<id>" /
+// "note:<id>" / "issue:<id>" values plus an optional free-text field. At
+// least one selected source or non-empty free text must be present —
+// enforced by a custom check in the registry (arktype alone cannot express
+// cross-field OR easily without unions of many shapes).
 export const MultiSourceSourcesPayloadSchema = type({
-  artifactItems: MultiSourceArtifactItemSchema.array(),
-  noteItems: MultiSourceNoteItemSchema.array(),
-  issueItems: MultiSourceIssueItemSchema.array(),
-  "text?": "string",
+  sourceIds: "string[]",
+  "freeText?": "string",
 });
 export type MultiSourceSourcesPayload =
   typeof MultiSourceSourcesPayloadSchema.infer;
@@ -34,27 +24,20 @@ export type MultiSourceSourcesPayload =
 export function multiSourceSourcesHasAtLeastOne(
   payload: MultiSourceSourcesPayload,
 ): boolean {
-  if (payload.artifactItems.length > 0) return true;
-  if (payload.noteItems.length > 0) return true;
-  if (payload.issueItems.length > 0) return true;
-  const text = payload.text?.trim() ?? "";
+  if (payload.sourceIds.length > 0) return true;
+  const text = payload.freeText?.trim() ?? "";
   return text.length > 0;
 }
 
-export const MultiSourceGenerateItemSchema = type({
-  contentType: "string >= 1",
-  sourceContext: "string >= 1",
-  systemPrompt: "string",
-  "titleHint?": "string",
+// `options`: a `form` block submit — the multiSelect of picked content types
+// plus the optional per-run guidance fields.
+export const MultiSourceOptionsPayloadSchema = type({
+  contentTypes: type("string").array().atLeastLength(1),
   "audience?": "string",
   "tone?": "string",
   "goal?": "string",
-});
-export type MultiSourceGenerateItem =
-  typeof MultiSourceGenerateItemSchema.infer;
-
-export const MultiSourceOptionsPayloadSchema = type({
-  items: MultiSourceGenerateItemSchema.array().atLeastLength(1),
+  "titleHint?": "string",
+  "promptOverride?": "string",
 });
 export type MultiSourceOptionsPayload =
   typeof MultiSourceOptionsPayloadSchema.infer;
@@ -66,24 +49,21 @@ export const MultiSourcePieceSchema = type({
 });
 export type MultiSourcePiece = typeof MultiSourcePieceSchema.infer;
 
-export const MultiSourceRegenerateItemSchema = type({
-  contentType: "string >= 1",
-  sourceContext: "string >= 1",
-  systemPrompt: "string",
-  previousContent: "string >= 1",
-  feedback: "string >= 1",
-  "titleHint?": "string",
-  "audience?": "string",
-  "tone?": "string",
-  "goal?": "string",
+// `review` / `review-final`: a `reviewList` block submit — every row's
+// verdict (`decisions`, covering every row) plus the approved rows' payloads
+// (`approvedPieces`). `review-final` carries only `approvedPieces` (a final
+// review has no further regenerate path).
+export const MultiSourceDecisionSchema = type({
+  approved: "boolean",
+  format: "string >= 1",
+  title: "string >= 1",
+  content: "string >= 1",
 });
-export type MultiSourceRegenerateItem =
-  typeof MultiSourceRegenerateItemSchema.infer;
+export type MultiSourceDecision = typeof MultiSourceDecisionSchema.infer;
 
 export const MultiSourceReviewPayloadSchema = type({
   approvedPieces: MultiSourcePieceSchema.array(),
-  shouldRegenerate: "boolean",
-  regenerateItems: MultiSourceRegenerateItemSchema.array(),
+  decisions: MultiSourceDecisionSchema.array(),
 });
 export type MultiSourceReviewPayload =
   typeof MultiSourceReviewPayloadSchema.infer;

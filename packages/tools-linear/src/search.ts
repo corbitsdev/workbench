@@ -38,7 +38,11 @@ export async function searchLinear(
   signal: AbortSignal,
 ): Promise<unknown> {
   const args = parseArgs(SearchArgsSchema, rawArgs, "linear_search");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const data = await fetchLinearGraphQL(
     config,
     SEARCH_ISSUES_QUERY,

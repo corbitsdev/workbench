@@ -335,11 +335,7 @@ describe("router", () => {
   });
 
   it("actually redirects /automations to /workflows", async () => {
-    const landed = await landedAt(
-      "/automations",
-      "/workflows",
-      "/automations",
-    );
+    const landed = await landedAt("/automations", "/workflows", "/automations");
     expect(landed).toBe("/workflows");
   });
 

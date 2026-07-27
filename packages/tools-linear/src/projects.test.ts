@@ -7,7 +7,9 @@ describe("linear_list_projects", () => {
   it("lists projects with default pagination", async () => {
     const nodes = [{ id: "p1", name: "Alpha", slug: "alpha" }];
     const fetcher = makeFetchStub({ data: { projects: { nodes } } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_list_projects", arguments: {} },
@@ -23,7 +25,9 @@ describe("linear_list_projects", () => {
 
   it("forwards query and team as ProjectFilter", async () => {
     const fetcher = makeFetchStub({ data: { projects: { nodes: [] } } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -49,7 +53,9 @@ describe("linear_get_project", () => {
   it("fetches a project by id", async () => {
     const project = { id: "p1", name: "Alpha", slug: "alpha", url: "u" };
     const fetcher = makeFetchStub({ data: { project } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_get_project", arguments: { id: "p1" } },
@@ -64,7 +70,9 @@ describe("linear_get_project", () => {
 
   it("errors when project is missing", async () => {
     const fetcher = makeFetchStub({ data: { project: null } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_get_project", arguments: { id: "missing" } },
@@ -86,7 +94,9 @@ describe("linear_save_project", () => {
         },
       },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -108,7 +118,9 @@ describe("linear_save_project", () => {
     const fetcher = makeFetchStub({
       data: { projectUpdate: { success: true, project: { id: "p1" } } },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {

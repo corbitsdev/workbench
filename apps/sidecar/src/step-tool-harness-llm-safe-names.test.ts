@@ -282,14 +282,14 @@ describe("step tool harness: LLM-safe package tool names (CL-3929)", () => {
 });
 
 // CL-3929 round 2: `buildStepTools` is shared with `runDeterministicToolStep`,
-// which dispatches by the CANONICAL colon-form name a deterministic workflow
-// step declares (`deterministicToolStep`'s `STEP_TOOL_TAG`, threaded through
-// `workflow-substrate-factory.ts`). The LLM-safe alias projection above must
-// be scoped to the warm-agent path only — this pins that `buildStepTools`
-// itself still exposes and dispatches the CANONICAL name, so a deterministic
-// step referencing a real package tool (e.g. reddit-opportunity-scanner's
-// `reddit_subreddit_search`, sumble-account-intel, attio-task-agent) keeps
-// working. This would have failed against the round-1 fix, which renamed
+// which dispatches by the CANONICAL colon-form name a native `action`'s
+// `handler` ref carries (`action-tool-handler.ts`). The LLM-safe alias
+// projection above must be scoped to the warm-agent path only — this pins
+// that `buildStepTools` itself still exposes and dispatches the CANONICAL
+// name, so an action step referencing a real package tool (e.g.
+// reddit-opportunity-scanner's `reddit_subreddit_search`,
+// sumble-account-intel, attio-task-agent) keeps working. This would have
+// failed against the round-1 fix, which renamed
 // `buildStepTools`'s definitions unconditionally and threw
 // `StepToolNotRegisteredError` for a canonical-name lookup.
 // A genuine multi-step workflow step (warmKeep undefined/false) is a

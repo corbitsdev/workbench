@@ -1441,7 +1441,9 @@ export function createOwnerRouter(
       const limitRaw = c.req.query("limit");
       const limit =
         limitRaw && /^\d+$/.test(limitRaw) ? Number(limitRaw) : undefined;
-      const items = await workUnitQueue.listDead({ limit });
+      const items = await workUnitQueue.listDead(
+        limit === undefined ? {} : { limit },
+      );
       return c.json({
         items: items.map((u) => ({
           id: u.id,

@@ -196,7 +196,7 @@ export function canonicalizeStepToolName(stepId: string, name: string): string {
   if (factoryId !== undefined) return `${factoryId}:${name}`;
   if (LOCAL_RUNNER_TOOL_NAMES.has(name)) return name;
   throw new Error(
-    `deterministicToolStep "${stepId}": tool "${name}" is not a known tool-package ` +
+    `step "${stepId}": tool "${name}" is not a known tool-package ` +
       `name or a local-runner name. Regenerate tool manifests (bun run build:tool-manifests) ` +
       `if this is a real, newly-added tool, or fix the tool name if it is a typo.`,
   );

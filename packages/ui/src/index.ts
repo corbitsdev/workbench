@@ -200,7 +200,6 @@ export {
   type ProgressChecklistProps,
 } from "./ProgressChecklist";
 export { default as StepSidebar } from "./StepSidebar";
-export { buildSteps } from "./workflow-steps";
 export {
   type WorkflowPanelProps,
   type WorkflowCredential,
@@ -209,7 +208,6 @@ export {
 } from "./workflow-panel";
 export {
   type WorkflowStep,
-  type WorkflowStepName,
   type WorkflowStepStatus,
   type WorkflowProgressStatus,
 } from "./workflow-step-types";

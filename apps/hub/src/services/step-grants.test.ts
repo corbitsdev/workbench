@@ -1,9 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import { evaluateGrants } from "@intx/authz";
-import { action, defineWorkflow, map } from "@intx/workflow";
-import { deterministicToolStep } from "@workbench/agents";
+import { defineAgent } from "@intx/agent";
+import { action, defineWorkflow, map, step } from "@intx/workflow";
+import type { StepPrimitive } from "@intx/workflow";
 import { assembleWorkflowDeployConfig } from "./workflow-deploy-config";
 import { frameGrantRules } from "./step-grants";
+
+// A minimal StepPrimitive whose agent declares one tool capability and no
+// inference sources — the shape a map's inner step needs (`MapPrimitive.step`
+// is typed `StepPrimitive`, not the broader `Primitive` union, so a map body
+// can never be a native `action`). Built directly here rather than through a
+// retired `deterministicToolStep` helper: this test exercises `frameGrantRules`
+// reading a map's inner `step.agent.capabilities`, not any dispatch mechanism.
+function toolCapabilityStep(id: string, tool: string): StepPrimitive {
+  return step({
+    agent: defineAgent({
+      id,
+      description: `test fixture: ${tool}`,
+      systemPrompt: "",
+      tools: [],
+      capabilities: [tool],
+      inference: { sources: [] },
+    }),
+  });
+}
 
 // The production failure this pins: heartbeat/last30days action steps threw
 // "action effect @workbench/tools-last30days/core:<name> was not authorized
@@ -12,9 +32,15 @@ import { frameGrantRules } from "./step-grants";
 // the sidecar writes into every step's state/grants.json, i.e. the set the
 // workflow child's authorize/EffectContext actually evaluates. The hub-side
 // per-step grant files were a dead path for actions.
-const EFFECT_NAME = "@workbench/tools-last30days/core:last30days_ground_queries";
+const EFFECT_NAME =
+  "@workbench/tools-last30days/core:last30days_ground_queries";
+// A sibling tool staged by the SAME factory (@workbench/tools-last30days/core)
+// as EFFECT_NAME — heartbeat_format_brief_title moved to its own
+// @workbench/tools-heartbeat package, so last30days_collect is now
+// the co-located fixture proving the whole package's surface stages, not just
+// declared names.
 const SIBLING_EFFECT_NAME =
-  "@workbench/tools-last30days/core:heartbeat_format_brief_title";
+  "@workbench/tools-last30days/core:last30days_collect";
 
 function actionDefinition() {
   return defineWorkflow({
@@ -66,11 +92,10 @@ describe("frameGrantRules over map primitives", () => {
       steps: {
         persist: map({
           over: { from: "trigger.payload" },
-          step: deterministicToolStep({
-            id: "map-grants-persist",
-            tool: "artifact_create",
-            input: { from: "item" },
-          }),
+          step: toolCapabilityStep(
+            "map-grants-persist",
+            "@workbench/tools-artifact/artifact:artifact_create",
+          ),
         }),
       },
     });

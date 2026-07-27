@@ -88,7 +88,9 @@ describe("useMyraReasoningExpanded", () => {
   });
 
   it("auto-collapses aged turns on reload even when expand was persisted", () => {
-    const agedAt = new Date(Date.now() - MYRA_AGED_HISTORY_MS - 60_000).toISOString();
+    const agedAt = new Date(
+      Date.now() - MYRA_AGED_HISTORY_MS - 60_000,
+    ).toISOString();
     writeReasoningExpanded("mail-1", true);
     const messages = [agent("mail-1", { createdAt: agedAt })];
     const { result } = renderHook(() => useMyraReasoningExpanded(messages));

@@ -11,16 +11,25 @@
 //  - suggest: a single-turn summarizer that proposes follow-ups for the
 //    completion page.
 //
-// The artifact-kind vocabulary and the decision schema are owned by
-// `@workbench/shared` (attio-task-agent.ts); these prompts describe the same
-// shapes in prose for the model. Keep them in sync with that module.
+// The artifact-kind vocabulary is also declared canonically in
+// `@workbench/shared` (attio-task-agent.ts) for the hub's resume-payload
+// registry — duplicated here (rather than imported) so this workflow package
+// carries no runtime dependency on a monorepo domain package (portability:
+// installable on any Interchange hub). Keep the two lists in sync.
+const ATTIO_TASK_ARTIFACT_KINDS = [
+  "cold-email",
+  "follow-up-email",
+  "twitter-post",
+  "linkedin-post",
+  "research-brief",
+  "task-explanation",
+  "gamma-presentation",
+  "blog",
+  "single-page-website",
+] as const;
+type AttioTaskArtifactKind = (typeof ATTIO_TASK_ARTIFACT_KINDS)[number];
 
-import {
-  attioTaskArtifactKinds,
-  type AttioTaskArtifactKind,
-} from "@workbench/shared";
-
-const ARTIFACT_KIND_LIST = attioTaskArtifactKinds.join(", ");
+const ARTIFACT_KIND_LIST = ATTIO_TASK_ARTIFACT_KINDS.join(", ");
 
 export function buildAnalyzeSystemPrompt(): string {
   return [
@@ -104,9 +113,9 @@ export const ARTIFACT_KIND_GUIDANCE: Record<AttioTaskArtifactKind, string[]> = {
 // covering all types — the executor focuses on the single `type` in its input —
 // so a new action type is one guidance entry, not a new step.
 function kindGuidanceBlock(): string {
-  return attioTaskArtifactKinds
-    .map((kind) => `- ${kind}: ${ARTIFACT_KIND_GUIDANCE[kind].join(" ")}`)
-    .join("\n");
+  return ATTIO_TASK_ARTIFACT_KINDS.map(
+    (kind) => `- ${kind}: ${ARTIFACT_KIND_GUIDANCE[kind].join(" ")}`,
+  ).join("\n");
 }
 
 export function buildExecutorSystemPrompt(): string {

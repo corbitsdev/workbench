@@ -16,7 +16,11 @@ export interface AnimatedNumberProps {
   decimals?: number;
 }
 
-function formatValue(value: number, decimals: number, format?: (n: number) => string) {
+function formatValue(
+  value: number,
+  decimals: number,
+  format?: (n: number) => string,
+) {
   if (format) return format(value);
   return value.toFixed(decimals);
 }
@@ -48,6 +52,8 @@ export function AnimatedNumber({
   }
 
   return (
-    <motion.span className={cn("tabular-nums", className)}>{display}</motion.span>
+    <motion.span className={cn("tabular-nums", className)}>
+      {display}
+    </motion.span>
   );
 }

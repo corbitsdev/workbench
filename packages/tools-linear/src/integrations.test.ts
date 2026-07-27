@@ -14,7 +14,9 @@ describe("linear_list_integrations", () => {
         },
       },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
     const result = await runner.run(
       { id: "1", name: "linear_list_integrations", arguments: {} },
       new AbortController().signal,

@@ -17,5 +17,5 @@
     "@types/bun": "latest",
     "typescript": "^5.9.0"
   },
-  "//": "Domain types plus the palette fuzzy-match contract (palette.ts) \u2014 the only runnable logic; covered by palette.test.ts."
+  "//": "Domain types plus the palette fuzzy-match contract (palette.ts) — the only runnable logic; covered by palette.test.ts."
 }

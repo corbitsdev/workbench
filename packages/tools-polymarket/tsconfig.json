@@ -11,11 +11,7 @@
     "skipLibCheck": true,
     "declaration": true,
     "declarationMap": true,
-    "customConditions": [
-      "intx-src"
-    ]
+    "customConditions": ["intx-src"]
   },
-  "include": [
-    "src/**/*"
-  ]
+  "include": ["src/**/*"]
 }

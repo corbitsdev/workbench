@@ -10,18 +10,18 @@ export const DISPLAY_STEPS: DisplayStep[] = [
   {
     key: "transcript",
     label: "Save the raw transcript",
-    stepIds: ["transcript"],
+    stepIds: ["prepare-transcript", "transcript"],
   },
   {
     key: "extract",
     label: "Extract working notes",
-    stepIds: ["extract", "processed"],
+    stepIds: ["extract", "prepare-processed", "processed"],
     activityLabel: "Extracting working notes",
   },
   {
     key: "finalize",
     label: "Verify and write call notes",
-    stepIds: ["finalize", "persist"],
+    stepIds: ["finalize", "prepare-persist", "persist"],
     activityLabel: "Writing the call notes",
   },
 ];

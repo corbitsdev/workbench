@@ -11,13 +11,7 @@ import type { GrantStore } from "@intx/types/authz";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { TurnFinalized } from "@workbench/event-collector";
 import type { HubDb } from "../db";
-import { agentInstance, memberAgentInstance } from "../db/schema";
-import { loadWorkflowGateInfos } from "../lib/workflow-catalog";
-import {
-  kindAllowsScheduledPostIntakeDrive,
-  SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST,
-  type WorkflowGateInfo,
-} from "../lib/workflow-gate-info";
+import { memberAgentInstance } from "../db/schema";
 import { isFeatureEnabledForTenantCached } from "../lib/feature-grants";
 import { slidingWindowLimiter } from "../lib/sliding-window";
 import {
@@ -131,7 +125,7 @@ export function createScheduledWorkflowGateAgent(
   const inFlight = new Set<string>();
   const pendingTurns = new Map<string, (turn: TurnFinalized | null) => void>();
   let processing = false;
-  let drainWaiters: Array<() => void> = [];
+  let drainWaiters: (() => void)[] = [];
 
   const sessionBudget = slidingWindowLimiter(
     MAX_SESSIONS_PER_HOUR,
@@ -452,38 +446,9 @@ export function createScheduledWorkflowGateAgent(
           record.triggerSource,
           gates,
         );
-        if (targets.length > 0) {
-          const gateInfos = await loadWorkflowGateInfos();
-          const catalogInfo = gateInfos.get(args.kind);
-          const gateInfo: WorkflowGateInfo | undefined =
-            catalogInfo ??
-            (SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST.has(args.kind)
-              ? { requiresIntake: true, humanGateCount: 2 }
-              : undefined);
-          if (
-            gateInfo === undefined ||
-            !kindAllowsScheduledPostIntakeDrive(args.kind, gateInfo)
-          ) {
-            log.warn(
-              "scheduled gate agent: post-intake gates open but kind lacks scheduled drive allowance",
-              { runId: args.runId, kind: args.kind },
-            );
-            await failRun(
-              {
-                runId: args.runId,
-                kind: args.kind,
-                tenantId: args.tenantId,
-                principalId: args.principalId,
-                deploymentId: args.deploymentId,
-                signalName: targets[0]!,
-                deploymentDomain: deps.deploymentDomain,
-                repoStore: args.repoStore,
-              },
-              `Scheduled gate drive failed: workflow "${args.kind}" is not opted in for unattended post-intake gates`,
-            );
-            return;
-          }
-        }
+        // Every workflow is schedulable (CL-4514) — no eligibility check gates
+        // whether a kind's post-intake gates may be driven; any scheduler-
+        // sourced run with open post-intake gates queues Myra to resolve them.
         for (const signalName of targets) {
           const key = queueKey({ runId: args.runId, signalName });
           if (inFlight.has(key)) continue;

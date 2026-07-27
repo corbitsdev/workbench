@@ -11,10 +11,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { pushSchema } from "drizzle-kit/api";
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import {
-  createWorkUnitQueue,
-  DEFAULT_MAX_ATTEMPTS,
-} from "./work-unit-queue";
+import { createWorkUnitQueue, DEFAULT_MAX_ATTEMPTS } from "./work-unit-queue";
 
 const TENANT = "ten-wq";
 

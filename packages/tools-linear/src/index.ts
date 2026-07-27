@@ -4,7 +4,6 @@ import { LINEAR_DEFINITIONS, LINEAR_HUB_TOOLS } from "./hub-tools";
 import { validateConfig, type LinearToolsConfig } from "./shared";
 import { createLinearToolFor } from "./tool-runtime";
 
-
 export type { LinearFetch, LinearToolsConfig } from "./shared";
 export { fetchLinearGraphQL } from "./client";
 export { LINEAR_DEFINITIONS, LINEAR_HUB_TOOLS } from "./hub-tools";

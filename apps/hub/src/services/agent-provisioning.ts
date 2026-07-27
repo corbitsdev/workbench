@@ -11,6 +11,7 @@ import {
   InvokerModelPreferences,
   type ProviderPreference,
 } from "@intx/types";
+import type { InferenceSource } from "@intx/types/runtime";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import type {
@@ -51,6 +52,11 @@ import { memberAgentInstance } from "../db/schema";
 import { appendInferenceParamsMarkerForMyraLaunch } from "../lib/inference-params-launch";
 import { writeInstanceDeploymentProjection } from "./workflow-deploy";
 import type { HubDb } from "../db";
+import { getConfig } from "../config";
+import {
+  mergeUserOAuthSources,
+  resolveUserOAuthInferenceSources,
+} from "../lib/user-oauth-inference";
 
 const log = getLogger(["api", "agents"]);
 
@@ -376,6 +382,51 @@ export async function launchAgentSession(
     agentRow,
     instanceRow?.modelPreferences ?? null,
   );
+
+  // `DB["db"]` is interchange's `PostgresJsDatabase<typeof intxSchema>`; the
+  // same connection also carries the workbench tables, which only `HubDb`
+  // declares. The two are structurally incompatible under
+  // `exactOptionalPropertyTypes` (see the note on `HubSchema` in
+  // `src/db/index.ts`), so widening through `unknown` is the existing
+  // repo-wide bridge — this is the single cast for the whole function, not a
+  // new one.
+  const hubDb = db as unknown as HubDb;
+
+  // Member-owned user-self-OAuth inference (Grok / Codex): prefer the invoker's
+  // personal connection over tenant API keys when the required model is covered.
+  const memberMapping = await hubDb.query.memberAgentInstance.findFirst({
+    where: eq(memberAgentInstance.instanceId, instanceId),
+  });
+  let oauthSources: InferenceSource[] = [];
+  if (memberMapping?.memberPrincipalId) {
+    try {
+      const modelRequirements =
+        agentRow.modelRequirements !== null
+          ? ModelRequirements.assert(agentRow.modelRequirements)
+          : [];
+      const modelNames = modelRequirements.map((r) => r.model);
+      const redirectUriBase = new URL(getConfig().auth.baseUrl).origin;
+      oauthSources = await resolveUserOAuthInferenceSources({
+        db: hubDb,
+        tenantId,
+        memberPrincipalId: memberMapping.memberPrincipalId,
+        ...(modelNames.length > 0 ? { modelNames } : {}),
+        redirectUriBase,
+        grantStore: createGrantStore(db),
+      });
+    } catch (err) {
+      log.warn("User OAuth inference source resolution failed", {
+        error: err,
+        tenantId,
+        instanceId,
+      });
+    }
+  }
+
+  // Catalog resolution stays fail-loud. A partial OAuth cover (the member
+  // connected Codex, which serves model A, while the agent also requires model
+  // B from a tenant key that failed to resolve) must not launch a
+  // silently-degraded agent — the run would simply never be able to reach B.
   if (!resolution.ok) {
     const reason =
       resolution.reason === "model_unavailable"
@@ -387,7 +438,7 @@ export async function launchAgentSession(
     );
   }
 
-  const sources = resolution.sources;
+  const sources = mergeUserOAuthSources(resolution.sources, oauthSources);
   const defaultSource = sources[0]!.id;
 
   const definitionToolNames = getToolNamesFromCapabilities(
@@ -430,7 +481,6 @@ export async function launchAgentSession(
   // and a failure in one lookup no longer blocks the others from being
   // attempted (a strict improvement on the previous style/pinned pairing,
   // where a style-compose throw skipped pinned-skills entirely).
-  const hubDb = db as unknown as HubDb;
   const [
     personalizedResult,
     styleSectionResult,

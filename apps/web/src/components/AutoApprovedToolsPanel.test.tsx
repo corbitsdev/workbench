@@ -8,7 +8,6 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AutoApprovedTool } from "../lib/approvals-api";
 

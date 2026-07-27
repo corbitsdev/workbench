@@ -67,7 +67,9 @@ function extractBrowserImportNames(source: string): string[] {
         continue;
       }
 
-      names.push(...parseNamedImportBody(source.slice(openBrace + 1, closeBrace)));
+      names.push(
+        ...parseNamedImportBody(source.slice(openBrace + 1, closeBrace)),
+      );
       searchFrom = fromIdx + marker.length;
     }
   }
@@ -92,7 +94,9 @@ function collectBrowserEntryExportNames(): Set<string> {
   const source = readFileSync(BROWSER_ENTRY, "utf8");
   const names = new Set<string>();
 
-  const exportBlocks = source.matchAll(/export\s*\{([\s\S]*?)\}(?:\s*from\s*["'][^"']+["'])?/g);
+  const exportBlocks = source.matchAll(
+    /export\s*\{([\s\S]*?)\}(?:\s*from\s*["'][^"']+["'])?/g,
+  );
   for (const block of exportBlocks) {
     for (const segment of block[1].split(",")) {
       const trimmed = segment.trim();

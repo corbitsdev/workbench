@@ -73,7 +73,8 @@ export async function softNullUnavailableVariantSelections(
   const available = await listAvailableMyraVariants(db, tenantId);
   const availableIds = new Set(available.map((v) => v.id));
   return {
-    chat: prefs.chat !== null && availableIds.has(prefs.chat) ? prefs.chat : null,
+    chat:
+      prefs.chat !== null && availableIds.has(prefs.chat) ? prefs.chat : null,
     triage:
       prefs.triage !== null && availableIds.has(prefs.triage)
         ? prefs.triage

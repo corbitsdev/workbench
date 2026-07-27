@@ -14,18 +14,18 @@ describe("pinned skills prompt index", () => {
         { name: "Weekly recap", description: "Summarize the week." },
         { name: "Inbox triage", description: "How to label mail." },
       ],
-      "xml",
+      { xml: true },
     );
     expect(section).not.toBeNull();
     expect(section).toContain("Weekly recap");
     expect(section).toContain("Summarize the week.");
-    expect(section).toContain("Pinned-skills");
+    expect(section).toContain("<pinned-skills>");
     expect(section).not.toContain("# Step 1");
     expect(section).not.toContain("SKILL.md");
   });
 
   it("returns null when there are no entries", () => {
-    expect(renderPinnedSkillsSection([], "xml")).toBeNull();
+    expect(renderPinnedSkillsSection([], { xml: true })).toBeNull();
   });
 
   it("enforces the documented max bound constant", () => {
@@ -33,10 +33,14 @@ describe("pinned skills prompt index", () => {
   });
 
   it("skips triage when no entry is triage-relevant", () => {
-    const entries = [{ name: "Chat only", description: "myra-surface: chat-only" }];
+    const entries = [
+      { name: "Chat only", description: "myra-surface: chat-only" },
+    ];
     const flags = [isPinnedSkillTriageRelevant(entries[0]!.description)];
     expect(filterPinnedEntriesForSurface("triage", entries, flags)).toEqual([]);
-    expect(filterPinnedEntriesForSurface("chat", entries, flags)).toEqual(entries);
+    expect(filterPinnedEntriesForSurface("chat", entries, flags)).toEqual(
+      entries,
+    );
   });
 
   it("uses the first line for multi-line descriptions", () => {

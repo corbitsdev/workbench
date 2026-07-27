@@ -11,28 +11,33 @@
         "list-artifacts",
         "list-notes",
         "list-issues",
+        "prepareSourcesGate",
         "sources"
-      ]
+      ],
+      "activityLabel": "Loading sources"
     },
     {
       "key": "options",
       "label": "Content",
       "stepIds": [
-        "fetch-artifacts",
-        "fetch-notes",
-        "fetch-issues",
+        "fetchSources",
+        "prepareOptionsGate",
         "options"
       ],
-      "activityLabel": "Loading sources"
+      "activityLabel": "Loading source content"
     },
     {
       "key": "review",
       "label": "Review",
       "stepIds": [
+        "buildGenerateItems",
         "generate",
+        "prepareReviewGate",
         "review",
+        "prepareRegenerateItems",
         "regenerateGate",
         "regenerate",
+        "prepareReviewFinalGate",
         "review-final"
       ],
       "activityLabel": "Generating collateral"
@@ -58,86 +63,81 @@
     ],
     "steps": {
       "list-artifacts": {
-        "kind": "step",
+        "kind": "action",
         "id": "list-artifacts",
-        "agent": {
-          "id": "multi-source-collateral-list-artifacts",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_list"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_list",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_list",
-            "workbench.title": "List artifacts"
-          }
-        },
+        "handler": "@workbench/tools-artifact/artifact:artifact_list",
         "drainBehavior": "cancel",
         "input": {
           "literal": {
             "limit": 50
           }
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-artifact/artifact:artifact_list"
+          ]
         }
       },
       "list-notes": {
-        "kind": "step",
+        "kind": "action",
         "id": "list-notes",
-        "agent": {
-          "id": "multi-source-collateral-list-notes",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-granola/granola:granola_list_notes"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_list_notes",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes",
-            "workbench.title": "List call notes"
-          }
-        },
+        "handler": "@workbench/tools-granola/granola:granola_list_notes",
         "drainBehavior": "cancel",
         "input": {
           "literal": {
             "limit": 30
           }
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-granola/granola:granola_list_notes"
+          ]
         }
       },
       "list-issues": {
-        "kind": "step",
+        "kind": "action",
         "id": "list-issues",
-        "agent": {
-          "id": "multi-source-collateral-list-issues",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-linear/linear:linear_list_issues"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-linear/linear:linear_list_issues",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-linear/linear:linear_list_issues",
-            "workbench.nonFatal": "true",
-            "workbench.title": "List Linear issues"
-          }
-        },
+        "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_list_issues",
         "drainBehavior": "cancel",
         "input": {
           "literal": {
             "first": 50
           }
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_list_issues"
+          ]
         }
+      },
+      "prepareSourcesGate": {
+        "kind": "action",
+        "id": "prepareSourcesGate",
+        "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_sources_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.list-artifacts.output"
+            },
+            {
+              "from": "steps.list-notes.output"
+            },
+            {
+              "from": "steps.list-issues.output"
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_sources_gate"
+          ]
+        },
+        "after": [
+          "list-artifacts",
+          "list-notes",
+          "list-issues"
+        ]
       },
       "sources": {
         "kind": "awaitSignal",
@@ -145,117 +145,41 @@
         "name": "sources",
         "drainBehavior": "wait",
         "after": [
-          "list-artifacts",
-          "list-notes",
-          "list-issues"
+          "prepareSourcesGate"
         ]
       },
-      "fetch-artifacts": {
-        "kind": "map",
-        "id": "fetch-artifacts",
-        "over": {
-          "from": "steps.sources.output.artifactItems"
+      "fetchSources": {
+        "kind": "action",
+        "id": "fetchSources",
+        "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_fetch_sources",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.sources.output"
         },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "multi-source-collateral-fetch-artifact",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-artifact/artifact:artifact_read"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_read",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
-              "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\"}}",
-              "workbench.title": "Load artifact"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
+        "effect": {
+          "requires": [
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_fetch_sources"
+          ]
         },
         "after": [
           "sources"
         ]
       },
-      "fetch-notes": {
-        "kind": "map",
-        "id": "fetch-notes",
-        "over": {
-          "from": "steps.sources.output.noteItems"
+      "prepareOptionsGate": {
+        "kind": "action",
+        "id": "prepareOptionsGate",
+        "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_options_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.fetchSources.output"
         },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "multi-source-collateral-fetch-note",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-granola/granola:granola_get_note"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_get_note",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
-              "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\"}}",
-              "workbench.title": "Load call note"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
+        "effect": {
+          "requires": [
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_options_gate"
+          ]
         },
         "after": [
-          "sources"
-        ]
-      },
-      "fetch-issues": {
-        "kind": "map",
-        "id": "fetch-issues",
-        "over": {
-          "from": "steps.sources.output.issueItems"
-        },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "multi-source-collateral-fetch-issue",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-linear/linear:linear_get_issue"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-linear/linear:linear_get_issue",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-linear/linear:linear_get_issue",
-              "workbench.argMap": "{\"id\":{\"from\":\"id\"}}",
-              "workbench.title": "Load Linear issue"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
-        },
-        "after": [
-          "sources"
+          "fetchSources"
         ]
       },
       "options": {
@@ -264,16 +188,39 @@
         "name": "options",
         "drainBehavior": "wait",
         "after": [
-          "fetch-artifacts",
-          "fetch-notes",
-          "fetch-issues"
+          "prepareOptionsGate"
+        ]
+      },
+      "buildGenerateItems": {
+        "kind": "action",
+        "id": "buildGenerateItems",
+        "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_build_generate_items",
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchSources.output"
+            },
+            {
+              "from": "steps.options.output"
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_build_generate_items"
+          ]
+        },
+        "after": [
+          "fetchSources",
+          "options"
         ]
       },
       "generate": {
         "kind": "map",
         "id": "generate",
         "over": {
-          "from": "steps.options.output.items"
+          "from": "steps.buildGenerateItems.output.items"
         },
         "step": {
           "kind": "step",
@@ -284,7 +231,12 @@
             "toolFactories": [],
             "capabilities": [],
             "inference": {
-              "sources": []
+              "sources": [
+                {
+                  "provider": "openai-compatible",
+                  "model": "kimi-k2.6"
+                }
+              ]
             },
             "description": "Reasoning step: multi-source-collateral-generate",
             "tags": {
@@ -297,7 +249,24 @@
           }
         },
         "after": [
-          "options"
+          "buildGenerateItems"
+        ]
+      },
+      "prepareReviewGate": {
+        "kind": "action",
+        "id": "prepareReviewGate",
+        "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_review_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.generate.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_review_gate"
+          ]
+        },
+        "after": [
+          "generate"
         ]
       },
       "review": {
@@ -306,26 +275,50 @@
         "name": "review",
         "drainBehavior": "wait",
         "after": [
-          "generate"
+          "prepareReviewGate"
+        ]
+      },
+      "prepareRegenerateItems": {
+        "kind": "action",
+        "id": "prepareRegenerateItems",
+        "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_regenerate_items",
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.review.output"
+            },
+            {
+              "from": "steps.fetchSources.output"
+            }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_regenerate_items"
+          ]
+        },
+        "after": [
+          "review"
         ]
       },
       "regenerateGate": {
         "kind": "gate",
         "id": "regenerateGate",
         "when": {
-          "from": "steps.review.output.shouldRegenerate"
+          "from": "steps.prepareRegenerateItems.output.shouldRegenerate"
         },
         "then": "regenerate",
         "else": "persist",
         "after": [
-          "review"
+          "prepareRegenerateItems"
         ]
       },
       "regenerate": {
         "kind": "map",
         "id": "regenerate",
         "over": {
-          "from": "steps.review.output.regenerateItems"
+          "from": "steps.prepareRegenerateItems.output.regenerateItems"
         },
         "step": {
           "kind": "step",
@@ -336,7 +329,12 @@
             "toolFactories": [],
             "capabilities": [],
             "inference": {
-              "sources": []
+              "sources": [
+                {
+                  "provider": "openai-compatible",
+                  "model": "kimi-k2.6"
+                }
+              ]
             },
             "description": "Reasoning step: multi-source-collateral-regenerate",
             "tags": {
@@ -352,82 +350,61 @@
           "regenerateGate"
         ]
       },
+      "prepareReviewFinalGate": {
+        "kind": "action",
+        "id": "prepareReviewFinalGate",
+        "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_review_final_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.regenerate.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_review_final_gate"
+          ]
+        },
+        "after": [
+          "regenerate"
+        ]
+      },
       "review-final": {
         "kind": "awaitSignal",
         "id": "review-final",
         "name": "review-final",
         "drainBehavior": "wait",
         "after": [
-          "regenerate"
+          "prepareReviewFinalGate"
         ]
       },
       "persist-after-regen": {
-        "kind": "map",
+        "kind": "action",
         "id": "persist-after-regen",
-        "over": {
-          "from": "steps.review-final.output.approvedPieces"
+        "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_persist_pieces",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.review-final.output"
         },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "multi-source-collateral-persist-after-regen",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-artifact/artifact:artifact_create"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"format\"},\"content\":{\"from\":\"content\"}}",
-              "workbench.title": "Save the collateral"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
+        "effect": {
+          "requires": [
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_persist_pieces"
+          ]
         },
         "after": [
           "review-final"
         ]
       },
       "persist": {
-        "kind": "map",
+        "kind": "action",
         "id": "persist",
-        "over": {
-          "from": "steps.review.output.approvedPieces"
+        "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_persist_pieces",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.review.output"
         },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "multi-source-collateral-persist",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-artifact/artifact:artifact_create"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"format\"},\"content\":{\"from\":\"content\"}}",
-              "workbench.title": "Save the collateral"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
+        "effect": {
+          "requires": [
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_persist_pieces"
+          ]
         },
         "after": [
           "regenerateGate"
@@ -438,15 +415,19 @@
       "list-artifacts",
       "list-notes",
       "list-issues",
+      "prepareSourcesGate",
       "sources",
-      "fetch-artifacts",
-      "fetch-notes",
-      "fetch-issues",
+      "fetchSources",
+      "prepareOptionsGate",
       "options",
+      "buildGenerateItems",
       "generate",
+      "prepareReviewGate",
       "review",
+      "prepareRegenerateItems",
       "regenerateGate",
       "regenerate",
+      "prepareReviewFinalGate",
       "review-final",
       "persist-after-regen",
       "persist"

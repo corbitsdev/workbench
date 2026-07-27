@@ -77,7 +77,7 @@ const EMPTY = {
 
 describe("readMyraVariantPreference", () => {
   it("returns nulls when no row exists", async () => {
-    const db = makeDb({ stored: undefined });
+    const db = makeDb({});
     expect(await readMyraVariantPreference(db, "tn", "prn")).toEqual(EMPTY);
   });
 
@@ -395,7 +395,11 @@ describe("normalizePinnedSkillIds", () => {
 describe("validatePinnedSkillIdsPatch", () => {
   it("returns null when pinnedSkillIds is omitted", async () => {
     await expect(
-      validatePinnedSkillIdsPatch({} as HubDb, { tenantId: "tn", userId: "u" }, {}),
+      validatePinnedSkillIdsPatch(
+        {} as HubDb,
+        { tenantId: "tn", userId: "u" },
+        {},
+      ),
     ).resolves.toBeNull();
   });
 });

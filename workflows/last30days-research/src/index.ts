@@ -1,18 +1,29 @@
-import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
-import type { Primitive, StepPrimitive } from "@intx/workflow";
-import {
-  deterministicToolStep,
-  agentStep,
-  canonicalizeStepToolName,
-  LLM_WRITER_MODEL,
-} from "@workbench/agents";
-import { INTAKE_SIGNAL, STEP_UI_HINTS } from "./step-ui-hints";
+import { action, awaitSignal, defineWorkflow, step } from "@intx/workflow";
+import type { Primitive, Selector, StepPrimitive } from "@intx/workflow";
+import { defineAgent } from "@intx/agent";
+import { INTAKE_SIGNAL, STEP_UI } from "./step-ui";
 import {
   buildCurateSystemPrompt,
   buildEntityExtractSystemPrompt,
   buildGroundingSystemPrompt,
   buildWriterSystemPrompt,
 } from "./prompts";
+
+// Corbits terminology guidance every reasoning step's system prompt carries,
+// so the writer/curate/grounding turns spell Corbits/Corbits.dev/Interchange/
+// Faremeter consistently regardless of how the source material spelled them.
+const CORBITS_VOCABULARY =
+  "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.";
+
+// The inference provider plugin every reasoning step declares (mirrors
+// `@workbench/agents`' `LLM_PROVIDER`).
+const LLM_PROVIDER = "openai-compatible";
+
+// The heavier writer-tier model the write/curate steps pin (mirrors
+// `@workbench/agents`' `LLM_WRITER_MODEL`) — genuine editorial judgment and
+// long-form synthesis both need it; grounding/entity-extraction stay on the
+// deploy default.
+const LLM_WRITER_MODEL = "kimi-k2.6";
 
 // The writer's output-token ceiling. The synthesis turn produces a long-form,
 // multi-section report; without an explicit ceiling it ran on the kimi writer
@@ -27,6 +38,44 @@ const WRITER_MAX_TOKENS = 16384;
 // ceiling keeps the JSON from truncating mid-array (a clean finish_reason:"length"
 // that would invalidate the JSON and force the deterministic fallback).
 const CURATE_MAX_TOKENS = 8192;
+
+// Native `step({ agent })` builder, inlined from `@workbench/agents`'
+// `agentStep` (CL-4540 dropped the framework dependency): a plain reasoning
+// step built from `defineAgent`, with no Workbench-specific dispatch tag.
+function reasoningStep(opts: {
+  id: string;
+  systemPrompt: string;
+  input?: Selector;
+  after?: readonly string[];
+  model?: string;
+  maxTokens?: number;
+}): StepPrimitive {
+  return step({
+    agent: defineAgent({
+      id: opts.id,
+      description: `Reasoning step: ${opts.id}`,
+      systemPrompt: [CORBITS_VOCABULARY, opts.systemPrompt].join("\n\n"),
+      tools: [],
+      capabilities: [],
+      inference:
+        opts.model !== undefined
+          ? {
+              sources: [
+                {
+                  provider: LLM_PROVIDER,
+                  model: opts.model,
+                  ...(opts.maxTokens !== undefined
+                    ? { parameters: { maxTokens: opts.maxTokens } }
+                    : {}),
+                },
+              ],
+            }
+          : { sources: [] },
+    }),
+    ...(opts.input !== undefined ? { input: opts.input } : {}),
+    ...(opts.after !== undefined ? { after: opts.after } : {}),
+  });
+}
 
 export const label = "Last30Days Research Report";
 export const description =
@@ -65,37 +114,98 @@ export const INTAKE_FIELDS = [
   },
 ] as const;
 
-// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
-// resolved via the same build-time-checked lookup `deterministicToolStep`
-// uses, so a typo'd or manifest-drifted tool name fails the build instead of
-// deploying a step nothing can dispatch. Each of these steps is fatal-only
-// (no best-effort degrade needed) and its `argMap` was always an identity
+// Native `action` handler refs — the tool's canonical (factory-prefixed)
+// runtime name. Each literal is checked against the committed tool manifest
+// by a repo-level test (`packages/tool-manifest/src/resolvable-handlers.test.ts`),
+// so a typo'd or manifest-drifted handler string still fails the build rather
+// than deploying a step nothing can dispatch (CL-4540 dropped the
+// `@workbench/agents` build-time `canonicalizeStepToolName` lookup from
+// workflow packages, in favor of workflows holding no dependency on
+// monorepo-generated data). Each of these steps is fatal-only (no
+// best-effort degrade needed) and its `argMap` was always an identity
 // passthrough or a literal, so a plain `action` + native selector expresses it
 // exactly with no reshape step in between.
-export const GROUND_QUERIES_HANDLER = canonicalizeStepToolName(
-  "last30days-ground-queries",
-  "last30days_ground_queries",
-);
-export const ENTITY_QUERIES_HANDLER = canonicalizeStepToolName(
-  "last30days-entity-queries",
-  "last30days_entity_queries",
-);
-export const COLLECT_HANDLER = canonicalizeStepToolName(
-  "last30days-collect",
-  "last30days_collect",
-);
-export const WORKFLOW_BRIEF_HANDLER = canonicalizeStepToolName(
-  "last30days-build-brief",
-  "last30days_workflow_brief",
-);
-export const FORMAT_REPORT_DOCUMENT_HANDLER = canonicalizeStepToolName(
-  "last30days-document",
-  "last30days_format_report_document",
-);
-export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
-  "last30days-persist-artifact",
-  "write_artifact",
-);
+export const GROUND_QUERIES_HANDLER =
+  "@workbench/tools-last30days/core:last30days_ground_queries";
+export const ENTITY_QUERIES_HANDLER =
+  "@workbench/tools-last30days/core:last30days_entity_queries";
+export const COLLECT_HANDLER =
+  "@workbench/tools-last30days/core:last30days_collect";
+export const WORKFLOW_BRIEF_HANDLER =
+  "@workbench/tools-last30days/core:last30days_workflow_brief";
+export const FORMAT_REPORT_DOCUMENT_HANDLER =
+  "@workbench/tools-last30days/core:last30days_format_report_document";
+export const WRITE_ARTIFACT_HANDLER =
+  "@workbench/tools-artifact/artifact:write_artifact";
+
+// The workflow's own "safe" source-tool wrappers: one per distinct
+// underlying source tool, each calling the real tool's handler in-process and
+// degrading a thrown error to a `{ isError: true, error }` JSON envelope
+// instead of propagating (see `./tools.ts`). This is what lets every source
+// step below become a plain native `action` — no `nonFatal` dispatch tag is
+// needed because the wrapper's own `ToolResult.isError` never comes back
+// true, so `runDeterministicToolStep` never throws for it.
+export const SAFE_EXA_SEARCH_HANDLER =
+  "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search";
+export const SAFE_HACKERNEWS_SEARCH_HANDLER =
+  "@workbench/workflow-last30days-research/keyless-safe:last30days_safe_hackernews_search";
+export const SAFE_GITHUB_ACTIVITY_HANDLER =
+  "@workbench/workflow-last30days-research/github-safe:last30days_safe_github_activity";
+export const SAFE_REDDIT_SEARCH_HANDLER =
+  "@workbench/workflow-last30days-research/reddit-safe:last30days_safe_reddit_search";
+export const SAFE_X_SEARCH_HANDLER =
+  "@workbench/workflow-last30days-research/x-safe:last30days_safe_x_search";
+export const SAFE_YOUTUBE_SEARCH_HANDLER =
+  "@workbench/workflow-last30days-research/youtube-safe:last30days_safe_youtube_search";
+export const SAFE_POLYMARKET_ODDS_HANDLER =
+  "@workbench/workflow-last30days-research/keyless-safe:last30days_safe_polymarket_odds";
+
+// Maps each source's original (unwrapped) tool name to its safe wrapper's
+// canonical handler ref, so `sourceStep`/`buildEntityRoundSteps` below share
+// one lookup instead of a per-source if/else.
+const SAFE_SOURCE_HANDLERS: Record<string, string> = {
+  exa_search: SAFE_EXA_SEARCH_HANDLER,
+  hackernews_search: SAFE_HACKERNEWS_SEARCH_HANDLER,
+  github_activity: SAFE_GITHUB_ACTIVITY_HANDLER,
+  reddit_search: SAFE_REDDIT_SEARCH_HANDLER,
+  x_search: SAFE_X_SEARCH_HANDLER,
+  youtube_search: SAFE_YOUTUBE_SEARCH_HANDLER,
+  polymarket_odds: SAFE_POLYMARKET_ODDS_HANDLER,
+};
+
+function safeSourceHandler(tool: string): string {
+  const handler = SAFE_SOURCE_HANDLERS[tool];
+  if (handler === undefined) {
+    throw new Error(
+      `last30days workflow: no safe wrapper handler registered for source tool "${tool}"`,
+    );
+  }
+  return handler;
+}
+
+// The real underlying tool's own canonical name, per source. Every wrapped
+// action step declares BOTH its safe handler AND this sibling name in
+// `effect.requires` — not to ever dispatch it (the wrapper calls the real
+// tool's handler in-process, never through the runtime's own dispatch), but
+// so the deploy's capability walk also pins the sibling package (e.g.
+// `@workbench/tools-exa`). That sibling's OWN manifest legitimately declares
+// the credential provider (`exa`/`github`/`scrapecreators`/`xai`/`youtube`)
+// this workflow's wrapper package's manifest cannot claim for itself (see the
+// `providerName: null` note in `./tool-manifest.ts`) — pinning it is what
+// puts the provider into the step's credential-route allow-list. Keyless
+// sources (hackernews/polymarket) need no sibling pin.
+const UNDERLYING_SOURCE_TOOL_HANDLERS: Record<string, string> = {
+  exa_search: "@workbench/tools-exa/exa:exa_search",
+  github_activity: "@workbench/tools-github/github:github_activity",
+  reddit_search: "@workbench/tools-reddit/reddit:reddit_search",
+  x_search: "@workbench/tools-x/x:x_search",
+  youtube_search: "@workbench/tools-youtube/youtube:youtube_search",
+};
+
+function sourceEffectRequires(tool: string, handler: string): string[] {
+  const sibling = UNDERLYING_SOURCE_TOOL_HANDLERS[tool];
+  return sibling === undefined ? [handler] : [handler, sibling];
+}
 
 // Each source pulls its query from the grounding step's per-source map rather
 // than the raw topic, so e.g. github_activity gets repo/org names and
@@ -109,24 +219,21 @@ function groundedQueryInput(sourceKey: string) {
 }
 
 // A source fetch is best-effort: a dead search API (rate-limit/auth/network)
-// must degrade to a recorded skip in the brief, never fail the run. `nonFatal`
-// makes the sidecar log the reason and return an isError envelope rather than
-// throwing, so the source step completes and `brief` still runs (CL-2401).
-// Tradeoff: a degraded step is "completed", so the runtime's tool-step retry
-// no longer fires — a transient blip degrades on first failure instead of
-// being retried. Acceptable here: not killing the run dominates, and the
-// chronic failures (e.g. bluesky) are permanent, not transient.
-//
-// This is one of the two step shapes in this workflow that stays a
-// `deterministicToolStep` rather than a native `action`: the native `action`
-// primitive has no `nonFatal` concept (a thrown tool error inside an action's
-// `ctx.perform` always propagates and fails the run — see
-// `apps/sidecar/src/action-tool-handler.ts`), so best-effort degrade is only
-// expressible through the Workbench dispatch-tag mechanism. The `argMap` shim
-// itself is still gone: `input` composes the tool's exact args directly via
-// `merge`+`literal` (the per-source path selector already yields `{ query }`,
-// the tool's own argument name — see `groundedQueryInput`/`entityQueryInput`),
-// so there is no separate reshape step left to drift from the evaluated input.
+// must degrade to a recorded skip in the brief, never fail the run. Formerly
+// this ran as a `deterministicToolStep` carrying the `nonFatal` dispatch tag,
+// because the native `action` primitive has no error-swallow of its own (a
+// thrown tool error inside an action's `ctx.perform` always propagates and
+// fails the run — see `apps/sidecar/src/action-tool-handler.ts`). The
+// tolerance moves INSIDE a tool this workflow owns instead: each source
+// dispatches its own `last30days_safe_*` wrapper (`./tools.ts`), which calls
+// the real source tool in-process and turns a thrown error into a
+// successful result carrying a `{ isError: true, error }` JSON body, so the
+// wrapped step is a plain native `action` and never needs `nonFatal`. The
+// `argMap` shim is still gone: `input` composes the tool's exact args
+// directly via `merge`+`literal` (the per-source path selector already
+// yields `{ query }`, the tool's own argument name — see
+// `groundedQueryInput`/`entityQueryInput`), so there is no separate reshape
+// step left to drift from the evaluated input.
 function sourceStep(opts: {
   id: string;
   tool: string;
@@ -135,18 +242,17 @@ function sourceStep(opts: {
   after: readonly string[];
   title: string;
 }) {
-  return deterministicToolStep({
-    id: opts.id,
-    tool: opts.tool,
-    title: opts.title,
+  const handler = safeSourceHandler(opts.tool);
+  return action({
+    handler,
     input: {
       merge: [
         groundedQueryInput(opts.sourceKey),
         { literal: { limit: opts.limit } },
       ],
     },
+    effect: { requires: sourceEffectRequires(opts.tool, handler) },
     after: opts.after,
-    nonFatal: true,
   });
 }
 
@@ -231,8 +337,8 @@ const LAST_SOURCE_KEY = lastSource.key;
 // Build the serial source chain: the first source depends on `firstAfter`, each
 // subsequent one on its predecessor, so no two source bodies are in flight at
 // once (the CL-2314 single-writer constraint above).
-function buildSourceSteps(firstAfter: string): Record<string, StepPrimitive> {
-  const steps: Record<string, StepPrimitive> = {};
+function buildSourceSteps(firstAfter: string): Record<string, Primitive> {
+  const steps: Record<string, Primitive> = {};
   let previous = firstAfter;
   for (const source of SOURCES) {
     steps[source.key] = sourceStep({
@@ -299,24 +405,21 @@ if (lastRound2 === undefined) {
 }
 const LAST_ROUND2_ID = lastRound2.id;
 
-function buildEntityRoundSteps(
-  firstAfter: string,
-): Record<string, StepPrimitive> {
-  const steps: Record<string, StepPrimitive> = {};
+function buildEntityRoundSteps(firstAfter: string): Record<string, Primitive> {
+  const steps: Record<string, Primitive> = {};
   let previous = firstAfter;
   for (const source of ROUND2_SOURCES) {
-    steps[source.id] = deterministicToolStep({
-      id: `last30days-fetch-${source.id}`,
-      tool: source.tool,
-      title: source.title,
+    const handler = safeSourceHandler(source.tool);
+    steps[source.id] = action({
+      handler,
       input: {
         merge: [
           entityQueryInput(source.mapKey),
           { literal: { limit: source.limit } },
         ],
       },
+      effect: { requires: sourceEffectRequires(source.tool, handler) },
       after: [previous],
-      nonFatal: true,
     });
     previous = source.id;
   }
@@ -333,9 +436,8 @@ export function buildResearchSteps(): Record<string, Primitive> {
     // untailored base query. It is NOT, however, best-effort against an inference
     // OUTAGE: like `rerank`/`write`, an inline step cannot carry `nonFatal`, so a
     // failed grounding turn fails the run (a one-call dependency, same as those).
-    ground: agentStep({
+    ground: reasoningStep({
       id: "last30days-ground",
-      title: "Ground the topic",
       systemPrompt: buildGroundingSystemPrompt(),
       input: { from: "steps.intake.output" },
       after: ["intake"],
@@ -368,9 +470,8 @@ export function buildResearchSteps(): Record<string, Primitive> {
     // names the concrete launches/entities that surfaced, emitting an entity-focused
     // follow-up query per platform so round 2 chases them deeper. Best-effort — the
     // parse tool falls back to the base query if the reply is malformed.
-    entities: agentStep({
+    entities: reasoningStep({
       id: "last30days-entities",
-      title: "Extract key entities",
       systemPrompt: buildEntityExtractSystemPrompt(),
       input: { from: "steps" },
       after: [LAST_SOURCE_KEY],
@@ -412,9 +513,8 @@ export function buildResearchSteps(): Record<string, Primitive> {
     // survivors into 3-6 named themes, and select 3-5 verbatim community quotes.
     // Runs on the heavier writer model. Best-effort — the brief tool falls back to
     // the deterministic buildReport pipeline if the curate JSON is missing or junk.
-    curate: agentStep({
+    curate: reasoningStep({
       id: "last30days-curate",
-      title: "Curate themes & quotes",
       systemPrompt: buildCurateSystemPrompt(),
       model: LLM_WRITER_MODEL,
       maxTokens: CURATE_MAX_TOKENS,
@@ -438,9 +538,9 @@ export function buildResearchSteps(): Record<string, Primitive> {
 // catalog, the pipeline) keep working unchanged. Browser consumers must
 // import these from the `./browser` subpath instead (see package.json
 // exports) — importing this main entry pulls in `defineWorkflow` and
-// `@workbench/agents`, both of which construct agents at module load time
-// and crash in the browser.
-export { INTAKE_SIGNAL, STEP_UI_HINTS };
+// `@intx/agent`, both of which construct agents at module load time and
+// crash in the browser.
+export { INTAKE_SIGNAL, STEP_UI };
 
 export const workflow = defineWorkflow({
   id: kind,
@@ -449,9 +549,8 @@ export const workflow = defineWorkflow({
     intake: awaitSignal({ name: INTAKE_SIGNAL }),
     ...buildResearchSteps(),
 
-    write: agentStep({
+    write: reasoningStep({
       id: "last30days-write-report",
-      title: "Write the report",
       systemPrompt: buildWriterSystemPrompt(),
       model: LLM_WRITER_MODEL,
       maxTokens: WRITER_MAX_TOKENS,

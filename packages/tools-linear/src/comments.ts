@@ -57,8 +57,16 @@ export async function listComments(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(ListCommentsArgsSchema, rawArgs, "linear_list_comments");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const args = parseArgs(
+    ListCommentsArgsSchema,
+    rawArgs,
+    "linear_list_comments",
+  );
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const data = await fetchLinearGraphQL(
     config,
     LIST_COMMENTS_QUERY,

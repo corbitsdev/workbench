@@ -11,7 +11,6 @@ import {
   type DisplayFlowStep,
 } from "@workbench/agents";
 import {
-  isRoutineEligibleKind,
   orderCatalogEntries,
   scheduleScopesForKind,
   WorkflowCatalogSchema,
@@ -27,13 +26,9 @@ import { readWorkflowDefinition } from "../services/workflow-deploy";
 import { readMemberPreferences } from "../lib/member-preferences";
 import {
   loadWorkflowDisplayFlows,
-  loadWorkflowEntryTriggerFields,
-  loadWorkflowGateInfos,
   loadWorkflowIntakeFields,
 } from "../lib/workflow-catalog";
-import { isKindStructurallyAttachable } from "../lib/workflow-gate-info";
 import { getRootTenantId, lookupMember } from "../lib/tenant-provisioning";
-import { ENRICHED_TRIGGER_KINDS } from "../workflow-executor/trigger-payload-enrichment-registry";
 
 const log = getLogger("workflows-catalog");
 
@@ -146,15 +141,14 @@ export function createWorkflowsCatalogRouter(deps: {
       // groups and labels steps identically. Absent kinds fall back to the
       // per-step stepOrder projection.
       const displayFlows = await loadWorkflowDisplayFlows();
-      // Gate shape + intake form per kind (CL-3508/CL-3509): whether the kind is
-      // attachable to a brief schedule, and the intake fields the attach UI
-      // collects. Intake fields ship whenever the embedded def declares them —
-      // including gate-free unattended kinds (prospect-engine) that still need
-      // Slack channel + Engine list ids at schedule-attach time. `requiresIntake`
-      // only describes awaitSignal gates; do not gate the form on it.
-      const gateInfos = await loadWorkflowGateInfos();
+      // Intake form per kind (CL-3508/CL-3509): fields ship whenever the
+      // embedded def declares them — including gate-free unattended kinds
+      // (prospect-engine) that still need Slack channel + Engine list ids at
+      // schedule-attach time. Every deployed kind is schedulable (CL-4514):
+      // there is no attachability gate — the scheduler takes the entry step's
+      // declared input fields and renders them as a form; a kind declaring
+      // none is still schedulable and fires with an empty payload.
       const intakeFieldsByKind = await loadWorkflowIntakeFields();
-      const entryTriggerFieldsByKind = await loadWorkflowEntryTriggerFields();
 
       const entries: WorkflowCatalogEntry[] = [];
       for (const entry of kinds) {
@@ -163,19 +157,8 @@ export function createWorkflowsCatalogRouter(deps: {
           entry.kind,
           displayFlows.get(entry.kind),
         );
-        const gateInfo = gateInfos.get(entry.kind);
         const intakeFields = intakeFieldsByKind.get(entry.kind);
-        // attachable = structural gate shape AND derived routine eligibility
-        // (CL-4204): every trigger field the entry step requires is either a
-        // declared intake field or supplied by a registered enricher.
-        const attachable =
-          gateInfo !== undefined &&
-          isKindStructurallyAttachable(gateInfo, entry.kind) &&
-          isRoutineEligibleKind(
-            entryTriggerFieldsByKind.get(entry.kind) ?? [],
-            new Set((intakeFields ?? []).map((f) => f.name)),
-            ENRICHED_TRIGGER_KINDS.has(entry.kind),
-          );
+        const attachable = true;
         const scopes = scheduleScopesForKind(entry.kind, attachable);
         entries.push({
           kind: entry.kind,

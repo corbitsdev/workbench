@@ -10,6 +10,7 @@
  * completed-run link once the deck is saved.
  */
 import {
+  humanizeStepId,
   pendingGateForRun,
   progressStateForStepPhase,
   type DockRunInput,
@@ -26,10 +27,6 @@ export interface GammaBlockInput extends DockRunInput {
    * (the value is the step's output, NOT wrapped in `{ output }`).
    */
   stepOutputs: Record<string, unknown>;
-}
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
 }
 
 function runPageLink(

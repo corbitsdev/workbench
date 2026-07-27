@@ -9,7 +9,10 @@
  *
  * Gates:
  *   1. intake — a `form` collecting the website URL (required) + optional brand
- *      / geography / ICP hints. Emitted verbatim as `{ inputUrl, ... }`; the
+ *      / geography / ICP hints. Emitted verbatim as `{ url, ... }` (renamed
+ *      from `inputUrl` so the native `scrape` action's `firecrawl_scrape`
+ *      call can pass it straight through — native selectors cannot rename a
+ *      key); the
  *      URL validation the panel enforced client-side is enforced server-side at
  *      the /resume boundary (RedditIntakePayloadSchema).
  *   2. recommendation-review — a pre-seeded `form` (CL-2773). The analyze step's
@@ -33,6 +36,7 @@
  */
 import {
   gateFallbackBlock,
+  humanizeStepId,
   pendingGateForRun,
   progressStateForStepPhase,
   runPageRedirectBlock,
@@ -48,6 +52,7 @@ import {
   parseCurateOutput,
   deriveBusinessContext,
 } from "./parse";
+import { INTAKE_FORM_FIELDS } from "./intake-fields";
 
 /** The intake gate's `awaitSignal` name (matches the workflow def). */
 export const INTAKE_SIGNAL = "intake";
@@ -61,43 +66,38 @@ export interface RedditOpportunityScannerBlockInput extends DockRunInput {
   stepOutputs: Record<string, unknown>;
 }
 
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
-}
+// The dock's intake fields (CL-4538) — the SAME list `./intake-fields.ts`
+// derives the schedule/attach `INTAKE_FIELDS` from, so the two surfaces can
+// never disagree about which fields exist or which are required. Converted
+// to `FormField` here (rather than in `./intake-fields.ts`) so that
+// dependency-free module never needs a runtime edge onto `@workbench/blocks`.
+const INTAKE_BLOCK_FIELDS: readonly FormField[] = INTAKE_FORM_FIELDS.map(
+  (field): FormField => {
+    if (field.kind !== "text" && field.kind !== "textarea") {
+      throw new Error(
+        `reddit-opportunity-scanner intake field "${field.name}" has unsupported kind "${field.kind}"`,
+      );
+    }
+    return {
+      kind: field.kind,
+      name: field.name,
+      ...(field.label !== undefined ? { label: field.label } : {}),
+      ...(field.placeholder !== undefined
+        ? { placeholder: field.placeholder }
+        : {}),
+      ...(field.required !== undefined ? { required: field.required } : {}),
+    };
+  },
+);
 
 function intakeForm(signalName: string): UIBlock {
-  const inputUrl: FormField = {
-    kind: "text",
-    name: "inputUrl",
-    label: "Website URL",
-    placeholder: "https://example.com",
-    required: true,
-  };
-  const brandName: FormField = {
-    kind: "text",
-    name: "brandName",
-    label: "Brand name (optional)",
-    placeholder: "Acme",
-  };
-  const targetGeography: FormField = {
-    kind: "text",
-    name: "targetGeography",
-    label: "Target geography (optional)",
-    placeholder: "North America",
-  };
-  const icpHints: FormField = {
-    kind: "textarea",
-    name: "icpHints",
-    label: "ICP / audience hints (optional)",
-    placeholder: "Who is the ideal customer? What problems do they have?",
-  };
   return {
     kind: "form",
     prompt:
       "Enter the website to scan. We crawl it, infer keywords and subreddits, and let you review them before searching Reddit.",
     signalName,
     submitLabel: "Analyze site",
-    fields: [inputUrl, brandName, targetGeography, icpHints],
+    fields: [...INTAKE_BLOCK_FIELDS],
   };
 }
 

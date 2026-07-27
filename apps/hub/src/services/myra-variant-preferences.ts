@@ -181,9 +181,7 @@ export function prunePinnedSkillIdsToVisibleLibrary(
   ids: readonly string[],
   visibleSkillIds: ReadonlySet<string>,
 ): string[] {
-  return normalizePinnedSkillIds(
-    ids.filter((id) => visibleSkillIds.has(id)),
-  );
+  return normalizePinnedSkillIds(ids.filter((id) => visibleSkillIds.has(id)));
 }
 
 /** Dedupe while preserving order and cap at {@link MAX_PINNED_MYRA_SKILLS}. */

@@ -51,6 +51,36 @@ is a fresh run rather than an in-run refine.
 Steps declare their tools as serializable `capabilities`, never inline tool
 factories — the definition is pushed as JSON.
 
+### Native `action` steps
+
+Every tool-calling step, including the two source readers, runs as a native
+`@intx/workflow` `action`. `fetch-artifact` and `fetch-note` dispatch
+workflow-owned tolerant wrapper tools (`fetch-tools.ts`) instead of the
+retired workbench-local `deterministicToolStep`'s `nonFatal` tag: an
+unresolved source degrades to "not available" (a `{ skipped: true }` content
+envelope) rather than failing the run, because `ActionPrimitive` has no
+non-fatal / error-swallow field of its own — `runDeterministicToolStep`
+throws on any outer `ToolResult.isError`, so the tolerance has to live inside
+the wrapper tool's `content` instead.
+
+Native selectors (`from`/`project`/`merge`/`literal`) cannot rename a field,
+so wherever an upstream field name didn't already match the downstream tool's
+argument name, this package ships its own small shaping tools rather than
+renaming a shared, multi-caller tool or aliasing a workflow-owned convention:
+
+- `gamma_presentation_creator_prepare_render` renames the draft agent's
+  `reply` to `gamma_create_from_template`'s `prompt` argument.
+- `gamma_presentation_creator_prepare_persist` pairs the intake `deckTitle`,
+  the describe agent's `reply`, and the rendered deck's `url`/`gammaId`/
+  `exportUrl` into `artifact_link_gamma_presentation`'s argument names
+  (`title`/`description`/`pdfUrl`, `url`/`gammaId` already match verbatim).
+
+Both live in `src/tools.ts`, registered via the package's own
+`interchange.tools`/`interchange.manifest` block (`src/interchange-tools.ts`,
+`src/tool-manifest.ts`) — mirroring `workflows/exa-topic-watch`'s pattern —
+rather than in a shared `packages/tools-*` package, since they are private to
+this workflow.
+
 ## Deploy
 
 Push via the admin CLI (`bun run admin` → select a tenant → "Local actions →

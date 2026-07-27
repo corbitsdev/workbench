@@ -1,6 +1,7 @@
 import type { AdapterManifest, AdapterRegistry } from "@intx/inference";
 import { loadAdapterRegistry } from "@intx/inference/providers";
 import type { LastCycleSource } from "@intx/types/runtime";
+import { withOAuthInferenceAdapters } from "./oauth-inference";
 
 // TEMPORARY local fix for an upstream Interchange bug — tracked in BD-394 /
 // internal bug linked.
@@ -71,11 +72,17 @@ export function stripThoughtSignatures(sseData: string): string {
  * factory) both build through this, so the BD-394 gemini workaround is
  * applied identically on both sides. Remove alongside the wrap once
  * fixed upstream.
+ *
+ * It also layers in the Workbench-owned user-OAuth inference adapters
+ * (`codex-responses`, `grok-responses`) — see `./oauth-inference` for why
+ * they cannot live in the vendored `packages/inference` provider set.
  */
 export async function buildWorkbenchAdapterRegistry(
   manifest: AdapterManifest,
 ): Promise<AdapterRegistry> {
-  return withGeminiThoughtSignaturePatch(await loadAdapterRegistry(manifest));
+  return withGeminiThoughtSignaturePatch(
+    withOAuthInferenceAdapters(await loadAdapterRegistry(manifest)),
+  );
 }
 
 export function withGeminiThoughtSignaturePatch(

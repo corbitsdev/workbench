@@ -104,7 +104,6 @@ async function seedUnmappedInstance(args: {
   );
 }
 
-
 async function seedSession(args: {
   id: string;
   principalId: string;

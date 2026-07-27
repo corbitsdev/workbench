@@ -6,7 +6,9 @@ describe("aged-history", () => {
   const now = Date.parse("2026-07-14T12:00:00.000Z");
 
   it("treats turns within 24h as fresh", () => {
-    const createdAt = new Date(now - MYRA_AGED_HISTORY_MS + 60_000).toISOString();
+    const createdAt = new Date(
+      now - MYRA_AGED_HISTORY_MS + 60_000,
+    ).toISOString();
     expect(isMyraHistoryAged(createdAt, now)).toBe(false);
   });
 

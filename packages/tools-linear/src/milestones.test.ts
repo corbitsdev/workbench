@@ -9,7 +9,9 @@ describe("linear_list_milestones", () => {
     const fetcher = makeFetchStub({
       data: { project: { projectMilestones: { nodes } } },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       {
@@ -29,7 +31,9 @@ describe("linear_list_milestones", () => {
 
   it("errors when project is not found", async () => {
     const fetcher = makeFetchStub({ data: { project: null } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       {
@@ -55,7 +59,9 @@ describe("linear_save_milestone", () => {
         },
       },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -90,7 +96,9 @@ describe("linear_save_milestone", () => {
         },
       },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {

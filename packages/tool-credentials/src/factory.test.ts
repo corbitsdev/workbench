@@ -72,7 +72,11 @@ it("passes structured hub-tool results through as objects", async () => {
   const factory = defineHubBackedToolPackage({
     id: "@workbench/tools-test/structured",
     definitions: [
-      { name: "structured_tool", description: "t", inputSchema: { type: "object", properties: {} } },
+      {
+        name: "structured_tool",
+        description: "t",
+        inputSchema: { type: "object", properties: {} },
+      },
     ],
   });
   const originalFetch = globalThis.fetch;

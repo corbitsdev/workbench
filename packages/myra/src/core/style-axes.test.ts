@@ -8,7 +8,12 @@ import {
   type StyleAxisSelections,
 } from "./style-axes";
 
-const FORBIDDEN_SUBSTRINGS = ["search_tools", "load_tools", "cannot", "disabled"];
+const FORBIDDEN_SUBSTRINGS = [
+  "search_tools",
+  "load_tools",
+  "cannot",
+  "disabled",
+];
 
 describe("style-axes catalog", () => {
   test("every axis's default option composes to an empty snippet", () => {
@@ -100,9 +105,7 @@ describe("composeStyleOverlay", () => {
   });
 
   test("an unknown option id is ignored rather than throwing", () => {
-    expect(composeStyleOverlay({ personality: "not-a-real-option" })).toBe(
-      "",
-    );
+    expect(composeStyleOverlay({ personality: "not-a-real-option" })).toBe("");
   });
 
   test("a single non-default selection composes exactly its snippet", () => {
@@ -110,7 +113,8 @@ describe("composeStyleOverlay", () => {
     const candid = getStyleAxis("personality")?.options.find(
       (o) => o.id === "candid",
     );
-    expect(overlay).toBe(candid?.snippet);
+    if (candid === undefined) throw new Error("no candid personality option");
+    expect(overlay).toBe(candid.snippet);
   });
 
   test("every axis set to a non-default option composes under 1200 chars", () => {

@@ -100,10 +100,7 @@
           "inference": {
             "sources": []
           },
-          "description": "Reasoning step: last30days-ground",
-          "tags": {
-            "workbench.title": "Ground the topic"
-          }
+          "description": "Reasoning step: last30days-ground"
         },
         "drainBehavior": "cancel",
         "input": {
@@ -138,26 +135,9 @@
         ]
       },
       "web": {
-        "kind": "step",
+        "kind": "action",
         "id": "web",
-        "agent": {
-          "id": "last30days-fetch-web",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-exa/exa:exa_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search the web"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -171,31 +151,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
+            "@workbench/tools-exa/exa:exa_search"
+          ]
+        },
         "after": [
           "groundQueries"
         ]
       },
       "webB": {
-        "kind": "step",
+        "kind": "action",
         "id": "webB",
-        "agent": {
-          "id": "last30days-fetch-webB",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-exa/exa:exa_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search the web again"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -209,31 +178,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
+            "@workbench/tools-exa/exa:exa_search"
+          ]
+        },
         "after": [
           "web"
         ]
       },
       "webC": {
-        "kind": "step",
+        "kind": "action",
         "id": "webC",
-        "agent": {
-          "id": "last30days-fetch-webC",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-exa/exa:exa_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search the web once more"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -247,31 +205,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
+            "@workbench/tools-exa/exa:exa_search"
+          ]
+        },
         "after": [
           "webB"
         ]
       },
       "hackernews": {
-        "kind": "step",
+        "kind": "action",
         "id": "hackernews",
-        "agent": {
-          "id": "last30days-fetch-hackernews",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-hackernews/hackernews:hackernews_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-hackernews/hackernews:hackernews_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-hackernews/hackernews:hackernews_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search Hacker News"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/keyless-safe:last30days_safe_hackernews_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -285,31 +232,19 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/keyless-safe:last30days_safe_hackernews_search"
+          ]
+        },
         "after": [
           "webC"
         ]
       },
       "github": {
-        "kind": "step",
+        "kind": "action",
         "id": "github",
-        "agent": {
-          "id": "last30days-fetch-github",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-github/github:github_activity"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-github/github:github_activity",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-github/github:github_activity",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Scan GitHub activity"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/github-safe:last30days_safe_github_activity",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -323,31 +258,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/github-safe:last30days_safe_github_activity",
+            "@workbench/tools-github/github:github_activity"
+          ]
+        },
         "after": [
           "hackernews"
         ]
       },
       "reddit": {
-        "kind": "step",
+        "kind": "action",
         "id": "reddit",
-        "agent": {
-          "id": "last30days-fetch-reddit",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-reddit/reddit:reddit_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-reddit/reddit:reddit_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-reddit/reddit:reddit_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search Reddit"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/reddit-safe:last30days_safe_reddit_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -361,31 +285,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/reddit-safe:last30days_safe_reddit_search",
+            "@workbench/tools-reddit/reddit:reddit_search"
+          ]
+        },
         "after": [
           "github"
         ]
       },
       "x": {
-        "kind": "step",
+        "kind": "action",
         "id": "x",
-        "agent": {
-          "id": "last30days-fetch-x",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-x/x:x_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-x/x:x_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-x/x:x_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search X"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/x-safe:last30days_safe_x_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -399,31 +312,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/x-safe:last30days_safe_x_search",
+            "@workbench/tools-x/x:x_search"
+          ]
+        },
         "after": [
           "reddit"
         ]
       },
       "youtube": {
-        "kind": "step",
+        "kind": "action",
         "id": "youtube",
-        "agent": {
-          "id": "last30days-fetch-youtube",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-youtube/youtube:youtube_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-youtube/youtube:youtube_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-youtube/youtube:youtube_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Search YouTube"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/youtube-safe:last30days_safe_youtube_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -437,31 +339,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/youtube-safe:last30days_safe_youtube_search",
+            "@workbench/tools-youtube/youtube:youtube_search"
+          ]
+        },
         "after": [
           "x"
         ]
       },
       "polymarket": {
-        "kind": "step",
+        "kind": "action",
         "id": "polymarket",
-        "agent": {
-          "id": "last30days-fetch-polymarket",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-polymarket/polymarket:polymarket_odds"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-polymarket/polymarket:polymarket_odds",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-polymarket/polymarket:polymarket_odds",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Check Polymarket odds"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/keyless-safe:last30days_safe_polymarket_odds",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -473,6 +364,11 @@
                 "limit": 15
               }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/keyless-safe:last30days_safe_polymarket_odds"
           ]
         },
         "after": [
@@ -490,10 +386,7 @@
           "inference": {
             "sources": []
           },
-          "description": "Reasoning step: last30days-entities",
-          "tags": {
-            "workbench.title": "Extract key entities"
-          }
+          "description": "Reasoning step: last30days-entities"
         },
         "drainBehavior": "cancel",
         "input": {
@@ -528,26 +421,9 @@
         ]
       },
       "web2": {
-        "kind": "step",
+        "kind": "action",
         "id": "web2",
-        "agent": {
-          "id": "last30days-fetch-web2",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-exa/exa:exa_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-exa/exa:exa_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-exa/exa:exa_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Dig deeper on the web"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -561,31 +437,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/exa-safe:last30days_safe_exa_search",
+            "@workbench/tools-exa/exa:exa_search"
+          ]
+        },
         "after": [
           "entityQueries"
         ]
       },
       "reddit2": {
-        "kind": "step",
+        "kind": "action",
         "id": "reddit2",
-        "agent": {
-          "id": "last30days-fetch-reddit2",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-reddit/reddit:reddit_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-reddit/reddit:reddit_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-reddit/reddit:reddit_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Dig deeper on Reddit"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/reddit-safe:last30days_safe_reddit_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -599,31 +464,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/reddit-safe:last30days_safe_reddit_search",
+            "@workbench/tools-reddit/reddit:reddit_search"
+          ]
+        },
         "after": [
           "web2"
         ]
       },
       "x2": {
-        "kind": "step",
+        "kind": "action",
         "id": "x2",
-        "agent": {
-          "id": "last30days-fetch-x2",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-x/x:x_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-x/x:x_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-x/x:x_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Dig deeper on X"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/x-safe:last30days_safe_x_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -637,31 +491,20 @@
             }
           ]
         },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/x-safe:last30days_safe_x_search",
+            "@workbench/tools-x/x:x_search"
+          ]
+        },
         "after": [
           "reddit2"
         ]
       },
       "youtube2": {
-        "kind": "step",
+        "kind": "action",
         "id": "youtube2",
-        "agent": {
-          "id": "last30days-fetch-youtube2",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-youtube/youtube:youtube_search"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-youtube/youtube:youtube_search",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-youtube/youtube:youtube_search",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Dig deeper on YouTube"
-          }
-        },
+        "handler": "@workbench/workflow-last30days-research/youtube-safe:last30days_safe_youtube_search",
         "drainBehavior": "cancel",
         "input": {
           "merge": [
@@ -673,6 +516,12 @@
                 "limit": 12
               }
             }
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-last30days-research/youtube-safe:last30days_safe_youtube_search",
+            "@workbench/tools-youtube/youtube:youtube_search"
           ]
         },
         "after": [
@@ -715,10 +564,7 @@
               }
             ]
           },
-          "description": "Reasoning step: last30days-curate",
-          "tags": {
-            "workbench.title": "Curate themes & quotes"
-          }
+          "description": "Reasoning step: last30days-curate"
         },
         "drainBehavior": "cancel",
         "input": {
@@ -750,7 +596,7 @@
         "id": "write",
         "agent": {
           "id": "last30days-write-report",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write the final last-30-days research report from a curated brief (JSON in the tool result content: topic, stats, leadInsight, clusters [named themes, each with title, summary, items], bestTakes [verbatim attributed quotes with engagement], items, citations, skippedSources). Output ONE markdown document only\n\n## Structure (follow exactly)\n# {Topic}: What People Actually Said (Last 30 Days)\n\n_Researched {today} · window: last 30 days · sources: Reddit, X, YouTube, Hacker News, GitHub, web_\n\n**TL;DR** - 2-4 sentences telling the real story of the last 30 days: the concrete launches/events and the sharpest community reaction.\n\n## {Theme 1 — the cluster's specific name}\nNarrative prose that explains the theme, names the specific entities (products, companies, people, repos, subreddits, numbers), weighs the evidence, and weaves in verbatim quotes with inline links. Note when a theme's evidence is thin.\n\n## {Theme 2}\n... one ## section per cluster the brief supports, strongest first ...\n\n## What's still open / contested\nThe genuine uncertainties and disagreements the evidence leaves unresolved.\n\n## Sources\nA deduped, dated, linked list of the concrete items that backed the report — one per line as \"- [label](url) (date)\".\n\n## Grounding\n- Use ONLY the brief; invent nothing (no claim, number, quote, citation, or date the brief does not contain)\n- Cite inline as [label](url) using REAL urls from brief.citations; one link per substantive claim, never a bare URL\n- Build a section per cluster; lead with the strongest. Match depth to the evidence — a rich brief earns longer sections, a thin one stays short. Never pad, never truncate\n\n## Community voice (the point of this tool)\n- Weave AT LEAST 3 verbatim, attributed quotes from brief.bestTakes into the prose (u/name, @handle, channel), with their engagement when meaningful (e.g. \"a thread that drew 81 upvotes\")\n- Quote exactly; never paraphrase a bestTake into a fake quote\n\n## Style\n- Collective voice (\"we\"), not \"I\"\n- Use \" - \" for asides, NOT em dashes or en dashes\n- No filler (\"it's worth noting\", \"in conclusion\"); name specifics over \"many users feel\" generalities\n- Use each platform's own unit: GitHub stars (never \"upvotes\"), Hacker News points, Reddit upvotes, YouTube views\n- If brief.skippedSources is set, you may note which sources were unavailable, never as a tool failure\n- The report stands alone: a reader who never saw the raw data understands what happened and can click through to verify",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write the final last-30-days research report from a curated brief (JSON in the tool result content: topic, stats, leadInsight, clusters [named themes, each with title, summary, items], bestTakes [verbatim attributed quotes with engagement], items, citations, skippedSources). Output ONE markdown document only\n\n## Structure (follow exactly)\n# {Topic}: What People Actually Said (Last 30 Days)\n\n_Researched {today} · window: last 30 days · sources: Reddit, X, YouTube, Hacker News, GitHub, web_\n\n**TL;DR** - 2-4 sentences telling the real story of the last 30 days: the concrete launches/events and the sharpest community reaction.\n\n## {Theme 1 — the cluster's specific name}\nNarrative prose that explains the theme, names the specific entities (products, companies, people, repos, subreddits, numbers), weighs the evidence, and weaves in verbatim quotes with inline links. Note when a theme's evidence is thin.\n\n## {Theme 2}\n... one ## section per cluster the brief supports, strongest first ...\n\n## What's still open / contested\nThe genuine uncertainties and disagreements the evidence leaves unresolved.\n\nDo NOT append a \"## Sources\" / \"## Citations\" / \"## References\" section. The\napp renders one deduped, linked sources list from brief.citations separately;\nadding your own here would duplicate it. End the document after \"What's still\nopen / contested\".\n\n## Grounding\n- Use ONLY the brief; invent nothing (no claim, number, quote, citation, or date the brief does not contain)\n- Cite inline as [label](url) using REAL urls from brief.citations; one link per substantive claim, never a bare URL\n- Build a section per cluster; lead with the strongest. Match depth to the evidence — a rich brief earns longer sections, a thin one stays short. Never pad, never truncate\n\n## Community voice (the point of this tool)\n- Weave AT LEAST 3 verbatim, attributed quotes from brief.bestTakes into the prose (u/name, @handle, channel), with their engagement when meaningful (e.g. \"a thread that drew 81 upvotes\")\n- Quote exactly; never paraphrase a bestTake into a fake quote\n\n## Style\n- Collective voice (\"we\"), not \"I\"\n- Use \" - \" for asides, NOT em dashes or en dashes\n- No filler (\"it's worth noting\", \"in conclusion\"); name specifics over \"many users feel\" generalities\n- Use each platform's own unit: GitHub stars (never \"upvotes\"), Hacker News points, Reddit upvotes, YouTube views\n- If brief.skippedSources is set, you may note which sources were unavailable, never as a tool failure\n- The report stands alone: a reader who never saw the raw data understands what happened and can click through to verify",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
@@ -764,10 +610,7 @@
               }
             ]
           },
-          "description": "Reasoning step: last30days-write-report",
-          "tags": {
-            "workbench.title": "Write the report"
-          }
+          "description": "Reasoning step: last30days-write-report"
         },
         "drainBehavior": "cancel",
         "input": {

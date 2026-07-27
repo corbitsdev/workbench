@@ -34,21 +34,6 @@ export const toolManifestFile = {
         heartbeat_merge_brief_sources: {
           sideEffect: "read",
         },
-        heartbeat_format_brief_document: {
-          sideEffect: "read",
-        },
-        heartbeat_format_brief_notify: {
-          sideEffect: "read",
-        },
-        heartbeat_format_brief_title: {
-          sideEffect: "read",
-        },
-        competitor_analysis_format_report_document: {
-          sideEffect: "read",
-        },
-        sumble_account_intel_format_report_document: {
-          sideEffect: "read",
-        },
       },
       myraCatalog: null,
       credentialCatalog: null,

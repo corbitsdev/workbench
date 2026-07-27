@@ -130,7 +130,7 @@ describe("deterministic step failure logging (Sentry capture seam)", () => {
     const env = await makeEnv();
     const controller = new AbortController();
     controller.abort();
-    // nonFatal + aborted exercises the cancellation guard: the throw is the
+    // An aborted signal exercises the cancellation guard: the throw is the
     // cancellation, rethrown, but it must NOT be logged at error level (a
     // run being torn down is not a fault to page on).
     await expect(
@@ -138,7 +138,6 @@ describe("deterministic step failure logging (Sentry capture seam)", () => {
         env: env as never,
         toolName: "mail_send",
         input: "not-an-object",
-        nonFatal: true,
         signal: controller.signal,
       }),
     ).rejects.toThrow(/requires an object/);

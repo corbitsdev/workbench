@@ -14,7 +14,9 @@ describe("linear_list_teams", () => {
   it("lists teams with default first", async () => {
     const nodes = [{ id: "t1", name: "Engineering", key: "ENG" }];
     const fetcher = makeFetchStub({ data: { teams: { nodes } } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_list_teams", arguments: {} },
@@ -29,7 +31,9 @@ describe("linear_list_teams", () => {
 
   it("forwards query as TeamFilter", async () => {
     const fetcher = makeFetchStub({ data: { teams: { nodes: [] } } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -54,7 +58,9 @@ describe("linear_get_team / resolveTeamId", () => {
     const fetcher = makeRoutingFetchStub([
       { includes: "GetTeam", data: { team } },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_get_team", arguments: { id: TEAM_UUID } },
@@ -80,7 +86,9 @@ describe("linear_get_team / resolveTeamId", () => {
       },
       { includes: "GetTeam", data: { team } },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_get_team", arguments: { id: "Engineering" } },
@@ -121,8 +129,7 @@ describe("linear_get_team / resolveTeamId", () => {
         getTeamCount += 1;
         seen.push("GetTeam");
         // First GetTeam (resolve): miss; second (getTeam): hit
-        const payload =
-          getTeamCount === 1 ? { team: null } : { team };
+        const payload = getTeamCount === 1 ? { team: null } : { team };
         return Promise.resolve(
           new Response(JSON.stringify({ data: payload }), {
             status: 200,
@@ -131,10 +138,10 @@ describe("linear_get_team / resolveTeamId", () => {
         );
       }
       return Promise.resolve(
-        new Response(
-          JSON.stringify({ errors: [{ message: "unstubbed" }] }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
+        new Response(JSON.stringify({ errors: [{ message: "unstubbed" }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
       );
     });
     const runner = createToolRunner(
@@ -154,7 +161,9 @@ describe("linear_get_team / resolveTeamId", () => {
     const fetcher = makeRoutingFetchStub([
       { includes: "TeamByName", data: { teams: { nodes: [] } } },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_get_team", arguments: { id: "missing" } },

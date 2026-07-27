@@ -45,21 +45,21 @@ describe("reasoning-token usage-event mapping and summing (CL-3917)", () => {
       now: occurredAt,
     });
 
-    expect(fact).toBeDefined();
-    expect(fact?.thinkingTokens).toBe(37);
+    if (fact === undefined) throw new Error("expected a usage fact");
+    expect(fact.thinkingTokens).toBe(37);
 
     const totalWithThinking = sumAnalyticsModelTokens({
-      inputTokens: fact?.inputTokens,
-      outputTokens: fact?.outputTokens,
-      cacheReadTokens: fact?.cacheReadTokens,
-      cacheWriteTokens: fact?.cacheWriteTokens,
-      thinkingTokens: fact?.thinkingTokens,
+      inputTokens: fact.inputTokens,
+      outputTokens: fact.outputTokens,
+      cacheReadTokens: fact.cacheReadTokens,
+      cacheWriteTokens: fact.cacheWriteTokens,
+      thinkingTokens: fact.thinkingTokens,
     });
     const totalWithoutThinking = sumAnalyticsModelTokens({
-      inputTokens: fact?.inputTokens,
-      outputTokens: fact?.outputTokens,
-      cacheReadTokens: fact?.cacheReadTokens,
-      cacheWriteTokens: fact?.cacheWriteTokens,
+      inputTokens: fact.inputTokens,
+      outputTokens: fact.outputTokens,
+      cacheReadTokens: fact.cacheReadTokens,
+      cacheWriteTokens: fact.cacheWriteTokens,
     });
 
     expect(totalWithThinking).toBe(totalWithoutThinking + 37);

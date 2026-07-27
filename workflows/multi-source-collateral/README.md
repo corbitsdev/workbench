@@ -39,11 +39,11 @@ Register/deploy like other packs (see `docs/DEPLOYING_WORKFLOWS.md`). Kind:
 
 ## Tools used
 
-| Tool | Role |
-| --- | --- |
-| `artifact_list` / `artifact_read` / `artifact_create` | Source + persist |
-| `granola_list_notes` / `granola_get_note` | Call notes |
-| `linear_list_issues` / `linear_get_issue` | Tickets (`list` is nonFatal) |
+| Tool                                                  | Role                         |
+| ----------------------------------------------------- | ---------------------------- |
+| `artifact_list` / `artifact_read` / `artifact_create` | Source + persist             |
+| `granola_list_notes` / `granola_get_note`             | Call notes                   |
+| `linear_list_issues` / `linear_get_issue`             | Tickets (`list` is nonFatal) |
 
 ## Resume signals
 

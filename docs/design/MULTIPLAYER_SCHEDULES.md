@@ -6,8 +6,8 @@ CL-4114 (tenant-once fire + subscribe fan-out).
 
 ## Labels
 
-| UI label       | Internal `scope` | Who the run is for                         |
-| -------------- | ---------------- | ------------------------------------------ |
+| UI label        | Internal `scope` | Who the run is for                          |
+| --------------- | ---------------- | ------------------------------------------- |
 | **Just for me** | `personal`       | One principal owns the schedule and the run |
 | **Everyone**    | `tenant`         | One tenant-scoped fire; outcomes fan out    |
 
@@ -43,10 +43,10 @@ kinds that are not personal-identity-bound may allow both scopes.
 
 ## Uniqueness
 
-| Scope      | Unique key                                      |
-| ---------- | ----------------------------------------------- |
-| `personal` | `(tenant_id, owner_member_principal_id, kind)`  |
-| `tenant`   | `(tenant_id, kind)`                             |
+| Scope      | Unique key                                     |
+| ---------- | ---------------------------------------------- |
+| `personal` | `(tenant_id, owner_member_principal_id, kind)` |
+| `tenant`   | `(tenant_id, kind)`                            |
 
 A member may hold a personal schedule for kind K while a separate tenant
 schedule for K also exists.

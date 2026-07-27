@@ -37,17 +37,9 @@ import type { GrantRule } from "@intx/authz";
 import { getLogger } from "@intx/log";
 import {
   createStepAgentFactory,
-  runDeterministicToolStep,
   STEP_TOOL_CONTEXT_KEY,
   type StepToolContext,
 } from "./step-tool-harness";
-import {
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-  STEP_ARGMAP_TAG,
-  STEP_NONFATAL_TAG,
-  DETERMINISTIC_TOOL_KIND,
-} from "@workbench/agents";
 import { createActionToolHandlerRegistry } from "./action-tool-handler";
 import { wsUrlToHttp } from "./agent-tools";
 import type {
@@ -1348,43 +1340,14 @@ export function createSidecarStepInvoker(args: {
       : {}),
   });
 
-  // Deterministic-tool dispatch (CL-2202). A step whose placeholder agent
-  // carries the deterministic marker tags is a pure tool/API call: build the
-  // step env (which materializes the per-step tool context) and invoke the
-  // named tool directly, skipping the reactor + inference entirely. Every
-  // other step (every reasoning step, native or historical) delegates to the
-  // real inference invoker above. The existing test seam (a test-injected
-  // `agentFactory` for pure inference) is untouched — the deterministic
-  // branch only triggers on the tag.
-  //
-  // The former inline single-turn inference dispatch (CL-2251) is retired:
-  // staging-only step provisioning removed the per-step session cost it
-  // existed to dodge, so every reasoning step — including what used to be
-  // authored as `inlineInferenceStep` — now runs through the same real
-  // `inferenceInvoker`/`createStepAgentFactory` path as any other deployed
-  // step.
+  // The retired `deterministic-tool` step dispatch (CL-2202) and the
+  // `inline-inference` dispatch before it (CL-2251) are both gone: every
+  // workflow now folds its tool/API calls into a native `action`
+  // (dispatched by `action-tool-handler.ts`'s own `runDeterministicToolStep`
+  // call, entirely outside this factory) or a genuine reasoning step. Every
+  // step this factory's invoker sees now runs through the real
+  // `inferenceInvoker`/`createStepAgentFactory` path below.
   return async (req) => {
-    const tags = req.agent.tags;
-    const toolName = tags?.[STEP_TOOL_TAG];
-    if (
-      tags?.[STEP_KIND_TAG] === DETERMINISTIC_TOOL_KIND &&
-      toolName !== undefined
-    ) {
-      const env = await buildEnv(req);
-      const argMapJson = tags?.[STEP_ARGMAP_TAG];
-      // WORKBENCH-LOCAL (CL-2401): a step tagged non-fatal degrades a thrown
-      // tool error to a completed isError envelope so one dead best-effort
-      // source can't flip the whole run to RunFailed.
-      const nonFatal = tags?.[STEP_NONFATAL_TAG] === "true";
-      return runDeterministicToolStep({
-        env,
-        toolName,
-        input: req.input,
-        ...(argMapJson !== undefined ? { argMapJson } : {}),
-        ...(nonFatal ? { nonFatal } : {}),
-        signal: req.signal,
-      });
-    }
     // WORKBENCH-LOCAL: reset the per-invocation error tracker before every
     // reasoning-step call, then fail the step loudly if this call's result
     // is the director's degraded inference-error reply rather than a

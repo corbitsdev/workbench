@@ -18,7 +18,12 @@ describe("ToolNarrative tool-row affordances (CL-3639)", () => {
     render(
       <ToolNarrative
         toolCalls={[
-          { id: "c1", name: "linear__create_issue", result: "{}", isError: false },
+          {
+            id: "c1",
+            name: "linear__create_issue",
+            result: "{}",
+            isError: false,
+          },
         ]}
         formatSummary={() => LONG_TITLE}
       />,
@@ -56,7 +61,10 @@ describe("ToolNarrative tool-row affordances (CL-3639)", () => {
       { id: "c1", name: "exa__search", isError: false },
     ];
     render(
-      <ToolNarrative toolCalls={calls} formatSummary={() => "Searching the web"} />,
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={() => "Searching the web"}
+      />,
     );
     const button = screen.getByTestId("tool-row-summary").closest("button");
     expect(button?.getAttribute("aria-expanded")).toBeNull();
@@ -68,7 +76,12 @@ describe("ToolNarrative tool-row affordances (CL-3639)", () => {
       <ToolNarrative
         toolCalls={[
           { id: "ok", name: "exa__search", result: "[]", isError: false },
-          { id: "bad", name: "attio__create_note", result: "boom", isError: true },
+          {
+            id: "bad",
+            name: "attio__create_note",
+            result: "boom",
+            isError: true,
+          },
         ]}
         formatSummary={(c) => `call-${c.id}`}
       />,

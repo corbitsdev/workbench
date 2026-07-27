@@ -174,6 +174,16 @@ changes. The committed embed in git is still the drift-test anchor for PRs
 `packages/tools-*` or manifest metadata, or CI tests fail even though the deployed
 image would have been correct.
 
+**Regenerating locally:** always run `bun run build:tool-manifests` **before**
+`build:tool-packages` (from `apps/hub`) — the latter bundles the former's
+generated `packages/tool-manifest/src/generated/tool-manifest-index.ts` into
+every tool package's `dist/interchange-tools.js`, so a stale manifest module
+produces a stale bundle with the wrong sha512 integrity. `build-tool-manifests.ts`
+formats that generated module with prettier itself before writing it, so there is
+no separate `bun run format` step to remember in between — the Dockerfile's
+two-command sequence above is correct as written and should not be "fixed" to add
+one.
+
 ## Auto-publishing on boot
 
 The hub can publish the build-serialized workflow definitions itself on startup,

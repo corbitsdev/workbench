@@ -7,7 +7,9 @@ describe("linear_list_users", () => {
   it("lists users with custom first", async () => {
     const nodes = [{ id: "u1", name: "Ada", email: "ada@x.com", active: true }];
     const fetcher = makeFetchStub({ data: { users: { nodes } } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       {
@@ -26,7 +28,9 @@ describe("linear_list_users", () => {
 
   it("forwards query and team as UserFilter", async () => {
     const fetcher = makeFetchStub({ data: { users: { nodes: [] } } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -52,7 +56,9 @@ describe("linear_get_user", () => {
   it("fetches a user by id", async () => {
     const user = { id: "u1", name: "Ada", email: "ada@x.com", active: true };
     const fetcher = makeFetchStub({ data: { user } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_get_user", arguments: { id: "u1" } },
@@ -67,7 +73,9 @@ describe("linear_get_user", () => {
 
   it("errors when user is missing", async () => {
     const fetcher = makeFetchStub({ data: { user: null } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "c1", name: "linear_get_user", arguments: { id: "missing" } },

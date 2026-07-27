@@ -16,3 +16,8 @@ export const schema = { ...intx, ...workbench };
 // while still carrying the workbench tables for `db.query`.
 export type HubSchema = typeof intx & typeof workbench;
 export type HubDb = PostgresJsDatabase<HubSchema> & { $client: Sql<{}> };
+
+// The handle `db.transaction(...)` hands its callback. It carries the query
+// builders but not `$client`, so a helper that runs inside a transaction must
+// accept `HubDb | HubTx` rather than `HubDb`.
+export type HubTx = Parameters<Parameters<HubDb["transaction"]>[0]>[0];

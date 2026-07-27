@@ -133,7 +133,9 @@ describe("POST /tools/credentials", () => {
           }),
         },
         provider: {
-          findFirst: async () => ({ metadata: { baseURL: "https://api.example" } }),
+          findFirst: async () => ({
+            metadata: { baseURL: "https://api.example" },
+          }),
         },
         ...emptyMemberPrincipalDbStubs,
       },
@@ -178,13 +180,15 @@ describe("POST /tools/credentials member principal", () => {
     query: {
       agent: {
         findFirst: async () => ({
-        id: "a1",
-        tenantId: "t1",
-        toolPackages: agentToolPackages,
-      }),
+          id: "a1",
+          tenantId: "t1",
+          toolPackages: agentToolPackages,
+        }),
       },
       provider: {
-        findFirst: async () => ({ metadata: { baseURL: "https://api.example" } }),
+        findFirst: async () => ({
+          metadata: { baseURL: "https://api.example" },
+        }),
       },
       principal: {
         findFirst: async () => ({ id: "prn-user" }),
@@ -247,10 +251,10 @@ describe("POST /tools/credentials member principal", () => {
       query: {
         agent: {
           findFirst: async () => ({
-        id: "a1",
-        tenantId: "t1",
-        toolPackages: agentToolPackages,
-      }),
+            id: "a1",
+            tenantId: "t1",
+            toolPackages: agentToolPackages,
+          }),
         },
         provider: {
           findFirst: async () => ({

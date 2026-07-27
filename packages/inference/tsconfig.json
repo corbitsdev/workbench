@@ -1,11 +1,7 @@
 {
   "extends": "../../tsconfig.json",
-  "include": [
-    "src/**/*.ts"
-  ],
+  "include": ["src/**/*.ts"],
   "compilerOptions": {
-    "customConditions": [
-      "intx-src"
-    ]
+    "customConditions": ["intx-src"]
   }
 }

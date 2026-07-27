@@ -3,15 +3,15 @@ import { runLocal } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { evaluateSelector } from "@intx/workflow/runtime";
 import type { ActionHandler } from "@intx/workflow";
-import { mergeHeartbeatBriefSources } from "@workbench/shared";
 import {
-  DETERMINISTIC_TOOL_KIND,
-  STEP_ARGMAP_TAG,
-  STEP_KIND_TAG,
-  STEP_NONFATAL_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
-import { WIRED_BRIEF_SOURCES } from "@workbench/shared";
+  mergeHeartbeatBriefSources,
+  WIRED_BRIEF_SOURCES,
+} from "./heartbeat-shared";
+import {
+  assertGateStepsHaveStepUIEntry,
+  assertStepUIKeysMatchStepIds,
+  STEP_UI,
+} from "./step-ui";
 
 import {
   workflow,
@@ -22,7 +22,10 @@ import {
   WRITE_ARTIFACT_HANDLER,
   HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER,
   MAIL_SEND_HANDLER,
+  HEARTBEAT_INTAKE_SOURCE_HANDLER,
 } from "./index";
+
+const STEP_TITLE_TAG = "workbench.title";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -46,7 +49,11 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
  * native `action` primitives (no agent, no step-tool tags — dispatched via
  * `runLocal`'s `actionResolver`, not `invokeStep`).
  */
-function makeRecordingActionResolver(outputs: Record<string, unknown> = {}): {
+type ActionOutput = unknown | ((input: Record<string, unknown>) => unknown);
+
+function makeRecordingActionResolver(
+  outputs: Record<string, ActionOutput> = {},
+): {
   resolver: (ref: string) => ActionHandler;
   ran: { handler: string; input: unknown }[];
 } {
@@ -54,7 +61,13 @@ function makeRecordingActionResolver(outputs: Record<string, unknown> = {}): {
   const resolver = (ref: string): ActionHandler => {
     return async (input) => {
       ran.push({ handler: ref, input });
-      return outputs[ref] ?? null;
+      const output = outputs[ref];
+      if (typeof output === "function") {
+        return (output as (input: Record<string, unknown>) => unknown)(
+          input as Record<string, unknown>,
+        );
+      }
+      return output ?? null;
     };
   };
   return { resolver, ran };
@@ -78,80 +91,6 @@ function actionPrimitive(id: string) {
     );
   }
   return primitive;
-}
-
-// Mirror of the sidecar's argMap reshape (`runDeterministicToolStep`): each key
-// pulls a top-level field (`{ from }`), a constant (`{ literal }`), or a field
-// off a JSON envelope (`{ fromJson, field }` — for stringTool outputs whose
-// payload is `{ content: "<json>" }`). Required `from` / `fromJson` fields throw
-// when absent (same fail-loud contract as the sidecar harness). Used to prove
-// the mail/artifact argMaps resolve against a real merged step input, not just
-// to snapshot the static tag.
-function resolveArgMap(
-  argMap: Record<
-    string,
-    | { from: string; optional?: boolean }
-    | { literal: unknown }
-    | { fromJson: string; field: string; optional?: boolean }
-  >,
-  input: Record<string, unknown>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, spec] of Object.entries(argMap)) {
-    if ("literal" in spec) {
-      out[key] = spec.literal;
-      continue;
-    }
-    if ("fromJson" in spec) {
-      const envelope =
-        spec.fromJson in input ? input[spec.fromJson] : undefined;
-      let parsed: unknown;
-      if (typeof envelope === "string") {
-        try {
-          parsed = JSON.parse(envelope);
-        } catch {
-          parsed = undefined;
-        }
-      } else if (envelope !== null && typeof envelope === "object") {
-        parsed = envelope;
-      }
-      const record =
-        parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-          ? (parsed as Record<string, unknown>)
-          : undefined;
-      const fieldPresent = record !== undefined && spec.field in record;
-      if (!fieldPresent) {
-        if (spec.optional === true) continue;
-        throw new Error(
-          `argMap maps tool arg "${key}" from JSON field "${spec.field}" of input field "${spec.fromJson}", but that field is absent on the evaluated step input`,
-        );
-      }
-      out[key] = record[spec.field];
-      continue;
-    }
-    const present = spec.from in input;
-    if (!present) {
-      if (spec.optional === true) continue;
-      throw new Error(
-        `argMap maps tool arg "${key}" from input field "${spec.from}", but that field is absent on the evaluated step input`,
-      );
-    }
-    out[key] = input[spec.from];
-  }
-  return out;
-}
-
-function argMapOf(
-  id: string,
-): Record<
-  string,
-  | { from: string; optional?: boolean }
-  | { literal: unknown }
-  | { fromJson: string; field: string; optional?: boolean }
-> {
-  const tag = stepPrimitive(id).agent.tags?.[STEP_ARGMAP_TAG];
-  if (tag === undefined) throw new Error(`expected argMap tag on step "${id}"`);
-  return JSON.parse(tag);
 }
 
 const TRIGGER_PAYLOAD = {
@@ -340,26 +279,29 @@ describe("heartbeat native workflow", () => {
     expect(notify.after).toEqual(["notify-prep"]);
   });
 
-  test("each generated intake step is a deterministic call to its source's tool, nonFatal, with no inference source", () => {
+  test("each generated intake step is a native action calling heartbeat_intake_source, parameterized by its source's tool", () => {
     for (const source of WIRED_BRIEF_SOURCES) {
-      const intake = stepPrimitive(heartbeatIntakeStepKey(source.key));
-      expect(intake.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-      expect(intake.agent.tags?.[STEP_TOOL_TAG]).toContain(source.tool);
-      expect(intake.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
-      expect(intake.agent.inference.sources).toEqual([]);
-      expect(intake.input).toEqual({ from: "trigger.payload" });
-      expect(intake.agent.tags?.[STEP_ARGMAP_TAG]).toBe(
-        JSON.stringify({
-          enabledSources: { from: "enabledSources" },
-          createdAfter: { from: "createdAfter" },
-        }),
-      );
+      const intake = actionPrimitive(heartbeatIntakeStepKey(source.key));
+      expect(intake.handler).toBe(HEARTBEAT_INTAKE_SOURCE_HANDLER);
+      expect(intake.effect?.requires).toEqual([
+        HEARTBEAT_INTAKE_SOURCE_HANDLER,
+      ]);
+      expect(intake.input).toEqual({
+        merge: [
+          {
+            project: { from: "trigger.payload" },
+            fields: ["enabledSources", "createdAfter"],
+          },
+          { literal: { tool: source.tool } },
+        ],
+      });
       expect(intake.after).toBeUndefined();
     }
   });
 
-  // Load-bearing: today's catalog generates one nonFatal intake step per
-  // wired source, with merge-sources depending on all of them.
+  // Load-bearing: today's catalog generates one intake action step per wired
+  // source, all calling the same generic wrapper handler, parameterized by
+  // `tool`, with merge-sources depending on all of them.
   test("today's catalog generates one intake step per wired source", () => {
     expect(WIRED_BRIEF_SOURCES.map((s) => s.key).sort()).toEqual([
       "attio",
@@ -367,10 +309,13 @@ describe("heartbeat native workflow", () => {
       "linear",
       "vercel",
     ]);
-    const intake = stepPrimitive(heartbeatIntakeStepKey("granola"));
-    expect(intake.agent.id).toBe("heartbeat-intake-granola");
-    expect(intake.agent.tags?.[STEP_TOOL_TAG]).toContain("granola_list_notes");
-    expect(intake.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+    const intake = actionPrimitive(heartbeatIntakeStepKey("granola"));
+    expect(intake.handler).toBe(HEARTBEAT_INTAKE_SOURCE_HANDLER);
+    const evaluated = evaluateSelector(intake.input!, {
+      trigger: { payload: { enabledSources: ["granola"] } },
+      steps: {},
+    }) as Record<string, unknown>;
+    expect(evaluated.tool).toBe("granola_list_notes");
     expect(actionPrimitive("merge-sources").after).toEqual(
       WIRED_BRIEF_SOURCES.map((s) => heartbeatIntakeStepKey(s.key)),
     );
@@ -379,10 +324,9 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Inline-inference brief step (default model)
   // -------------------------------------------------------------------------
-  test("brief is a native reasoning step (agentStep) with a real prompt and the default model", () => {
+  test("brief is a native reasoning step (step({ agent })) with a real prompt and the default model", () => {
     const brief = stepPrimitive("brief");
-    expect(brief.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
-    expect(brief.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
+    expect(brief.agent.tags?.[STEP_TITLE_TAG]).toBe("Write the brief");
     expect(brief.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(brief.agent.capabilities).toEqual([]);
     // No per-step model preference declared → the deploy default model
@@ -390,32 +334,47 @@ describe("heartbeat native workflow", () => {
     expect(brief.agent.inference.sources).toEqual([]);
   });
 
+  test("STEP_UI declares an entry for every real step id, and heartbeat has no awaitSignal gate to require one", () => {
+    assertStepUIKeysMatchStepIds(STEP_UI, Object.keys(workflow.steps));
+    const gateStepIds = Object.entries(workflow.steps)
+      .filter(([, primitive]) => primitive.kind === "awaitSignal")
+      .map(([id]) => id);
+    expect(gateStepIds).toEqual([]);
+    assertGateStepsHaveStepUIEntry(STEP_UI, gateStepIds);
+  });
+
   // -------------------------------------------------------------------------
   // Selector wiring
   // -------------------------------------------------------------------------
-  test("every intake step reads trigger.payload and narrows tool args via the shared fetch argMap", () => {
+  test("every intake step reads trigger.payload and narrows to { tool, enabledSources, createdAfter }", () => {
     for (const source of WIRED_BRIEF_SOURCES) {
-      const intake = stepPrimitive(heartbeatIntakeStepKey(source.key));
-      expect(intake.input).toEqual({ from: "trigger.payload" });
-      expect(argMapOf(heartbeatIntakeStepKey(source.key))).toEqual({
-        enabledSources: { from: "enabledSources" },
-        createdAfter: { from: "createdAfter" },
+      const intake = actionPrimitive(heartbeatIntakeStepKey(source.key));
+      expect(intake.input).toEqual({
+        merge: [
+          {
+            project: { from: "trigger.payload" },
+            fields: ["enabledSources", "createdAfter"],
+          },
+          { literal: { tool: source.tool } },
+        ],
       });
     }
   });
 
-  // Both argMap fields are non-optional, which is only safe because
-  // `enrichHeartbeatTriggerPayload` (apps/hub/src/lib/heartbeat-trigger-payload.ts)
-  // stamps both unconditionally on every heartbeat fire — proves the argMap
-  // actually resolves against the real enriched trigger payload shape, not
-  // just that the static tag looks right.
-  test("intake argMap resolves enabledSources/createdAfter from a real enriched trigger payload", () => {
-    const args = resolveArgMap(
-      argMapOf(heartbeatIntakeStepKey("granola")),
-      TRIGGER_PAYLOAD,
-    );
-    expect(args.enabledSources).toEqual(TRIGGER_PAYLOAD.enabledSources);
-    expect(args.createdAfter).toBe(TRIGGER_PAYLOAD.createdAfter);
+  // Proves the selector actually resolves against the real enriched trigger
+  // payload shape (`enrichHeartbeatTriggerPayload`,
+  // apps/hub/src/lib/heartbeat-trigger-payload.ts stamps both fields
+  // unconditionally on every heartbeat fire), not just that the static
+  // selector looks right.
+  test("intake selector resolves enabledSources/createdAfter/tool from a real enriched trigger payload", () => {
+    const intake = actionPrimitive(heartbeatIntakeStepKey("granola"));
+    const evaluated = evaluateSelector(intake.input!, {
+      trigger: { payload: TRIGGER_PAYLOAD },
+      steps: {},
+    }) as Record<string, unknown>;
+    expect(evaluated.enabledSources).toEqual(TRIGGER_PAYLOAD.enabledSources);
+    expect(evaluated.createdAfter).toBe(TRIGGER_PAYLOAD.createdAfter);
+    expect(evaluated.tool).toBe("granola_list_notes");
   });
 
   test("brief merges the trigger payload and merged sources content", () => {
@@ -496,17 +455,23 @@ describe("heartbeat native workflow", () => {
     const briefReply =
       "# Morning brief\n\n## What happened\n- Discovery call with Acme.";
     const { invoker, ran: stepRan } = makeRecordingInvoker({
-      "heartbeat-intake-granola": {
-        notes: [{ id: "note_1", title: "Acme call", summary: "Discovery" }],
-      },
-      "heartbeat-intake-linear": { issues: [] },
-      "heartbeat-intake-attio": {
-        attioActivity: { newCompanies: [], openTasks: [] },
-      },
-      "heartbeat-intake-vercel": { deployments: [] },
       "heartbeat-brief": { reply: briefReply },
     });
+    const intakeContentByTool: Record<string, unknown> = {
+      granola_list_notes: {
+        notes: [{ id: "note_1", title: "Acme call", summary: "Discovery" }],
+      },
+      linear_list_issues: { issues: [] },
+      attio_recent_activity: {
+        attioActivity: { newCompanies: [], openTasks: [] },
+      },
+      vercel_list_deployments: { deployments: [] },
+    };
     const { resolver, ran: actionRan } = makeRecordingActionResolver({
+      [HEARTBEAT_INTAKE_SOURCE_HANDLER]: (input: Record<string, unknown>) => ({
+        content: JSON.stringify(intakeContentByTool[input.tool as string]),
+        isError: false,
+      }),
       [HEARTBEAT_MERGE_BRIEF_SOURCES_HANDLER]: {
         content: {
           sources: {
@@ -569,10 +534,14 @@ describe("heartbeat native workflow", () => {
 
     const ranStepIds = stepRan.map((r) => r.id);
     const ranHandlers = actionRan.map((r) => r.handler);
-    expect(ranStepIds).toContain("heartbeat-intake-granola");
-    expect(ranStepIds).toContain("heartbeat-intake-linear");
-    expect(ranStepIds).toContain("heartbeat-intake-attio");
-    expect(ranStepIds).toContain("heartbeat-intake-vercel");
+    const intakeCalls = actionRan.filter(
+      (r) => r.handler === HEARTBEAT_INTAKE_SOURCE_HANDLER,
+    );
+    expect(intakeCalls.length).toBe(WIRED_BRIEF_SOURCES.length);
+    const calledTools = intakeCalls
+      .map((r) => (r.input as Record<string, unknown>).tool)
+      .sort();
+    expect(calledTools).toEqual(WIRED_BRIEF_SOURCES.map((s) => s.tool).sort());
     expect(ranStepIds).toContain("heartbeat-brief");
     expect(ranHandlers).toContain(HEARTBEAT_MERGE_BRIEF_SOURCES_HANDLER);
     expect(ranHandlers).toContain(HEARTBEAT_FORMAT_BRIEF_TITLE_HANDLER);
@@ -591,21 +560,126 @@ describe("heartbeat native workflow", () => {
   });
 
   // -------------------------------------------------------------------------
+  // A failing source degrades the brief, never the run
+  // -------------------------------------------------------------------------
+  test("one source's intake action returning a degraded envelope still completes the run", async () => {
+    const briefReply = "# Morning brief\n\nMostly clear.";
+    const { invoker } = makeRecordingInvoker({
+      "heartbeat-brief": { reply: briefReply },
+    });
+    const intakeContentByTool: Record<string, unknown> = {
+      granola_list_notes: { notes: [] },
+      linear_list_issues: { issues: [] },
+      vercel_list_deployments: { deployments: [] },
+    };
+    const { resolver, ran: actionRan } = makeRecordingActionResolver({
+      // `heartbeat_intake_source`'s real contract: the outer
+      // `ToolResult.isError` is ALWAYS false — `runDeterministicToolStep`
+      // (apps/sidecar/src/step-tool-harness.ts) is used for native `action`
+      // dispatch too and throws whenever the outer `isError` is true, and
+      // `ActionPrimitive` has no `nonFatal` escape, so that throw would fail
+      // this whole run. A missing credential or source-side failure is
+      // carried inside `content` as `{ isError: true, error }` instead —
+      // exactly what this mock returns for attio here, proving that shape
+      // alone (never an outer isError, never a throw) is what keeps the run
+      // completing. `mergeHeartbeatBriefSources` parsing that nested shape
+      // into a per-source "not available" note is covered directly against
+      // the real function in `heartbeat-brief-merge.test.ts`
+      // (`@workbench/shared`) — this test proves the run-level half: the
+      // degraded envelope this wrapper produces never reaches `ctx.perform`
+      // as a failure.
+      [HEARTBEAT_INTAKE_SOURCE_HANDLER]: (input: Record<string, unknown>) => {
+        const tool = input.tool as string;
+        if (tool === "attio_recent_activity") {
+          return {
+            isError: false,
+            content: {
+              isError: true,
+              error: "source unavailable: no attio credential configured",
+            },
+          };
+        }
+        return {
+          content: JSON.stringify(intakeContentByTool[tool]),
+          isError: false,
+        };
+      },
+      [HEARTBEAT_MERGE_BRIEF_SOURCES_HANDLER]: {
+        content: {
+          sources: {
+            granola: { notes: [] },
+            linear: { issues: [] },
+            attio: {
+              isError: true,
+              error: "source unavailable: no attio credential configured",
+            },
+            vercel: { deployments: [] },
+          },
+        },
+      },
+      [HEARTBEAT_FORMAT_BRIEF_TITLE_HANDLER]: {
+        content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
+      },
+      [HEARTBEAT_FORMAT_BRIEF_DOCUMENT_HANDLER]: {
+        content: {
+          title: "Jordan Lee's Morning Brief - 04/07/26",
+          body: briefReply,
+        },
+      },
+      [WRITE_ARTIFACT_HANDLER]: {
+        content: {
+          artifactId: "art_1",
+          version: 1,
+          title: "Jordan Lee's Morning Brief - 04/07/26",
+        },
+      },
+      [HEARTBEAT_FORMAT_BRIEF_NOTIFY_HANDLER]: {
+        content: {
+          to: TRIGGER_PAYLOAD.userAddress,
+          subject: "Jordan Lee's Morning Brief - 04/07/26",
+          content: briefReply,
+          refs: [],
+        },
+      },
+      [MAIL_SEND_HANDLER]: { messageId: "mail_1" },
+    });
+
+    const run = runLocal(workflow, {
+      invokeStep: invoker,
+      actionResolver: resolver,
+      triggerPayload: TRIGGER_PAYLOAD,
+    });
+    const result = await run.complete;
+
+    // The genuine capability-gap fix: the run completes even though one
+    // intake step's tool call failed — a thrown tool error, or an outer
+    // isError, inside an `action`'s handler would have failed the whole run
+    // (no `nonFatal` on `ActionPrimitive`), so this only passes because
+    // `heartbeat_intake_source` never produces either for a source failure.
+    expect(result.terminalStatus).toBe("completed");
+
+    const attioCall = actionRan.find(
+      (r) =>
+        r.handler === HEARTBEAT_INTAKE_SOURCE_HANDLER &&
+        (r.input as Record<string, unknown>).tool === "attio_recent_activity",
+    );
+    if (attioCall === undefined) throw new Error("attio intake did not run");
+  });
+
+  // -------------------------------------------------------------------------
   // Integration seam — the mail step's decoded args carry the firing user's
   // usr_ address and the brief body; the artifact persists the same brief.
   // -------------------------------------------------------------------------
   test("mail_send receives the firing user's usr_ address and the artifact persists the brief", async () => {
     const briefReply = "# Morning brief\n\nAll clear today.";
     const { invoker } = makeRecordingInvoker({
-      "heartbeat-intake-granola": { notes: [] },
-      "heartbeat-intake-linear": { issues: [] },
-      "heartbeat-intake-attio": {
-        attioActivity: { newCompanies: [], openTasks: [] },
-      },
-      "heartbeat-intake-vercel": { deployments: [] },
       "heartbeat-brief": { reply: briefReply },
     });
     const { resolver, ran } = makeRecordingActionResolver({
+      [HEARTBEAT_INTAKE_SOURCE_HANDLER]: {
+        content: JSON.stringify({}),
+        isError: false,
+      },
       [HEARTBEAT_MERGE_BRIEF_SOURCES_HANDLER]: {
         content: {
           sources: {

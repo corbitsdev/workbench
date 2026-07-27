@@ -22,4 +22,8 @@ describe("artifact-session-enrichment", () => {
     expect(workflowRunStatusToSessionStatus("completed")).toBe("done");
     expect(workflowRunStatusToSessionStatus("failed")).toBe("failed");
   });
+
+  it("maps a user-stopped run to a terminal, non-processing status", () => {
+    expect(workflowRunStatusToSessionStatus("stopped")).toBe("failed");
+  });
 });

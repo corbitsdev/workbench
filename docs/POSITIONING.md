@@ -48,12 +48,12 @@ The narrative:
 Each buyer-facing claim is backed by architecture that already exists or is on
 the locked roadmap:
 
-| Claim                        | What backs it                                                                                    |
-| ---------------------------- | ------------------------------------------------------------------------------------------------ |
-| AI teammates, not tools      | Agents have inboxes, identities, grants, provenance — the same multiplayer physics as humans     |
-| They know *your* business    | Evidence captured as a side effect of working; answers cited or silent                           |
-| They never act without you   | HITL execute and approval gates on every external side effect — the trust rail is the product    |
-| Your data stays yours        | BYO LLM keys, owner-plugged self-host inference endpoints, sources stay systems of record        |
+| Claim                      | What backs it                                                                                 |
+| -------------------------- | --------------------------------------------------------------------------------------------- |
+| AI teammates, not tools    | Agents have inboxes, identities, grants, provenance — the same multiplayer physics as humans  |
+| They know _your_ business  | Evidence captured as a side effect of working; answers cited or silent                        |
+| They never act without you | HITL execute and approval gates on every external side effect — the trust rail is the product |
+| Your data stays yours      | BYO LLM keys, owner-plugged self-host inference endpoints, sources stay systems of record     |
 
 ## What GTM is in this picture
 

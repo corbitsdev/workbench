@@ -68,6 +68,37 @@
   ],
   "requiresIntake": true,
   "humanGateCount": 3,
+  "intakeFields": [
+    {
+      "name": "url",
+      "label": "Website URL",
+      "inputHint": "text",
+      "required": true,
+      "placeholder": "https://example.com",
+      "order": 0
+    },
+    {
+      "name": "brandName",
+      "label": "Brand name (optional)",
+      "inputHint": "text",
+      "placeholder": "Acme",
+      "order": 1
+    },
+    {
+      "name": "targetGeography",
+      "label": "Target geography (optional)",
+      "inputHint": "text",
+      "placeholder": "North America",
+      "order": 2
+    },
+    {
+      "name": "icpHints",
+      "label": "ICP / audience hints (optional)",
+      "inputHint": "textarea",
+      "placeholder": "Who is the ideal customer? What problems do they have?",
+      "order": 3
+    }
+  ],
   "definition": {
     "id": "reddit-opportunity-scanner",
     "triggers": [
@@ -83,29 +114,17 @@
         "drainBehavior": "wait"
       },
       "scrape": {
-        "kind": "step",
+        "kind": "action",
         "id": "scrape",
-        "agent": {
-          "id": "reddit-opp-scrape",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
-            "workbench.argMap": "{\"url\":{\"from\":\"inputUrl\"}}",
-            "workbench.title": "Scan the website"
-          }
-        },
+        "handler": "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
         "drainBehavior": "cancel",
         "input": {
           "from": "steps.intake.output"
+        },
+        "effect": {
+          "requires": [
+            "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape"
+          ]
         },
         "after": [
           "intake"
@@ -152,37 +171,17 @@
         ]
       },
       "collect": {
-        "kind": "map",
+        "kind": "action",
         "id": "collect",
-        "over": {
-          "from": "steps.review.output.searches"
+        "handler": "@workbench/workflow-reddit-opportunity-scanner/collect:reddit_opportunity_scanner_collect_searches",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.review.output"
         },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "reddit-opp-collect-search",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-reddit/reddit:reddit_subreddit_search"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-reddit/reddit:reddit_subreddit_search",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-reddit/reddit:reddit_subreddit_search",
-              "workbench.argMap": "{\"subreddit\":{\"from\":\"subreddit\"},\"query\":{\"from\":\"query\"},\"sort\":{\"from\":\"sort\"},\"timeframe\":{\"from\":\"timeframe\"},\"limit\":{\"from\":\"limit\"}}",
-              "workbench.nonFatal": "true",
-              "workbench.title": "Search each subreddit"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
+        "effect": {
+          "requires": [
+            "@workbench/workflow-reddit-opportunity-scanner/collect:reddit_opportunity_scanner_collect_searches"
+          ]
         },
         "after": [
           "review"
@@ -193,7 +192,7 @@
         "id": "curate",
         "agent": {
           "id": "reddit-opp-curate",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are the editorial judgment for a Reddit opportunity scanner. You receive the website strategy, the approved search plan, and deterministic Reddit search results. Turn the evidence into a short ranked list of GTM opportunities a human can review and save.\n\nInput: an object with two fields:\n- review.output: the approved plan — businessContext, keywords, subreddits, competitors, and searches\n- collect.output: one Reddit result list per approved search; each item may include title, url, author, publishedAt, engagement, and topComments\n\nJudge hard. Most Reddit search results are noise.\n\nKeep a thread only when it shows at least one of these signals (these map from the plan's search intents: buying-intent → buying-signal, competitor-frustration → competitor-mention, and workaround / language-mining surface as pain-point):\n- buying-signal: asks for tool/vendor recommendations, pricing, implementation help, migration advice, templates, integrations, examples, or alternatives\n- pain-point: states an active problem, workaround, broken workflow, manual process, blocker, risk, or repeated frustration the scanned business can credibly address\n- competitor-mention: compares vendors, complains about an alternative, describes switching intent, or exposes positioning language\n\nDrop these completely:\n- hiring posts, memes, generic news, promo posts, SEO spam, vague opinions, low-context link drops, and threads unrelated to the ICP\n- competitor mentions that are neutral name-drops with no pain, switching, comparison, or positioning insight\n- duplicate threads or near-duplicates from multiple searches\n\nReturn strict JSON only. No markdown fences, no prose. Match this exact shape:\n{\n  \"opportunities\": [\n    {\n      \"id\": \"short-url-safe-slug\",\n      \"title\": \"thread title\",\n      \"subreddit\": \"name without r/\",\n      \"signal\": \"buying-signal|pain-point|competitor-mention\",\n      \"score\": 1,\n      \"url\": \"full reddit url\",\n      \"evidence\": \"verbatim thread title or top comment that proves the signal\",\n      \"whyItMatters\": \"one or two sentences tying the thread to the business and ICP\",\n      \"suggestedAction\": \"specific next action for GTM: reply angle, content idea, objection to address, or sales follow-up\",\n      \"content\": \"paste-ready markdown opportunity brief\"\n    }\n  ]\n}\n\nScoring:\n- 5: explicit buying motion or urgent pain from the ICP with clear next action\n- 4: strong pain, competitor frustration, or implementation blocker with useful language\n- 3: relevant but less urgent signal\n- 2: marginal signal; usually drop rather than pad the list\n- 1: weak or off-ICP; drop\n\nRules:\n- Return at most 12 opportunities, ranked by score then specificity.\n- If evidence is weak, return fewer rather than filling the list.\n- evidence must be a verbatim title or top comment from the input. Never invent quotes, URLs, subreddits, scores, or engagement.\n- content must be a self-contained markdown brief with: source link, signal, evidence, why it matters, and suggested action.\n- Write whyItMatters, suggestedAction, and content in plain, specific language: state what the thread is and what to do. No hype, no vague modifiers, no filler.\n- Use only the supplied Reddit evidence and approved strategy.",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are the editorial judgment for a Reddit opportunity scanner. You receive the website strategy, the approved search plan, and deterministic Reddit search results. Turn the evidence into a short ranked list of GTM opportunities a human can review and save.\n\nInput: an object with two fields:\n- review.output: the approved plan — businessContext, keywords, subreddits, competitors, and searches\n- collect.output.content.results: an array, one entry per approved search, in the same order as review.output.searches. Each entry is either that search's Reddit result list (items may include title, url, author, publishedAt, engagement, and topComments), or a failed-search marker shaped like { isError: true, error } — a search that returned this marker found nothing; skip it, do not treat it as evidence\n\nJudge hard. Most Reddit search results are noise.\n\nKeep a thread only when it shows at least one of these signals (these map from the plan's search intents: buying-intent → buying-signal, competitor-frustration → competitor-mention, and workaround / language-mining surface as pain-point):\n- buying-signal: asks for tool/vendor recommendations, pricing, implementation help, migration advice, templates, integrations, examples, or alternatives\n- pain-point: states an active problem, workaround, broken workflow, manual process, blocker, risk, or repeated frustration the scanned business can credibly address\n- competitor-mention: compares vendors, complains about an alternative, describes switching intent, or exposes positioning language\n\nDrop these completely:\n- hiring posts, memes, generic news, promo posts, SEO spam, vague opinions, low-context link drops, and threads unrelated to the ICP\n- competitor mentions that are neutral name-drops with no pain, switching, comparison, or positioning insight\n- duplicate threads or near-duplicates from multiple searches\n\nReturn strict JSON only. No markdown fences, no prose. Match this exact shape:\n{\n  \"opportunities\": [\n    {\n      \"id\": \"short-url-safe-slug\",\n      \"title\": \"thread title\",\n      \"subreddit\": \"name without r/\",\n      \"signal\": \"buying-signal|pain-point|competitor-mention\",\n      \"score\": 1,\n      \"url\": \"full reddit url\",\n      \"evidence\": \"verbatim thread title or top comment that proves the signal\",\n      \"whyItMatters\": \"one or two sentences tying the thread to the business and ICP\",\n      \"suggestedAction\": \"specific next action for GTM: reply angle, content idea, objection to address, or sales follow-up\",\n      \"content\": \"paste-ready markdown opportunity brief\"\n    }\n  ]\n}\n\nScoring:\n- 5: explicit buying motion or urgent pain from the ICP with clear next action\n- 4: strong pain, competitor frustration, or implementation blocker with useful language\n- 3: relevant but less urgent signal\n- 2: marginal signal; usually drop rather than pad the list\n- 1: weak or off-ICP; drop\n\nRules:\n- Return at most 12 opportunities, ranked by score then specificity.\n- If evidence is weak, return fewer rather than filling the list.\n- evidence must be a verbatim title or top comment from the input. Never invent quotes, URLs, subreddits, scores, or engagement.\n- content must be a self-contained markdown brief with: source link, signal, evidence, why it matters, and suggested action.\n- Write whyItMatters, suggestedAction, and content in plain, specific language: state what the thread is and what to do. No hype, no vague modifiers, no filler.\n- Use only the supplied Reddit evidence and approved strategy.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
@@ -236,36 +235,17 @@
         ]
       },
       "persist": {
-        "kind": "map",
+        "kind": "action",
         "id": "persist",
-        "over": {
-          "from": "steps.selection.output.selected"
+        "handler": "@workbench/workflow-reddit-opportunity-scanner/persist:reddit_opportunity_scanner_persist_items",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.selection.output"
         },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "reddit-opp-persist-item",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-artifact/artifact:artifact_create"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"literal\":\"reddit-opportunity-scan\"},\"content\":{\"from\":\"content\"}}",
-              "workbench.title": "Save each opportunity"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
+        "effect": {
+          "requires": [
+            "@workbench/workflow-reddit-opportunity-scanner/persist:reddit_opportunity_scanner_persist_items"
+          ]
         },
         "after": [
           "selection"

@@ -44,7 +44,11 @@ export async function listUsers(
   signal: AbortSignal,
 ): Promise<unknown> {
   const args = parseArgs(ListUsersArgsSchema, rawArgs, "linear_list_users");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const query = optionalString(args.query);
   const team = optionalString(args.team);
   const filter: Record<string, unknown> = {};
@@ -72,7 +76,12 @@ export async function getUser(
   signal: AbortSignal,
 ): Promise<unknown> {
   const args = parseArgs(GetUserArgsSchema, rawArgs, "linear_get_user");
-  const data = await fetchLinearGraphQL(config, GET_USER_QUERY, { id: args.id }, signal);
+  const data = await fetchLinearGraphQL(
+    config,
+    GET_USER_QUERY,
+    { id: args.id },
+    signal,
+  );
   if (data.user === null || data.user === undefined) {
     throw new Error(`Linear user not found: ${args.id}`);
   }

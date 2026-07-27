@@ -12,9 +12,13 @@ describe("linear_list_webhooks", () => {
   it("lists webhooks", async () => {
     const nodes = [{ id: "w1", url: "https://hook", enabled: true }];
     const fetcher = makeFetchStub({
-      data: { webhooks: { nodes, pageInfo: { endCursor: null, hasNextPage: false } } },
+      data: {
+        webhooks: { nodes, pageInfo: { endCursor: null, hasNextPage: false } },
+      },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "1", name: "linear_list_webhooks", arguments: {} },
@@ -34,7 +38,9 @@ describe("linear_save_webhook", () => {
         data: { webhookCreate: { success: true, webhook: { id: "w-new" } } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -59,7 +65,9 @@ describe("linear_save_webhook", () => {
         data: { webhookUpdate: { success: true, webhook: { id: "w1" } } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
@@ -79,7 +87,9 @@ describe("linear_delete_webhook", () => {
     const fetcher = makeRoutingFetchStub([
       { includes: "webhookDelete", data: { webhookDelete: { success: true } } },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "1", name: "linear_delete_webhook", arguments: { id: "w1" } },

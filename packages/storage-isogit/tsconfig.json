@@ -13,17 +13,9 @@
     "noImplicitOverride": true,
     "exactOptionalPropertyTypes": true,
     "noEmit": true,
-    "lib": [
-      "ESNext"
-    ],
-    "types": [
-      "bun"
-    ],
-    "customConditions": [
-      "intx-src"
-    ]
+    "lib": ["ESNext"],
+    "types": ["bun"],
+    "customConditions": ["intx-src"]
   },
-  "include": [
-    "src/**/*.ts"
-  ]
+  "include": ["src/**/*.ts"]
 }

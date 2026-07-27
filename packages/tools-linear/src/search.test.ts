@@ -7,12 +7,23 @@ describe("linear_search", () => {
   it("searches issues by term with pagination", async () => {
     const nodes = [{ id: "i1", identifier: "ENG-1", title: "auth" }];
     const fetcher = makeFetchStub({
-      data: { searchIssues: { nodes, pageInfo: { endCursor: null, hasNextPage: false } } },
+      data: {
+        searchIssues: {
+          nodes,
+          pageInfo: { endCursor: null, hasNextPage: false },
+        },
+      },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
-      { id: "1", name: "linear_search", arguments: { query: "auth bug", first: 10 } },
+      {
+        id: "1",
+        name: "linear_search",
+        arguments: { query: "auth bug", first: 10 },
+      },
       new AbortController().signal,
     );
 

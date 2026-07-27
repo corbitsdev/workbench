@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@workbench/ui";
-import type { OAuthProviderConfig } from "@workbench/shared";
+import type { OAuthOwnerAppProviderConfig } from "@workbench/shared";
 import { buildRootUrl } from "../../lib/api";
 
 /**
@@ -15,7 +15,7 @@ import { buildRootUrl } from "../../lib/api";
 export function OAuthAppSetupPanel({
   config,
 }: {
-  config: OAuthProviderConfig;
+  config: OAuthOwnerAppProviderConfig;
 }) {
   // The callback is a HUB route, not the web app origin — build it from the hub
   // base so the owner registers the URL the provider will actually redirect to.

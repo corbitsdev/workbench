@@ -4,16 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schema as intxSchema } from "@intx/db";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
-import { defineWorkflow } from "@intx/workflow";
+import { action, defineWorkflow } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import type { AgentRepoStore, SidecarRouter } from "@workbench/hub-sessions";
 import type { HubDb } from "../db";
-import {
-  createWorkbenchDirectorRegistry,
-  deterministicToolStep,
-  agentStep,
-} from "@workbench/agents";
+import { createWorkbenchDirectorRegistry, agentStep } from "@workbench/agents";
 import { workflowRun } from "../db/schema";
 
 // Per-run deployment (CL-2582): provisionRunDeployment reads the published
@@ -327,7 +323,7 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
   // Native workflow-deployment identity: the minted `dep_` id puts every
   // per-step deploy ack on interchange's workflow-derived-address path, which
   // resolves against the `workflow_deployment` projection row — so the row
-  // must be written at provision, every step (inline, deterministic,
+  // must be written at provision, every step (inline reasoning, action,
   // deployed) stages through the orchestrator's native loop, and
   // `agent_instance` rows stay attribution-only (deployed steps).
   test("writes the native workflow_deployment row and stages every step class", async () => {
@@ -341,10 +337,12 @@ describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {
           id: "analyze",
           systemPrompt: "extract pain points",
         }),
-        fetch: deterministicToolStep({
-          id: "fetch-agent",
-          tool: "fetch_tool",
+        fetch: action({
+          handler: "@workbench/tools-artifact/artifact:artifact_create",
           after: ["analyze"],
+          effect: {
+            requires: ["@workbench/tools-artifact/artifact:artifact_create"],
+          },
         }),
       },
     });

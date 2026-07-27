@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { STEP_ARGMAP_TAG } from "@workbench/agents";
 import {
   buildPainPointCollateralBlocks,
   CONTEXT_SIGNAL,
@@ -10,7 +9,7 @@ import {
   REVIEW_SIGNAL,
   type PainPointCollateralBlockInput,
 } from "./blocks";
-import { workflow } from "./index";
+import { approvedPieceToArtifactCreateArgs } from "./persist-tool";
 
 // A Granola tool step's log output is the tool result envelope: { content: JSON }.
 function toolEnvelope(value: unknown): { content: string } {
@@ -88,7 +87,7 @@ describe("pain-point-collateral dock blocks (CL-2775)", () => {
     expect(blocks.some((b) => b.kind === "link")).toBe(false);
     const error = blocks.find((b) => b.kind === "error");
     if (error?.kind !== "error") throw new Error("expected an error block");
-    expect(error.message).toContain("intake");
+    expect(error.message).toContain("Intake");
     // Classified, plain-language — never the raw provider string.
     expect(error.detail).toBe(
       "Granola declined the request (401). Check the connected Granola credential's access and try again.",
@@ -242,30 +241,10 @@ describe("pain-point-collateral dock blocks (CL-2775)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The persist argMap, read from the real workflow definition — NOT hardcoded, so
-// this test tracks the workflow's actual field mapping (CL-2775 fidelity guard).
+// The persist tool's field mapping, read from the real batch tool — NOT
+// hardcoded, so this test tracks the actual field mapping (CL-2775 fidelity
+// guard), now dispatched from `persist-tool.ts` instead of a workflow argMap.
 // ---------------------------------------------------------------------------
-function persistArgMap(): Record<string, { from: string }> {
-  const persist = workflow.steps.persist;
-  if (persist === undefined || persist.kind !== "map") {
-    throw new Error("expected a persist map step");
-  }
-  const tag = persist.step.agent.tags?.[STEP_ARGMAP_TAG];
-  if (tag === undefined) throw new Error("expected an argMap tag on persist");
-  return JSON.parse(tag) as Record<string, { from: string }>;
-}
-
-function resolveArgMap(
-  argMap: Record<string, { from: string }>,
-  piece: Record<string, unknown>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, selector] of Object.entries(argMap)) {
-    out[key] = piece[selector.from];
-  }
-  return out;
-}
-
 describe("pain-point-collateral review → persist fidelity (CL-2775)", () => {
   const approvedPiece = {
     format: "email",
@@ -273,45 +252,42 @@ describe("pain-point-collateral review → persist fidelity (CL-2775)", () => {
     content: "Hi Acme, following up on the onboarding pain we discussed…",
   };
 
-  test("each reviewList row payload resolves non-empty title/kind/content through the persist argMap", () => {
+  test("each reviewList row payload resolves non-empty title/kind/content through the persist tool's field mapping", () => {
     // The reviewList block builds one row per generated piece, carrying the FULL
     // piece as its payload. On approve, the block emits those payloads verbatim
-    // under `approvedPieces`; the persist map applies its argMap to each. This is
-    // the integrated seam — block row payload → argMap → artifact_create args.
+    // under `approvedPieces`; the persist action's batch tool applies its field
+    // mapping to each. This is the integrated seam — block row payload → the
+    // tool's mapping → artifact_create args.
     const blocks = buildPainPointCollateralBlocks(
       gateInput(REVIEW_SIGNAL, { generate: [reply(approvedPiece)] }),
     );
     const review = blocks.find((b) => b.kind === "reviewList");
     if (review?.kind !== "reviewList") throw new Error("expected reviewList");
 
-    const argMap = persistArgMap();
     for (const row of review.rows) {
-      const args = resolveArgMap(
-        argMap,
+      const args = approvedPieceToArtifactCreateArgs(
         row.payload as Record<string, unknown>,
       );
       expect(args.title).toBe(approvedPiece.title);
       expect(args.kind).toBe(approvedPiece.format);
       expect(args.content).toBe(approvedPiece.content);
       // The load-bearing assertion: content is non-empty. A display-fields-only
-      // row payload would fail here (see the negative control below).
+      // row payload would throw here (see the negative control below).
       expect(typeof args.content === "string" && args.content.length > 0).toBe(
         true,
       );
     }
   });
 
-  test("negative control: a display-fields-only payload resolves EMPTY content (the bug the guard catches)", () => {
+  test("negative control: a display-fields-only payload throws instead of silently persisting empty content", () => {
     // Proves the assertion above has teeth: had the row payload been the display
-    // subset (no `content`), the persist argMap would resolve `content` to
-    // undefined and the created artifact would be empty.
+    // subset (no `content`), the old argMap-based resolution would have silently
+    // resolved `content` to `undefined`. The batch persist tool instead fails
+    // loud — a stricter guard than the mechanism it replaces.
     const displayOnly = {
       format: approvedPiece.format,
       title: approvedPiece.title,
     };
-    const args = resolveArgMap(persistArgMap(), displayOnly);
-    expect(args.content).toBeUndefined();
-    expect(args.title).toBe(approvedPiece.title);
-    expect(args.kind).toBe(approvedPiece.format);
+    expect(() => approvedPieceToArtifactCreateArgs(displayOnly)).toThrow();
   });
 });

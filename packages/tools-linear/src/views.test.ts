@@ -7,9 +7,16 @@ describe("linear_list_views", () => {
   it("lists custom views", async () => {
     const nodes = [{ id: "v1", name: "My view", filterData: {} }];
     const fetcher = makeFetchStub({
-      data: { customViews: { nodes, pageInfo: { endCursor: null, hasNextPage: false } } },
+      data: {
+        customViews: {
+          nodes,
+          pageInfo: { endCursor: null, hasNextPage: false },
+        },
+      },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "1", name: "linear_list_views", arguments: { limit: 5 } },

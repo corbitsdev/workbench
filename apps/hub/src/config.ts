@@ -512,6 +512,20 @@ export function loadConfig() {
 // envelope-encryption key for the per-user tokens, resolved LAZILY (at token
 // write) so a deployment that has not enabled OAuth-for-inbox still boots.
 
+/**
+ * Per-environment allowlist of user-self-OAuth *inference* providers
+ * (`xai-grok`, `chatgpt-codex`). Default EMPTY — those Connect buttons are
+ * hidden and their token endpoints refuse, everywhere, until an operator opts
+ * the environment in with `USER_OAUTH_INFERENCE_PROVIDERS`. Both providers use
+ * a vendor CLI's public client whose registered redirect URI may not cover a
+ * given hub origin, so a visible-by-default button would dead-end at the
+ * authorization server. Resolved per call, not cached in `getConfig()`, so it
+ * stays a deployment switch rather than a boot-time contract.
+ */
+export function enabledUserOAuthInferenceProviders(): readonly string[] {
+  return parseOrigins(optionalEnv("USER_OAUTH_INFERENCE_PROVIDERS"));
+}
+
 /** Dedicated secret for signing the OAuth `state` HMAC. Kept separate from
  * `BETTER_AUTH_SECRET` (least-privilege / blast-radius isolation): the state
  * signer must not share a key with session auth. Resolved lazily (at

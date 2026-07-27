@@ -69,7 +69,9 @@ export function CreateScheduleSummary({
           </div>
         ))}
       </dl>
-      {actions ? <div className="mt-2 flex flex-col gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="mt-2 flex flex-col gap-2">{actions}</div>
+      ) : null}
     </div>
   );
 }

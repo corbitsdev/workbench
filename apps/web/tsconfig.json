@@ -9,8 +9,6 @@
     }
   ],
   "compilerOptions": {
-    "customConditions": [
-      "intx-src"
-    ]
+    "customConditions": ["intx-src"]
   }
 }

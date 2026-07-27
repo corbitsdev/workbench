@@ -1,7 +1,7 @@
-import { awaitSignal, defineWorkflow, map } from "@intx/workflow";
+import { action, awaitSignal, defineWorkflow } from "@intx/workflow";
 import {
-  deterministicToolStep,
   agentStep,
+  canonicalizeStepToolName,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
 import { buildAnalyzeSystemPrompt, buildCurateSystemPrompt } from "./prompts";
@@ -27,6 +27,15 @@ export const kind = "reddit-opportunity-scanner";
 // browser-safe module.
 export { DISPLAY_STEPS } from "./display-steps";
 
+// Schedule-field metadata (CL-4538): re-exported so `build-workflow-defs`
+// (which reads a workflow module's `INTAKE_FIELDS` export) populates the
+// embedded def's `intakeFields` from the SAME list `./blocks.ts`'s intake
+// form renders — without this the Routines/attach form has nothing to
+// render and the /resume boundary rejects the empty payload it collects.
+// Sourced from `./intake-fields` (not `./blocks`) so this server-side entry
+// never gains a runtime edge onto `@workbench/blocks`.
+export { INTAKE_FIELDS } from "./intake-fields";
+
 // -------------------------------------------------------------------------
 // Workflow definition — guided Reddit research flow (CL-2513)
 //
@@ -37,43 +46,27 @@ export { DISPLAY_STEPS } from "./display-steps";
 // (review) and before saving (selection).
 // -------------------------------------------------------------------------
 
-// The collect step's per-row tool-arg mapping — exported so the fidelity
-// integration test asserts against the REAL field names (a typo here fails the
-// map trap the test guards, not a hand-rolled copy).
-export const COLLECT_ARG_MAP = {
-  subreddit: { from: "subreddit" },
-  query: { from: "query" },
-  sort: { from: "sort" },
-  timeframe: { from: "timeframe" },
-  limit: { from: "limit" },
-} as const;
-
-// The persist step's per-opportunity tool-arg mapping — exported for the same
-// reason: the fidelity test reads `title`/`content` from here, not a copy.
-export const PERSIST_ARG_MAP = {
-  title: { from: "title" },
-  kind: { literal: "reddit-opportunity-scan" },
-  content: { from: "content" },
-} as const;
-
-const collectStep = deterministicToolStep({
-  id: "reddit-opp-collect-search",
-  title: "Search each subreddit",
-  tool: "reddit_subreddit_search",
-  // map passes each approved search as trigger.payload.
-  input: { from: "trigger.payload" },
-  argMap: COLLECT_ARG_MAP,
-  nonFatal: true,
-});
-
-const persistStep = deterministicToolStep({
-  id: "reddit-opp-persist-item",
-  title: "Save each opportunity",
-  tool: "artifact_create",
-  // map passes each selected opportunity as trigger.payload.
-  input: { from: "trigger.payload" },
-  argMap: PERSIST_ARG_MAP,
-});
+// Native `action` handler refs. `collect` folds the same way `persist` did:
+// the tool loops over the approved searches in plain TypeScript
+// (`collect-tool.ts`), so `map`'s `StepPrimitive`-only typing gap
+// (interchange/packages/workflow/src/definition/primitives.ts) no longer
+// applies — there is no map left to hit it. This DOES change
+// `steps.collect.output`'s shape (bare array → `{ results: [...] }` under
+// one `ToolResult.content`, see collect-tool.ts) and collapses N per-search
+// checkpoints into 1; `curate`'s system prompt (`prompts.ts`) documents the
+// new shape.
+export const FIRECRAWL_SCRAPE_HANDLER = canonicalizeStepToolName(
+  "reddit-opp-scrape",
+  "firecrawl_scrape",
+);
+export const COLLECT_SEARCHES_HANDLER = canonicalizeStepToolName(
+  "reddit-opp-collect",
+  "reddit_opportunity_scanner_collect_searches",
+);
+export const PERSIST_ITEMS_HANDLER = canonicalizeStepToolName(
+  "reddit-opp-persist",
+  "reddit_opportunity_scanner_persist_items",
+);
 
 export const workflow = defineWorkflow({
   id: kind,
@@ -82,13 +75,14 @@ export const workflow = defineWorkflow({
     // 1. Human supplies the website URL + optional brand / geography / ICP hints.
     intake: awaitSignal({ name: "intake" }),
 
-    // 2. Scrape the site deterministically (was a firecrawl_scrape tool call).
-    scrape: deterministicToolStep({
-      id: "reddit-opp-scrape",
-      title: "Scan the website",
-      tool: "firecrawl_scrape",
+    // 2. Scrape the site. Native action: `firecrawl_scrape`'s schema
+    //    declares `url` verbatim, so intake's own `url` field (renamed from
+    //    the pre-migration `inputUrl` to match the tool arg — native
+    //    selectors cannot rename a key) passes through unchanged.
+    scrape: action({
+      handler: FIRECRAWL_SCRAPE_HANDLER,
       input: { from: "steps.intake.output" },
-      argMap: { url: { from: "inputUrl" } },
+      effect: { requires: [FIRECRAWL_SCRAPE_HANDLER] },
       after: ["intake"],
     }),
 
@@ -111,10 +105,16 @@ export const workflow = defineWorkflow({
     //    ({subreddit, query, sort, timeframe, limit}) for deterministic collection.
     review: awaitSignal({ name: "recommendation-review", after: ["analyze"] }),
 
-    // 5. Deterministically fetch Reddit evidence for each approved search.
-    collect: map({
-      over: { from: "steps.review.output.searches" },
-      step: collectStep,
+    // 5. Deterministically fetch Reddit evidence for every approved search.
+    // Folded from a `map` of single-search `deterministicToolStep`s into one
+    // native `action`: `reddit_opportunity_scanner_collect_searches` loops
+    // over `review.output.searches` in-process (see `collect-tool.ts`),
+    // tolerating a per-search failure inside `content.results[i]` instead of
+    // failing the run.
+    collect: action({
+      handler: COLLECT_SEARCHES_HANDLER,
+      input: { from: "steps.review.output" },
+      effect: { requires: [COLLECT_SEARCHES_HANDLER] },
       after: ["review"],
     }),
 
@@ -140,10 +140,19 @@ export const workflow = defineWorkflow({
       after: ["curate"],
     }),
 
-    // 8. One artifact per selected opportunity, saved deterministically.
-    persist: map({
-      over: { from: "steps.selection.output.selected" },
-      step: persistStep,
+    // 8. Folded from a `map` of single-opportunity `deterministicToolStep`s
+    // into one native `action`: `reddit_opportunity_scanner_persist_items`
+    // loops over `selected` in-process (see `persist-tool.ts`). Fatal by
+    // design (unchanged from the old map): any failed save fails the run.
+    // Folding N per-item steps into one action means a crash mid-save now
+    // re-runs the WHOLE batch on resume instead of resuming after the
+    // already-saved opportunities — a real checkpointing change from the
+    // old per-item map, acceptable given a selected batch is small (the
+    // panel caps at 12 opportunities).
+    persist: action({
+      handler: PERSIST_ITEMS_HANDLER,
+      input: { from: "steps.selection.output" },
+      effect: { requires: [PERSIST_ITEMS_HANDLER] },
       after: ["selection"],
     }),
   },

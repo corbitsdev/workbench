@@ -76,7 +76,11 @@ export async function listIssueLabels(
     rawArgs,
     "linear_list_issue_labels",
   );
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const name = optionalString(args.name);
   const team = optionalString(args.team);
   const filter: Record<string, unknown> = {};
@@ -127,7 +131,11 @@ export async function listProjectLabels(
     rawArgs,
     "linear_list_project_labels",
   );
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const data = await fetchLinearGraphQL(
     config,
     LIST_PROJECT_LABELS_QUERY,
@@ -147,7 +155,11 @@ export async function listInitiativeLabels(
     rawArgs,
     "linear_list_initiative_labels",
   );
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const data = await fetchLinearGraphQL(
     config,
     LIST_INITIATIVE_LABELS_QUERY,

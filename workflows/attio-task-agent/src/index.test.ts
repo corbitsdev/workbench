@@ -3,20 +3,32 @@ import { runLocal } from "@intx/workflow/runlocal";
 import type { ActionHandler } from "@intx/workflow";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import {
-  STEP_ARGMAP_TAG,
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
+  assertGateStepsHaveStepUIEntry,
+  assertStepUIKeysMatchStepIds,
+} from "@workbench/shared";
 import {
+  CLARIFICATION_GATE_HANDLER,
   CREATE_NOTE_HANDLER,
   description,
   GET_TASK_HANDLER,
   label,
   LIST_TASKS_HANDLER,
   LIST_WORKSPACE_MEMBERS_HANDLER,
+  MEMBER_SELECTION_GATE_HANDLER,
+  PERSIST_PIECES_HANDLER,
+  REVIEW_GATE_HANDLER,
+  STEP_UI,
+  SYNC_APPROVAL_GATE_HANDLER,
+  TASK_SELECTION_GATE_HANDLER,
   UPDATE_TASK_HANDLER,
   workflow,
 } from "./index";
+
+// The retired `deterministic-tool` authoring kind's tag. Kept as a literal
+// (not an import from `@workbench/agents`, which no longer exports it) —
+// this test only asserts the tag is ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
 
 function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   invoker: StepInvoker;
@@ -70,16 +82,6 @@ function actionPrimitive(id: string) {
   return primitive;
 }
 
-function mapPrimitive(id: string) {
-  const primitive = workflow.steps[id];
-  if (primitive === undefined || primitive.kind !== "map") {
-    throw new Error(
-      `expected map primitive for "${id}", got ${primitive?.kind ?? "undefined"}`,
-    );
-  }
-  return primitive;
-}
-
 function awaitSignalPrimitive(id: string) {
   const primitive = workflow.steps[id];
   if (primitive === undefined || primitive.kind !== "awaitSignal") {
@@ -122,7 +124,6 @@ describe("attio-task-agent native workflow", () => {
         overall: "Send-ready.",
         items: [{ type: "cold-email", verdict: "pass", notes: "Good." }],
       },
-      "attio-task-agent-persist": { artifactId: "art_1" },
       "attio-task-agent-suggest": "Sent the draft. Next: schedule a follow-up.",
     });
     const { resolver, ran: actionsRan } = makeRecordingActionResolver({
@@ -138,8 +139,30 @@ describe("attio-task-agent native workflow", () => {
         task: { id: { task_id: "task_1" } },
         linkedRecords: [{ object: "companies", recordId: "rec_1" }],
       },
+      [PERSIST_PIECES_HANDLER]: { results: [{ artifactId: "art_1" }] },
       [CREATE_NOTE_HANDLER]: { id: { note_id: "note_1" } },
       [UPDATE_TASK_HANDLER]: { id: { task_id: "task_1" } },
+      [MEMBER_SELECTION_GATE_HANDLER]: {
+        kind: "choice",
+        options: [{ id: "me@abklabs.com", label: "me@abklabs.com" }],
+      },
+      [TASK_SELECTION_GATE_HANDLER]: {
+        kind: "choice",
+        options: [{ id: "task_1", label: "Reach out" }],
+      },
+      [CLARIFICATION_GATE_HANDLER]: {
+        kind: "choice",
+        options: [{ id: "continue", label: "Continue" }],
+      },
+      [REVIEW_GATE_HANDLER]: {
+        kind: "reviewList",
+        displayFields: [{ key: "title", label: "Draft" }],
+        rows: [],
+      },
+      [SYNC_APPROVAL_GATE_HANDLER]: {
+        kind: "choice",
+        options: [{ id: "skip", label: "Skip" }],
+      },
     });
 
     const run = runLocal(workflow, {
@@ -172,12 +195,12 @@ describe("attio-task-agent native workflow", () => {
     expect(ranIds).toContain("attio-task-agent-analyze");
     expect(ranIds).toContain("attio-task-agent-execute");
     expect(ranIds).toContain("attio-task-agent-review-artifacts");
-    expect(ranIds).toContain("attio-task-agent-persist");
 
     const actionRefs = actionsRan.map((r) => r.handler);
     expect(actionRefs).toContain(LIST_WORKSPACE_MEMBERS_HANDLER);
     expect(actionRefs).toContain(LIST_TASKS_HANDLER);
     expect(actionRefs).toContain(GET_TASK_HANDLER);
+    expect(actionRefs).toContain(PERSIST_PIECES_HANDLER);
     expect(actionRefs).toContain(CREATE_NOTE_HANDLER);
     expect(actionRefs).toContain(UPDATE_TASK_HANDLER);
 
@@ -281,23 +304,16 @@ describe("attio-task-agent native workflow", () => {
     expect(s.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(s.agent.capabilities).toEqual([]);
     expect(s.agent.systemPrompt.length).toBeGreaterThan(0);
-    expect(s.agent.inference.sources).toEqual([]);
+    expect(s.agent.inference.sources).toEqual([
+      { provider: "openai-compatible", model: "deepseek-v4-flash" },
+    ]);
   });
 
-  test("persist maps artifact_create over the approved pieces, keying artifact kind off the action type", () => {
-    const persist = mapPrimitive("persist");
-    expect(persist.over).toEqual({
-      from: "steps.review.output.approvedPieces",
-    });
-    const inner = persist.step;
-    expect(inner.agent.tags?.[STEP_TOOL_TAG]).toContain("artifact_create");
-    const argMap = inner.agent.tags?.[STEP_ARGMAP_TAG];
-    if (argMap === undefined) throw new Error("expected argMap on persist");
-    expect(JSON.parse(argMap)).toEqual({
-      title: { from: "title" },
-      kind: { from: "type" },
-      content: { from: "content" },
-    });
+  test("persist is a native action dispatching the batch persist-pieces handler over review.output", () => {
+    const persist = actionPrimitive("persist");
+    expect(persist.handler).toBe(PERSIST_PIECES_HANDLER);
+    expect(persist.input).toEqual({ from: "steps.review.output" });
+    expect(persist.effect).toEqual({ requires: [PERSIST_PIECES_HANDLER] });
   });
 
   test("destructive write-back stays gated on an explicit confirm flag, as native FATAL action primitives", () => {
@@ -347,7 +363,6 @@ describe("attio-task-agent native workflow", () => {
         overall: "ok",
         items: [{ type: "cold-email", verdict: "pass", notes: "" }],
       },
-      "attio-task-agent-persist": { artifactId: "a" },
       "attio-task-agent-suggest": "done",
     });
     const { resolver, ran: actionsRan } = makeRecordingActionResolver({
@@ -380,5 +395,100 @@ describe("attio-task-agent native workflow", () => {
     expect(awaitSignalPrimitive("review").name).toBe("review");
     expect(awaitSignalPrimitive("approveSync").name).toBe("sync-approval");
     expect(workflow.steps.selectKinds).toBeUndefined();
+  });
+
+  // Every gate is preceded by its own gate-prep `action` step (`./tools.ts`),
+  // reading exactly the upstream step(s) its STEP_UI entry's `gateSourceStep`
+  // names — a mismatch here is precisely the "dock renders a payload the
+  // consuming step never reads" bug class this migration is watched for.
+  test("every gate-prep step reads exactly the step(s) its STEP_UI entry sources from", () => {
+    const memberGate = actionPrimitive("memberSelectGate");
+    expect(memberGate.handler).toBe(MEMBER_SELECTION_GATE_HANDLER);
+    expect(memberGate.input).toEqual({
+      project: { from: "steps" },
+      fields: ["listMembers"],
+    });
+    expect(STEP_UI.selectMember?.gateSourceStep).toBe("memberSelectGate");
+
+    const taskGate = actionPrimitive("taskSelectGate");
+    expect(taskGate.handler).toBe(TASK_SELECTION_GATE_HANDLER);
+    expect(taskGate.input).toEqual({
+      project: { from: "steps" },
+      fields: ["listTasks"],
+    });
+    expect(STEP_UI.selectTask?.gateSourceStep).toBe("taskSelectGate");
+
+    const clarifyGate = actionPrimitive("clarifyGate");
+    expect(clarifyGate.handler).toBe(CLARIFICATION_GATE_HANDLER);
+    expect(clarifyGate.input).toEqual({
+      project: { from: "steps" },
+      fields: ["analyze"],
+    });
+    expect(STEP_UI.clarify?.gateSourceStep).toBe("clarifyGate");
+
+    const reviewGate = actionPrimitive("reviewGate");
+    expect(reviewGate.handler).toBe(REVIEW_GATE_HANDLER);
+    expect(reviewGate.input).toEqual({
+      project: { from: "steps" },
+      fields: ["execute", "reviewArtifacts"],
+    });
+    expect(STEP_UI.review?.gateSourceStep).toBe("reviewGate");
+
+    const syncGate = actionPrimitive("syncApprovalGate");
+    expect(syncGate.handler).toBe(SYNC_APPROVAL_GATE_HANDLER);
+    expect(syncGate.input).toEqual({
+      project: { from: "steps" },
+      fields: ["fetchTask", "selectTask", "analyze"],
+    });
+    expect(STEP_UI.approveSync?.gateSourceStep).toBe("syncApprovalGate");
+  });
+
+  test("every gate step's resume payload is read verbatim by its consuming step (no unread field, no missing field)", () => {
+    // member-selection: gate emits { assignee } → listTasks merges
+    // steps.selectMember.output (expects `assignee`).
+    const listTasks = actionPrimitive("listTasks");
+    expect(listTasks.input).toEqual({
+      merge: [
+        { from: "steps.selectMember.output" },
+        { literal: { isCompleted: false } },
+      ],
+    });
+    // task-selection: gate emits { taskId } → fetchTask reads
+    // steps.selectTask.output verbatim (expects `taskId`).
+    expect(actionPrimitive("fetchTask").input).toEqual({
+      from: "steps.selectTask.output",
+    });
+    // clarification: gate folds free text into { answers } → execute merges
+    // steps.clarify.output (buildExecutorSystemPrompt documents `answers`).
+    expect(stepPrimitive("execute").input).toEqual({
+      merge: [
+        { from: "steps.analyze.output" },
+        { from: "steps.fetchTask.output" },
+        { from: "steps.clarify.output" },
+      ],
+    });
+    // review: gate rows carry { type, title, content } under the reviewList's
+    // default approvedKey "approvedPieces" → persist reads
+    // steps.review.output verbatim and requires exactly those three fields
+    // (persist-pieces' inputSchema).
+    expect(actionPrimitive("persist").input).toEqual({
+      from: "steps.review.output",
+    });
+    // sync-approval: the confirm option's payload carries
+    // { confirm, taskId, idempotencyKey, parentObject, parentRecordId } (+
+    // `content` folded in from the promptBox) → writeNote/writeComplete read
+    // steps.approveSync.output verbatim/projected, matching every field name.
+    expect(actionPrimitive("writeNote").input).toEqual({
+      from: "steps.approveSync.output",
+    });
+  });
+
+  test("STEP_UI covers every real step id and every awaitSignal gate has an entry", () => {
+    const stepIds = Object.keys(workflow.steps);
+    assertStepUIKeysMatchStepIds(STEP_UI, stepIds);
+    const gateStepIds = stepIds.filter(
+      (id) => workflow.steps[id]?.kind === "awaitSignal",
+    );
+    assertGateStepsHaveStepUIEntry(STEP_UI, gateStepIds);
   });
 });

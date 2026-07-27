@@ -6,40 +6,40 @@ import {
 } from "./competitor-analysis";
 
 describe("CompetitorAnalysisIntakePayloadSchema", () => {
-  test("accepts a valid https companyUrl with optional fields", () => {
+  test("accepts a valid https url with optional fields", () => {
     const out = CompetitorAnalysisIntakePayloadSchema({
-      companyUrl: "https://acme.com",
+      url: "https://acme.com",
       companyName: "Acme",
       focusNotes: "focus on mid-market CRM",
     });
     expect(out instanceof type.errors).toBe(false);
     if (!(out instanceof type.errors)) {
-      expect(out.companyUrl).toBe("https://acme.com");
+      expect(out.url).toBe("https://acme.com");
       expect(out.companyName).toBe("Acme");
       expect(out.focusNotes).toBe("focus on mid-market CRM");
     }
   });
 
-  test("accepts a payload with only companyUrl", () => {
+  test("accepts a payload with only url", () => {
     const out = CompetitorAnalysisIntakePayloadSchema({
-      companyUrl: "http://example.com/path",
+      url: "http://example.com/path",
     });
     expect(out instanceof type.errors).toBe(false);
   });
 
-  test("rejects a blank companyUrl", () => {
-    const out = CompetitorAnalysisIntakePayloadSchema({ companyUrl: "" });
+  test("rejects a blank url", () => {
+    const out = CompetitorAnalysisIntakePayloadSchema({ url: "" });
     expect(out instanceof type.errors).toBe(true);
   });
 
-  test("rejects a non-http(s) companyUrl", () => {
+  test("rejects a non-http(s) url", () => {
     const out = CompetitorAnalysisIntakePayloadSchema({
-      companyUrl: "ftp://example.com",
+      url: "ftp://example.com",
     });
     expect(out instanceof type.errors).toBe(true);
   });
 
-  test("rejects a missing companyUrl", () => {
+  test("rejects a missing url", () => {
     const out = CompetitorAnalysisIntakePayloadSchema({
       companyName: "Acme",
     });

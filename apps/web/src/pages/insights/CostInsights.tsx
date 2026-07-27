@@ -14,7 +14,13 @@ import {
 } from "@workbench/pricing";
 import type { ActivityOverview } from "../../lib/hub-api";
 import { ProviderLogoMark } from "./ProviderLogoMark";
-import { CaveatNote, HudCard, Stat, formatDollars, formatNumber } from "./stats";
+import {
+  CaveatNote,
+  HudCard,
+  Stat,
+  formatDollars,
+  formatNumber,
+} from "./stats";
 import { SectionLabel } from "./section-label";
 
 type DateRange = { startDate?: string; endDate?: string };

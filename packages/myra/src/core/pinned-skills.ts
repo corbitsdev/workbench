@@ -18,17 +18,25 @@ const PINNED_SKILLS_FRAMING =
  * opt out with `myra-surface: chat-only` in their description; otherwise pinned
  * skills are triage-relevant.
  */
-export function isPinnedSkillTriageRelevant(description: string | null | undefined): boolean {
+export function isPinnedSkillTriageRelevant(
+  description: string | null | undefined,
+): boolean {
   const d = description?.trim() ?? "";
   if (/myra-surface:\s*chat-only/i.test(d)) return false;
   return true;
 }
 
 /** First non-empty line of a skill description for the prompt index. */
-export function oneLineSkillDescription(description: string | null | undefined): string {
+export function oneLineSkillDescription(
+  description: string | null | undefined,
+): string {
   const raw = description?.trim() ?? "";
   if (!raw) return "No description.";
-  const line = raw.split(/\r?\n/).find((l) => l.trim().length > 0)?.trim() ?? raw;
+  const line =
+    raw
+      .split(/\r?\n/)
+      .find((l) => l.trim().length > 0)
+      ?.trim() ?? raw;
   return line.length > 240 ? `${line.slice(0, 237)}…` : line;
 }
 

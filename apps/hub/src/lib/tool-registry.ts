@@ -36,6 +36,7 @@ import { LIST_AGENTS_HUB_TOOLS } from "../tools/list-agents";
 import { SEARCH_AGENTS_HUB_TOOLS } from "../tools/search-agents";
 import { INVOKE_AGENT_HUB_TOOLS } from "../tools/invoke-agent";
 import { IDENTITY_HUB_TOOLS } from "../tools/identity";
+import { INBOX_DELIVER_BATCH_HUB_TOOLS } from "../tools/inbox-deliver-batch";
 import { SKILLS_HUB_TOOLS } from "../tools/list-skills";
 import { GAMMA_TEMPLATES_HUB_TOOLS } from "../tools/gamma-templates";
 import { AB_COMPARE_HUB_TOOLS } from "../tools/ab-compare-tools";
@@ -107,6 +108,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...LIST_AGENTS_HUB_TOOLS,
   ...SEARCH_AGENTS_HUB_TOOLS,
   ...IDENTITY_HUB_TOOLS,
+  ...INBOX_DELIVER_BATCH_HUB_TOOLS,
   ...SKILLS_HUB_TOOLS,
   ...WRITE_ARTIFACT_HUB_TOOLS,
   ...WORKFLOWS_HUB_TOOLS,

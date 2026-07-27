@@ -104,8 +104,8 @@ export async function enqueueDueAgentTaskTurns(
 
   const turnKey = args?.turnKey ?? "auto";
   const eligible = await selectEligibleTasksForAutoPickup(db, {
-    tenantId: args?.tenantId,
-    limit: args?.limit,
+    ...(args?.tenantId === undefined ? {} : { tenantId: args.tenantId }),
+    ...(args?.limit === undefined ? {} : { limit: args.limit }),
   });
 
   let enqueued = 0;

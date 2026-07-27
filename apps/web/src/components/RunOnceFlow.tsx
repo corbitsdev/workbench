@@ -56,9 +56,7 @@ export function RunOnceFlow({
       <div className="mb-4">
         {showHeader ? (
           <>
-            <h3 className="text-sm font-semibold text-text">
-              {productLabel}
-            </h3>
+            <h3 className="text-sm font-semibold text-text">{productLabel}</h3>
             {entry.description ? (
               <p className="mt-1 text-sm text-text-2">{entry.description}</p>
             ) : null}

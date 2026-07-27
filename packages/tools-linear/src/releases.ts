@@ -58,8 +58,16 @@ export async function listReleases(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(ListReleasesArgsSchema, rawArgs, "linear_list_releases");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const args = parseArgs(
+    ListReleasesArgsSchema,
+    rawArgs,
+    "linear_list_releases",
+  );
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const query = optionalString(args.query);
   const pipeline = optionalString(args.pipeline);
   const filter: Record<string, unknown> = {};

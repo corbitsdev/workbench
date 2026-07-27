@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
-import { blocksFromStepUIHints } from "@workbench/blocks";
-import { STEP_UI_HINTS } from "@workbench/workflow-last30days-research/browser";
+import { blocksFromStepUI } from "@workbench/blocks";
+import { STEP_UI } from "@workbench/workflow-last30days-research/browser";
 import { Last30daysIntakePayloadSchema } from "@workbench/shared";
 import {
   logRunStateSchema,
@@ -11,11 +11,10 @@ import {
 
 // Drives a real log-derived run state through the production
 // `runStateFromLog` decoder — exactly what WorkflowDock does — and only THEN
-// into `blocksFromStepUIHints` fed the workflow's declared `STEP_UI_HINTS`
-// (CL-3923), so the test starts from wire-shaped data, not a pre-trusted
-// object (mirrors the gamma/ab-compare seam tests). Asserts the emitted
-// intake FORM payload validates at the /resume boundary schema the hub
-// enforces (CL-2765).
+// into `blocksFromStepUI` fed the workflow's declared `STEP_UI`, so the test
+// starts from wire-shaped data, not a pre-trusted object (mirrors the
+// gamma/ab-compare seam tests). Asserts the emitted intake FORM payload
+// validates at the /resume boundary schema the hub enforces (CL-2765).
 
 function parseLog(raw: unknown): LogRunState {
   const parsed = logRunStateSchema(raw);
@@ -35,7 +34,7 @@ function toSteps(log: LogRunState) {
   }));
 }
 
-describe("last30days-research blocks — real log→state→blocks seam (CL-2765, CL-3923)", () => {
+describe("last30days-research blocks — real log→state→blocks seam (CL-2765)", () => {
   const rawIntakeLog = {
     runId: "run_l30",
     phase: "running" as const,
@@ -54,7 +53,7 @@ describe("last30days-research blocks — real log→state→blocks seam (CL-2765
   it("emits a topic+focus form whose verbatim payload validates at the resume boundary", () => {
     const log = parseLog(rawIntakeLog);
 
-    const blocks = blocksFromStepUIHints(STEP_UI_HINTS, {
+    const blocks = blocksFromStepUI(STEP_UI, {
       runId: log.runId,
       phase: runStateFromLog(log).phase,
       steps: toSteps(log),

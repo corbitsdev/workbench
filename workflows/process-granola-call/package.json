@@ -16,14 +16,20 @@
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/shared": "workspace:*",
+    "@workbench/tool-manifest": "workspace:*",
     "@workbench/ui": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "catalog:"
+  },
+  "interchange": {
+    "tools": "./dist/interchange-tools.js",
+    "manifest": "./src/tool-manifest.ts"
   }
 }

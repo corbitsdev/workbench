@@ -12,7 +12,7 @@ import { type } from "arktype";
 // The URL validation the panel enforced client-side lives here as the single
 // server-side check, so a block-form submission is held to the same contract.
 export const RedditIntakePayloadSchema = type({
-  inputUrl: /^https?:\/\/.+/iu,
+  url: /^https?:\/\/.+/iu,
   "brandName?": "string",
   "targetGeography?": "string",
   "icpHints?": "string",

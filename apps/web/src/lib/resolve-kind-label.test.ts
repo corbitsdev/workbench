@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { explicitVisualForKind, KNOWN_ARTIFACT_KINDS } from "@workbench/artifact";
+import {
+  explicitVisualForKind,
+  KNOWN_ARTIFACT_KINDS,
+} from "@workbench/artifact";
 import { resolveKindLabel } from "./resolve-kind-label";
 
 describe("resolveKindLabel", () => {

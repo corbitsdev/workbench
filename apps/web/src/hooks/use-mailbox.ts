@@ -157,7 +157,9 @@ function patchMailboxPages(
   };
 }
 
-function invalidateMailboxQueries(queryClient: ReturnType<typeof useQueryClient>) {
+function invalidateMailboxQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
   void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
   void queryClient.invalidateQueries({ queryKey: MAILBOX_UNREAD_COUNT_KEY });
 }

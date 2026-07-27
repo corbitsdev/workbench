@@ -369,10 +369,7 @@ describe("fanOutTenantScheduleTerminalMail (CL-4114)", () => {
     const db = makeDb({
       owner: { id: "prn-alice", kind: "user", refId: "alice" },
       tenant: { domain: "tenant.example" },
-      members: [
-        { principalId: "prn-alice" },
-        { principalId: "prn-bob" },
-      ],
+      members: [{ principalId: "prn-alice" }, { principalId: "prn-bob" }],
     });
 
     await fanOutTenantScheduleTerminalMail(deps(db), {
@@ -397,9 +394,7 @@ describe("fanOutTenantScheduleTerminalMail (CL-4114)", () => {
     const db = {
       query: {
         principal: {
-          findFirst: async (opts: {
-            where?: { queryChunks?: unknown[] };
-          }) => {
+          findFirst: async (opts: { where?: { queryChunks?: unknown[] } }) => {
             // drizzle eq() is opaque in unit tests; return bob when alice already
             // mailed (second call), else alice. Prefer length of insertCalls.
             void opts;
@@ -441,10 +436,7 @@ describe("fanOutTenantScheduleTerminalMail (CL-4114)", () => {
     const db = makeDb({
       owner: { id: "prn-bob", kind: "user", refId: "bob" },
       tenant: { domain: "tenant.example" },
-      members: [
-        { principalId: "prn-alice" },
-        { principalId: "prn-bob" },
-      ],
+      members: [{ principalId: "prn-alice" }, { principalId: "prn-bob" }],
     });
 
     await fanOutTenantScheduleTerminalMail(deps(db), {

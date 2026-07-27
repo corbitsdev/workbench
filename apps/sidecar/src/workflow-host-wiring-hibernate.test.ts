@@ -29,7 +29,13 @@ import {
   type SubprocessSpawner,
 } from "@workbench/workflow-host";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
-import { DETERMINISTIC_TOOL_KIND, STEP_KIND_TAG } from "@workbench/agents";
+
+// A minimal step-agent tag pair, filler content for the generic step fixture
+// below — not an import from `@workbench/agents` (the retired
+// `deterministicToolStep`'s tags are deleted); this test only needs SOME
+// step shape, not this specific one.
+const STEP_KIND_TAG = "workbench.stepKind";
+const DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 
 import {
   createSidecarDeployRouter,

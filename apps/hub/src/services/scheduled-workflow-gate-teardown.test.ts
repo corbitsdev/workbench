@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { TurnFinalized } from "@workbench/event-collector";
+import type { SessionService } from "@workbench/hub-sessions";
+
+type UserMessageParams = Parameters<SessionService["sendUserMessage"]>[0];
 
 mock.module("../config", () => ({
   getConfig: () => ({ featureGrantCacheTtlMs: 30_000 }),
@@ -52,22 +55,6 @@ mock.module("../workflow-executor/run-terminal-mail", () => ({
   deliverRunTerminalMail: mock(async () => undefined),
 }));
 
-mock.module("../lib/workflow-catalog", () => ({
-  loadWorkflowGateInfos: mock(
-    async () =>
-      new Map([
-        [
-          "allowed-multi",
-          {
-            requiresIntake: true,
-            humanGateCount: 2,
-            allowsScheduledPostIntakeDrive: true,
-          },
-        ],
-      ]),
-  ),
-}));
-
 const { createScheduledWorkflowGateAgent } = await import(
   "./scheduled-workflow-gate-agent"
 );
@@ -92,7 +79,9 @@ function makeDb(): HubDb {
 }
 
 function makeSessionService() {
-  const sendUserMessage = mock(async () => new Uint8Array());
+  const sendUserMessage = mock(
+    async (_params: UserMessageParams) => new Uint8Array(),
+  );
   const endSession = mock(async () => undefined);
   return {
     service: { sendUserMessage, endSession } as never,
@@ -103,11 +92,16 @@ function makeSessionService() {
 
 function completedTurn(text: string): TurnFinalized {
   return {
+    turnId: "turn-1",
     status: "completed",
     text,
+    hadReply: true,
+    hadError: false,
+    errors: [],
     toolCalls: [],
-    usage: undefined,
-  } as TurnFinalized;
+    toolErrors: [],
+    reasoning: "",
+  };
 }
 
 const REPO = {} as never;
@@ -150,15 +144,9 @@ describe("scheduled gate Myra session teardown", () => {
       await Bun.sleep(10);
     }
 
-    const sendArgs = session.sendUserMessage.mock.calls[0]![0] as Record<
-      string,
-      unknown
-    >;
+    const sendArgs = session.sendUserMessage.mock.calls[0]![0];
     pendingGates = [];
-    agent.handleTurnFinalized(
-      sendArgs.agentAddress as string,
-      completedTurn("done"),
-    );
+    agent.handleTurnFinalized(sendArgs.agentAddress, completedTurn("done"));
     await agent.waitForDrain();
 
     expect(session.endSession).toHaveBeenCalled();
@@ -197,15 +185,9 @@ describe("scheduled gate Myra session teardown", () => {
       await Bun.sleep(10);
     }
 
-    const sendArgs = session.sendUserMessage.mock.calls[0]![0] as Record<
-      string,
-      unknown
-    >;
+    const sendArgs = session.sendUserMessage.mock.calls[0]![0];
     pendingGates = [];
-    agent.handleTurnFinalized(
-      sendArgs.agentAddress as string,
-      completedTurn("done"),
-    );
+    agent.handleTurnFinalized(sendArgs.agentAddress, completedTurn("done"));
     await agent.waitForDrain();
 
     expect(session.endSession).toHaveBeenCalled();

@@ -89,6 +89,7 @@ function granolaSource(
           { externalId: "g1", subject: "S", body: "B", url: "u" },
         ]);
       }
+      return undefined;
     },
   };
 }

@@ -18,7 +18,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { type } from "arktype";
 import { createAgent, defineTool } from "@intx/agent";
 import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
 import { evaluateGrants } from "@intx/authz";
@@ -33,7 +32,6 @@ import {
   providerFromEnvKey,
 } from "@workbench/tool-credentials";
 import {
-  ArgMap,
   WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
   DYNAMIC_TOOLS_DIRECTOR_ID,
   TRIAGE_BUDGET_DIRECTOR_ID,
@@ -192,9 +190,10 @@ export function assertStepToolAvailable(
  * Faults that indicate the step's tool infrastructure itself is broken or
  * misconfigured — the tool was never pinned, its credential is missing, or
  * its loaded closure is corrupt — as opposed to the tool running and failing
- * on its own terms (a data/execution fault). Infrastructure faults must never
- * be absorbed by a `nonFatal` degrade: swallowing them reports a run as
- * COMPLETED when it never actually attempted the work.
+ * on its own terms (a data/execution fault). A caller that only wants to
+ * degrade genuine tool-execution failures (e.g. a wrapper's own tolerance
+ * envelope) must not treat one of these as such: an infrastructure fault
+ * means the step never actually attempted the work.
  */
 export function isStepToolInfrastructureFault(error: unknown): boolean {
   return (
@@ -492,13 +491,12 @@ async function buildStepTools(args: {
       // `<factoryId>:<name>` form here (e.g. `@workbench/tools-exa/exa:exa_search`).
       // `buildStepTools` is shared by two consumers with DIFFERENT name
       // contracts: `runDeterministicToolStep` dispatches by the canonical
-      // colon-form name a deterministic workflow step declares
-      // (`deterministicToolStep`'s `STEP_TOOL_TAG`, threaded through
-      // `workflow-substrate-factory.ts`'s `runDeterministicToolStep` call),
-      // while the warm single-step agent path needs the LLM-safe
-      // `toLlmToolName` alias the model can actually call (CL-2306) and the
-      // dynamic tool catalog advertises (CL-3929). Renaming here would break
-      // every deterministic package-tool step. The warm-agent-only alias
+      // colon-form name a native `action`'s `handler` ref carries
+      // (`action-tool-handler.ts`'s `runDeterministicToolStep` call), while
+      // the warm single-step agent path needs the LLM-safe `toLlmToolName`
+      // alias the model can actually call (CL-2306) and the dynamic tool
+      // catalog advertises (CL-3929). Renaming here would break every
+      // action-dispatched package-tool step. The warm-agent-only alias
       // projection is applied in `resolveWarmAgentHarness`, the one
       // model-facing consumer that needs it.
       loadedRunners.push({
@@ -650,10 +648,10 @@ export function prepareWarmAgentPrompt(
  * (`@`, `/`, `:`) blows the same 64-char/charset provider limit there. Only
  * `buildStepTools`'s OWN return value (its `definitions`/`packageToolNames`,
  * consumed directly by `runDeterministicToolStep`) stays canonical — that
- * dispatches by the colon-form name a deterministic workflow step declares
- * (`deterministicToolStep`'s `STEP_TOOL_TAG`), and aliasing there would throw
- * `StepToolNotRegisteredError` on every deterministic package-tool step. The
- * alias projection happens only on the copy handed to `createAgent` in
+ * dispatches by the colon-form name a native `action`'s `handler` ref
+ * carries, and aliasing there would throw `StepToolNotRegisteredError` on
+ * every action-dispatched package-tool step. The alias projection happens
+ * only on the copy handed to `createAgent` in
  * `createStepAgentFactory`, so both consumers of `buildStepTools` keep their
  * own contract. Local mail tools are already unprefixed (not in
  * `packageToolNames`) and pass through unchanged here; warm advertisement
@@ -868,13 +866,14 @@ async function resolveWarmAgentHarness(args: {
 }
 
 /**
- * Run a workflow step as a deterministic tool call: load the step's pinned
- * tool packages + credentials the SAME way the tool-capable agent path does,
- * then invoke the named tool DIRECTLY against the runner — no `createAgent`,
- * no `agent.send`, no reactor, no inference. With no `argMap`, the step's
- * runtime-resolved `input` is passed verbatim as the tool-call arguments;
- * with an `argMap`, the tool arguments are reshaped from the evaluated input
- * (`runDeterministicToolStep` parses the argMap JSON at this boundary).
+ * Run a workflow step as a direct tool call: load the step's pinned tool
+ * packages + credentials the SAME way the tool-capable agent path does, then
+ * invoke the named tool DIRECTLY against the runner — no `createAgent`, no
+ * `agent.send`, no reactor, no inference. The step's runtime-resolved
+ * `input` is passed verbatim as the tool-call arguments (the retired
+ * `argMap` reshape, once used by `deterministicToolStep`, is gone — no
+ * caller passes one anymore). This is the shared dispatch primitive behind
+ * the native `action` primitive (`action-tool-handler.ts`).
  *
  * Disposal mirrors the agent path: every tool runner disposer runs and the
  * per-step `storeDir` is reclaimed on both success and failure.
@@ -898,204 +897,6 @@ function verbatimToolArguments(
   }
 
   return input as Record<string, unknown>;
-}
-
-/**
- * Result of reshaping a step's evaluated input into tool arguments per its
- * `argMap`. A `skip` result means a `skipStepIfAbsent` field was absent (or
- * an empty string) on the evaluated input — the caller must not invoke the
- * tool at all, and must not treat this as an error. An absent/empty
- * `optional` field is NOT a skip: it is simply omitted from
- * `toolArguments`, and the tool call still proceeds.
- */
-export type ArgMapReshapeResult =
-  | { skip: true; reason: string }
-  | { skip: false; toolArguments: Record<string, unknown> };
-
-/**
- * Reshape the evaluated step input into tool arguments per the step's
- * `argMap`. The argMap JSON is parsed + validated through arktype at this
- * trust boundary. For each `[argName, spec]`: `{ from }` pulls a top-level
- * field off the evaluated input. Non-optional, non-skip `{ from }`: absence
- * is a missing key on the evaluated step input and fails loud, naming it —
- * an empty string is a real value and passes through unchanged. Optional
- * `{ from, optional: true }`: an absent key OR an empty-string value OMITS
- * `argName` from the returned `toolArguments` — the tool is still called,
- * just without that one argument. `{ from, skipStepIfAbsent: true }`: an
- * absent key OR an empty-string value skips the tool call entirely — for the
- * rare argMap whose field is the tool's own only required argument, where
- * there is no sensible "call without it". `{ literal }` supplies the
- * constant. `{ fromJson, field }` reads `fromJson` off the input,
- * JSON-parses it when it is a string (an already-object value is
- * tolerated), then applies the same presence/optional/skipStepIfAbsent
- * rules to `field` on the parsed object — for a deterministic step
- * consuming another deterministic tool's `stringTool` output (encoded as
- * `{ content: "<json>" }`).
- */
-export function reshapeWithArgMap(
-  toolName: string,
-  input: unknown,
-  argMapJson: string,
-): ArgMapReshapeResult {
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(argMapJson);
-  } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(
-      `step-tool-harness: deterministic step "${toolName}" has a non-JSON argMap tag: ${reason}`,
-    );
-  }
-  const argMap = ArgMap(parsedJson);
-  if (argMap instanceof type.errors) {
-    throw new Error(
-      `step-tool-harness: deterministic step "${toolName}" argMap failed validation: ${argMap.summary}`,
-    );
-  }
-  const inputRecord =
-    input !== null && typeof input === "object" && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : undefined;
-  const toolArguments: Record<string, unknown> = {};
-  for (const [argName, spec] of Object.entries(argMap)) {
-    if ("object" in spec) {
-      const objectArgument: Record<string, unknown> = {};
-      for (const [fieldName, fieldSpec] of Object.entries(spec.object)) {
-        if ("literal" in fieldSpec) {
-          objectArgument[fieldName] = fieldSpec.literal;
-          continue;
-        }
-        if ("fromJson" in fieldSpec) {
-          const envelope =
-            inputRecord !== undefined && fieldSpec.fromJson in inputRecord
-              ? inputRecord[fieldSpec.fromJson]
-              : undefined;
-          let parsed: unknown = undefined;
-          if (typeof envelope === "string") {
-            try {
-              parsed = JSON.parse(envelope);
-            } catch {
-              parsed = undefined;
-            }
-          } else if (envelope !== null && typeof envelope === "object") {
-            parsed = envelope;
-          }
-          const parsedRecord =
-            parsed !== null &&
-            typeof parsed === "object" &&
-            !Array.isArray(parsed)
-              ? (parsed as Record<string, unknown>)
-              : undefined;
-          const present =
-            parsedRecord !== undefined && fieldSpec.field in parsedRecord;
-          const value = present ? parsedRecord[fieldSpec.field] : undefined;
-          const isAbsentOrEmpty = !present || value === "";
-          if (isAbsentOrEmpty && fieldSpec.skipStepIfAbsent === true) {
-            return {
-              skip: true,
-              reason: `object field "${fieldName}" is absent or empty and skipStepIfAbsent is set`,
-            };
-          }
-          if (isAbsentOrEmpty && fieldSpec.optional === true) {
-            continue;
-          }
-          if (!present) {
-            throw new Error(
-              `step-tool-harness: deterministic step "${toolName}" argMap maps object field "${fieldName}" from JSON field "${fieldSpec.field}" of input field "${fieldSpec.fromJson}", but that field is absent on the evaluated step input`,
-            );
-          }
-          objectArgument[fieldName] = value;
-          continue;
-        }
-        const present =
-          inputRecord !== undefined && fieldSpec.from in inputRecord;
-        const value = present ? inputRecord[fieldSpec.from] : undefined;
-        const isAbsentOrEmpty = !present || value === "";
-        if (isAbsentOrEmpty && fieldSpec.skipStepIfAbsent === true) {
-          return {
-            skip: true,
-            reason: `object field "${fieldName}" is absent or empty and skipStepIfAbsent is set`,
-          };
-        }
-        if (isAbsentOrEmpty && fieldSpec.optional === true) {
-          continue;
-        }
-        if (!present) {
-          throw new Error(
-            `step-tool-harness: deterministic step "${toolName}" argMap maps object field "${fieldName}" from input field "${fieldSpec.from}", but that field is absent on the evaluated step input`,
-          );
-        }
-        objectArgument[fieldName] = value;
-      }
-      toolArguments[argName] = objectArgument;
-      continue;
-    }
-    if ("literal" in spec) {
-      toolArguments[argName] = spec.literal;
-      continue;
-    }
-    if ("fromJson" in spec) {
-      const envelope =
-        inputRecord !== undefined && spec.fromJson in inputRecord
-          ? inputRecord[spec.fromJson]
-          : undefined;
-      let parsed: unknown = undefined;
-      if (typeof envelope === "string") {
-        try {
-          parsed = JSON.parse(envelope);
-        } catch {
-          parsed = undefined;
-        }
-      } else if (envelope !== null && typeof envelope === "object") {
-        parsed = envelope;
-      }
-      const parsedRecord =
-        parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-          ? (parsed as Record<string, unknown>)
-          : undefined;
-      const fieldPresent =
-        parsedRecord !== undefined && spec.field in parsedRecord;
-      const fieldValue = fieldPresent ? parsedRecord[spec.field] : undefined;
-      const isEmptyString = typeof fieldValue === "string" && fieldValue === "";
-      const isAbsentOrEmpty = !fieldPresent || isEmptyString;
-      if (isAbsentOrEmpty && spec.skipStepIfAbsent === true) {
-        return {
-          skip: true,
-          reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from JSON field "${spec.field}" of "${spec.fromJson}", which is absent or empty on the evaluated step input and skipStepIfAbsent is set`,
-        };
-      }
-      if (isAbsentOrEmpty && spec.optional === true) {
-        continue;
-      }
-      if (!fieldPresent) {
-        throw new Error(
-          `step-tool-harness: deterministic step "${toolName}" argMap maps tool arg "${argName}" from JSON field "${spec.field}" of input field "${spec.fromJson}", but that field is absent on the evaluated step input`,
-        );
-      }
-      toolArguments[argName] = fieldValue;
-      continue;
-    }
-    const present = inputRecord !== undefined && spec.from in inputRecord;
-    const rawValue = present ? inputRecord[spec.from] : undefined;
-    const isEmptyString = typeof rawValue === "string" && rawValue === "";
-    const isAbsentOrEmpty = !present || isEmptyString;
-    if (isAbsentOrEmpty && spec.skipStepIfAbsent === true) {
-      return {
-        skip: true,
-        reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from input field "${spec.from}", which is absent or empty on the evaluated step input and skipStepIfAbsent is set`,
-      };
-    }
-    if (isAbsentOrEmpty && spec.optional === true) {
-      continue;
-    }
-    if (!present) {
-      throw new Error(
-        `step-tool-harness: deterministic step "${toolName}" argMap maps tool arg "${argName}" from input field "${spec.from}", but that field is absent on the evaluated step input`,
-      );
-    }
-    toolArguments[argName] = rawValue;
-  }
-  return { skip: false, toolArguments };
 }
 
 function toolResultErrorMessage(output: unknown): string | undefined {
@@ -1179,15 +980,6 @@ export async function runDeterministicToolStep(args: {
   env: Omit<BaseEnv, "authorize">;
   toolName: string;
   input: unknown;
-  /** Raw JSON of the step's `workbench.argMap` tag, if present. */
-  argMapJson?: string;
-  /**
-   * When true (the step's `workbench.nonFatal` tag is set), a thrown tool error
-   * or a tool result with `isError: true` is logged and degraded to completed
-   * output instead of propagating — so one best-effort source cannot fail the
-   * whole run.
-   */
-  nonFatal?: boolean;
   signal: AbortSignal;
 }): Promise<{ output: unknown }> {
   const ctx = readStepToolContext(
@@ -1217,28 +1009,7 @@ export async function runDeterministicToolStep(args: {
   try {
     const available = new Set(runner.definitions.map((d) => d.name));
     assertStepToolAvailable(args.toolName, available, credentialSkips);
-    let toolArguments: Record<string, unknown>;
-    if (args.argMapJson !== undefined) {
-      const reshaped = reshapeWithArgMap(
-        args.toolName,
-        args.input,
-        args.argMapJson,
-      );
-      if (reshaped.skip) {
-        logger.info(
-          "Deterministic step {tool} skipped for {address}: {reason}",
-          {
-            tool: args.toolName,
-            address: ctx.stepAddress,
-            reason: reshaped.reason,
-          },
-        );
-        return { output: { skipped: true } };
-      }
-      toolArguments = reshaped.toolArguments;
-    } else {
-      toolArguments = verbatimToolArguments(args.toolName, args.input);
-    }
+    const toolArguments = verbatimToolArguments(args.toolName, args.input);
     const result = await runner.run(
       {
         id: `det-${ctx.stepAgentId}`,
@@ -1249,22 +1020,6 @@ export async function runDeterministicToolStep(args: {
     );
     const toolError = toolResultErrorMessage(result);
     if (toolError !== undefined) {
-      if (args.nonFatal === true && !args.signal.aborted) {
-        logger.error(
-          "Deterministic step tool {tool} returned isError for {address}: {msg}",
-          { tool: args.toolName, address: ctx.stepAddress, msg: toolError },
-        );
-        // A genuine tool-execution failure (the tool ran and reported its
-        // own error) is exactly what `nonFatal` is for. Mark the envelope so
-        // the run surface can tell a degraded step apart from a clean
-        // completion instead of reporting it as indistinguishable success.
-        return {
-          output: {
-            ...(result as Record<string, unknown>),
-            degraded: true,
-          },
-        };
-      }
       if (!args.signal.aborted) {
         logger.error("Deterministic step tool {tool} failed for {address}", {
           tool: args.toolName,
@@ -1276,46 +1031,25 @@ export async function runDeterministicToolStep(args: {
     }
     return { output: result };
   } catch (cause) {
-    // A degrade must never mask cancellation: if the step's signal aborted (run
-    // cancel/timeout), the throw is the cancellation, not a source failure —
-    // rethrow it so the runtime propagates the cancel instead of letting the
-    // run march on into brief/write/persist.
-    //
-    // A degrade must also never mask an infrastructure fault: a tool that was
-    // never pinned, a package dropped for a missing credential, or a corrupt
-    // tool closure means the step never actually ran the work it was meant
-    // to. `nonFatal` exists to absorb a genuine tool-execution/data failure —
-    // the tool ran and reported its own error — not to paper over broken
-    // tool infrastructure as a clean completion.
-    if (
-      args.nonFatal !== true ||
-      args.signal.aborted ||
-      isStepToolInfrastructureFault(cause)
-    ) {
-      // Log WITH the Error so the child's Sentry sink captures the stack via
-      // captureException — the on-disk StepFailed event keeps only the message.
-      // Skip on cancellation (signal aborted): teardown is not a fault.
-      if (!args.signal.aborted) {
-        logger.error("Deterministic step tool {tool} failed for {address}", {
-          tool: args.toolName,
-          address: ctx.stepAddress,
-          error: cause instanceof Error ? cause : new Error(String(cause)),
-        });
-      }
-      throw cause;
+    // No `nonFatal` degrade exists on this path anymore — tolerant wrapper
+    // tools replaced every best-effort deterministic step with a workflow-
+    // owned tolerance-envelope wrapper (see
+    // `@workbench/tool-credentials/tolerance-envelope-dispatch`). Every failure here rethrows: a genuine
+    // tool-execution error, a run cancel/timeout (signal aborted), or an
+    // infrastructure fault (`isStepToolInfrastructureFault` — unpinned tool,
+    // missing credential, corrupt closure) all propagate identically. Log
+    // WITH the Error so the child's Sentry sink captures the stack via
+    // captureException — the on-disk StepFailed event keeps only the
+    // message. Skip logging on cancellation (signal aborted): teardown is
+    // not a fault.
+    if (!args.signal.aborted) {
+      logger.error("Deterministic step tool {tool} failed for {address}", {
+        tool: args.toolName,
+        address: ctx.stepAddress,
+        error: cause instanceof Error ? cause : new Error(String(cause)),
+      });
     }
-    const reason = cause instanceof Error ? cause.message : String(cause);
-    logger.error(
-      "Deterministic step tool {tool} failed; degraded to a non-fatal skip for {address}: {msg}",
-      { tool: args.toolName, address: ctx.stepAddress, msg: reason },
-    );
-    return {
-      output: {
-        content: `${args.toolName} step failed: ${reason}`,
-        isError: true,
-        degraded: true,
-      },
-    };
+    throw cause;
   } finally {
     for (const dispose of disposers) {
       try {

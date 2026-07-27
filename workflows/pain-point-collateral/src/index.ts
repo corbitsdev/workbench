@@ -1,17 +1,13 @@
 import { action, awaitSignal, defineWorkflow, map } from "@intx/workflow";
-import {
-  canonicalizeStepToolName,
-  deterministicToolStep,
-  agentStep,
-} from "@workbench/agents";
+import { canonicalizeStepToolName, agentStep } from "@workbench/agents";
 import {
   buildCollateralGenerationSystemPrompt,
   buildExtractionSystemPrompt,
 } from "./prompts";
 
 // Native `action` handler refs — the tool's canonical (factory-prefixed) name,
-// resolved via the same build-time-checked lookup `deterministicToolStep`
-// uses, so a typo'd or manifest-drifted tool name fails the build instead of
+// resolved via `canonicalizeStepToolName`'s build-time-checked lookup, so
+// a typo'd or manifest-drifted tool name fails the build instead of
 // deploying a step nothing can dispatch.
 export const GRANOLA_LIST_NOTES_HANDLER = canonicalizeStepToolName(
   "pain-point-collateral-intake",
@@ -20,6 +16,10 @@ export const GRANOLA_LIST_NOTES_HANDLER = canonicalizeStepToolName(
 export const GRANOLA_GET_NOTE_HANDLER = canonicalizeStepToolName(
   "pain-point-collateral-fetch",
   "granola_get_note",
+);
+export const PERSIST_PIECES_HANDLER = canonicalizeStepToolName(
+  "pain-point-collateral-persist",
+  "pain_point_collateral_persist_pieces",
 );
 
 // -------------------------------------------------------------------------
@@ -62,8 +62,7 @@ export { DISPLAY_STEPS } from "./display-steps";
 //     └ agentStep input from trigger.payload only (item carries all LLM-needed data)
 //   review       awaitSignal            review              → {decisions: Array<{format,title,content}>}
 //                                       (panel sends ONLY approved pieces)
-//   persist      map over review.output.decisions
-//     └ deterministicToolStep artifact_create argMap {title, kind, content}
+//   persist      action  artifact_create batch tool  over review.output.decisions
 //
 // Deviation from spec step 6 (parallel map):
 //   The interchange `map` primitive runs iterations SEQUENTIALLY (v1 runtime).
@@ -88,36 +87,18 @@ const generateStep = agentStep({
   input: { from: "trigger.payload" },
 });
 
-// NOT migrated to a native `action` — two independent blockers, either one
-// sufficient on its own:
-//   1. Field rename: `artifact_create` requires `kind`, but the map item
-//      carries the same value under `format`. The native selector vocabulary
-//      (`from` / `project` / `merge` / `literal`) can only pick fields
-//      through, never rename one — `project` keeps the source field's own
-//      name, and there is no selector shape that writes a value under a
-//      different key. Composing `title`/`content` (pass through unrenamed)
-//      with `kind` (renamed from `format`) into one object is therefore not
-//      expressible as a single `input` selector.
-//   2. `MapPrimitive.step` is typed `StepPrimitive` (see
-//      `@intx/workflow`'s `primitives.ts`), not `Primitive` — an `action`
-//      cannot be a map's inner step at all. Independently, the deploy-time
-//      capability walk's `extractAgent` only reads `primitive.step.agent` for
-//      a `map` node (see `interchange/packages/workflow-deploy/src/
-//      capability-walk.ts`); it never inspects an inner step's `effect`, so
-//      even a same-shape action inside a map would pin no tool package.
-const persistStep = deterministicToolStep({
-  id: "pain-point-collateral-persist",
-  title: "Save the collateral",
-  tool: "artifact_create",
-  // map passes each approved item as `trigger.payload` ({format, title,
-  // content}); point the step input at it so the argMap fields resolve.
-  input: { from: "trigger.payload" },
-  argMap: {
-    title: { from: "title" },
-    kind: { from: "format" },
-    content: { from: "content" },
-  },
-});
+// Folded from a `map` of single-piece `deterministicToolStep`s into one
+// native `action`: `pain_point_collateral_persist_pieces` loops over
+// `approvedPieces` in-process, doing the `format` → `kind` field rename
+// itself (see `persist-tool.ts` for the two independent blockers that ruled
+// out a plain same-shape action inside the old map: the field rename no
+// selector can express, and `MapPrimitive.step`'s `StepPrimitive`-only
+// typing). Fatal by design (unchanged from the old map): any failed save
+// fails the run. Folding N per-item steps into one action means a crash
+// mid-save now re-runs the WHOLE batch on resume instead of resuming after
+// the already-saved pieces — a real checkpointing change from the old
+// per-item map, acceptable given an approved batch is capped small (max 9
+// pain-point × format combinations).
 
 export const workflow = defineWorkflow({
   id: kind,
@@ -186,10 +167,11 @@ export const workflow = defineWorkflow({
     //    approvedPieces for persistence.
     review: awaitSignal({ name: "review", after: ["generate"] }),
 
-    // 10. Create one artifact per approved piece (sequential map)
-    persist: map({
-      over: { from: "steps.review.output.approvedPieces" },
-      step: persistStep,
+    // 10. Save every approved piece — one native action, batched internally.
+    persist: action({
+      handler: PERSIST_PIECES_HANDLER,
+      input: { from: "steps.review.output" },
+      effect: { requires: [PERSIST_PIECES_HANDLER] },
       after: ["review"],
     }),
   },

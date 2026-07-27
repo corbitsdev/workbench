@@ -274,7 +274,11 @@ export function createGammaTemplatesRouter(
       }
       const { name, gammaId, description, systemPrompt } = parsed;
 
-      const config: GammaTemplateConfig = { gammaId, description, systemPrompt };
+      const config: GammaTemplateConfig = {
+        gammaId,
+        description,
+        systemPrompt,
+      };
 
       const result = await db.transaction(async (tx) => {
         const [header] = await tx
@@ -433,7 +437,11 @@ export function createGammaTemplatesRouter(
       }
       const { name, gammaId, description, systemPrompt } = parsed;
 
-      const config: GammaTemplateConfig = { gammaId, description, systemPrompt };
+      const config: GammaTemplateConfig = {
+        gammaId,
+        description,
+        systemPrompt,
+      };
 
       // Read-then-insert of the next version must be atomic: two concurrent
       // PUTs both reading MAX(version)=N would otherwise both insert N+1 and

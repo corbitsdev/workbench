@@ -203,6 +203,7 @@ async function deployDeployedWorkflow(): Promise<DeployProbes> {
     principalId: DEPLOY_PRINCIPAL,
     deploymentDomain: DEPLOYMENT_DOMAIN,
     sources: [TENANT_SOURCE],
+    definition: workflow,
   });
 
   const service = createWorkflowDeployService({

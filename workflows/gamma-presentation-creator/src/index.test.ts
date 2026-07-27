@@ -1,15 +1,35 @@
 import { describe, expect, test } from "bun:test";
+import type { ActionHandler } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
 import { runLocal } from "@intx/workflow/runlocal";
-import {
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-  STEP_ARGMAP_TAG,
-  STEP_NONFATAL_TAG,
-  DETERMINISTIC_TOOL_KIND,
-} from "@workbench/agents";
 
-import { workflow } from "./index";
+import {
+  ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER,
+  ARTIFACT_LIST_HANDLER,
+  FETCH_ARTIFACT_HANDLER,
+  FETCH_NOTE_HANDLER,
+  GAMMA_CREATE_FROM_TEMPLATE_HANDLER,
+  GRANOLA_LIST_NOTES_HANDLER,
+  PREPARE_PERSIST_HANDLER,
+  PREPARE_RENDER_HANDLER,
+  workflow,
+} from "./index";
+
+// The retired `deterministic-tool` authoring kind's tag. Kept as a literal
+// (not an import from `@workbench/agents`, which no longer exports it) —
+// this test only asserts the tag is ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
+
+function actionPrimitive(id: string) {
+  const primitive = workflow.steps[id];
+  if (primitive === undefined || primitive.kind !== "action") {
+    throw new Error(
+      `expected action primitive for step id "${id}", got ${primitive?.kind ?? "undefined"}`,
+    );
+  }
+  return primitive;
+}
 
 function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   invoker: StepInvoker;
@@ -23,47 +43,196 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   return { invoker, ran };
 }
 
-// Both readers always run; the unused one returns an empty/isError envelope.
-const baseOutputs: Record<string, unknown> = {
-  "presentation-fetch-artifact": {},
-  "presentation-fetch-note": {},
-  "presentation-generate": { reply: "SLIDE 1: v1" },
-  // gamma_create_from_template returns the NEW deck's gammaId (distinct from the
-  // template id carried on intake); it must win the persist merge over intake.
-  "presentation-render": {
-    gammaUrl: "https://gamma.app/docs/1",
-    gammaId: "deck_1",
-  },
-  "presentation-describe": { reply: "A deck about v1" },
-};
+function makeActionResolver(
+  outputs: Record<string, unknown>,
+  calls: Record<string, unknown>[],
+): (ref: string) => ActionHandler {
+  return (ref: string): ActionHandler => {
+    return async (input): Promise<unknown> => {
+      calls.push({ ref, input });
+      return outputs[ref] ?? null;
+    };
+  };
+}
 
-const intake = {
-  artifactId: "art_1",
-  deckTitle: "Q3 Deck",
-  gammaId: "tmpl_1",
-  goal: "Close",
-};
+describe("gamma-presentation-creator native action wiring", () => {
+  test("list-artifacts is a native action preloading artifact_list's max page", () => {
+    const listArtifacts = actionPrimitive("list-artifacts");
+    expect(listArtifacts.handler).toBe(ARTIFACT_LIST_HANDLER);
+    expect(listArtifacts.input).toEqual({ literal: { limit: 50 } });
+    expect(listArtifacts.effect).toEqual({
+      requires: [ARTIFACT_LIST_HANDLER],
+    });
+  });
+
+  test("list-notes is a native action preloading granola_list_notes' max page", () => {
+    const listNotes = actionPrimitive("list-notes");
+    expect(listNotes.handler).toBe(GRANOLA_LIST_NOTES_HANDLER);
+    expect(listNotes.input).toEqual({ literal: { limit: 30 } });
+    expect(listNotes.effect).toEqual({
+      requires: [GRANOLA_LIST_NOTES_HANDLER],
+    });
+  });
+
+  test("prepare-render is a native action renaming generate's reply to gamma_create_from_template's prompt arg", () => {
+    const prepareRender = actionPrimitive("prepare-render");
+    expect(prepareRender.handler).toBe(PREPARE_RENDER_HANDLER);
+    expect(prepareRender.input).toEqual({
+      merge: [
+        { from: "steps.intake.output" },
+        { from: "steps.generate.output" },
+      ],
+    });
+    expect(prepareRender.effect).toEqual({
+      requires: [PREPARE_RENDER_HANDLER],
+    });
+    expect(prepareRender.after).toEqual(["generate"]);
+  });
+
+  test("render is a native action passthrough dispatching gamma_create_from_template on prepare-render's output", () => {
+    const render = actionPrimitive("render");
+    expect(render.handler).toBe(GAMMA_CREATE_FROM_TEMPLATE_HANDLER);
+    expect(render.input).toEqual({
+      from: "steps.prepare-render.output.content",
+    });
+    expect(render.effect).toEqual({
+      requires: [GAMMA_CREATE_FROM_TEMPLATE_HANDLER],
+    });
+    expect(render.after).toEqual(["prepare-render"]);
+  });
+
+  test("prepare-persist is a native action pairing intake/render/describe fields into artifact_link_gamma_presentation's arg names", () => {
+    const preparePersist = actionPrimitive("prepare-persist");
+    expect(preparePersist.handler).toBe(PREPARE_PERSIST_HANDLER);
+    expect(preparePersist.input).toEqual({
+      merge: [
+        { from: "steps.intake.output" },
+        { from: "steps.render.output.content" },
+        { from: "steps.describe.output" },
+      ],
+    });
+    expect(preparePersist.effect).toEqual({
+      requires: [PREPARE_PERSIST_HANDLER],
+    });
+    expect(preparePersist.after).toEqual(["render", "describe"]);
+  });
+
+  test("persist is a native action passthrough dispatching artifact_link_gamma_presentation on prepare-persist's output", () => {
+    const persist = actionPrimitive("persist");
+    expect(persist.handler).toBe(ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER);
+    expect(persist.input).toEqual({
+      from: "steps.prepare-persist.output.content",
+    });
+    expect(persist.effect).toEqual({
+      requires: [ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER],
+    });
+    expect(persist.after).toEqual(["prepare-persist"]);
+  });
+});
 
 describe("artifact → gamma deck workflow (single-shot)", () => {
   test("intake drives the whole run to persist with no further gate", async () => {
-    const { invoker, ran } = makeRecordingInvoker(baseOutputs);
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const { invoker, ran } = makeRecordingInvoker({
+      "presentation-generate": { reply: "SLIDE 1: v1" },
+      "presentation-describe": { reply: "A deck about v1" },
+    });
+    const actionCalls: Record<string, unknown>[] = [];
+    const actionResolver = makeActionResolver(
+      {
+        [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
+        [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        [FETCH_ARTIFACT_HANDLER]: { content: { skipped: true } },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
+        [PREPARE_RENDER_HANDLER]: {
+          content: { gammaId: "tmpl_1", prompt: "SLIDE 1: v1" },
+        },
+        [GAMMA_CREATE_FROM_TEMPLATE_HANDLER]: {
+          content: {
+            gammaUrl: "https://gamma.app/docs/1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            exportUrl: "",
+          },
+        },
+        [PREPARE_PERSIST_HANDLER]: {
+          content: {
+            title: "Q3 Deck",
+            description: "A deck about v1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            pdfUrl: "",
+          },
+        },
+        [ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER]: { artifactId: "art_new" },
+      },
+      actionCalls,
+    );
+    const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
 
-    await run.signal("intake", intake);
+    await run.signal("intake", {
+      artifactId: "art_1",
+      deckTitle: "Q3 Deck",
+      gammaId: "tmpl_1",
+      goal: "Close",
+    });
 
     const result = await run.complete;
     expect(result.terminalStatus).toBe("completed");
 
     const ids = ran.map((r) => r.id);
     expect(ids).toContain("presentation-generate");
-    expect(ids).toContain("presentation-render");
     expect(ids).toContain("presentation-describe");
-    expect(ids).toContain("presentation-persist");
+
+    const refs = actionCalls.map((c) => c.ref);
+    expect(refs).toEqual([
+      ARTIFACT_LIST_HANDLER,
+      GRANOLA_LIST_NOTES_HANDLER,
+      FETCH_ARTIFACT_HANDLER,
+      FETCH_NOTE_HANDLER,
+      PREPARE_RENDER_HANDLER,
+      GAMMA_CREATE_FROM_TEMPLATE_HANDLER,
+      PREPARE_PERSIST_HANDLER,
+      ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER,
+    ]);
   });
 
   test("both readers run and each receives its intake id", async () => {
-    const { invoker, ran } = makeRecordingInvoker(baseOutputs);
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const { invoker } = makeRecordingInvoker({
+      "presentation-generate": { reply: "SLIDE 1: v1" },
+      "presentation-describe": { reply: "A deck about v1" },
+    });
+    const actionCalls: Record<string, unknown>[] = [];
+    const actionResolver = makeActionResolver(
+      {
+        [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
+        [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        [FETCH_ARTIFACT_HANDLER]: { content: { skipped: true } },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
+        [PREPARE_RENDER_HANDLER]: {
+          content: { gammaId: "t", prompt: "SLIDE 1: v1" },
+        },
+        [GAMMA_CREATE_FROM_TEMPLATE_HANDLER]: {
+          content: {
+            gammaUrl: "https://gamma.app/docs/1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            exportUrl: "",
+          },
+        },
+        [PREPARE_PERSIST_HANDLER]: {
+          content: {
+            title: "D",
+            description: "A deck about v1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            pdfUrl: "",
+          },
+        },
+        [ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER]: { artifactId: "art_new" },
+      },
+      actionCalls,
+    );
+    const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
 
     await run.signal("intake", {
       artifactId: "art_42",
@@ -74,17 +243,51 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     });
     await run.complete;
 
-    const artifactRead = ran.find(
-      (r) => r.id === "presentation-fetch-artifact",
+    const artifactRead = actionCalls.find(
+      (c) => c.ref === FETCH_ARTIFACT_HANDLER,
     );
-    const noteRead = ran.find((r) => r.id === "presentation-fetch-note");
+    const noteRead = actionCalls.find((c) => c.ref === FETCH_NOTE_HANDLER);
     expect(artifactRead?.input).toMatchObject({ artifactId: "art_42" });
     expect(noteRead?.input).toMatchObject({ noteId: "note_7" });
   });
 
   test("pasted text reaches the generate step", async () => {
-    const { invoker, ran } = makeRecordingInvoker(baseOutputs);
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const { invoker, ran } = makeRecordingInvoker({
+      "presentation-generate": { reply: "SLIDE 1: v1" },
+      "presentation-describe": { reply: "A deck about v1" },
+    });
+    const actionCalls: Record<string, unknown>[] = [];
+    const actionResolver = makeActionResolver(
+      {
+        [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
+        [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        [FETCH_ARTIFACT_HANDLER]: { content: { skipped: true } },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
+        [PREPARE_RENDER_HANDLER]: {
+          content: { gammaId: "tmpl_1", prompt: "SLIDE 1: v1" },
+        },
+        [GAMMA_CREATE_FROM_TEMPLATE_HANDLER]: {
+          content: {
+            gammaUrl: "https://gamma.app/docs/1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            exportUrl: "",
+          },
+        },
+        [PREPARE_PERSIST_HANDLER]: {
+          content: {
+            title: "Paste deck",
+            description: "A deck about v1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            pdfUrl: "",
+          },
+        },
+        [ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER]: { artifactId: "art_new" },
+      },
+      actionCalls,
+    );
+    const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
 
     await run.signal("intake", {
       text: "raw pasted notes",
@@ -98,73 +301,192 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     expect(gen?.input).toMatchObject({ text: "raw pasted notes" });
   });
 
-  test("render maps the template gammaId and the draft reply onto the gamma tool args", async () => {
-    const { invoker, ran } = makeRecordingInvoker(baseOutputs);
-    const run = runLocal(workflow, { invokeStep: invoker });
-    await run.signal("intake", { ...intake, gammaId: "tmpl_77" });
+  test("prepare-render receives the template gammaId and the draft reply", async () => {
+    const { invoker } = makeRecordingInvoker({
+      "presentation-generate": { reply: "SLIDE 1: v1" },
+      "presentation-describe": { reply: "A deck about v1" },
+    });
+    const actionCalls: Record<string, unknown>[] = [];
+    const actionResolver = makeActionResolver(
+      {
+        [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
+        [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        [FETCH_ARTIFACT_HANDLER]: { content: { skipped: true } },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
+        [PREPARE_RENDER_HANDLER]: {
+          content: { gammaId: "tmpl_77", prompt: "SLIDE 1: v1" },
+        },
+        [GAMMA_CREATE_FROM_TEMPLATE_HANDLER]: {
+          content: {
+            gammaUrl: "https://gamma.app/docs/1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            exportUrl: "",
+          },
+        },
+        [PREPARE_PERSIST_HANDLER]: {
+          content: {
+            title: "Q3 Deck",
+            description: "A deck about v1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            pdfUrl: "",
+          },
+        },
+        [ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER]: { artifactId: "art_new" },
+      },
+      actionCalls,
+    );
+    const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
+    await run.signal("intake", {
+      artifactId: "art_1",
+      deckTitle: "Q3 Deck",
+      gammaId: "tmpl_77",
+      goal: "Close",
+    });
     await run.complete;
 
-    const render = ran.find((r) => r.id === "presentation-render");
-    expect(render?.input).toMatchObject({
+    const prepareRenderCall = actionCalls.find(
+      (c) => c.ref === PREPARE_RENDER_HANDLER,
+    );
+    expect(prepareRenderCall?.input).toMatchObject({
       gammaId: "tmpl_77",
       reply: "SLIDE 1: v1",
     });
   });
 
-  test("persist receives the rendered deck url, the description, and the gammaId", async () => {
-    const { invoker, ran } = makeRecordingInvoker(baseOutputs);
-    const run = runLocal(workflow, { invokeStep: invoker });
-    await run.signal("intake", intake);
+  test("prepare-persist receives the rendered deck url, the description, and the NEW gammaId (not the template id)", async () => {
+    const { invoker } = makeRecordingInvoker({
+      "presentation-generate": { reply: "SLIDE 1: v1" },
+      "presentation-describe": { reply: "A deck about v1" },
+    });
+    const actionCalls: Record<string, unknown>[] = [];
+    const actionResolver = makeActionResolver(
+      {
+        [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
+        [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        [FETCH_ARTIFACT_HANDLER]: { content: { skipped: true } },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
+        [PREPARE_RENDER_HANDLER]: {
+          content: { gammaId: "tmpl_1", prompt: "SLIDE 1: v1" },
+        },
+        [GAMMA_CREATE_FROM_TEMPLATE_HANDLER]: {
+          content: {
+            gammaUrl: "https://gamma.app/docs/1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            exportUrl: "",
+          },
+        },
+        [PREPARE_PERSIST_HANDLER]: {
+          content: {
+            title: "Q3 Deck",
+            description: "A deck about v1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            pdfUrl: "",
+          },
+        },
+        [ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER]: { artifactId: "art_new" },
+      },
+      actionCalls,
+    );
+    const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
+    await run.signal("intake", {
+      artifactId: "art_1",
+      deckTitle: "Q3 Deck",
+      gammaId: "tmpl_1",
+      goal: "Close",
+    });
     await run.complete;
 
-    const persist = ran.find((r) => r.id === "presentation-persist");
-    // gammaId must be the rendered deck id (render wins the merge), NOT the
-    // intake template id (tmpl_1).
-    expect(persist?.input).toMatchObject({
+    const preparePersistCall = actionCalls.find(
+      (c) => c.ref === PREPARE_PERSIST_HANDLER,
+    );
+    // gammaId must be the rendered deck id (render's content wins the merge),
+    // NOT the intake template id (tmpl_1).
+    expect(preparePersistCall?.input).toMatchObject({
       deckTitle: "Q3 Deck",
       gammaId: "deck_1",
-      gammaUrl: "https://gamma.app/docs/1",
+      url: "https://gamma.app/docs/1",
       reply: "A deck about v1",
     });
   });
 
-  test("persist maps the render step's exportUrl to the pdfUrl arg", () => {
-    const persist = workflow.steps["persist"];
-    if (persist === undefined || persist.kind !== "step") {
-      throw new Error("expected a step primitive for persist");
-    }
-    const rawArgMap = persist.agent.tags?.[STEP_ARGMAP_TAG];
-    if (typeof rawArgMap !== "string") {
-      throw new Error("persist is missing an argMap tag");
-    }
-    expect(JSON.parse(rawArgMap)).toMatchObject({
-      pdfUrl: { fromJson: "content", field: "exportUrl" },
+  test("fetch-artifact/fetch-note are native actions dispatching the tolerant wrapper tools", () => {
+    const fetchArtifact = actionPrimitive("fetch-artifact");
+    expect(fetchArtifact.handler).toBe(FETCH_ARTIFACT_HANDLER);
+    expect(fetchArtifact.input).toEqual({ from: "steps.intake.output" });
+    expect(fetchArtifact.effect).toEqual({
+      requires: [FETCH_ARTIFACT_HANDLER],
     });
+    expect(fetchArtifact.after).toEqual(["intake"]);
+
+    const fetchNote = actionPrimitive("fetch-note");
+    expect(fetchNote.handler).toBe(FETCH_NOTE_HANDLER);
+    expect(fetchNote.input).toEqual({ from: "steps.intake.output" });
+    expect(fetchNote.effect).toEqual({ requires: [FETCH_NOTE_HANDLER] });
+    expect(fetchNote.after).toEqual(["intake"]);
   });
 
-  test("the readers are deterministic, non-fatal, and skip the whole step when the intake id is absent", () => {
-    // artifactId/noteId are each the sole argMap field and the underlying
-    // tool's only required argument, so there is no sensible "call without
-    // it" — these use skipStepIfAbsent, not optional (which would omit the
-    // argument and call the tool anyway).
-    for (const [key, tool, arg] of [
-      ["fetch-artifact", "artifact_read", "artifactId"],
-      ["fetch-note", "granola_get_note", "noteId"],
-    ] as const) {
-      const reader = workflow.steps[key];
-      if (reader === undefined || reader.kind !== "step") {
-        throw new Error(`expected a step primitive for ${key}`);
-      }
-      expect(reader.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-      expect(reader.agent.tags?.[STEP_TOOL_TAG]).toContain(tool);
-      expect(reader.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
-      expect(JSON.parse(reader.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
-        [arg]: { from: arg, skipStepIfAbsent: true },
-      });
-    }
+  test("a failed fetch-artifact/fetch-note does not fail the run — the wrapper tool absorbs it", async () => {
+    const { invoker } = makeRecordingInvoker({
+      "presentation-generate": { reply: "SLIDE 1: v1" },
+      "presentation-describe": { reply: "A deck about v1" },
+    });
+    const actionCalls: Record<string, unknown>[] = [];
+    const actionResolver = makeActionResolver(
+      {
+        [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
+        [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+        // Simulates the wrapper tool's own catch: a completed envelope
+        // carrying the failure, never a thrown action error.
+        [FETCH_ARTIFACT_HANDLER]: {
+          content: { isError: true, error: "artifact not found" },
+        },
+        [FETCH_NOTE_HANDLER]: { content: { skipped: true } },
+        [PREPARE_RENDER_HANDLER]: {
+          content: { gammaId: "tmpl_1", prompt: "SLIDE 1: v1" },
+        },
+        [GAMMA_CREATE_FROM_TEMPLATE_HANDLER]: {
+          content: {
+            gammaUrl: "https://gamma.app/docs/1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            exportUrl: "",
+          },
+        },
+        [PREPARE_PERSIST_HANDLER]: {
+          content: {
+            title: "Q3 Deck",
+            description: "A deck about v1",
+            url: "https://gamma.app/docs/1",
+            gammaId: "deck_1",
+            pdfUrl: "",
+          },
+        },
+        [ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER]: { artifactId: "art_new" },
+      },
+      actionCalls,
+    );
+    const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
+
+    await run.signal("intake", {
+      artifactId: "art_missing",
+      deckTitle: "Q3 Deck",
+      gammaId: "tmpl_1",
+      goal: "Close",
+    });
+
+    const result = await run.complete;
+    expect(result.terminalStatus).toBe("completed");
+    const persistCall = actionCalls.find(
+      (c) => c.ref === ARTIFACT_LINK_GAMMA_PRESENTATION_HANDLER,
+    );
+    expect(persistCall).toBeDefined();
   });
 
-  test("generate (inline) → render (deterministic gamma) → persist (deterministic artifact)", () => {
+  test("generate/describe stay inline agent steps; list/fetch/render/persist are native actions", () => {
     const generate = workflow.steps["generate"];
     if (generate === undefined || generate.kind !== "step") {
       throw new Error("expected a step primitive for generate");
@@ -173,19 +495,6 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     expect(generate.agent.capabilities).toEqual([]);
     expect(generate.agent.systemPrompt.length).toBeGreaterThan(0);
 
-    const render = workflow.steps["render"];
-    if (render === undefined || render.kind !== "step") {
-      throw new Error("expected a step primitive for render");
-    }
-    expect(render.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(render.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "gamma_create_from_template",
-    );
-    expect(JSON.parse(render.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
-      gammaId: { from: "gammaId" },
-      prompt: { from: "reply" },
-    });
-
     const describe = workflow.steps["describe"];
     if (describe === undefined || describe.kind !== "step") {
       throw new Error("expected a step primitive for describe");
@@ -193,55 +502,35 @@ describe("artifact → gamma deck workflow (single-shot)", () => {
     expect(describe.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(describe.agent.systemPrompt.length).toBeGreaterThan(0);
 
-    const persist = workflow.steps["persist"];
-    if (persist === undefined || persist.kind !== "step") {
-      throw new Error("expected a step primitive for persist");
+    for (const id of [
+      "list-artifacts",
+      "list-notes",
+      "fetch-artifact",
+      "fetch-note",
+      "prepare-render",
+      "render",
+      "prepare-persist",
+      "persist",
+    ]) {
+      expect(workflow.steps[id]?.kind).toBe("action");
     }
-    expect(persist.agent.tags?.[STEP_TOOL_TAG]).toContain(
-      "artifact_link_gamma_presentation",
-    );
-    expect(JSON.parse(persist.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
-      title: { from: "deckTitle" },
-      description: { from: "reply" },
-      url: { fromJson: "content", field: "gammaUrl" },
-      gammaId: { fromJson: "content", field: "gammaId" },
-      pdfUrl: { fromJson: "content", field: "exportUrl" },
-    });
   });
 
-  test("there is no preview or check gate; persist depends directly on render and describe", () => {
+  test("there is no preview or check gate; persist depends on prepare-persist, which depends on render and describe", () => {
     expect(workflow.steps["preview-1"]).toBeUndefined();
     expect(workflow.steps["check-1"]).toBeUndefined();
-    const persist = workflow.steps["persist"];
-    if (persist === undefined || persist.kind !== "step") {
-      throw new Error("expected a step primitive for persist");
-    }
-    expect(persist.after).toEqual(["render", "describe"]);
+    const persist = actionPrimitive("persist");
+    expect(persist.after).toEqual(["prepare-persist"]);
+    const preparePersist = actionPrimitive("prepare-persist");
+    expect(preparePersist.after).toEqual(["render", "describe"]);
   });
 
   test("there is no list-templates step; the hub serves templates to the intake UI", () => {
     expect(workflow.steps["list-templates"]).toBeUndefined();
-    const ids = Object.values(workflow.steps).flatMap((step) =>
-      step.kind === "step" ? [step.agent.tags?.[STEP_TOOL_TAG]] : [],
+    const refs = Object.values(workflow.steps).flatMap((step) =>
+      step.kind === "action" ? [step.handler] : [],
     );
-    expect(ids).not.toContain("gamma_list_templates");
-  });
-
-  test("the source readers preload each tool's max for client-side paging", () => {
-    // Each limit is the tool's own ceiling — a higher literal is silently
-    // truncated. artifact_list allows 50; granola_list_notes clamps to 30.
-    for (const [key, limit] of [
-      ["list-artifacts", 50],
-      ["list-notes", 30],
-    ] as const) {
-      const step = workflow.steps[key];
-      if (step === undefined || step.kind !== "step") {
-        throw new Error(`expected a deterministic tool step for ${key}`);
-      }
-      expect(JSON.parse(step.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
-        limit: { literal: limit },
-      });
-    }
+    expect(refs).not.toContain("gamma_list_templates");
   });
 
   test("intake waits only on the two readers, not on list-templates", () => {

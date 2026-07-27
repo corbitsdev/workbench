@@ -37,7 +37,11 @@ export async function listDashboards(
     rawArgs,
     "linear_list_dashboards",
   );
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   try {
     const data = await fetchLinearGraphQL(
       config,

@@ -25,6 +25,7 @@
  */
 import {
   gateFallbackBlock,
+  humanizeStepId,
   pendingGateForRun,
   progressStateForStepPhase,
   runPageRedirectBlock,
@@ -54,10 +55,6 @@ export const MAX_PAIN_POINTS = 3;
 export interface PainPointCollateralBlockInput extends DockRunInput {
   /** Decoded step outputs keyed by stepId, as `stepOutputsFromLog` produces. */
   stepOutputs: Record<string, unknown>;
-}
-
-function humanizeStepId(stepId: string): string {
-  return stepId.replace(/[-_]+/gu, " ").trim();
 }
 
 function noteChoice(signalName: string, notes: GranolaNote[]): UIBlock {

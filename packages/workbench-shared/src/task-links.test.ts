@@ -33,14 +33,12 @@ describe("validateTaskLinkRef", () => {
     ).toMatch(/http\(s\)/i);
   });
 
-  it.each([
-    "artifact",
-    "workflow_run",
-    "mail",
-    "conversation",
-  ] as const)("accepts a non-empty %s ref id", (kind) => {
-    expect(validateTaskLinkRef({ kind, ref: "entity-1" })).toBeNull();
-  });
+  it.each(["artifact", "workflow_run", "mail", "conversation"] as const)(
+    "accepts a non-empty %s ref id",
+    (kind) => {
+      expect(validateTaskLinkRef({ kind, ref: "entity-1" })).toBeNull();
+    },
+  );
 
   it("rejects internal refs that look like URLs", () => {
     expect(
@@ -52,9 +50,9 @@ describe("validateTaskLinkRef", () => {
   });
 
   it("rejects whitespace-padded internal refs", () => {
-    expect(
-      validateTaskLinkRef({ kind: "mail", ref: " pm-1" }),
-    ).toMatch(/whitespace/i);
+    expect(validateTaskLinkRef({ kind: "mail", ref: " pm-1" })).toMatch(
+      /whitespace/i,
+    );
   });
 });
 
@@ -72,9 +70,9 @@ describe("validateTaskLinks", () => {
 
 describe("resolveTaskLinkHref", () => {
   it("maps conversation links to /chats/:ref", () => {
-    expect(
-      resolveTaskLinkHref({ kind: "conversation", ref: "thread-1" }),
-    ).toBe("/chats/thread-1");
+    expect(resolveTaskLinkHref({ kind: "conversation", ref: "thread-1" })).toBe(
+      "/chats/thread-1",
+    );
   });
 
   it("returns null for unsafe stored url links", () => {

@@ -7,7 +7,9 @@ describe("linear_get_attachment", () => {
   it("fetches attachment by id", async () => {
     const attachment = { id: "a1", title: "doc", url: "https://x" };
     const fetcher = makeFetchStub({ data: { attachment } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "1", name: "linear_get_attachment", arguments: { id: "a1" } },
@@ -29,7 +31,9 @@ describe("linear_prepare_attachment_upload", () => {
         },
       },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       {
@@ -45,7 +49,10 @@ describe("linear_prepare_attachment_upload", () => {
       new AbortController().signal,
     );
 
-    const parsed = JSON.parse(String(result.content)) as Record<string, unknown>;
+    const parsed = JSON.parse(String(result.content)) as Record<
+      string,
+      unknown
+    >;
     expect(parsed.issue).toBe("iss-1");
     expect(parsed.title).toBe("f.png");
     const body = lastBody(fetcher);
@@ -71,13 +78,19 @@ describe("linear_create_attachment_from_upload", () => {
         },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     await runner.run(
       {
         id: "1",
         name: "linear_create_attachment_from_upload",
-        arguments: { issue: "iss-1", assetUrl: "https://asset", subtitle: "sub" },
+        arguments: {
+          issue: "iss-1",
+          assetUrl: "https://asset",
+          subtitle: "sub",
+        },
       },
       new AbortController().signal,
     );

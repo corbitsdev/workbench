@@ -135,6 +135,9 @@ describe("POST /triggers/webhook/:triggerId", () => {
           triggerId: TRIGGER_ID,
           payload: { hello: "world" },
         },
+        // Unattended: marks the start so a pre-record failure is recorded and
+        // mailed rather than only logged (CL-4586).
+        source: "webhook",
       },
     ]);
   });

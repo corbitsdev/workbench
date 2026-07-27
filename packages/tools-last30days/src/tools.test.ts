@@ -180,6 +180,45 @@ describe("last30days_workflow_brief resilience", () => {
     expect(report.skippedSources?.map((s) => s.source)).toContain("x");
   });
 
+  test("a safe-wrapper envelope (successful ToolResult, JSON { isError: true, error } body) is recorded as a source error, not silently dropped", async () => {
+    // Every last30days source now dispatches through a `last30days_safe_*`
+    // wrapper tool (workflows/last30days-research/src/tools.ts) that never
+    // lets its own ToolResult.isError come back true — the native `action`
+    // primitive has no nonFatal escape, so a true outer isError would fail
+    // the whole run. A wrapped failure instead arrives as a SUCCESSFUL
+    // string result whose JSON content carries `{ isError: true, error }`.
+    // `validItemsEnvelope()`'s hardcoded `publishedAt` is a fixed past date
+    // that the 30-day window will eventually age out (a pre-existing test
+    // debt this change does not fix — see the several already-failing date-
+    // drift tests in this file), so this test dates its own good item off
+    // `Date.now()` instead of relying on that helper for the "not poisoned"
+    // half of the assertion.
+    const freshItem = {
+      url: "https://a.com",
+      title: "Alpha post about AI coding agents",
+      publishedAt: new Date().toISOString(),
+      source: "hn",
+      engagement: { upvotes: 200, comments: 40 },
+    };
+    const report = await runBrief({
+      intake: { output: { topic: "AI Coding Agents", days: 30 } },
+      hackernews: { output: { content: JSON.stringify([freshItem]) } },
+      x: {
+        output: {
+          content: JSON.stringify({
+            isError: true,
+            error: "xAI API error: 429 Too Many Requests",
+          }),
+          isError: false,
+        },
+      },
+    });
+    expect(report.items.length).toBeGreaterThan(0);
+    const xSkip = report.skippedSources?.find((s) => s.source === "x");
+    if (!xSkip) throw new Error("expected x to be recorded as skipped");
+    expect(xSkip.reason).toContain("xAI API error: 429 Too Many Requests");
+  });
+
   test("a non-JSON content envelope is skipped, not thrown", async () => {
     const report = await runBrief({
       intake: { output: { topic: "AI Coding Agents", days: 30 } },
@@ -564,237 +603,6 @@ describe("heartbeat_merge_brief_sources (CL-3485)", () => {
       isError: true,
       error: "403 forbidden",
     });
-  });
-});
-
-describe("heartbeat_format_brief_notify (CL-4232)", () => {
-  test("returns the mail_send argument shape verbatim (to/subject/content/refs)", async () => {
-    const handler = fullTool("heartbeat_format_brief_notify");
-    const result = await handler(
-      {
-        id: "notify",
-        name: "heartbeat_format_brief_notify",
-        arguments: {
-          userAddress: "usr_abc@workbench.local",
-          title: "Jordan Lee's Morning Brief - 04/07/26",
-          body: "# Morning brief\n\nAll clear.",
-          artifactId: "art_abc",
-          runId: "run_heartbeat-1",
-        },
-      },
-      SIGNAL,
-    );
-    if (typeof result.content === "string") {
-      throw new Error("expected object content");
-    }
-    expect(result.content).toEqual({
-      to: "usr_abc@workbench.local",
-      subject: "Jordan Lee's Morning Brief - 04/07/26",
-      content: "# Morning brief\n\nAll clear.",
-      refs: [
-        { kind: "artifact", ref: "art_abc", label: "Open brief" },
-        {
-          kind: "workflow_run",
-          ref: "run_heartbeat-1",
-          label: "Open Company Heartbeat",
-        },
-      ],
-    });
-  });
-
-  test("returns isError when runId is missing", async () => {
-    const handler = fullTool("heartbeat_format_brief_notify");
-    const result = await handler(
-      {
-        id: "notify",
-        name: "heartbeat_format_brief_notify",
-        arguments: {
-          userAddress: "usr_abc@workbench.local",
-          title: "t",
-          body: "b",
-          artifactId: "art_abc",
-        },
-      },
-      SIGNAL,
-    );
-    expect(result.isError).toBe(true);
-    expect(result.content).toBe("runId is required");
-  });
-});
-
-describe("heartbeat_format_brief_document (CL-4232)", () => {
-  test("pairs title and reply into a title/body document", async () => {
-    const handler = fullTool("heartbeat_format_brief_document");
-    const result = await handler(
-      {
-        id: "document",
-        name: "heartbeat_format_brief_document",
-        arguments: {
-          title: "Jordan Lee's Morning Brief - 04/07/26",
-          reply: "# Morning brief\n\nAll clear.",
-        },
-      },
-      SIGNAL,
-    );
-    if (typeof result.content === "string") {
-      throw new Error("expected object content");
-    }
-    expect(result.content).toEqual({
-      title: "Jordan Lee's Morning Brief - 04/07/26",
-      body: "# Morning brief\n\nAll clear.",
-    });
-  });
-
-  test("returns isError when reply is missing", async () => {
-    const handler = fullTool("heartbeat_format_brief_document");
-    const result = await handler(
-      {
-        id: "document",
-        name: "heartbeat_format_brief_document",
-        arguments: { title: "t" },
-      },
-      SIGNAL,
-    );
-    expect(result.isError).toBe(true);
-    expect(result.content).toBe("reply is required");
-  });
-});
-
-describe("heartbeat_format_brief_title (CL-3502)", () => {
-  test("returns a possessive title built from userDisplayName", async () => {
-    const handler = fullTool("heartbeat_format_brief_title");
-    const result = await handler(
-      {
-        id: "title",
-        name: "heartbeat_format_brief_title",
-        arguments: { userDisplayName: "Jordan Lee" },
-      },
-      SIGNAL,
-    );
-    if (typeof result.content === "string") {
-      throw new Error("expected object content");
-    }
-    const content = result.content as { title: string };
-    expect(content.title).toMatch(
-      /^Jordan Lee's Morning Brief - \d{2}\/\d{2}\/\d{2}$/,
-    );
-  });
-
-  test("falls back to 'Your Morning Brief' when no display name is given", async () => {
-    const handler = fullTool("heartbeat_format_brief_title");
-    const result = await handler(
-      { id: "title", name: "heartbeat_format_brief_title", arguments: {} },
-      SIGNAL,
-    );
-    if (typeof result.content === "string") {
-      throw new Error("expected object content");
-    }
-    const content = result.content as { title: string };
-    expect(content.title).toMatch(/^Your Morning Brief - \d{2}\/\d{2}\/\d{2}$/);
-  });
-});
-
-describe("competitor_analysis_format_report_document (CL-4232)", () => {
-  test("pairs companyUrl and reply into a title/body document", async () => {
-    const handler = fullTool("competitor_analysis_format_report_document");
-    const result = await handler(
-      {
-        id: "document",
-        name: "competitor_analysis_format_report_document",
-        arguments: {
-          companyUrl: "https://acme.com",
-          reply: "## Competitor report\n\nAcme has three main rivals.",
-        },
-      },
-      SIGNAL,
-    );
-    if (typeof result.content === "string") {
-      throw new Error("expected object content");
-    }
-    expect(result.content).toEqual({
-      title: "https://acme.com",
-      body: "## Competitor report\n\nAcme has three main rivals.",
-    });
-  });
-
-  test("returns isError when reply is missing", async () => {
-    const handler = fullTool("competitor_analysis_format_report_document");
-    const result = await handler(
-      {
-        id: "document",
-        name: "competitor_analysis_format_report_document",
-        arguments: { companyUrl: "https://acme.com" },
-      },
-      SIGNAL,
-    );
-    expect(result.isError).toBe(true);
-    expect(result.content).toBe("reply is required");
-  });
-
-  test("returns isError when companyUrl is missing", async () => {
-    const handler = fullTool("competitor_analysis_format_report_document");
-    const result = await handler(
-      {
-        id: "document",
-        name: "competitor_analysis_format_report_document",
-        arguments: { reply: "body" },
-      },
-      SIGNAL,
-    );
-    expect(result.isError).toBe(true);
-    expect(result.content).toBe("companyUrl is required");
-  });
-});
-
-describe("sumble_account_intel_format_report_document (CL-4232)", () => {
-  test("pairs organizationDomain and reply into a title/body document", async () => {
-    const handler = fullTool("sumble_account_intel_format_report_document");
-    const result = await handler(
-      {
-        id: "document",
-        name: "sumble_account_intel_format_report_document",
-        arguments: {
-          organizationDomain: "acme.com",
-          reply: "## Account brief\n\nAcme is worth a look.",
-        },
-      },
-      SIGNAL,
-    );
-    if (typeof result.content === "string") {
-      throw new Error("expected object content");
-    }
-    expect(result.content).toEqual({
-      title: "acme.com",
-      body: "## Account brief\n\nAcme is worth a look.",
-    });
-  });
-
-  test("returns isError when reply is missing", async () => {
-    const handler = fullTool("sumble_account_intel_format_report_document");
-    const result = await handler(
-      {
-        id: "document",
-        name: "sumble_account_intel_format_report_document",
-        arguments: { organizationDomain: "acme.com" },
-      },
-      SIGNAL,
-    );
-    expect(result.isError).toBe(true);
-    expect(result.content).toBe("reply is required");
-  });
-
-  test("returns isError when organizationDomain is missing", async () => {
-    const handler = fullTool("sumble_account_intel_format_report_document");
-    const result = await handler(
-      {
-        id: "document",
-        name: "sumble_account_intel_format_report_document",
-        arguments: { reply: "body" },
-      },
-      SIGNAL,
-    );
-    expect(result.isError).toBe(true);
-    expect(result.content).toBe("organizationDomain is required");
   });
 });
 

@@ -1,20 +1,22 @@
 import { describe, expect, it } from "bun:test";
 import type { WorkflowDefinition } from "@intx/workflow";
-import {
-  DETERMINISTIC_TOOL_KIND,
-  STEP_KIND_TAG,
-  STEP_TITLE_TAG,
-} from "./deterministic-step";
+import { STEP_TITLE_TAG } from "./deterministic-step";
 
 // The retired `inline-inference` tag value, kept as a literal (not an export —
 // the authoring kind is deleted) so historical workflow definitions that still
 // carry it on disk classify correctly when read back.
 const LEGACY_INLINE_INFERENCE_TAG = "inline-inference";
+// The retired `deterministic-tool` authoring kind's tag + value, kept as
+// literals for the same reason — `deterministicToolStep`,
+// `STEP_KIND_TAG`, and `DETERMINISTIC_TOOL_KIND` are deleted, but a
+// historical definition can still carry this tag.
+const LEGACY_STEP_KIND_TAG = "workbench.stepKind";
+const LEGACY_DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 import { classifyWorkflowSteps, countHumanGates } from "./flow-classify";
 
 function stepAgent(tag?: string, title?: string) {
   const tags: Record<string, string> = {};
-  if (tag !== undefined) tags[STEP_KIND_TAG] = tag;
+  if (tag !== undefined) tags[LEGACY_STEP_KIND_TAG] = tag;
   if (title !== undefined) tags[STEP_TITLE_TAG] = title;
   return { agent: { id: "a", tags } };
 }
@@ -28,7 +30,7 @@ function makeDefinition(): WorkflowDefinition {
       fetch_sources: {
         kind: "step",
         id: "fetch_sources",
-        ...stepAgent(DETERMINISTIC_TOOL_KIND),
+        ...stepAgent(LEGACY_DETERMINISTIC_TOOL_KIND),
       },
       synthesize_brief: {
         kind: "step",
@@ -43,7 +45,7 @@ function makeDefinition(): WorkflowDefinition {
       publish: {
         kind: "step",
         id: "publish",
-        ...stepAgent(DETERMINISTIC_TOOL_KIND),
+        ...stepAgent(LEGACY_DETERMINISTIC_TOOL_KIND),
       },
     },
   } as unknown as WorkflowDefinition;
@@ -84,7 +86,10 @@ describe("classifyWorkflowSteps", () => {
         webB: {
           kind: "step",
           id: "webB",
-          ...stepAgent(DETERMINISTIC_TOOL_KIND, "Search the web (round 2)"),
+          ...stepAgent(
+            LEGACY_DETERMINISTIC_TOOL_KIND,
+            "Search the web (round 2)",
+          ),
         },
       },
     } as unknown as WorkflowDefinition;
@@ -105,7 +110,10 @@ describe("classifyWorkflowSteps", () => {
           step: {
             kind: "step",
             id: "inner",
-            ...stepAgent(DETERMINISTIC_TOOL_KIND, "Fan out across sources"),
+            ...stepAgent(
+              LEGACY_DETERMINISTIC_TOOL_KIND,
+              "Fan out across sources",
+            ),
           },
         },
       },

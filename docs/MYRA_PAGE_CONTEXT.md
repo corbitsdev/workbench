@@ -4,13 +4,13 @@ Myra receives a short **page context** block when the web app launches (or relau
 
 ## Contract
 
-| Layer | Responsibility |
-| --- | --- |
-| `apps/web/src/page-context/catalog.ts` | Maintained strings and `match(pathname)` per primary route |
-| `apps/web/src/page-context/resolve.ts` | `pageContextForPathname()` — first matching catalog entry wins |
-| `apps/web/src/hooks/use-myra-session.ts` | On connect / relaunch recovery, `POST /api/v1/instances/:id/sessions` with `{ pageContext }` |
-| `apps/hub/src/routes/agents.ts` | Validates optional `pageContext` on launch |
-| `apps/hub/src/services/agent-provisioning.ts` | Appends a `page_context` section to the deploy system prompt via `@workbench/prompts` |
+| Layer                                         | Responsibility                                                                               |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `apps/web/src/page-context/catalog.ts`        | Maintained strings and `match(pathname)` per primary route                                   |
+| `apps/web/src/page-context/resolve.ts`        | `pageContextForPathname()` — first matching catalog entry wins                               |
+| `apps/web/src/hooks/use-myra-session.ts`      | On connect / relaunch recovery, `POST /api/v1/instances/:id/sessions` with `{ pageContext }` |
+| `apps/hub/src/routes/agents.ts`               | Validates optional `pageContext` on launch                                                   |
+| `apps/hub/src/services/agent-provisioning.ts` | Appends a `page_context` section to the deploy system prompt via `@workbench/prompts`        |
 
 Interchange session launch already ships a composed system prompt on deploy; page context is merged into that prompt at launch time (same pattern as operator personalization), not injected into user mail.
 

@@ -18,9 +18,7 @@ import { adminTableCard } from "./admin-ui";
 export function OwnerWorkUnits() {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const [confirmDiscardId, setConfirmDiscardId] = useState<string | null>(
-    null,
-  );
+  const [confirmDiscardId, setConfirmDiscardId] = useState<string | null>(null);
 
   const health = useQuery({
     queryKey: ["owner", "work-units", "health"],
@@ -185,11 +183,7 @@ export function OwnerWorkUnits() {
   );
 }
 
-function Stat(props: {
-  label: string;
-  value: string;
-  tone?: "ok" | "warn";
-}) {
+function Stat(props: { label: string; value: string; tone?: "ok" | "warn" }) {
   return (
     <div className="rounded-md border border-border bg-surface p-3">
       <div className="text-xs uppercase tracking-wide text-text-2">

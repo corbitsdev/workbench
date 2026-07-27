@@ -8,6 +8,7 @@ import {
   enrichProspectEngineTriggerPayload,
   resolveEnabledBriefSources,
 } from "@workbench/shared";
+import { enrichDailyLinkedInTriggerPayload } from "@workbench/linkedin";
 
 export type TriggerPayloadEnrichmentDeps = {
   db: HubDb;
@@ -88,6 +89,14 @@ const TRIGGER_PAYLOAD_ENRICHERS: Record<string, TriggerPayloadEnricher> = {
       },
       ctx.lookback ?? "manual-refresh",
     );
+  },
+  // daily-linkedin (CL-4033): stamp the firing member's mail identity. The
+  // drafting agent passes `userAddress` straight to `inbox_deliver_batch`,
+  // which requires it; it is not a schedule field and no step resolves it, so
+  // without this every fire reaches the deliver call with nothing to send to.
+  "daily-linkedin": async (deps, ctx, input) => {
+    const identity = await deps.resolveUserIdentity(ctx.principalId);
+    return enrichDailyLinkedInTriggerPayload(input, identity);
   },
 };
 

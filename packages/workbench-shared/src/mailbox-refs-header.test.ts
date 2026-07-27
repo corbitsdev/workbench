@@ -8,7 +8,9 @@ import {
 
 describe("mailbox refs MIME header", () => {
   test("round-trips artifact refs through JSON", () => {
-    const refs = [{ kind: "artifact" as const, ref: "art_1", label: "Open brief" }];
+    const refs = [
+      { kind: "artifact" as const, ref: "art_1", label: "Open brief" },
+    ];
     const encoded = encodeWorkbenchRefsHeaderValue(refs);
     expect(JSON.parse(encoded)).toEqual(refs);
     expect(parseWorkbenchRefsHeaderValue(encoded)).toEqual(refs);
@@ -27,6 +29,8 @@ describe("mailbox refs MIME header", () => {
 
   test("invalid JSON degrades to undefined", () => {
     expect(parseWorkbenchRefsHeaderValue("not-json")).toBeUndefined();
-    expect(parseWorkbenchRefsHeaderValue('[{"kind":"bogus","ref":"x"}]')).toBeUndefined();
+    expect(
+      parseWorkbenchRefsHeaderValue('[{"kind":"bogus","ref":"x"}]'),
+    ).toBeUndefined();
   });
 });

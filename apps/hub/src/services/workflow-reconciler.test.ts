@@ -45,7 +45,9 @@ mock.module("../workflow-executor/run-store", () => ({
       runId,
       signalId: signal.signalId,
       receivedAt: signal.receivedAt,
-      redeliveries: signal.redeliveries,
+      ...(signal.redeliveries === undefined
+        ? {}
+        : { redeliveries: signal.redeliveries }),
     });
     return refreshResultRef;
   },
@@ -898,12 +900,19 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
     expect(summary.redelivered).toBe(1);
   });
 
-  it("gives a freshly-accepted pending signal time to land (no immediate re-delivery) and never hibernates a pending-signal run", async () => {
+  it("delivers a freshly-queued pending signal on its FIRST attempt without waiting for the redelivery backoff (CL-4548), and never hibernates a pending-signal run", async () => {
+    // attempts === 0 AND dispatched: false (the EXPLICIT queued-only marker
+    // deliverStartIntakeSignal/queueScheduledIntakeSignal write): the backoff
+    // exists to give an in-flight delivery time to land before RE-delivering,
+    // not to delay the genuine first delivery — an intake signal queued at
+    // run start must reach the sidecar promptly, not sit for up to a full
+    // redelivery window first.
     const pending = {
       signalId: "sig-in-flight",
       signalName: "approval",
       payload: {},
       receivedAt: new Date().toISOString(),
+      dispatched: false,
     };
     const h = makeHarness({
       records: [parkedRecord("ses_run_landing", GRACE_MS * 10, pending)],
@@ -912,9 +921,97 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
 
     const summary = await h.reconciler.reconcileAwaiting();
 
-    // Routable and past the grace, but a signal is in flight: neither
-    // hibernated nor re-delivered this tick — the projection will clear the
-    // pending signal when SignalReceived folds, or the next tick re-delivers.
+    expect(h.undeploys).toEqual([]);
+    expect(h.sentSignals).toEqual([
+      {
+        agentAddress: addressOf("ses_run_landing"),
+        runId: "run_ses_run_landing",
+        signalName: "approval",
+        signalId: "sig-in-flight",
+        payload: {},
+      },
+    ]);
+    expect(summary.hibernated).toBe(0);
+    expect(summary.redelivered).toBe(1);
+  });
+
+  it("does NOT re-deliver a signal its writer already dispatched synchronously (dispatched: true), even on attempt 0 within the backoff window", async () => {
+    // acceptGateSignal / resumeWorkflowRun call sendSignalDeliver themselves
+    // in the same request and mark the row `dispatched: true` — this row is a
+    // durable receipt backstop for a send that already happened, NOT an
+    // undelivered queue entry. The reconciler's own attempt counter is still
+    // 0 here, but it must treat this exactly like a genuine redelivery (back
+    // off), or every human gate-resume gets a premature duplicate dispatch on
+    // the very next tick.
+    const pending = {
+      signalId: "sig-already-dispatched",
+      signalName: "approval",
+      payload: {},
+      receivedAt: new Date().toISOString(),
+      dispatched: true,
+    };
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_dispatched", GRACE_MS * 10, pending)],
+      routable: [addressOf("ses_run_dispatched")],
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(h.undeploys).toEqual([]);
+    expect(h.sentSignals).toEqual([]);
+    expect(summary.hibernated).toBe(0);
+    expect(summary.redelivered).toBe(0);
+  });
+
+  it("a LEGACY row with no `dispatched` key at all still backs off (absent means dispatched, not queued — no migration required)", async () => {
+    // Every pendingSignal row that could already exist in the database before
+    // CL-4548 shipped was written by acceptGateSignal/resumeWorkflowRun (the
+    // queued-only path is new code that has written zero rows historically),
+    // so a row with no `dispatched` key is, in truth, always a dispatched
+    // one. `dispatched` absent must therefore behave exactly like
+    // `dispatched: true` — enforcing the backoff — so a legacy row is never
+    // misclassified as queued-only and delivered early on deploy. This is the
+    // whole point of defaulting absent to "dispatched": it needs no
+    // migration/backfill to give old rows their pre-existing behavior.
+    const pending = {
+      signalId: "sig-legacy-no-dispatched-key",
+      signalName: "approval",
+      payload: {},
+      receivedAt: new Date().toISOString(),
+      // No `dispatched` key at all — the shape every pre-CL-4548 row has.
+    };
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_legacy", GRACE_MS * 10, pending)],
+      routable: [addressOf("ses_run_legacy")],
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(h.undeploys).toEqual([]);
+    expect(h.sentSignals).toEqual([]);
+    expect(summary.hibernated).toBe(0);
+    expect(summary.redelivered).toBe(0);
+  });
+
+  it("still backs off a genuine RE-delivery (attempts > 0) freshly refreshed within the window — the backoff's actual job is untouched", async () => {
+    const pending = {
+      signalId: "sig-recently-redelivered",
+      signalName: "approval",
+      payload: {},
+      receivedAt: new Date().toISOString(),
+      redeliveries: 1,
+    };
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_backoff", GRACE_MS * 10, pending)],
+      routable: [addressOf("ses_run_backoff")],
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    // Routable and past the hibernation grace, but a RE-delivery is in
+    // flight within its backoff window: neither hibernated nor re-delivered
+    // this tick — the projection will clear the pending signal when
+    // SignalReceived folds, or the next tick (past the window) re-delivers.
     expect(h.undeploys).toEqual([]);
     expect(h.sentSignals).toEqual([]);
     expect(summary.hibernated).toBe(0);

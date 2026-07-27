@@ -4,18 +4,20 @@ import { awaitSignal, defineWorkflow, step } from "@intx/workflow";
 import type { ActionHandler } from "@intx/workflow";
 import { runLocal } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
-import {
-  DETERMINISTIC_TOOL_KIND,
-  STEP_ARGMAP_TAG,
-  STEP_KIND_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
 
 import {
   workflow,
   GRANOLA_GET_NOTE_HANDLER,
   GRANOLA_LIST_NOTES_HANDLER,
+  PERSIST_PIECES_HANDLER,
 } from "./index";
+
+// The retired `deterministic-tool` authoring kind's tags. Kept as literals
+// (not an import from `@workbench/agents`, which no longer exports them) —
+// this test only asserts the tags are ABSENT from every native step, proving
+// no step regresses onto the deleted mechanism.
+const STEP_KIND_TAG = "workbench.stepKind";
+const STEP_TOOL_TAG = "workbench.tool";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -105,7 +107,6 @@ describe("pain-point-collateral native workflow", () => {
     const { invoker, ran } = makeRecordingInvoker({
       "pain-point-collateral-analyze": AGENT_REPLY(analyzeReply),
       "pain-point-collateral-generate": AGENT_REPLY(generateReply),
-      "pain-point-collateral-persist": { artifactId: "art_1" },
     });
     const { resolver, ran: actionsRan } = makeRecordingActionResolver({
       [GRANOLA_LIST_NOTES_HANDLER]: {
@@ -116,6 +117,7 @@ describe("pain-point-collateral native workflow", () => {
         title: "Acme call",
         summary: "Discovery",
       },
+      [PERSIST_PIECES_HANDLER]: { results: [{ artifactId: "art_1" }] },
     });
 
     const run = runLocal(workflow, {
@@ -152,10 +154,10 @@ describe("pain-point-collateral native workflow", () => {
     const actionRefs = actionsRan.map((r) => r.handler);
     expect(actionRefs).toContain(GRANOLA_LIST_NOTES_HANDLER);
     expect(actionRefs).toContain(GRANOLA_GET_NOTE_HANDLER);
+    expect(actionRefs).toContain(PERSIST_PIECES_HANDLER);
     const ranIds = ran.map((r) => r.id);
     expect(ranIds).toContain("pain-point-collateral-analyze");
     expect(ranIds).toContain("pain-point-collateral-generate");
-    expect(ranIds).toContain("pain-point-collateral-persist");
   });
 
   // -------------------------------------------------------------------------
@@ -217,30 +219,11 @@ describe("pain-point-collateral native workflow", () => {
     expect(gen.step.input).toEqual({ from: "trigger.payload" });
   });
 
-  test("persist map iterates over review.output.approvedPieces", () => {
-    const persist = mapPrimitive("persist");
-    expect(persist.over).toEqual({
-      from: "steps.review.output.approvedPieces",
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Persist step is deterministic with correct argMap
-  // -------------------------------------------------------------------------
-  test("persist inner step is a deterministic artifact_create with title/kind/content argMap", () => {
-    const persist = mapPrimitive("persist");
-    const inner = persist.step;
-    expect(inner.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(inner.agent.tags?.[STEP_TOOL_TAG]).toContain("artifact_create");
-    expect(inner.agent.inference.sources).toEqual([]);
-    const argMapTag = inner.agent.tags?.[STEP_ARGMAP_TAG];
-    if (argMapTag === undefined)
-      throw new Error("expected argMap tag on persist inner step");
-    expect(JSON.parse(argMapTag)).toEqual({
-      title: { from: "title" },
-      kind: { from: "format" },
-      content: { from: "content" },
-    });
+  test("persist is a native action dispatching the batch persist-pieces handler over review.output", () => {
+    const persist = actionPrimitive("persist");
+    expect(persist.handler).toBe(PERSIST_PIECES_HANDLER);
+    expect(persist.input).toEqual({ from: "steps.review.output" });
+    expect(persist.effect).toEqual({ requires: [PERSIST_PIECES_HANDLER] });
   });
 
   // -------------------------------------------------------------------------

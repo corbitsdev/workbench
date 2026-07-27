@@ -15,11 +15,16 @@ import type { HubDb } from "../db";
 import { evaluateGrants } from "@intx/authz";
 import { toolPackagesForCapabilities } from "@workbench/agents";
 import type { GrantRule } from "@intx/authz";
-import { createEffectContext, defineWorkflow, map, step } from "@intx/workflow";
+import {
+  action,
+  createEffectContext,
+  defineWorkflow,
+  step,
+} from "@intx/workflow";
 import { defineAgent } from "@intx/agent";
 import {
   createWorkbenchDirectorRegistry,
-  deterministicToolStep,
+  canonicalizeStepToolName,
   agentStep,
 } from "@workbench/agents";
 
@@ -39,7 +44,6 @@ import {
   buildSupervisorDeployFrame,
   capabilityNames,
   stepGrantCapabilityNames,
-  collectDeterministicToolStepIds,
   collectGrants,
   createWorkflowDeployService,
   createWorkflowRepoWriter,
@@ -422,9 +426,10 @@ describe("stepGrantCapabilityNames", () => {
   // last30days' ground-queries action ("effect
   // @workbench/tools-last30days/core:last30days_ground_queries was not
   // authorized (null)"), and heartbeat's brief-title action (same, for
-  // heartbeat_format_brief_title). Declaring one tool from a package stages
-  // the whole package's definitions in front of the model — entitlement to
-  // call must match entitlement to see.
+  // heartbeat_format_brief_title — since moved to its own
+  // @workbench/tools-heartbeat package). Declaring one tool from a
+  // package stages the whole package's definitions in front of the model —
+  // entitlement to call must match entitlement to see.
   test("declaring one granola tool grants the package's whole canonical surface", () => {
     const declared = ["@workbench/tools-granola/granola:granola_list_notes"];
     const names = stepGrantCapabilityNames(
@@ -458,7 +463,7 @@ describe("stepGrantCapabilityNames", () => {
     const rules = buildStepGrantRules(names);
     const granted = await evaluateGrants(
       rules,
-      "effect:@workbench/tools-last30days/core:heartbeat_format_brief_title",
+      "effect:@workbench/tools-last30days/core:last30days_collect",
       "invoke",
     );
     expect(granted.effect).toBe("allow");
@@ -527,11 +532,12 @@ describe("buildStepGrantRules", () => {
     // was a pure authorization-resource mismatch, not a credential or
     // pinning defect.
     const rules = buildStepGrantRules(["granola_list_notes"]);
-    const authorize: Parameters<typeof createEffectContext>[0]["authorize"] =
-      async (resource, action) => {
-        const decision = await evaluateGrants(rules, resource, action);
-        return { effect: decision.effect, matchingGrants: [], resolvedBy: null };
-      };
+    const authorize: Parameters<
+      typeof createEffectContext
+    >[0]["authorize"] = async (resource, action) => {
+      const decision = await evaluateGrants(rules, resource, action);
+      return { effect: decision.effect, matchingGrants: [], resolvedBy: null };
+    };
     const ctx = createEffectContext({
       authorize,
       effects: {
@@ -980,57 +986,6 @@ describe("readWorkflowDefinition", () => {
   });
 });
 
-describe("collectDeterministicToolStepIds", () => {
-  test("collects only steps whose agent carries the deterministic-tool marker tag", () => {
-    const deployedAgent = defineAgent({
-      id: "draft",
-      description: "deployed reasoning",
-      systemPrompt: "reason",
-      tools: [],
-      capabilities: [],
-      inference: { sources: [{ provider: "openai-compatible", model: "m" }] },
-    });
-    const wf = defineWorkflow({
-      id: "wf",
-      trigger: { type: "manual" },
-      steps: {
-        fetch: deterministicToolStep({
-          id: "fetch",
-          tool: "granola_list_notes",
-        }),
-        analyze: agentStep({
-          id: "analyze",
-          systemPrompt: "reason",
-          after: ["fetch"],
-        }),
-        draft: step({ agent: deployedAgent, after: ["analyze"] }),
-      },
-    });
-
-    const deterministic = collectDeterministicToolStepIds(wf);
-    expect([...deterministic]).toEqual(["fetch"]);
-    expect(deterministic.has("analyze")).toBe(false);
-    expect(deterministic.has("draft")).toBe(false);
-  });
-
-  test("finds a deterministic-tool step nested inside a map primitive", () => {
-    const wf = defineWorkflow({
-      id: "wf",
-      trigger: { type: "manual" },
-      steps: {
-        fan: map({
-          over: { literal: [] },
-          step: deterministicToolStep({
-            id: "fan-inner",
-            tool: "granola_list_notes",
-          }),
-        }),
-      },
-    });
-    expect([...collectDeterministicToolStepIds(wf)]).toEqual(["fan"]);
-  });
-});
-
 // Integration-style proof of CONDITION 2: a workflow with an inline step
 // deploys creating ZERO agent-state repos for the inline step, while the
 // deployed step still gets its agent-state grants repo + agent/instance rows.
@@ -1145,7 +1100,7 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
       stageWorkflowStep: () => Promise.resolve(),
     });
 
-    const result = await service.deployWorkflow({
+    await service.deployWorkflow({
       workflow,
       deploymentId,
       deploymentDomain,
@@ -1191,14 +1146,15 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
   });
 });
 
-// Integration-style proof of CL-2252: a deterministic tool step deploys
-// keeping ONLY its `agent` row — no `agent_instance` row, no `state/grants.json`
-// agent-state repo, and no launchSession. The fully-deployed step keeps both
-// rows + its grants repo but (as of CL-2782) also no longer launches. Exercises
-// the real `createWorkflowDeployService` across its
-// seams; only the db / repoStore / sessionService / sidecarRouter boundaries
-// are mocked.
-describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
+// Integration-style proof that every step class — native `action`, native
+// `agentStep`, and a hand-built `defineAgent`+`step` — gets the SAME row set
+// uniformly: an `agent` row, an `agent_instance` row, and an agent-state repo
+// carrying `state/grants.json`. The retired `deterministic-tool` step class
+// used to keep only its `agent` row; that partition is gone along with
+// `deterministicToolStep` itself, so every step now gets the full set.
+// Exercises the real `createWorkflowDeployService` across its seams; only the
+// db / repoStore / sessionService / sidecarRouter boundaries are mocked.
+describe("deployWorkflow uniform per-step rows", () => {
   const SOURCE: InferenceSource = {
     id: "openai-compatible:m",
     provider: "openai-compatible",
@@ -1225,7 +1181,7 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
     } as unknown as HarnessConfig;
   }
 
-  test("keeps agent + instance rows for every step but scopes the grants repo to deployed steps", async () => {
+  test("keeps agent + instance rows AND the grants repo for every step uniformly", async () => {
     const deploymentId = "ses_det";
     const deploymentDomain = "deploy.example.com";
 
@@ -1237,13 +1193,17 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
       capabilities: [],
       inference: { sources: [{ provider: "openai-compatible", model: "m" }] },
     });
+    const fetchHandler = canonicalizeStepToolName(
+      "fetch",
+      "granola_list_notes",
+    );
     const workflow = defineWorkflow({
       id: "pain-point-collateral",
       trigger: { type: "manual" },
       steps: {
-        fetch: deterministicToolStep({
-          id: "fetch",
-          tool: "granola_list_notes",
+        fetch: action({
+          handler: fetchHandler,
+          effect: { requires: [fetchHandler] },
         }),
         analyze: agentStep({
           id: "analyze",
@@ -1304,7 +1264,7 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
       stageWorkflowStep: () => Promise.resolve(),
     });
 
-    const result = await service.deployWorkflow({
+    await service.deployWorkflow({
       workflow,
       deploymentId,
       deploymentDomain,
@@ -1317,17 +1277,17 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
 
     // No per-step launch happens at all now: the deploy service wires a no-op
     // launch hook (the in-process session runtime is retired), so no step —
-    // deterministic or fully-deployed reasoning — launches a session.
+    // action or reasoning — launches a session.
 
-    // 0 agent-state repos for the deterministic tool step (no grants.json);
-    // both reasoning steps (`analyze`, a native `agentStep`, and `draft`, a
-    // hand-built `defineAgent`+`step`) get one — execution reads it.
+    // Every step gets an agent-state repo (and thus `state/grants.json`)
+    // uniformly: the native `action` step (`fetch`), the native `agentStep`
+    // (`analyze`), and the hand-built `defineAgent`+`step` (`draft`).
     const agentStateIds = writeTreeRepoIds
       .filter((r) => r.kind === "agent-state")
       .map((r) => r.id);
     expect(agentStateIds).toContain("ses_det-draft");
     expect(agentStateIds).toContain("ses_det-analyze");
-    expect(agentStateIds).not.toContain("ses_det-fetch");
+    expect(agentStateIds).toContain("ses_det-fetch");
 
     // Every step keeps BOTH rows uniformly: interchange's pack phase records
     // a session_asset row per staged attachment with a hard FK to
@@ -1486,7 +1446,7 @@ describe("deployWorkflow approves the catalog inference chain", () => {
       sendAgentDeploy as unknown as SidecarRouter["sendAgentDeploy"],
     );
 
-    const result = await service.deployWorkflow({
+    await service.deployWorkflow({
       workflow,
       deploymentId,
       deploymentDomain,
@@ -1828,7 +1788,7 @@ describe("persistCatalog (hub-only publish)", () => {
       directorRegistry: createWorkbenchDirectorRegistry(),
     });
 
-    const result = await service.persistCatalog({
+    await service.persistCatalog({
       workflow,
       deploymentId,
       deploymentDomain,

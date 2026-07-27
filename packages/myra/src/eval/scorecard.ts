@@ -86,8 +86,7 @@ export function buildScorecard(opts: {
     corpus: opts.corpus,
     promptVersion: opts.promptVersion,
     model: opts.model,
-    runsPerCase:
-      opts.runs[0] !== undefined ? opts.runs[0].scores.length : 0,
+    runsPerCase: opts.runs[0] !== undefined ? opts.runs[0].scores.length : 0,
     generatedAt: opts.generatedAt ?? new Date().toISOString(),
     cases,
     summary: {

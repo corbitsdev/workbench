@@ -263,7 +263,10 @@ export async function failDeadParkedRuns(
         const detail =
           failedSteps.length > 0
             ? failedSteps
-                .map((s) => `${s.stepId}${s.errorMessage ? ` (${s.errorMessage})` : ""}`)
+                .map(
+                  (s) =>
+                    `${s.stepId}${s.errorMessage ? ` (${s.errorMessage})` : ""}`,
+                )
                 .join("; ")
             : "a dependency step";
         await notifyStalledRunFailure(

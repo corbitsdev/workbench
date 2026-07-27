@@ -188,7 +188,7 @@ const MYRA_VARIANT_TEMPLATES: AgentTemplate[] = MYRA_VARIANTS.filter(
   // id). Carrying the same `kind: "personal"` marker as canonical Myra keeps
   // catalog/operator-profile personalization identical; reapability is
   // governed separately by `ephemeral` below, not by `kind`.
-  kind: variant.kind === "chat" ? "personal" : undefined,
+  ...(variant.kind === "chat" ? { kind: "personal" as const } : {}),
   // Triage variants are ephemeral single-turn inbox-triage sessions (see the
   // canonical `myra-triage` entry below); chat variants are real chat
   // surfaces a member returns to, exactly like canonical Myra.

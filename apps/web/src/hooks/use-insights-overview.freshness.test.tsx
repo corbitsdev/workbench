@@ -42,7 +42,9 @@ describe("useInsightsOverview overviewQuery freshness config", () => {
       ),
     });
 
-    await waitFor(() => expect(result.current.overviewQuery.isSuccess).toBe(true));
+    await waitFor(() =>
+      expect(result.current.overviewQuery.isSuccess).toBe(true),
+    );
 
     const state = client
       .getQueryCache()

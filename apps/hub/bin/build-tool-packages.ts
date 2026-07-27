@@ -4,7 +4,7 @@
 // whose BUILTINS list is @intx-only and whose packer is not exported.
 // See docs/CREATING_AGENTS_AND_TOOLS.md.
 
-import { promises as fs } from "node:fs";
+import { promises as fs, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import * as tar from "tar";
@@ -12,10 +12,7 @@ import ssri from "ssri";
 import { type } from "arktype";
 
 import { PackageJSON } from "@intx/types/package-json";
-import {
-  deriveToolPackageSpecs,
-  loadCommittedToolManifestFactories,
-} from "@workbench/tool-manifest";
+import { discoverToolPackageDirs } from "@workbench/tool-manifest/discover";
 import {
   type EmbeddedToolPackageManifest,
   type EmbeddedToolPackageRow,
@@ -37,13 +34,30 @@ export interface BuiltToolPackage {
   tarballPath: string;
 }
 
-/** Derived from committed tool manifests; run `bun run build:tool-manifests` after manifest edits. */
-export const TOOL_PACKAGES: ToolPackageSpec[] = deriveToolPackageSpecs(
-  loadCommittedToolManifestFactories(),
-);
-
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const DEFAULT_OUT_DIR = path.join(REPO_ROOT, "dist", "tool-packages");
+
+function packageNameFromDisk(packageDir: string): string {
+  const pkgJsonPath = path.join(REPO_ROOT, packageDir, "package.json");
+  const raw = JSON.parse(readFileSync(pkgJsonPath, "utf8")) as {
+    name?: unknown;
+  };
+  if (typeof raw.name !== "string") {
+    throw new Error(`${pkgJsonPath} has no "name" field`);
+  }
+  return raw.name;
+}
+
+/**
+ * Derived by walking the real checkout — build-time-only, so there is no
+ * repo-relative-path data persisted anywhere; the discovery walk that finds
+ * a tool package is the same one that reports where it lives.
+ */
+export const TOOL_PACKAGES: ToolPackageSpec[] = discoverToolPackageDirs(
+  REPO_ROOT,
+)
+  .map((packageDir) => ({ name: packageNameFromDisk(packageDir), packageDir }))
+  .sort((a, b) => a.name.localeCompare(b.name));
 
 const NPM_PACKAGE_NAME_PATTERN =
   /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;

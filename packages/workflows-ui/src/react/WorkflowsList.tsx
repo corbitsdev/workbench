@@ -39,8 +39,7 @@ export function WorkflowListSectionHeader({
   count?: number;
   className?: string;
 }) {
-  const label =
-    count === undefined ? title : `${title} · ${count}`;
+  const label = count === undefined ? title : `${title} · ${count}`;
   return (
     <div
       className={cn(
@@ -142,11 +141,11 @@ export function WorkflowsList({
       {showHead ? <WorkflowListHead /> : null}
       <div className="min-h-0 flex-1 overflow-auto" role="rowgroup">
         {!hasRows ? (
-          empty ?? (
+          (empty ?? (
             <div className="px-4 py-10 text-center text-[13px] text-text-3">
               No workflows match these filters.
             </div>
-          )
+          ))
         ) : (
           <>
             {live.length > 0 ? (
@@ -156,9 +155,7 @@ export function WorkflowsList({
                   <WorkflowListRow
                     key={item.id}
                     item={item}
-                    selected={
-                      selectedKind === "run" && selectedId === item.id
-                    }
+                    selected={selectedKind === "run" && selectedId === item.id}
                     {...(onSelect ? { onSelect } : {})}
                   />
                 ))}

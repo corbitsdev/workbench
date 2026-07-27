@@ -1,7 +1,7 @@
-import { defineWorkflow } from "@intx/workflow";
+import { action, defineWorkflow } from "@intx/workflow";
 import {
   agentStep,
-  deterministicToolStep,
+  canonicalizeStepToolName,
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
 
@@ -51,6 +51,23 @@ Verify the working document against the transcript: fix anything unsupported, mi
 
 Your reply is saved verbatim as the final call-notes artifact. No preamble. Markdown only.`;
 
+// Native `action` handler refs — the tool's canonical (factory-prefixed) name,
+// resolved via `canonicalizeStepToolName`'s build-time-checked lookup, so
+// a typo'd or manifest-drifted tool name fails the build instead of
+// deploying a step nothing can dispatch.
+export const GRANOLA_GET_NOTE_HANDLER = canonicalizeStepToolName(
+  "process-granola-fetch",
+  "granola_get_note",
+);
+export const WRITE_ARTIFACT_HANDLER = canonicalizeStepToolName(
+  "process-granola-persist",
+  "write_artifact",
+);
+export const PREPARE_DOCUMENT_HANDLER = canonicalizeStepToolName(
+  "process-granola-prepare-document",
+  "process_granola_prepare_document",
+);
+
 // -------------------------------------------------------------------------
 // Per-call child workflow (the granola-call parent starts one run per new
 // note). Artifact chain per call, all keyed by noteId so re-runs upsert in
@@ -66,45 +83,61 @@ Your reply is saved verbatim as the final call-notes artifact. No preamble. Mark
 // emitting the final document. Fact-check and polish are deliberately ONE
 // stage — split only if hallucinations survive into final artifacts.
 //
-// Deterministic steps use `deterministicToolStep` argMaps for the rename
-// gaps native selectors cannot express (reply→body, content.title→title);
-// sourceRef prefixing is server-side (write_artifact's sourceRefPrefix/
-// sourceRefKey) because argMaps cannot concatenate strings.
+// Native `action` dispatch passes its evaluated `input` selector verbatim as
+// the tool's arguments, and selectors (`from`/`project`/`merge`/`literal`)
+// cannot rename or duplicate a field. Each write_artifact call needs `title`
+// pulled out of the raw note JSON (a `fromJson` extract), `body` renamed
+// from `content`/`reply`, and — for the two lineage writes — the SAME
+// noteId duplicated under both `sourceRefKey` and `parentSourceRefKey`. None
+// of that is selector-expressible, so a `prepare-*` action ahead of each
+// write shapes it via this workflow's own `process_granola_prepare_document`
+// tool (@workbench/workflow-process-granola-call); the write_artifact action
+// itself then only merges that shaped output with the step's constant
+// literals (titlePrefix/kind/sourceRefPrefix/parentSourceRefPrefix/jobLabel).
 // -------------------------------------------------------------------------
 
 export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
   steps: {
-    fetch: deterministicToolStep({
-      id: "process-granola-fetch",
-      title: "Fetch the transcript",
-      tool: "granola_get_note",
+    // Native action: granola_get_note's sole argument is `noteId`, which is
+    // also trigger.payload's own field name (INTAKE_FIELDS) — a pure
+    // passthrough, no reshape needed.
+    fetch: action({
+      handler: GRANOLA_GET_NOTE_HANDLER,
       input: { from: "trigger.payload" },
-      argMap: {
-        noteId: { from: "noteId" },
-      },
+      effect: { requires: [GRANOLA_GET_NOTE_HANDLER] },
     }),
 
-    transcript: deterministicToolStep({
-      id: "process-granola-transcript",
-      title: "Save the raw transcript",
-      tool: "write_artifact",
+    "prepare-transcript": action({
+      handler: PREPARE_DOCUMENT_HANDLER,
       // fetch's output is the raw ToolResult ({ content: "<note json>" });
-      // trigger.payload contributes the top-level noteId for the sourceRef.
+      // trigger.payload contributes the top-level noteId. No `reply` here,
+      // so the tool falls back to `content` as the transcript's own body.
       input: {
         merge: [{ from: "steps.fetch.output" }, { from: "trigger.payload" }],
       },
-      argMap: {
-        title: { fromJson: "content", field: "title" },
-        titlePrefix: { literal: "Transcript — " },
-        body: { from: "content" },
-        kind: { literal: "research" },
-        sourceRefPrefix: { literal: "granola-transcript" },
-        sourceRefKey: { from: "noteId" },
-        jobLabel: { literal: label },
-      },
+      effect: { requires: [PREPARE_DOCUMENT_HANDLER] },
       after: ["fetch"],
+    }),
+
+    transcript: action({
+      handler: WRITE_ARTIFACT_HANDLER,
+      input: {
+        merge: [
+          { from: "steps.prepare-transcript.output.content" },
+          {
+            literal: {
+              titlePrefix: "Transcript — ",
+              kind: "research",
+              sourceRefPrefix: "granola-transcript",
+              jobLabel: label,
+            },
+          },
+        ],
+      },
+      effect: { requires: [WRITE_ARTIFACT_HANDLER] },
+      after: ["prepare-transcript"],
     }),
 
     extract: agentStep({
@@ -115,36 +148,46 @@ export const workflow = defineWorkflow({
       after: ["fetch"],
     }),
 
-    processed: deterministicToolStep({
-      id: "process-granola-processed",
-      title: "Save the working notes",
-      tool: "write_artifact",
+    "prepare-processed": action({
+      handler: PREPARE_DOCUMENT_HANDLER,
       input: {
         merge: [
           { from: "steps.fetch.output" },
           { from: "steps.extract.output" },
           { from: "trigger.payload" },
+          { literal: { includeParent: true } },
         ],
       },
-      argMap: {
-        title: { fromJson: "content", field: "title" },
-        titlePrefix: { literal: "Working notes — " },
-        body: { from: "reply" },
-        kind: { literal: "research" },
-        sourceRefPrefix: { literal: "granola-processed" },
-        sourceRefKey: { from: "noteId" },
-        // Lineage: working notes descend from the raw transcript, so the
-        // chain renders as a linked family (write_artifact resolves the
-        // parent by its composed sourceRef; best-effort server-side).
-        parentSourceRefPrefix: { literal: "granola-transcript" },
-        parentSourceRefKey: { from: "noteId" },
-        jobLabel: { literal: label },
+      effect: { requires: [PREPARE_DOCUMENT_HANDLER] },
+      after: ["fetch", "extract"],
+    }),
+
+    processed: action({
+      handler: WRITE_ARTIFACT_HANDLER,
+      input: {
+        merge: [
+          { from: "steps.prepare-processed.output.content" },
+          {
+            literal: {
+              titlePrefix: "Working notes — ",
+              kind: "research",
+              sourceRefPrefix: "granola-processed",
+              // Lineage: working notes descend from the raw transcript, so
+              // the chain renders as a linked family (write_artifact
+              // resolves the parent by its composed sourceRef; best-effort
+              // server-side).
+              parentSourceRefPrefix: "granola-transcript",
+              jobLabel: label,
+            },
+          },
+        ],
       },
+      effect: { requires: [WRITE_ARTIFACT_HANDLER] },
       // transcript is an explicit dependency: the parent lookup is a plain
       // read at write time, so the parent artifact must exist BEFORE this
       // step runs — sibling DAG branches run concurrently otherwise and the
       // lineage silently loses the race.
-      after: ["extract", "transcript"],
+      after: ["prepare-processed", "transcript"],
     }),
 
     finalize: agentStep({
@@ -167,31 +210,40 @@ export const workflow = defineWorkflow({
       after: ["extract"],
     }),
 
-    persist: deterministicToolStep({
-      id: "process-granola-persist",
-      title: "Save the call notes",
-      tool: "write_artifact",
+    "prepare-persist": action({
+      handler: PREPARE_DOCUMENT_HANDLER,
       input: {
         merge: [
           { from: "steps.fetch.output" },
           { from: "steps.finalize.output" },
           { from: "trigger.payload" },
+          { literal: { includeParent: true } },
         ],
       },
-      argMap: {
-        title: { fromJson: "content", field: "title" },
-        body: { from: "reply" },
-        kind: { literal: "research" },
-        sourceRefPrefix: { literal: "granola-call-note" },
-        sourceRefKey: { from: "noteId" },
-        // Lineage: the final call notes descend from the working notes.
-        parentSourceRefPrefix: { literal: "granola-processed" },
-        parentSourceRefKey: { from: "noteId" },
-        jobLabel: { literal: label },
+      effect: { requires: [PREPARE_DOCUMENT_HANDLER] },
+      after: ["fetch", "finalize"],
+    }),
+
+    persist: action({
+      handler: WRITE_ARTIFACT_HANDLER,
+      input: {
+        merge: [
+          { from: "steps.prepare-persist.output.content" },
+          {
+            literal: {
+              kind: "research",
+              sourceRefPrefix: "granola-call-note",
+              // Lineage: the final call notes descend from the working notes.
+              parentSourceRefPrefix: "granola-processed",
+              jobLabel: label,
+            },
+          },
+        ],
       },
+      effect: { requires: [WRITE_ARTIFACT_HANDLER] },
       // processed is an explicit dependency for the same lineage-race
       // reason as transcript above.
-      after: ["finalize", "processed"],
+      after: ["prepare-persist", "processed"],
     }),
   },
 });

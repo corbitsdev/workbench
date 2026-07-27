@@ -70,9 +70,7 @@ function WaterfallRowBar({
               left: `${bar.leftPercent}%`,
               width: `${bar.widthPercent}%`,
             }}
-            title={
-              row.durationLabel !== null ? row.durationLabel : undefined
-            }
+            title={row.durationLabel !== null ? row.durationLabel : undefined}
           />
         ) : (
           <button

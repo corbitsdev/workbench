@@ -133,6 +133,8 @@ bun run format && bun run lint && bun run typecheck && bun run test
 
 `bun run format` formats only changed files (staged + unstaged + untracked). Use `bun run format:all` to format the entire repo explicitly.
 
+`bun run lint` likewise checks only changed files (prettier + eslint on the changed subset). Use `bun run lint:all` for the full repo-wide gate (prettier, eslint, `lint:no-effect-fetch`, tool-manifest drift) — it is slow on a large tree and is not the day-to-day gate.
+
 `bun run typecheck` must pass with zero errors in `apps/`, `packages/`, `scripts/` before any commit. Errors inside `interchange/` are pre-existing upstream issues.
 
 ## Dockerfile Maintenance
@@ -160,7 +162,7 @@ When you add a `@workbench/tools-*` package with a credential `providerName`:
 - Add the env var to `.env.example`.
 - Add a `buildEntries()` test asserting the entry appears/disappears with the env var.
 - Add the `providerName` to the agent's `credentialProviderNames` (never `credentialRequirements`).
-- **Add the provider to `CREDENTIAL_PROVIDER_CATALOG` in `packages/workbench-shared/src/governance.ts`** (`kind: "tool"`) so the key can be set/replaced/cleared from the Owner → Capabilities page. The catalog is a hand-maintained list, NOT derived from the tool packages — a new tool credential is invisible in the Owner UI until it is added here. The `surfaces every seeded tool credential` test in `seed-credentials.test.ts` fails if a seeded tool provider is missing from the catalog. If the credential needs more than a secret (an endpoint or identity handle), set `secondaryField`; override `secretLabel` when the secret is not an API key; list the platforms one credential powers via `platforms`.
+- **Set the manifest's `credentialCatalog` field** (`label`, and optionally `secretLabel`/`secondaryField`/`platforms`) on the factory in the package's `tool-manifest.ts`. `CREDENTIAL_PROVIDER_CATALOG` (`packages/workbench-shared/src/credential-provider-catalog.ts`) derives its tool-kind entries automatically from every manifest's `credentialCatalog` via `buildDerivedToolCredentialCatalogEntries()` → `deriveToolCredentialCatalogEntries(loadCommittedToolManifestFactories())` — set `credentialCatalog` and the key surfaces on the Owner → Capabilities page with no separate catalog edit. If the credential needs more than a secret (an endpoint or identity handle), set `secondaryField` on the manifest; override `secretLabel` when the secret is not an API key; list the platforms one credential powers via `platforms`. Only three catalog rows are hand-authored outside the manifest, in `TOOL_OAUTH_APP_CREDENTIAL_ENTRIES`: `linear-oauth-app`, `attio-oauth-app`, and `linear-webhook` (OAuth app client id/secret and inbound-webhook signing secrets — neither is a tool-manifest credential). The `surfaces every seeded tool credential` test in `seed-credentials.test.ts` still fails if `buildEntries()` seeds a provider whose tool manifest doesn't declare a matching `credentialCatalog`.
 
 Keyless tools need no seed entry and no catalog entry — say so in the package README.
 

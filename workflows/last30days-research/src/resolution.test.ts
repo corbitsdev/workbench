@@ -13,6 +13,13 @@ import {
   WORKFLOW_BRIEF_HANDLER,
   FORMAT_REPORT_DOCUMENT_HANDLER,
   WRITE_ARTIFACT_HANDLER,
+  SAFE_EXA_SEARCH_HANDLER,
+  SAFE_HACKERNEWS_SEARCH_HANDLER,
+  SAFE_GITHUB_ACTIVITY_HANDLER,
+  SAFE_REDDIT_SEARCH_HANDLER,
+  SAFE_X_SEARCH_HANDLER,
+  SAFE_YOUTUBE_SEARCH_HANDLER,
+  SAFE_POLYMARKET_ODDS_HANDLER,
 } from "./index";
 
 // CL-2640 confirmed-shapes fixtures. These are the EXACT stored-output shapes
@@ -21,9 +28,10 @@ import {
 //     all `kind:"full"` or `kind:"string"` tools) is the tool's return
 //     verbatim — `action`'s `ctx.perform` returns `result.output` unwrapped
 //     (interchange tool.ts:349-353, sidecar action-tool-handler.ts).
-//   - the deterministic (`deterministicToolStep`) harness returns the same
-//     `{ callId, content }` shape for the still-shimmed best-effort source
-//     steps.
+//   - the `runDeterministicToolStep` harness (shared by every action-
+//     dispatched step, the retired `deterministicToolStep`'s former path)
+//     returns the same `{ callId, content }` shape for the still-shimmed
+//     best-effort source steps.
 //   - an inline inference step stores `{ reply, turn }`
 //     (workflow-substrate-factory.ts:1118).
 //   - an awaitSignal step stores the signal payload verbatim (run.ts runAwaitSignal).
@@ -180,10 +188,15 @@ describe("CL-2640 corrected workflow through the real executor", () => {
       resolvedInputs[agent.id] = input;
       return { output: STEP_OUTPUTS[agent.id] ?? null };
     };
+    // Several source steps share ONE safe wrapper handler ref (e.g.
+    // web/webB/webC/web2 all dispatch `last30days_safe_exa_search`), so each
+    // ref's resolved inputs are recorded in call order, not overwritten.
     const resolvedActionInputs: Record<string, unknown> = {};
+    const resolvedActionInputsByRef: Record<string, unknown[]> = {};
     const resolver = (ref: string): ActionHandler => {
       return async (input) => {
         resolvedActionInputs[ref] = input;
+        (resolvedActionInputsByRef[ref] ??= []).push(input);
         return ACTION_OUTPUTS[ref] ?? null;
       };
     };
@@ -202,28 +215,31 @@ describe("CL-2640 corrected workflow through the real executor", () => {
 
     // Round 1 + round 2 source steps: each `input` resolved directly to the
     // tool's exact call shape — a non-empty tailored `query` plus a numeric
-    // `limit` — with no intermediate argMap reshape to drift from it.
-    const sourceStepIds = [
-      "last30days-fetch-web",
-      "last30days-fetch-webB",
-      "last30days-fetch-webC",
-      "last30days-fetch-hackernews",
-      "last30days-fetch-github",
-      "last30days-fetch-reddit",
-      "last30days-fetch-x",
-      "last30days-fetch-youtube",
-      "last30days-fetch-polymarket",
-      "last30days-fetch-web2",
-      "last30days-fetch-reddit2",
-      "last30days-fetch-x2",
-      "last30days-fetch-youtube2",
-    ];
-    for (const id of sourceStepIds) {
-      const args = resolvedInputs[id] as Record<string, unknown> | undefined;
-      expect(args).toBeDefined();
-      expect(typeof args?.query).toBe("string");
-      expect((args?.query as string).length).toBeGreaterThan(0);
-      expect(typeof args?.limit).toBe("number");
+    // `limit` — with no intermediate argMap reshape to drift from it. Every
+    // source now dispatches through its safe wrapper handler ref (a native
+    // `action`), not a recorded step-agent invocation; `exa_search` backs
+    // four calls (web/webB/webC/web2), `reddit_search`/`x_search`/
+    // `youtube_search` back two each (round 1 + round 2), the rest back one.
+    const expectedCallCountByHandler: Record<string, number> = {
+      [SAFE_EXA_SEARCH_HANDLER]: 4,
+      [SAFE_HACKERNEWS_SEARCH_HANDLER]: 1,
+      [SAFE_GITHUB_ACTIVITY_HANDLER]: 1,
+      [SAFE_REDDIT_SEARCH_HANDLER]: 2,
+      [SAFE_X_SEARCH_HANDLER]: 2,
+      [SAFE_YOUTUBE_SEARCH_HANDLER]: 2,
+      [SAFE_POLYMARKET_ODDS_HANDLER]: 1,
+    };
+    for (const [handler, expectedCount] of Object.entries(
+      expectedCallCountByHandler,
+    )) {
+      const calls = resolvedActionInputsByRef[handler] ?? [];
+      expect(calls).toHaveLength(expectedCount);
+      for (const call of calls) {
+        const args = call as Record<string, unknown>;
+        expect(typeof args.query).toBe("string");
+        expect((args.query as string).length).toBeGreaterThan(0);
+        expect(typeof args.limit).toBe("number");
+      }
     }
 
     // Persist: the write_artifact args the run's `input` selector produced —

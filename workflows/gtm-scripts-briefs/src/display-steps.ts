@@ -1,4 +1,13 @@
-import type { DisplayFlowStep } from "@workbench/agents";
+// Structurally identical to `DisplayFlowStep` from `@workbench/agents`
+// (key/label/stepIds) — declared locally so this module carries no
+// `@workbench/agents` dependency; every consumer (the client stepper, the
+// hub's catalog classifier) reads this shape structurally, not by nominal
+// type.
+export interface DisplayFlowStep {
+  key: string;
+  label: string;
+  stepIds: readonly string[];
+}
 
 // Mirrors last30days-research's RESEARCH_STEP_IDS (this workflow reuses
 // buildResearchSteps() verbatim) clustered into one "Research" node, plus the
@@ -31,5 +40,9 @@ export const DISPLAY_STEPS: DisplayFlowStep[] = [
   { key: "intake", label: "Topic", stepIds: ["intake"] },
   { key: "research", label: "Research", stepIds: [...RESEARCH_STEP_IDS] },
   { key: "write", label: "Script & Brief", stepIds: ["write"] },
-  { key: "done", label: "Done", stepIds: ["persist"] },
+  {
+    key: "done",
+    label: "Done",
+    stepIds: ["persist-prepare", "persist"],
+  },
 ];

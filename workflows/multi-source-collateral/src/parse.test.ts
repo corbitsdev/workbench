@@ -39,9 +39,9 @@ describe("extractors", () => {
   });
 
   test("extractNoteText prefers transcript", () => {
-    expect(
-      extractNoteText({ title: "Call", transcript: "hello" }),
-    ).toContain("hello");
+    expect(extractNoteText({ title: "Call", transcript: "hello" })).toContain(
+      "hello",
+    );
   });
 
   test("extractIssueText uses identifier", () => {

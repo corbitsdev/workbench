@@ -113,6 +113,7 @@ describe("member-scope dispatch", () => {
             { externalId: "g1", subject: "S", body: "B", url: "u" },
           ]);
         }
+        return undefined;
       },
     };
     const intake = createInboxIntake({

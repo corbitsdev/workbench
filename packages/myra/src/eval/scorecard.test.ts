@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { EvalScore } from "./case";
 import { buildScorecard, EvalScorecardSchema } from "./scorecard";
 
-function score(
-  caseId: string,
-  passed: boolean,
-  tools = 0,
-): EvalScore {
+function score(caseId: string, passed: boolean, tools = 0): EvalScore {
   return {
     caseId,
     passed,
@@ -34,7 +30,11 @@ describe("buildScorecard", () => {
         {
           caseId: "a",
           title: "A",
-          scores: [score("a", true, 2), score("a", false, 0), score("a", true, 1)],
+          scores: [
+            score("a", true, 2),
+            score("a", false, 0),
+            score("a", true, 1),
+          ],
         },
       ],
       generatedAt: "2026-01-01T00:00:00.000Z",

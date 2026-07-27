@@ -25,9 +25,13 @@ const PROCESSED_SOURCE_REF_PREFIX = "granola-call-note";
 const DEFAULT_MAX_CALLS = 10;
 const MAX_CALLS_CEILING = 25;
 
-// Routine intake delivers maxCalls as text; a manual/JSON start can deliver
-// a number. Both are legitimate; anything else non-empty fails loudly.
-function parseMaxCalls(value: unknown): number {
+// Routine intake delivers limit as text; a manual/JSON start can deliver a
+// number. Both are legitimate; anything else non-empty fails loudly. Named
+// `limit` (not `maxCalls`) so the workflow's single intake field reaches this
+// tool and granola_list_notes's own `limit` argument under the same name —
+// native selectors cannot rename a field, so the two tools share the name
+// instead.
+function parseLimit(value: unknown): number {
   if (value === undefined || value === null || value === "") {
     return DEFAULT_MAX_CALLS;
   }
@@ -39,7 +43,7 @@ function parseMaxCalls(value: unknown): number {
         : Number.NaN;
   if (!Number.isFinite(parsed) || parsed < 1) {
     throw new Error(
-      `granola_spawn_call_runs: maxCalls must be a positive number, got ${JSON.stringify(value)}`,
+      `granola_spawn_call_runs: limit must be a positive number, got ${JSON.stringify(value)}`,
     );
   }
   return Math.min(Math.floor(parsed), MAX_CALLS_CEILING);
@@ -93,7 +97,7 @@ export const GRANOLA_SPAWN_HUB_TOOLS: Record<string, ContextToolEntry> = {
               "granola_spawn_call_runs: content is required (the granola_list_notes JSON)",
             );
           }
-          const maxCalls = parseMaxCalls(args.maxCalls);
+          const maxCalls = parseLimit(args.limit);
           const {
             sessionService,
             cryptoProvider,

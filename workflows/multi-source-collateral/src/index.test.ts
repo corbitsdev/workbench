@@ -1,17 +1,26 @@
 import { describe, expect, test } from "bun:test";
 import { runLocal } from "@intx/workflow/runlocal";
+import type { ActionHandler } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
-import {
-  DETERMINISTIC_TOOL_KIND,
-  STEP_KIND_TAG,
-  STEP_NONFATAL_TAG,
-  STEP_TOOL_TAG,
-} from "@workbench/agents";
 
-import { kind, label, workflow } from "./index";
+import {
+  ARTIFACT_LIST_HANDLER,
+  BUILD_GENERATE_ITEMS_HANDLER,
+  FETCH_SOURCES_HANDLER,
+  GRANOLA_LIST_NOTES_HANDLER,
+  LIST_ISSUES_HANDLER,
+  PERSIST_PIECES_HANDLER,
+  PREPARE_OPTIONS_GATE_HANDLER,
+  PREPARE_REGENERATE_ITEMS_HANDLER,
+  PREPARE_REVIEW_FINAL_GATE_HANDLER,
+  PREPARE_REVIEW_GATE_HANDLER,
+  PREPARE_SOURCES_GATE_HANDLER,
+  kind,
+  label,
+  workflow,
+} from "./index";
 import { buildGenerationSystemPrompt, CONTENT_TYPES } from "./prompts";
 import {
-  buildSourceContext,
   parseArtifactList,
   parseGeneratedPieces,
   parseIssueList,
@@ -30,14 +39,18 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   return { invoker, ran };
 }
 
-function stepPrimitive(id: string) {
-  const primitive = workflow.steps[id];
-  if (primitive === undefined || primitive.kind !== "step") {
-    throw new Error(
-      `expected step for "${id}", got ${primitive?.kind ?? "undefined"}`,
-    );
-  }
-  return primitive;
+function makeActionResolver(outputs: Record<string, unknown> = {}): {
+  resolver: (ref: string) => ActionHandler;
+  ran: { ref: string; input: unknown }[];
+} {
+  const ran: { ref: string; input: unknown }[] = [];
+  const resolver = (ref: string): ActionHandler => {
+    return async (input): Promise<unknown> => {
+      ran.push({ ref, input });
+      return outputs[ref] ?? null;
+    };
+  };
+  return { resolver, ran };
 }
 
 function mapPrimitive(id: string) {
@@ -45,6 +58,16 @@ function mapPrimitive(id: string) {
   if (primitive === undefined || primitive.kind !== "map") {
     throw new Error(
       `expected map for "${id}", got ${primitive?.kind ?? "undefined"}`,
+    );
+  }
+  return primitive;
+}
+
+function actionPrimitive(id: string) {
+  const primitive = workflow.steps[id];
+  if (primitive === undefined || primitive.kind !== "action") {
+    throw new Error(
+      `expected action for "${id}", got ${primitive?.kind ?? "undefined"}`,
     );
   }
   return primitive;
@@ -62,21 +85,70 @@ describe("multi-source-collateral package", () => {
     expect(workflow.id).toBe(kind);
   });
 
-  test("list-issues is nonFatal so missing Linear does not fail the run", () => {
-    const prim = stepPrimitive("list-issues");
-    expect(prim.agent.tags?.[STEP_TOOL_TAG]).toContain("linear_list_issues");
-    expect(prim.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(prim.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+  test("list-issues is a native action dispatching the tolerant wrapper tool", () => {
+    const primitive = actionPrimitive("list-issues");
+    expect(primitive.handler).toBe(LIST_ISSUES_HANDLER);
+    expect(primitive.input).toEqual({ literal: { first: 50 } });
+    expect(primitive.effect).toEqual({ requires: [LIST_ISSUES_HANDLER] });
   });
 
-  test("generate map uses inline inference", () => {
-    const m = mapPrimitive("generate");
-    expect(m.step.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
+  test("list-artifacts is a native action calling artifact_list with a literal limit", () => {
+    const primitive = actionPrimitive("list-artifacts");
+    expect(primitive.handler).toBe(ARTIFACT_LIST_HANDLER);
+    expect(primitive.input).toEqual({ literal: { limit: 50 } });
+    expect(primitive.effect).toEqual({ requires: [ARTIFACT_LIST_HANDLER] });
   });
 
-  test("persist map targets artifact_create", () => {
-    const m = mapPrimitive("persist");
-    expect(m.step.agent.tags?.[STEP_TOOL_TAG]).toContain("artifact_create");
+  test("list-notes is a native action calling granola_list_notes with a literal limit", () => {
+    const primitive = actionPrimitive("list-notes");
+    expect(primitive.handler).toBe(GRANOLA_LIST_NOTES_HANDLER);
+    expect(primitive.input).toEqual({ literal: { limit: 30 } });
+    expect(primitive.effect).toEqual({
+      requires: [GRANOLA_LIST_NOTES_HANDLER],
+    });
+  });
+
+  test("fetchSources folds the former per-kind maps into one action", () => {
+    const primitive = actionPrimitive("fetchSources");
+    expect(primitive.handler).toBe(FETCH_SOURCES_HANDLER);
+    expect(primitive.input).toEqual({ from: "steps.sources.output" });
+  });
+
+  test("persist and persist-after-regen both target the folded persist-pieces action", () => {
+    expect(actionPrimitive("persist").handler).toBe(PERSIST_PIECES_HANDLER);
+    expect(actionPrimitive("persist-after-regen").handler).toBe(
+      PERSIST_PIECES_HANDLER,
+    );
+  });
+
+  test("generate/regenerate maps use inline inference (no tool-dispatch tags)", () => {
+    const generate = mapPrimitive("generate");
+    const regenerate = mapPrimitive("regenerate");
+    expect(generate.step.agent.inference.sources.length).toBe(1);
+    expect(regenerate.step.agent.inference.sources.length).toBe(1);
+    expect(generate.step.agent.toolFactories).toEqual([]);
+    expect(regenerate.step.agent.toolFactories).toEqual([]);
+  });
+
+  test("gate handlers reference the committed workflow-owned tool names", () => {
+    expect(PREPARE_SOURCES_GATE_HANDLER).toContain(
+      "multi_source_collateral_prepare_sources_gate",
+    );
+    expect(PREPARE_OPTIONS_GATE_HANDLER).toContain(
+      "multi_source_collateral_prepare_options_gate",
+    );
+    expect(PREPARE_REVIEW_GATE_HANDLER).toContain(
+      "multi_source_collateral_prepare_review_gate",
+    );
+    expect(PREPARE_REVIEW_FINAL_GATE_HANDLER).toContain(
+      "multi_source_collateral_prepare_review_final_gate",
+    );
+    expect(PREPARE_REGENERATE_ITEMS_HANDLER).toContain(
+      "multi_source_collateral_prepare_regenerate_items",
+    );
+    expect(BUILD_GENERATE_ITEMS_HANDLER).toContain(
+      "multi_source_collateral_build_generate_items",
+    );
   });
 
   test("happy path without regenerate: sources → options → generate → review → persist", async () => {
@@ -86,68 +158,62 @@ describe("multi-source-collateral package", () => {
       content: "Body copy",
     });
     const { invoker, ran } = makeRecordingInvoker({
-      "multi-source-collateral-list-artifacts": {
-        artifacts: [{ id: "a1", title: "Brief" }],
-      },
-      "multi-source-collateral-list-notes": {
-        notes: [{ id: "n1", title: "Call" }],
-      },
-      "multi-source-collateral-list-issues": {
+      "multi-source-collateral-generate": AGENT_REPLY(draft),
+    });
+    const { resolver: actionResolver, ran: actionsRan } = makeActionResolver({
+      [ARTIFACT_LIST_HANDLER]: { artifacts: [{ id: "a1", title: "Brief" }] },
+      [GRANOLA_LIST_NOTES_HANDLER]: { notes: [{ id: "n1", title: "Call" }] },
+      [LIST_ISSUES_HANDLER]: {
         issues: [{ id: "i1", identifier: "CL-1", title: "Ticket" }],
       },
-      "multi-source-collateral-fetch-artifact": {
-        title: "Brief",
-        content: "Artifact body",
+      [PREPARE_SOURCES_GATE_HANDLER]: { kind: "form", fields: [] },
+      [FETCH_SOURCES_HANDLER]: {
+        sourceContext: "combined context",
+        sourcesSummary: [{ kind: "artifact", id: "a1" }],
       },
-      "multi-source-collateral-fetch-note": {
-        title: "Call",
-        transcript: "We talked about onboarding.",
+      [PREPARE_OPTIONS_GATE_HANDLER]: { kind: "form", fields: [] },
+      [BUILD_GENERATE_ITEMS_HANDLER]: {
+        items: [
+          {
+            contentType: "linkedin-post",
+            format: "linkedin-post",
+            sourceContext: "combined context",
+          },
+        ],
       },
-      "multi-source-collateral-fetch-issue": {
-        identifier: "CL-1",
-        title: "Ticket",
-        description: "Ship collateral",
+      [PREPARE_REVIEW_GATE_HANDLER]: { kind: "reviewList", rows: [] },
+      [PREPARE_REGENERATE_ITEMS_HANDLER]: {
+        shouldRegenerate: false,
+        regenerateItems: [],
       },
-      "multi-source-collateral-generate": AGENT_REPLY(draft),
-      "multi-source-collateral-persist": { artifactId: "art_out" },
+      [PERSIST_PIECES_HANDLER]: { artifacts: [{ artifactId: "art_out" }] },
     });
 
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
 
     await run.signal("sources", {
-      artifactItems: [{ artifactId: "a1" }],
-      noteItems: [{ noteId: "n1" }],
-      issueItems: [{ id: "i1" }],
-      text: "Extra free text",
+      sourceIds: ["artifact:a1"],
+      freeText: "Extra free text",
     });
-
-    await run.signal("options", {
-      items: [
-        {
-          contentType: "linkedin-post",
-          format: "linkedin-post",
-          sourceContext: "combined context",
-          systemPrompt: "Be short.",
-        },
-      ],
-    });
-
+    await run.signal("options", { contentTypes: ["linkedin-post"] });
     await run.signal("review", {
       approvedPieces: [
+        { format: "linkedin-post", title: "Hook", content: "Body copy" },
+      ],
+      decisions: [
         {
+          approved: true,
           format: "linkedin-post",
           title: "Hook",
           content: "Body copy",
         },
       ],
-      shouldRegenerate: false,
-      regenerateItems: [],
     });
 
     const result = await run.complete;
     expect(result.terminalStatus).toBe("completed");
     expect(ran.map((r) => r.id)).toContain("multi-source-collateral-generate");
-    expect(ran.map((r) => r.id)).toContain("multi-source-collateral-persist");
+    expect(actionsRan.map((r) => r.ref)).toContain(PERSIST_PIECES_HANDLER);
     expect(ran.map((r) => r.id)).not.toContain(
       "multi-source-collateral-regenerate",
     );
@@ -165,54 +231,56 @@ describe("multi-source-collateral package", () => {
       content: "Revised draft",
     });
     const { invoker, ran } = makeRecordingInvoker({
-      "multi-source-collateral-list-artifacts": { artifacts: [] },
-      "multi-source-collateral-list-notes": { notes: [] },
-      "multi-source-collateral-list-issues": { issues: [] },
       "multi-source-collateral-generate": AGENT_REPLY(draft),
       "multi-source-collateral-regenerate": AGENT_REPLY(revised),
-      "multi-source-collateral-persist-after-regen": { artifactId: "art_2" },
+    });
+    const { resolver: actionResolver, ran: actionsRan } = makeActionResolver({
+      [ARTIFACT_LIST_HANDLER]: { artifacts: [] },
+      [GRANOLA_LIST_NOTES_HANDLER]: { notes: [] },
+      [LIST_ISSUES_HANDLER]: { issues: [] },
+      [PREPARE_SOURCES_GATE_HANDLER]: { kind: "form", fields: [] },
+      [FETCH_SOURCES_HANDLER]: {
+        sourceContext: "Only free text source",
+        sourcesSummary: [],
+      },
+      [PREPARE_OPTIONS_GATE_HANDLER]: { kind: "form", fields: [] },
+      [BUILD_GENERATE_ITEMS_HANDLER]: {
+        items: [
+          {
+            contentType: "blog-short",
+            format: "blog-short",
+            sourceContext: "Only free text source",
+          },
+        ],
+      },
+      [PREPARE_REVIEW_GATE_HANDLER]: { kind: "reviewList", rows: [] },
+      [PREPARE_REGENERATE_ITEMS_HANDLER]: {
+        shouldRegenerate: true,
+        regenerateItems: [
+          {
+            contentType: "blog-short",
+            format: "blog-short",
+            sourceContext: "Only free text source",
+            previousContent: "First draft",
+            feedback: "Make it punchier",
+          },
+        ],
+      },
+      [PREPARE_REVIEW_FINAL_GATE_HANDLER]: { kind: "reviewList", rows: [] },
+      [PERSIST_PIECES_HANDLER]: { artifacts: [{ artifactId: "art_2" }] },
     });
 
-    const run = runLocal(workflow, { invokeStep: invoker });
+    const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
 
     await run.signal("sources", {
-      artifactItems: [],
-      noteItems: [],
-      issueItems: [],
-      text: "Only free text source",
+      sourceIds: [],
+      freeText: "Only free text source",
     });
-
-    await run.signal("options", {
-      items: [
-        {
-          contentType: "blog-short",
-          sourceContext: "Only free text source",
-          systemPrompt: "Write a short blog.",
-        },
-      ],
-    });
-
-    await run.signal("review", {
-      approvedPieces: [],
-      shouldRegenerate: true,
-      regenerateItems: [
-        {
-          contentType: "blog-short",
-          sourceContext: "Only free text source",
-          systemPrompt: "Write a short blog.",
-          previousContent: "First draft",
-          feedback: "Make it punchier",
-        },
-      ],
-    });
-
+    await run.signal("options", { contentTypes: ["blog-short"] });
+    await run.signal("review", { approvedPieces: [], decisions: [] });
     await run.signal("review-final", {
       approvedPieces: [
-        {
-          format: "blog-short",
-          title: "V2",
-          content: "Revised draft",
-        },
+        { format: "blog-short", title: "V2", content: "Revised draft" },
       ],
     });
 
@@ -221,12 +289,10 @@ describe("multi-source-collateral package", () => {
     expect(ran.map((r) => r.id)).toContain(
       "multi-source-collateral-regenerate",
     );
-    expect(ran.map((r) => r.id)).toContain(
-      "multi-source-collateral-persist-after-regen",
+    const persistCalls = actionsRan.filter(
+      (r) => r.ref === PERSIST_PIECES_HANDLER,
     );
-    expect(ran.map((r) => r.id)).not.toContain(
-      "multi-source-collateral-persist",
-    );
+    expect(persistCalls).toHaveLength(1);
   });
 });
 
@@ -246,37 +312,12 @@ describe("parse helpers", () => {
     );
   });
 
-  test("buildSourceContext concatenates sources", () => {
-    const ctx = buildSourceContext({
-      artifactOutputs: [{ title: "A", content: "body" }],
-      noteOutputs: [{ title: "N", transcript: "talk" }],
-      issueOutputs: [{ identifier: "CL-1", title: "T", description: "d" }],
-      text: "free",
-    });
-    expect(ctx).toContain("Artifact");
-    expect(ctx).toContain("Granola");
-    expect(ctx).toContain("Linear");
-    expect(ctx).toContain("free");
-  });
-
-  test("parseGeneratedPieces reads JSON reply strings", () => {
-    const pieces = parseGeneratedPieces([
-      {
-        reply: JSON.stringify({
-          format: "twitter-post",
-          title: "T",
-          content: "c",
-        }),
-      },
-    ]);
-    // reply-only shape may not parse without tryParsePiece handling reply
-    // Accept either parsed or empty depending on shape — also try direct:
+  test("parseGeneratedPieces reads direct pieces", () => {
     const direct = parseGeneratedPieces([
       { format: "twitter-post", title: "T", content: "c" },
     ]);
     expect(direct).toHaveLength(1);
     expect(direct[0]?.format).toBe("twitter-post");
-    expect(pieces.length === 0 || pieces.length === 1).toBe(true);
   });
 });
 

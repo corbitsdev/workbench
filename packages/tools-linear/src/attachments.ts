@@ -1,7 +1,11 @@
 import { type } from "arktype";
 import type { ToolDefinition } from "@intx/types/runtime";
 import { fetchLinearGraphQL } from "./client";
-import { parseArgs, requireMutationSuccess, type LinearToolsConfig } from "./shared";
+import {
+  parseArgs,
+  requireMutationSuccess,
+  type LinearToolsConfig,
+} from "./shared";
 
 const GET_ATTACHMENT_QUERY = `query GetAttachment($id: String!) {
   attachment(id: $id) {
@@ -49,7 +53,11 @@ export async function getAttachment(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(GetAttachmentArgsSchema, rawArgs, "linear_get_attachment");
+  const args = parseArgs(
+    GetAttachmentArgsSchema,
+    rawArgs,
+    "linear_get_attachment",
+  );
   const data = await fetchLinearGraphQL(
     config,
     GET_ATTACHMENT_QUERY,

@@ -19,7 +19,9 @@ export function useMailboxLive(): void {
   useEffect(() => {
     return subscribeMailboxEvents(() => {
       void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
-      void queryClient.invalidateQueries({ queryKey: MAILBOX_UNREAD_COUNT_KEY });
+      void queryClient.invalidateQueries({
+        queryKey: MAILBOX_UNREAD_COUNT_KEY,
+      });
     });
   }, [queryClient]);
 }

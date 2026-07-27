@@ -47,6 +47,9 @@ describe("findToolManifestDrift", () => {
 });
 
 describe("check-tool-manifest-drift script against the real repo", () => {
+  // collectToolFactoryManifests() dynamically imports every tool package's
+  // manifest module on first invocation in a process (~9s cold), which blows
+  // past bun's default 5000ms test timeout.
   test("detects the current committed index is stale against live package manifests", async () => {
     const { collectToolFactoryManifests } = await import(
       "./build-tool-manifests"
@@ -60,5 +63,5 @@ describe("check-tool-manifest-drift script against the real repo", () => {
     // the committed index is regenerated, this must report no drift. Until
     // then it documents the exact bug this ticket fixes.
     expect(result.hasDrift).toBe(false);
-  });
+  }, 30_000);
 });

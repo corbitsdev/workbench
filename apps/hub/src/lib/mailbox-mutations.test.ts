@@ -66,15 +66,46 @@ describe("mailbox mutations", () => {
     const id = "00000000-0000-4000-8000-000000000010";
     await seed(id, true);
 
-    await markMailboxMessageUnread(db, { tenantId: TENANT, principalId: PRINCIPAL, id });
-    expect(await countUnreadActiveMailbox(db, { tenantId: TENANT, principalId: PRINCIPAL })).toBe(1);
+    await markMailboxMessageUnread(db, {
+      tenantId: TENANT,
+      principalId: PRINCIPAL,
+      id,
+    });
+    expect(
+      await countUnreadActiveMailbox(db, {
+        tenantId: TENANT,
+        principalId: PRINCIPAL,
+      }),
+    ).toBe(1);
 
-    await archiveMailboxMessage(db, { tenantId: TENANT, principalId: PRINCIPAL, id });
-    expect(await countUnreadActiveMailbox(db, { tenantId: TENANT, principalId: PRINCIPAL })).toBe(0);
+    await archiveMailboxMessage(db, {
+      tenantId: TENANT,
+      principalId: PRINCIPAL,
+      id,
+    });
+    expect(
+      await countUnreadActiveMailbox(db, {
+        tenantId: TENANT,
+        principalId: PRINCIPAL,
+      }),
+    ).toBe(0);
 
-    await restoreMailboxMessage(db, { tenantId: TENANT, principalId: PRINCIPAL, id });
-    await trashMailboxMessage(db, { tenantId: TENANT, principalId: PRINCIPAL, id });
-    expect(await countUnreadActiveMailbox(db, { tenantId: TENANT, principalId: PRINCIPAL })).toBe(0);
+    await restoreMailboxMessage(db, {
+      tenantId: TENANT,
+      principalId: PRINCIPAL,
+      id,
+    });
+    await trashMailboxMessage(db, {
+      tenantId: TENANT,
+      principalId: PRINCIPAL,
+      id,
+    });
+    expect(
+      await countUnreadActiveMailbox(db, {
+        tenantId: TENANT,
+        principalId: PRINCIPAL,
+      }),
+    ).toBe(0);
   });
 
   test("bulk trash updates rows", async () => {
@@ -97,7 +128,11 @@ describe("mailbox mutations", () => {
   test("archive returns false for trashed rows", async () => {
     const id = "00000000-0000-4000-8000-000000000012";
     await seed(id, true);
-    await trashMailboxMessage(db, { tenantId: TENANT, principalId: PRINCIPAL, id });
+    await trashMailboxMessage(db, {
+      tenantId: TENANT,
+      principalId: PRINCIPAL,
+      id,
+    });
     const ok = await archiveMailboxMessage(db, {
       tenantId: TENANT,
       principalId: PRINCIPAL,
@@ -128,7 +163,11 @@ describe("mailbox mutations", () => {
   test("mark unread does not apply to archived rows", async () => {
     const id = "00000000-0000-4000-8000-000000000015";
     await seed(id, true);
-    await archiveMailboxMessage(db, { tenantId: TENANT, principalId: PRINCIPAL, id });
+    await archiveMailboxMessage(db, {
+      tenantId: TENANT,
+      principalId: PRINCIPAL,
+      id,
+    });
     const ok = await markMailboxMessageUnread(db, {
       tenantId: TENANT,
       principalId: PRINCIPAL,

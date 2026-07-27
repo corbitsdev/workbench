@@ -91,3 +91,65 @@ describe("enrichTriggerPayloadForStart", () => {
     ).rejects.toThrow("principal not found: prn-ghost");
   });
 });
+
+// daily-linkedin's drafting agent hands `userAddress` straight to
+// `inbox_deliver_batch`, which requires it. It is not a schedule field and no
+// step derives it, so this enricher is the only thing that makes the kind
+// deliverable on a scheduled fire.
+describe("daily-linkedin trigger-payload enrichment (CL-4033)", () => {
+  test("stamps the firing member's mail identity alongside the stored roster pick", async () => {
+    const result = await enrichTriggerPayloadForStart(
+      {
+        db: makeDb(undefined) as HubDb,
+        resolveUserIdentity: async (principalId: string) => ({
+          userAddress: `usr_${principalId}@workbench.example`,
+          userRefId: principalId,
+          userDisplayName: "Jordan Lee",
+        }),
+      },
+      { kind: "daily-linkedin", tenantId: "tn-1", principalId: "prn-1" },
+      {
+        recipients: [
+          { refId: "u_alex", displayName: "Alex" },
+          { refId: "u_pontus", displayName: "Pontus" },
+        ],
+      },
+    );
+    expect(result).toEqual({
+      recipients: [
+        { refId: "u_alex", displayName: "Alex" },
+        { refId: "u_pontus", displayName: "Pontus" },
+      ],
+      userAddress: "usr_prn-1@workbench.example",
+      userRefId: "prn-1",
+      userDisplayName: "Jordan Lee",
+    });
+  });
+
+  // The recipient list is the whole point of this kind, so a schedule that has
+  // none (or one stored under the retired bare-string shape) must fail at the
+  // enricher rather than fire and quietly deliver to nobody.
+  test("a fire whose schedule has no usable recipient list fails loudly", async () => {
+    const deps = {
+      db: makeDb(undefined) as HubDb,
+      resolveUserIdentity: async () => ({
+        userAddress: "usr_owner@workbench.example",
+        userRefId: "owner",
+      }),
+    };
+    const ctx = {
+      kind: "daily-linkedin",
+      tenantId: "tn-1",
+      principalId: "prn-1",
+    };
+    await expect(enrichTriggerPayloadForStart(deps, ctx, {})).rejects.toThrow(
+      /not a list of/,
+    );
+    await expect(
+      enrichTriggerPayloadForStart(deps, ctx, { recipients: [] }),
+    ).rejects.toThrow(/no recipients/);
+    await expect(
+      enrichTriggerPayloadForStart(deps, ctx, { recipients: ["prn-2"] }),
+    ).rejects.toThrow(/not a list of/);
+  });
+});

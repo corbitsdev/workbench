@@ -13,7 +13,10 @@ import {
   setPrincipalCapabilityGrant,
 } from "../lib/capability-grants";
 import { readMemberPreferences } from "../lib/member-preferences";
-import { completeConnect, resolveOwnerOAuthClient } from "../lib/oauth-flow";
+import {
+  completeConnect,
+  resolveOAuthClientForProvider,
+} from "../lib/oauth-flow";
 import { verifyState } from "../lib/oauth-crypto";
 import type { FetchLike, PendingAuthorizationStore } from "../lib/oauth-flow";
 import { oauthCallbackRedirectUri } from "../lib/oauth-redirect";
@@ -106,14 +109,14 @@ export function createOAuthCallbackRouter(deps: CreateOAuthCallbackDeps): Hono {
           return c.redirect(redirect(providerName, false));
         }
 
-        const clientConfig = await resolveOwnerOAuthClient(
+        const clientConfig = await resolveOAuthClientForProvider(
           db,
           peeked.tenantId,
           cfg,
           oauthCallbackRedirectUri(redirectUriBase, providerName),
         );
         if (!clientConfig) {
-          throw new Error(`${cfg.label} OAuth app not registered by owner`);
+          throw new Error(`${cfg.label} OAuth client is not configured`);
         }
         const result = await completeConnect({
           db,

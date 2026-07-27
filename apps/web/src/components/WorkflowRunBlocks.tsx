@@ -216,7 +216,7 @@ export function WorkflowRunBlocks({
   return (
     <div className="flex h-full flex-col overflow-hidden border border-border bg-bg">
       {fullStepperSteps && (
-        <div className="shrink-0 overflow-x-auto">
+        <div className="shrink-0">
           <HorizontalStepper steps={fullStepperSteps} />
         </div>
       )}

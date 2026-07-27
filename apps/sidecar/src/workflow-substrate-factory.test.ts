@@ -38,7 +38,6 @@ import {
   parseStepInferenceSources,
 } from "./workflow-substrate-factory";
 import type { Principal, RepoId, RepoStore } from "@workbench/hub-sessions";
-import { type StepToolContext } from "./step-tool-harness";
 import {
   createDurableConversationRegistry,
   createDurableConversationStore,
@@ -493,46 +492,6 @@ describe("createSidecarStepInvoker", () => {
     expect(factoryCalled).toBe(false);
   });
 
-  test("routes a deterministic-tool-tagged step away from the inference agent factory", async () => {
-    const dataDir = await makeDataDir();
-    let factoryCalled = false;
-    const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: [SOURCE] },
-      dataDir,
-      signer: async () => "sig",
-      directors: createDefaultDirectorRegistry(),
-      adapters: createBuiltinRegistry(),
-      evaluateGrants: allowAll,
-      agentFactory: async () => {
-        factoryCalled = true;
-        throw new Error(
-          "inference factory must not run for a deterministic step",
-        );
-      },
-    });
-
-    const detAgent: AgentDefinition<BaseEnv> = {
-      ...makeAgentDefinition("deterministic-gamma_create_from_template"),
-      tags: {
-        "workbench.stepKind": "deterministic-tool",
-        "workbench.tool": "gamma_create_from_template",
-      },
-    };
-    const req: StepInvokeRequest = {
-      agent: detAgent,
-      input: { foo: "bar" },
-      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
-      signal: new AbortController().signal,
-    };
-
-    // The deterministic branch builds the step env and dispatches to the tool
-    // handler; with no resolveStepToolContext wired (pure-dispatch test), the
-    // handler fails loud on the missing tool context. The key assertion is
-    // that the INFERENCE factory was never consulted — the marker rerouted it.
-    await expect(invoke(req)).rejects.toThrow(/STEP_TOOL_CONTEXT/);
-    expect(factoryCalled).toBe(false);
-  });
-
   test("an unmarked step still reaches the inference agent factory", async () => {
     const dataDir = await makeDataDir();
     let factoryCalled = false;
@@ -567,104 +526,6 @@ describe("createSidecarStepInvoker", () => {
 
     await invoke(makeRequest());
     expect(factoryCalled).toBe(true);
-  });
-
-  // Regression (greybeard/critique): a `map({ over, step: deterministicToolStep })`
-  // dispatches each per-element invocation through the deterministic branch, not
-  // inference. The runtime calls the step invoker once per element with the same
-  // deterministic-tagged step request shape, so we drive `invoke` per element and
-  // assert: the real tool runner ran once per element (mail_send per item via the
-  // outbound bridge) and the inference agent factory was never constructed.
-  test("dispatches a per-element map invocation through the deterministic tool branch, never inference", async () => {
-    stubHubFetch();
-    const dataDir = await makeDataDir();
-    let factoryCalled = false;
-    const resolveStepToolContext = async (
-      req: StepInvokeRequest,
-    ): Promise<StepToolContext> => {
-      const stepId = req.authzContext.stepId ?? "step";
-      return {
-        hubHttpUrl: "http://hub.invalid",
-        sidecarToken: "tok",
-        tenantId: "ten_1",
-        stepAgentId: `ins_dep-${stepId}`,
-        stepAddress: `ins_dep-${stepId}`,
-        principalId: `ins_dep-${stepId}`,
-        grants: [],
-        // No deploy/ subtree under dataDir → empty on-disk manifest → no
-        // package tools. Outbound bridge below loads mail_send for det dispatch.
-        deployTreeDir: dataDir,
-        cacheRoot: path.join(dataDir, "cache"),
-        cacheMaxBytes: 1024 * 1024,
-        registryMaxTarballBytes: 1024 * 1024,
-      };
-    };
-    const bridge: ChildOutboundMailBridge = {
-      submit: async () => ({ messageId: "mid-map", status: "delivered" }),
-      handleResult: () => {},
-      cancelAll: () => {},
-      pendingCount: 0,
-    };
-    const invoke = createSidecarStepInvoker({
-      table: { [STEP_ID]: [SOURCE] },
-      dataDir,
-      signer: async () => "sig",
-      directors: createDefaultDirectorRegistry(),
-      adapters: createBuiltinRegistry(),
-      evaluateGrants: allowAll,
-      resolveStepToolContext,
-      outboundMailBridge: bridge,
-      mailboxAddress: "ins_ses_warm@example.com",
-      agentFactory: async () => {
-        factoryCalled = true;
-        throw new Error(
-          "inference factory must not run for a map of det steps",
-        );
-      },
-    });
-
-    const detAgent: AgentDefinition<BaseEnv> = {
-      ...makeAgentDefinition("deterministic-mail_send"),
-      tags: {
-        "workbench.stepKind": "deterministic-tool",
-        "workbench.tool": "mail_send",
-      },
-    };
-
-    // `map` invokes the step invoker once per element; each element gets a
-    // distinct per-attempt store. Drive them sequentially with a per-element
-    // attempt so the per-step store teardown does not race (a test-harness
-    // concern, not a product one) and assert every element dispatched through
-    // the deterministic tool branch.
-    const elements = [
-      "a@tenant.example",
-      "b@tenant.example",
-      "c@tenant.example",
-    ];
-    const outputs: { output: unknown }[] = [];
-    for (let i = 0; i < elements.length; i += 1) {
-      const recipient = elements[i] as string;
-      outputs.push(
-        assertOutput(
-          await invoke({
-            agent: detAgent,
-            input: { to: recipient, content: `content-${recipient}` },
-            authzContext: { stepId: STEP_ID, attempt: i + 1, runId: RUN_ID },
-            signal: new AbortController().signal,
-          }),
-        ),
-      );
-    }
-
-    // No agent was constructed for any element.
-    expect(factoryCalled).toBe(false);
-    // The tool runner produced a ToolResult envelope per element.
-    expect(outputs).toHaveLength(elements.length);
-    for (const { output } of outputs) {
-      const tr = output as Record<string, unknown>;
-      expect(tr).toHaveProperty("callId");
-      expect(tr.isError).not.toBe(true);
-    }
   });
 });
 
@@ -1245,7 +1106,7 @@ function createOnDiskSubstrate(repoDir: string): RepoStore {
 }
 
 describe("live durable-conversation seam on a single-step (warmKeep) deploy", () => {
-  test("a deterministic dispatch runs acquire + restoreFromSubstrate (returning false) cleanly without throwing or blocking startup", async () => {
+  test("a reasoning-step dispatch runs acquire + restoreFromSubstrate (returning false) cleanly without throwing or blocking startup", async () => {
     stubHubFetch();
     const dataDir = await makeDataDir();
     const repoDir = await makeDataDir();
@@ -1261,8 +1122,8 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
     // durable store over a substrate with no prior snapshot returns false from
     // restoreFromSubstrate and neither throws nor hangs. This is exactly what
     // the registry runs inside acquire(); asserting the boolean here proves the
-    // first-ever-run path the deterministic branch hits is a clean
-    // no-op, not a silent failure.
+    // first-ever-run path any step dispatch hits is a clean no-op, not a
+    // silent failure.
     const probeStore: DurableConversationStore =
       await createDurableConversationStore({
         localStoreDir: path.join(dataDir, "probe-store"),
@@ -1303,33 +1164,29 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
 
     let factoryCalled = false;
     let capturedStorage: unknown;
-    const resolveStepToolContext = async (
-      req: StepInvokeRequest,
-    ): Promise<StepToolContext> => {
-      const stepId = req.authzContext.stepId ?? "step";
-      return {
-        hubHttpUrl: "http://hub.invalid",
-        sidecarToken: "tok",
-        tenantId: "ten_1",
-        stepAgentId: `ins_dep-${stepId}`,
-        stepAddress: `ins_dep-${stepId}`,
-        principalId: `ins_dep-${stepId}`,
-        grants: [],
-        // No deploy/ subtree under dataDir → empty on-disk manifest → no
-        // package tools. Outbound bridge below loads mail_send for det dispatch.
-        deployTreeDir: dataDir,
-        cacheRoot: path.join(dataDir, "cache"),
-        cacheMaxBytes: 1024 * 1024,
-        registryMaxTarballBytes: 1024 * 1024,
-      };
-    };
-
     const bridge: ChildOutboundMailBridge = {
       submit: async () => ({ messageId: "mid-durable", status: "delivered" }),
       handleResult: () => {},
       cancelAll: () => {},
       pendingCount: 0,
     };
+
+    const stubAgent: Agent = {
+      send: async () => ({
+        type: "reply",
+        reply: "ok",
+        turn: { role: "assistant", content: "ok" } as unknown as SendTurn,
+      }),
+      stream: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ value: undefined, done: true }),
+        }),
+      }),
+      deliver: () => {},
+      close: async () => {},
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
 
     const invoke = createSidecarStepInvoker({
       table: { [STEP_ID]: [SOURCE] },
@@ -1339,58 +1196,41 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
       directors: createDefaultDirectorRegistry(),
       adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
-      resolveStepToolContext,
       outboundMailBridge: bridge,
       mailboxAddress: "ins_ses_warm@example.com",
       // Wiring a real durableConversation is what selects the warm-path env
       // keying and triggers the acquire/restore seam in buildEnv.
       durableConversation: registry,
       agentFactory: async (_def, env) => {
-        // The deterministic branch must NOT reach the inference factory; if it
-        // ever does, capture the storage to prove the durable store backed it.
         factoryCalled = true;
         capturedStorage = (env as unknown as Record<string, unknown>).storage;
-        throw new Error(
-          "inference factory must not run for a deterministic step",
-        );
+        return stubAgent;
       },
     });
 
-    const detAgent: AgentDefinition<BaseEnv> = {
-      ...makeAgentDefinition("deterministic-mail_send"),
-      tags: {
-        "workbench.stepKind": "deterministic-tool",
-        "workbench.tool": "mail_send",
-      },
-    };
-
     const result = await invoke({
-      agent: detAgent,
-      input: {
-        to: "usr_x@tenant.example",
-        content: "durable-seam-ok",
-      },
+      agent: makeAgentDefinition("warm-reasoning"),
+      input: {},
       authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
       signal: new AbortController().signal,
     });
 
-    // Startup did not block or throw: the deterministic tool ran to completion.
-    const output = assertOutput(result).output as Record<string, unknown>;
-    expect(output).toHaveProperty("callId");
-    expect(output.isError).not.toBe(true);
+    // Startup did not block or throw: the reasoning step ran to completion.
+    assertOutput(result);
     // The durable seam fired on the live path: buildEnv acquired the store
-    // (which runs restoreFromSubstrate internally) keyed by the stepId, exactly
-    // once, for this non-inference dispatch.
+    // (which runs restoreFromSubstrate internally) keyed by the stepId,
+    // exactly once, for this dispatch.
     expect(acquireKey).toBe(STEP_ID);
     expect(acquireCount).toBe(1);
-    // The deterministic branch never reached the inference agent factory.
-    expect(factoryCalled).toBe(false);
-    expect(capturedStorage).toBeUndefined();
+    // The reasoning step reached the inference agent factory, backed by the
+    // durable store's storage.
+    expect(factoryCalled).toBe(true);
+    expect(capturedStorage).toBeDefined();
     // The live acquire materialized the durable per-agent store on disk under
     // the conversation-state root keyed by the stepId — proof the warm/durable
     // env path (not the cold per-run isogit store) backed this dispatch. This
-    // root survives the deterministic step's per-call scratch cleanup, so a
-    // re-deploy would resume from it.
+    // root survives the step's per-call scratch cleanup, so a re-deploy would
+    // resume from it.
     const durableRoot = path.join(
       dataDir,
       "agent-conversation-state",
@@ -1399,9 +1239,9 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
     );
     expect((await fs.stat(durableRoot)).isDirectory()).toBe(true);
     // The warm keying was used, NOT the cold per-run layout: the per-run
-    // `runs/<runId>/` subtree was never created (the deterministic step keyed
-    // its scratch under the stable `warm/<stepId>/` sub-root and reclaimed it
-    // on completion, leaving no per-run tree behind).
+    // `runs/<runId>/` subtree was never created (the step keyed its scratch
+    // under the stable `warm/<stepId>/` sub-root and reclaimed it on
+    // completion, leaving no per-run tree behind).
     const runRoot = path.join(
       dataDir,
       "workflow-step-state",

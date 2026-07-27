@@ -169,9 +169,9 @@ describe("step tool harness: missing-credential skip logs loud", () => {
 
   // CL-4196: a deterministic step dispatched to a tool whose owning factory
   // was credential-skipped must fail with the credential-specific error, not
-  // the misleading generic "not pinned" error — and `nonFatal` must NOT
-  // absorb this, since it is an infrastructure fault, not a genuine
-  // tool-execution failure.
+  // the misleading generic "not pinned" error — an infrastructure fault, not
+  // a genuine tool-execution failure a wrapper's own tolerance envelope
+  // would degrade.
   test("runDeterministicToolStep fails dispatch with StepToolCredentialMissingError naming the provider", async () => {
     stubHubFetch();
     loadToolPackagesMock.mockImplementationOnce(async () => [
@@ -204,33 +204,6 @@ describe("step tool harness: missing-credential skip logs loud", () => {
     const error = thrown as InstanceType<typeof StepToolCredentialMissingError>;
     expect(error.providerName).toBe("sumble");
     expect(error.message).toContain('provider "sumble"');
-  });
-
-  test("runDeterministicToolStep with nonFatal still rejects for a credential-missing tool (infra fault bypasses degrade)", async () => {
-    stubHubFetch();
-    loadToolPackagesMock.mockImplementationOnce(async () => [
-      {
-        factories: [
-          Object.assign(
-            () => {
-              throw new ToolCredentialMissingError("sumble");
-            },
-            { id: "@workbench/tools-sumble/sumble", requires: [] },
-          ),
-        ],
-      },
-    ]);
-
-    const env = await buildStepEnv();
-    await expect(
-      runDeterministicToolStep({
-        env: env as never,
-        toolName: "@workbench/tools-sumble/sumble:sumble_get_organization_list",
-        input: {},
-        nonFatal: true,
-        signal: new AbortController().signal,
-      }),
-    ).rejects.toBeInstanceOf(StepToolCredentialMissingError);
   });
 
   test("a factory throwing a generic Error still warns", async () => {

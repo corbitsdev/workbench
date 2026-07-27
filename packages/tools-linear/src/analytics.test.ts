@@ -7,9 +7,16 @@ describe("linear_list_dashboards", () => {
   it("lists dashboards when the API returns data", async () => {
     const nodes = [{ id: "dash-1", name: "Velocity" }];
     const fetcher = makeFetchStub({
-      data: { dashboards: { nodes, pageInfo: { endCursor: null, hasNextPage: false } } },
+      data: {
+        dashboards: {
+          nodes,
+          pageInfo: { endCursor: null, hasNextPage: false },
+        },
+      },
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "1", name: "linear_list_dashboards", arguments: {} },
@@ -25,7 +32,9 @@ describe("linear_list_dashboards", () => {
     const fetcher = makeFetchStub({
       errors: [{ message: "Cannot query field dashboards" }],
     });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       { id: "1", name: "linear_list_dashboards", arguments: {} },
@@ -33,7 +42,10 @@ describe("linear_list_dashboards", () => {
     );
 
     expect(result.isError).toBeUndefined();
-    const parsed = JSON.parse(String(result.content)) as Record<string, unknown>;
+    const parsed = JSON.parse(String(result.content)) as Record<
+      string,
+      unknown
+    >;
     expect(parsed.unsupported).toBe(true);
     expect(String(parsed.reason)).toContain("analytics");
   });

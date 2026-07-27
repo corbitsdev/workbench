@@ -69,15 +69,18 @@ export type ProspectEngineLane = typeof ProspectEngineLaneSchema.infer;
 /**
  * Schedule / hub trigger payload after fire-time enrichment. List ids and
  * Slack channel are operator config (CL-3703 / CL-3717) until tenant constants
- * ship. `userAddress`/`userRefId`/`runDate`/`artifactTitle`/`runId` are
- * server-stamped — never trusted from the schedule row alone.
+ * ship. `userAddress`/`userRefId`/`runDate`/`title`/`runId` are
+ * server-stamped — never trusted from the schedule row alone. `title` (the
+ * persisted report/mail title) is named to match `write_artifact`'s `title`
+ * arg directly — the workflow's own intake field, renamed at the source so
+ * the native `action` persist step needs no reshape.
  */
 export const ProspectEngineTriggerPayloadSchema = type({
   reason: "string > 0",
   userAddress: "string > 0",
   userRefId: "string > 0",
   runDate: "string > 0",
-  artifactTitle: "string > 0",
+  title: "string > 0",
   "slackChannelId?": "string > 0",
   growthEngineListId: "number.integer > 0",
   enterpriseEngineListId: "number.integer > 0",
@@ -211,7 +214,7 @@ export function enrichProspectEngineTriggerPayload(
     userAddress: memberIdentity.userAddress,
     userRefId: memberIdentity.userRefId,
     runDate,
-    artifactTitle: `Prospect engine — ${runDate}`,
+    title: `Prospect engine — ${runDate}`,
   };
   delete enriched.slackChannelId;
   if (slackChannelId !== undefined) enriched.slackChannelId = slackChannelId;
@@ -649,6 +652,26 @@ export function sanitizeProspectEngineContacts(
 }
 
 /**
+ * Drop every key whose value is `undefined`, then cast to
+ * `ProspectEngineCandidate`. `exactOptionalPropertyTypes` forbids assigning
+ * `undefined` to an optional field explicitly, so a reshape built from `??`
+ * fallbacks (which can still land on `undefined` when both sides are
+ * missing) must be filtered before it is returned as a typed value — the
+ * cast is sound because the filtered object always satisfies the shape
+ * (every required field is set from `b`, a validated `ProspectEngineCandidate`),
+ * it just isn't expressible in the type system as a generic transform.
+ */
+function definedFieldsOnly(
+  obj: Record<string, unknown>,
+): ProspectEngineCandidate {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) out[key] = value;
+  }
+  return out as ProspectEngineCandidate;
+}
+
+/**
  * Merge map/reveal enrichments onto the qualified shortlist.
  * Base order and membership win so delivery never depends solely on the
  * map agent emitting a complete accounts array. Overlay-only orgs are dropped.
@@ -661,15 +684,22 @@ export function mergeProspectEngineShortlist(
   return base.map((b) => {
     const o = overById.get(b.organizationId);
     if (!o) {
+      const sanitizedContacts = sanitizeProspectEngineContacts(b.contacts);
       return {
         ...b,
-        contacts: sanitizeProspectEngineContacts(b.contacts),
+        ...(sanitizedContacts !== undefined
+          ? { contacts: sanitizedContacts }
+          : {}),
       };
     }
     const contacts =
       sanitizeProspectEngineContacts(o.contacts) ??
       sanitizeProspectEngineContacts(b.contacts);
-    return {
+    // `exactOptionalPropertyTypes` forbids assigning an explicit `undefined`
+    // to an optional field — the `??` fallbacks below can still leave one
+    // undefined (both sides missing), so the merged object is filtered
+    // through `definedFieldsOnly` rather than spread directly.
+    return definedFieldsOnly({
       ...b,
       ...o,
       organizationId: b.organizationId,
@@ -685,7 +715,7 @@ export function mergeProspectEngineShortlist(
       evidence: o.evidence ?? b.evidence,
       industry: o.industry ?? b.industry,
       ...(contacts !== undefined ? { contacts } : {}),
-    };
+    });
   });
 }
 

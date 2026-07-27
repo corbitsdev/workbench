@@ -53,9 +53,7 @@ describe("stepDeployTreeDir", () => {
     });
     expect(dir).toBe(path.join(DATA_DIR, sanitizeAddress(stepAddress)));
     // A distinct sibling of the head — not the head tree.
-    expect(dir).not.toBe(
-      path.join(DATA_DIR, sanitizeAddress(MAILBOX)),
-    );
+    expect(dir).not.toBe(path.join(DATA_DIR, sanitizeAddress(MAILBOX)));
   });
 
   test("a map-scoped step id collapses to its base step's staged tree", () => {

@@ -78,13 +78,35 @@
           ]
         }
       },
+      "memberSelectGate": {
+        "kind": "action",
+        "id": "memberSelectGate",
+        "handler": "@workbench/workflow-attio-task-agent/core:attio_task_agent_member_selection_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "listMembers"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-attio-task-agent/core:attio_task_agent_member_selection_gate"
+          ]
+        },
+        "after": [
+          "listMembers"
+        ]
+      },
       "selectMember": {
         "kind": "awaitSignal",
         "id": "selectMember",
         "name": "member-selection",
         "drainBehavior": "wait",
         "after": [
-          "listMembers"
+          "memberSelectGate"
         ]
       },
       "listTasks": {
@@ -113,13 +135,35 @@
           "selectMember"
         ]
       },
+      "taskSelectGate": {
+        "kind": "action",
+        "id": "taskSelectGate",
+        "handler": "@workbench/workflow-attio-task-agent/core:attio_task_agent_task_selection_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "listTasks"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-attio-task-agent/core:attio_task_agent_task_selection_gate"
+          ]
+        },
+        "after": [
+          "listTasks"
+        ]
+      },
       "selectTask": {
         "kind": "awaitSignal",
         "id": "selectTask",
         "name": "task-selection",
         "drainBehavior": "wait",
         "after": [
-          "listTasks"
+          "taskSelectGate"
         ]
       },
       "fetchTask": {
@@ -170,7 +214,6 @@
           },
           "description": "The planner: grounds itself in the Attio task + record and internal context (read-only), then decides the action plan.",
           "tags": {
-            "credentialName": "opencode-zen",
             "workbench.title": "Plan the work"
           }
         },
@@ -189,13 +232,35 @@
           "fetchTask"
         ]
       },
+      "clarifyGate": {
+        "kind": "action",
+        "id": "clarifyGate",
+        "handler": "@workbench/workflow-attio-task-agent/core:attio_task_agent_clarification_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "analyze"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-attio-task-agent/core:attio_task_agent_clarification_gate"
+          ]
+        },
+        "after": [
+          "analyze"
+        ]
+      },
       "clarify": {
         "kind": "awaitSignal",
         "id": "clarify",
         "name": "clarification",
         "drainBehavior": "wait",
         "after": [
-          "analyze"
+          "clarifyGate"
         ]
       },
       "execute": {
@@ -203,7 +268,7 @@
         "id": "execute",
         "agent": {
           "id": "attio-task-agent-execute",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are a business-development executor. Your input is a merged JSON object with these fields:\n- `reply`: the planner's decision as a JSON string — parse it; the action plan is its `draftActions` array (each item has a `type` and a self-contained `brief`).\n- `content`: the Attio task and its linked record as a JSON string — parse it for task context. (This is NOT the plan.)\n- `answers`: any human clarification text (may be empty).\n\nPerform EVERY action in the plan's `draftActions` — one produced output per action, in the same order. For each, follow its `brief` and apply the guidance for its `type`:\n\n- cold-email: Write a first-touch cold outreach email to the task's contact. Subject + body. Open with a specific, researched reason for reaching out (not a generic hook). One clear ask. 90-130 words. Ready to send — no placeholders or [brackets]. Warm, direct, peer-to-peer; no hype.\n- follow-up-email: Write a follow-up email continuing a prior thread or meeting. Reference the specific prior context. Add one new piece of value (an insight, resource, or next step). Short — under 100 words. Ready to send, no placeholders.\n- twitter-post: Write a single Twitter/X post inspired by the insight behind this task. ANONYMIZED: no company names, personal names, logos, or identifying details. Under 280 characters. One sharp idea; no hashtag spam.\n- linkedin-post: Write a LinkedIn post inspired by the insight behind this task. ANONYMIZED: no company names, personal names, or identifying details — frame it as a universal lesson. 120-200 words, skimmable line breaks, one takeaway, a light prompt for discussion. No emojis-as-bullets.\n- research-brief: Write a research brief on the company/person and the context of this task. Skimmable: who they are, why now, relevant signals, and 2-3 angles for engagement. Ground every claim in the gathered context; cite sources inline where available. No speculation presented as fact.\n- task-explanation: Restate this task with full context so a teammate could pick it up cold. Cover: what the task is, why it matters, the relevant record/history, and the recommended approach. Concise and concrete.\n- gamma-presentation: Write a deck outline suitable for Gamma generation. Titled slides, each with 2-4 tight bullet points. Lead with the narrative arc (problem → insight → proposal → next step). 5-8 slides. Content only — no design directives.\n- blog: Write a long-form blog post derived from the task and research. Strong headline, a hook, 3-5 sections with subheads, and a closing takeaway. 600-900 words. Authoritative but readable; ground claims in the gathered context.\n- single-page-website: Write the copy and section structure for a single-page landing site. Sections: hero (headline + subhead + CTA), problem, solution, proof, and a final CTA. Provide the copy for each section, labeled. Punchy, benefit-led.\n\nIf a `type` is not listed above, follow its brief directly. Produce finished, ready-to-use outputs — no placeholders or [brackets]. If `draftActions` is empty or absent, return an empty `outputs` array.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"outputs\": [{ \"type\": <echo the action type>, \"title\": string, \"content\": string, \"brief\": <echo the action brief> }]\n}",
+          "systemPrompt": "You are a business-development executor. Your input is a merged JSON object with these fields:\n- `reply`: the planner's decision as a JSON string — parse it; the action plan is its `draftActions` array (each item has a `type` and a self-contained `brief`).\n- `content`: the Attio task and its linked record as a JSON string — parse it for task context. (This is NOT the plan.)\n- `answers`: any human clarification text (may be empty).\n\nPerform EVERY action in the plan's `draftActions` — one produced output per action, in the same order. For each, follow its `brief` and apply the guidance for its `type`:\n\n- cold-email: Write a first-touch cold outreach email to the task's contact. Subject + body. Open with a specific, researched reason for reaching out (not a generic hook). One clear ask. 90-130 words. Ready to send — no placeholders or [brackets]. Warm, direct, peer-to-peer; no hype.\n- follow-up-email: Write a follow-up email continuing a prior thread or meeting. Reference the specific prior context. Add one new piece of value (an insight, resource, or next step). Short — under 100 words. Ready to send, no placeholders.\n- twitter-post: Write a single Twitter/X post inspired by the insight behind this task. ANONYMIZED: no company names, personal names, logos, or identifying details. Under 280 characters. One sharp idea; no hashtag spam.\n- linkedin-post: Write a LinkedIn post inspired by the insight behind this task. ANONYMIZED: no company names, personal names, or identifying details — frame it as a universal lesson. 120-200 words, skimmable line breaks, one takeaway, a light prompt for discussion. No emojis-as-bullets.\n- research-brief: Write a research brief on the company/person and the context of this task. Skimmable: who they are, why now, relevant signals, and 2-3 angles for engagement. Ground every claim in the gathered context; cite sources inline where available. No speculation presented as fact.\n- task-explanation: Restate this task with full context so a teammate could pick it up cold. Cover: what the task is, why it matters, the relevant record/history, and the recommended approach. Concise and concrete.\n- gamma-presentation: Write a deck outline suitable for Gamma generation. Titled slides, each with 2-4 tight bullet points. Lead with the narrative arc (problem → insight → proposal → next step). 5-8 slides. Content only — no design directives.\n- blog: Write a long-form blog post derived from the task and research. Strong headline, a hook, 3-5 sections with subheads, and a closing takeaway. 600-900 words. Authoritative but readable; ground claims in the gathered context.\n- single-page-website: Write the copy and section structure for a single-page landing site. Sections: hero (headline + subhead + CTA), problem, solution, proof, and a final CTA. Provide the copy for each section, labeled. Punchy, benefit-led.\n\nIf a `type` is not listed above, follow its brief directly. Produce finished, ready-to-use outputs — no placeholders or [brackets]. If `draftActions` is empty or absent, return an empty `outputs` array.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"outputs\": [{ \"type\": <echo the action type>, \"title\": string, \"content\": string, \"brief\": <echo the action brief> }]\n}",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
@@ -217,7 +282,7 @@
               }
             ]
           },
-          "description": "Reasoning step: attio-task-agent-execute",
+          "description": "The executor: performs every planned draft action in one turn.",
           "tags": {
             "workbench.title": "Do the work"
           }
@@ -245,13 +310,21 @@
         "id": "reviewArtifacts",
         "agent": {
           "id": "attio-task-agent-review-artifacts",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are a quality reviewer. Your input is a JSON array of produced outputs; each element has `type`, `brief` (the instruction it was given), `title`, and `content`. Some elements may be wrapped in a `{ reply: ... }` or `{ content: ... }` envelope — unwrap and parse the inner JSON before judging.\n\nFor EACH output, judge whether it correctly and completely fulfills its brief: on-topic, grounded, ready to use, and matching the conventions of its type (e.g. an anonymized post carries no identifying details; an email is send-ready). Do not rewrite them — only judge.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"overall\": string,                                   // one-sentence assessment of the set\n  \"items\": [{ \"type\": string, \"verdict\": \"pass\" | \"revise\" | \"reject\", \"notes\": string }]\n}\n\nOne items entry per produced output, in the same order. verdict=pass: ready. revise: usable but needs a specific fix (say what in notes). reject: does not fulfil the brief.",
+          "systemPrompt": "You are a quality reviewer. Your input is a JSON array of produced outputs; each element has `type`, `brief` (the instruction it was given), `title`, and `content`. Some elements may be wrapped in a `{ reply: ... }` or `{ content: ... }` envelope — unwrap and parse the inner JSON before judging.\n\nFor EACH output, judge whether it correctly and completely fulfills its brief: on-topic, grounded, ready to use, and matching the conventions of its type (e.g. an anonymized post carries no identifying details; an email is send-ready). Do not rewrite them — only judge.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"overall\": string,                                   // one-sentence assessment of the set\n  \"items\": [{ \"type\": string, \"verdict\": \"pass\" | \"revise\" | \"reject\", \"notes\": string }]\n}\n\nOne items entry per produced output, in the same order. verdict=pass: ready. revise: usable but needs a specific fix (say what in notes). reject: does not fulfil the brief.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
-            "sources": []
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "deepseek-v4-flash",
+                "parameters": {
+                  "maxTokens": 8192
+                }
+              }
+            ]
           },
-          "description": "Reasoning step: attio-task-agent-review-artifacts",
+          "description": "The reviewer: validates every produced output against its brief.",
           "tags": {
             "workbench.title": "Check the drafts"
           }
@@ -264,46 +337,50 @@
           "execute"
         ]
       },
+      "reviewGate": {
+        "kind": "action",
+        "id": "reviewGate",
+        "handler": "@workbench/workflow-attio-task-agent/core:attio_task_agent_review_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "execute",
+            "reviewArtifacts"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-attio-task-agent/core:attio_task_agent_review_gate"
+          ]
+        },
+        "after": [
+          "reviewArtifacts"
+        ]
+      },
       "review": {
         "kind": "awaitSignal",
         "id": "review",
         "name": "review",
         "drainBehavior": "wait",
         "after": [
-          "reviewArtifacts"
+          "reviewGate"
         ]
       },
       "persist": {
-        "kind": "map",
+        "kind": "action",
         "id": "persist",
-        "over": {
-          "from": "steps.review.output.approvedPieces"
+        "handler": "@workbench/workflow-attio-task-agent/persist:attio_task_agent_persist_pieces",
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.review.output"
         },
-        "step": {
-          "kind": "step",
-          "id": "",
-          "agent": {
-            "id": "attio-task-agent-persist",
-            "systemPrompt": "",
-            "toolFactories": [],
-            "capabilities": [
-              "@workbench/tools-artifact/artifact:artifact_create"
-            ],
-            "inference": {
-              "sources": []
-            },
-            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
-            "tags": {
-              "workbench.stepKind": "deterministic-tool",
-              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"type\"},\"content\":{\"from\":\"content\"}}",
-              "workbench.title": "Save each piece"
-            }
-          },
-          "drainBehavior": "cancel",
-          "input": {
-            "from": "trigger.payload"
-          }
+        "effect": {
+          "requires": [
+            "@workbench/workflow-attio-task-agent/persist:attio_task_agent_persist_pieces"
+          ]
         },
         "after": [
           "review"
@@ -314,13 +391,18 @@
         "id": "suggest",
         "agent": {
           "id": "attio-task-agent-suggest",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are a business-development task agent wrapping up. Given the Attio task, its context, and the analysis decision, write a short completion summary for the human.\n\nCover: what you produced, and 2-4 concrete suggested follow-ups (next BD actions) if any.\n\nWhen a follow-up maps to an existing Workbench workflow, recommend running it by name:\n- \"Gamma Presentation Creator\" — turn the collateral into a deck.\n- \"last30days Research\" — deeper recent research on the company/person.\n- \"Pain Point Collateral Generation\" — mine a call transcript for pain points and generate collateral.\nOnly suggest a workflow when it genuinely fits the task; do not list them all by default.\n\nKeep it to a few sentences plus a short bulleted list. Plain text, no code fence.",
+          "systemPrompt": "You are a business-development task agent wrapping up. Given the Attio task, its context, and the analysis decision, write a short completion summary for the human.\n\nCover: what you produced, and 2-4 concrete suggested follow-ups (next BD actions) if any.\n\nWhen a follow-up maps to an existing Workbench workflow, recommend running it by name:\n- \"Gamma Presentation Creator\" — turn the collateral into a deck.\n- \"last30days Research\" — deeper recent research on the company/person.\n- \"Pain Point Collateral Generation\" — mine a call transcript for pain points and generate collateral.\nOnly suggest a workflow when it genuinely fits the task; do not list them all by default.\n\nKeep it to a few sentences plus a short bulleted list. Plain text, no code fence.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
-            "sources": []
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "deepseek-v4-flash"
+              }
+            ]
           },
-          "description": "Reasoning step: attio-task-agent-suggest",
+          "description": "Summarizes the run and proposes follow-ups for the human.",
           "tags": {
             "workbench.title": "Suggest follow-ups"
           }
@@ -340,13 +422,37 @@
           "persist"
         ]
       },
+      "syncApprovalGate": {
+        "kind": "action",
+        "id": "syncApprovalGate",
+        "handler": "@workbench/workflow-attio-task-agent/core:attio_task_agent_sync_approval_gate",
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "fetchTask",
+            "selectTask",
+            "analyze"
+          ]
+        },
+        "effect": {
+          "requires": [
+            "@workbench/workflow-attio-task-agent/core:attio_task_agent_sync_approval_gate"
+          ]
+        },
+        "after": [
+          "suggest"
+        ]
+      },
       "approveSync": {
         "kind": "awaitSignal",
         "id": "approveSync",
         "name": "sync-approval",
         "drainBehavior": "wait",
         "after": [
-          "suggest"
+          "syncApprovalGate"
         ]
       },
       "syncGate": {
@@ -421,17 +527,22 @@
     },
     "stepOrder": [
       "listMembers",
+      "memberSelectGate",
       "selectMember",
       "listTasks",
+      "taskSelectGate",
       "selectTask",
       "fetchTask",
       "analyze",
+      "clarifyGate",
       "clarify",
       "execute",
       "reviewArtifacts",
+      "reviewGate",
       "review",
       "persist",
       "suggest",
+      "syncApprovalGate",
       "approveSync",
       "syncGate",
       "writeNote",

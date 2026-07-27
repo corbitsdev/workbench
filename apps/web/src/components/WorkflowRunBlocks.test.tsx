@@ -113,8 +113,8 @@ describe("WorkflowRunBlocks", () => {
     );
 
     // Both steps render as timeline entries.
-    screen.getByText("intake");
-    screen.getByText("select");
+    screen.getByText("Intake");
+    screen.getByText("Select");
   });
 
   it("renders the FULL workflow-definition step sequence immediately, even when only the first two of eight steps have materialized in the log (CL-4285)", () => {
@@ -208,7 +208,10 @@ describe("WorkflowRunBlocks", () => {
     screen.getByText(/step 2 of 8/i);
 
     // Every step in the definition is visible up front, including the six that
-    // have not started yet — never blank, never omitted.
+    // have not started yet — never blank, never omitted. The header stepper
+    // (catalog titles) and the dock's own progress block (sentence-cased step
+    // ids) now render the identical label for a step that has started, so
+    // assert presence via `getAllByText` rather than requiring a single match.
     for (const label of [
       "Intake",
       "Select",
@@ -219,7 +222,7 @@ describe("WorkflowRunBlocks", () => {
       "Generate",
       "Persist",
     ]) {
-      screen.getByText(label);
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
   });
 

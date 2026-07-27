@@ -17,7 +17,6 @@ export {
   derivePackageProviders,
   derivePackageTools,
   deriveToolCredentialCatalogEntries,
-  deriveToolPackageSpecs,
   flatBareToolNames,
   writeBareToolNamesFromFactories,
   sortFactoryManifests,

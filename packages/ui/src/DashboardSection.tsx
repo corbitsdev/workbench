@@ -48,7 +48,9 @@ export function DashboardSection({
             {title}
           </h2>
           {description ? (
-            <p className="text-[13px] leading-snug text-text-2">{description}</p>
+            <p className="text-[13px] leading-snug text-text-2">
+              {description}
+            </p>
           ) : null}
         </div>
         {action ? (

@@ -70,8 +70,20 @@ mock.module("./run-store", () => ({
     const found = rows.get(runId);
     return found ? structuredClone(found) : null;
   },
-  setPendingSignal: async () => {},
+  setPendingSignal: async (
+    _db: unknown,
+    runId: string,
+    signal: { signalName: string; payload: unknown },
+  ) => {
+    pendingSignalCalls.push({ runId, ...signal });
+  },
 }));
+
+const pendingSignalCalls: {
+  runId: string;
+  signalName: string;
+  payload: unknown;
+}[] = [];
 
 const { startWorkflowRun } = await import("./run-exec");
 
@@ -143,6 +155,7 @@ function reset(): void {
   insertedInputs.clear();
   sent.length = 0;
   reclaimCalls.length = 0;
+  pendingSignalCalls.length = 0;
 }
 
 const startOpts = {
@@ -534,5 +547,89 @@ describe("startWorkflowRun required-input validation (prospect-engine)", () => {
     >;
     expect(delivered.growthEngineListId).toBe(80089);
     expect(delivered.enterpriseEngineListId).toBe(80090);
+  });
+});
+
+// Manual-start intake auto-delivery (CL-4548): a "start now" run of an
+// intake-gated kind used to have no equivalent of the scheduler's post-fire
+// auto-deliver (index.ts scheduler.startWorkflowRun), so it parked on its
+// `intake` gate and re-asked the human for the fields they had just typed on
+// the start page. The fix threads the same `deliverStartIntakeSignal` helper
+// through the background provision-and-trigger tail, right after the trigger
+// message sends successfully. last30days-research is a real embedded kind
+// whose only human gate is named `intake` and whose schema requires a
+// non-empty `topic` (packages/workbench-shared/src/last30days.ts) — exercised
+// here against the real embedded catalog and the real registered schema, not
+// a mock.
+describe("startWorkflowRun manual-start intake auto-delivery (CL-4548)", () => {
+  test("a populated, valid intake reaches the run with no human signal required", async () => {
+    reset();
+    const result = await startWorkflowRun(baseDeps(provisionOk), {
+      kind: "last30days-research",
+      chain: ["tn-1"],
+      principalId: "prn-1",
+      input: {
+        topic: "AI coding agents for GTM teams",
+        focus: "buyer objections",
+      },
+      originConversationId: null,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    await result.backgroundTask;
+
+    expect(pendingSignalCalls).toHaveLength(1);
+    expect(pendingSignalCalls[0]?.runId).toBe(result.state.runId);
+    expect(pendingSignalCalls[0]?.signalName).toBe("intake");
+    expect(pendingSignalCalls[0]?.payload).toEqual({
+      topic: "AI coding agents for GTM teams",
+      focus: "buyer objections",
+    });
+  });
+
+  test("an empty payload is not delivered — the run parks and asks", async () => {
+    reset();
+    const result = await startWorkflowRun(baseDeps(provisionOk), {
+      kind: "last30days-research",
+      chain: ["tn-1"],
+      principalId: "prn-1",
+      input: {},
+      originConversationId: null,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    await result.backgroundTask;
+
+    expect(pendingSignalCalls).toHaveLength(0);
+  });
+
+  test("an incomplete payload missing the required topic is not delivered — parks and asks rather than delivering a payload that would fail the boundary", async () => {
+    reset();
+    const result = await startWorkflowRun(baseDeps(provisionOk), {
+      kind: "last30days-research",
+      chain: ["tn-1"],
+      principalId: "prn-1",
+      input: { focus: "buyer objections" },
+      originConversationId: null,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    await result.backgroundTask;
+
+    expect(pendingSignalCalls).toHaveLength(0);
+  });
+
+  test("a kind whose entry gate is not named intake is never delivered", async () => {
+    reset();
+    const result = await startWorkflowRun(baseDeps(provisionOk), startOpts);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    await result.backgroundTask;
+
+    expect(pendingSignalCalls).toHaveLength(0);
   });
 });

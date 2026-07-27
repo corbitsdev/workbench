@@ -437,7 +437,6 @@ The catalog runner and env catalog are built _after_ the tool factories run, and
 
 Opt-in is via `resolveDynamicToolConfig(systemPrompt)` (personal-agent control-plane identity marker `<!-- workbench:personal-agent -->`, stamped at prompt composition and stripped before inference — CL-3194); only Myra opts in today. `@workbench/tools-catalog` is a **local in-process runner, not a tarball tool package** — it needs direct access to the exposure state, so it is not registered in the package build, not published to the registry, and not pinned in `toolPackages`. It is keyless (no seed-credentials entry).
 
-
 When a catalog-managed package gains or loses a tool, update its entry in `PACKAGE_TOOLS` (`packages/agents/src/tool-names.ts`) — the catalog, grants, and pins all derive from it, so a tool missing from `PACKAGE_TOOLS` is loaded by the sidecar but neither cataloged nor granted: it is advertised on turn one (falls into the base set) yet denied at invoke. To give Myra a new integration, add its package to `MYRA_CATALOG_PACKAGES`; to keep a capability workflow-only (Gamma, last30days), leave its package out entirely.
 
 ---
@@ -460,7 +459,7 @@ A director may still allow a system sender address (e.g. `scheduler@system`) for
 - [ ] `src/tool-manifest.ts` describes tools, providers, and Myra catalog metadata
 - [ ] `src/interchange-tools.ts` exports a `defineTool` factory (keyless) or `defineCredentialedToolPackage` (credentialed)
 - [ ] No `process.env` reads; no LLM calls
-- [ ] `bun run build:tool-manifests` run; Dockerfile tool `COPY` lines updated if the drift test fails
+- [ ] Regenerated in order — `bun run build:tool-manifests` **then** `bun run build:tool-packages` (and `build:workflow-defs` if workflow-owned) — from `apps/hub`; Dockerfile tool `COPY` lines updated if the drift test fails. `build-tool-manifests.ts` formats its own generated `packages/tool-manifest/src/generated/tool-manifest-index.ts` output with prettier before writing it, so no separate `bun run format` pass is required in between — this matters because that module is bundled into every tool package's `dist/interchange-tools.js`, and Bun.build does not normalize away object-key quote style, so an unformatted vs. formatted source produces different bundled bytes (and sha512 integrity) for the same content. `apps/hub/Dockerfile` runs the same two commands with no format step in between and is correct as-is — it builds from already-committed, already-formatted source, so there is nothing to normalize.
 - [ ] Pinned via `toolPackages` on each using agent's descriptor **and** `AGENT_TEMPLATES` entry
 - [ ] Credentialed: `providerName` / `credentialCatalog` in manifest + owner catalog (`packages/workbench-shared/src/credential-provider-catalog.ts` overrides if needed) + agent `credentialProviderNames`
 - [ ] Credentialed tools only: bare tool names from manifest appear in `KNOWN_TOOLS` (drift guard for the credential rail)

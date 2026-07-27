@@ -939,7 +939,7 @@ export async function createSkill(
       tenantId: userContext.tenantId,
       kind: "skill",
       name: assetName,
-      displayName,
+      ...(displayName === undefined ? {} : { displayName }),
       creatorPrincipalId: userContext.principalId,
     });
   } catch (err) {
@@ -1319,13 +1319,15 @@ async function removeDraftRepoDir(
   assetId: string,
 ): Promise<void> {
   const dir = skillDraftRepoDir(repoStore, assetId);
-  await nodefs.promises.rm(dir, { recursive: true, force: true }).catch((err) => {
-    log.error("Failed to remove skill-draft git repo", {
-      assetId,
-      dir,
-      error: String(err),
+  await nodefs.promises
+    .rm(dir, { recursive: true, force: true })
+    .catch((err) => {
+      log.error("Failed to remove skill-draft git repo", {
+        assetId,
+        dir,
+        error: String(err),
+      });
     });
-  });
 }
 
 function toSkillDraftItem(
@@ -1435,11 +1437,11 @@ export async function upsertSkillDraft(
     .limit(1);
   const existingDraft = rows[0];
 
-  if (existingDraft && existingDraft.creatorPrincipalId !== input.ownerPrincipalId) {
-    throw new SkillLibraryError(
-      `A draft named "${title}" already exists`,
-      409,
-    );
+  if (
+    existingDraft &&
+    existingDraft.creatorPrincipalId !== input.ownerPrincipalId
+  ) {
+    throw new SkillLibraryError(`A draft named "${title}" already exists`, 409);
   }
 
   // Preserve a prior stamp when re-authoring without an explicit one.
@@ -1449,7 +1451,8 @@ export async function upsertSkillDraft(
     existingSkillId = prior.existingSkillId;
   }
 
-  const description = input.description === undefined ? null : input.description;
+  const description =
+    input.description === undefined ? null : input.description;
   const files = input.files === undefined ? [] : input.files;
   const treeFiles = buildSkillDraftTree({
     title,
@@ -1517,10 +1520,13 @@ export async function upsertSkillDraft(
       .delete(intxSchema.asset)
       .where(eq(intxSchema.asset.id, asset.id))
       .catch((deleteErr) => {
-        log.error("Failed to clean up orphaned skill-draft asset after create failure", {
-          assetId: asset.id,
-          error: String(deleteErr),
-        });
+        log.error(
+          "Failed to clean up orphaned skill-draft asset after create failure",
+          {
+            assetId: asset.id,
+            error: String(deleteErr),
+          },
+        );
       });
     throw err;
   }
@@ -1549,7 +1555,8 @@ export async function getOwnedSkillDraftItem(
     )
     .limit(1);
   const row = rows[0];
-  if (!row) throw new SkillLibraryError(`Skill draft not found: ${draftId}`, 404);
+  if (!row)
+    throw new SkillLibraryError(`Skill draft not found: ${draftId}`, 404);
   const content = await loadSkillDraftContent(repoStore, row.id);
   return toSkillDraftItem(row, content);
 }

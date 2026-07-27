@@ -13,7 +13,9 @@ describe("issue write handlers", () => {
         data: { issueUpdate: { success: true, issue } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
     const result = await runner.run(
       {
         id: "1",
@@ -33,7 +35,9 @@ describe("issue write handlers", () => {
         data: { issueArchive: { success: true } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
     const result = await runner.run(
       { id: "1", name: "linear_archive_issue", arguments: { id: "iss-1" } },
       new AbortController().signal,
@@ -49,7 +53,9 @@ describe("issue write handlers", () => {
         data: { issueArchive: { success: false } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
     const result = await runner.run(
       { id: "1", name: "linear_archive_issue", arguments: { id: "iss-1" } },
       new AbortController().signal,
@@ -65,7 +71,9 @@ describe("issue write handlers", () => {
         data: { issueDelete: { success: true } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
     const result = await runner.run(
       { id: "1", name: "linear_delete_issue", arguments: { id: "iss-1" } },
       new AbortController().signal,
@@ -81,7 +89,9 @@ describe("issue write handlers", () => {
         data: { issueDelete: { success: false } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
     const result = await runner.run(
       { id: "1", name: "linear_delete_issue", arguments: { id: "iss-1" } },
       new AbortController().signal,
@@ -97,7 +107,9 @@ describe("issue write handlers", () => {
         data: { issueRelationCreate: { success: true } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
     await runner.run(
       {
         id: "1",
@@ -124,7 +136,9 @@ describe("issue write handlers", () => {
         data: { issueRelationCreate: { success: true } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
     const result = await runner.run(
       {
         id: "1",
@@ -149,7 +163,9 @@ describe("issue write handlers", () => {
         data: { issueRelationCreate: { success: false } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
     const result = await runner.run(
       {
         id: "1",
@@ -176,7 +192,9 @@ describe("webhook write mutation success", () => {
         data: { webhookCreate: { success: false } },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
     const result = await runner.run(
       {
         id: "1",

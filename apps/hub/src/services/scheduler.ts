@@ -176,6 +176,15 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
         }
       }
     } catch (err) {
+      // CL-4586: the fired-marker is NOT rolled back here, deliberately. A
+      // schedule can be permanently unstartable (its recipients were deleted,
+      // so every fire's enrichment throws); re-arming the window would retry
+      // it on every tick forever — a storm of failed runs and inbox notices
+      // for a fault only the owner can fix. Instead the failure is recorded
+      // AGAINST that window by `recordPreStartFailure` in the run starter: a
+      // terminal failed run row plus the standard terminal-failure mail. So
+      // the fire is visible and the attempt budget stays exactly one per
+      // recurrence window, failure or not.
       log.error("scheduler: run-start failed", {
         scheduleId: row.id,
         ownerMemberPrincipalId: row.ownerMemberPrincipalId,

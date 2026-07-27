@@ -102,9 +102,14 @@ export async function listTeams(
   signal: AbortSignal,
 ): Promise<unknown> {
   const args = parseArgs(ListTeamsArgsSchema, rawArgs, "linear_list_teams");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const query = optionalString(args.query);
-  const filter = query !== null ? { name: { containsIgnoreCase: query } } : null;
+  const filter =
+    query !== null ? { name: { containsIgnoreCase: query } } : null;
   const data = await fetchLinearGraphQL(
     config,
     LIST_TEAMS_QUERY,
@@ -124,7 +129,12 @@ export async function getTeam(
 ): Promise<unknown> {
   const args = parseArgs(GetTeamArgsSchema, rawArgs, "linear_get_team");
   const teamId = await resolveTeamId(config, args.id, signal);
-  const data = await fetchLinearGraphQL(config, GET_TEAM_QUERY, { id: teamId }, signal);
+  const data = await fetchLinearGraphQL(
+    config,
+    GET_TEAM_QUERY,
+    { id: teamId },
+    signal,
+  );
   if (data.team === null || data.team === undefined) {
     throw new Error(`Linear team not found: ${args.id}`);
   }
@@ -133,7 +143,8 @@ export async function getTeam(
 
 export const LINEAR_LIST_TEAMS_DEFINITION: ToolDefinition = {
   name: "linear_list_teams",
-  description: "List Linear teams with optional name query and cursor pagination.",
+  description:
+    "List Linear teams with optional name query and cursor pagination.",
   inputSchema: {
     type: "object",
     properties: {

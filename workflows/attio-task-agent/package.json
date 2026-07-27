@@ -8,13 +8,9 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./ui": {
-      "types": "./src/ui.tsx",
-      "default": "./src/ui.tsx"
-    },
-    "./blocks": {
-      "types": "./src/blocks.ts",
-      "default": "./src/blocks.ts"
+    "./browser": {
+      "types": "./src/step-ui.ts",
+      "default": "./src/step-ui.ts"
     }
   },
   "scripts": {
@@ -24,19 +20,20 @@
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
-    "@workbench/agents": "workspace:*",
-    "@workbench/blocks": "workspace:*",
-    "@workbench/shared": "workspace:*",
-    "@workbench/ui": "workspace:*",
+    "@workbench/tool-credentials": "workspace:*",
+    "@workbench/tool-manifest": "workspace:*",
+    "@workbench/tools-artifact": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {
+    "@workbench/shared": "workspace:*",
     "@types/bun": "latest",
-    "@types/react": "^19.0.0",
     "typescript": "catalog:"
   },
-  "peerDependencies": {
-    "react": "*"
+  "interchange": {
+    "tools": "./dist/interchange-tools.js",
+    "manifest": "./src/tool-manifest.ts"
   }
 }

@@ -31,7 +31,7 @@ describe("ProspectEngineTriggerPayloadSchema", () => {
     userAddress: "usr_123@workbench.local",
     userRefId: "usr_123",
     runDate: "2026-07-20",
-    artifactTitle: "Prospect engine - 2026-07-20",
+    title: "Prospect engine - 2026-07-20",
     slackChannelId: "C0123456789",
     growthEngineListId: 80089,
     enterpriseEngineListId: 80090,
@@ -113,7 +113,7 @@ describe("enrichProspectEngineTriggerPayload", () => {
     expect(enriched.userAddress).toBe("usr_abc@workbench.local");
     expect(enriched.userRefId).toBe("usr_abc");
     expect(enriched.runDate).toBe("2026-07-20");
-    expect(enriched.artifactTitle).toBe("Prospect engine — 2026-07-20");
+    expect(enriched.title).toBe("Prospect engine — 2026-07-20");
     expect(enriched.slackChannelId).toBe("C0123");
     expect(enriched.growthEngineListId).toBe(80089);
     expect(enriched.enterpriseEngineListId).toBe(80090);

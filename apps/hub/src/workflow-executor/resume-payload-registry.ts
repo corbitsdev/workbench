@@ -5,6 +5,7 @@ import {
   ClarificationPayloadSchema,
   CompetitorAnalysisIntakePayloadSchema,
   CompetitorAnalysisReviewPayloadSchema,
+  DailyLinkedInIntakePayloadSchema,
   Last30daysIntakePayloadSchema,
   MemberSelectionPayloadSchema,
   RedditIntakePayloadSchema,
@@ -26,6 +27,7 @@ import {
   SumbleIntakePayloadSchema,
   SumbleReviewPayloadSchema,
   ProspectEngineIntakePayloadSchema,
+  ScrapeForStoriesIntakePayloadSchema,
   SyncApprovalPayloadSchema,
   TaskSelectionPayloadSchema,
 } from "@workbench/shared";
@@ -151,6 +153,21 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   "prospect-engine": {
     intake: ProspectEngineIntakePayloadSchema,
   },
+  // scrape-for-stories (CL-4430): the one `intake` gate is filled by the
+  // schedule, never by a person at run time, so REQUIRING at least one
+  // non-blank topic here is the only thing standing between a hollow schedule
+  // payload and a run that searches nothing and still persists a "thin week"
+  // story bucket for Daily LinkedIn to consume as truth.
+  "scrape-for-stories": {
+    intake: ScrapeForStoriesIntakePayloadSchema,
+  },
+  // daily-linkedin (CL-4033/CL-4429): the recipient list is picked at intake
+  // and stored on the schedule. At least one `{ refId, displayName }` pair is
+  // required — an empty list means nobody, not everybody, so without this a
+  // schedule could fire daily, draft for no one, and report success.
+  "daily-linkedin": {
+    intake: DailyLinkedInIntakePayloadSchema,
+  },
   // Multi-gate scheduler integration fixture (CL-3528): intake then a post-intake
   // confirm gate with an empty payload — exercises scheduled Myra gate-drive.
   "scheduler-multi-gate-test": {
@@ -194,18 +211,7 @@ export function validateResumePayload(
     return {
       ok: false,
       error:
-        "sources requires at least one artifact, note, Linear issue, or non-empty text",
-    };
-  }
-  if (
-    kind === "multi-source-collateral" &&
-    signalName === "review" &&
-    out.shouldRegenerate === true &&
-    out.regenerateItems.length === 0
-  ) {
-    return {
-      ok: false,
-      error: "shouldRegenerate requires at least one regenerateItems entry",
+        "sources requires at least one selected artifact/note/issue, or non-empty free text",
     };
   }
   if (kind === "attio-task-agent" && signalName === "sync-approval") {
@@ -221,4 +227,30 @@ export function describeResumePayload(
   const schema = RESUME_PAYLOAD_SCHEMAS[kind]?.[signalName];
   if (schema === undefined) return undefined;
   return String(schema.expression);
+}
+
+/**
+ * The required top-level keys of a kind's registered `intake` resume-payload
+ * schema (read via arktype's JSON Schema projection). Used to assert a
+ * workflow's declared intake fields (`INTAKE_FIELDS`) actually cover every key
+ * the `/resume` boundary requires — the gap that shipped `gtm-scripts-briefs`
+ * with a schedule form collecting nothing against a schema requiring
+ * `topic`/`days` (CL-4538). Returns `undefined` when the kind has no
+ * registered `intake` schema — nothing to check.
+ */
+export function requiredIntakeSchemaKeys(kind: string): string[] | undefined {
+  const schema = RESUME_PAYLOAD_SCHEMAS[kind]?.intake;
+  if (schema === undefined) return undefined;
+  // Several registered schemas narrow a leaf type with `.narrow(...)` (e.g.
+  // `topic`'s non-empty-string check) — arktype's JSON Schema projection has
+  // no representation for an arbitrary predicate and throws unless a
+  // `fallback` is supplied. Only the required-KEY list is needed here (not
+  // the predicate itself), so the fallback degrades a narrowed leaf to its
+  // unrefined base type.
+  const jsonSchema = schema.toJsonSchema({
+    fallback: { predicate: (ctx) => ctx.base },
+  }) as { required?: unknown };
+  const required = jsonSchema.required;
+  if (!Array.isArray(required)) return [];
+  return required.filter((key): key is string => typeof key === "string");
 }

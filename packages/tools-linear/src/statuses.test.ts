@@ -25,10 +25,16 @@ describe("linear_list_issue_statuses", () => {
         },
       },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
-      { id: "1", name: "linear_list_issue_statuses", arguments: { team: "t1" } },
+      {
+        id: "1",
+        name: "linear_list_issue_statuses",
+        arguments: { team: "t1" },
+      },
       new AbortController().signal,
     );
 
@@ -43,7 +49,9 @@ describe("linear_get_issue_status", () => {
   it("fetches status by workflowState id when id is set", async () => {
     const state = { id: "s1", name: "Done", type: "completed" };
     const fetcher = makeFetchStub({ data: { workflowState: state } });
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       {
@@ -64,7 +72,9 @@ describe("linear_get_issue_status", () => {
       { includes: "TeamByName", data: { teams: { nodes: [{ id: "t1" }] } } },
       { includes: "GetStatus", data: { team: { states: { nodes } } } },
     ]);
-    const runner = createToolRunner(createLinearTools({ apiKey: "k", fetcher }));
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
 
     const result = await runner.run(
       {

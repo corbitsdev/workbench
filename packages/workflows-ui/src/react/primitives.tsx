@@ -41,8 +41,7 @@ export function StatusChip({
   pulse?: boolean;
   className?: string;
 }) {
-  const shouldPulse =
-    pulse ?? (tone === "running" || tone === "awaiting");
+  const shouldPulse = pulse ?? (tone === "running" || tone === "awaiting");
   return (
     <span
       className={cn(
@@ -73,8 +72,7 @@ export function ScopePill({
   label?: string;
   className?: string;
 }) {
-  const text =
-    label ?? (scope === "tenant" ? "Everyone" : "Mine");
+  const text = label ?? (scope === "tenant" ? "Everyone" : "Mine");
   return (
     <span
       className={cn(

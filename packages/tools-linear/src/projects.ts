@@ -66,8 +66,16 @@ export async function listProjects(
   rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const args = parseArgs(ListProjectsArgsSchema, rawArgs, "linear_list_projects");
-  const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
+  const args = parseArgs(
+    ListProjectsArgsSchema,
+    rawArgs,
+    "linear_list_projects",
+  );
+  const pagination = resolveListPagination(
+    args,
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+  );
   const query = optionalString(args.query);
   const team = optionalString(args.team);
   const filter: Record<string, unknown> = {};

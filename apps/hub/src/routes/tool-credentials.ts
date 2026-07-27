@@ -158,8 +158,12 @@ export function createToolCredentialsRouter(
       const memberPrincipalId = await resolveToolCredentialMemberPrincipal(db, {
         tenantId: parsed.tenantId,
         agentId: parsed.agentId,
-        workflowRunId: parsed.workflowRunId,
-        memberPrincipalId: parsed.memberPrincipalId,
+        ...(parsed.workflowRunId === undefined
+          ? {}
+          : { workflowRunId: parsed.workflowRunId }),
+        ...(parsed.memberPrincipalId === undefined
+          ? {}
+          : { memberPrincipalId: parsed.memberPrincipalId }),
       });
 
       const credentials: Record<string, ToolCredential> = {};
@@ -212,7 +216,9 @@ export function createToolCredentialsRouter(
           const providerRow = await db.query.provider.findFirst({
             where: (p, { eq: eqp }) => eqp(p.id, resolved.providerId),
           });
-          const metadata = (providerRow?.metadata ?? {}) as { baseURL?: string };
+          const metadata = (providerRow?.metadata ?? {}) as {
+            baseURL?: string;
+          };
           credentials[providerName] = {
             apiKey: decryptToolCredentialSecret(resolved.secret),
             baseURL: metadata.baseURL ?? "",

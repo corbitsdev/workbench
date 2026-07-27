@@ -87,10 +87,17 @@ const getOwnedSkillDraftItem = mock(
 );
 
 const capturedDraftWrites: any[] = [];
-const upsertSkillDraft = mock(async (_assetService: unknown, _db: unknown, _repoStore: unknown, input: any) => {
-  capturedDraftWrites.push(input);
-  return { draftId: "asset-draft-1" };
-});
+const upsertSkillDraft = mock(
+  async (
+    _assetService: unknown,
+    _db: unknown,
+    _repoStore: unknown,
+    input: any,
+  ) => {
+    capturedDraftWrites.push(input);
+    return { draftId: "asset-draft-1" };
+  },
+);
 
 mock.module("../services/skill-library", () => ({
   listSkills,
@@ -325,9 +332,7 @@ describe("list_skills", () => {
       new AbortController().signal,
     );
     expect(JSON.parse(result)).toEqual({
-      skills: [
-        { id: "a3", name: "landing-page", displayName: "Landing page" },
-      ],
+      skills: [{ id: "a3", name: "landing-page", displayName: "Landing page" }],
     });
   });
 
