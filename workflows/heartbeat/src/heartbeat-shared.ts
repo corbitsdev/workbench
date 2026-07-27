@@ -18,8 +18,9 @@ export interface BriefSourceDescriptor {
 /**
  * The brief sources heartbeat generates one intake step per. Static rather
  * than derived from a shared credential-provider catalog — adding a fifth
- * source means adding a row here AND a `SOURCE_TOOL_BUILDERS` entry in
- * `tools.ts`.
+ * source means adding a row here, a `SOURCE_TOOL_BUILDERS` entry in
+ * `tools.ts`, a `SOURCE_TOOL_HANDLERS` entry in `index.ts`, and the matching
+ * expected sibling in `index.test.ts`.
  */
 export const WIRED_BRIEF_SOURCES: readonly BriefSourceDescriptor[] = [
   { key: "granola", label: "Granola", tool: "granola_list_notes" },
