@@ -259,7 +259,6 @@ function createPrepareSourcesGateTool(): AgentTool {
   };
 }
 
-
 // ---------------------------------------------------------------------------
 // fetch-sources — fatal. Replaces the former per-kind `map`s (fetch-artifact/
 // fetch-note/fetch-issue): `MapPrimitive.step` is a `StepPrimitive`, and an
