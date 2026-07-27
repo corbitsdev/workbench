@@ -119,13 +119,13 @@
         "input": {
           "merge": [
             {
-              "from": "steps.list-artifacts.output"
+              "from": "steps.list-artifacts.output.content"
             },
             {
-              "from": "steps.list-notes.output"
+              "from": "steps.list-notes.output.content"
             },
             {
-              "from": "steps.list-issues.output"
+              "from": "steps.list-issues.output.content"
             }
           ]
         },
@@ -172,7 +172,7 @@
         "handler": "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_options_gate",
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.fetchSources.output"
+          "from": "steps.fetchSources.output.content"
         },
         "effect": {
           "requires": [
@@ -200,7 +200,7 @@
         "input": {
           "merge": [
             {
-              "from": "steps.fetchSources.output"
+              "from": "steps.fetchSources.output.content"
             },
             {
               "from": "steps.options.output"
@@ -221,7 +221,7 @@
         "kind": "map",
         "id": "generate",
         "over": {
-          "from": "steps.buildGenerateItems.output.items"
+          "from": "steps.buildGenerateItems.output.content.items"
         },
         "step": {
           "kind": "step",
@@ -290,7 +290,7 @@
               "from": "steps.review.output"
             },
             {
-              "from": "steps.fetchSources.output"
+              "from": "steps.fetchSources.output.content"
             }
           ]
         },
@@ -307,7 +307,7 @@
         "kind": "gate",
         "id": "regenerateGate",
         "when": {
-          "from": "steps.prepareRegenerateItems.output.shouldRegenerate"
+          "from": "steps.prepareRegenerateItems.output.content.shouldRegenerate"
         },
         "then": "regenerate",
         "else": "persist",
@@ -319,7 +319,7 @@
         "kind": "map",
         "id": "regenerate",
         "over": {
-          "from": "steps.prepareRegenerateItems.output.regenerateItems"
+          "from": "steps.prepareRegenerateItems.output.content.regenerateItems"
         },
         "step": {
           "kind": "step",
