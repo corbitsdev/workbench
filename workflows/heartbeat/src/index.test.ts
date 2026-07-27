@@ -285,6 +285,7 @@ describe("heartbeat native workflow", () => {
       expect(intake.handler).toBe(HEARTBEAT_INTAKE_SOURCE_HANDLER);
       expect(intake.effect?.requires).toEqual([
         HEARTBEAT_INTAKE_SOURCE_HANDLER,
+        expect.stringContaining(`:${source.tool}`),
       ]);
       expect(intake.input).toEqual({
         merge: [
@@ -768,5 +769,24 @@ describe("heartbeat native workflow", () => {
     expect(persistInput.body).toBe(briefReply);
     expect(persistInput.kind).toBe("morning-brief");
     expect(persistInput.title).toBe("Jordan Lee's Morning Brief - 04/07/26");
+  });
+});
+
+describe("intake steps authorize their source package", () => {
+  // The wrapper resolves each source's credential at runtime, but a step is
+  // only granted a provider whose PACKAGE the deploy's capability walk pinned.
+  // Declaring the sibling real tool name is what pins it — without that the
+  // credential route 403s the whole request and every source reports itself
+  // unconfigured. See `last30days-research/src/tool-manifest.ts` for the
+  // pattern this follows.
+  test("each intake step requires the sibling source tool, not only the wrapper", () => {
+    for (const source of WIRED_BRIEF_SOURCES) {
+      const stepId = heartbeatIntakeStepKey(source.key);
+      const step = workflow.steps[stepId];
+      const requires = step?.effect?.requires ?? [];
+      expect(
+        requires.some((name: string) => name.endsWith(`:${source.tool}`)),
+      ).toBe(true);
+    }
   });
 });
