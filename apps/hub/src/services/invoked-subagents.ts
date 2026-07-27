@@ -1,5 +1,4 @@
 import { and, desc, eq } from "drizzle-orm";
-import { generateId } from "@intx/hub-common";
 import { INVOKE_TEMPLATE_KEY } from "@workbench/myra";
 import type { HubDb } from "../db";
 import { memberAgentInstance, memberInvokedSubagent } from "../db/schema";
@@ -17,6 +16,13 @@ export type InvokedSubagentRow = {
   lastInvokedAt: string;
   originConversationId: string | null;
 };
+
+/** A workbench-local id: `generateId` only accepts interchange's fixed prefix
+ * set, and `member_invoked_subagent` is a workbench-owned table with no
+ * interchange counterpart, so it mints its own prefixed random id. */
+export function newInvokedSubagentId(): string {
+  return `mis_${crypto.randomUUID().replace(/-/g, "")}`;
+}
 
 /** Member-owned conversation (Myra thread id) for a calling agent instance principal. */
 export async function resolveMemberOwnedConversation(
@@ -68,7 +74,7 @@ export async function recordInvokedSubagentForConversation(args: {
   }
 
   await args.db.insert(memberInvokedSubagent).values({
-    id: generateId("mis"),
+    id: newInvokedSubagentId(),
     tenantId: args.tenantId,
     memberPrincipalId: args.memberPrincipalId,
     originConversationId: args.originConversationId,

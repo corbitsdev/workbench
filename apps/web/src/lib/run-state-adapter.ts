@@ -35,6 +35,14 @@ export interface RunRecord {
     label?: string;
     description?: string;
   };
+  // Run owner attribution, joined on the hub from the run's principal. Both are
+  // declared by `runRecordSchema` and returned by GET /workflow-exec/records/:id
+  // — the Insights trace page renders the display name (falling back to the raw
+  // principal id) as a link to that owner's Insights page. `ownerDisplayName` is
+  // omitted when the principal has no resolvable name; `principalId` is omitted
+  // on records written before the run store began capturing it.
+  principalId?: string;
+  ownerDisplayName?: string;
 }
 
 // Widened sibling of `isRecordTerminal` for callers holding a run's `status`

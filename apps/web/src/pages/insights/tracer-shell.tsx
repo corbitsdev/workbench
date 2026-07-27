@@ -1,5 +1,11 @@
 import { Link } from "react-router";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { ArrowLeft, ArrowRight, Check, Clipboard, Info } from "lucide-react";
 import { statusToneClass, type StatusTone } from "./status-tone";
 
@@ -262,7 +268,9 @@ export function FacetTabs({
 
 export interface Stat {
   label: string;
-  value: string;
+  /** `StatStrip` renders this into a `<dd>`, so a stat may be a formatted
+   * string or a node — the owner stat is a link to the owner's Insights page. */
+  value: ReactNode;
   /** Render the value in the accent-deep cost color. */
   cost?: boolean;
 }

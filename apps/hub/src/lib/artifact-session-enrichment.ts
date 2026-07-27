@@ -28,6 +28,13 @@ export function workflowRunStatusToSessionStatus(
       return "done";
     case "failed":
       return "failed";
+    // A user-stopped run is terminal and did not finish. `SessionStatus` is a
+    // closed union with no cancelled member, and the artifact viewers only ask
+    // whether the producing session is still working — so `failed` is the one
+    // mapping that is both terminal and honest. `done` would assert a
+    // completion that never happened and hide a partial artifact body.
+    case "stopped":
+      return "failed";
   }
 }
 

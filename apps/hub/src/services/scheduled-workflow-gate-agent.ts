@@ -11,7 +11,7 @@ import type { GrantStore } from "@intx/types/authz";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { TurnFinalized } from "@workbench/event-collector";
 import type { HubDb } from "../db";
-import { agentInstance, memberAgentInstance } from "../db/schema";
+import { memberAgentInstance } from "../db/schema";
 import { isFeatureEnabledForTenantCached } from "../lib/feature-grants";
 import { slidingWindowLimiter } from "../lib/sliding-window";
 import {
@@ -125,7 +125,7 @@ export function createScheduledWorkflowGateAgent(
   const inFlight = new Set<string>();
   const pendingTurns = new Map<string, (turn: TurnFinalized | null) => void>();
   let processing = false;
-  let drainWaiters: Array<() => void> = [];
+  let drainWaiters: (() => void)[] = [];
 
   const sessionBudget = slidingWindowLimiter(
     MAX_SESSIONS_PER_HOUR,

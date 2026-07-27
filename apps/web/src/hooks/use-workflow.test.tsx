@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createElement } from "react";
 import { logger } from "../lib/logger";
+import type { RunRecord } from "../lib/run-state-adapter";
 import {
   CONVERSATION_RUN_IDLE_POLL_MS,
   CONVERSATION_RUN_POLL_MS,
@@ -152,6 +153,28 @@ describe("useConversationWorkflowRuns", () => {
 });
 
 describe("useWorkflowRecord", () => {
+  it("carries the owner attribution the trace page renders", async () => {
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(
+        jsonResponse(200, {
+          runId: "wfr_1",
+          kind: "brief",
+          status: "completed",
+          principalId: "prn_owner",
+          ownerDisplayName: "Ada Lovelace",
+        }),
+      )) as typeof fetch;
+
+    const client = new QueryClient();
+    const { result } = renderHook(() => useWorkflowRecord("wfr_1"), {
+      wrapper: recordWrapper(client),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const record: RunRecord | undefined = result.current.data;
+    expect(record?.principalId).toBe("prn_owner");
+    expect(record?.ownerDisplayName).toBe("Ada Lovelace");
+  });
+
   it("does not retry a forbidden record and surfaces the error after one fetch", async () => {
     let calls = 0;
     globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
