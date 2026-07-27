@@ -1,5 +1,3 @@
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
   findWorkflowDefsDrift,
@@ -54,25 +52,13 @@ describe("check-workflow-defs-drift script against the real repo", () => {
   // serializeWorkflowDef dynamically imports every workflow package on first
   // invocation in a process, which blows past bun's default 5000ms timeout.
   test("the committed workflow defs match the live workflow sources", async () => {
-    const { workflowKinds, serializeWorkflowDef, serializeEmbeddedJson } =
-      await import("./build-workflow-defs");
-    const { embeddedWorkflowDefsDir } = await import(
-      "../src/lib/workflow-defs-embedded"
+    const { collectLiveDefs, collectCommittedDefs } = await import(
+      "./check-workflow-defs-drift"
     );
-    const live = new Map<string, string>();
-    for (const kind of workflowKinds()) {
-      live.set(kind, serializeEmbeddedJson(await serializeWorkflowDef(kind)));
-    }
-    const committed = new Map<string, string>();
-    const dir = embeddedWorkflowDefsDir();
-    for (const file of await readdir(dir)) {
-      if (!file.endsWith(".json")) continue;
-      committed.set(
-        file.slice(0, -".json".length),
-        await readFile(join(dir, file), "utf8"),
-      );
-    }
-    const result = findWorkflowDefsDrift(live, committed);
+    const result = findWorkflowDefsDrift(
+      await collectLiveDefs(),
+      collectCommittedDefs(),
+    );
     expect(result.staleKinds).toEqual([]);
     expect(result.missingKinds).toEqual([]);
     expect(result.orphanKinds).toEqual([]);

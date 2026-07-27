@@ -75,7 +75,7 @@ export function renderDriftReport(result: WorkflowDefsDriftResult): string {
   return lines.join("\n");
 }
 
-async function collectLiveDefs(): Promise<Map<string, string>> {
+export async function collectLiveDefs(): Promise<Map<string, string>> {
   const live = new Map<string, string>();
   for (const kind of workflowKinds()) {
     live.set(kind, serializeEmbeddedJson(await serializeWorkflowDef(kind)));
@@ -83,7 +83,7 @@ async function collectLiveDefs(): Promise<Map<string, string>> {
   return live;
 }
 
-function collectCommittedDefs(): Map<string, string> {
+export function collectCommittedDefs(): Map<string, string> {
   const dir = embeddedWorkflowDefsDir();
   const committed = new Map<string, string>();
   for (const file of readdirSync(dir)) {
