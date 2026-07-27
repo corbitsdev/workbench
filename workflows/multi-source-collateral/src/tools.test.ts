@@ -184,9 +184,12 @@ describe("multi_source_collateral_prepare_sources_gate", () => {
     );
     const block = result.content as {
       kind: string;
+      prompt: string;
       fields: { kind: string; name: string; options?: { value: string }[] }[];
     };
     expect(block.kind).toBe("form");
+    expect(block.prompt).toContain("Pick artifacts");
+    expect(block.prompt).not.toContain("source list failed");
     const sourceIds = block.fields.find((f) => f.name === "sourceIds");
     expect(sourceIds?.options?.map((o) => o.value)).toEqual([
       "artifact:a1",
@@ -196,11 +199,35 @@ describe("multi_source_collateral_prepare_sources_gate", () => {
     expect(block.fields.some((f) => f.name === "freeText")).toBe(true);
   });
 
-  test("tells the operator a source is unavailable rather than showing it as empty", async () => {
+  test("empty successful lists do not surface a failure warning", async () => {
     const handler = fullTool("multi_source_collateral_prepare_sources_gate");
-    // A source wrapped in a tolerance envelope reports failure INSIDE its
-    // content with a non-error outer ToolResult, so the merged gate input
-    // carries `isError`/`error` and simply lacks that source's list key.
+    const result = await handler(
+      {
+        id: "c",
+        name: "multi_source_collateral_prepare_sources_gate",
+        arguments: {
+          artifacts: [],
+          notes: [],
+          issues: [],
+        },
+      },
+      SIGNAL,
+    );
+    const block = result.content as {
+      prompt: string;
+      fields: { name: string; options?: unknown[] }[];
+    };
+    expect(block.prompt).not.toContain("could not be loaded");
+    expect(block.prompt).not.toContain("source list failed");
+    const sourceIds = block.fields.find((f) => f.name === "sourceIds");
+    expect(sourceIds?.options).toEqual([]);
+  });
+
+  test("merged tolerance-envelope failure is not silent empty (CL-4624)", async () => {
+    const handler = fullTool("multi_source_collateral_prepare_sources_gate");
+    // Production: merge of three `.output.content` values. list-issues fails
+    // with the shared tolerance envelope; artifacts/notes succeed. The merged
+    // gate input carries `isError`/`error` and simply lacks that source's list key.
     const result = await handler(
       {
         id: "c",
@@ -209,27 +236,41 @@ describe("multi_source_collateral_prepare_sources_gate", () => {
           artifacts: [{ id: "a1", title: "Brief" }],
           notes: [{ id: "n1", title: "Call" }],
           isError: true,
-          error: "Linear credential missing",
+          error: "Linear credential not configured",
         },
       },
       SIGNAL,
     );
-    const block = result.content as { prompt: string };
-    expect(block.prompt).toContain("Linear credential missing");
+    const block = result.content as {
+      kind: string;
+      prompt: string;
+      fields: { name: string; options?: { value: string }[] }[];
+    };
+    expect(block.kind).toBe("form");
+    // #1338 operator-facing wording: unavailable source, incomplete options.
+    expect(block.prompt).toContain("could not be loaded");
+    expect(block.prompt).toContain("Linear credential not configured");
+    expect(block.prompt).toContain("incomplete");
+    const sourceIds = block.fields.find((f) => f.name === "sourceIds");
+    expect(sourceIds?.options?.map((o) => o.value)).toEqual([
+      "artifact:a1",
+      "note:n1",
+    ]);
   });
 
-  test("says nothing about unavailable sources when every source merely returned nothing", async () => {
+  test("bare tolerance-envelope failure alone still warns", async () => {
     const handler = fullTool("multi_source_collateral_prepare_sources_gate");
     const result = await handler(
       {
         id: "c",
         name: "multi_source_collateral_prepare_sources_gate",
-        arguments: { artifacts: [], notes: [], issues: [] },
+        arguments: { isError: true, error: "linear exploded" },
       },
       SIGNAL,
     );
     const block = result.content as { prompt: string };
-    expect(block.prompt).not.toContain("could not be loaded");
+    expect(block.prompt).toContain("could not be loaded");
+    expect(block.prompt).toContain("linear exploded");
   });
 });
 

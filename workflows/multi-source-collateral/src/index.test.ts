@@ -122,6 +122,44 @@ describe("multi-source-collateral package", () => {
     expect(primitive.input).toEqual({ from: "steps.sources.output" });
   });
 
+  test("action→action selectors read ToolResult.content (production wire shape)", () => {
+    expect(actionPrimitive("prepareSourcesGate").input).toEqual({
+      merge: [
+        { from: "steps.list-artifacts.output.content" },
+        { from: "steps.list-notes.output.content" },
+        { from: "steps.list-issues.output.content" },
+      ],
+    });
+    expect(actionPrimitive("prepareOptionsGate").input).toEqual({
+      from: "steps.fetchSources.output.content",
+    });
+    expect(actionPrimitive("buildGenerateItems").input).toEqual({
+      merge: [
+        { from: "steps.fetchSources.output.content" },
+        { from: "steps.options.output" },
+      ],
+    });
+    expect(mapPrimitive("generate").over).toEqual({
+      from: "steps.buildGenerateItems.output.content.items",
+    });
+    expect(actionPrimitive("prepareRegenerateItems").input).toEqual({
+      merge: [
+        { from: "steps.review.output" },
+        { from: "steps.fetchSources.output.content" },
+      ],
+    });
+    const regenerateGate = workflow.steps.regenerateGate;
+    if (regenerateGate === undefined || regenerateGate.kind !== "gate") {
+      throw new Error("expected regenerateGate");
+    }
+    expect(regenerateGate.when).toEqual({
+      from: "steps.prepareRegenerateItems.output.content.shouldRegenerate",
+    });
+    expect(mapPrimitive("regenerate").over).toEqual({
+      from: "steps.prepareRegenerateItems.output.content.regenerateItems",
+    });
+  });
+
   test("persist and persist-after-regen both target the folded persist-pieces action", () => {
     expect(actionPrimitive("persist").handler).toBe(PERSIST_PIECES_HANDLER);
     expect(actionPrimitive("persist-after-regen").handler).toBe(
@@ -169,32 +207,54 @@ describe("multi-source-collateral package", () => {
       "multi-source-collateral-generate": AGENT_REPLY(draft),
     });
     const { resolver: actionResolver, ran: actionsRan } = makeActionResolver({
-      [ARTIFACT_LIST_HANDLER]: { artifacts: [{ id: "a1", title: "Brief" }] },
-      [GRANOLA_LIST_NOTES_HANDLER]: { notes: [{ id: "n1", title: "Call" }] },
+      // Action handlers in production store full ToolResult envelopes; mocks
+      // match that shape so selectors reading `.output.content` resolve.
+      [ARTIFACT_LIST_HANDLER]: {
+        content: { artifacts: [{ id: "a1", title: "Brief" }] },
+      },
+      [GRANOLA_LIST_NOTES_HANDLER]: {
+        content: { notes: [{ id: "n1", title: "Call" }] },
+      },
       [LIST_ISSUES_HANDLER]: {
-        issues: [{ id: "i1", identifier: "CL-1", title: "Ticket" }],
+        content: {
+          issues: [{ id: "i1", identifier: "CL-1", title: "Ticket" }],
+        },
       },
-      [PREPARE_SOURCES_GATE_HANDLER]: { kind: "form", fields: [] },
+      [PREPARE_SOURCES_GATE_HANDLER]: {
+        content: { kind: "form", fields: [] },
+      },
       [FETCH_SOURCES_HANDLER]: {
-        sourceContext: "combined context",
-        sourcesSummary: [{ kind: "artifact", id: "a1" }],
+        content: {
+          sourceContext: "combined context",
+          sourcesSummary: [{ kind: "artifact", id: "a1" }],
+        },
       },
-      [PREPARE_OPTIONS_GATE_HANDLER]: { kind: "form", fields: [] },
+      [PREPARE_OPTIONS_GATE_HANDLER]: {
+        content: { kind: "form", fields: [] },
+      },
       [BUILD_GENERATE_ITEMS_HANDLER]: {
-        items: [
-          {
-            contentType: "linkedin-post",
-            format: "linkedin-post",
-            sourceContext: "combined context",
-          },
-        ],
+        content: {
+          items: [
+            {
+              contentType: "linkedin-post",
+              format: "linkedin-post",
+              sourceContext: "combined context",
+            },
+          ],
+        },
       },
-      [PREPARE_REVIEW_GATE_HANDLER]: { kind: "reviewList", rows: [] },
+      [PREPARE_REVIEW_GATE_HANDLER]: {
+        content: { kind: "reviewList", rows: [] },
+      },
       [PREPARE_REGENERATE_ITEMS_HANDLER]: {
-        shouldRegenerate: false,
-        regenerateItems: [],
+        content: {
+          shouldRegenerate: false,
+          regenerateItems: [],
+        },
       },
-      [PERSIST_PIECES_HANDLER]: { artifacts: [{ artifactId: "art_out" }] },
+      [PERSIST_PIECES_HANDLER]: {
+        content: { artifacts: [{ artifactId: "art_out" }] },
+      },
     });
 
     const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
@@ -225,6 +285,18 @@ describe("multi-source-collateral package", () => {
     expect(ran.map((r) => r.id)).not.toContain(
       "multi-source-collateral-regenerate",
     );
+
+    // Selectors project `.output.content` so the gate tool sees list payloads,
+    // not ToolResult envelopes (CL-4624).
+    const prepareSourcesInput = actionsRan.find(
+      (r) => r.ref === PREPARE_SOURCES_GATE_HANDLER,
+    )?.input as Record<string, unknown> | undefined;
+    expect(prepareSourcesInput).toMatchObject({
+      artifacts: [{ id: "a1", title: "Brief" }],
+      notes: [{ id: "n1", title: "Call" }],
+      issues: [{ id: "i1", identifier: "CL-1", title: "Ticket" }],
+    });
+    expect(prepareSourcesInput).not.toHaveProperty("callId");
   });
 
   test("regenerate path: review shouldRegenerate → regenerate → review-final → persist-after-regen", async () => {
@@ -243,39 +315,55 @@ describe("multi-source-collateral package", () => {
       "multi-source-collateral-regenerate": AGENT_REPLY(revised),
     });
     const { resolver: actionResolver, ran: actionsRan } = makeActionResolver({
-      [ARTIFACT_LIST_HANDLER]: { artifacts: [] },
-      [GRANOLA_LIST_NOTES_HANDLER]: { notes: [] },
-      [LIST_ISSUES_HANDLER]: { issues: [] },
-      [PREPARE_SOURCES_GATE_HANDLER]: { kind: "form", fields: [] },
+      [ARTIFACT_LIST_HANDLER]: { content: { artifacts: [] } },
+      [GRANOLA_LIST_NOTES_HANDLER]: { content: { notes: [] } },
+      [LIST_ISSUES_HANDLER]: { content: { issues: [] } },
+      [PREPARE_SOURCES_GATE_HANDLER]: {
+        content: { kind: "form", fields: [] },
+      },
       [FETCH_SOURCES_HANDLER]: {
-        sourceContext: "Only free text source",
-        sourcesSummary: [],
+        content: {
+          sourceContext: "Only free text source",
+          sourcesSummary: [],
+        },
       },
-      [PREPARE_OPTIONS_GATE_HANDLER]: { kind: "form", fields: [] },
+      [PREPARE_OPTIONS_GATE_HANDLER]: {
+        content: { kind: "form", fields: [] },
+      },
       [BUILD_GENERATE_ITEMS_HANDLER]: {
-        items: [
-          {
-            contentType: "blog-short",
-            format: "blog-short",
-            sourceContext: "Only free text source",
-          },
-        ],
+        content: {
+          items: [
+            {
+              contentType: "blog-short",
+              format: "blog-short",
+              sourceContext: "Only free text source",
+            },
+          ],
+        },
       },
-      [PREPARE_REVIEW_GATE_HANDLER]: { kind: "reviewList", rows: [] },
+      [PREPARE_REVIEW_GATE_HANDLER]: {
+        content: { kind: "reviewList", rows: [] },
+      },
       [PREPARE_REGENERATE_ITEMS_HANDLER]: {
-        shouldRegenerate: true,
-        regenerateItems: [
-          {
-            contentType: "blog-short",
-            format: "blog-short",
-            sourceContext: "Only free text source",
-            previousContent: "First draft",
-            feedback: "Make it punchier",
-          },
-        ],
+        content: {
+          shouldRegenerate: true,
+          regenerateItems: [
+            {
+              contentType: "blog-short",
+              format: "blog-short",
+              sourceContext: "Only free text source",
+              previousContent: "First draft",
+              feedback: "Make it punchier",
+            },
+          ],
+        },
       },
-      [PREPARE_REVIEW_FINAL_GATE_HANDLER]: { kind: "reviewList", rows: [] },
-      [PERSIST_PIECES_HANDLER]: { artifacts: [{ artifactId: "art_2" }] },
+      [PREPARE_REVIEW_FINAL_GATE_HANDLER]: {
+        content: { kind: "reviewList", rows: [] },
+      },
+      [PERSIST_PIECES_HANDLER]: {
+        content: { artifacts: [{ artifactId: "art_2" }] },
+      },
     });
 
     const run = runLocal(workflow, { invokeStep: invoker, actionResolver });
