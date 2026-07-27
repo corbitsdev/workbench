@@ -170,6 +170,33 @@ function issueLabel(item: LinearIssueItem): string {
   return item.title ? `${identifier}: ${item.title}` : identifier;
 }
 
+const SOURCES_GATE_PROMPT =
+  "Pick artifacts, Granola notes, and/or Linear issues to draw from, and/or paste free text.";
+
+/**
+ * A source wrapped in a tolerance envelope reports failure INSIDE its content
+ * with a non-error outer `ToolResult`, and this gate's input is a merge of the
+ * three list steps' outputs — so a failed source contributes `isError`/`error`
+ * and simply lacks its list key. Its parser then returns `empty`, which is
+ * indistinguishable from a source that genuinely had nothing. Without this the
+ * operator approves an incomplete source set believing it was complete.
+ *
+ * Declared locally rather than imported: this workflow package deliberately
+ * carries no dependency on `@workbench/workbench-shared`, and `heartbeat` sets
+ * the same precedent.
+ */
+function toleranceFailureError(raw: unknown): string | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.isError !== true || typeof obj.error !== "string") return null;
+  return obj.error;
+}
+
+function sourcesGatePrompt(unavailable: string | null): string {
+  if (unavailable === null) return SOURCES_GATE_PROMPT;
+  return `${SOURCES_GATE_PROMPT}\n\nA source could not be loaded (${unavailable}). The options below are incomplete — continue only if you can proceed without it.`;
+}
+
 function createPrepareSourcesGateTool(): AgentTool {
   return {
     kind: "full",
@@ -204,8 +231,7 @@ function createPrepareSourcesGateTool(): AgentTool {
       ];
       return ok(call.id, {
         kind: "form",
-        prompt:
-          "Pick artifacts, Granola notes, and/or Linear issues to draw from, and/or paste free text.",
+        prompt: sourcesGatePrompt(toleranceFailureError(args)),
         submitLabel: "Continue",
         fields: [
           {

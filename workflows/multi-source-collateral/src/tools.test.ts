@@ -195,6 +195,42 @@ describe("multi_source_collateral_prepare_sources_gate", () => {
     ]);
     expect(block.fields.some((f) => f.name === "freeText")).toBe(true);
   });
+
+  test("tells the operator a source is unavailable rather than showing it as empty", async () => {
+    const handler = fullTool("multi_source_collateral_prepare_sources_gate");
+    // A source wrapped in a tolerance envelope reports failure INSIDE its
+    // content with a non-error outer ToolResult, so the merged gate input
+    // carries `isError`/`error` and simply lacks that source's list key.
+    const result = await handler(
+      {
+        id: "c",
+        name: "multi_source_collateral_prepare_sources_gate",
+        arguments: {
+          artifacts: [{ id: "a1", title: "Brief" }],
+          notes: [{ id: "n1", title: "Call" }],
+          isError: true,
+          error: "Linear credential missing",
+        },
+      },
+      SIGNAL,
+    );
+    const block = result.content as { prompt: string };
+    expect(block.prompt).toContain("Linear credential missing");
+  });
+
+  test("says nothing about unavailable sources when every source merely returned nothing", async () => {
+    const handler = fullTool("multi_source_collateral_prepare_sources_gate");
+    const result = await handler(
+      {
+        id: "c",
+        name: "multi_source_collateral_prepare_sources_gate",
+        arguments: { artifacts: [], notes: [], issues: [] },
+      },
+      SIGNAL,
+    );
+    const block = result.content as { prompt: string };
+    expect(block.prompt).not.toContain("could not be loaded");
+  });
 });
 
 describe("multi_source_collateral_fetch_sources — fatal", () => {
