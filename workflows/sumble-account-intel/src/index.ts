@@ -92,6 +92,13 @@ export const SEARCH_SIGNALS_HANDLER =
   "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_search_signals";
 export const ENRICH_CONTACTS_HANDLER =
   "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_enrich_contacts";
+// Real X tool name — never dispatched (the wrapper calls it in-process), but
+// declared in enrichSocial's effect.requires so the deploy capability walk
+// pins @workbench/tools-x (provider is `xai`; package is `tools-x`), whose
+// manifest carries the credential this workflow's wrapper package cannot
+// claim (providerName: null). Without the pin the hub 403s the whole
+// sumble+xai batch. Same pattern as last30days-research / heartbeat.
+export const X_SEARCH_HANDLER = "@workbench/tools-x/x:x_search";
 export const REVIEW_GATE_HANDLER =
   "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_prepare_review_gate";
 
@@ -226,7 +233,7 @@ export const workflow = defineWorkflow({
     enrichSocial: action({
       handler: ENRICH_CONTACTS_HANDLER,
       input: { from: "steps.contacts.output.content" },
-      effect: { requires: [ENRICH_CONTACTS_HANDLER] },
+      effect: { requires: [ENRICH_CONTACTS_HANDLER, X_SEARCH_HANDLER] },
       after: ["signals"],
     }),
 

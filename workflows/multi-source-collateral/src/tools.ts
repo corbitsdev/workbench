@@ -6,7 +6,10 @@ import {
   defineCredentialedToolPackage,
   defineHubBackedToolPackage,
 } from "@workbench/tool-credentials/factory";
-import { withToleranceEnvelope } from "@workbench/tool-credentials/tolerance-envelope-dispatch";
+import {
+  isToleranceEnvelopeFailure,
+  withToleranceEnvelope,
+} from "@workbench/tool-credentials/tolerance-envelope-dispatch";
 import { ARTIFACT_TOOL_DEFINITIONS } from "@workbench/tools-artifact";
 import { createGranolaTools } from "@workbench/tools-granola";
 import type { GranolaToolsConfig } from "@workbench/tools-granola";
@@ -170,6 +173,37 @@ function issueLabel(item: LinearIssueItem): string {
   return item.title ? `${identifier}: ${item.title}` : identifier;
 }
 
+const SOURCES_GATE_BASE_PROMPT =
+  "Pick artifacts, Granola notes, and/or Linear issues to draw from, and/or paste free text.";
+
+/**
+ * Detect a tolerance-envelope failure in merged list-step contents.
+ * Uses the shared checker only (CL-4624). After `merge` of several
+ * `steps.*.output.content` values, a failed tolerant source contributes
+ * `{ isError, error }` alongside successful list keys — project those
+ * fields and re-check when the whole merge is not itself the failure shape.
+ * Without this the operator approves an incomplete source set believing it
+ * was complete (parsers return empty for a missing list key).
+ */
+function toleranceFailureFromMergedContent(raw: unknown): string | null {
+  if (isToleranceEnvelopeFailure(raw)) return raw.error;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const obj = raw as Record<string, unknown>;
+  if (!("isError" in obj) && !("error" in obj)) return null;
+  const projected = { isError: obj.isError, error: obj.error };
+  if (isToleranceEnvelopeFailure(projected)) return projected.error;
+  return null;
+}
+
+function sourcesGatePrompt(args: Record<string, unknown>): string {
+  const failure = toleranceFailureFromMergedContent(args);
+  if (failure === null) return SOURCES_GATE_BASE_PROMPT;
+  // #1338 operator-facing wording: unavailable source, incomplete options.
+  return `${SOURCES_GATE_BASE_PROMPT}\n\nA source could not be loaded (${failure}). The options below are incomplete — continue only if you can proceed without it.`;
+}
+
 function createPrepareSourcesGateTool(): AgentTool {
   return {
     kind: "full",
@@ -204,8 +238,7 @@ function createPrepareSourcesGateTool(): AgentTool {
       ];
       return ok(call.id, {
         kind: "form",
-        prompt:
-          "Pick artifacts, Granola notes, and/or Linear issues to draw from, and/or paste free text.",
+        prompt: sourcesGatePrompt(args),
         submitLabel: "Continue",
         fields: [
           {
