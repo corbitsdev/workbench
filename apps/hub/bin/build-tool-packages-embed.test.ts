@@ -75,7 +75,7 @@ function hubDockerfilePath(): string {
 }
 
 const HUB_IMAGE_EMBED_RUN =
-  /RUN bun run --cwd apps\/hub build:workflow-defs && \\\n\s+bun run --cwd apps\/hub build:tool-manifests && \\\n\s+bun run --cwd apps\/hub build:tool-packages/;
+  /RUN bun run --cwd apps\/hub build:tool-manifests && \\\n\s+bun run --cwd apps\/hub check:tool-manifest-drift && \\\n\s+bun run --cwd apps\/hub check:workflow-defs-drift && \\\n\s+bun run --cwd apps\/hub build:workflow-defs && \\\n\s+bun run --cwd apps\/hub build:tool-packages/;
 
 describe("hub Docker image can run build:tool-packages", () => {
   it("rebuilds workflow defs, tool manifests, and embedded tarballs in one image-build RUN", async () => {

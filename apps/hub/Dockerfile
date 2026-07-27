@@ -191,11 +191,12 @@ COPY workflows/ workflows/
 # Tool manifests MUST be rebuilt before workflow defs: `build:workflow-defs`
 # canonicalizes step tool names against the committed tool-manifest index, so
 # stamping defs before the index is regenerated bakes in a bare (unprefixed)
-# name for any tool added since the last manifest regen. The drift check runs
-# between the two so a stale committed index fails the image build instead of
-# silently shipping a broken def.
+# name for any tool added since the last manifest regen. The drift checks run
+# before their consumers so a stale committed index or workflow def fails the
+# image build instead of silently shipping a broken def (CL-4649).
 RUN bun run --cwd apps/hub build:tool-manifests && \
     bun run --cwd apps/hub check:tool-manifest-drift && \
+    bun run --cwd apps/hub check:workflow-defs-drift && \
     bun run --cwd apps/hub build:workflow-defs && \
     bun run --cwd apps/hub build:tool-packages
 

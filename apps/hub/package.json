@@ -8,6 +8,7 @@
     "build:tool-manifests": "BUN_OPTIONS=--conditions=intx-src bun run bin/build-tool-manifests.ts",
     "build:tool-packages": "BUN_OPTIONS=--conditions=intx-src bun run bin/build-tool-packages.ts --embed",
     "check:tool-manifest-drift": "BUN_OPTIONS=--conditions=intx-src bun run bin/check-tool-manifest-drift.ts",
+    "check:workflow-defs-drift": "BUN_OPTIONS=--conditions=intx-src bun run bin/check-workflow-defs-drift.ts",
     "build": "BUN_OPTIONS=--conditions=intx-src bun run build:tool-manifests && bun run build:workflow-defs && bun run build:tool-packages && bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
     "start": "BUN_OPTIONS=--conditions=intx-src bun run dist/index.js",
