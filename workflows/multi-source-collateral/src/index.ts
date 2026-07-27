@@ -145,17 +145,17 @@ export const workflow = defineWorkflow({
       effect: { requires: [LIST_ISSUES_HANDLER, LINEAR_LIST_ISSUES_HANDLER] },
     }),
 
-    // Shapes the three list steps' output into the `form` UIBlock the
-    // `sources` gate's STEP_UI entry renders via gateFromOutput. Fatal — a
-    // malformed prior step's output here is a genuine wiring bug, not a
-    // best-effort data source (each input list already tolerates empty).
+    // Action steps store the full ToolResult envelope as step output
+    // (sidecar action-tool-handler). Selectors that want the tool payload
+    // must read `.output.content` — same pattern as gamma-presentation-creator
+    // and heartbeat. Signal steps and map steps keep bare `.output`.
     prepareSourcesGate: action({
       handler: PREPARE_SOURCES_GATE_HANDLER,
       input: {
         merge: [
-          { from: "steps.list-artifacts.output" },
-          { from: "steps.list-notes.output" },
-          { from: "steps.list-issues.output" },
+          { from: "steps.list-artifacts.output.content" },
+          { from: "steps.list-notes.output.content" },
+          { from: "steps.list-issues.output.content" },
         ],
       },
       effect: { requires: [PREPARE_SOURCES_GATE_HANDLER] },
@@ -182,7 +182,7 @@ export const workflow = defineWorkflow({
     // `options` gate's STEP_UI entry renders via gateFromOutput.
     prepareOptionsGate: action({
       handler: PREPARE_OPTIONS_GATE_HANDLER,
-      input: { from: "steps.fetchSources.output" },
+      input: { from: "steps.fetchSources.output.content" },
       effect: { requires: [PREPARE_OPTIONS_GATE_HANDLER] },
       after: ["fetchSources"],
     }),
@@ -195,7 +195,7 @@ export const workflow = defineWorkflow({
       handler: BUILD_GENERATE_ITEMS_HANDLER,
       input: {
         merge: [
-          { from: "steps.fetchSources.output" },
+          { from: "steps.fetchSources.output.content" },
           { from: "steps.options.output" },
         ],
       },
@@ -204,7 +204,7 @@ export const workflow = defineWorkflow({
     }),
 
     generate: map({
-      over: { from: "steps.buildGenerateItems.output.items" },
+      over: { from: "steps.buildGenerateItems.output.content.items" },
       step: reasoningStep({
         id: "multi-source-collateral-generate",
         title: "Draft each piece",
@@ -230,23 +230,27 @@ export const workflow = defineWorkflow({
       input: {
         merge: [
           { from: "steps.review.output" },
-          { from: "steps.fetchSources.output" },
+          { from: "steps.fetchSources.output.content" },
         ],
       },
       effect: { requires: [PREPARE_REGENERATE_ITEMS_HANDLER] },
       after: ["review"],
     }),
 
-    // shouldRegenerate is a boolean on prepareRegenerateItems' output.
+    // shouldRegenerate is a boolean on prepareRegenerateItems' content.
     regenerateGate: gate({
-      when: { from: "steps.prepareRegenerateItems.output.shouldRegenerate" },
+      when: {
+        from: "steps.prepareRegenerateItems.output.content.shouldRegenerate",
+      },
       then: "regenerate",
       else: "persist",
       after: ["prepareRegenerateItems"],
     }),
 
     regenerate: map({
-      over: { from: "steps.prepareRegenerateItems.output.regenerateItems" },
+      over: {
+        from: "steps.prepareRegenerateItems.output.content.regenerateItems",
+      },
       step: reasoningStep({
         id: "multi-source-collateral-regenerate",
         title: "Revise with feedback",
