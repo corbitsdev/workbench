@@ -89,7 +89,15 @@ describe("multi-source-collateral package", () => {
     const primitive = actionPrimitive("list-issues");
     expect(primitive.handler).toBe(LIST_ISSUES_HANDLER);
     expect(primitive.input).toEqual({ literal: { first: 50 } });
-    expect(primitive.effect).toEqual({ requires: [LIST_ISSUES_HANDLER] });
+    // Sibling pins @workbench/tools-linear so the linear credential is
+    // allow-listed. Assert the whole canonical string: a wrong package
+    // prefix pins nothing and reproduces the silent-403 this guards against.
+    expect(primitive.effect).toEqual({
+      requires: [
+        LIST_ISSUES_HANDLER,
+        "@workbench/tools-linear/linear:linear_list_issues",
+      ],
+    });
   });
 
   test("list-artifacts is a native action calling artifact_list with a literal limit", () => {

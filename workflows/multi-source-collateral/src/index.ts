@@ -69,6 +69,14 @@ export const GRANOLA_LIST_NOTES_HANDLER =
   "@workbench/tools-granola/granola:granola_list_notes";
 export const LIST_ISSUES_HANDLER =
   "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_list_issues";
+// Real Linear tool name — never dispatched (the wrapper calls it in-process),
+// but declared in list-issues' effect.requires so the deploy capability walk
+// pins @workbench/tools-linear, whose manifest carries the `linear` provider
+// this workflow's wrapper package cannot claim (providerName: null). Without
+// the pin the credential route 403s the whole batch. Same pattern as
+// last30days-research / heartbeat.
+export const LINEAR_LIST_ISSUES_HANDLER =
+  "@workbench/tools-linear/linear:linear_list_issues";
 export const PREPARE_SOURCES_GATE_HANDLER =
   "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_prepare_sources_gate";
 export const FETCH_SOURCES_HANDLER =
@@ -134,7 +142,7 @@ export const workflow = defineWorkflow({
     "list-issues": action({
       handler: LIST_ISSUES_HANDLER,
       input: { literal: { first: 50 } },
-      effect: { requires: [LIST_ISSUES_HANDLER] },
+      effect: { requires: [LIST_ISSUES_HANDLER, LINEAR_LIST_ISSUES_HANDLER] },
     }),
 
     // Shapes the three list steps' output into the `form` UIBlock the

@@ -168,7 +168,15 @@ describe("sumble-account-intel workflow structure", () => {
     const enrich = actionPrimitive("enrichSocial");
     expect(enrich.handler).toBe(ENRICH_CONTACTS_HANDLER);
     expect(enrich.input).toEqual({ from: "steps.contacts.output.content" });
-    expect(enrich.effect).toEqual({ requires: [ENRICH_CONTACTS_HANDLER] });
+    // Sibling pins @workbench/tools-x so the xai credential is allow-listed
+    // (and does not 403 the whole sumble+xai batch). Assert the whole
+    // canonical string: a wrong package prefix pins nothing.
+    expect(enrich.effect).toEqual({
+      requires: [
+        ENRICH_CONTACTS_HANDLER,
+        "@workbench/tools-x/x:x_search",
+      ],
+    });
     expect("agent" in enrich).toBe(false);
     // No step in this workflow is a `map` primitive anymore.
     for (const primitive of Object.values(workflow.steps)) {

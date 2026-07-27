@@ -106,7 +106,8 @@
         },
         "effect": {
           "requires": [
-            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_list_issues"
+            "@workbench/workflow-multi-source-collateral/core:multi_source_collateral_list_issues",
+            "@workbench/tools-linear/linear:linear_list_issues"
           ]
         }
       },

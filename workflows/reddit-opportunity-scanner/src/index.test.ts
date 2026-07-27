@@ -286,7 +286,15 @@ describe("reddit-opportunity-scanner native workflow", () => {
     const collect = actionPrimitive("collect");
     expect(collect.handler).toBe(COLLECT_SEARCHES_HANDLER);
     expect(collect.input).toEqual({ from: "steps.review.output" });
-    expect(collect.effect).toEqual({ requires: [COLLECT_SEARCHES_HANDLER] });
+    // Sibling pins @workbench/tools-reddit so the scrapecreators credential
+    // is allow-listed. Assert the whole canonical string: a wrong package
+    // prefix pins nothing and reproduces the silent-403 this guards against.
+    expect(collect.effect).toEqual({
+      requires: [
+        COLLECT_SEARCHES_HANDLER,
+        "@workbench/tools-reddit/reddit:reddit_subreddit_search",
+      ],
+    });
   });
 
   test("curate is a native reasoning step (agentStep) over collected Reddit evidence", () => {

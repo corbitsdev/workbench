@@ -264,7 +264,8 @@
         },
         "effect": {
           "requires": [
-            "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_enrich_contacts"
+            "@workbench/workflow-sumble-account-intel/core:sumble_account_intel_enrich_contacts",
+            "@workbench/tools-x/x:x_search"
           ]
         },
         "after": [

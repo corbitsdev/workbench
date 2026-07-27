@@ -180,7 +180,8 @@
         },
         "effect": {
           "requires": [
-            "@workbench/workflow-reddit-opportunity-scanner/collect:reddit_opportunity_scanner_collect_searches"
+            "@workbench/workflow-reddit-opportunity-scanner/collect:reddit_opportunity_scanner_collect_searches",
+            "@workbench/tools-reddit/reddit:reddit_subreddit_search"
           ]
         },
         "after": [

@@ -63,6 +63,14 @@ export const COLLECT_SEARCHES_HANDLER = canonicalizeStepToolName(
   "reddit-opp-collect",
   "reddit_opportunity_scanner_collect_searches",
 );
+// Real reddit tool name — never dispatched (the wrapper calls it in-process),
+// but declared in collect's effect.requires so the deploy capability walk pins
+// @workbench/tools-reddit, whose manifest carries the `scrapecreators`
+// provider this workflow's wrapper package cannot claim (providerName: null).
+// Without the pin the credential route 403s the whole batch. Same pattern as
+// last30days-research / heartbeat.
+export const REDDIT_SUBREDDIT_SEARCH_HANDLER =
+  "@workbench/tools-reddit/reddit:reddit_subreddit_search";
 export const PERSIST_ITEMS_HANDLER = canonicalizeStepToolName(
   "reddit-opp-persist",
   "reddit_opportunity_scanner_persist_items",
@@ -114,7 +122,9 @@ export const workflow = defineWorkflow({
     collect: action({
       handler: COLLECT_SEARCHES_HANDLER,
       input: { from: "steps.review.output" },
-      effect: { requires: [COLLECT_SEARCHES_HANDLER] },
+      effect: {
+        requires: [COLLECT_SEARCHES_HANDLER, REDDIT_SUBREDDIT_SEARCH_HANDLER],
+      },
       after: ["review"],
     }),
 
