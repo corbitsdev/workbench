@@ -23,6 +23,7 @@
     "@intx/agent": "workspace:*",
     "@intx/types": "workspace:*",
     "@types/bun": "latest",
+    "@workbench/shared": "workspace:*",
     "typescript": "^5.9.0"
   },
   "interchange": {
