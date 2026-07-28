@@ -149,6 +149,7 @@ function makeSession(over: Partial<MyraSession>): MyraSession {
     state: { phase: "loading" },
     messages: [],
     activity: null,
+    busy: false,
     live: true,
     queuedFailed: false,
     connectionNotice: null,

@@ -43,6 +43,7 @@ function readySession(
     state: { phase: "ready", session: {} as never },
     messages: [],
     activity: null,
+    busy: false,
     send,
     reconnect: () => {},
     instanceId: "i1",

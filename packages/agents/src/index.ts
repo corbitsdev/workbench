@@ -171,6 +171,10 @@ export { convertInstanceEvents } from "./adapter";
 export { createPartAssembler, type PartAssembler } from "./part-assembler";
 export { deriveAgentPhase, type AgentPhase } from "./agent-phase";
 export {
+  createRunBusyTracker,
+  type RunBusyTracker,
+} from "./run-busy-tracker";
+export {
   composeChatMessages,
   STREAMING_BUBBLE_ID,
   type ComposeChatInput,

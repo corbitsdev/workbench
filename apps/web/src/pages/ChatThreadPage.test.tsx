@@ -55,6 +55,7 @@ let sessionResult: any = {
   state: { phase: "loading" },
   messages: [],
   activity: null,
+  busy: false,
 };
 
 mock.module("../hooks/use-members", () => ({

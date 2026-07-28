@@ -35,6 +35,13 @@ export interface ChatPanelProps {
   /** Stops the agent's running turn; while busy the composer's send control becomes a stop button. */
   onAbort?: () => void | Promise<void>;
   typing?: boolean;
+  /**
+   * Run-level busy for the composer spinner / orange border. When provided,
+   * owns the send-button busy state so multi-turn agent runs stay spinning
+   * even while micro `activity` is null (text streaming, between tools/turns).
+   * When omitted, falls back to `activity != null` for backward compatibility.
+   */
+  busy?: boolean;
   /** What the agent is currently doing, shown as a contextual status label. */
   activity?: ChatActivity | null;
   quickReplies?: QuickReply[];
@@ -137,6 +144,7 @@ export function ChatPanel({
   onSend,
   onAbort,
   typing,
+  busy: busyProp,
   activity,
   quickReplies,
   onQuickReply,
@@ -174,7 +182,12 @@ export function ChatPanel({
   slashCommands,
   voiceInput,
 }: ChatPanelProps) {
-  const busy = typing === true || (activity !== undefined && activity !== null);
+  const busy =
+    busyProp === true ||
+    typing === true ||
+    (busyProp === undefined &&
+      activity !== undefined &&
+      activity !== null);
 
   const headerControlClassName =
     "rounded-[8px] px-2.5 py-1 text-xs font-medium text-text-3 transition-colors hover:bg-page hover:text-text cursor-pointer";

@@ -408,6 +408,39 @@ describe("ChatPanel busy state", () => {
     const sendButton = screen.getByRole("button", { name: "Send" });
     expect(sendButton).toBeDefined();
   });
+
+  it("keeps the send control spinning when busy is true even if activity is null (CL-4684)", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        busy
+        activity={null}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Waiting for agent" }),
+    ).toBeDefined();
+    expect(screen.getByTestId("composer-busy-spinner")).toBeDefined();
+  });
+
+  it("does not spin from activity alone when the host passes busy={false}", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        busy={false}
+        activity={{ type: "thinking" }}
+      />,
+    );
+    // Activity still drives the thread pill...
+    expect(screen.getByTestId("busy-indicator")).toBeDefined();
+    // ...but the host-owned busy flag owns the composer spinner.
+    expect(screen.getByRole("button", { name: "Send" })).toBeDefined();
+    expect(screen.queryByTestId("composer-busy-spinner")).toBeNull();
+  });
 });
 
 describe("ChatPanel composer interaction", () => {

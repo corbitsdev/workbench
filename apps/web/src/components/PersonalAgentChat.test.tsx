@@ -32,6 +32,7 @@ mock.module("../hooks/use-myra-session", () => ({
     state: sessionState,
     messages: [],
     activity: null,
+    busy: false,
     send: sendSpy,
     reconnect: () => {},
     instanceId: "inst",

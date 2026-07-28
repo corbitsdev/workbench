@@ -37,6 +37,10 @@ export {
   type AgentPhaseTracker,
 } from "./agent-phase-tracker";
 export {
+  createRunBusyTracker,
+  type RunBusyTracker,
+} from "./run-busy-tracker";
+export {
   composeChatMessages,
   STREAMING_BUBBLE_ID,
   reconstructDroppedTurnEvents,

@@ -146,6 +146,10 @@ const assemblerStop = mock();
 // session's own `activity` field). Reset in beforeEach.
 let assemblerActivity: { type: string; name?: string } | null = null;
 let capturedAssemblerOnUpdate: (() => void) | null = null;
+const runBusyStop = mock();
+// Run-level busy for the composer spinner (CL-4684). Independent of micro activity.
+let runBusy = false;
+let capturedRunBusyOnUpdate: (() => void) | null = null;
 
 mock.module("@workbench/agents/browser", () => ({
   composeChatMessages: (input: { events?: StubEvent[] }) => ({
@@ -184,6 +188,19 @@ mock.module("@workbench/agents/browser", () => ({
       },
     };
   },
+  createRunBusyTracker: (
+    _transport: unknown,
+    _params: unknown,
+    onUpdate?: () => void,
+  ) => {
+    capturedRunBusyOnUpdate = onUpdate ?? null;
+    return {
+      stop: runBusyStop,
+      get busy() {
+        return runBusy;
+      },
+    };
+  },
 }));
 
 const {
@@ -218,6 +235,9 @@ beforeEach(() => {
   assemblerStop.mockClear();
   assemblerActivity = null;
   capturedAssemblerOnUpdate = null;
+  runBusyStop.mockClear();
+  runBusy = false;
+  capturedRunBusyOnUpdate = null;
 });
 
 afterEach(() => {
@@ -1482,5 +1502,95 @@ describe("useMyraSession — optimistic awaiting-agent indicator (CL-3702)", () 
       jest.advanceTimersByTime(30_000);
     });
     expect(result.current.activity).toBeNull();
+  });
+});
+
+describe("useMyraSession run-level busy (CL-4684)", () => {
+  it("is busy while the run tracker is busy even when micro activity is null", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.live).toBe(true));
+    // Tracker must be wired once the session is live.
+    expect(capturedRunBusyOnUpdate).not.toBeNull();
+
+    expect(result.current.busy).toBe(false);
+    expect(result.current.activity).toBeNull();
+
+    act(() => {
+      runBusy = true;
+      capturedRunBusyOnUpdate?.();
+    });
+    await waitFor(() => expect(result.current.busy).toBe(true));
+    expect(result.current.activity).toBeNull();
+
+    // Multi-turn gap: tracker stays busy while activity stays null (text/between tools).
+    act(() => {
+      assemblerActivity = null;
+      capturedAssemblerOnUpdate?.();
+    });
+    await waitFor(() => expect(result.current.busy).toBe(true));
+    expect(result.current.activity).toBeNull();
+
+    act(() => {
+      runBusy = false;
+      capturedRunBusyOnUpdate?.();
+    });
+    await waitFor(() => expect(result.current.busy).toBe(false));
+  });
+
+  it("is busy on optimistic send before any tracker event", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    expect(result.current.busy).toBe(false);
+    act(() => {
+      void result.current.send("hello");
+    });
+    expect(result.current.busy).toBe(true);
+    expect(result.current.activity).toEqual({ type: "thinking" });
+  });
+
+  it("stays busy when micro activity drops mid-run (text streaming)", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(result.current.live).toBe(true));
+    expect(capturedRunBusyOnUpdate).not.toBeNull();
+
+    act(() => {
+      runBusy = true;
+      assemblerActivity = { type: "thinking" };
+      capturedRunBusyOnUpdate?.();
+      capturedAssemblerOnUpdate?.();
+    });
+    await waitFor(() => {
+      expect(result.current.busy).toBe(true);
+      expect(result.current.activity).toEqual({ type: "thinking" });
+    });
+
+    // Answer text: assembler activity goes null; spinner must stay.
+    act(() => {
+      assemblerActivity = null;
+      capturedAssemblerOnUpdate?.();
+    });
+    await waitFor(() => {
+      expect(result.current.activity).toBeNull();
+      expect(result.current.busy).toBe(true);
+    });
   });
 });

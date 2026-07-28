@@ -19,9 +19,11 @@ import type { InferenceTurnResponse } from "@intx/types";
 import {
   composeChatMessages,
   createPartAssembler,
+  createRunBusyTracker,
   mergeReconstructedTurns,
   reconstructDroppedTurnEvents,
   type PartAssembler,
+  type RunBusyTracker,
 } from "@workbench/agents/browser";
 import type {
   ChatActivity,
@@ -343,6 +345,13 @@ export type MyraSession = {
   messages: ChatMessage[];
   activity: ChatActivity | null;
   /**
+   * Run-level busy for the composer send-button spinner. Stays true across
+   * multi-turn agent work (tools, text streaming, turn gaps) until the cycle
+   * settles — separate from micro `activity`, which drops during text and
+   * between tools (CL-4684).
+   */
+  busy: boolean;
+  /**
    * Whether a live agent session is currently connected. History (from the DB)
    * renders regardless; `live` is false while the sidecar is unreachable, during
    * which sends are queued and flushed on reconnect rather than failing.
@@ -483,6 +492,7 @@ export function useMyraSession(
   const sessionRef = useRef<InstanceSession | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const assemblerRef = useRef<PartAssembler | null>(null);
+  const runBusyTrackerRef = useRef<RunBusyTracker | null>(null);
   const transportRef = useRef<Transport | null>(null);
   // blobId → in-flight/settled object-URL promise, so a re-render never
   // re-fetches the same blob. Cleared and revoked on session teardown.
@@ -525,6 +535,8 @@ export function useMyraSession(
     stopRef.current = null;
     assemblerRef.current?.stop();
     assemblerRef.current = null;
+    runBusyTrackerRef.current?.stop();
+    runBusyTrackerRef.current = null;
     transportRef.current = null;
     sessionRef.current?.destroy();
     sessionRef.current = null;
@@ -871,6 +883,14 @@ export function useMyraSession(
           },
         );
 
+        runBusyTrackerRef.current = createRunBusyTracker(
+          transport,
+          { tenantId: targetTenantId, instanceId: targetInstanceId },
+          () => {
+            if (!cancelled) scheduleStreamRerender();
+          },
+        );
+
         if (!cancelled) setState({ phase: "ready", session });
 
         void establishLive();
@@ -1090,6 +1110,18 @@ export function useMyraSession(
   ) {
     stopAwaitingAgent();
   }
+
+  // Run-level busy (CL-4684): tracker stays true across multi-turn work;
+  // optimistic awaiting covers the gap between send() and the first event.
+  // rate_limited mid-run keeps the spinner via the tracker (still active).
+  const runBusy =
+    runBusyTrackerRef.current !== null
+      ? runBusyTrackerRef.current.busy
+      : false;
+  const busy =
+    runBusy ||
+    (awaitingAgentRef.current && live) ||
+    rawActivity?.type === "rate_limited";
 
   const sendWithAttachments = async (
     text: string,
@@ -1331,6 +1363,7 @@ export function useMyraSession(
     state,
     messages,
     activity,
+    busy,
     live,
     queuedFailed,
     connectionNotice,

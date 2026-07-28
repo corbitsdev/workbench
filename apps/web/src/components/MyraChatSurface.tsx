@@ -579,6 +579,7 @@ export function MyraChatSurface({
         ? { attachmentPolicy: MYRA_ATTACHMENT_POLICY }
         : {})}
       activity={session.activity}
+      busy={session.busy}
       onRate={session.onRate}
       getRating={session.getRating}
       {...(session.resolveAttachmentUrl !== undefined

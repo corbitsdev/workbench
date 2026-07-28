@@ -40,13 +40,18 @@ mock.module("../lib/hub-api", () => ({
 }));
 
 mock.module("../lib/instance-transport", () => ({
-  createHubTransport: () => ({}),
+  createHubTransport: () => ({
+    fetch: () => Promise.resolve(undefined),
+    subscribe: () => () => {},
+  }),
   fetchBlobObjectUrl: () => Promise.resolve("blob:test"),
   fetchArtifactObjectUrl: () => Promise.resolve("blob:artifact-test"),
 }));
 
 mock.module("@workbench/agents/browser", () => ({
   composeChatMessages: () => ({ messages: [] }),
+  reconstructDroppedTurnEvents: () => [],
+  mergeReconstructedTurns: (events: unknown[]) => events,
   createPartAssembler: () => ({
     stop: () => {},
     parts: [],
@@ -56,6 +61,10 @@ mock.module("@workbench/agents/browser", () => ({
     liveImages: [],
     activity: null,
     closeOpenPart: () => {},
+  }),
+  createRunBusyTracker: () => ({
+    stop: () => {},
+    busy: false,
   }),
 }));
 
