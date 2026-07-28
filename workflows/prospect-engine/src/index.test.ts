@@ -73,6 +73,30 @@ describe("prospect-engine workflow package", () => {
     expect(json).toContain("prospect_engine_extract_list_org_ids");
   });
 
+  // CL-4650: step-tool-harness passes action input verbatim as tool args and
+  // rejects non-objects ("got number"). List-read steps must never resolve to
+  // a bare list id scalar.
+  test("list-read steps pass object-shaped tool arguments (never bare list ids)", () => {
+    const steps = workflow.steps as unknown as Record<
+      string,
+      { input?: unknown }
+    >;
+
+    expect(steps.pipeline?.input).toEqual({
+      literal: { listId: PROSPECT_ENGINE_PIPELINE_LIST_ID },
+    });
+
+    expect(steps.growthList?.input).toEqual({
+      project: { from: "trigger.payload" },
+      fields: ["growthEngineListId"],
+    });
+
+    expect(steps.enterpriseList?.input).toEqual({
+      project: { from: "trigger.payload" },
+      fields: ["enterpriseEngineListId"],
+    });
+  });
+
   test("delivery path writes artifacts, lists, slack, mail (not memory_save)", () => {
     const json = JSON.stringify(workflow);
     expect(json).toContain("write_artifact");

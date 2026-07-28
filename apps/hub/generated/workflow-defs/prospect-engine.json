@@ -188,7 +188,9 @@
         "handler": "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
-          "literal": 80088
+          "literal": {
+            "listId": 80088
+          }
         },
         "effect": {
           "requires": [
@@ -205,7 +207,12 @@
         "handler": "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload.growthEngineListId"
+          "project": {
+            "from": "trigger.payload"
+          },
+          "fields": [
+            "growthEngineListId"
+          ]
         },
         "effect": {
           "requires": [
@@ -222,7 +229,12 @@
         "handler": "@workbench/tools-prospect-engine-sumble-bridge/list:prospect_engine_read_organization_list_tolerant",
         "drainBehavior": "cancel",
         "input": {
-          "from": "trigger.payload.enterpriseEngineListId"
+          "project": {
+            "from": "trigger.payload"
+          },
+          "fields": [
+            "enterpriseEngineListId"
+          ]
         },
         "effect": {
           "requires": [

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { toolCredentialEnvKey } from "@workbench/tool-credentials";
 import { extractOrganizationIds } from "@workbench/shared";
 
@@ -39,7 +39,7 @@ describe("prospectEngineSumbleListBridge", () => {
       {
         id: "call1",
         name: "prospect_engine_read_organization_list_tolerant",
-        arguments: "list_123" as unknown as Record<string, unknown>,
+        arguments: { listId: 123 },
       },
       new AbortController().signal,
     );
@@ -55,6 +55,7 @@ describe("prospectEngineSumbleListBridge", () => {
   });
 
   test("a successful call forwards the underlying tool's organization ids", async () => {
+    let forwardedListId: unknown;
     mock.module("@workbench/tools-sumble", () => ({
       SUMBLE_HUB_TOOLS: {
         sumble_get_organization_list: {
@@ -62,11 +63,19 @@ describe("prospectEngineSumbleListBridge", () => {
             {
               kind: "full" as const,
               definition: { name: "sumble_get_organization_list" },
-              handler: async (call: { id: string }) => ({
-                callId: call.id,
-                isError: false,
-                content: { organizations: [{ organizationId: 42 }] },
-              }),
+              handler: async (call: {
+                id: string;
+                arguments?: Record<string, unknown>;
+              }) => {
+                forwardedListId = call.arguments?.listId;
+                return {
+                  callId: call.id,
+                  isError: false,
+                  content: {
+                    organizations: [{ organizationId: 42 }],
+                  },
+                };
+              },
             },
           ],
         },
@@ -79,12 +88,65 @@ describe("prospectEngineSumbleListBridge", () => {
       {
         id: "call1",
         name: "prospect_engine_read_organization_list_tolerant",
-        arguments: "list_123" as unknown as Record<string, unknown>,
+        arguments: { listId: 80088 },
       },
       new AbortController().signal,
     );
     expect(result.isError).toBe(false);
     expect(extractOrganizationIds(result.content)).toEqual([42]);
+    expect(forwardedListId).toBe(80088);
+  });
+
+  // CL-4650: growthList/enterpriseList project intake fields into the
+  // object args the harness accepts; the bridge must read those keys and
+  // coerce numeric/string ids for sumble_get_organization_list (listId: number).
+  test("extracts listId from intake field names and coerces numeric/string ids", async () => {
+    const seen: unknown[] = [];
+    mock.module("@workbench/tools-sumble", () => ({
+      SUMBLE_HUB_TOOLS: {
+        sumble_get_organization_list: {
+          createTools: () => [
+            {
+              kind: "full" as const,
+              definition: { name: "sumble_get_organization_list" },
+              handler: async (call: {
+                id: string;
+                arguments?: Record<string, unknown>;
+              }) => {
+                seen.push(call.arguments?.listId);
+                return {
+                  callId: call.id,
+                  isError: false,
+                  content: { organizations: [] },
+                };
+              },
+            },
+          ],
+        },
+        sumble_add_organization_list_organizations: { createTools: () => [] },
+      },
+    }));
+    const { prospectEngineSumbleListBridge } = await import("./bridges");
+    const runner = prospectEngineSumbleListBridge(SUMBLE_ENV as never);
+    const signal = new AbortController().signal;
+
+    for (const arguments_ of [
+      { growthEngineListId: 111 },
+      { enterpriseEngineListId: "222" },
+      { listId: 333 },
+    ]) {
+      const result = await runner.run(
+        {
+          id: "call1",
+          name: "prospect_engine_read_organization_list_tolerant",
+          arguments: arguments_,
+        },
+        signal,
+      );
+      expect(result.isError).toBe(false);
+    }
+
+    expect(seen).toEqual([111, 222, 333]);
   });
 });
 

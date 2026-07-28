@@ -273,23 +273,34 @@ export const workflow = defineWorkflow({
     // sumble_get_organization_list in-process and never throws — a failed
     // read degrades to an `{ isError, error }` envelope that
     // extractListOrgs/dedupe read as an empty org-id list.
+    //
+    // CL-4650: step-tool-harness passes action input verbatim as tool args
+    // and rejects non-objects. These steps must resolve to objects (never a
+    // bare list-id number). The bridge remaps `listId` / intake field names
+    // to sumble_get_organization_list's `listId: number` arg itself.
     pipeline: action({
       handler: READ_ORG_LIST_TOLERANT_HANDLER,
-      input: { literal: PROSPECT_ENGINE_PIPELINE_LIST_ID },
+      input: { literal: { listId: PROSPECT_ENGINE_PIPELINE_LIST_ID } },
       effect: { requires: [READ_ORG_LIST_TOLERANT_HANDLER] },
       after: ["parseLedger"],
     }),
 
     growthList: action({
       handler: READ_ORG_LIST_TOLERANT_HANDLER,
-      input: { from: "trigger.payload.growthEngineListId" },
+      input: {
+        project: { from: "trigger.payload" },
+        fields: ["growthEngineListId"],
+      },
       effect: { requires: [READ_ORG_LIST_TOLERANT_HANDLER] },
       after: ["parseLedger"],
     }),
 
     enterpriseList: action({
       handler: READ_ORG_LIST_TOLERANT_HANDLER,
-      input: { from: "trigger.payload.enterpriseEngineListId" },
+      input: {
+        project: { from: "trigger.payload" },
+        fields: ["enterpriseEngineListId"],
+      },
       effect: { requires: [READ_ORG_LIST_TOLERANT_HANDLER] },
       after: ["parseLedger"],
     }),

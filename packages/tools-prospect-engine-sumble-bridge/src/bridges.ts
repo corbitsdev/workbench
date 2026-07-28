@@ -69,17 +69,42 @@ export const PROSPECT_ENGINE_READ_ORG_LIST_TOLERANT_DEFINITION: ToolDefinition =
   {
     name: "prospect_engine_read_organization_list_tolerant",
     description:
-      "Tolerant wrapper over sumble_get_organization_list for the prospect-engine list reads (pipeline / growth / enterprise). Accepts the list id as a bare string input, or an object carrying `listId`. Any failure returns { isError: true, error } instead of throwing, so dedupe/extractListOrgs still degrade to an empty org-id list rather than failing the run.",
+      "Tolerant wrapper over sumble_get_organization_list for the prospect-engine list reads (pipeline / growth / enterprise). Accepts an object carrying `listId`, or the intake field names `growthEngineListId` / `enterpriseEngineListId` (numeric or numeric-string). Any failure returns { isError: true, error } instead of throwing, so dedupe/extractListOrgs still degrade to an empty org-id list rather than failing the run.",
     inputSchema: {
       type: "object",
       additionalProperties: true,
     },
   };
 
-function extractListId(input: unknown): string | undefined {
-  if (typeof input === "string" && input.length > 0) return input;
-  if (isRecord(input) && typeof input.listId === "string") {
-    return input.listId;
+/**
+ * Coerce a Sumble list id to the number the underlying tool requires.
+ * Accepts finite numbers and non-empty numeric strings.
+ */
+function coerceListId(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.length > 0) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+/**
+ * Pull a list id out of object-shaped tool args. The selector DSL has no
+ * rename primitive, so growthList/enterpriseList project intake fields
+ * (`growthEngineListId` / `enterpriseEngineListId`) and pipeline uses
+ * `{ listId }`. Bare scalars never reach this path — step-tool-harness
+ * rejects non-object action inputs before dispatch.
+ */
+function extractListId(input: unknown): number | undefined {
+  if (!isRecord(input)) return undefined;
+  for (const key of [
+    "listId",
+    "growthEngineListId",
+    "enterpriseEngineListId",
+  ] as const) {
+    const n = coerceListId(input[key]);
+    if (n !== undefined) return n;
   }
   return undefined;
 }
