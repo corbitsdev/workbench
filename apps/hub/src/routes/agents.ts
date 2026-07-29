@@ -21,6 +21,7 @@ import {
   launchFailureLogMessage,
   isAgentAlreadyExistsError,
   isMailReady,
+  isAddressRoutable,
   ensureMailReadyOnLiveInstance,
   launchAgentSession,
   type LaunchErrorDescription,
@@ -547,18 +548,11 @@ export function createAgentProvisioningRouter(
         return c.json({ error: "Instance not found" }, 404);
       }
 
-      // If the agent is already reachable on a connected sidecar, do not re-launch.
-      // Re-launching re-deploys the same address, which the sidecar rejects with
-      // "Agent already exists"; that rejected deploy evicts the live agent from
-      // the router address index, after which mail 502s with "agent is
-      // unreachable". The frontend fires this route proactively (and sometimes
-      // twice) right after deploy, so it must be idempotent for a healthy
-      // instance.
-      //
-      // Interchange mail also requires status === "running" and a truthy
-      // sessionId (isMailReady). Routable alone is not enough — heal DB drift
-      // before claiming warm success so the next mail send cannot 409 after a
-      // 200 ensure (CL-4688).
+      // Warm path: agent is live on a connected sidecar. Do not re-deploy (that
+      // evicts the live agent → mail 502s). Heal DB to Interchange mail-ready
+      // (running + sessionId), minting a session when missing — so open-chat
+      // and send cannot disagree (CL-4688 / CL-4689). Never green-lie and never
+      // cold-deploy a routable address.
       //
       // Even when already routable + mail-ready, refresh DB grants and push them
       // to the sidecar. After a hub redeploy the sidecar reconnects and the
@@ -566,18 +560,43 @@ export function createAgentProvisioningRouter(
       // be stale if tool names changed (e.g. short→canonical on M4). Idempotent:
       // delete+reinsert is safe on every call and sendGrantsUpdate does not
       // restart the agent.
-      if (sidecarRouter.getRoutableAddresses().includes(instance.address)) {
+      if (isAddressRoutable(instance.address, sidecarRouter)) {
+        // Explicit deletes cannot be healed into a live session.
+        if (instance.status === "stopped" && instance.endedAt !== null) {
+          return c.json(
+            { error: "Instance was deleted. Provision a new instance." },
+            409,
+          );
+        }
+
         let sessionId = instance.sessionId ?? null;
         if (!isMailReady(instance)) {
-          sessionId = await ensureMailReadyOnLiveInstance(db, {
-            id: instance.id,
-            agentId: instance.agentId,
-            tenantId: instance.tenantId,
-            principalId: instance.principalId,
-            status: instance.status,
-            sessionId: instance.sessionId,
-          });
+          try {
+            sessionId = await ensureMailReadyOnLiveInstance(db, {
+              id: instance.id,
+              agentId: instance.agentId,
+              tenantId: instance.tenantId,
+              principalId: instance.principalId,
+              status: instance.status,
+              sessionId: instance.sessionId,
+              endedAt: instance.endedAt,
+            });
+          } catch (err) {
+            log.error("Failed to heal mail-ready state for live agent", {
+              instanceId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return c.json(
+              {
+                error: "Instance is live but not mail-accept ready",
+                code: "not_mail_accept_ready",
+                sessionId: instance.sessionId,
+              },
+              409,
+            );
+          }
         }
+
         const grantsStart = performance.now();
         await refreshInstanceGrantsFromDefinition(
           db,
@@ -676,19 +695,36 @@ export function createAgentProvisioningRouter(
         // and returns a DB-authoritative sessionId. If a future change rethrows
         // that error, heal mail-ready without claiming a local mint (CL-4688).
         if (isAgentAlreadyExistsError(err)) {
-          const refreshed = await db.query.agentInstance.findFirst({
-            where: eq(agentInstance.id, instanceId),
-          });
-          const row = refreshed ?? instance;
-          sessionId = await ensureMailReadyOnLiveInstance(db, {
-            id: row.id,
-            agentId: row.agentId,
-            tenantId: row.tenantId,
-            principalId: row.principalId,
-            status: row.status,
-            sessionId: row.sessionId,
-          });
-          launched = true;
+          try {
+            const refreshed = await db.query.agentInstance.findFirst({
+              where: eq(agentInstance.id, instanceId),
+            });
+            const row = refreshed ?? instance;
+            sessionId = await ensureMailReadyOnLiveInstance(db, {
+              id: row.id,
+              agentId: row.agentId,
+              tenantId: row.tenantId,
+              principalId: row.principalId,
+              status: row.status,
+              sessionId: row.sessionId,
+              endedAt: row.endedAt,
+            });
+            launched = true;
+          } catch (healErr) {
+            launchFailure = {
+              phase: "provision",
+              detail:
+                healErr instanceof Error
+                  ? healErr.message
+                  : "Agent already exists on sidecar but instance is not mail-accept ready",
+              leakedAgent: false,
+            };
+            log.warn("Already-exists recovery refused: not mail-accept ready", {
+              instanceId,
+              error:
+                healErr instanceof Error ? healErr.message : String(healErr),
+            });
+          }
         } else {
           launchFailure = describeLaunchError(err);
           // Log the real Error object (not a pre-stringified message) so the

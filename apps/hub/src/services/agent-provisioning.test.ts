@@ -74,6 +74,8 @@ import {
   launchAgentSession,
   relaunchInstanceIfNeeded,
   isMailReady,
+  isAddressRoutable,
+  isDeliveryReady,
   ensureMailReadyOnLiveInstance,
 } from "./agent-provisioning";
 import {
@@ -310,7 +312,10 @@ describe("relaunchInstanceIfNeeded", () => {
       if (typeof set.sessionId === "string") {
         db.query.agentInstance.findFirst = mock(() =>
           Promise.resolve(
-            coldInstance({ status: "running", sessionId: set.sessionId as string }),
+            coldInstance({
+              status: "running",
+              sessionId: set.sessionId as string,
+            }),
           ),
         );
       }
@@ -1171,20 +1176,35 @@ describe("launchAgentSession Myra personalization style overlay", () => {
   });
 });
 
-describe("isMailReady / ensureMailReadyOnLiveInstance (CL-4688)", () => {
+describe("isMailReady / ensureMailReadyOnLiveInstance (CL-4688 / CL-4689)", () => {
   it("isMailReady requires running status and a truthy sessionId", () => {
-    expect(
-      isMailReady({ status: "running", sessionId: "ses-1" }),
-    ).toBe(true);
-    expect(isMailReady({ status: "deployed", sessionId: "ses-1" })).toBe(
-      false,
-    );
+    expect(isMailReady({ status: "running", sessionId: "ses-1" })).toBe(true);
+    expect(isMailReady({ status: "deployed", sessionId: "ses-1" })).toBe(false);
     expect(isMailReady({ status: "running", sessionId: null })).toBe(false);
     expect(isMailReady({ status: "running", sessionId: undefined })).toBe(
       false,
     );
     // Interchange mail uses `!sessionId` — empty string must not count as ready.
     expect(isMailReady({ status: "running", sessionId: "" })).toBe(false);
+  });
+
+  it("isAddressRoutable / isDeliveryReady combine mail-ready with sidecar liveness", () => {
+    const live = {
+      status: "running",
+      sessionId: "ses-1",
+      address: "myra@tenant.workbench.local",
+    };
+    const router = {
+      getRoutableAddresses: () => [live.address],
+    };
+    expect(isAddressRoutable(live.address, router)).toBe(true);
+    expect(isDeliveryReady(live, router)).toBe(true);
+    expect(isDeliveryReady({ ...live, status: "deployed" }, router)).toBe(
+      false,
+    );
+    expect(isDeliveryReady(live, { getRoutableAddresses: () => [] })).toBe(
+      false,
+    );
   });
 
   it("ensureMailReadyOnLiveInstance is a no-op when already mail-ready", async () => {
@@ -1201,6 +1221,21 @@ describe("isMailReady / ensureMailReadyOnLiveInstance (CL-4688)", () => {
     });
     expect(sessionId).toBe("ses-live");
     expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("ensureMailReadyOnLiveInstance refuses deleted instances", async () => {
+    const db = makeMockDb();
+    await expect(
+      ensureMailReadyOnLiveInstance(db as never, {
+        id: "ins-1",
+        agentId: "agt-1",
+        tenantId: "tenant-1",
+        principalId: "prn-1",
+        status: "stopped",
+        sessionId: "ses-1",
+        endedAt: new Date(),
+      }),
+    ).rejects.toThrow(/deleted instance/);
   });
 
   it("ensureMailReadyOnLiveInstance remints when status drifted and session is ended", async () => {

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { eq, and, inArray, like } from "drizzle-orm";
+import { eq, and, inArray, like, isNull } from "drizzle-orm";
+
 import {
   schema as intxSchema,
   resolveModelSources,
@@ -830,22 +831,25 @@ export async function launchAgentSession(
 
   // Sidecar already has the agent (race with reconnect / concurrent ensure).
   // Treat as success: the address is live, so ending the session we just
-  // minted would leave mail 409-ready-to-fail (CL-4688). Mark running without
-  // overwriting sessionId (a concurrent heal may have repointed the row);
-  // re-read and prefer the DB value, falling back to this launch's sessionId.
+  // minted would leave mail 409-ready-to-fail (CL-4688 / CL-4689). Heal the
+  // instance to mail-ready (mint sessionId when missing) without re-deploying.
   //
   // Collector ownership matches reconnect: only create when missing, and only
   // after the authoritative sessionId is known — never abandon a live collector
   // mid-turn for an agent that was already healthy.
   if (lastError !== undefined && isAgentAlreadyExistsError(lastError)) {
-    await db
-      .update(agentInstance)
-      .set({ status: "running", updatedAt: new Date() })
-      .where(eq(agentInstance.id, instanceId));
-    const persisted = await db.query.agentInstance.findFirst({
+    const current = await db.query.agentInstance.findFirst({
       where: eq(agentInstance.id, instanceId),
     });
-    const authoritativeSessionId = persisted?.sessionId ?? sessionId;
+    const authoritativeSessionId = await ensureMailReadyOnLiveInstance(db, {
+      id: instanceId,
+      agentId,
+      tenantId,
+      principalId: instancePrincipalId,
+      status: current?.status ?? "deployed",
+      sessionId: current?.sessionId ?? sessionId,
+      endedAt: current?.endedAt ?? null,
+    });
     if (!eventCollectors.has(address)) {
       eventCollectors.create(
         address,
@@ -919,7 +923,7 @@ export async function launchAgentSession(
 }
 
 // Relaunch a Myra instance's session if it has no active session but has credentials granted.
-// Called from POST /v1/me so existing users get Myra running automatically on login.
+// Called from mail-wake / wedge sweep so slept or wedged instances come back on demand.
 export async function relaunchInstanceIfNeeded(
   db: DB["db"],
   sessionService: SessionService,
@@ -937,28 +941,16 @@ export async function relaunchInstanceIfNeeded(
   // relaunched.
   if (instance.status === "stopped" && instance.endedAt !== null) return;
 
-  // The sidecar — not the hub — owns the lifecycle of a launched agent. If the
-  // address is routable on a connected sidecar the agent is live; and even while
-  // momentarily unroutable during a sidecar reconnect, an instance that already
-  // has an active session is restored by the sidecar (see the agent.reconnected
-  // path in hub-session-orchestrator). Relaunching from the poll-driven POST /v1/me
-  // path in either case churns sessions and can evict the live agent ("Agent
-  // already exists" → router eviction → 502). So relaunch only for a genuine cold
-  // start: an instance with no active session yet. (CL-1651)
-  //
-  // When routable but not mail-ready (status/sessionId drift vs Interchange mail
-  // gates), heal the DB in place — do not re-deploy (CL-4688).
-  if (sidecarRouter.getRoutableAddresses().includes(instance.address)) {
-    if (!isMailReady(instance)) {
-      await ensureMailReadyOnLiveInstance(db, {
-        id: instance.id,
-        agentId: instance.agentId,
-        tenantId: instance.tenantId,
-        principalId: instance.principalId,
-        status: instance.status,
-        sessionId: instance.sessionId,
-      });
-    }
+  // One readiness signal shared with warm path and Interchange mail (CL-4689).
+  // Delivery-ready → no-op. Live on sidecar → heal DB to mail-ready (mint
+  // sessionId when missing) and never re-deploy (CL-1651 / CL-4688): cold deploy
+  // of a routable address evicts the live agent. Unroutable + non-ended session →
+  // harness owns continuity; only a fully ended (or missing) session is a
+  // genuine cold start.
+  if (isDeliveryReady(instance, sidecarRouter)) return;
+
+  if (isAddressRoutable(instance.address, sidecarRouter)) {
+    await ensureMailReadyOnLiveInstance(db, instance);
     return;
   }
   if (instance.sessionId) {
@@ -1000,7 +992,7 @@ export async function relaunchInstanceIfNeeded(
   // Coalesce concurrent POST /v1/me relaunches onto one launch and back off
   // after a failing launch, so a wedged launch is not re-attempted every poll
   // (CL-2407). The breaker re-throws the launch cause; we still translate the
-  // benign "agent already exists" race into a no-op here.
+  // benign "agent already exists" race into a mail-ready heal (no re-deploy).
   try {
     await runDedupedRelaunch(instance.id, async () => {
       await launchAgentSession(
@@ -1020,8 +1012,21 @@ export async function relaunchInstanceIfNeeded(
       );
     });
   } catch (err) {
-    // Agent already running on the sidecar — nothing to do.
-    if (isAgentAlreadyExistsError(err)) return;
+    // Sidecar already has the agent. launchAgentSession usually heals before
+    // returning success; if the race still surfaces here, heal without re-deploy
+    // so wake/mail share mail-ready state (CL-4688 / CL-4689).
+    if (isAgentAlreadyExistsError(err)) {
+      const current = await db.query.agentInstance.findFirst({
+        where: eq(agentInstance.id, instanceId),
+      });
+      if (
+        current &&
+        !(current.status === "stopped" && current.endedAt != null)
+      ) {
+        await ensureMailReadyOnLiveInstance(db, current);
+      }
+      return;
+    }
     throw err;
   }
 }
@@ -1073,13 +1078,43 @@ export function launchFailureLogMessage(
  * Interchange mail (`POST …/instances/:id/mail`) accepts only instances with
  * `status === "running"` and a truthy `sessionId` (its gate is `!sessionId`).
  * Warm path and mail-wake must share this definition of "agent can receive mail"
- * so a successful ensure cannot be followed by a readiness 409 (CL-4688).
+ * so a successful ensure cannot be followed by a readiness 409 (CL-4688 / CL-4689).
+ * Empty-string sessionId is not ready (`Boolean("")` is false).
  */
 export function isMailReady(instance: {
   status: string;
   sessionId: string | null | undefined;
 }): boolean {
   return instance.status === "running" && Boolean(instance.sessionId);
+}
+
+/**
+ * Sidecar liveness for an instance address (Interchange health liveness).
+ * Shared so warm path and wake cannot invent divergent routability checks.
+ */
+export function isAddressRoutable(
+  address: string,
+  sidecarRouter: Pick<SidecarRouter, "getRoutableAddresses">,
+): boolean {
+  return sidecarRouter.getRoutableAddresses().includes(address);
+}
+
+/**
+ * Delivery-ready: Interchange mail would accept the instance *and* the sidecar
+ * can route the address. Shared by warm path and wake so open-chat and send
+ * cannot disagree. (CL-4689)
+ */
+export function isDeliveryReady(
+  instance: {
+    status: string;
+    sessionId: string | null | undefined;
+    address: string;
+  },
+  sidecarRouter: Pick<SidecarRouter, "getRoutableAddresses">,
+): boolean {
+  return (
+    isMailReady(instance) && isAddressRoutable(instance.address, sidecarRouter)
+  );
 }
 
 /**
@@ -1095,6 +1130,8 @@ export function isMailReady(instance: {
  * When already `isMailReady` (running + truthy sessionId), returns immediately —
  * matching Interchange's mail gate, which does not inspect session row status.
  * Ended-session remint only runs when the instance is not yet mail-ready.
+ * Never heals an explicitly deleted instance (stopped + endedAt).
+ * (CL-4688 / CL-4689)
  */
 export async function ensureMailReadyOnLiveInstance(
   db: DB["db"],
@@ -1105,8 +1142,14 @@ export async function ensureMailReadyOnLiveInstance(
     principalId: string;
     status: string;
     sessionId: string | null;
+    endedAt?: Date | null;
   },
 ): Promise<string> {
+  if (instance.status === "stopped" && instance.endedAt != null) {
+    throw new Error(
+      `Cannot heal mail-ready state for deleted instance ${instance.id}`,
+    );
+  }
   if (isMailReady(instance)) {
     // Narrowed by isMailReady (truthy sessionId).
     return instance.sessionId as string;
@@ -1139,6 +1182,9 @@ export async function ensureMailReadyOnLiveInstance(
     });
   }
 
+  // CAS: do not resurrect an explicitly deleted instance if a concurrent stop
+  // raced us (endedAt set). Other lag statuses (deployed/error/…) flip to
+  // running because the sidecar already has the agent live.
   await db
     .update(agentInstance)
     .set({
@@ -1146,7 +1192,9 @@ export async function ensureMailReadyOnLiveInstance(
       sessionId,
       updatedAt: now,
     })
-    .where(eq(agentInstance.id, instance.id));
+    .where(
+      and(eq(agentInstance.id, instance.id), isNull(agentInstance.endedAt)),
+    );
 
   // Concurrent heals may overwrite sessionId; the row is the authority when
   // present. Fall back to the sessionId we just wrote if the re-read is empty
@@ -1154,8 +1202,20 @@ export async function ensureMailReadyOnLiveInstance(
   const persisted = await db.query.agentInstance.findFirst({
     where: eq(agentInstance.id, instance.id),
   });
-  const authoritativeSessionId = persisted?.sessionId ?? sessionId;
-  if (!authoritativeSessionId) {
+  if (
+    persisted &&
+    persisted.status === "stopped" &&
+    persisted.endedAt != null
+  ) {
+    throw new Error(
+      `Cannot heal mail-ready state for deleted instance ${instance.id}`,
+    );
+  }
+  const authoritativeSessionId =
+    typeof persisted?.sessionId === "string" && persisted.sessionId.length > 0
+      ? persisted.sessionId
+      : sessionId;
+  if (!authoritativeSessionId || authoritativeSessionId.length === 0) {
     throw new Error(
       `Failed to persist mail-ready sessionId for instance ${instance.id}`,
     );

@@ -27,17 +27,18 @@ const { agentInstance } = intxSchema;
 //      agent instance, and re-delivers the mail via the router's public
 //      `routeMail` once the address is routable again.
 
-/** The cold-start relaunch used for every wake; a no-op when the instance is
- * already routable (see `relaunchInstanceIfNeeded`). */
+/** Cold-start or heal-to-mail-ready used for every wake. Delivery-ready
+ * instances (mail-ready + routable) are a no-op; live-but-not-mail-ready
+ * instances heal in place without re-deploy (see `relaunchInstanceIfNeeded`). */
 export type WakeInstance = (instanceId: string) => Promise<void>;
 
 /**
  * Hono middleware: on an inbound mail POST, wake the target instance before
  * the downstream (interchange-owned) mail route runs. Awaited so the mail
- * route sees the relaunched, routable address; a relaunch failure is logged
- * and falls through to the mail route's own error handling rather than
- * blocking the request. Non-POST methods (the mail-list GET polls this same
- * path) pass straight through.
+ * route sees a delivery-ready address (mail-ready + routable); a relaunch
+ * failure is logged and falls through to the mail route's own error handling
+ * rather than blocking the request. Non-POST methods (the mail-list GET polls
+ * this same path) pass straight through.
  */
 export function createMailWakeMiddleware(
   wake: WakeInstance,
