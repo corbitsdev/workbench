@@ -767,10 +767,20 @@ describe("POST /instances/:instanceId/sessions", () => {
 
   it("returns 200 with launched:true when deployInstanceAtHead fails because the agent already exists on the sidecar", async () => {
     const db = makeMockDb();
-    // First read is the route's ownership check; second is the already-exists
-    // re-read that recovers sessionId for ReviewGate scoping (CL-3286).
+    // Instance points at a prior session id; the active session row is present so
+    // launchAgentSession resumes it. On already-exists, launch treats success and
+    // returns that sessionId (CL-4688 — no teardown of the mid-flight session).
     db.query.agentInstance.findFirst = mock(() =>
       Promise.resolve({ ...INSTANCE, sessionId: "ses-already-exists" }),
+    );
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({
+        id: "ses-already-exists",
+        status: "active",
+        tenantId: "tenant-1",
+        agentId: "agt-1",
+        principalId: "prn-agent-1",
+      }),
     );
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
@@ -1437,7 +1447,8 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
     agentId: "agt-1",
     tenantId: "tenant-1",
     address: "ins-1@tenant-1.localhost",
-    status: "deployed",
+    // Mail-ready steady state (Interchange mail gates; CL-4688).
+    status: "running",
     principalId: "prn-agent-1",
     sessionId: "ses-live-1",
     endedAt: null,
@@ -1486,6 +1497,64 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
     // ReviewGate stays chat-scoped after reload/reopen (CL-3286).
     expect(json.sessionId).toBe("ses-live-1");
     expect(sessionService.deployInstanceAtHead).not.toHaveBeenCalled();
+  });
+
+  it("heals status/sessionId when routable but not mail-ready (CL-4688)", async () => {
+    const db = makeMockDb();
+    // Live on sidecar, but DB still says "deployed" with a null session —
+    // the warm→409 split-brain the client used to hit after ensure success.
+    const notMailReady = {
+      ...INSTANCE,
+      status: "deployed",
+      sessionId: null as string | null,
+    };
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(notMailReady));
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.agentSession.findFirst = mock(() => Promise.resolve(undefined));
+
+    const setMock = mock((set: Record<string, unknown>) => {
+      if (typeof set.sessionId === "string") {
+        db.query.agentInstance.findFirst = mock(() =>
+          Promise.resolve({
+            ...notMailReady,
+            status: "running",
+            sessionId: set.sessionId as string,
+          }),
+        );
+      }
+      return { where: mock(() => Promise.resolve()) };
+    });
+    db.update = mock(() => ({ set: setMock }));
+    const insertValues = mock(() => Promise.resolve());
+    db.insert = mock(() => ({ values: insertValues }));
+
+    const sessionService = {
+      ...mockSessionService,
+      deployInstanceAtHead: mock(() => Promise.resolve({ publicKey: "pk" })),
+    };
+    const app = buildApp(
+      db,
+      sessionService as unknown as SessionService,
+      "user-1",
+      makeSidecarRouter([INSTANCE.address]),
+    );
+    const res = await app.fetch(
+      makeRequest("http://localhost/instances/ins-1/sessions", {
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as ResBody & { sessionId?: string | null };
+    expect(json.launched).toBe(true);
+    // Healed: a session was minted and returned; no re-deploy of the live agent.
+    expect(typeof json.sessionId).toBe("string");
+    expect(json.sessionId).not.toBeNull();
+    expect(sessionService.deployInstanceAtHead).not.toHaveBeenCalled();
+    expect(insertValues).toHaveBeenCalled();
+    const runningUpdate = setMock.mock.calls.find(
+      (c) => (c[0] as { status?: string }).status === "running",
+    );
+    expect(runningUpdate).toBeTruthy();
   });
 
   // BEHAVIOR CHANGE (runtime retirement): an already-routable instance still

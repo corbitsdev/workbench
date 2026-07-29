@@ -452,6 +452,45 @@ describe("hub-api network helpers", () => {
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({});
   });
 
+  it("launchInstanceSession single-flights concurrent ensures per instance (CL-4688)", async () => {
+    let resolveBody!: (value: unknown) => void;
+    const bodyPromise = new Promise((resolve) => {
+      resolveBody = resolve;
+    });
+    let fetchCalls = 0;
+    const calls: FetchCall[] = [];
+    globalThis.fetch = mock((url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      fetchCalls += 1;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: () => bodyPromise,
+      });
+    }) as unknown as typeof fetch;
+
+    const a = launchInstanceSession("inst-shared");
+    const b = launchInstanceSession("inst-shared");
+    await Promise.resolve();
+    expect(fetchCalls).toBe(1);
+
+    resolveBody({ launched: true, sessionId: "ses-shared" });
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(ra).toEqual({ launched: true, sessionId: "ses-shared" });
+    expect(rb).toEqual({ launched: true, sessionId: "ses-shared" });
+    expect(calls).toHaveLength(1);
+
+    // After settle, a new ensure is allowed.
+    installFetch(() => ({
+      body: { launched: true, sessionId: "ses-next" },
+    }));
+    expect(await launchInstanceSession("inst-shared")).toEqual({
+      launched: true,
+      sessionId: "ses-next",
+    });
+  });
+
   it("launchInstanceSession sends pageContext on chat open (CL-3527)", async () => {
     const calls = installFetch(() => ({
       body: { launched: true, sessionId: "ses-9" },

@@ -998,26 +998,49 @@ export type LaunchInstanceSessionOptions = {
   pageContext?: string;
 };
 
+/**
+ * Single-flight per instanceId: concurrent ensure-session calls (chat open,
+ * 409 recovery, reconnect) share one in-flight POST so a warm→409 storm
+ * cannot fan out into concurrent deploys (CL-4688). Keyed by instance only —
+ * concurrent callers with different pageContext share the first request's body.
+ */
+const launchInstanceSessionInFlight = new Map<
+  string,
+  Promise<LaunchInstanceSessionResponse>
+>();
+
 export async function launchInstanceSession(
   instanceId: string,
   options?: LaunchInstanceSessionOptions,
 ): Promise<LaunchInstanceSessionResponse> {
-  const body: { pageContext?: string } = {};
-  if (options?.pageContext !== undefined) {
-    body.pageContext = options.pageContext;
-  }
-  const raw = await hubFetch<unknown>(
-    "POST",
-    `v1/instances/${instanceId}/sessions`,
-    body,
-  );
-  const parsed = LaunchInstanceSessionResponseSchema(raw);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `Invalid launch instance session response: ${parsed.summary}`,
+  const existing = launchInstanceSessionInFlight.get(instanceId);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<LaunchInstanceSessionResponse> => {
+    const body: { pageContext?: string } = {};
+    if (options?.pageContext !== undefined) {
+      body.pageContext = options.pageContext;
+    }
+    const raw = await hubFetch<unknown>(
+      "POST",
+      `v1/instances/${instanceId}/sessions`,
+      body,
     );
-  }
-  return parsed;
+    const parsed = LaunchInstanceSessionResponseSchema(raw);
+    if (parsed instanceof type.errors) {
+      throw new Error(
+        `Invalid launch instance session response: ${parsed.summary}`,
+      );
+    }
+    return parsed;
+  })().finally(() => {
+    if (launchInstanceSessionInFlight.get(instanceId) === promise) {
+      launchInstanceSessionInFlight.delete(instanceId);
+    }
+  });
+
+  launchInstanceSessionInFlight.set(instanceId, promise);
+  return promise;
 }
 
 export async function stopAgentInstance(

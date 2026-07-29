@@ -20,6 +20,8 @@ import {
   describeLaunchError,
   launchFailureLogMessage,
   isAgentAlreadyExistsError,
+  isMailReady,
+  ensureMailReadyOnLiveInstance,
   launchAgentSession,
   type LaunchErrorDescription,
 } from "../services/agent-provisioning";
@@ -545,21 +547,37 @@ export function createAgentProvisioningRouter(
         return c.json({ error: "Instance not found" }, 404);
       }
 
-      // If the agent is already reachable on a connected sidecar, it is live — do
-      // not re-launch. Re-launching re-deploys the same address, which the sidecar
-      // rejects with "Agent already exists"; that rejected deploy evicts the live
-      // agent from the router address index, after which mail 502s with "agent is
+      // If the agent is already reachable on a connected sidecar, do not re-launch.
+      // Re-launching re-deploys the same address, which the sidecar rejects with
+      // "Agent already exists"; that rejected deploy evicts the live agent from
+      // the router address index, after which mail 502s with "agent is
       // unreachable". The frontend fires this route proactively (and sometimes
       // twice) right after deploy, so it must be idempotent for a healthy
-      // instance. The 409-recovery path still works: a genuinely-down instance is
-      // not routable, so it falls through to relaunch below.
+      // instance.
       //
-      // Even when already routable, refresh DB grants and push them to the sidecar.
-      // After a hub redeploy the sidecar reconnects and the orchestrator pushes
-      // whatever grants are currently in the DB — which may be stale if tool names
-      // changed (e.g. short→canonical on M4). Idempotent: delete+reinsert is safe
-      // on every call and sendGrantsUpdate does not restart the agent.
+      // Interchange mail also requires status === "running" and a truthy
+      // sessionId (isMailReady). Routable alone is not enough — heal DB drift
+      // before claiming warm success so the next mail send cannot 409 after a
+      // 200 ensure (CL-4688).
+      //
+      // Even when already routable + mail-ready, refresh DB grants and push them
+      // to the sidecar. After a hub redeploy the sidecar reconnects and the
+      // orchestrator pushes whatever grants are currently in the DB — which may
+      // be stale if tool names changed (e.g. short→canonical on M4). Idempotent:
+      // delete+reinsert is safe on every call and sendGrantsUpdate does not
+      // restart the agent.
       if (sidecarRouter.getRoutableAddresses().includes(instance.address)) {
+        let sessionId = instance.sessionId ?? null;
+        if (!isMailReady(instance)) {
+          sessionId = await ensureMailReadyOnLiveInstance(db, {
+            id: instance.id,
+            agentId: instance.agentId,
+            tenantId: instance.tenantId,
+            principalId: instance.principalId,
+            status: instance.status,
+            sessionId: instance.sessionId,
+          });
+        }
         const grantsStart = performance.now();
         await refreshInstanceGrantsFromDefinition(
           db,
@@ -582,7 +600,7 @@ export function createAgentProvisioningRouter(
         // rather than falling open to the whole tenant (CL-3286).
         return c.json({
           launched: true,
-          sessionId: instance.sessionId ?? null,
+          sessionId,
         });
       }
 
@@ -654,20 +672,22 @@ export function createAgentProvisioningRouter(
           totalMs: performance.now() - routeStart,
         });
       } catch (err) {
-        // If the sidecar already has the agent provisioned (e.g. a race between
-        // the orchestrator's reconnect path and this explicit launch), treat it
-        // as success. The agent is live; the frontend can proceed.
+        // Defense-in-depth: launchAgentSession treats already-exists as success
+        // and returns a DB-authoritative sessionId. If a future change rethrows
+        // that error, heal mail-ready without claiming a local mint (CL-4688).
         if (isAgentAlreadyExistsError(err)) {
-          await db
-            .update(agentInstance)
-            .set({ status: "running", updatedAt: new Date() })
-            .where(eq(agentInstance.id, instanceId));
-          // launchAgentSession threw after minting/resuming the session row —
-          // re-read so the client can still scope ReviewGate to this session.
           const refreshed = await db.query.agentInstance.findFirst({
             where: eq(agentInstance.id, instanceId),
           });
-          sessionId = refreshed?.sessionId ?? instance.sessionId ?? null;
+          const row = refreshed ?? instance;
+          sessionId = await ensureMailReadyOnLiveInstance(db, {
+            id: row.id,
+            agentId: row.agentId,
+            tenantId: row.tenantId,
+            principalId: row.principalId,
+            status: row.status,
+            sessionId: row.sessionId,
+          });
           launched = true;
         } else {
           launchFailure = describeLaunchError(err);

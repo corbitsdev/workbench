@@ -73,6 +73,8 @@ mock.module("./workflow-deploy", () => ({
 import {
   launchAgentSession,
   relaunchInstanceIfNeeded,
+  isMailReady,
+  ensureMailReadyOnLiveInstance,
 } from "./agent-provisioning";
 import {
   resetRelaunchBreaker,
@@ -263,14 +265,19 @@ describe("relaunchInstanceIfNeeded", () => {
 
   it("does not relaunch when the address is already routable on the sidecar", async () => {
     const db = makeMockDb();
+    // Mail-ready + routable: pure no-op (no deploy, no heal writes).
     db.query.agentInstance.findFirst = mock(() =>
-      Promise.resolve(coldInstance()),
+      Promise.resolve(
+        coldInstance({ status: "running", sessionId: "ses-live" }),
+      ),
     );
 
     const deployInstanceAtHead = mock(() =>
       Promise.resolve({ publicKey: "pk" }),
     );
     const sessionService = { ...mockSessionService, deployInstanceAtHead };
+    const insert = mock(() => ({ values: mock(() => Promise.resolve()) }));
+    db.insert = insert;
 
     await relaunchInstanceIfNeeded(
       db as never,
@@ -282,6 +289,50 @@ describe("relaunchInstanceIfNeeded", () => {
     );
 
     expect(deployInstanceAtHead).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("heals mail-ready when routable but status/sessionId drifted (CL-4688)", async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve(coldInstance({ status: "deployed", sessionId: null })),
+    );
+    db.query.agentSession.findFirst = mock(() => Promise.resolve(undefined));
+
+    const deployInstanceAtHead = mock(() =>
+      Promise.resolve({ publicKey: "pk" }),
+    );
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
+    const insertValues = mock(() => Promise.resolve());
+    db.insert = mock(() => ({ values: insertValues }));
+    const setMock = mock((set: Record<string, unknown>) => {
+      // Re-read after heal must see the persisted sessionId (DB authority).
+      if (typeof set.sessionId === "string") {
+        db.query.agentInstance.findFirst = mock(() =>
+          Promise.resolve(
+            coldInstance({ status: "running", sessionId: set.sessionId as string }),
+          ),
+        );
+      }
+      return { where: mock(() => Promise.resolve()) };
+    });
+    db.update = mock(() => ({ set: setMock }));
+
+    await relaunchInstanceIfNeeded(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      "ins-1",
+      makeSidecarRouter(["ins-1@tenant-1.localhost"]) as never,
+    );
+
+    expect(deployInstanceAtHead).not.toHaveBeenCalled();
+    expect(insertValues).toHaveBeenCalled();
+    const runningUpdate = setMock.mock.calls.find(
+      (c) => (c[0] as { status?: string }).status === "running",
+    );
+    expect(runningUpdate).toBeTruthy();
   });
 
   it("bounds launch attempts across repeated polls while launch keeps failing", async () => {
@@ -508,6 +559,99 @@ describe("launchAgentSession retry behavior", () => {
       ),
     ).rejects.toBe(provisionError);
     expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats already-exists as success and returns the DB sessionId (CL-4688)", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const provisionError = new SessionLaunchError(
+      "provision",
+      new Error(`Agent already exists for address "ins-1@tenant-1.localhost"`),
+      false,
+    );
+    const deployInstanceAtHead = mock(() => Promise.reject(provisionError));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
+
+    const db = launchDb();
+    // After mark-running, a concurrent heal may have repointed sessionId.
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: "ins-1", sessionId: "ses-from-heal" }),
+    );
+
+    const create = mock(() => {});
+    const has = mock(() => false);
+    const collectors = { ...mockEventCollectors, create, has };
+
+    const result = await launchAgentSession(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      collectors as never,
+      BASE_OPTS,
+    );
+
+    expect(result.sessionId).toBe("ses-from-heal");
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
+    // Missing collector is created with the authoritative (re-read) sessionId.
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith(
+      expect.any(String),
+      "tenant-1",
+      "ses-from-heal",
+      "ins-1",
+    );
+  });
+
+  it("treats already-exists as success and falls back to the launch sessionId when re-read is empty", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const provisionError = new SessionLaunchError(
+      "provision",
+      new Error(`Agent already exists for address "ins-1@tenant-1.localhost"`),
+      false,
+    );
+    const deployInstanceAtHead = mock(() => Promise.reject(provisionError));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
+
+    // launchDb re-read returns null sessionId — fall back to the mint.
+    const result = await launchAgentSession(
+      launchDb() as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      BASE_OPTS,
+    );
+
+    expect(typeof result.sessionId).toBe("string");
+    expect(result.sessionId.length).toBeGreaterThan(0);
+    expect(deployInstanceAtHead).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not abandon a live event collector on already-exists (CL-4688)", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const provisionError = new SessionLaunchError(
+      "provision",
+      new Error(`Agent already exists for address "ins-1@tenant-1.localhost"`),
+      false,
+    );
+    const deployInstanceAtHead = mock(() => Promise.reject(provisionError));
+    const sessionService = { ...mockSessionService, deployInstanceAtHead };
+
+    const create = mock(() => {});
+    const has = mock(() => true);
+    const collectors = { ...mockEventCollectors, create, has };
+
+    await launchAgentSession(
+      launchDb() as never,
+      sessionService as never,
+      mockGrantStore as never,
+      collectors as never,
+      BASE_OPTS,
+    );
+
+    // Reconnect ownership: live collector must not be replaced mid-turn.
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("writes the native deployment projection after a successful single-agent deploy", async () => {
@@ -1024,5 +1168,137 @@ describe("launchAgentSession Myra personalization style overlay", () => {
     expect(prompt).not.toContain(
       "Do not create artifacts; deliver results in the reply.",
     );
+  });
+});
+
+describe("isMailReady / ensureMailReadyOnLiveInstance (CL-4688)", () => {
+  it("isMailReady requires running status and a truthy sessionId", () => {
+    expect(
+      isMailReady({ status: "running", sessionId: "ses-1" }),
+    ).toBe(true);
+    expect(isMailReady({ status: "deployed", sessionId: "ses-1" })).toBe(
+      false,
+    );
+    expect(isMailReady({ status: "running", sessionId: null })).toBe(false);
+    expect(isMailReady({ status: "running", sessionId: undefined })).toBe(
+      false,
+    );
+    // Interchange mail uses `!sessionId` — empty string must not count as ready.
+    expect(isMailReady({ status: "running", sessionId: "" })).toBe(false);
+  });
+
+  it("ensureMailReadyOnLiveInstance is a no-op when already mail-ready", async () => {
+    const db = makeMockDb();
+    const insert = mock(() => ({ values: mock(() => Promise.resolve()) }));
+    db.insert = insert;
+    const sessionId = await ensureMailReadyOnLiveInstance(db as never, {
+      id: "ins-1",
+      agentId: "agt-1",
+      tenantId: "tenant-1",
+      principalId: "prn-1",
+      status: "running",
+      sessionId: "ses-live",
+    });
+    expect(sessionId).toBe("ses-live");
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("ensureMailReadyOnLiveInstance remints when status drifted and session is ended", async () => {
+    const db = makeMockDb();
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: "ses-dead", status: "ended" }),
+    );
+    const insertValues = mock(() => Promise.resolve());
+    db.insert = mock(() => ({ values: insertValues }));
+    let writtenSessionId: string | undefined;
+    const setMock = mock((set: Record<string, unknown>) => {
+      writtenSessionId = set.sessionId as string;
+      db.query.agentInstance.findFirst = mock(() =>
+        Promise.resolve({ id: "ins-1", sessionId: writtenSessionId }),
+      );
+      return { where: mock(() => Promise.resolve()) };
+    });
+    db.update = mock(() => ({ set: setMock }));
+
+    const sessionId = await ensureMailReadyOnLiveInstance(db as never, {
+      id: "ins-1",
+      agentId: "agt-1",
+      tenantId: "tenant-1",
+      principalId: "prn-1",
+      // Not mail-ready yet (status ≠ running), so ended-session remint runs.
+      status: "deployed",
+      sessionId: "ses-dead",
+    });
+
+    expect(insertValues).toHaveBeenCalled();
+    expect(sessionId).not.toBe("ses-dead");
+    expect(sessionId).toBe(writtenSessionId);
+    expect(setMock).toHaveBeenCalled();
+    const setArg = setMock.mock.calls[0]![0] as {
+      status: string;
+      sessionId: string;
+    };
+    expect(setArg.status).toBe("running");
+    expect(setArg.sessionId).toBe(sessionId);
+  });
+
+  it("ensureMailReadyOnLiveInstance mints a session and sets running when drifted", async () => {
+    const db = makeMockDb();
+    db.query.agentSession.findFirst = mock(() => Promise.resolve(undefined));
+    const insertValues = mock(() => Promise.resolve());
+    db.insert = mock(() => ({ values: insertValues }));
+    let writtenSessionId: string | undefined;
+    const setMock = mock((set: Record<string, unknown>) => {
+      writtenSessionId = set.sessionId as string;
+      db.query.agentInstance.findFirst = mock(() =>
+        Promise.resolve({ id: "ins-1", sessionId: writtenSessionId }),
+      );
+      return { where: mock(() => Promise.resolve()) };
+    });
+    db.update = mock(() => ({ set: setMock }));
+
+    const sessionId = await ensureMailReadyOnLiveInstance(db as never, {
+      id: "ins-1",
+      agentId: "agt-1",
+      tenantId: "tenant-1",
+      principalId: "prn-1",
+      status: "deployed",
+      sessionId: null,
+    });
+
+    expect(typeof sessionId).toBe("string");
+    expect(sessionId.length).toBeGreaterThan(0);
+    expect(insertValues).toHaveBeenCalled();
+    expect(setMock).toHaveBeenCalled();
+    const setArg = setMock.mock.calls[0]![0] as {
+      status: string;
+      sessionId: string;
+    };
+    expect(setArg.status).toBe("running");
+    expect(setArg.sessionId).toBe(sessionId);
+  });
+
+  it("ensureMailReadyOnLiveInstance returns the row's sessionId after concurrent overwrite", async () => {
+    const db = makeMockDb();
+    db.query.agentSession.findFirst = mock(() => Promise.resolve(undefined));
+    db.insert = mock(() => ({ values: mock(() => Promise.resolve()) }));
+    db.update = mock(() => ({
+      set: mock(() => ({ where: mock(() => Promise.resolve()) })),
+    }));
+    // Concurrent heal wrote a different sessionId last.
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ id: "ins-1", sessionId: "ses-from-other-heal" }),
+    );
+
+    const sessionId = await ensureMailReadyOnLiveInstance(db as never, {
+      id: "ins-1",
+      agentId: "agt-1",
+      tenantId: "tenant-1",
+      principalId: "prn-1",
+      status: "deployed",
+      sessionId: null,
+    });
+
+    expect(sessionId).toBe("ses-from-other-heal");
   });
 });

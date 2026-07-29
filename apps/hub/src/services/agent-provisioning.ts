@@ -828,6 +828,41 @@ export async function launchAgentSession(
     }
   }
 
+  // Sidecar already has the agent (race with reconnect / concurrent ensure).
+  // Treat as success: the address is live, so ending the session we just
+  // minted would leave mail 409-ready-to-fail (CL-4688). Mark running without
+  // overwriting sessionId (a concurrent heal may have repointed the row);
+  // re-read and prefer the DB value, falling back to this launch's sessionId.
+  //
+  // Collector ownership matches reconnect: only create when missing, and only
+  // after the authoritative sessionId is known — never abandon a live collector
+  // mid-turn for an agent that was already healthy.
+  if (lastError !== undefined && isAgentAlreadyExistsError(lastError)) {
+    await db
+      .update(agentInstance)
+      .set({ status: "running", updatedAt: new Date() })
+      .where(eq(agentInstance.id, instanceId));
+    const persisted = await db.query.agentInstance.findFirst({
+      where: eq(agentInstance.id, instanceId),
+    });
+    const authoritativeSessionId = persisted?.sessionId ?? sessionId;
+    if (!eventCollectors.has(address)) {
+      eventCollectors.create(
+        address,
+        tenantId,
+        authoritativeSessionId,
+        instanceId,
+      );
+    }
+    log.info("Agent session launch treated as success (already exists)", {
+      instanceId,
+      agentId,
+      tenantId,
+      sessionId: authoritativeSessionId,
+    });
+    return { address, sessionId: authoritativeSessionId };
+  }
+
   // Launch ultimately failed — mark the session ended. Stamp endedAt (not just
   // status) so ended sessions carry a timestamp (CL-1651).
   const failedAt = new Date();
@@ -910,7 +945,22 @@ export async function relaunchInstanceIfNeeded(
   // path in either case churns sessions and can evict the live agent ("Agent
   // already exists" → router eviction → 502). So relaunch only for a genuine cold
   // start: an instance with no active session yet. (CL-1651)
-  if (sidecarRouter.getRoutableAddresses().includes(instance.address)) return;
+  //
+  // When routable but not mail-ready (status/sessionId drift vs Interchange mail
+  // gates), heal the DB in place — do not re-deploy (CL-4688).
+  if (sidecarRouter.getRoutableAddresses().includes(instance.address)) {
+    if (!isMailReady(instance)) {
+      await ensureMailReadyOnLiveInstance(db, {
+        id: instance.id,
+        agentId: instance.agentId,
+        tenantId: instance.tenantId,
+        principalId: instance.principalId,
+        status: instance.status,
+        sessionId: instance.sessionId,
+      });
+    }
+    return;
+  }
   if (instance.sessionId) {
     const session = await db.query.agentSession.findFirst({
       where: eq(agentSession.id, instance.sessionId),
@@ -1017,6 +1067,108 @@ export function launchFailureLogMessage(
 ): string {
   const phase = failure.phase ?? "unknown";
   return `${prefix} phase=${phase}: ${failure.detail}`;
+}
+
+/**
+ * Interchange mail (`POST …/instances/:id/mail`) accepts only instances with
+ * `status === "running"` and a truthy `sessionId` (its gate is `!sessionId`).
+ * Warm path and mail-wake must share this definition of "agent can receive mail"
+ * so a successful ensure cannot be followed by a readiness 409 (CL-4688).
+ */
+export function isMailReady(instance: {
+  status: string;
+  sessionId: string | null | undefined;
+}): boolean {
+  return instance.status === "running" && Boolean(instance.sessionId);
+}
+
+/**
+ * Align DB fields with Interchange mail gates for an agent that is already
+ * routable on a sidecar. Re-deploying would hit "Agent already exists" and can
+ * evict the live agent from the router address index — so this path heals the
+ * instance row (and mints a session when needed) without a deploy.
+ *
+ * Returns the sessionId currently on the instance row after the heal. Concurrent
+ * heals may each mint a session; last writer wins on the row, and every caller
+ * re-reads so they converge on that persisted id rather than a local mint.
+ *
+ * When already `isMailReady` (running + truthy sessionId), returns immediately —
+ * matching Interchange's mail gate, which does not inspect session row status.
+ * Ended-session remint only runs when the instance is not yet mail-ready.
+ */
+export async function ensureMailReadyOnLiveInstance(
+  db: DB["db"],
+  instance: {
+    id: string;
+    agentId: string;
+    tenantId: string;
+    principalId: string;
+    status: string;
+    sessionId: string | null;
+  },
+): Promise<string> {
+  if (isMailReady(instance)) {
+    // Narrowed by isMailReady (truthy sessionId).
+    return instance.sessionId as string;
+  }
+
+  let sessionId = instance.sessionId;
+  const now = new Date();
+
+  if (sessionId) {
+    const existing = await db.query.agentSession.findFirst({
+      where: eq(agentSession.id, sessionId),
+    });
+    // Ended or missing session rows cannot satisfy a stable mail identity —
+    // mint a fresh active session rather than reusing a dead id.
+    if (!existing || existing.status === "ended") {
+      sessionId = null;
+    }
+  }
+
+  if (!sessionId) {
+    sessionId = generateId("session");
+    await db.insert(agentSession).values({
+      id: sessionId,
+      tenantId: instance.tenantId,
+      agentId: instance.agentId,
+      principalId: instance.principalId,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  await db
+    .update(agentInstance)
+    .set({
+      status: "running",
+      sessionId,
+      updatedAt: now,
+    })
+    .where(eq(agentInstance.id, instance.id));
+
+  // Concurrent heals may overwrite sessionId; the row is the authority when
+  // present. Fall back to the sessionId we just wrote if the re-read is empty
+  // (stale mock / race window before the write is visible).
+  const persisted = await db.query.agentInstance.findFirst({
+    where: eq(agentInstance.id, instance.id),
+  });
+  const authoritativeSessionId = persisted?.sessionId ?? sessionId;
+  if (!authoritativeSessionId) {
+    throw new Error(
+      `Failed to persist mail-ready sessionId for instance ${instance.id}`,
+    );
+  }
+
+  log.info("Healed mail-ready state for live instance", {
+    instanceId: instance.id,
+    previousStatus: instance.status,
+    previousSessionId: instance.sessionId,
+    sessionId: authoritativeSessionId,
+  });
+
+  return authoritativeSessionId;
 }
 
 /**
