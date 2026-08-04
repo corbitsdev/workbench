@@ -513,10 +513,12 @@ describe("createSidecarDeployRouter hibernate", () => {
     // Orphan self-heal: a hibernate whose ack path failed leaves the hub
     // believing the deployment is down while the child is still resident
     // (interchange's undeploy timeout arm unroutes before rejecting); the
-    // wake then re-sends agent.deploy at the live supervisor. The deploy
-    // branch must shut the resident child down (state-preserving — no rm)
-    // before standing the fresh one up, or the old child leaks and two
-    // children drive one workflow-run repo.
+    // wake then re-sends agent.deploy at the live supervisor.
+    //
+    // WORKBENCH-LOCAL (deploy-timeout fix): re-ack the existing agent key
+    // without teardown/re-spawn. A full kill+spawn on the warm path was
+    // exceeding the hub's 30s deploy wait under concurrent session
+    // launches; re-ack recovers routing in O(ms) against the live child.
     const thirdDeploy = router.deploy(frame);
     while (spawns.length < 3) {
       await new Promise((r) => setTimeout(r, 1));
@@ -526,25 +528,17 @@ describe("createSidecarDeployRouter hibernate", () => {
     await completeSpawnHandshake(third);
     await thirdDeploy;
 
-    const fourthDeploy = router.deploy(frame);
-    while (spawns.length < 4) {
-      await new Promise((r) => setTimeout(r, 1));
-    }
-    const fourth = spawns[3];
-    if (fourth === undefined) throw new Error("unreachable");
-    await completeSpawnHandshake(fourth);
-    await fourthDeploy;
-
-    // The resident third child was shut down by the fourth deploy...
-    expect(third.killed).toBe(true);
-    expect(third.exitedResolved).toBe(true);
-    // ...without reclaiming any durable state (a hibernate-shaped teardown,
-    // not an undeploy).
+    // Second deploy against the now-live third child: no fourth spawn, no kill.
+    const fourth = await router.deploy(frame);
+    expect(spawns.length).toBe(3);
+    expect(third.killed).toBe(false);
+    expect(fourth.publicKey).toBeString();
+    // Durable state still intact (no reclaim happened)...
     expect(await fs.readFile(stepStateFile, "utf8")).toBe("x");
     expect(
       await fs.readFile(path.join(workflowRunDir, "events.jsonl"), "utf8"),
     ).toBe("{}");
-    // The fresh child owns the deployment's routing.
+    // ...and the resident third child still owns routing.
     expect(
       await signalRouter.tryRoute({
         type: "signal.deliver",
@@ -556,7 +550,7 @@ describe("createSidecarDeployRouter hibernate", () => {
       }),
     ).toBe(true);
     expect(
-      fourth.supervisorToChild.lines.find((line) =>
+      third.supervisorToChild.lines.find((line) =>
         line.includes("signal.deliver"),
       ),
     ).toBeString();

@@ -1846,20 +1846,39 @@ export function createSidecarDeployRouter(deps: {
       }
     }
 
-    // WORKBENCH-LOCAL (CL-3104): resident-supervisor self-heal. A hibernate
-    // whose ack path failed leaves the hub believing the deployment is down
-    // (interchange's undeploy timeout unroutes before rejecting) while the
-    // child is still resident here; the wake then re-sends agent.deploy at the
-    // live supervisor. Without this the fresh deploy would hit the
-    // already-deployed throw (or, absent it, overwrite the activeSupervisors
-    // entry and leak the resident child so two children drive one workflow-run
-    // repo). Tear the resident supervisor down state-preservingly (hibernate
-    // semantics — no rm) before standing the fresh one up. A concurrent
-    // in-flight deploy (`reservingDeployAddresses`) is a genuine race, not a
-    // resident child, so it still throws below.
+    // WORKBENCH-LOCAL (CL-3104 / deploy-timeout fix): resident-supervisor recovery.
+    // A hibernate whose ack path failed (or a hub restart that dropped
+    // addressIndex) leaves the hub believing the deployment is down while the
+    // child is still resident here. The hub then re-sends agent.deploy at the
+    // live supervisor.
+    //
+    // Previous behavior tore the resident supervisor down state-preservingly
+    // and stood a fresh child up. Under concurrent warm-path deploys that
+    // teardown+respawn path routinely exceeded the hub's 30s deploy wait
+    // (teardown kill/exit + spawn ready ≤25s), so chat session launches
+    // timed out with `phase=provision` even though the agent was already live.
+    //
+    // Recovery is now a re-announce: re-surface the existing agent key so the
+    // hub can re-bind routing and continue pack/grants phases against the live
+    // child. No teardown, no second spawn. A concurrent in-flight deploy
+    // (`reservingDeployAddresses`) is a genuine race, not a resident child, so
+    // it still throws below.
     if (activeSupervisors.has(frame.agentAddress)) {
-      logger.warn`deploy for ${frame.agentAddress} found a resident supervisor; shutting it down state-preservingly before re-deploying`;
-      await teardownDeployment(frame.agentAddress, { reclaimDirs: false });
+      logger.warn`deploy for ${frame.agentAddress} found a resident supervisor; re-acking existing agent key without re-spawn`;
+      const { keyPair } = await deps.keyStore.loadOrGenerateKey(
+        frame.agentAddress,
+      );
+      // Refresh the hub key so a hub that rotated its signing material mid-run
+      // can still verify inbound frames after re-binding this address.
+      if (frame.hubPublicKey !== undefined) {
+        deps.keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
+      }
+      // Ensure the head deploy-tree repo still exists for the hub's pack phase
+      // (idempotent; a healthy resident already has it).
+      if (projection.definition.stepOrder.length === 1) {
+        await deps.sessions.initRepo(frame.agentAddress);
+      }
+      return { publicKey: hexEncode(keyPair.publicKey) };
     }
 
     // Reject a re-deploy of an address mid-deploy in this process BEFORE
