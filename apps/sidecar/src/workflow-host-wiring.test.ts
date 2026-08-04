@@ -1945,30 +1945,34 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     });
   }
 
-  test("a second deploy for a live address self-heals the resident supervisor (CL-3104)", async () => {
+  test("a second deploy for a live address re-acks without re-spawning (CL-3104)", async () => {
     const dataDir = await createTempBaseDir("sidecar-restore-dup-data-");
     const head = "ins_dup@example.com";
+    const headKeyPair = await generateKeyPair();
 
     const spawner = makeReadyDrivingSpawner(9700);
     const { router, transport } = await buildMultistepFixture({
       spawner: spawner.spawner,
+      headKeyPair,
       multistepSubstrateEnv: { SIDECAR_DATA_DIR: dataDir },
     });
 
     const deployPromise = router.deploy(singleStepFrame(head, "wf-dup"));
     await spawner.driveReadyFor(0);
-    await deployPromise;
+    const first = await deployPromise;
 
-    // WORKBENCH-LOCAL (CL-3104): a second deploy for the already-live address
-    // does NOT reject (upstream's behavior) -- a wake re-deploy that races a
-    // failed hibernate ack finds the child still resident and must recover,
-    // not wedge. The deploy branch tears the resident supervisor down
-    // state-preservingly (reclaimDirs: false) and stands a fresh child up.
-    const secondDeploy = router.deploy(singleStepFrame(head, "wf-dup"));
-    await spawner.driveReadyFor(1);
-    await secondDeploy;
-    expect(spawner.spawnCount()).toBe(2);
+    // WORKBENCH-LOCAL (CL-3104 / deploy-timeout fix): a second deploy for an
+    // already-live address re-acks the existing agent key without teardown or
+    // re-spawn. Hub warm-path re-deploys after addressIndex loss must complete
+    // well under the hub's 30s deploy wait; tearing down + spawning a second
+    // child was the production hang that timed out chat session launches.
+    const second = await router.deploy(singleStepFrame(head, "wf-dup"));
+    expect(spawner.spawnCount()).toBe(1);
     expect(isRegistered(transport, head)).toBe(true);
+    expect(second.publicKey).toBe(first.publicKey);
+    expect(second.publicKey).toBe(
+      Buffer.from(headKeyPair.publicKey).toString("hex"),
+    );
   });
 
   test("a deploy whose child never signals ready times out and rejects", async () => {
