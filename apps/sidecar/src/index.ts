@@ -1,0 +1,307 @@
+// Composition root for the sidecar host. The host is deliberately
+// generic: it reads its identity and hub location from the environment,
+// dials in to the hub over a WebSocket, and runs whatever it is given
+// through the deploy-router seam -- workflow deployments arrive as
+// `agent.deploy` frames and are executed in supervised workflow-process
+// children. It knows no deployment by name and holds no policy about
+// what runs on it; the hub tells it everything over the wire. Because
+// the sidecar dials the hub (never the reverse), hosted and local
+// topologies are identical, and any number of sidecars can dial the
+// same hub without this file changing.
+//
+// Boot order matters: orphaned tarball-cache staging is swept before
+// any apply work is accepted, the process identity keypair loads before
+// anything touches the data dir's substrate, the deploy router is
+// captured during orchestrator construction, restored deployments are
+// re-established BEFORE the hub connection opens (mailbox registrations
+// must be live before the hub routes to them), the watchdog is armed
+// for the first connect attempt, and only then does the link dial out.
+
+import path from "node:path";
+import {
+  createEd25519Crypto,
+  generateKeyPair,
+  signEd25519,
+  verifySSHSignature,
+} from "@intx/crypto";
+import { createSidecarOrchestrator, type HubLink } from "@intx/hub-agent";
+import { createAgentRepoStore } from "@intx/hub-sessions";
+import { loadAdapterRegistry } from "@intx/inference/providers";
+import { getLogger, setup } from "@intx/log";
+import { createInMemoryTransport } from "@intx/mail-memory";
+import { createTarballCache } from "@intx/tool-packaging";
+import { hexEncode } from "@intx/types";
+
+import { readSidecarConfig } from "./config";
+import { DEFAULT_TOOL_REGISTRIES_JSON } from "./tool-materialization";
+import { createDefaultHarnessBuilder } from "./default-harness";
+import { createHubLinkWatchdog } from "./hub-link-watchdog";
+import { drainWithTimeout } from "./shutdown";
+import { loadOrMintSidecarKeypair } from "./signing-keypair";
+import {
+  createSidecarDeployRouter,
+  type SidecarDeployRouter,
+} from "./workflow-host-wiring";
+import {
+  createDeploymentAddressRegistry,
+  createMultistepDrainRouter,
+  createMultistepMailRouter,
+  createMultistepSignalRouter,
+  createMultistepSourcesRouter,
+  createWorkflowRunPackClient,
+  createWorkflowRunPackPushingRepoStore,
+} from "./workflow-run-pack-client";
+
+await setup();
+
+const config = readSidecarConfig(process.env);
+
+// Host policy constants, not configuration: the tarball cache lives
+// inside the data dir, and the two byte caps bound per-step tool
+// materialization. They are data the host owns, so they are pinned here
+// rather than surfaced as environment knobs.
+const CACHE_ROOT = path.join(config.dataDir, "cache", "tarballs");
+const CACHE_MAX_BYTES = 10 * 1024 * 1024 * 1024;
+const REGISTRY_MAX_TARBALL_BYTES = 10 * 1024 * 1024;
+
+// Inference adapters are the statically-linked built-ins. Custom
+// adapter modules are code; installing one means installing a package
+// into this workspace, not naming a specifier in the environment.
+const adapters = await loadAdapterRegistry([]);
+
+// Sweep any tmp staging directories left behind by a tarball put or
+// extract that crashed between staging and the final rename on a
+// previous boot, before the orchestrator starts accepting apply work.
+await createTarballCache({
+  rootDir: CACHE_ROOT,
+  maxBytes: CACHE_MAX_BYTES,
+}).sweepOrphans();
+
+// Load or mint the host's persisted Ed25519 identity before anything
+// else touches the data directory. One key, one identity for this
+// process: the supervisor principal signs every workflow-run commit
+// with it, the substrate's signing callback signs every SSH-signed
+// commit with it, and each workflow-process child re-derives it from
+// its spawn-time env. The public key is logged so an operator can pin
+// which identity a given process advertises.
+const signingKey = await loadOrMintSidecarKeypair(
+  path.join(config.dataDir, ".sidecar-signing"),
+);
+getLogger(["sidecar", "boot"])
+  .info`Sidecar identity ${hexEncode(signingKey.publicKey)}`;
+
+// The substrate-backed RepoStore the supervisors read and write through.
+// Wrapped below with the pack-pushing facade so a successful
+// workflow-run write ships to the hub before its Promise resolves.
+const agentRepoStore = createAgentRepoStore({
+  dataDir: config.dataDir,
+  signingKey,
+});
+
+// Per-deployment registries the hub link consults on inbound frames and
+// the pack-push facade consults when addressing outbound frames.
+const deploymentAddressRegistry = createDeploymentAddressRegistry();
+const multistepMailRouter = createMultistepMailRouter();
+const multistepSignalRouter = createMultistepSignalRouter();
+const multistepDrainRouter = createMultistepDrainRouter();
+const multistepSourcesRouter = createMultistepSourcesRouter();
+
+const transport = createInMemoryTransport();
+
+// The pack-push client closes over the substrate (for pack creation)
+// and a lazy hub-link binding: `createSidecarOrchestrator` invokes
+// `createDeployRouter` during construction, before the orchestrator
+// handle exists, so the link reference is bound once construction
+// returns and consulted lazily here.
+let resolvedHubLink: HubLink | null = null;
+const workflowRunPackClient = createWorkflowRunPackClient({
+  substrate: agentRepoStore.repoStore,
+  hubLink: {
+    pushWorkflowRunPack(opts) {
+      if (resolvedHubLink === null) {
+        throw new Error(
+          "sidecar boot: workflow-run pack push attempted before hub link was constructed",
+        );
+      }
+      return resolvedHubLink.pushWorkflowRunPack(opts);
+    },
+  },
+});
+
+const wrappedRepoStore = createWorkflowRunPackPushingRepoStore({
+  underlying: agentRepoStore.repoStore,
+  packClient: workflowRunPackClient,
+  registry: deploymentAddressRegistry,
+});
+
+// Substrate-config keys threaded into every workflow-process child's
+// fresh spawn env (nothing is inherited from this process). PATH lets
+// the child's `bun` shebang resolve; HOME/TMPDIR give agent code a
+// writable home and the host's temp root. The signing keys let the
+// child's substrate factory re-derive the host identity.
+const multistepSubstrateEnv: Record<string, string> = {
+  SIDECAR_DATA_DIR: config.dataDir,
+  SIDECAR_SIGNING_PUBLIC_KEY: hexEncode(signingKey.publicKey),
+  SIDECAR_SIGNING_PRIVATE_KEY: hexEncode(signingKey.privateKey),
+  HUB_WS_URL: config.hubURL,
+  SIDECAR_ID: config.sidecarId,
+  SIDECAR_TOKEN: config.token,
+  PATH: config.path,
+  SIDECAR_CACHE_MAX_BYTES: String(CACHE_MAX_BYTES),
+  SIDECAR_REGISTRY_MAX_TARBALL_BYTES: String(REGISTRY_MAX_TARBALL_BYTES),
+  SIDECAR_ADAPTER_MANIFEST: JSON.stringify([]),
+  // Always serialized, defaulting to the public npmjs registry when the
+  // operator pinned none, so the child's per-step tool materialization
+  // resolves the exact registries this boot edge resolved — a child
+  // never falls back to a default of its own.
+  SIDECAR_TOOL_REGISTRIES:
+    config.toolRegistries ?? DEFAULT_TOOL_REGISTRIES_JSON,
+};
+if (config.home !== undefined) {
+  multistepSubstrateEnv["HOME"] = config.home;
+}
+if (config.tmpdir !== undefined) {
+  multistepSubstrateEnv["TMPDIR"] = config.tmpdir;
+}
+
+// The deploy router's source-admission gate reuses this exact
+// `canBuildSource` predicate against the one adapter registry.
+const buildHarness = createDefaultHarnessBuilder({ adapters });
+
+const watchdogLog = getLogger(["sidecar", "hub-link-watchdog"]);
+const watchdog = createHubLinkWatchdog({
+  stallDeadlineMs: 60_000,
+  onStall: () => {
+    watchdogLog.error`Hub link stalled: connect attempt got neither open nor close within the deadline; exiting for a clean restart`;
+    process.exit(1);
+  },
+});
+
+// Captured by the createDeployRouter callback, which the orchestrator
+// invokes synchronously during construction; asserted below so a wiring
+// regression fails loud at boot instead of silently skipping restore.
+let capturedRouter: SidecarDeployRouter | undefined;
+
+const orchestrator = createSidecarOrchestrator({
+  hubURL: config.hubURL,
+  sidecarId: config.sidecarId,
+  token: config.token,
+  dataDir: config.dataDir,
+  transport,
+  cryptoOps: {
+    generateKeyPair,
+    signEd25519,
+    verifySSHSig: verifySSHSignature,
+  },
+  scheduleReconnect: watchdog.scheduleReconnect,
+  mailInboundRouter: multistepMailRouter,
+  signalInboundRouter: multistepSignalRouter,
+  drainInboundRouter: multistepDrainRouter,
+  sourcesInboundRouter: multistepSourcesRouter,
+  // Called from every connection's open handler -- the watchdog's
+  // aliveness signal -- and from the close path, which immediately
+  // re-schedules a reconnect that re-arms the deadline.
+  getWorkflowAddresses: () => {
+    watchdog.markAlive();
+    if (capturedRouter === undefined) {
+      throw new Error(
+        "sidecar boot: deploy router was not constructed before the hub link requested deployment addresses",
+      );
+    }
+    return capturedRouter.activeAddresses();
+  },
+  // After the link re-answers a reconnect challenge for a deployment
+  // address, re-drive any workflow-run pack the disconnect cancelled.
+  onWorkflowAddressesRoutable: (addresses) => {
+    for (const address of addresses) {
+      wrappedRepoStore.notifyAddressRoutable(address);
+    }
+  },
+  // On disconnect, block the addresses' workflow-run pushes until the
+  // reconnect challenge re-routes them; a push shipped on the fresh,
+  // not-yet-challenged connection would be dropped by the hub.
+  onWorkflowAddressesUnroutable: (addresses) => {
+    for (const address of addresses) {
+      wrappedRepoStore.markAddressUnroutable(address);
+    }
+  },
+  createDeployRouter: ({
+    sessions,
+    keyStore,
+    publishWorkflowInferenceEvent,
+  }) => {
+    const router = createSidecarDeployRouter({
+      sessions,
+      keyStore,
+      transport,
+      repoStore: wrappedRepoStore,
+      signingKeySeed: signingKey.privateKey,
+      createAgentCrypto: createEd25519Crypto,
+      assertSourceBuildable: buildHarness.canBuildSource,
+      registerDeployment: ({ deploymentId, agentAddress }) => {
+        deploymentAddressRegistry.record(deploymentId, agentAddress);
+      },
+      unregisterDeployment: ({ deploymentId }) => {
+        deploymentAddressRegistry.unregister(deploymentId);
+      },
+      multistepMailRouter,
+      multistepSignalRouter,
+      multistepDrainRouter,
+      multistepSourcesRouter,
+      multistepSubstrateEnv,
+      publishWorkflowInferenceEvent,
+    });
+    capturedRouter = router;
+    return router;
+  },
+});
+
+resolvedHubLink = orchestrator.hubLink;
+
+if (capturedRouter === undefined) {
+  throw new Error(
+    "sidecar boot: deploy router was not constructed before deployment restore",
+  );
+}
+const deployRouter: SidecarDeployRouter = capturedRouter;
+
+// Re-establish the deployments a prior process persisted BEFORE the
+// connection opens: each deployment's mailbox/transport registration
+// must be live before the hub can route to it, and the first register
+// frame must announce every restored address.
+await deployRouter.restoreWorkflowDeployments();
+
+// The first connect bypasses the reconnect scheduler, so arm the stall
+// deadline by hand; the open path's getWorkflowAddresses disarms it.
+watchdog.armForBoot();
+orchestrator.start();
+
+const SHUTDOWN_DRAIN_MS = 8_000;
+let shuttingDown = false;
+
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const log = getLogger(["sidecar", "shutdown"]);
+  log.info`Received ${signal}; draining before exit`;
+  orchestrator.close();
+  const outcome = await drainWithTimeout(
+    () => deployRouter.shutdownAll(),
+    SHUTDOWN_DRAIN_MS,
+  );
+  // Drained and timed-out both exit 0: the process is going down either
+  // way and a bound cutting a slow drain short is not a crash. A drain
+  // that threw is a genuine fault and exits non-zero.
+  if (outcome.kind === "failed") {
+    const message =
+      outcome.error instanceof Error
+        ? outcome.error.message
+        : String(outcome.error);
+    log.error`Drain threw during shutdown; exiting non-zero: ${message}`;
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));

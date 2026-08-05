@@ -1,0 +1,15 @@
+#!/usr/bin/env bun
+// The workflow-process child this host spawns, one per workflow
+// deployment. The supervisor spawns it by path (`Bun.spawn([binaryPath])`)
+// with a fresh env carrying only the typed substrate-config keys; the
+// published `runWorkflowChildFromProcessEnv` owns the env crossing and
+// hands the validated config to this host's substrate factory.
+import { runWorkflowChildFromProcessEnv } from "@intx/workflow-host";
+import {
+  SIDECAR_SUBSTRATE_CONFIG_KEYS,
+  createSubstrate,
+} from "../src/workflow-substrate-factory";
+
+await runWorkflowChildFromProcessEnv(createSubstrate, {
+  substrateConfigKeys: SIDECAR_SUBSTRATE_CONFIG_KEYS,
+});

@@ -1,0 +1,38 @@
+{
+  "name": "sidecar",
+  "private": true,
+  "description": "Generic execution host that dials in to a hub over WebSocket and hosts whatever it is deployed",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "bin": {
+    "workflow-child": "./bin/workflow-child"
+  },
+  "scripts": {
+    "start": "bun src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "^0.2.2",
+    "@intx/authz": "^0.2.2",
+    "@intx/crypto": "^0.2.2",
+    "@intx/harness": "^0.2.2",
+    "@intx/hub-agent": "^0.2.2",
+    "@intx/hub-sessions": "^0.2.2",
+    "@intx/inference": "^0.2.2",
+    "@intx/log": "^0.2.2",
+    "@intx/mail-memory": "^0.2.2",
+    "@intx/storage-isogit": "^0.2.2",
+    "@intx/tool-packaging": "^0.2.2",
+    "@intx/types": "^0.2.2",
+    "@intx/workflow": "^0.2.2",
+    "@intx/workflow-deploy": "^0.2.2",
+    "@intx/workflow-host": "^0.2.2",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
