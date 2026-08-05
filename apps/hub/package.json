@@ -1,0 +1,33 @@
+{
+  "name": "hub",
+  "private": true,
+  "description": "Composition root that mounts the platform API, extension routes, and the user interface on one origin",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "scripts": {
+    "start": "bun src/index.ts",
+    "dev": "bun --watch --env-file=../../.env src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/authz": "^0.2.2",
+    "@intx/crypto": "^0.2.2",
+    "@intx/db": "^0.2.2",
+    "@intx/hub-api": "^0.2.2",
+    "@intx/hub-sessions": "^0.2.2",
+    "@intx/log": "^0.2.2",
+    "@intx/types": "^0.2.2",
+    "@workbench/echo": "workspace:*",
+    "arktype": "catalog:",
+    "better-auth": "^1.4.18",
+    "drizzle-orm": "0.45.2",
+    "hono": "^4.11.9",
+    "postgres": "^3.4.8"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
