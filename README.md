@@ -18,13 +18,20 @@ Requires [Bun](https://bun.sh) >= 1.2.
 
 ```sh
 bun install
-bun run check   # typecheck + lint + test
+bun run typecheck && bun run lint && bun run test
 ```
 
 ## Running locally
 
-Requires [Bun](https://bun.sh) >= 1.2 and [Docker](https://docs.docker.com/get-docker/)
-with the compose plugin.
+Requires [Bun](https://bun.sh) >= 1.2 and a local
+[Postgres](https://www.postgresql.org) with the pgvector extension. On macOS:
+
+```sh
+brew install postgresql@17 pgvector
+brew services start postgresql@17
+```
+
+Then:
 
 ```sh
 cp .env.example .env
@@ -32,10 +39,9 @@ bun run dev
 ```
 
 `bun run dev` validates your `.env` (reporting every missing or malformed
-value at once), starts Postgres with the pgvector extension via
-`compose.yaml`, then starts the hub — which applies migrations as it boots —
-and one sidecar together. Every required setting lives in `.env.example`
-with its expected shape; the copied defaults work as-is on a laptop.
+value at once), verifies the database in `DATABASE_URL` is reachable and
+actually speaks Postgres, and starts the hub and one sidecar together. Every
+required setting lives in `.env.example` with its expected shape.
 
 ## Repo layout
 
