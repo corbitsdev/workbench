@@ -21,3 +21,6 @@ tmp/
 # OS / editor noise
 .DS_Store
 *.log
+
+# Local runtime state (hub and sidecar data dirs)
+.data/

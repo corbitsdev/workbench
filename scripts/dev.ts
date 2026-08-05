@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join, resolve } from "node:path";
 import { readHubConfig, type HubConfig } from "../apps/hub/src/config.ts";
+import { ensureSidecarIdentity, setupDatabase } from "./db-setup.ts";
 
 const repoRoot = resolve(import.meta.dir, "..");
 
@@ -107,6 +108,34 @@ async function requireDatabaseReachable(config: HubConfig): Promise<void> {
 interface App {
   label: string;
   dir: string;
+  env?: Record<string, string>;
+}
+
+const DEV_SIDECAR_ID = "sidecar-dev";
+
+/**
+ * The local sidecar's dial-in token, derived from SESSION_SECRET so it
+ * is stable per checkout without another secret to manage. The database
+ * stores only its hash; `ensureSidecarIdentity` refreshes the hash on
+ * every dev start, so a changed SESSION_SECRET heals automatically.
+ */
+async function devSidecarToken(config: HubConfig): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`${DEV_SIDECAR_ID}:${config.sessionSecret}`),
+  );
+  return Buffer.from(digest).toString("hex");
+}
+
+function sidecarEnv(config: HubConfig, token: string): Record<string, string> {
+  const base = new URL(config.baseUrl);
+  const wsProtocol = base.protocol === "https:" ? "wss:" : "ws:";
+  return {
+    SIDECAR_DATA_DIR: join(repoRoot, ".data", "sidecar"),
+    HUB_WS_URL: `${wsProtocol}//${base.host}/api/sidecars/ws`,
+    SIDECAR_ID: DEV_SIDECAR_ID,
+    SIDECAR_TOKEN: token,
+  };
 }
 
 const apps: App[] = [
@@ -149,6 +178,7 @@ async function startApps(): Promise<never> {
   const processes = apps.map((app) => {
     const proc = Bun.spawn(["bun", "run", "dev"], {
       cwd: app.dir,
+      env: { ...process.env, ...app.env },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -180,8 +210,88 @@ async function startApps(): Promise<never> {
   );
 }
 
+// Bring the database's schema current before the apps boot: creates
+// the database and applies the platform migrations when needed, and
+// reports either way. Failures name the problem and the fix.
+async function requireDatabaseSetUp(config: HubConfig): Promise<void> {
+  try {
+    const report = await setupDatabase(config.databaseUrl);
+    if (report.createdDatabase) {
+      console.log(`[dev] created database ${JSON.stringify(report.database)}`);
+    }
+    if (report.action === "migrated") {
+      console.log(
+        `[dev] applied ${report.migrations} platform migrations to database ` +
+          `${JSON.stringify(report.database)}`,
+      );
+    } else {
+      console.log(
+        `[dev] database ${JSON.stringify(report.database)} schema is current`,
+      );
+    }
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/**
+ * Create the development convenience account once the hub answers, so a
+ * fresh checkout can sign in immediately. Runs beside the apps; skipped
+ * when either DEV_SEED_EMAIL or DEV_SEED_PASSWORD is empty or absent.
+ * "Already exists" is a skip, not an error — re-runs stay quiet.
+ */
+async function seedDevAccount(config: HubConfig): Promise<void> {
+  const email = process.env["DEV_SEED_EMAIL"] ?? "";
+  const password = process.env["DEV_SEED_PASSWORD"] ?? "";
+  if (email === "" || password === "") return;
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      const probe = await fetch(`${config.baseUrl}/api/auth/get-session`);
+      if (probe.ok) break;
+    } catch {
+      // hub not listening yet; keep waiting
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  try {
+    const response = await fetch(`${config.baseUrl}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        name: email.split("@")[0] ?? email,
+      }),
+    });
+    if (response.ok) {
+      console.log(`[dev] seeded account ${email} (password from .env)`);
+    } else {
+      const body = await response.text();
+      if (/exist/i.test(body)) {
+        console.log(`[dev] account ${email} already exists`);
+      } else {
+        console.error(
+          `[dev] could not seed account ${email}: ${response.status} ${body}`,
+        );
+      }
+    }
+  } catch (error) {
+    console.error(
+      `[dev] could not seed account ${email}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 requireEnvFile();
 const config = validateConfig();
 await requireDatabaseReachable(config);
+await requireDatabaseSetUp(config);
+const token = await devSidecarToken(config);
+await ensureSidecarIdentity(config.databaseUrl, DEV_SIDECAR_ID, token);
+console.log(`[dev] sidecar identity ${JSON.stringify(DEV_SIDECAR_ID)} ready`);
+const sidecar = apps.find((app) => app.label === "sidecar");
+if (sidecar) sidecar.env = sidecarEnv(config, token);
 requireApps();
+void seedDevAccount(config);
 await startApps();
