@@ -1,0 +1,13 @@
+node_modules/
+dist/
+vendor/
+.claude/
+coverage/
+bun.lock
+GPL-2.0.txt
+.worktrees/
+.agent-state/
+dispatch/
+specs/
+plans/
+tmp/

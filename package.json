@@ -1,0 +1,41 @@
+{
+  "name": "workbench",
+  "version": "0.0.1",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE.md",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tools/*",
+    "workflows/*"
+  ],
+  "scripts": {
+    "typecheck": "bun run scripts/run-all.ts typecheck",
+    "lint": "prettier --check . && eslint .",
+    "format": "prettier --write .",
+    "build": "bun run scripts/run-all.ts build",
+    "test": "bun run scripts/run-all.ts test",
+    "test:e2e": "bun run scripts/not-implemented.ts test:e2e",
+    "dev": "bun run scripts/dev.ts",
+    "check:deletion": "bun run scripts/checks/deletion.ts",
+    "check:killdates": "bun run scripts/checks/killdates.ts",
+    "check:packages": "bun run scripts/checks/packages.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/bun": "1.3.14",
+    "eslint": "^10.8.0",
+    "jiti": "^2.7.0",
+    "prettier": "^3.6.2",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.42.0"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "catalog": {
+    "arktype": "^2.2.0",
+    "typescript": "6.0.3",
+    "@types/bun": "^1.3.9"
+  }
+}

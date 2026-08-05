@@ -1,0 +1,23 @@
+# Secrets — never committed; .env.example is the only tracked env file
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local orchestration / planning artifacts (not product source)
+.worktrees/
+.agent-state/
+.claude/
+dispatch/
+specs/
+plans/
+tmp/
+
+# OS / editor noise
+.DS_Store
+*.log
