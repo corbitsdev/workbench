@@ -1,0 +1,9 @@
+# Kill-date registry, read by check:killdates.
+#
+# Every temporary path registers here in the change that introduces it:
+#
+#   <repo-relative path> | <owner> | <YYYY-MM-DD>
+#
+# check:killdates fails once the date has passed while the path still
+# exists, and fails on stale rows whose path is gone. Vendored paths
+# (see VENDORED.md) and short-lived bridges are the intended customers.

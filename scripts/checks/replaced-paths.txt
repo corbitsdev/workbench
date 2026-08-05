@@ -1,0 +1,15 @@
+# Replaced-donor-path ledger, read by check:deletion.
+#
+# One repo-relative path per line. A change that replaces a path adds it
+# here in the same commit that deletes it; check:deletion fails while
+# any listed path still exists. Rows are permanent: they keep a replaced
+# path from ever being resurrected.
+packages/module
+packages/config
+apps/hub/src/install-list.ts
+apps/hub/ALLOWED_FILES
+apps/sidecar/ALLOWED_FILES
+scripts/checks/growth.ts
+scripts/checks/manifest.ts
+scripts/checks/routes.ts
+scripts/checks/lib/modules.ts
