@@ -1,0 +1,23 @@
+{
+  "name": "@workbench/echo",
+  "private": true,
+  "description": "Minimal hub extension: a tenant-scoped echo route plus the migration and grant it needs",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/hub-api": "^0.2.2",
+    "hono": "^4.11.9"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

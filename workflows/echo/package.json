@@ -1,0 +1,23 @@
+{
+  "name": "echo-workflow",
+  "private": true,
+  "description": "Minimal mail-triggered conversational workflow that echoes each inbound message back verbatim",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "^0.2.2",
+    "@intx/workflow": "^0.2.2"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
