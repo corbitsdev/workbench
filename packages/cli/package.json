@@ -1,0 +1,24 @@
+{
+  "name": "@workbench/cli",
+  "private": true,
+  "description": "Curated setup and seed commands that take a fresh checkout to a provisioned organization with the default workflows deployed and confirmed",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "bin": {
+    "workbench": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/types": "^0.2.2",
+    "arktype": "catalog:",
+    "echo-workflow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
