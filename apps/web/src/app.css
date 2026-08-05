@@ -1,0 +1,290 @@
+/* Layout glue only. All visual styling comes from the component library's
+   prebuilt stylesheet; the rules here arrange its pieces into the app frame
+   and reach for the theme's tokens where a color is unavoidable. */
+
+.app-frame {
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.app-mark {
+  height: 1.375rem;
+  width: auto;
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.app-boot-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100dvh;
+}
+
+.app-session {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.app-session-email {
+  overflow: hidden;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+aside[data-collapsed="true"] .app-session-email,
+aside[data-collapsed="true"] .app-session-label,
+aside[data-collapsed="true"] .app-mark {
+  display: none;
+}
+
+/* Auth screen — the two-column corbits.dev sign-in shell. The right panel is
+   the brand's charcoal regardless of theme; everything else reads the theme's
+   tokens so the form column follows light/dark. Breakpoints mirror the
+   library's md (48rem) and lg (64rem). */
+
+.auth-shell {
+  display: grid;
+  min-height: 100svh;
+  background: var(--background);
+}
+
+.auth-form-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.auth-brand-chip {
+  display: grid;
+  height: 1.75rem;
+  width: 1.75rem;
+  place-items: center;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.auth-brand-mark {
+  height: 1.125rem;
+  width: 1.125rem;
+}
+
+.auth-form-slot {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1.5rem 4rem;
+}
+
+.auth-form {
+  width: 100%;
+  max-width: 24rem;
+}
+
+.auth-panel {
+  position: relative;
+  display: none;
+  overflow: hidden;
+  /* Corbits charcoal (the dark theme's card tone); the panel stays dark in
+     both themes — it is artwork, not surface. */
+  background: #2b2627;
+}
+
+.auth-panel-fallback {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+
+.auth-panel-dither {
+  position: absolute;
+  inset: 0;
+}
+
+.auth-quote-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+}
+
+.auth-quote-card {
+  width: 100%;
+  max-width: 20rem;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  padding: 1.5rem;
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+}
+
+.auth-quote-text {
+  margin: 0;
+  white-space: pre-line;
+  font-size: 1rem;
+  line-height: 1.625;
+  color: var(--foreground);
+}
+
+.auth-quote-attr {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.auth-quote-attr-rule {
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+}
+
+.auth-quote-attr-name {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+@media (min-width: 48rem) {
+  .auth-brand {
+    padding: 2rem;
+  }
+
+  .auth-form-slot {
+    padding-inline: 2.5rem;
+  }
+}
+
+@media (min-width: 64rem) {
+  .auth-shell {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .auth-panel {
+    display: block;
+  }
+}
+
+.auth-switch {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--foreground);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.app-wordmark {
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+aside[data-collapsed="true"] .app-wordmark {
+  display: none;
+}
+
+.page-fill {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.page-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.chat-column {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.card-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+}
+
+.card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 2rem;
+  row-gap: 0.5rem;
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.detail-list dt {
+  color: var(--muted-foreground);
+}
+
+.detail-list dd {
+  margin: 0;
+}
+
+.query-skeleton {
+  height: 5rem;
+  width: 100%;
+}
+
+.stat-skeleton {
+  height: 1.75rem;
+  width: 3rem;
+}
