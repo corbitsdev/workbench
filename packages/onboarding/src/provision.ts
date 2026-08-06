@@ -3,11 +3,17 @@
 // creation route (never a product-owned tenant table of our own),
 // parented under the operator tenant when one is configured, and
 // seeded with the default workflow set when the hub carries a seed
-// model credential. Every step reuses a native route or `@workbench/cli`;
-// nothing here re-implements tenant creation, grant planting, or
-// workflow deployment.
+// model credential. Every step reuses a native route or
+// `@workbench/hub-client`; nothing here re-implements tenant creation,
+// grant planting, or workflow deployment.
 
-import { paginatedSchema, PrincipalSummary, TenantResponse } from "@intx/types";
+import {
+  AssetWithOriginResponse,
+  paginatedSchema,
+  PrincipalSummary,
+  TenantResponse,
+} from "@intx/types";
+import { type } from "arktype";
 import {
   DEFAULT_WORKFLOWS,
   parseAs,
@@ -15,10 +21,10 @@ import {
   type ApiCall,
   type ModelSource,
   type WorkflowPusher,
-} from "@workbench/cli";
+} from "@workbench/hub-client";
 
 export type ProvisionResult =
-  | { readonly kind: "existing-member" }
+  | { readonly kind: "existing-member"; readonly seeded?: true }
   | {
       readonly kind: "provisioned";
       readonly tenantId: string;
@@ -59,7 +65,7 @@ export function personalOrgSlug(email: string, userId: string): string {
 async function fetchPrincipals(
   api: ApiCall,
   cookies: string[],
-): Promise<{ tenantId: string; principalId: string }[]> {
+): Promise<{ tenantId: string; tenantSlug: string; principalId: string }[]> {
   const response = await api("GET", "/api/me/principals", undefined, cookies);
   const summary = parseAs(
     paginatedSchema(PrincipalSummary),
@@ -68,8 +74,59 @@ async function fetchPrincipals(
   );
   return summary.data.map((p) => ({
     tenantId: p.tenantId,
+    tenantSlug: p.tenantSlug,
     principalId: p.principalId,
   }));
+}
+
+const WorkflowDeploymentStatus = type({
+  definitionAssetId: "string",
+  status: "string",
+});
+
+/**
+ * Whether every default workflow already has an active deployment on
+ * this tenant. Read-only: it never creates or deploys anything, it
+ * only tells the caller whether `seedTenant` still has work to do —
+ * the same asset-then-deployment lookup `seedTenant` itself performs
+ * before deciding to skip a step.
+ */
+async function isFullySeeded(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+): Promise<boolean> {
+  const assetsResponse = await api(
+    "GET",
+    `/api/tenants/${tenantId}/assets?kind=workflow`,
+    undefined,
+    cookies,
+  );
+  const assets = parseAs(
+    AssetWithOriginResponse.array(),
+    assetsResponse.data,
+    "assets response",
+  );
+
+  const deploymentsResponse = await api(
+    "GET",
+    `/api/tenants/${tenantId}/workflows/instances`,
+    undefined,
+    cookies,
+  );
+  const deployments = parseAs(
+    WorkflowDeploymentStatus.array(),
+    deploymentsResponse.data,
+    "deployments response",
+  );
+
+  return DEFAULT_WORKFLOWS.every((workflow) => {
+    const asset = assets.find((a) => a.name === workflow.assetName);
+    if (!asset) return false;
+    return deployments.some(
+      (d) => d.definitionAssetId === asset.id && d.status === "active",
+    );
+  });
 }
 
 /**
@@ -81,17 +138,59 @@ async function fetchPrincipals(
 export async function provisionPersonalOrgIfNeeded(
   args: ProvisionArgs,
 ): Promise<ProvisionResult> {
+  const expectedSlug = personalOrgSlug(args.userEmail, args.userId);
   const before = await fetchPrincipals(args.api, args.cookies);
-  if (before.length > 0) return { kind: "existing-member" };
+  if (before.length > 0) {
+    // A membership already exists. If it is not the personal org this
+    // hook itself owns, there is nothing to recover — some other org
+    // added this user, and that is none of this hook's business. If it
+    // is our own personal org, an earlier call may have created the
+    // tenant and then failed before seeding it; re-seed rather than
+    // silently treating "created but never seeded" as done.
+    const own = before.find((p) => p.tenantSlug === expectedSlug);
+    if (!own || !args.seedModel) return { kind: "existing-member" };
+    if (await isFullySeeded(args.api, args.cookies, own.tenantId)) {
+      return { kind: "existing-member" };
+    }
+    const tenantResponse = await args.api(
+      "GET",
+      `/api/tenants/${own.tenantId}`,
+      undefined,
+      args.cookies,
+    );
+    const ownTenant = parseAs(
+      TenantResponse,
+      tenantResponse.data,
+      "tenant response",
+    );
+    await seedTenant({
+      api: args.api,
+      cookies: args.cookies,
+      hubUrl: args.hubUrl,
+      tenant: {
+        tenantId: own.tenantId,
+        principalId: own.principalId,
+        domain: ownTenant.domain,
+      },
+      model: args.seedModel,
+      pushWorkflow: args.pushWorkflow,
+      log: args.log,
+      workflows: DEFAULT_WORKFLOWS,
+    });
+    return { kind: "existing-member", seeded: true };
+  }
+
+  const tenantCreateBody: { name: string; slug: string; parentId?: string } = {
+    name: `${args.userEmail.split("@")[0] ?? args.userEmail}'s workbench`,
+    slug: expectedSlug,
+  };
+  if (args.operatorTenantId !== undefined)
+    tenantCreateBody.parentId = args.operatorTenantId;
 
   const created = await args.api(
     "POST",
     "/api/tenants",
-    {
-      name: `${args.userEmail.split("@")[0] ?? args.userEmail}'s workbench`,
-      slug: personalOrgSlug(args.userEmail, args.userId),
-      ...(args.operatorTenantId ? { parentId: args.operatorTenantId } : {}),
-    },
+    tenantCreateBody,
     args.cookies,
   );
   if (created.status === 409) {
