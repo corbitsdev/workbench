@@ -2,8 +2,34 @@
 #
 # Every temporary path registers here in the change that introduces it:
 #
-#   <repo-relative path> | <owner> | <YYYY-MM-DD>
+#   <repo-relative path> | <owner> | <YYYY-MM-DD> [| <sha256>]
 #
 # check:killdates fails once the date has passed while the path still
 # exists, and fails on stale rows whose path is gone. Vendored paths
 # (see VENDORED.md) and short-lived bridges are the intended customers.
+#
+# Vendored rows also record a sha256 content hash of their tree
+# (sorted relative paths, each hashed as path + NUL + bytes,
+# node_modules excluded). check:killdates recomputes it and fails on
+# drift: editing a vendored tree means updating this hash and the
+# package's VENDORED-FROM delta line in the same change.
+vendor/intx/agent | sawyer | 2026-09-05 | 59a5f63b2dd867286a380a67f19497d333f4505fb9ba7a69786a956d676da982
+vendor/intx/authz | sawyer | 2026-09-05 | 74d3d917bd345d195d6bb850b10afeec5a5a254f9a16e3ba3aa9951da7587f17
+vendor/intx/crypto | sawyer | 2026-09-05 | a10cd3e95e5c7431d4786e80f002cd60b9dfcbcb1f9f4147ab5bc8112a16d9af
+vendor/intx/db | sawyer | 2026-09-05 | b20aaab9bc46fb11895cb0c4ee66ffe6c362f2e586e45353165bb534950a9bed
+vendor/intx/harness | sawyer | 2026-09-05 | 5366b422735d29fe2910e50ab1488f5f7b944a94975deddea10943ee2e1d6651
+vendor/intx/hub-agent | sawyer | 2026-09-05 | 21ce45a6c5c8fd3c9c25dba328d7738525233d0550d89dcd4a90d11b9b8db60f
+vendor/intx/hub-api | sawyer | 2026-09-05 | dc296363e6d59496bcd45823d9664aace6d2471e52c0a2202f53f413238b58db
+vendor/intx/hub-common | sawyer | 2026-09-05 | 19337a3a485eee024cf23c4709fa492cf0bc5a03a3f7c09736a75f7e9af5a0c2
+vendor/intx/hub-sessions | sawyer | 2026-09-05 | 46218879092e4fd8542de1cf087a1f0d9b2d0e56e46c59264e0bc9dd8bb55d0a
+vendor/intx/inference | sawyer | 2026-09-05 | 6b851917931e4c0628b6f59a3da51515329b590844a3a1b04b3b4d09ea2f478d
+vendor/intx/log | sawyer | 2026-09-05 | 17afdd4e403f638808969cd631c9cfee3ae525eb28f6cf316221eb14cbe454a0
+vendor/intx/mail-memory | sawyer | 2026-09-05 | 4e2c03fbff63f01f2ba000a5b6b06b43ed0c14e9c59aac32883ea454f9f9e295
+vendor/intx/mime | sawyer | 2026-09-05 | 8267b8a9058acef725c9c802fbc610e9355267e7ad15a3bf894f3b4da1651f14
+vendor/intx/pack-transport | sawyer | 2026-09-05 | 8f74b97a60b020c95c132110c87d0b8a684044e2317eb3e5c9274290ae7d357f
+vendor/intx/storage-isogit | sawyer | 2026-09-05 | cbeed1444696380dfd08c2c6111b88c439bc82850c8cb1154f7cf04f1eb3a3f7
+vendor/intx/tool-packaging | sawyer | 2026-09-05 | bacc8c6340f9b4806901061a26ed95bd6c6aeca827c5af85041ad90f6bea7d05
+vendor/intx/types | sawyer | 2026-09-05 | 1edc05b8a5ecdd3ea5a623965d3b3ebbf4e4d3dd3bc458650c14e2574f629943
+vendor/intx/workflow | sawyer | 2026-09-05 | f72956fdb9293747b12f2e2c32ddef78e52ba77a6b4810acb8a90b96d7d9502d
+vendor/intx/workflow-deploy | sawyer | 2026-09-05 | 38f84803abbe5eecb8128fa8f6eefa5cf9f307d536cd506961115c7204141ece
+vendor/intx/workflow-host | sawyer | 2026-09-05 | ebc75c47ba16b2e683689e5aadccc674b8d33d67eab4844dfbab596bbbc75391

@@ -13,9 +13,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/types": "^0.2.2",
+    "@intx/types": "workspace:*",
     "arktype": "catalog:",
-    "echo-workflow": "workspace:*"
+    "@corbits/echo-workflow": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

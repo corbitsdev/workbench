@@ -1,6 +1,8 @@
 // Pure helpers over a package.json "exports" field, used by the
 // package-hygiene check.
 
+import { type } from "arktype";
+
 /**
  * Every relative file path an "exports" field promises, across all
  * subpaths and conditions. These are the files a published artifact
@@ -21,10 +23,12 @@ export function collectExportTargets(exportsField: unknown): string[] {
   return [...targets];
 }
 
+// The one slice of a package.json this checker reads.
+const DependencyBearer = type({ "dependencies?": "Record<string, string>" });
+
 /** Names in "dependencies" — the packages a consumer install provides. */
 export function declaredDependencyNames(packageJson: unknown): string[] {
-  if (typeof packageJson !== "object" || packageJson === null) return [];
-  const dependencies = (packageJson as Record<string, unknown>).dependencies;
-  if (typeof dependencies !== "object" || dependencies === null) return [];
-  return Object.keys(dependencies);
+  const parsed = DependencyBearer(packageJson);
+  if (parsed instanceof type.errors) return [];
+  return Object.keys(parsed.dependencies ?? {});
 }

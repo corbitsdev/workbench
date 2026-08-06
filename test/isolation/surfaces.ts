@@ -54,9 +54,21 @@ export const tenantSurfaces: TenantSurface[] = [
     memberStatus: 200,
   },
   {
+    name: "workflow definitions list",
+    method: "GET",
+    path: (t) => `/api/tenants/${t}/workflows/definitions`,
+    memberStatus: 200,
+  },
+  {
     name: "workflow deployments list",
     method: "GET",
     path: (t) => `/api/tenants/${t}/workflows/instances`,
+    memberStatus: 200,
+  },
+  {
+    name: "tenant workflow runs list",
+    method: "GET",
+    path: (t) => `/api/tenants/${t}/workflows/runs`,
     memberStatus: 200,
   },
   {

@@ -22,14 +22,14 @@ const SharedEnv = {
     "the administrator password, at least 8 characters",
   ),
   "WORKBENCH_ORG_SLUG?": type(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/).describe(
-    "a lowercase-kebab organization slug, e.g. workbench",
+    "a lowercase-kebab bench slug, e.g. workbench",
   ),
 } as const;
 
 const SetupEnv = type({
   ...SharedEnv,
   "WORKBENCH_ORG_NAME?": type("string > 0").describe(
-    "the organization display name, e.g. Workbench",
+    "the bench display name, e.g. Workbench",
   ),
 });
 

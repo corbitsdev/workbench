@@ -3,9 +3,13 @@
 **The multiplayer workspace for humans and agents.**
 
 Corbits Workbench is the open-source workspace where your team and your AI
-agents work side by side — same threads, same workflows, same inbox. Built on
-[Interchange](https://github.com/faremeter/interchange), grounded in your
-team's own knowledge, with every external side effect behind human approval.
+agents work side by side in shared [benches](docs/GLOSSARY.md) — same
+threads, same workflows, same inbox. It is the default implementation of
+the Corbits Platform — a set of pluggable libraries with
+[Interchange](https://github.com/faremeter/interchange) at the core —
+offering agents, workflows, and multi-tenant capabilities for organizations
+embracing agentic solutions. Grounded in your team's own knowledge, with
+every external side effect behind human approval.
 
 ## Install
 
@@ -24,7 +28,8 @@ bun run typecheck && bun run lint && bun run test
 ## Running locally
 
 Requires [Bun](https://bun.sh) >= 1.2 and a local
-[Postgres](https://www.postgresql.org) with the pgvector extension. On macOS:
+[Postgres](https://www.postgresql.org) with the pgvector extension — any
+Postgres 17 you point `DATABASE_URL` at works. On macOS:
 
 ```sh
 brew install postgresql@17 pgvector
@@ -40,8 +45,10 @@ bun run dev
 
 `bun run dev` validates your `.env` (reporting every missing or malformed
 value at once), verifies the database in `DATABASE_URL` is reachable and
-actually speaks Postgres, and starts the hub and one sidecar together. Every
-required setting lives in `.env.example` with its expected shape.
+actually speaks Postgres, applies any pending platform migrations, builds
+the web UI if it has not been built yet, and starts the hub and one sidecar
+together. Every required setting lives in `.env.example` with its expected
+shape, and a development account is seeded so you can sign in immediately.
 
 ## Repo layout
 

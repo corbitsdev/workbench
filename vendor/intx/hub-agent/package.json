@@ -1,0 +1,41 @@
+{
+  "name": "@intx/hub-agent",
+  "description": "Sidecar-side orchestrator linking per-agent stores and sessions to the hub over WebSocket",
+  "version": "0.2.2",
+  "license": "LGPL-2.1-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./paths": {
+      "types": "./src/paths.ts",
+      "default": "./src/paths.ts"
+    }
+  },
+  "dependencies": {
+    "@intx/harness": "workspace:*",
+    "@intx/log": "workspace:*",
+    "@intx/mail-memory": "workspace:*",
+    "@intx/pack-transport": "workspace:*",
+    "@intx/storage-isogit": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:",
+    "isomorphic-git": "catalog:"
+  },
+  "devDependencies": {
+    "@intx/crypto": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
+    "hono": "catalog:"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

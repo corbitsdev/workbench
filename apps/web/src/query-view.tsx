@@ -24,7 +24,7 @@ export function QueryView<T>({
   children,
 }: {
   readonly query: APIQuery<T>;
-  /** What is being loaded, named in the failure message: "your workspaces". */
+  /** What is being loaded, named in the failure message: "your benches". */
   readonly label: string;
   readonly children: (data: T) => ReactNode;
 }) {

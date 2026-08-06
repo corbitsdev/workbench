@@ -74,8 +74,13 @@ async function loadIntxDb(): Promise<IntxDbMigrate> {
     typeof loaded.dropSchema !== "function"
   ) {
     throw new Error(
-      `@intx/db at ${resolved} does not export runMigrations/dropSchema; ` +
-        "the installed version does not match what scripts/db-setup.ts expects.",
+      [
+        `@intx/db at ${resolved} does not export runMigrations/dropSchema;`,
+        "the installed version does not match what scripts/db-setup.ts",
+        "expects. Reinstall dependencies and re-run:",
+        "",
+        "  bun install",
+      ].join("\n"),
     );
   }
   return { runMigrations: loaded.runMigrations, dropSchema: loaded.dropSchema };
@@ -88,8 +93,10 @@ async function loadPostgres(): Promise<PostgresFactory> {
 }
 
 /**
- * The migration files @intx/db ships, sorted in apply order. Resolved
- * relative to the installed package (dist/index.js -> ../migrations),
+ * The migration files @intx/db ships, sorted in apply order. The
+ * package pins them at `<pkgRoot>/migrations`, a sibling of the entry
+ * module's directory (`src/index.ts` in the vendored workspace,
+ * `dist/index.js` when published), so `<entry dir>/../migrations` is
  * the same resolution @intx/db's own runMigrations performs.
  */
 async function listShippedMigrations(): Promise<string[]> {
@@ -100,13 +107,24 @@ async function listShippedMigrations(): Promise<string[]> {
     files = await readdir(dir);
   } catch {
     throw new Error(
-      `@intx/db's migrations directory is missing at ${dir}; ` +
-        "reinstall dependencies with `bun install`.",
+      [
+        `@intx/db's migrations directory is missing at ${dir}.`,
+        "Reinstall dependencies and re-run:",
+        "",
+        "  bun install",
+      ].join("\n"),
     );
   }
   const sql = files.filter((f) => f.endsWith(".sql")).sort();
   if (sql.length === 0) {
-    throw new Error(`@intx/db ships no .sql migrations in ${dir}`);
+    throw new Error(
+      [
+        `@intx/db ships no .sql migrations in ${dir}; the installed package`,
+        "is broken. Reinstall dependencies and re-run:",
+        "",
+        "  bun install",
+      ].join("\n"),
+    );
   }
   return sql;
 }
@@ -432,8 +450,14 @@ export async function resetSchema(
     await probe.end();
     if (pgErrorCode(error) === "3D000") return;
     throw new Error(
-      `Cannot connect to Postgres at ${target.host}:${target.port} ` +
-        `(from DATABASE_URL): ${error instanceof Error ? error.message : String(error)}`,
+      [
+        `Cannot connect to Postgres at ${target.host}:${target.port} ` +
+          `(from DATABASE_URL): ${error instanceof Error ? error.message : String(error)}`,
+        "Start a local Postgres and re-run. On macOS:",
+        "",
+        "  brew install postgresql@17 pgvector",
+        "  brew services start postgresql@17",
+      ].join("\n"),
       { cause: error },
     );
   }

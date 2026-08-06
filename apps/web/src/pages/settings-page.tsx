@@ -1,5 +1,5 @@
 // Settings shows what the hub actually serves for this account today: the
-// profile and the workspace memberships. Both panels are read-only because no
+// profile and the bench memberships. Both panels are read-only because no
 // hub endpoint accepts an edit yet; when one does, the panel that gains a
 // save action is the one whose data it edits.
 
@@ -32,7 +32,7 @@ export function SettingsPage({
   return (
     <>
       <TopBar>
-        <TopBarTitle subtitle="Your account and workspace memberships">
+        <TopBarTitle subtitle="Your account and bench memberships">
           Settings
         </TopBarTitle>
       </TopBar>
@@ -64,21 +64,21 @@ export function SettingsPage({
               </QueryView>
             </SettingsPanel>
             <SettingsPanel
-              title="Workspaces"
-              description="Every workspace this account belongs to, and your roles in each."
+              title="Benches"
+              description="Every bench this account belongs to, and your roles in each."
             >
-              <QueryView query={principals} label="your workspaces">
+              <QueryView query={principals} label="your benches">
                 {(page) =>
                   page.data.length === 0 ? (
                     <EmptyState
-                      title="No workspaces yet"
-                      description="This account is not a member of any workspace. Workspaces are created through the hub API (/api/tenants)."
+                      title="No benches yet"
+                      description="This account is not a member of any bench. Benches are created through the hub API (/api/tenants)."
                     />
                   ) : (
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Workspace</TableHead>
+                          <TableHead>Bench</TableHead>
                           <TableHead>Roles</TableHead>
                           <TableHead>Status</TableHead>
                         </TableRow>

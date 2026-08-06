@@ -45,14 +45,14 @@ export function ApprovalsPage({
               <EmptyState
                 icon={<ShieldCheck />}
                 title="No approvals waiting"
-                description="When an agent asks for permission to act, the request lands here with the resource and action it wants. Nothing is waiting on you right now."
+                description="When a running workflow asks for permission to act, the request lands here with the resource and action it wants. Nothing is waiting on you right now."
               />
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Agent</TableHead>
-                    <TableHead>Workspace</TableHead>
+                    <TableHead>Definition</TableHead>
+                    <TableHead>Bench</TableHead>
                     <TableHead>Resource</TableHead>
                     <TableHead>Action</TableHead>
                     <TableHead>Requested</TableHead>
@@ -61,7 +61,7 @@ export function ApprovalsPage({
                 <TableBody>
                   {rows.map((approval) => (
                     <TableRow key={approval.id}>
-                      <TableCell>{approval.agentName}</TableCell>
+                      <TableCell>{approval.definitionName}</TableCell>
                       <TableCell>{approval.tenantName}</TableCell>
                       <TableCell>
                         <code>{approval.resource}</code>

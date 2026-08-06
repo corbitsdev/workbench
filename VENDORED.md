@@ -22,7 +22,47 @@ never a convenience.
 
 ## Ledger
 
-| Vendored path | What was copied | Upstream repo @ commit | Why not a published package | Owner | Kill date | Kill-date test |
-| ------------- | --------------- | ---------------------- | --------------------------- | ----- | --------- | -------------- |
+| Vendored path                 | What was copied                                                                | Upstream repo @ commit                                                         | Why not a published package                                                            | Owner  | Kill date  | Kill-date test    |
+| ----------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ------ | ---------- | ----------------- |
+| `vendor/intx/agent`           | `@intx/agent` source (`src/`, manifest, tsconfig)                              | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/authz`           | `@intx/authz` source (`src/`, manifest, tsconfig)                              | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/crypto`          | `@intx/crypto` source (`src/`, manifest, tsconfig)                             | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/db`              | `@intx/db` source (`src/`, `migrations/`, drizzle config, manifest, tsconfigs) | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/harness`         | `@intx/harness` source (`src/`, manifest, tsconfig)                            | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/hub-agent`       | `@intx/hub-agent` source (`src/`, manifest, tsconfig)                          | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/hub-api`         | `@intx/hub-api` source (`src/`, manifest, tsconfig)                            | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/hub-common`      | `@intx/hub-common` source (`src/`, manifest, tsconfig)                         | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/hub-sessions`    | `@intx/hub-sessions` source (`src/`, manifest, tsconfig)                       | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/inference`       | `@intx/inference` source (`src/`, manifest, tsconfig)                          | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/log`             | `@intx/log` source (`src/`, manifest, tsconfig)                                | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/mail-memory`     | `@intx/mail-memory` source (`src/`, manifest, tsconfig)                        | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/mime`            | `@intx/mime` source (`src/`, manifest, tsconfig)                               | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/pack-transport`  | `@intx/pack-transport` source (`src/`, manifest, tsconfig)                     | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/storage-isogit`  | `@intx/storage-isogit` source (`src/`, manifest, tsconfig)                     | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/tool-packaging`  | `@intx/tool-packaging` source (`src/`, manifest, tsconfig)                     | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/types`           | `@intx/types` source (`src/`, manifest, tsconfig)                              | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/workflow`        | `@intx/workflow` source (`src/`, manifest, tsconfig)                           | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/workflow-deploy` | `@intx/workflow-deploy` source (`src/`, manifest, tsconfig)                    | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/intx/workflow-host`   | `@intx/workflow-host` source (`src/`, manifest, tsconfig)                      | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7c5a37` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
 
-_No entries._
+Local modifications (all `vendor/intx/*` rows): each package's exports map
+is repointed from the upstream `intx-src` resolve condition to direct
+TypeScript source resolution (`types`/`default` → `./src/...`), with `dist/`
+references and the `customConditions` entry in the shared tsconfig removed —
+workbench forbids custom resolve conditions; `vendor/intx/harness` also drops
+the unvendored `@intx/inference-testing` devDependency; `vendor/intx/hub-api`
+adds a `@types/ssri` devDependency that bun's isolated linker does not hoist
+from tool-packaging the way upstream's install does. Each package's
+`VENDORED-FROM` file restates its own delta.
+
+### Un-vendoring `vendor/intx`
+
+- [ ] Delete `vendor/intx/` and remove `vendor/intx/*` from the root
+      `package.json` workspaces.
+- [ ] Restore the `@intx/*` dependencies in `apps/*`, `packages/*`, and
+      `workflows/*` to the published npm version that covers the vendored
+      surface.
+- [ ] Delete the twenty ledger rows above and the local-modifications note.
+- [ ] Drop the `vendor/intx/*` rows from `scripts/checks/kill-dates.txt`.
+- [ ] `bun install`
+- [ ] `bun run check`

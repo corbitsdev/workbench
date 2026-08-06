@@ -4,11 +4,10 @@
 // undefined leaking into a page.
 
 import {
-  AgentSummary,
   ApprovalSummary,
-  InstanceSummary,
   PrincipalSummary,
   UserProfile,
+  WorkflowRunSummary,
   paginatedSchema,
 } from "@intx/types";
 import { type } from "arktype";
@@ -17,18 +16,22 @@ import { useEffect, useState } from "react";
 
 export const ProfileSchema = UserProfile;
 export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
-export const AgentsSchema = paginatedSchema(AgentSummary);
-export const InstancesSchema = paginatedSchema(InstanceSummary);
+export const RunsSchema = paginatedSchema(WorkflowRunSummary);
 export const ApprovalsSchema = ApprovalSummary.array();
 
 export type Profile = typeof UserProfile.infer;
 export type Principal = typeof PrincipalSummary.infer;
-export type Agent = typeof AgentSummary.infer;
-export type Instance = typeof InstanceSummary.infer;
+export type WorkflowRun = typeof WorkflowRunSummary.infer;
 export type Approval = typeof ApprovalSummary.infer;
-export type PrincipalsPage = typeof PrincipalsSchema.infer;
-export type AgentsPage = typeof AgentsSchema.infer;
-export type InstancesPage = typeof InstancesSchema.infer;
+
+/**
+ * The envelope paginatedSchema validates, stated structurally: the generic
+ * schema's inferred type carries an arktype inference artifact that rejects
+ * plain literals, so pages and tests use this equivalent shape instead.
+ */
+type Paginated<T> = { data: T[]; nextCursor: string | null };
+export type PrincipalsPage = Paginated<Principal>;
+export type RunsPage = Paginated<WorkflowRun>;
 
 export type APIQuery<T> =
   | { readonly kind: "loading" }

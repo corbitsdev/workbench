@@ -315,6 +315,12 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         "address",
         "trigger deployment mail",
       );
+      // The deployment's stable mail address. This same value is also the
+      // deployment's run identity: the platform derives one run id from
+      // the address, shared by every trigger of the deployment. The
+      // per-trigger correlation handle is the response's messageId, which
+      // this suite does not follow up on (run-completion needs a real
+      // inference credential).
       expect(address).toBe(`ins_${deploymentId}@${slug}.localhost`);
     });
 

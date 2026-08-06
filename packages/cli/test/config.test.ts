@@ -57,7 +57,7 @@ describe("readSetupConfig", () => {
     expect(readSetupConfig(VALID_SHARED).hubUrl).toBe("http://localhost:3000");
   });
 
-  test("rejects a malformed organization slug", () => {
+  test("rejects a malformed bench slug", () => {
     expect(() =>
       readSetupConfig({ ...VALID_SHARED, WORKBENCH_ORG_SLUG: "Not A Slug" }),
     ).toThrow(CliError);

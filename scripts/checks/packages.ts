@@ -18,7 +18,9 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Glob } from "bun";
+import { readFileSync } from "node:fs";
 import { collectExportTargets, declaredDependencyNames } from "./lib/exports";
+import { listVendoredPaths } from "./killdates";
 import {
   emptyReport,
   reportAndExit,
@@ -201,6 +203,46 @@ function checkPackedConsumption(
   }
 }
 
+export const LEDGER_PATH = "VENDORED.md";
+
+/** Vendored paths named in the first column of the VENDORED.md ledger. */
+export function vendoredLedgerPaths(markdown: string): string[] {
+  const paths: string[] = [];
+  for (const line of markdown.split("\n")) {
+    const match = /^\|\s*`([^`]+)`\s*\|/.exec(line.trim());
+    if (match?.[1] !== undefined) paths.push(match[1]);
+  }
+  return paths;
+}
+
+/**
+ * Every vendored directory must have a VENDORED.md ledger row, and
+ * every ledger row must point at a directory that still exists.
+ */
+export function auditVendoredLedger(
+  vendoredDirs: readonly string[],
+  ledgerPaths: readonly string[],
+): CheckReport {
+  const report = emptyReport();
+  const inLedger = new Set(ledgerPaths);
+  const onDisk = new Set(vendoredDirs);
+  for (const dir of vendoredDirs) {
+    if (inLedger.has(dir)) continue;
+    report.violations.push(
+      `${dir}: vendored directory with no ${LEDGER_PATH} ledger row — ` +
+        `code copied into the tree without a ledger row is a bug.`,
+    );
+  }
+  for (const ledgerPath of ledgerPaths) {
+    if (onDisk.has(ledgerPath)) continue;
+    report.violations.push(
+      `${LEDGER_PATH}: row for "${ledgerPath}" but the path no longer ` +
+        `exists — retiring a vendored copy deletes the row with the files.`,
+    );
+  }
+  return report;
+}
+
 async function main(): Promise<void> {
   const root = rootFromArgs(Bun.argv.slice(2));
   const report = emptyReport();
@@ -225,6 +267,15 @@ async function main(): Promise<void> {
   if (packages.length === 0) {
     report.notes.push("no workspace packages yet.");
   }
+  const ledgerFile = path.join(root, LEDGER_PATH);
+  const ledgerPaths = existsSync(ledgerFile)
+    ? vendoredLedgerPaths(readFileSync(ledgerFile, "utf8"))
+    : [];
+  const ledgerReport = auditVendoredLedger(
+    listVendoredPaths(root),
+    ledgerPaths,
+  );
+  report.violations.push(...ledgerReport.violations);
   reportAndExit("check:packages", report);
 }
 

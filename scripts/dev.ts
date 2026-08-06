@@ -36,6 +36,23 @@ function validateConfig(): HubConfig {
   }
 }
 
+// A DATABASE_URL without a username makes the postgres driver fall back to
+// the USER environment variable; without that either, the connection dies
+// deep inside the hub as a Postgres role error. Catch it before boot.
+function requireDatabaseUser(config: HubConfig): void {
+  if (new URL(config.databaseUrl).username !== "") return;
+  if ((process.env["USER"] ?? "") !== "") return;
+  fail(
+    [
+      "DATABASE_URL names no username and USER is not set in this",
+      "environment, so Postgres has no role to connect as. Add a username",
+      "to DATABASE_URL in .env, for example:",
+      "",
+      "  DATABASE_URL=postgres://<your-postgres-user>@localhost:5432/workbench",
+    ].join("\n"),
+  );
+}
+
 type ProbeResult = "postgres" | "unreachable" | "not-postgres";
 
 // Speaks just enough of the Postgres wire protocol (an SSLRequest, answered
@@ -156,6 +173,44 @@ function requireApps(): void {
       "run until both exist. Make sure you are on an up-to-date checkout.",
     ].join("\n"),
   );
+}
+
+// HUB_STATIC_DIR resolves against the hub's working directory and
+// defaults to the web app's build output, which is not checked in — a
+// fresh clone has no index.html to serve. Build it here so the first
+// `bun run dev` serves the interface instead of a 404; when the build
+// output already exists this stays quiet.
+async function requireWebBuild(config: HubConfig): Promise<void> {
+  const staticDir = resolve(join(repoRoot, "apps", "hub"), config.hubStaticDir);
+  if (existsSync(join(staticDir, "index.html"))) return;
+  console.log(
+    `[dev] no index.html in ${staticDir}; building the web app first`,
+  );
+  const build = Bun.spawn(["bun", "run", "build"], {
+    cwd: join(repoRoot, "apps", "web"),
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const code = await build.exited;
+  if (code !== 0) {
+    fail(
+      [
+        `The web build exited with code ${code}, so the hub still has no`,
+        "interface to serve. Fix the build failure above and re-run:",
+        "",
+        "  bun run dev",
+      ].join("\n"),
+    );
+  }
+  if (!existsSync(join(staticDir, "index.html"))) {
+    fail(
+      [
+        `The web build succeeded but produced no index.html in ${staticDir}`,
+        "(from HUB_STATIC_DIR). Point HUB_STATIC_DIR in .env at a directory",
+        "containing an index.html, or at the web build output ../web/dist.",
+      ].join("\n"),
+    );
+  }
 }
 
 async function forwardWithPrefix(
@@ -285,6 +340,7 @@ async function seedDevAccount(config: HubConfig): Promise<void> {
 
 requireEnvFile();
 const config = validateConfig();
+requireDatabaseUser(config);
 await requireDatabaseReachable(config);
 await requireDatabaseSetUp(config);
 const token = await devSidecarToken(config);
@@ -293,5 +349,6 @@ console.log(`[dev] sidecar identity ${JSON.stringify(DEV_SIDECAR_ID)} ready`);
 const sidecar = apps.find((app) => app.label === "sidecar");
 if (sidecar) sidecar.env = sidecarEnv(config, token);
 requireApps();
+await requireWebBuild(config);
 void seedDevAccount(config);
 await startApps();

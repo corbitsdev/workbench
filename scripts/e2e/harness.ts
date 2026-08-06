@@ -45,7 +45,8 @@ export function baseUrlToE2eUrl(databaseUrl: string): string {
   const database = url.pathname.replace(/^\//, "");
   if (database === "") {
     throw new Error(
-      `DATABASE_URL names no database (empty path): ${databaseUrl}`,
+      `DATABASE_URL names no database (empty path): ${databaseUrl}. ` +
+        "Expected e.g. postgres://localhost:5432/workbench.",
     );
   }
   url.pathname = `/${database}_e2e`;
@@ -182,10 +183,15 @@ function spawnApp(
   };
 }
 
-/** OS facts forwarded into every spawned process; nothing else is inherited. */
+/**
+ * OS facts forwarded into every spawned process; nothing else is
+ * inherited. USER is in the list because a DATABASE_URL without a
+ * username makes the postgres client resolve the role from it — a
+ * local-Postgres setup (see .env.example) authenticates as the OS user.
+ */
 function osEnv(): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const key of ["PATH", "HOME", "TMPDIR"]) {
+  for (const key of ["PATH", "HOME", "TMPDIR", "USER"]) {
     const value = process.env[key];
     if (value !== undefined) env[key] = value;
   }

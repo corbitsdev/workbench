@@ -1,20 +1,27 @@
 # Workbench — Agent Guide
 
 Corbits Workbench is the multiplayer workspace for humans and agents — teams
-and AI agents working side by side in the same threads, workflows, and inbox.
-It is built on [Interchange](https://github.com/faremeter/interchange), and
-every external side effect sits behind human approval.
+and AI agents working side by side in shared [benches](docs/GLOSSARY.md),
+with the same threads, workflows, and inbox. It is the default
+implementation of the Corbits Platform: a set of pluggable libraries, with
+[Interchange](https://github.com/faremeter/interchange) at the core,
+offering agents, workflows, and multi-tenant capabilities. Everything
+composes as a library another build could plug in — hardcoded,
+build-specific machinery is a defect — and every external side effect sits
+behind human approval.
 
 ## Ground rules
 
 - **Interchange is the platform.** Credential resolution, agent launch,
   session orchestration, LLM inference, ID generation, and the workflow
   runtime belong to `@intx/*` — never reimplement them. Consume `@intx/*` as
-  published npm packages; no git submodules, no custom resolve conditions. If
-  a needed capability is unpublished, vendor it with attribution and say so in
-  the PR — never fork silently. Every vendored path gets a ledger row with a
-  kill date in [VENDORED.md](VENDORED.md); hand-copied files only, never a
-  submodule, and the upstream repository is never touched.
+  published npm packages wherever a publish covers the needed capability; no
+  git submodules, no custom resolve conditions. If a needed capability is
+  unpublished, vendor it with attribution and say so in the PR — never fork
+  silently. Every vendored path gets a ledger row with a kill date in
+  [VENDORED.md](VENDORED.md), the authoritative ledger of any active vendored
+  paths; hand-copied files only, never a submodule, and the upstream
+  repository is never touched.
 - **Apps stay generic; packages own the domain.** A product rule inside
   `apps/*` belongs in a package.
 - **Where each kind of thing lives.** Deployable services in `apps/`, domain

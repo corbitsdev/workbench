@@ -51,7 +51,7 @@ describe("runSetup", () => {
     expect(dbSetupRuns).toBe(1);
     const output = lines.join("\n");
     expect(output).toContain("created administrator admin@example.com");
-    expect(output).toContain("created organization workbench");
+    expect(output).toContain("created bench workbench");
     expect(output).toContain("role defaults in place: admin, member, owner");
     expect(output).toContain("WORKBENCH_MODEL_API_KEY");
     expect(output).toContain("workbench seed");
@@ -82,7 +82,7 @@ describe("runSetup", () => {
     expect(output).toContain(
       "administrator admin@example.com already exists (skipped)",
     );
-    expect(output).toContain("organization workbench already exists (skipped)");
+    expect(output).toContain("bench workbench already exists (skipped)");
   });
 
   test("a database initialization failure stops the run before any hub call", async () => {

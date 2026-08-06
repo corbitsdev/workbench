@@ -14,19 +14,8 @@ import {
 import type { ReactNode } from "react";
 
 import { useAPIQuery } from "../api";
-import {
-  AgentsSchema,
-  InstancesSchema,
-  PrincipalsSchema,
-  ProfileSchema,
-} from "../api";
-import type {
-  AgentsPage,
-  APIQuery,
-  InstancesPage,
-  PrincipalsPage,
-  Profile,
-} from "../api";
+import { PrincipalsSchema, ProfileSchema, RunsSchema } from "../api";
+import type { APIQuery, PrincipalsPage, Profile, RunsPage } from "../api";
 import { Link } from "../navigation";
 import { subtitleProp } from "../optional-props";
 import { SignedOutNotice } from "../query-view";
@@ -40,12 +29,12 @@ const SHORTCUTS = [
   {
     to: "/runs",
     title: "Runs",
-    description: "Watch the agent instances running right now.",
+    description: "Watch the workflow runs executing right now.",
   },
   {
     to: "/library",
     title: "Library",
-    description: "Browse the agents deployed across your workspaces.",
+    description: "Browse the workflow definitions running across your benches.",
   },
 ] as const;
 
@@ -64,13 +53,11 @@ function tileValue(query: APIQuery<{ data: unknown[] }>): ReactNode {
 export function HomePage({
   profile,
   principals,
-  agents,
-  instances,
+  runs,
 }: {
   readonly profile: APIQuery<Profile>;
   readonly principals: APIQuery<PrincipalsPage>;
-  readonly agents: APIQuery<AgentsPage>;
-  readonly instances: APIQuery<InstancesPage>;
+  readonly runs: APIQuery<RunsPage>;
 }) {
   const greeting =
     profile.kind === "ready" ? `Welcome back, ${profile.data.name}` : "Welcome";
@@ -92,12 +79,11 @@ export function HomePage({
           <>
             <Section
               title={greeting}
-              description="A live snapshot of your workspaces and what is running in them."
+              description="A live snapshot of your benches and what is running in them."
             >
               <StatGrid>
-                <StatTile label="Workspaces" value={tileValue(principals)} />
-                <StatTile label="Agents" value={tileValue(agents)} />
-                <StatTile label="Active runs" value={tileValue(instances)} />
+                <StatTile label="Benches" value={tileValue(principals)} />
+                <StatTile label="Active runs" value={tileValue(runs)} />
               </StatGrid>
             </Section>
             <Section
@@ -133,14 +119,6 @@ export function HomePage({
 export function HomeRoute() {
   const profile = useAPIQuery("/api/me", ProfileSchema);
   const principals = useAPIQuery("/api/me/principals", PrincipalsSchema);
-  const agents = useAPIQuery("/api/me/agents", AgentsSchema);
-  const instances = useAPIQuery("/api/me/instances", InstancesSchema);
-  return (
-    <HomePage
-      profile={profile}
-      principals={principals}
-      agents={agents}
-      instances={instances}
-    />
-  );
+  const runs = useAPIQuery("/api/me/workflows/runs", RunsSchema);
+  return <HomePage profile={profile} principals={principals} runs={runs} />;
 }

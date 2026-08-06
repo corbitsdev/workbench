@@ -1,5 +1,5 @@
 // `workbench setup`: initialize the database, provision the
-// organization through the hub's native tenant-creation route, report
+// bench through the hub's native tenant-creation route, report
 // the role defaults the platform created, and state exactly what the
 // operator must still supply. Safe to re-run; every skipped step says
 // so.
@@ -36,7 +36,7 @@ async function ensureTenant(
   );
   if (created.status === 201) {
     const tenant = parseAs(TenantResponse, created.data, "tenant response");
-    log(`created organization ${args.slug} (${tenant.id})`);
+    log(`created bench ${args.slug} (${tenant.id})`);
     return tenant.id;
   }
 
@@ -48,12 +48,12 @@ async function ensureTenant(
   );
   const existing = summary.data.find((p) => p.tenantSlug === args.slug);
   if (existing) {
-    log(`organization ${args.slug} already exists (skipped)`);
+    log(`bench ${args.slug} already exists (skipped)`);
     return existing.tenantId;
   }
 
   throw new CliError(
-    `the hub rejected creation of organization ${args.slug} with status ${created.status}: ${JSON.stringify(created.data)}`,
+    `the hub rejected creation of bench ${args.slug} with status ${created.status}: ${JSON.stringify(created.data)}`,
     "pick a different WORKBENCH_ORG_SLUG, or check the hub logs for the underlying failure, then re-run: workbench setup",
   );
 }
@@ -94,7 +94,7 @@ export async function runSetup(deps: SetupDeps): Promise<void> {
   ).data;
   if (roleList.length === 0) {
     throw new CliError(
-      `organization ${config.orgSlug} has zero roles; the platform should have created its role defaults (owner, admin, member) at tenant creation`,
+      `bench ${config.orgSlug} has zero roles; the platform should have created its role defaults (owner, admin, member) at tenant creation`,
       "check the hub logs for the tenant-creation failure, then re-run: workbench setup",
     );
   }

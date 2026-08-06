@@ -16,9 +16,9 @@ const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..");
 const USAGE = `usage: workbench <command>
 
 commands:
-  setup   initialize the database, provision the organization, and
+  setup   initialize the database, provision the bench, and
           report what you still need to supply
-  seed    deploy the default workflow set to the organization and
+  seed    deploy the default workflow set to the bench and
           confirm every deployment answers
 
 Both commands read their configuration from the environment (see

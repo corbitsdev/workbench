@@ -1,0 +1,385 @@
+// Production `WorkflowRuntimeEnv.SpawnChildWorkflow` adapter.
+//
+// The runtime body sees the spawn callback shape: given a
+// `definitionRef` (a workflow asset's repo id), a parent-allocated
+// `childRunId`, the materialized child input, and parent attribution,
+// settle once the child run reaches a terminal phase. The adapter
+// itself does not execute the child workflow -- it resolves the
+// `definitionRef` into a concrete `WorkflowDefinition` from the
+// workflow repo's deploy ref, then delegates the spawn to a
+// runtime-supplied `runChild` callback. The supervisor wires the
+// callback against a child `WorkflowRuntimeEnv` and `runtimeRun`.
+//
+// Resolution path:
+//   1. Build `RepoId { kind: "workflow", id: definitionRef }` against
+//      the substrate the deploy orchestrator wrote the workflow asset
+//      into.
+//   2. Read `workflow.json` from the deploy ref's working tree at
+//      `getRepoDir(repoId)`. The deploy-time `writeTree` materializes
+//      the file on disk under the same path, so a flat `fs.readFile`
+//      against the substrate's repo dir gives the workflow envelope
+//      without dragging in a git object-database read for this commit.
+//      The sibling repo-store and blob-substrate adapters use the same
+//      working-tree-read pattern.
+//   3. Parse as JSON, validate the envelope shape via
+//      `workflowDefinitionEnvelopeSchema`, and surface the parsed
+//      object as a `WorkflowDefinition`. The state-machine-narrowed
+//      primitives are validated by the runtime body downstream; the
+//      adapter does the structural-shape check the workflow-kind
+//      handler already enforces at push time so a tampered-on-disk
+//      tree still surfaces a clear error here rather than crashing
+//      deep inside the runtime.
+//
+// Drain coordination is handled by the supervisor's drain primitive
+// (`packages/workflow-host/src/supervisor`), not by this adapter. The
+// spawn path ships the basic shape the runtime body needs and leaves
+// same-deployment vs cross-deployment drain semantics to the caller.
+//
+// Abort handling: if `signal` is already aborted on entry, the adapter
+// short-circuits with a DOMException-shaped `AbortError`. The signal
+// is propagated to the `runChild` callback so the child runtime can
+// honor a parent-initiated cancellation. The adapter does not wrap
+// the signal -- the same `AbortSignal` flows through so the abort
+// reason attribution is unchanged across the boundary.
+//
+// Sub-namespace scoping (in-process recursion): the adapter is the
+// resolution point that gives the runtime-supplied `runChild` callback
+// a concrete `WorkflowDefinition` paired with the parent's allocated
+// `childRunId`. The callback is expected to construct a child
+// `WorkflowRuntimeEnv` whose `repoStore`/`blobs`/`signalChannel` route
+// every per-run write through the SAME workflow-run repo the parent
+// runs in, with the runtime body's per-call `runId` argument being the
+// child's allocated `childRunId`. The workflow-run substrate's path
+// shape is `runs/<runId>/events/<seq>.json` (and `runs/<runId>/blobs/`
+// for the blob substrate), so feeding `childRunId` into the child env
+// at the call boundary lands every child event under
+// `runs/<childRunId>/...` of the parent's deployment workflow-run
+// repo, sibling to the parent's own `runs/<parentRunId>/...` subtree.
+// The adapter itself does not construct that env -- the supervisor's
+// `runChild` does -- but the callback's input shape (`{ definition,
+// childRunId, ... }`) is the seam that makes the scoping unambiguous
+// at the boundary.
+
+import { type } from "arktype";
+
+import type { Principal, RepoStore } from "@intx/hub-sessions/substrate";
+import { workflowDefinitionEnvelopeSchema } from "@intx/hub-sessions/substrate";
+import type { InferenceEvent } from "@intx/types/runtime";
+import type {
+  SpawnChildWorkflow,
+  SpawnSuspendableChild,
+  SuspendableChildHandle,
+  WorkflowDefinition,
+  WorkflowEvent,
+} from "@intx/workflow";
+
+const WORKFLOW_JSON_PATH = "workflow.json";
+
+/**
+ * The terminal-status shape the runtime body expects back from a
+ * spawn. Mirrored from `SpawnChildWorkflow`'s return type so the
+ * `runChild` callback's signature is symmetric with the adapter's.
+ */
+export type ChildTerminalStatus = "completed" | "failed" | "cancelled";
+
+/**
+ * Runtime-supplied child execution callback. The supervisor owns the
+ * child `WorkflowRuntimeEnv` construction (per-deployment substrate,
+ * per-run blob substrate, child director registry) and the
+ * `runtimeRun` invocation; the adapter is the single resolution
+ * point that hands the supervisor a concrete `WorkflowDefinition`
+ * alongside the parent attribution the runtime body produced.
+ *
+ * The callback receives the same `AbortSignal` the parent runtime
+ * passed into the adapter so a parent-initiated cancellation
+ * propagates to the child without an intermediate wrapper.
+ */
+export type RunChildWorkflow = (input: {
+  definition: WorkflowDefinition;
+  definitionRef: string;
+  childRunId: string;
+  input: unknown;
+  parentRunId: string;
+  parentStepId: string;
+  signal: AbortSignal;
+}) => Promise<{ terminalStatus: ChildTerminalStatus }>;
+
+export interface WorkflowSpawnChildOpts {
+  /**
+   * Substrate the deploy orchestrator wrote the workflow asset into.
+   * The adapter reads the workflow envelope through
+   * `substrate.getRepoDir` -- the deploy-time `writeTree` already
+   * materialized the file under the returned directory and a flat
+   * `fs.readFile` does not need to walk the git object database.
+   */
+  substrate: RepoStore;
+  /**
+   * Principal the adapter presents to the substrate for any future
+   * authorize-gated read path. The current implementation does not
+   * gate `getRepoDir` (the substrate documents it as a pure path
+   * computation), but holding the principal in closure keeps the
+   * adapter symmetric with the sibling production adapters and ready
+   * for a future API that surfaces an authorize gate on the same
+   * read path.
+   */
+  principal: Principal;
+  /**
+   * Ref under the workflow asset's repo whose tree holds the
+   * deployed `workflow.json`. Callers typically supply
+   * `"refs/heads/main"` -- the workflow-kind handler enforces the
+   * envelope's structural shape at push time so a deploy ref read
+   * here either yields a valid envelope or surfaces a targeted
+   * parse/validation error.
+   */
+  deployRef: string;
+  /**
+   * Runtime-supplied child execution callback. The adapter delegates
+   * here once the `WorkflowDefinition` is resolved; the supervisor
+   * owns the child `WorkflowRuntimeEnv` and the `runtimeRun`
+   * invocation.
+   */
+  runChild: RunChildWorkflow;
+}
+
+/**
+ * Construct the production `WorkflowRuntimeEnv.SpawnChildWorkflow`
+ * adapter. The substrate handle, the principal, the deploy ref, and
+ * the runtime-supplied child callback live in closure; the returned
+ * callable satisfies the runtime-env interface.
+ */
+export function createWorkflowSpawnChild(
+  opts: WorkflowSpawnChildOpts,
+): SpawnChildWorkflow {
+  return async ({
+    definitionRef,
+    childRunId,
+    input,
+    parentRunId,
+    parentStepId,
+    signal,
+  }) => {
+    if (signal.aborted) {
+      throw abortError(signal);
+    }
+
+    const definition = await resolveDefinition(
+      { substrate: opts.substrate, deployRef: opts.deployRef },
+      definitionRef,
+    );
+
+    // Re-check the abort signal after the resolution await. The
+    // caller can fire `signal.abort()` between the entry-time check
+    // and here; without this re-check the child callback would be
+    // invoked with an already-aborted signal and the parent's audit
+    // log would carry a spawn the adapter could have short-circuited
+    // before it ever reached the supervisor.
+    if (signal.aborted) {
+      throw abortError(signal);
+    }
+
+    const result = await opts.runChild({
+      definition,
+      definitionRef,
+      childRunId,
+      input,
+      parentRunId,
+      parentStepId,
+      signal,
+    });
+    return { terminalStatus: result.terminalStatus };
+  };
+}
+
+/**
+ * Runtime-supplied suspendable child execution callback. The park-aware
+ * analog of {@link RunChildWorkflow}: the supervisor owns the child
+ * `WorkflowRuntimeEnv` construction and the `runtimeRun` invocation and
+ * returns a live `SuspendableChildHandle` the caller drives across the
+ * body's approval parks, rather than awaiting a terminal. The adapter is
+ * the single resolution point that hands the supervisor a concrete
+ * `WorkflowDefinition` alongside the parent attribution the runtime body
+ * produced.
+ */
+export type RunSuspendableChild = (
+  input: {
+    definition: WorkflowDefinition;
+    definitionRef: string;
+    childRunId: string;
+    input: unknown;
+    parentRunId: string;
+    parentStepId: string;
+    signal: AbortSignal;
+    resumeFromEvents?: readonly WorkflowEvent[];
+  },
+  /**
+   * Live inference-event sink for the child's agent steps. Threaded from the
+   * host's per-run funnel (the parent run's event-channel closure) so the
+   * body's inference events reach the hub's live stream instead of being
+   * silently dropped. Per-run durable attribution is unaffected -- the child
+   * runtime commits its events under `runs/<childRunId>/events/` regardless.
+   */
+  onEvent: (event: InferenceEvent) => void,
+) => Promise<SuspendableChildHandle>;
+
+/**
+ * Host-side widening of the runtime {@link SpawnSuspendableChild} contract: the
+ * same input plus the per-run `onEvent` sink the host injects. The runtime
+ * calls the narrow `SpawnSuspendableChild` (no event slot); the host binding
+ * wired into the runtime env closes over the run's funnel and forwards it here,
+ * mirroring how `ChildStepInvoker` widens the runtime `StepInvoker` with
+ * `onEvent`. The runtime contract in `@intx/workflow` stays untouched.
+ */
+export type HostSpawnSuspendableChild = (
+  input: Parameters<SpawnSuspendableChild>[0],
+  onEvent: (event: InferenceEvent) => void,
+) => ReturnType<SpawnSuspendableChild>;
+
+export interface WorkflowSpawnSuspendableChildOpts {
+  /**
+   * Substrate the deploy orchestrator wrote the workflow asset into.
+   * Read through `substrate.getRepoDir` exactly as the terminal-only
+   * adapter resolves its definition.
+   */
+  substrate: RepoStore;
+  /**
+   * Principal held in closure for symmetry with the terminal-only adapter
+   * and a future authorize-gated read path; `getRepoDir` resolution does
+   * not gate on it today.
+   */
+  principal: Principal;
+  /**
+   * Ref under the workflow asset's repo whose tree holds the deployed
+   * `workflow.json`.
+   */
+  deployRef: string;
+  /**
+   * Runtime-supplied suspendable child execution callback. The adapter
+   * delegates here once the `WorkflowDefinition` is resolved; the
+   * supervisor owns the child `WorkflowRuntimeEnv`, the `runtimeRun`
+   * invocation, and the returned handle.
+   */
+  runSuspendableChild: RunSuspendableChild;
+}
+
+/**
+ * Construct the production `WorkflowRuntimeEnv.SpawnSuspendableChild`
+ * adapter. Mirrors {@link createWorkflowSpawnChild}: it resolves the
+ * `definitionRef` to a concrete `WorkflowDefinition` from the deploy ref
+ * and delegates to the runtime-supplied `runSuspendableChild`, which
+ * returns the live handle `runOnTrigger` drives across the body's
+ * approval parks. Sharing `resolveDefinition` keeps definitionRef
+ * resolution owned by this layer for both the terminal-only and
+ * park-aware spawn paths.
+ */
+export function createWorkflowSpawnSuspendableChild(
+  opts: WorkflowSpawnSuspendableChildOpts,
+): HostSpawnSuspendableChild {
+  return async (
+    {
+      definitionRef,
+      childRunId,
+      input,
+      parentRunId,
+      parentStepId,
+      signal,
+      resumeFromEvents,
+    },
+    onEvent,
+  ) => {
+    if (signal.aborted) {
+      throw abortError(signal);
+    }
+
+    const definition = await resolveDefinition(
+      { substrate: opts.substrate, deployRef: opts.deployRef },
+      definitionRef,
+    );
+
+    // Re-check the abort signal after the resolution await, mirroring the
+    // terminal-only adapter: a caller can fire `signal.abort()` between the
+    // entry-time check and here, and the child callback must not spin up a
+    // run against an already-aborted signal.
+    if (signal.aborted) {
+      throw abortError(signal);
+    }
+
+    return opts.runSuspendableChild(
+      {
+        definition,
+        definitionRef,
+        childRunId,
+        input,
+        parentRunId,
+        parentStepId,
+        signal,
+        ...(resumeFromEvents !== undefined ? { resumeFromEvents } : {}),
+      },
+      onEvent,
+    );
+  };
+}
+
+async function resolveDefinition(
+  opts: { substrate: RepoStore; deployRef: string },
+  definitionRef: string,
+): Promise<WorkflowDefinition> {
+  const repoId = { kind: "workflow" as const, id: definitionRef };
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const dir = opts.substrate.getRepoDir(repoId);
+  const workflowPath = path.join(dir, WORKFLOW_JSON_PATH);
+  let raw: string;
+  try {
+    raw = await fs.readFile(workflowPath, "utf8");
+  } catch (cause) {
+    if (isErrnoNotFound(cause)) {
+      throw new Error(
+        `workflow-runtime: spawn-child cannot resolve definitionRef ${JSON.stringify(definitionRef)}: ${WORKFLOW_JSON_PATH} not present under ${repoId.kind}/${repoId.id} on ${opts.deployRef}`,
+        { cause },
+      );
+    }
+    throw cause;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(
+      `workflow-runtime: spawn-child read ${WORKFLOW_JSON_PATH} for ${repoId.kind}/${repoId.id} on ${opts.deployRef} is not valid JSON`,
+      { cause },
+    );
+  }
+  const validated = workflowDefinitionEnvelopeSchema(parsed);
+  if (validated instanceof type.errors) {
+    throw new Error(
+      `workflow-runtime: spawn-child ${WORKFLOW_JSON_PATH} for ${repoId.kind}/${repoId.id} on ${opts.deployRef} failed envelope validation: ${validated.summary}`,
+    );
+  }
+  // The envelope schema enforces the structural shape the workflow
+  // body and state machine consume; the discriminated narrow over
+  // every `Primitive` variant lives downstream (the runtime body
+  // walks the steps and dispatches per-kind). Re-deriving the
+  // primitive narrow here would duplicate `defineWorkflow`'s
+  // validation, and the workflow-kind handler already enforced the
+  // same envelope at push time.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- WorkflowDefinition's primitive union is narrowed downstream by the runtime body; the envelope schema enforces the structural shape this adapter cares about
+  return validated as unknown as WorkflowDefinition;
+}
+
+/**
+ * Construct the rejection used when `signal.aborted` short-circuits.
+ * Mirrors the abort-error shape the sibling step-invoker adapter
+ * emits so consumers can `instanceof DOMException` /
+ * `name === "AbortError"` against a stable shape across the runtime.
+ */
+function abortError(signal: AbortSignal): Error {
+  const reason = signal.reason;
+  if (reason instanceof Error) return reason;
+  return new DOMException("aborted", "AbortError");
+}
+
+function isErrnoNotFound(cause: unknown): boolean {
+  if (cause === null || typeof cause !== "object") return false;
+  const code = (cause as { code?: unknown }).code;
+  return code === "ENOENT";
+}

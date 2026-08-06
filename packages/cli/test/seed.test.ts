@@ -329,7 +329,7 @@ describe("runSeed", () => {
     expect((caught as CliError).fix).toContain("bun run dev");
   });
 
-  test("a missing organization points at workbench setup", async () => {
+  test("a missing bench points at workbench setup", async () => {
     const handler: FakeHandler = (method, path) => {
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();

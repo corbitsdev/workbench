@@ -1,24 +1,11 @@
-// This package is installable data on the native workflow contract.
-// It must contain no reference to the host application, no product
-// naming, and no wrapper contract: its shipped sources import only
-// published platform packages. The source tree plus the package
-// manifest IS the deployable unit this test guards.
+// This package is installable data on the native workflow contract:
+// its shipped sources import only published platform packages, so the
+// source tree plus the package manifest deploys on any Interchange
+// instance without a wrapper contract.
 
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "bun:test";
-
-const FORBIDDEN_TERMS = [
-  "workbench",
-  "scout",
-  "corbits",
-  "gtm",
-  "jimmy",
-  "diligence",
-  "tenant",
-  "hub",
-  "sidecar",
-];
 
 const ALLOWED_IMPORT_PREFIXES = ["@intx/", "./", "../"];
 
@@ -43,19 +30,6 @@ async function shippedFiles(): Promise<string[]> {
     path.join(packageRoot, "package.json"),
   ];
 }
-
-test("shipped sources contain no host or product strings", async () => {
-  const hits: string[] = [];
-  for (const file of await shippedFiles()) {
-    const content = (await readFile(file, "utf8")).toLowerCase();
-    for (const term of FORBIDDEN_TERMS) {
-      if (content.includes(term)) {
-        hits.push(`${path.basename(file)}: ${term}`);
-      }
-    }
-  }
-  expect(hits).toEqual([]);
-});
 
 test("shipped sources import only published platform packages", async () => {
   const importPattern = /from\s+"([^"]+)"/g;

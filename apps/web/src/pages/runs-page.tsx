@@ -15,12 +15,12 @@ import {
 import type { BadgeTone } from "@corbits/react-ui";
 import { Activity } from "lucide-react";
 
-import { InstancesSchema, useAPIQuery } from "../api";
+import { RunsSchema, useAPIQuery } from "../api";
 import { countProp } from "../optional-props";
-import type { APIQuery, Instance, InstancesPage } from "../api";
+import type { APIQuery, RunsPage as RunsPageData, WorkflowRun } from "../api";
 import { QueryView } from "../query-view";
 
-const STATUS_TONE: Record<Instance["status"], BadgeTone> = {
+const STATUS_TONE: Record<WorkflowRun["status"], BadgeTone> = {
   running: "success",
   deployed: "info",
   updating: "info",
@@ -29,10 +29,10 @@ const STATUS_TONE: Record<Instance["status"], BadgeTone> = {
 };
 
 export function RunsPage({
-  instances,
+  runs,
   now = Date.now(),
 }: {
-  readonly instances: APIQuery<InstancesPage>;
+  readonly runs: APIQuery<RunsPageData>;
   /** Reference time for the Started column; injectable for deterministic tests. */
   readonly now?: number;
 }) {
@@ -41,48 +41,48 @@ export function RunsPage({
       <TopBar>
         <TopBarTitle
           {...countProp(
-            instances.kind === "ready" ? instances.data.data.length : undefined,
+            runs.kind === "ready" ? runs.data.data.length : undefined,
           )}
-          subtitle="Agent instances running across your workspaces"
+          subtitle="Workflow runs executing across your benches"
         >
           Runs
         </TopBarTitle>
       </TopBar>
       <PageShell className="page-fill">
-        <QueryView query={instances} label="your runs">
+        <QueryView query={runs} label="your runs">
           {(page) =>
             page.data.length === 0 ? (
               <EmptyState
                 icon={<Activity />}
                 title="No active runs"
-                description="When an agent instance is running in one of your workspaces it appears here."
+                description="When a workflow run is executing in one of your benches it appears here."
               />
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Agent</TableHead>
-                    <TableHead>Workspace</TableHead>
+                    <TableHead>Definition</TableHead>
+                    <TableHead>Bench</TableHead>
                     <TableHead>Address</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Started</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {page.data.map((instance) => (
-                    <TableRow key={instance.id}>
-                      <TableCell>{instance.agentName}</TableCell>
-                      <TableCell>{instance.tenantName}</TableCell>
+                  {page.data.map((run) => (
+                    <TableRow key={run.id}>
+                      <TableCell>{run.definitionName}</TableCell>
+                      <TableCell>{run.tenantName}</TableCell>
                       <TableCell>
-                        <code>{instance.address}</code>
+                        <code>{run.address}</code>
                       </TableCell>
                       <TableCell>
-                        <Badge tone={STATUS_TONE[instance.status]}>
-                          {instance.status}
+                        <Badge tone={STATUS_TONE[run.status]}>
+                          {run.status}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {formatRelativeTime(instance.createdAt, now)}
+                        {formatRelativeTime(run.createdAt, now)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -97,6 +97,6 @@ export function RunsPage({
 }
 
 export function RunsRoute() {
-  const instances = useAPIQuery("/api/me/instances", InstancesSchema);
-  return <RunsPage instances={instances} />;
+  const runs = useAPIQuery("/api/me/workflows/runs", RunsSchema);
+  return <RunsPage runs={runs} />;
 }

@@ -293,6 +293,7 @@ export function createToolBearingAgentFactory(): <EnvReq extends BaseEnv>(
       defineTool({
         id: annotated.id,
         requires: annotated.requires,
+        definitions: annotated.definitions,
         factory: (factoryEnv: BaseEnv): ToolBundle => {
           const bundle = annotated(factoryEnv);
           if (bundle.dispose !== undefined) {

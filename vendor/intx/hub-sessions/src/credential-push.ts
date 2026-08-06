@@ -1,0 +1,154 @@
+// Shared logic for re-resolving a running instance's inference sources from
+// the catalog and pushing the update to its sidecar.
+//
+// Used after a credential secret rotation (a model provider's credential
+// changes the resolved source's apiKey) and after a catalog edit in a tenant
+// or its subtree.
+
+import { eq, and, inArray, isNull, isNotNull } from "drizzle-orm";
+import { getLogger } from "@intx/log";
+import { workflowRun } from "@intx/db/schema";
+import { resolveInstanceModelSources, getDescendantTenants } from "@intx/db";
+import type { DB } from "@intx/db";
+
+import type { SidecarRouter } from "./ws/sidecar-handler";
+
+const log = getLogger(["hub", "credentials"]);
+
+/**
+ * Re-resolve a single running instance's inference sources from the catalog
+ * (the definition's model requirements plus the invoker preferences persisted
+ * on the instance) and push the ordered list to its sidecar. The head of the
+ * catalog-priority-ordered list is the active default; the tail is the
+ * failover chain.
+ *
+ * No-op when the instance resolves to no launchable source — the resolver's
+ * own logger is the signal for why.
+ */
+export async function pushInstanceSourceUpdate(
+  db: DB["db"],
+  sidecarRouter: Pick<SidecarRouter, "sendSourcesUpdate">,
+  instance: {
+    address: string;
+    definitionId: string;
+    tenantId: string;
+    modelPreferences: unknown;
+  },
+): Promise<void> {
+  const resolution = await resolveInstanceModelSources(
+    db,
+    instance.tenantId,
+    instance,
+  );
+  if (!resolution.ok) return;
+  const [head] = resolution.sources;
+  if (head === undefined) return;
+  await sidecarRouter.sendSourcesUpdate(
+    instance.address,
+    resolution.sources,
+    head.id,
+  );
+}
+
+/**
+ * Re-resolve every running instance in the given tenants against the catalog
+ * and push the updates to sidecars. The running instances are the folded runs
+ * a launch produces: born running, with a routing address and no deployment.
+ * Deployment-anchor runs (which own a deployment id and a workflow-derived
+ * address) and address-less child runs route via the deployment, not this
+ * per-instance push, so they are excluded. Each instance re-resolves from its
+ * own tenant's context (its ancestor chain), so the rotated/edited upstream
+ * entry flows through. Errors are logged per-instance but do not propagate.
+ */
+async function pushSourceUpdatesToTenants(
+  db: DB["db"],
+  sidecarRouter: SidecarRouter,
+  tenantIds: string[],
+): Promise<void> {
+  if (tenantIds.length === 0) return;
+
+  // Callers fire this without awaiting, so it must never reject: a failure to
+  // enumerate or push is logged and dropped, not propagated as an unhandled
+  // rejection. The push is best effort — the next mutation or a sidecar
+  // reconnect re-resolves sources.
+  try {
+    // The instance-shaped runs: running, addressable, and not anchored on a
+    // deployment. `deploymentId IS NULL` excludes the deployment-anchor runs
+    // (which set it to their own id), so no workflow-derived `ins_dep_` address
+    // -- the only kind an anchor carries -- can reach the address-targeted push
+    // below. Mirrors the /me/workflows/runs and tenant run-list predicate.
+    const instances = await db.query.workflowRun.findMany({
+      where: and(
+        inArray(workflowRun.tenantId, tenantIds),
+        eq(workflowRun.status, "running"),
+        isNull(workflowRun.deploymentId),
+        isNotNull(workflowRun.address),
+      ),
+    });
+
+    if (instances.length === 0) return;
+
+    const results = await Promise.allSettled(
+      instances.map(async (instance) => {
+        // The isNotNull(address) filter guarantees a value; a null here is a
+        // broken invariant. The callback is async, so this throw becomes a
+        // rejected promise captured per-instance by allSettled and logged
+        // below -- one bad row is surfaced, not fatal to the whole batch.
+        if (instance.address === null) {
+          throw new Error(
+            `running run ${instance.id} matched the non-null-address filter but has a null address`,
+          );
+        }
+        return pushInstanceSourceUpdate(db, sidecarRouter, {
+          address: instance.address,
+          definitionId: instance.definitionId,
+          tenantId: instance.tenantId,
+          modelPreferences: instance.modelPreferences,
+        });
+      }),
+    );
+
+    for (const result of results) {
+      if (result.status === "rejected") {
+        log.warn`Failed to push source update: ${String(result.reason)}`;
+      }
+    }
+  } catch (err: unknown) {
+    log.warn`Failed to push source updates: ${String(err)}`;
+  }
+}
+
+/**
+ * After a credential secret is rotated, re-resolve every running instance in
+ * the tenant against the catalog and push the updates. A rotated secret flows
+ * through because resolution dereferences the provider's credential reference
+ * to the current secret.
+ */
+export async function pushSourceUpdates(
+  db: DB["db"],
+  sidecarRouter: SidecarRouter,
+  tenantId: string,
+): Promise<void> {
+  await pushSourceUpdatesToTenants(db, sidecarRouter, [tenantId]);
+}
+
+/**
+ * After a catalog edit in a tenant, re-resolve and push to every running
+ * instance in that tenant AND its descendants. Descendants inherit the
+ * edited tenant's catalog, so a change there (a disabled provider, a new
+ * offering, a price update) alters their resolved sources too.
+ */
+export async function pushSourceUpdatesSubtree(
+  db: DB["db"],
+  sidecarRouter: SidecarRouter,
+  tenantId: string,
+): Promise<void> {
+  let tenants: string[];
+  try {
+    tenants = await getDescendantTenants(db, tenantId);
+  } catch (err: unknown) {
+    log.warn`Failed to enumerate descendants for source push: ${String(err)}`;
+    return;
+  }
+  await pushSourceUpdatesToTenants(db, sidecarRouter, tenants);
+}

@@ -1,7 +1,5 @@
 import {
-  Badge,
   Card,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -10,68 +8,68 @@ import {
   TopBar,
   TopBarTitle,
 } from "@corbits/react-ui";
-import type { BadgeTone } from "@corbits/react-ui";
 import { Bot } from "lucide-react";
 
-import { AgentsSchema, useAPIQuery } from "../api";
+import { RunsSchema, useAPIQuery } from "../api";
 import { countProp } from "../optional-props";
-import type { Agent, AgentsPage, APIQuery } from "../api";
+import type { APIQuery, RunsPage, WorkflowRun } from "../api";
 import { QueryView } from "../query-view";
 
-const STATUS_TONE: Record<Agent["status"], BadgeTone> = {
-  deployed: "success",
-  updating: "info",
-  stopped: "neutral",
-  error: "danger",
-};
+/**
+ * The hub exposes no cross-tenant definitions listing, so the library shows
+ * the definitions behind the caller's running workflow runs: one card per
+ * distinct definition, taken from the run summaries.
+ */
+function distinctDefinitions(runs: readonly WorkflowRun[]): WorkflowRun[] {
+  const byDefinition = new Map<string, WorkflowRun>();
+  for (const run of runs) {
+    if (!byDefinition.has(run.definitionId)) {
+      byDefinition.set(run.definitionId, run);
+    }
+  }
+  return [...byDefinition.values()];
+}
 
-export function LibraryPage({
-  agents,
-}: {
-  readonly agents: APIQuery<AgentsPage>;
-}) {
+export function LibraryPage({ runs }: { readonly runs: APIQuery<RunsPage> }) {
   return (
     <>
       <TopBar>
         <TopBarTitle
           {...countProp(
-            agents.kind === "ready" ? agents.data.data.length : undefined,
+            runs.kind === "ready"
+              ? distinctDefinitions(runs.data.data).length
+              : undefined,
           )}
-          subtitle="Agents deployed across your workspaces"
+          subtitle="Workflow definitions running across your benches"
         >
           Library
         </TopBarTitle>
       </TopBar>
       <PageShell className="page-fill">
-        <QueryView query={agents} label="the library">
-          {(page) =>
-            page.data.length === 0 ? (
+        <QueryView query={runs} label="the library">
+          {(page) => {
+            const definitions = distinctDefinitions(page.data);
+            return definitions.length === 0 ? (
               <EmptyState
                 icon={<Bot />}
                 title="The library is empty"
-                description="Agents deployed to any of your workspaces appear here. None exist yet."
+                description="Workflow definitions with a run executing in any of your benches appear here. None are running yet."
               />
             ) : (
               <div className="card-grid">
-                {page.data.map((agent) => (
-                  <Card key={agent.id}>
+                {definitions.map((definition) => (
+                  <Card key={definition.definitionId}>
                     <CardHeader>
-                      <CardTitle>{agent.name}</CardTitle>
-                      {agent.description == null ? null : (
-                        <CardDescription>{agent.description}</CardDescription>
-                      )}
+                      <CardTitle>{definition.definitionName}</CardTitle>
                     </CardHeader>
                     <CardFooter className="card-footer-row">
-                      <span>{agent.tenantName}</span>
-                      <Badge tone={STATUS_TONE[agent.status]}>
-                        {agent.status}
-                      </Badge>
+                      <span>{definition.tenantName}</span>
                     </CardFooter>
                   </Card>
                 ))}
               </div>
-            )
-          }
+            );
+          }}
         </QueryView>
       </PageShell>
     </>
@@ -79,6 +77,6 @@ export function LibraryPage({
 }
 
 export function LibraryRoute() {
-  const agents = useAPIQuery("/api/me/agents", AgentsSchema);
-  return <LibraryPage agents={agents} />;
+  const runs = useAPIQuery("/api/me/workflows/runs", RunsSchema);
+  return <LibraryPage runs={runs} />;
 }

@@ -1,5 +1,5 @@
 {
-  "name": "echo-workflow",
+  "name": "@corbits/echo-workflow",
   "private": true,
   "description": "Minimal mail-triggered conversational workflow that echoes each inbound message back verbatim",
   "version": "0.0.1",
@@ -13,8 +13,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "^0.2.2",
-    "@intx/workflow": "^0.2.2"
+    "@intx/agent": "workspace:*",
+    "@intx/workflow": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

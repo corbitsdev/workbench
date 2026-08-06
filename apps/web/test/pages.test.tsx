@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { APIQuery, Approval, Instance } from "../src/api";
+import type { APIQuery, Approval, WorkflowRun } from "../src/api";
 import { ApprovalsPage } from "../src/pages/approvals-page";
 import { ChatPage } from "../src/pages/chat-page";
 import { HomePage } from "../src/pages/home-page";
@@ -31,12 +31,12 @@ const profile = ready({
 
 describe("empty states", () => {
   test("runs says it has no active runs", () => {
-    const markup = renderToStaticMarkup(<RunsPage instances={emptyPage} />);
+    const markup = renderToStaticMarkup(<RunsPage runs={emptyPage} />);
     expect(markup).toContain("No active runs");
   });
 
   test("library says it is empty", () => {
-    const markup = renderToStaticMarkup(<LibraryPage agents={emptyPage} />);
+    const markup = renderToStaticMarkup(<LibraryPage runs={emptyPage} />);
     expect(markup).toContain("The library is empty");
   });
 
@@ -47,12 +47,12 @@ describe("empty states", () => {
     expect(markup).toContain("No approvals waiting");
   });
 
-  test("settings renders with no workspace memberships", () => {
+  test("settings renders with no bench memberships", () => {
     const markup = renderToStaticMarkup(
       <SettingsPage profile={profile} principals={emptyPage} />,
     );
     expect(markup).toContain("ada@example.com");
-    expect(markup).toContain("No workspaces yet");
+    expect(markup).toContain("No benches yet");
   });
 
   test("chat says it is not connected and disables the composer", () => {
@@ -76,8 +76,7 @@ describe("signed-out state", () => {
       <HomePage
         profile={unauthenticated}
         principals={unauthenticated}
-        agents={unauthenticated}
-        instances={unauthenticated}
+        runs={unauthenticated}
       />,
     );
     expect(markup).toContain("Sign in required");
@@ -85,27 +84,67 @@ describe("signed-out state", () => {
 });
 
 describe("live data", () => {
-  test("runs renders a running instance from hub data", () => {
-    const instance: Instance = {
-      id: "inst_1",
-      tenantId: "tenant_1",
-      tenantName: "Acme",
-      agentId: "agent_1",
-      agentName: "Researcher",
-      address: "acme/researcher",
-      status: "running",
-      createdAt: "2026-08-05T11:00:00.000Z",
-    };
+  const run: WorkflowRun = {
+    id: "run_1",
+    tenantId: "tenant_1",
+    tenantName: "Acme",
+    definitionId: "wfd_1",
+    definitionName: "Researcher",
+    address: "run_1@acme.localhost",
+    status: "running",
+    createdAt: "2026-08-05T11:00:00.000Z",
+  };
+
+  test("runs renders a running workflow run from hub data", () => {
     const markup = renderToStaticMarkup(
       <RunsPage
-        instances={ready({ data: [instance], nextCursor: null })}
+        runs={ready({ data: [run], nextCursor: null })}
         now={Date.parse("2026-08-05T12:00:00.000Z")}
       />,
     );
     expect(markup).toContain("Researcher");
-    expect(markup).toContain("acme/researcher");
+    expect(markup).toContain("run_1@acme.localhost");
     expect(markup).toContain("running");
     expect(markup).toContain("ago");
+  });
+
+  test("library shows each definition once across its runs", () => {
+    const secondRunSameDefinition: WorkflowRun = {
+      ...run,
+      id: "run_2",
+      address: "run_2@acme.localhost",
+    };
+    const markup = renderToStaticMarkup(
+      <LibraryPage
+        runs={ready({
+          data: [run, secondRunSameDefinition],
+          nextCursor: null,
+        })}
+      />,
+    );
+    expect(markup).toContain("Researcher");
+    expect(markup).toContain("Acme");
+    expect(markup.match(/Researcher/g)?.length).toBe(1);
+  });
+
+  test("library shows a card per distinct definition", () => {
+    const runOfOtherDefinition: WorkflowRun = {
+      ...run,
+      id: "run_2",
+      definitionId: "wfd_2",
+      definitionName: "Summarizer",
+      address: "run_2@acme.localhost",
+    };
+    const markup = renderToStaticMarkup(
+      <LibraryPage
+        runs={ready({
+          data: [run, runOfOtherDefinition],
+          nextCursor: null,
+        })}
+      />,
+    );
+    expect(markup.match(/Researcher/g)?.length).toBe(1);
+    expect(markup.match(/Summarizer/g)?.length).toBe(1);
   });
 
   test("home counts what the hub reports", () => {
@@ -126,11 +165,10 @@ describe("live data", () => {
           ],
           nextCursor: null,
         })}
-        agents={emptyPage}
-        instances={emptyPage}
+        runs={emptyPage}
       />,
     );
     expect(markup).toContain("Welcome back, Ada");
-    expect(markup).toContain("Workspaces");
+    expect(markup).toContain("Benches");
   });
 });

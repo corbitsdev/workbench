@@ -1,5 +1,5 @@
 // `workbench seed`: deploy the default workflow set to the provisioned
-// organization over the hub's native deploy route, then confirm each
+// bench over the hub's native deploy route, then confirm each
 // deployment answers. Validation is part of the verb — a deployment
 // that cannot be confirmed is a seed failure, and a run with nothing
 // to seed is a failure too. Safe to re-run; every skipped step says so.
@@ -13,7 +13,10 @@ import {
   TenantResponse,
 } from "@intx/types";
 import { type } from "arktype";
-import { buildEchoWorkflow, serializeEchoWorkflow } from "echo-workflow";
+import {
+  buildEchoWorkflow,
+  serializeEchoWorkflow,
+} from "@corbits/echo-workflow";
 import type { ModelSource, SeedConfig } from "./config";
 import { CliError } from "./errors";
 import { authenticate, parseAs, type ApiCall } from "./hub";
@@ -58,7 +61,7 @@ export type DefaultWorkflow = {
 };
 
 /**
- * The workflow set an organization starts with. Today that is the echo
+ * The workflow set a bench starts with. Today that is the echo
  * workflow; growing the set is adding an entry here, nothing more.
  */
 export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
@@ -112,7 +115,7 @@ async function resolveTenant(
   const membership = summary.data.find((p) => p.tenantSlug === slug);
   if (!membership) {
     throw new CliError(
-      `organization ${slug} does not exist on the hub (or this account is not a member of it)`,
+      `bench ${slug} does not exist on the hub (or this account is not a member of it)`,
       "provision it first: workbench setup — then re-run: workbench seed",
     );
   }
@@ -124,7 +127,7 @@ async function resolveTenant(
   );
   if (tenant.status !== 200) {
     throw new CliError(
-      `the hub refused to describe organization ${slug} (status ${tenant.status}): ${JSON.stringify(tenant.data)}`,
+      `the hub refused to describe bench ${slug} (status ${tenant.status}): ${JSON.stringify(tenant.data)}`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
   }
@@ -231,7 +234,7 @@ async function ensureWorkflowAsset(
   const existing = assets.find((a) => a.name === args.assetName);
   if (!existing) {
     throw new CliError(
-      `workflow asset ${args.assetName} reported a name conflict but is not listable on the organization`,
+      `workflow asset ${args.assetName} reported a name conflict but is not listable on the bench`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
   }
@@ -434,7 +437,7 @@ export async function runSeed(
   });
   const cookies = session.cookies;
   const tenant = await resolveTenant(api, cookies, config.orgSlug);
-  log(`seeding organization ${config.orgSlug} (${tenant.tenantId})`);
+  log(`seeding bench ${config.orgSlug} (${tenant.tenantId})`);
 
   for (const grant of SEED_GRANTS) {
     await plantGrant(

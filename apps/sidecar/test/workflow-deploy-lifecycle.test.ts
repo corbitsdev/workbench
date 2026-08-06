@@ -348,6 +348,61 @@ async function answerReadyHandshake(spawns: Spawn[], at: number) {
 }
 
 describe("workflow deployment lifecycle through the deploy router", () => {
+  test("a deploy frame carrying referencedDefinitions materializes each body's workflow.json and sources.json", async () => {
+    const { router, spawns, dataDir } = await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("ins_lifecycle-bodies@example.com");
+    if (frame.workflow === undefined) throw new Error("unreachable");
+    const bodySources = {
+      "body-step": [
+        {
+          id: "body-step",
+          provider: "anthropic",
+          baseURL: "https://api.anthropic.com",
+          apiKey: "sk-body",
+          model: "claude-3-5",
+        },
+      ],
+    };
+    const bodyDefinition = {
+      id: "wf-lifecycle-body",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["body-step"],
+      steps: { "body-step": { kind: "step" } },
+    };
+    frame.workflow.referencedDefinitions = [
+      { definition: bodyDefinition, sources: bodySources },
+    ];
+
+    const deployPromise = router.deploy(frame);
+    await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    // The top-level definition lands where the workflow-process child's
+    // loadWorkflowDefinition reads it...
+    const assetDir = (id: string) =>
+      path.join(dataDir, "assets", "workflow", id);
+    const topLevel = JSON.parse(
+      await fs.readFile(
+        path.join(assetDir("wf-lifecycle"), "workflow.json"),
+        "utf8",
+      ),
+    );
+    expect(topLevel).toEqual(frame.workflow.definition);
+
+    // ...and each referenced onTrigger body lands beside it under its own
+    // ref -- the body id -- as the definition plus the co-located
+    // per-step source pins the in-process body child resolves off disk.
+    const bodyDir = assetDir(bodyDefinition.id);
+    expect(
+      JSON.parse(
+        await fs.readFile(path.join(bodyDir, "workflow.json"), "utf8"),
+      ),
+    ).toEqual(bodyDefinition);
+    expect(
+      JSON.parse(await fs.readFile(path.join(bodyDir, "sources.json"), "utf8")),
+    ).toEqual(bodySources);
+  });
+
   test("a workflow frame is accepted: the child spawns, the address goes live, and a durable record lands", async () => {
     const { router, spawns, dataDir } = await makeLifecycleFixture();
     const frame = makeWorkflowFrame("ins_lifecycle-accept@example.com");

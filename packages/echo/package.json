@@ -1,7 +1,7 @@
 {
   "name": "@workbench/echo",
   "private": true,
-  "description": "Minimal hub extension: a tenant-scoped echo route plus the migration and grant it needs",
+  "description": "Minimal hub extension: a tenant-scoped echo route",
   "version": "0.0.1",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
@@ -13,7 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/hub-api": "^0.2.2",
+    "@intx/hub-api": "workspace:*",
     "hono": "^4.11.9"
   },
   "devDependencies": {
