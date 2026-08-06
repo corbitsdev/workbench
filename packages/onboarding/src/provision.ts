@@ -94,6 +94,18 @@ export async function provisionPersonalOrgIfNeeded(
     },
     args.cookies,
   );
+  if (created.status === 409) {
+    // Lost a race: another concurrent first-login call for this same
+    // user already created the (deterministically-slugged) personal
+    // org between our own "zero principals" read and this create. The
+    // loser recognizes "someone already provisioned me" rather than
+    // surfacing the native route's slug conflict as a failure.
+    const afterRace = await fetchPrincipals(args.api, args.cookies);
+    if (afterRace.length > 0) return { kind: "existing-member" };
+    throw new Error(
+      `first-login provisioning hit a slug conflict creating a personal org, but the caller still has no principal anywhere: ${JSON.stringify(created.data)}`,
+    );
+  }
   if (created.status !== 201) {
     throw new Error(
       `first-login provisioning could not create a personal org (status ${created.status}): ${JSON.stringify(created.data)}`,
