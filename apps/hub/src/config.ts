@@ -103,12 +103,23 @@ function seedModelFrom(
     WORKBENCH_SEED_MODEL_API_KEY: parsed.WORKBENCH_SEED_MODEL_API_KEY,
   });
   if (!complete) return undefined;
-  return {
-    provider: parsed.WORKBENCH_SEED_MODEL_PROVIDER as string,
-    model: parsed.WORKBENCH_SEED_MODEL as string,
-    baseURL: parsed.WORKBENCH_SEED_MODEL_BASE_URL as string,
-    apiKey: parsed.WORKBENCH_SEED_MODEL_API_KEY as string,
-  };
+
+  const provider = parsed.WORKBENCH_SEED_MODEL_PROVIDER;
+  const model = parsed.WORKBENCH_SEED_MODEL;
+  const baseURL = parsed.WORKBENCH_SEED_MODEL_BASE_URL;
+  const apiKey = parsed.WORKBENCH_SEED_MODEL_API_KEY;
+  if (
+    typeof provider !== "string" ||
+    typeof model !== "string" ||
+    typeof baseURL !== "string" ||
+    typeof apiKey !== "string"
+  ) {
+    // requireGroupOrNone already confirmed all four fields are present;
+    // this is unreachable in practice and only here so the return below
+    // narrows without a cast.
+    return undefined;
+  }
+  return { provider, model, baseURL, apiKey };
 }
 
 /**
@@ -156,6 +167,9 @@ export function readHubConfig(
         ? Number(parsed.SIGNUP_RATE_LIMIT_MAX)
         : DEFAULT_SIGNUP_RATE_LIMIT_MAX,
     },
-    ...(seedModel ? { seedModel } : {}),
   };
+  if (parsed.OPERATOR_TENANT_ID !== undefined)
+    hubConfig.operatorTenantId = parsed.OPERATOR_TENANT_ID;
+  if (seedModel !== undefined) hubConfig.seedModel = seedModel;
+  return hubConfig;
 }
