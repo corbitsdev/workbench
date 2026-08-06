@@ -8,6 +8,9 @@
   "bin": {
     "workbench": "./src/index.ts"
   },
+  "exports": {
+    ".": "./src/lib.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"

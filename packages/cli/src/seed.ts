@@ -414,15 +414,51 @@ async function confirmDeploymentAnswers(
   );
 }
 
-export async function runSeed(
-  deps: SeedDeps,
-  workflows: readonly DefaultWorkflow[] = DEFAULT_WORKFLOWS,
-): Promise<void> {
-  const { config, api, log } = deps;
+/** The tenant identity `seedTenant` needs; resolved by `runSeed` from the
+ * CLI's own bench slug, or already known to a caller (such as the
+ * first-login provisioning hook) that just minted the tenant. */
+export type SeedTenant = {
+  tenantId: string;
+  principalId: string;
+  domain: string;
+};
+
+export type SeedTenantArgs = {
+  api: ApiCall;
+  cookies: string[];
+  hubUrl: string;
+  tenant: SeedTenant;
+  model: ModelSource;
+  pushWorkflow: WorkflowPusher;
+  log: (line: string) => void;
+  workflows?: readonly DefaultWorkflow[];
+  sleep?: (ms: number) => Promise<void>;
+  runStartTimeoutMs?: number;
+  runPollIntervalMs?: number;
+};
+
+/**
+ * Plants the seed grants and deploys and confirms every default
+ * workflow for one already-known tenant. Split out of `runSeed` so a
+ * caller that already holds an authenticated session and a freshly
+ * created tenant (the first-login provisioning hook, in particular)
+ * can seed it without re-authenticating or re-resolving the tenant by
+ * slug.
+ */
+export async function seedTenant(args: SeedTenantArgs): Promise<void> {
+  const {
+    api,
+    cookies,
+    hubUrl,
+    tenant,
+    model,
+    log,
+    workflows = DEFAULT_WORKFLOWS,
+  } = args;
   const sleep =
-    deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const timeoutMs = deps.runStartTimeoutMs ?? RUN_START_TIMEOUT_MS;
-  const intervalMs = deps.runPollIntervalMs ?? RUN_POLL_INTERVAL_MS;
+    args.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const timeoutMs = args.runStartTimeoutMs ?? RUN_START_TIMEOUT_MS;
+  const intervalMs = args.runPollIntervalMs ?? RUN_POLL_INTERVAL_MS;
 
   if (workflows.length === 0) {
     throw new CliError(
@@ -430,14 +466,6 @@ export async function runSeed(
       "restore the default workflow set in @workbench/cli before running: workbench seed",
     );
   }
-
-  const session = await authenticate(api, {
-    email: config.adminEmail,
-    password: config.adminPassword,
-  });
-  const cookies = session.cookies;
-  const tenant = await resolveTenant(api, cookies, config.orgSlug);
-  log(`seeding bench ${config.orgSlug} (${tenant.tenantId})`);
 
   for (const grant of SEED_GRANTS) {
     await plantGrant(
@@ -463,10 +491,10 @@ export async function runSeed(
     );
 
     const tokenSecret = await mintGitToken(api, cookies, tenant.tenantId);
-    const outcome = await deps.pushWorkflow({
-      remoteUrl: `${config.hubUrl}/api/tenants/${tenant.tenantId}/assets/workflow/${workflow.assetName}.git`,
+    const outcome = await args.pushWorkflow({
+      remoteUrl: `${hubUrl}/api/tenants/${tenant.tenantId}/assets/workflow/${workflow.assetName}.git`,
       tokenSecret,
-      workflowJson: workflow.buildJson(tenant.domain, config.modelSource),
+      workflowJson: workflow.buildJson(tenant.domain, model),
     });
     log(
       outcome === "pushed"
@@ -481,7 +509,7 @@ export async function runSeed(
         tenantId: tenant.tenantId,
         assetId,
         assetName: workflow.assetName,
-        model: config.modelSource,
+        model,
       },
       log,
     );
@@ -509,4 +537,44 @@ export async function runSeed(
     );
   }
   log(`seed complete: ${confirmed} workflow(s) deployed and confirmed`);
+}
+
+export async function runSeed(
+  deps: SeedDeps,
+  workflows: readonly DefaultWorkflow[] = DEFAULT_WORKFLOWS,
+): Promise<void> {
+  const { config, api, log } = deps;
+
+  if (workflows.length === 0) {
+    throw new CliError(
+      "the default workflow set is empty; seeding zero workflows is a failure, not a success",
+      "restore the default workflow set in @workbench/cli before running: workbench seed",
+    );
+  }
+
+  const session = await authenticate(api, {
+    email: config.adminEmail,
+    password: config.adminPassword,
+  });
+  const cookies = session.cookies;
+  const tenant = await resolveTenant(api, cookies, config.orgSlug);
+  log(`seeding bench ${config.orgSlug} (${tenant.tenantId})`);
+
+  await seedTenant({
+    api,
+    cookies,
+    hubUrl: config.hubUrl,
+    tenant,
+    model: config.modelSource,
+    pushWorkflow: deps.pushWorkflow,
+    log,
+    workflows,
+    ...(deps.sleep ? { sleep: deps.sleep } : {}),
+    ...(deps.runStartTimeoutMs !== undefined
+      ? { runStartTimeoutMs: deps.runStartTimeoutMs }
+      : {}),
+    ...(deps.runPollIntervalMs !== undefined
+      ? { runPollIntervalMs: deps.runPollIntervalMs }
+      : {}),
+  });
 }
