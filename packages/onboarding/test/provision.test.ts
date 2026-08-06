@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { ApiCall } from "@workbench/cli";
-import type { WorkflowPusher } from "@workbench/cli";
+import type { ApiCall } from "@workbench/hub-client";
+import type { WorkflowPusher } from "@workbench/hub-client";
 import {
   personalOrgSlug,
   provisionPersonalOrgIfNeeded,

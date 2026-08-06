@@ -23,8 +23,8 @@ import {
 } from "@intx/hub-sessions";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
-import { createGitWorkflowPusher } from "@workbench/cli";
 import { createEchoRoutes } from "@workbench/echo";
+import { createGitWorkflowPusher } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";

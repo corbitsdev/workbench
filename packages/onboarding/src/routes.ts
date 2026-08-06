@@ -10,7 +10,7 @@ import {
   createHubAPI,
   type ModelSource,
   type WorkflowPusher,
-} from "@workbench/cli";
+} from "@workbench/hub-client";
 import { Hono } from "hono";
 import { provisionPersonalOrgIfNeeded } from "./provision";
 
@@ -22,7 +22,7 @@ export type CreateOnboardingRoutesDeps = {
   log: (line: string) => void;
 };
 
-function cookiesFromHeader(header: string | null): string[] {
+function cookiesFromHeader(header: string | undefined): string[] {
   if (!header) return [];
   return header
     .split(";")
