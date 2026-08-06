@@ -82,6 +82,94 @@ describe("provisionPersonalOrgIfNeeded", () => {
     expect(tenantCreateCalls).toBe(0);
   });
 
+  test("losing a concurrent-provisioning race returns the winner's membership instead of erroring", async () => {
+    let principalsCalls = 0;
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        principalsCalls += 1;
+        if (principalsCalls === 1) {
+          return {
+            status: 200,
+            data: { data: [], nextCursor: null },
+            cookies: [],
+          };
+        }
+        // The race's winner already created the org by the time this
+        // caller re-checks after its own create lost with a 409.
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                principalId: PRINCIPAL_ID,
+                tenantId: TENANT_ID,
+                tenantName: "alice's workbench",
+                tenantSlug: TENANT_SLUG,
+                kind: "user",
+                status: "active",
+                roles: [{ id: "rol_owner", name: "owner" }],
+              },
+            ],
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === "/api/tenants") {
+        return {
+          status: 409,
+          data: { error: { code: "conflict", message: "Slug already taken" } },
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await provisionPersonalOrgIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      pushWorkflow: noopPush,
+      log: collector().log,
+    });
+
+    expect(result).toEqual({ kind: "existing-member" });
+  });
+
+  test("a slug conflict that still leaves the caller orgless is a real failure", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === "/api/tenants") {
+        return {
+          status: 409,
+          data: { error: { code: "conflict", message: "Slug already taken" } },
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    await expect(
+      provisionPersonalOrgIfNeeded({
+        api,
+        cookies: ["session=abc"],
+        hubUrl: "http://localhost:3000",
+        userId: "user_1",
+        userEmail: "alice@example.com",
+        pushWorkflow: noopPush,
+        log: collector().log,
+      }),
+    ).rejects.toThrow(/slug conflict/);
+  });
+
   test("zero principals with no seed model: provisions the org and reports the seed skip loudly", async () => {
     let principalsCalls = 0;
     const { lines, log } = collector();
