@@ -45,21 +45,38 @@ export function createOnboardingRoutes(
     }
 
     const cookies = cookiesFromHeader(c.req.header("cookie") ?? null);
-    const result = await provisionPersonalOrgIfNeeded({
-      api,
-      cookies,
-      hubUrl: deps.hubUrl,
-      userId: user.id,
-      userEmail: user.email,
-      ...(deps.operatorTenantId
-        ? { operatorTenantId: deps.operatorTenantId }
-        : {}),
-      ...(deps.seedModel ? { seedModel: deps.seedModel } : {}),
-      pushWorkflow: deps.pushWorkflow,
-      log: deps.log,
-    });
+    try {
+      const result = await provisionPersonalOrgIfNeeded({
+        api,
+        cookies,
+        hubUrl: deps.hubUrl,
+        userId: user.id,
+        userEmail: user.email,
+        ...(deps.operatorTenantId
+          ? { operatorTenantId: deps.operatorTenantId }
+          : {}),
+        ...(deps.seedModel ? { seedModel: deps.seedModel } : {}),
+        pushWorkflow: deps.pushWorkflow,
+        log: deps.log,
+      });
 
-    return c.json(result, 200);
+      return c.json(result, 200);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      deps.log(
+        `first-login provisioning failed for user ${user.id}: ${message}`,
+      );
+      return c.json(
+        {
+          error: {
+            code: "provisioning_failed",
+            message:
+              "Could not provision a workbench for this account. Try again in a moment.",
+          },
+        },
+        500,
+      );
+    }
   });
 
   return app;

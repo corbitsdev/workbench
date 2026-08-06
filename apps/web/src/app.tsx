@@ -23,6 +23,7 @@ import {
 } from "./navigation";
 import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
+import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
 import { APP_ROUTES } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 
@@ -118,6 +119,8 @@ export function App({
   onSignedIn,
   onSignOut,
   onRetry,
+  provisioningError,
+  onRetryProvisioning,
 }: {
   readonly path: string;
   readonly navigate: Navigate;
@@ -125,7 +128,17 @@ export function App({
   readonly onSignedIn: (user: SessionUser) => void;
   readonly onSignOut: () => void;
   readonly onRetry: () => void;
+  readonly provisioningError?: string | null;
+  readonly onRetryProvisioning?: () => void;
 }) {
+  if (session.kind === "signed-in" && provisioningError) {
+    return (
+      <ProvisioningErrorPage
+        message={provisioningError}
+        onRetry={onRetryProvisioning ?? onRetry}
+      />
+    );
+  }
   switch (session.kind) {
     case "loading":
       return (

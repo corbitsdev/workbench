@@ -39,19 +39,31 @@ function Root() {
   // The first-login hook: once per session that reaches signed-in, ask
   // the hub whether this is a session with zero principals anywhere.
   // Idempotent on the hub side, so re-running it on a page reload for
-  // an existing member costs one read and nothing else.
+  // an existing member costs one read and nothing else. A failure here
+  // blocks the shell entirely — a signed-in user with no org and a
+  // failed provisioning attempt has nothing useful to do in the app.
+  const [provisioningError, setProvisioningError] = useState<string | null>(
+    null,
+  );
   const provisionedUserId =
     session.kind === "signed-in" ? session.user.id : null;
-  useEffect(() => {
-    if (provisionedUserId === null) return;
+  const runProvisioning = useCallback(() => {
+    if (provisionedUserId === null) return () => undefined;
     let cancelled = false;
+    setProvisioningError(null);
     void triggerFirstLoginProvisioning().then((result) => {
-      if (!cancelled && result?.kind === "provisioned") navigate("/onboarding");
+      if (cancelled) return;
+      if (result.kind === "provisioned") navigate("/onboarding");
+      else if (result.kind === "error") setProvisioningError(result.message);
     });
     return () => {
       cancelled = true;
     };
   }, [provisionedUserId, navigate]);
+  useEffect(runProvisioning, [runProvisioning]);
+  const handleRetryProvisioning = useCallback(() => {
+    runProvisioning();
+  }, [runProvisioning]);
   const handleSignOut = useCallback(() => {
     setSession({ kind: "signed-out" });
     void signOut();
@@ -65,6 +77,8 @@ function Root() {
       onSignedIn={handleSignedIn}
       onSignOut={handleSignOut}
       onRetry={probe}
+      provisioningError={provisioningError}
+      onRetryProvisioning={handleRetryProvisioning}
     />
   );
 }
