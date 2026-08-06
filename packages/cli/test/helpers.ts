@@ -3,7 +3,7 @@
 // function per test; an unmatched call fails the test loudly instead
 // of vanishing into a stubbed default.
 
-import type { ApiCall } from "../src/hub";
+import type { ApiCall } from "@workbench/hub-client";
 
 export type FakeResponse = { status: number; data: unknown };
 
@@ -85,31 +85,4 @@ export function rolesResponse(names: string[]): FakeResponse {
       nextCursor: null,
     },
   };
-}
-
-export function assetRow(id: string, name: string) {
-  return {
-    id,
-    tenantId: TENANT_ID,
-    kind: "workflow",
-    name,
-    displayName: null,
-    creatorPrincipalId: null,
-    createdAt: TIMESTAMP,
-    updatedAt: TIMESTAMP,
-  };
-}
-
-export function deploymentRow(id: string, assetId: string, status: string) {
-  return {
-    id,
-    tenantId: TENANT_ID,
-    definitionAssetId: assetId,
-    status,
-    createdAt: TIMESTAMP,
-  };
-}
-
-export function emptyPage(): FakeResponse {
-  return { status: 200, data: { data: [], nextCursor: null } };
 }

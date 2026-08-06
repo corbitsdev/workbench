@@ -10,9 +10,13 @@ import {
   RoleResponse,
   TenantResponse,
 } from "@intx/types";
+import {
+  authenticate,
+  parseAs,
+  CliError,
+  type ApiCall,
+} from "@workbench/hub-client";
 import { MODEL_CREDENTIAL_VARIABLES, type SetupConfig } from "./config";
-import { CliError } from "./errors";
-import { authenticate, parseAs, type ApiCall } from "./hub";
 
 export type SetupDeps = {
   config: SetupConfig;

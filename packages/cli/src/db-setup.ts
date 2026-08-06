@@ -6,7 +6,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { CliError } from "./errors";
+import { CliError } from "@workbench/hub-client";
 
 export function createDbSetupRunner(repoRoot: string): () => Promise<void> {
   return async () => {

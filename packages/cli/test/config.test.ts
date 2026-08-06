@@ -4,7 +4,7 @@ import {
   readSeedConfig,
   readSetupConfig,
 } from "../src/config";
-import { CliError } from "../src/errors";
+import { CliError } from "@workbench/hub-client";
 
 const VALID_SHARED = {
   BASE_URL: "http://localhost:3000",

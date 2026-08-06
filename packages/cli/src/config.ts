@@ -4,7 +4,7 @@
 // exact fix.
 
 import { type } from "arktype";
-import { CliError } from "./errors";
+import { CliError, type ModelSource } from "@workbench/hub-client";
 
 const HTTP_URL = /^https?:\/\/.+$/;
 
@@ -57,12 +57,7 @@ export type SetupConfig = {
   readonly orgSlug: string;
 };
 
-export type ModelSource = {
-  readonly provider: string;
-  readonly model: string;
-  readonly baseURL: string;
-  readonly apiKey: string;
-};
+export type { ModelSource };
 
 export type SeedConfig = {
   readonly hubUrl: string;

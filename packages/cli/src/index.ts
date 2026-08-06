@@ -3,13 +3,15 @@
 // the same invocations serve local bootstrap and hosted provisioning.
 
 import { resolve } from "node:path";
+import {
+  createGitWorkflowPusher,
+  createHubAPI,
+  isCliError,
+} from "@workbench/hub-client";
 import { readSeedConfig, readSetupConfig } from "./config";
 import { createDbSetupRunner } from "./db-setup";
-import { isCliError } from "./errors";
-import { createHubAPI } from "./hub";
 import { runSeed } from "./seed";
 import { runSetup } from "./setup";
-import { createGitWorkflowPusher } from "./workflow-push";
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..");
 

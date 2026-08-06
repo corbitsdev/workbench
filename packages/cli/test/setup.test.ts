@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { SetupConfig } from "../src/config";
-import { CliError } from "../src/errors";
+import { CliError } from "@workbench/hub-client";
 import { runSetup } from "../src/setup";
 import {
   collector,

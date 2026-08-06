@@ -17,8 +17,8 @@
   },
   "dependencies": {
     "@intx/types": "workspace:*",
-    "arktype": "catalog:",
-    "@corbits/echo-workflow": "workspace:*"
+    "@workbench/hub-client": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
