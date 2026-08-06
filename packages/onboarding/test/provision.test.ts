@@ -398,4 +398,198 @@ describe("provisionPersonalOrgIfNeeded", () => {
       seeded: true,
     });
   });
+
+  test("a retry after tenant creation succeeded but seeding failed re-seeds instead of reporting a plain existing member", async () => {
+    let assetCreateAttempts = 0;
+    let runsCalls = 0;
+    let tenantCreated = false;
+
+    const membership = () => ({
+      status: 200,
+      data: {
+        data: tenantCreated
+          ? [
+              {
+                principalId: PRINCIPAL_ID,
+                tenantId: TENANT_ID,
+                tenantName: "alice's workbench",
+                tenantSlug: TENANT_SLUG,
+                kind: "user",
+                status: "active",
+                roles: [{ id: "rol_owner", name: "owner" }],
+              },
+            ]
+          : [],
+        nextCursor: null,
+      },
+      cookies: [],
+    });
+
+    const api: ApiCall = async (method, path, body) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return membership();
+      }
+      if (method === "POST" && path === "/api/tenants") {
+        tenantCreated = true;
+        const parsed = body as { slug: string };
+        return {
+          status: 201,
+          data: {
+            id: TENANT_ID,
+            name: "alice's workbench",
+            slug: parsed.slug,
+            domain: `${parsed.slug}.localhost`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return {
+          status: 200,
+          data: {
+            id: TENANT_ID,
+            name: "alice's workbench",
+            slug: TENANT_SLUG,
+            domain: `${TENANT_SLUG}.localhost`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow`
+      ) {
+        return { status: 200, data: [], cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
+        assetCreateAttempts += 1;
+        if (assetCreateAttempts === 1) {
+          // The first attempt's seeding fails right here, after the
+          // tenant itself was already created above.
+          return {
+            status: 500,
+            data: { error: "asset service unavailable" },
+            cookies: [],
+          };
+        }
+        return {
+          status: 201,
+          data: {
+            id: "ast_1",
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: "echo",
+            displayName: null,
+            creatorPrincipalId: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/git-tokens`
+      ) {
+        return {
+          status: 201,
+          data: { id: "tok_1", secret: "s3cret" },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      ) {
+        return { status: 200, data: [], cookies: [] };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      ) {
+        return {
+          status: 201,
+          data: {
+            id: DEPLOYMENT_ID,
+            tenantId: TENANT_ID,
+            definitionAssetId: "ast_1",
+            status: "active",
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls <= 1 ? [] : ["run_1"] },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/mail`
+      ) {
+        return {
+          status: 202,
+          data: {
+            deploymentId: DEPLOYMENT_ID,
+            address: "echo@x",
+            messageId: "m1",
+          },
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const firstAttempt = provisionPersonalOrgIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      seedModel: MODEL,
+      pushWorkflow: noopPush,
+      log: collector().log,
+    });
+    await expect(firstAttempt).rejects.toThrow(/asset service unavailable/);
+    expect(tenantCreated).toBe(true);
+
+    const { log } = collector();
+    const retry = await provisionPersonalOrgIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      seedModel: MODEL,
+      pushWorkflow: noopPush,
+      log,
+    });
+
+    expect(retry).toEqual({ kind: "existing-member", seeded: true });
+    expect(assetCreateAttempts).toBe(2);
+  });
 });
