@@ -33,6 +33,7 @@ jobs:
       - run: bun run check:deletion
       - run: bun run check:killdates
       - run: bun run check:packages
+      - run: bun run check:no-product-tenancy
 
   walking-skeleton:
     runs-on: ubuntu-latest
