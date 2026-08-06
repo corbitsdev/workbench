@@ -1,4 +1,4 @@
-import { evaluateGrants } from "@intx/authz";
+import { authorizeAction } from "@intx/authz";
 import type { GrantRule } from "@intx/types/authz";
 import type { GrantEffect, GrantOrigin, GrantRequirement } from "@intx/types";
 import { generateId } from "@intx/hub-common";
@@ -17,6 +17,36 @@ export type MaterializedGrantRow = {
   createdAt: Date;
   updatedAt: Date;
 };
+
+// Build a materialized grant row: mint the id and stamp createdAt/updatedAt from
+// a single `now`, so every materialization site -- creator/invoker delegation,
+// ad-hoc invoker grants, and the launch route's tenant-owned credential
+// bindings -- constructs the identical row shape one way.
+export function makeGrantRow(fields: {
+  tenantId: string;
+  principalId: string;
+  resource: string;
+  action: string;
+  effect: GrantEffect;
+  conditions: Record<string, unknown> | null;
+  origin: GrantOrigin;
+  expiresAt: Date | null;
+  now: Date;
+}): MaterializedGrantRow {
+  return {
+    id: generateId("grant"),
+    tenantId: fields.tenantId,
+    principalId: fields.principalId,
+    resource: fields.resource,
+    action: fields.action,
+    effect: fields.effect,
+    conditions: fields.conditions,
+    origin: fields.origin,
+    expiresAt: fields.expiresAt,
+    createdAt: fields.now,
+    updatedAt: fields.now,
+  };
+}
 
 // An ad-hoc grant the invoker asks to delegate at launch, resolved against
 // the invoker's own authority. Structurally the launch request's
@@ -70,7 +100,7 @@ export const INVOKER_GRANT_TTL_MS = 24 * 60 * 60 * 1000;
  * grant rows to materialize on the target principal.
  *
  * Pure over its inputs: it runs creator- and invoker-sourced delegation
- * checks with `evaluateGrants` against the supplied collected grants and
+ * checks with `authorizeAction` against the supplied collected grants and
  * accumulates the rows to insert. Only `system`/`role`/`creator` grants can be
  * delegated, so invoker-origin grants are filtered out of the invoker's
  * delegatable set before resolving invoker-sourced requirements. Nothing is
@@ -103,12 +133,12 @@ export async function resolveGrantMaterialization({
     const effect = req.effect ?? "allow";
 
     if (req.source === "creator") {
-      const result = await evaluateGrants(
+      const decision = await authorizeAction(
         creatorGrants,
         req.resource,
         req.action,
       );
-      if (result.effect !== "allow") {
+      if (!decision.ok) {
         return {
           ok: false,
           rejection: {
@@ -118,26 +148,26 @@ export async function resolveGrantMaterialization({
           },
         };
       }
-      grantRows.push({
-        id: generateId("grant"),
-        tenantId,
-        principalId: targetPrincipalId,
-        resource: req.resource,
-        action: req.action,
-        effect,
-        conditions: req.conditions ?? null,
-        origin: "creator",
-        expiresAt: null,
-        createdAt: now,
-        updatedAt: now,
-      });
+      grantRows.push(
+        makeGrantRow({
+          tenantId,
+          principalId: targetPrincipalId,
+          resource: req.resource,
+          action: req.action,
+          effect,
+          conditions: req.conditions ?? null,
+          origin: "creator",
+          expiresAt: null,
+          now,
+        }),
+      );
     } else if (req.source === "invoker") {
-      const result = await evaluateGrants(
+      const decision = await authorizeAction(
         delegatableInvokerGrants,
         req.resource,
         req.action,
       );
-      if (result.effect !== "allow") {
+      if (!decision.ok) {
         return {
           ok: false,
           rejection: {
@@ -147,26 +177,27 @@ export async function resolveGrantMaterialization({
           },
         };
       }
-      grantRows.push({
-        id: generateId("grant"),
-        tenantId,
-        principalId: targetPrincipalId,
-        resource: req.resource,
-        action: req.action,
-        effect,
-        conditions: req.conditions ?? null,
-        origin: "invoker",
-        expiresAt: invokerExpiresAt,
-        createdAt: now,
-        updatedAt: now,
-      });
+      grantRows.push(
+        makeGrantRow({
+          tenantId,
+          principalId: targetPrincipalId,
+          resource: req.resource,
+          action: req.action,
+          effect,
+          conditions: req.conditions ?? null,
+          origin: "invoker",
+          expiresAt: invokerExpiresAt,
+          now,
+        }),
+      );
     } else {
+      const _exhaustive: never = req.source;
       return {
         ok: false,
         rejection: {
           status: 409,
           code: "not_launchable",
-          message: `Unknown grant requirement source: ${req.source}`,
+          message: `Unknown grant requirement source: ${String(_exhaustive)}`,
         },
       };
     }
@@ -175,12 +206,12 @@ export async function resolveGrantMaterialization({
   // Process ad-hoc invoker grants from the launch request.
   for (const ig of adHocInvokerGrants) {
     const effect = ig.effect ?? "allow";
-    const result = await evaluateGrants(
+    const decision = await authorizeAction(
       delegatableInvokerGrants,
       ig.resource,
       ig.action,
     );
-    if (result.effect !== "allow") {
+    if (!decision.ok) {
       return {
         ok: false,
         rejection: {
@@ -190,19 +221,19 @@ export async function resolveGrantMaterialization({
         },
       };
     }
-    grantRows.push({
-      id: generateId("grant"),
-      tenantId,
-      principalId: targetPrincipalId,
-      resource: ig.resource,
-      action: ig.action,
-      effect,
-      conditions: ig.conditions ?? null,
-      origin: "invoker",
-      expiresAt: invokerExpiresAt,
-      createdAt: now,
-      updatedAt: now,
-    });
+    grantRows.push(
+      makeGrantRow({
+        tenantId,
+        principalId: targetPrincipalId,
+        resource: ig.resource,
+        action: ig.action,
+        effect,
+        conditions: ig.conditions ?? null,
+        origin: "invoker",
+        expiresAt: invokerExpiresAt,
+        now,
+      }),
+    );
   }
 
   return { ok: true, grantRows };

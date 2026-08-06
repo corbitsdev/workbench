@@ -498,6 +498,27 @@
       "when": 1785519721882,
       "tag": "0070_flashy_proteus",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1785788422511,
+      "tag": "0072_add_workflow_definition_credential_bindings",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1785791424774,
+      "tag": "0073_grant_target_exactly_one_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1785884353793,
+      "tag": "0074_add_provider_api_base_url",
+      "breakpoints": true
     }
   ]
 }

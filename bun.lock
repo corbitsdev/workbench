@@ -153,6 +153,7 @@
       "version": "0.2.2",
       "dependencies": {
         "@intx/authz": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
@@ -168,6 +169,7 @@
       "version": "0.2.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/authz": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
       },

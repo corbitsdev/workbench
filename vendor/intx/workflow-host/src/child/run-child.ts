@@ -90,6 +90,7 @@ import {
 } from "../drain-controller";
 
 import type { InferenceSource } from "@intx/types/runtime";
+import type { CredentialDelivery } from "@intx/types/sidecar";
 
 import { createWorkflowRunRepoStore } from "../adapters/repo-store";
 import { createWorkflowRunBlobSubstrate } from "../adapters/blob-substrate";
@@ -139,6 +140,17 @@ const WORKFLOW_JSON_PATH = "workflow.json";
  */
 export type CredentialsSnapshotRef = {
   current: CredentialsSnapshot | null;
+};
+
+/**
+ * The deployment's decrypted credential material and per-handle descriptors,
+ * held through a mutable reference and swapped wholesale on a rotation push (a
+ * revoked credential arrives by omission, so the swap evicts it). The secret
+ * lives ONLY here -- read at tool-invoke time through the gated capability --
+ * and is never copied into a snapshot, event, or state.
+ */
+export type CredentialMaterialRef = {
+  current: CredentialDelivery | null;
 };
 
 /**
@@ -251,12 +263,31 @@ export type DrainController = WorkflowHostDrainController;
  * by the run-loop (`runWorkflowChild`), not the binding: the binding
  * only reads it through to the adapter.
  */
+/**
+ * Per-run credential inputs the top-level step invoker carries to the
+ * substrate: the live material cell the control channel writes each delivery
+ * into, and a resolver for a step's grants (which the substrate gates
+ * credential use against). The substrate combines these with its own static
+ * provider registry to assemble each tool bundle's `credentials` capability.
+ *
+ * Grants are typed `readonly unknown[]` here: this package owns no grant
+ * grammar (the credentials snapshot's grants are `unknown[]` throughout), so
+ * the substrate casts to its `GrantRule` shape at its own boundary, exactly
+ * as the grant evaluator does. The cell is read live per use, so a rotation or
+ * a revoking re-push reaches an already-shaped handle without a rebuild.
+ */
+export interface CredentialWiring {
+  readonly materialRef: CredentialMaterialRef;
+  readonly resolveStepGrants: (stepId: string) => readonly unknown[];
+}
+
 export type ChildStepInvoker = (
   req: StepInvokeRequest,
   onEvent: (event: EventPayload) => void,
   authorize: WorkflowAuthorizeFn,
   warmCache: WarmAgentCache | undefined,
   sourcesRef: SourcesSnapshotRef,
+  credentialWiring: CredentialWiring,
 ) => Promise<StepInvokeResult>;
 
 /**
@@ -380,6 +411,14 @@ export interface RunWorkflowChildBindings {
    * rather than resolving a default.
    */
   initialSources?: Record<string, InferenceSource[]>;
+  /**
+   * Bootstrap credential material for the deployment's tools, decrypted
+   * hub-side and delivered on the deploy frame so it is resident before any
+   * step runs. Seeds the mutable `credentialMaterialRef` the gated capability
+   * reads. Absent when the deployment binds no credentials; a later
+   * `credentials-updated` control frame refreshes it on rotation.
+   */
+  initialCredentialMaterial?: CredentialDelivery;
   /**
    * Optional override for the child's Ed25519 keypair factory. The
    * child mints a fresh keypair at startup, holds the private half
@@ -505,6 +544,34 @@ export async function runWorkflowChild(
   const sourcesRef: SourcesSnapshotRef = {
     current: opts.bindings.initialSources ?? {},
   };
+  const credentialMaterialRef: CredentialMaterialRef = {
+    current: opts.bindings.initialCredentialMaterial ?? null,
+  };
+  // The per-run credential wiring the top-level step invoker carries to the
+  // substrate: the live material cell and a resolver for a step's grants from
+  // the same credentials snapshot `authorize` reads. Built once over the two
+  // refs; every step build reads them live, so a rotation -- or a revoking
+  // re-push that swaps a ref -- is reflected without rebuilding the wiring.
+  const credentialWiring: CredentialWiring = {
+    materialRef: credentialMaterialRef,
+    resolveStepGrants: (stepId) => {
+      const snapshot = credentialsRef.current;
+      if (snapshot === null) {
+        throw new Error(
+          `workflow-child credential wiring: no credentials snapshot for step ${stepId}; a tool-bearing step cannot resolve its grants before the run carries any`,
+        );
+      }
+      const entry = snapshot.steps.find(
+        (step) => step.stepId === baseStepId(stepId),
+      );
+      if (entry === undefined) {
+        throw new Error(
+          `workflow-child credential wiring: credentials snapshot has no entry for step ${baseStepId(stepId)}`,
+        );
+      }
+      return entry.grants;
+    },
+  };
   const directors = opts.bindings.directors ?? createDefaultDirectorRegistry();
   const clock = opts.bindings.clock ?? defaultClock;
   const newId = opts.bindings.newId ?? defaultNewId;
@@ -598,6 +665,7 @@ export async function runWorkflowChild(
       drainController,
       warmCache,
       sourcesRef,
+      credentialWiring,
       onEvent: (event) => {
         void eventSender.send(event).catch((cause) => {
           logger.error`event-channel send failed during resume run ${run.runId}: ${String(cause)}`;
@@ -693,6 +761,8 @@ export async function runWorkflowChild(
           runsInFlight,
           warmCache,
           sourcesRef,
+          credentialMaterialRef,
+          credentialWiring,
           ...(opts.substrateWriteBridge !== undefined
             ? { substrateWriteBridge: opts.substrateWriteBridge }
             : {}),
@@ -767,6 +837,8 @@ async function handleControlPayload(
     runsInFlight: Map<string, WorkflowRun>;
     warmCache: WarmAgentCache | undefined;
     sourcesRef: SourcesSnapshotRef;
+    credentialMaterialRef: CredentialMaterialRef;
+    credentialWiring: CredentialWiring;
     substrateWriteBridge?: SubstrateWriteResponseSink;
     outboundMailBridge?: ChildOutboundMailBridge;
   },
@@ -821,6 +893,7 @@ async function handleControlPayload(
         drainController: ctx.drainController,
         warmCache: ctx.warmCache,
         sourcesRef: ctx.sourcesRef,
+        credentialWiring: ctx.credentialWiring,
         onEvent: (event) => {
           void ctx.eventSender.send(event).catch((cause) => {
             logger.error`event-channel send failed during run ${payload.data.runId}: ${String(cause)}`;
@@ -888,6 +961,15 @@ async function handleControlPayload(
         }
       }
       ctx.credentialsRef.current = snapshot;
+      return false;
+    }
+    case "credentials-updated": {
+      // Replace the in-memory credential material wholesale. A revoked
+      // credential arrives by omission -- its material entry is absent from
+      // the delivery -- so the swap evicts it. Atomic whole-object assignment,
+      // so a concurrent reader never observes a torn cell. The secret stays on
+      // this ref only; nothing here copies it into a snapshot, event, or state.
+      ctx.credentialMaterialRef.current = payload.data.delivery;
       return false;
     }
     case "signal.deliver": {
@@ -1169,6 +1251,7 @@ function buildRuntimeEnv(args: {
   drainController: DrainController;
   warmCache: WarmAgentCache | undefined;
   sourcesRef: SourcesSnapshotRef;
+  credentialWiring: CredentialWiring;
   onEvent: (event: EventPayload) => void;
   upstreamSender: ControlChannelSender;
 }): WorkflowRuntimeEnv {
@@ -1203,6 +1286,7 @@ function buildRuntimeEnv(args: {
       args.authorize,
       args.warmCache,
       args.sourcesRef,
+      args.credentialWiring,
     );
   };
   // Adapt the host binding (which takes the run's `onEvent` sink) down to the

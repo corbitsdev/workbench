@@ -17,3 +17,8 @@ export {
   createDetachedSignatureWithSigner,
 } from "./pgp";
 export { createSSHSignature, verifySSHSignature } from "./sshsig";
+export { aeadEncrypt, aeadDecrypt, AEAD_KEY_BYTES, isCiphertext } from "./aead";
+export {
+  createEnvKeyCredentialCipher,
+  createNoopCredentialCipher,
+} from "./credential-cipher";

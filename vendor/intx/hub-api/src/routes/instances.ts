@@ -18,7 +18,7 @@ import {
   workflowDefinition,
   workflowRun,
 } from "@intx/db/schema";
-import { parseWorkflowDefinitionRow } from "@intx/db";
+import { buildCredentialDelivery, parseWorkflowDefinitionRow } from "@intx/db";
 import type { DB } from "@intx/db";
 import { authorize } from "@intx/authz";
 import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
@@ -39,7 +39,8 @@ import {
   formatAgentAddress,
   paginatedSchema,
 } from "@intx/types";
-import type { ProviderPreference } from "@intx/types";
+import type { CredentialCipher, ProviderPreference } from "@intx/types";
+import type { CredentialDelivery } from "@intx/types/sidecar";
 import type { CryptoProvider } from "@intx/types/runtime";
 import {
   findRoutableById,
@@ -63,7 +64,10 @@ import {
   mapRunStatusToInstanceStatus,
 } from "./instance-view";
 import { validateAttachments } from "../attachment-validation";
-import { resolveGrantMaterialization } from "../grant-materialization";
+import {
+  resolveGrantMaterialization,
+  makeGrantRow,
+} from "../grant-materialization";
 
 import type { TenantEnv } from "../context";
 import { idResource } from "../middleware/grant";
@@ -156,6 +160,7 @@ export type CreateInstanceRoutesDeps = {
   conditionRegistry: ConditionRegistry;
   requireGrant: RequireGrant;
   assetService: AssetService | null;
+  credentialCipher: CredentialCipher;
 };
 
 export function createInstanceRoutes({
@@ -167,6 +172,7 @@ export function createInstanceRoutes({
   conditionRegistry,
   requireGrant,
   assetService,
+  credentialCipher,
 }: CreateInstanceRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
 
@@ -313,12 +319,11 @@ export function createInstanceRoutes({
 
       const resolution = await resolveDefinitionSources({
         db,
-        grantStore,
         tenantId: tenant.id,
-        creatorPrincipalId,
         modelRequirements: definition.modelRequirements,
         fallbackModel: foldedBody.model,
         invokerPreferences,
+        credentialCipher,
       });
       if (!resolution.ok) {
         return c.json(
@@ -376,6 +381,62 @@ export function createInstanceRoutes({
         return c.json({ error: { code, message } }, status);
       }
       const grantRows = materialization.grantRows;
+
+      // --- Credential binding resolution ---
+      //
+      // Resolve + decrypt the folded body's credential bindings into the
+      // material delivered to the tools and the `credential:{id}` / `use` grants
+      // stamped below. The builder's shape also anticipates a planned reconnect
+      // re-push that would re-deliver the material alone. A launch-blocking
+      // configuration failure (unresolved /
+      // no-origin / ambiguous binding) is a fail-closed 409 -- the same bucket
+      // as every other non-authority launchability failure here; a DB read fault
+      // throws from the builder and surfaces as 500, never mislabeled a terminal
+      // 409. No production `workflow.json` carries bindings yet, so this path
+      // runs only under test fixtures today.
+      const deliveryResult = await buildCredentialDelivery({
+        db,
+        tenantId: tenant.id,
+        bindings: foldedBody.credentialBindings,
+        creatorPrincipalId,
+        invokerPrincipalId: principal.id,
+        credentialCipher,
+      });
+      if (!deliveryResult.ok) {
+        return c.json(
+          {
+            error: {
+              code: "not_launchable",
+              message: deliveryResult.reason.message,
+            },
+          },
+          409,
+        );
+      }
+      const credentialDelivery: CredentialDelivery | undefined =
+        deliveryResult.delivery;
+
+      // A binding's credential is authorized by tenant ownership, already proven
+      // by buildCredentialDelivery's resolution -- there is nothing to
+      // re-authorize. Stamp each `credential:{id}` / `use` grant, scoped to its
+      // consuming tool package by the `{ tool }` condition the runtime
+      // per-consumer gate reads. origin `system`: the authority is tenant
+      // ownership, not a delegated personal grant.
+      for (const bindingGrant of deliveryResult.bindingGrants) {
+        grantRows.push(
+          makeGrantRow({
+            tenantId: tenant.id,
+            principalId: instancePrincipalId,
+            resource: bindingGrant.resource,
+            action: "use",
+            effect: "allow",
+            conditions: bindingGrant.conditions,
+            origin: "system",
+            expiresAt: null,
+            now,
+          }),
+        );
+      }
 
       // An instance-kind `workflow_definition` launches as a `workflow_run`
       // rather than an `agent_instance`: the run IS the launched instance. The
@@ -522,6 +583,9 @@ export function createInstanceRoutes({
           deployContent: {
             systemPrompt: foldedBody.systemPrompt,
           },
+          ...(credentialDelivery !== undefined
+            ? { credentials: credentialDelivery }
+            : {}),
         });
       } catch (err) {
         eventCollectors.abandon(agentAddress);

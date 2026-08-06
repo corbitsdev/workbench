@@ -14,6 +14,8 @@ export * from "./wallets";
 export * from "./providers";
 export * from "./oauth-clients";
 export * from "./credentials";
+export * from "./credential-cipher";
+export * from "./mediated-credential";
 export * from "./assets";
 export * from "./offerings";
 export * from "./models";

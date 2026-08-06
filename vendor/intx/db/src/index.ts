@@ -6,6 +6,10 @@ export {
 } from "./pg-error";
 export type { DBConfig } from "./config";
 export { runMigrations, dropSchema } from "./migrate";
+export {
+  rekeyCredentialSecrets,
+  type RekeyReport,
+} from "./rekey-credential-secrets";
 export { createGrantStore } from "./grant-store";
 export {
   createApprovalStore,
@@ -33,6 +37,14 @@ export {
   resolveCredentialByName,
   resolveCredentialById,
   resolveCredentialRequirement,
+  resolveTenantOwnedCredentialById,
+  AmbiguousCredentialError,
+  buildCredentialDelivery,
+} from "./credential-resolution";
+export type {
+  BuildCredentialDeliveryResult,
+  BindingCredentialGrant,
+  CredentialDeliveryFailure,
 } from "./credential-resolution";
 export {
   resolveAssetByName,
