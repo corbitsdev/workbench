@@ -94,3 +94,12 @@ jobs:
 
       - name: Run the two-org isolation suite
         run: bun test test/isolation
+
+      # apps/hub's own DB-backed suites (e.g. the sign-up rate-limit
+      # proof) never run under the plain `checks` job, which has no
+      # Postgres. E2E_REQUIRED=1 turns a would-be skip here into a hard
+      # failure, so a misconfigured invocation can't pass vacuously.
+      - name: Run the hub's database-backed suites
+        run: bun test apps/hub/test
+        env:
+          E2E_REQUIRED: "1"

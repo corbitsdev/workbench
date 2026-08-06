@@ -1,6 +1,7 @@
-// The first-login hook's one route: mounted at `/api/onboarding` in
-// the hub's native tenant middleware, outside any tenant scope (a
-// brand-new user belongs to none yet). Follows the same route-factory
+// The first-login hook's one route: mounted at `/api/onboarding`,
+// outside the hub's tenant-prefixed routes (`/api/tenants/:tenantId/...`)
+// and outside any tenant scope (a brand-new user belongs to none yet).
+// Follows the same route-factory
 // idiom as every other extension — one `app.route` line in the
 // composition root, nothing more architectural.
 

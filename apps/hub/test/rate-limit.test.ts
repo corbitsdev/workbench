@@ -29,7 +29,15 @@ async function signUpAttempt(app: AppLike, email: string): Promise<Response> {
 if (!databaseUrl) {
   // Without a database there is nothing meaningful to assert; skipping
   // loudly beats a vacuous pass. Set DATABASE_URL or
-  // ISOLATION_DATABASE_URL to run this against a real Postgres.
+  // ISOLATION_DATABASE_URL to run this against a real Postgres. In CI,
+  // E2E_REQUIRED=1 turns that skip into a loud failure so this proof can
+  // never silently vanish from the pipeline (mirrors scripts/e2e/harness.ts).
+  if (process.env["E2E_REQUIRED"] === "1") {
+    throw new Error(
+      "E2E_REQUIRED=1 but DATABASE_URL is not set; the sign-up rate-limit " +
+        "suite would be skipped. Set DATABASE_URL to a reachable Postgres.",
+    );
+  }
   test.skip("sign-up rate limiting (set DATABASE_URL or ISOLATION_DATABASE_URL to run)", () => {});
 } else {
   await prepareDatabase(databaseUrl);
