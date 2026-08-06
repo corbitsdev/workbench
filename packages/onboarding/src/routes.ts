@@ -45,21 +45,24 @@ export function createOnboardingRoutes(
       );
     }
 
-    const cookies = cookiesFromHeader(c.req.header("cookie") ?? null);
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
     try {
-      const result = await provisionPersonalOrgIfNeeded({
-        api,
-        cookies,
-        hubUrl: deps.hubUrl,
-        userId: user.id,
-        userEmail: user.email,
-        ...(deps.operatorTenantId
-          ? { operatorTenantId: deps.operatorTenantId }
-          : {}),
-        ...(deps.seedModel ? { seedModel: deps.seedModel } : {}),
-        pushWorkflow: deps.pushWorkflow,
-        log: deps.log,
-      });
+      const provisionArgs: Parameters<typeof provisionPersonalOrgIfNeeded>[0] =
+        {
+          api,
+          cookies,
+          hubUrl: deps.hubUrl,
+          userId: user.id,
+          userEmail: user.email,
+          pushWorkflow: deps.pushWorkflow,
+          log: deps.log,
+        };
+      if (deps.operatorTenantId !== undefined)
+        provisionArgs.operatorTenantId = deps.operatorTenantId;
+      if (deps.seedModel !== undefined)
+        provisionArgs.seedModel = deps.seedModel;
+
+      const result = await provisionPersonalOrgIfNeeded(provisionArgs);
 
       return c.json(result, 200);
     } catch (cause) {

@@ -172,18 +172,17 @@ export async function createHub(config: HubConfig) {
   // the operator tenant once one is configured (CL-5431), and seeds it
   // with the default workflow set when a hub-owned model credential is
   // configured.
-  app.route(
-    "/api/onboarding",
-    createOnboardingRoutes({
-      hubUrl: config.baseUrl,
-      ...(config.operatorTenantId
-        ? { operatorTenantId: config.operatorTenantId }
-        : {}),
-      ...(config.seedModel ? { seedModel: config.seedModel } : {}),
-      pushWorkflow: createGitWorkflowPusher(),
-      log: (line) => log.info`${line}`,
-    }),
-  );
+  const onboardingDeps: Parameters<typeof createOnboardingRoutes>[0] = {
+    hubUrl: config.baseUrl,
+    pushWorkflow: createGitWorkflowPusher(),
+    log: (line) => log.info`${line}`,
+  };
+  if (config.operatorTenantId !== undefined)
+    onboardingDeps.operatorTenantId = config.operatorTenantId;
+  if (config.seedModel !== undefined)
+    onboardingDeps.seedModel = config.seedModel;
+
+  app.route("/api/onboarding", createOnboardingRoutes(onboardingDeps));
 
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
   return { app, db, close };

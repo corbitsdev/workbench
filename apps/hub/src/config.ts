@@ -142,15 +142,12 @@ export function readHubConfig(
     );
   }
 
-  return {
+  const hubConfig: { -readonly [K in keyof HubConfig]: HubConfig[K] } = {
     databaseUrl: parsed.DATABASE_URL,
     baseUrl: parsed.BASE_URL,
     sessionSecret: parsed.SESSION_SECRET,
     hubDataDir: parsed.HUB_DATA_DIR,
     hubStaticDir: parsed.HUB_STATIC_DIR,
-    ...(parsed.OPERATOR_TENANT_ID
-      ? { operatorTenantId: parsed.OPERATOR_TENANT_ID }
-      : {}),
     signupRateLimit: {
       windowSeconds: parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS
         ? Number(parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS)
