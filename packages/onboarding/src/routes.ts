@@ -1,9 +1,8 @@
-// The first-login hook's one route: mounted at `/api/onboarding`,
-// outside the hub's tenant-prefixed routes (`/api/tenants/:tenantId/...`)
-// and outside any tenant scope (a brand-new user belongs to none yet).
-// Follows the same route-factory
-// idiom as every other extension — one `app.route` line in the
-// composition root, nothing more architectural.
+// `POST /provision`, mounted outside the hub's tenant-prefixed routes
+// because a brand-new user belongs to no tenant yet: authenticated,
+// idempotent, and answering either the provisioning result or the hub's
+// `{ error: { code, message } }` envelope. What it decides and why lives
+// in ./provision.ts.
 
 import type { AppEnv } from "@intx/hub-api";
 import {

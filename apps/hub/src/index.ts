@@ -166,12 +166,10 @@ export async function createHub(config: HubConfig) {
   // runs with c.get("tenant") / c.get("principal") resolved.
   app.route(`${TENANT_PREFIX}/echo`, createEchoRoutes());
 
-  // The first-login hook has no tenant yet, so it mounts outside the
-  // tenant prefix: one authenticated route that provisions a personal
-  // bench for a session with zero principals anywhere, parented under
-  // the operator tenant once one is configured (CL-5431), and seeds it
-  // with the default workflow set when a hub-owned model credential is
-  // configured.
+  // The first-login hook mounts outside the tenant prefix, since the
+  // session it serves belongs to no tenant yet. The route is
+  // `@workbench/onboarding`'s; what it decides is documented in that
+  // package's provision.ts.
   const onboardingDeps: Parameters<typeof createOnboardingRoutes>[0] = {
     hubUrl: config.baseUrl,
     pushWorkflow: createGitWorkflowPusher(),
