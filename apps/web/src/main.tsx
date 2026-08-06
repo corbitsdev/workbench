@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./app";
 import { triggerFirstLoginProvisioning } from "./onboarding";
+import { ONBOARDING_PATH } from "./routes";
 import { fetchSession, signOut } from "./session";
 import type { SessionState, SessionUser } from "./session";
 
@@ -53,7 +54,7 @@ function Root() {
     setProvisioningError(null);
     void triggerFirstLoginProvisioning().then((result) => {
       if (cancelled) return;
-      if (result.kind === "provisioned") navigate("/onboarding");
+      if (result.kind === "provisioned") navigate(ONBOARDING_PATH);
       else if (result.kind === "error") setProvisioningError(result.message);
     });
     return () => {

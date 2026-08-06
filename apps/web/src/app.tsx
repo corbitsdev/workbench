@@ -24,7 +24,7 @@ import {
 import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
-import { APP_ROUTES } from "./routes";
+import { APP_ROUTES, ONBOARDING_PATH } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 
 function AppNav({ path }: { readonly path: string }) {
@@ -93,7 +93,7 @@ function Shell({
           </SidebarFooter>
         </Sidebar>
         <main className="app-main">
-          {path === "/onboarding" ? (
+          {path === ONBOARDING_PATH ? (
             <OnboardingPage />
           ) : route === undefined ? (
             <NotFoundPage path={path} />
