@@ -1,7 +1,8 @@
 // Landing point for a session the first-login hook just provisioned a
-// personal bench for. The real stepper (welcome, invite teammates, first
-// workflow) is CL-5295's job; this page only confirms the bench exists
-// and gets out of the way.
+// personal bench for. The real stepper — welcome, invite teammates,
+// first workflow — is a separate, larger piece of product work; this is
+// a placeholder screen that only confirms the bench exists and gets out
+// of the way.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { PartyPopper } from "lucide-react";
