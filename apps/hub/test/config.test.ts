@@ -28,6 +28,47 @@ describe("readHubConfig", () => {
       sessionSecret: validEnv.SESSION_SECRET,
       hubDataDir: validEnv.HUB_DATA_DIR,
       hubStaticDir: validEnv.HUB_STATIC_DIR,
+      signupRateLimit: { windowSeconds: 60, max: 5 },
+    });
+  });
+
+  test("OPERATOR_TENANT_ID is optional and absent by default", () => {
+    expect(readHubConfig(validEnv).operatorTenantId).toBeUndefined();
+    expect(
+      readHubConfig({ ...validEnv, OPERATOR_TENANT_ID: "ten_operator" })
+        .operatorTenantId,
+    ).toBe("ten_operator");
+  });
+
+  test("the signup rate limit is configurable and defaults sanely", () => {
+    const config = readHubConfig({
+      ...validEnv,
+      SIGNUP_RATE_LIMIT_WINDOW_SECONDS: "30",
+      SIGNUP_RATE_LIMIT_MAX: "2",
+    });
+    expect(config.signupRateLimit).toEqual({ windowSeconds: 30, max: 2 });
+  });
+
+  test("the hub seed model credential is all-or-nothing", () => {
+    expect(() =>
+      readHubConfig({
+        ...validEnv,
+        WORKBENCH_SEED_MODEL_PROVIDER: "anthropic",
+      }),
+    ).toThrow(/hub seed model credential/);
+
+    const config = readHubConfig({
+      ...validEnv,
+      WORKBENCH_SEED_MODEL_PROVIDER: "anthropic",
+      WORKBENCH_SEED_MODEL: "claude-sonnet-4-5",
+      WORKBENCH_SEED_MODEL_BASE_URL: "https://api.anthropic.com/v1",
+      WORKBENCH_SEED_MODEL_API_KEY: "sk-test",
+    });
+    expect(config.seedModel).toEqual({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      baseURL: "https://api.anthropic.com/v1",
+      apiKey: "sk-test",
     });
   });
 

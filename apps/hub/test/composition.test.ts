@@ -25,6 +25,7 @@ const config: HubConfig = {
   sessionSecret: "insecure-test-only-session-secret-0000",
   hubDataDir: path.join(root, "data"),
   hubStaticDir: staticDir,
+  signupRateLimit: { windowSeconds: 60, max: 5 },
 };
 
 const closers: (() => Promise<void>)[] = [];
@@ -87,5 +88,17 @@ describe("extension mounting", () => {
     // path falls through to the interface shell.
     const outside = await hub.app.request("/echo");
     expect(await outside.text()).toBe("<html>shell</html>");
+  });
+
+  test("the first-login onboarding hook is gated the same way", async () => {
+    const hub = await bootHub();
+
+    const gated = await hub.app.request("/api/onboarding/provision", {
+      method: "POST",
+    });
+    expect(gated.status).toBe(401);
+    expect(await gated.json()).toEqual({
+      error: { code: "unauthorized", message: "Authentication required" },
+    });
   });
 });

@@ -83,6 +83,7 @@ export async function bootIsolationHub(
       sessionSecret: string;
       hubDataDir: string;
       hubStaticDir: string;
+      signupRateLimit: { windowSeconds: number; max: number };
     }): Promise<{ app: AppLike; close(): Promise<void> }>;
   };
 
@@ -94,6 +95,7 @@ export async function bootIsolationHub(
     sessionSecret: "insecure-isolation-suite-secret-0000",
     hubDataDir: dataDir,
     hubStaticDir: staticDir,
+    signupRateLimit: { windowSeconds: 60, max: 5 },
   });
 
   return {
