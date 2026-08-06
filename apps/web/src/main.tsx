@@ -5,6 +5,7 @@ import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./app";
+import { triggerFirstLoginProvisioning } from "./onboarding";
 import { fetchSession, signOut } from "./session";
 import type { SessionState, SessionUser } from "./session";
 
@@ -34,6 +35,23 @@ function Root() {
     },
     [navigate],
   );
+
+  // The first-login hook: once per session that reaches signed-in, ask
+  // the hub whether this is a session with zero principals anywhere.
+  // Idempotent on the hub side, so re-running it on a page reload for
+  // an existing member costs one read and nothing else.
+  const provisionedUserId =
+    session.kind === "signed-in" ? session.user.id : null;
+  useEffect(() => {
+    if (provisionedUserId === null) return;
+    let cancelled = false;
+    void triggerFirstLoginProvisioning().then((result) => {
+      if (!cancelled && result?.kind === "provisioned") navigate("/onboarding");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [provisionedUserId, navigate]);
   const handleSignOut = useCallback(() => {
     setSession({ kind: "signed-out" });
     void signOut();

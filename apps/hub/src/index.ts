@@ -23,7 +23,9 @@ import {
 } from "@intx/hub-sessions";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
+import { createGitWorkflowPusher } from "@workbench/cli";
 import { createEchoRoutes } from "@workbench/echo";
+import { createOnboardingRoutes } from "@workbench/onboarding";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, type Next } from "hono";
@@ -34,7 +36,17 @@ import { readHubConfig, type HubConfig } from "./config";
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 const TENANT_PREFIX = "/api/tenants/:tenantId";
+const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 
+// Open signup is safe by enumeration: BYOK means there is nothing free
+// to burn, and the hosted deployment only ever runs Corbits-signed
+// packages, so signup mints no operator-credential grants. Only
+// email+password signup is wired up — it is the only path anything in
+// apps/web actually drives end to end. OTP verification and social
+// sign-in return once a transactional-email credential and real UI
+// exist for them; wiring either in ahead of that would be dead surface
+// that also risks logging a verification secret with nowhere honest to
+// send it.
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
   return {
@@ -66,11 +78,25 @@ function createStaticHandler(staticDir: string) {
 
 export async function createHub(config: HubConfig) {
   const { db, close } = createDB(dbConfigFromUrl(config.databaseUrl));
+  const log = getLogger(["hub", "auth"]);
   const auth = betterAuth({
     baseURL: config.baseUrl,
     secret: config.sessionSecret,
     database: drizzleAdapter(db, { provider: "pg" }),
     emailAndPassword: { enabled: true },
+    rateLimit: {
+      // Explicit and always on: better-auth's own default only enables
+      // this in production (`enabled ?? isProduction`), which would
+      // leave it silently untested in dev and CI. Loudly true here
+      // instead of inferred from NODE_ENV.
+      enabled: true,
+      customRules: {
+        [SIGN_UP_EMAIL_PATH]: {
+          window: config.signupRateLimit.windowSeconds,
+          max: config.signupRateLimit.max,
+        },
+      },
+    },
   });
   const signingKey = await generateKeyPair();
   const agentRepoStore = createAgentRepoStore({
@@ -139,6 +165,25 @@ export async function createHub(config: HubConfig) {
   // platform's native tenant middleware, so every extension handler
   // runs with c.get("tenant") / c.get("principal") resolved.
   app.route(`${TENANT_PREFIX}/echo`, createEchoRoutes());
+
+  // The first-login hook has no tenant yet, so it mounts outside the
+  // tenant prefix: one authenticated route that provisions a personal
+  // org for a session with zero principals anywhere, parented under
+  // the operator tenant once one is configured (CL-5431), and seeds it
+  // with the default workflow set when a hub-owned model credential is
+  // configured.
+  app.route(
+    "/api/onboarding",
+    createOnboardingRoutes({
+      hubUrl: config.baseUrl,
+      ...(config.operatorTenantId
+        ? { operatorTenantId: config.operatorTenantId }
+        : {}),
+      ...(config.seedModel ? { seedModel: config.seedModel } : {}),
+      pushWorkflow: createGitWorkflowPusher(),
+      log: (line) => log.info`${line}`,
+    }),
+  );
 
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
   return { app, db, close };

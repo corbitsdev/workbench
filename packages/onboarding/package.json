@@ -1,0 +1,26 @@
+{
+  "name": "@workbench/onboarding",
+  "private": true,
+  "description": "First-login provisioning: a signed-in session with zero principals anywhere gets its own personal org, parented under the operator tenant when one is configured, and seeded with the default workflow set",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/hub-api": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@workbench/cli": "workspace:*",
+    "arktype": "catalog:",
+    "hono": "^4.11.9"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

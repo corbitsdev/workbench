@@ -28,7 +28,9 @@
         "@intx/hub-sessions": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
+        "@workbench/cli": "workspace:*",
         "@workbench/echo": "workspace:*",
+        "@workbench/onboarding": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "^1.4.18",
         "drizzle-orm": "0.45.2",
@@ -113,6 +115,21 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/hub-api": "workspace:*",
+        "hono": "^4.11.9",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/onboarding": {
+      "name": "@workbench/onboarding",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/hub-api": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@workbench/cli": "workspace:*",
+        "arktype": "catalog:",
         "hono": "^4.11.9",
       },
       "devDependencies": {
@@ -792,6 +809,8 @@
     "@workbench/echo": ["@workbench/echo@workspace:packages/echo"],
 
     "@workbench/hub": ["@workbench/hub@workspace:apps/hub"],
+
+    "@workbench/onboarding": ["@workbench/onboarding@workspace:packages/onboarding"],
 
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
 

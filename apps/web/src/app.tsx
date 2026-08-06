@@ -22,6 +22,7 @@ import {
   type Navigate,
 } from "./navigation";
 import { NotFoundPage } from "./pages/not-found-page";
+import { OnboardingPage } from "./pages/onboarding-page";
 import { APP_ROUTES } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 
@@ -91,7 +92,13 @@ function Shell({
           </SidebarFooter>
         </Sidebar>
         <main className="app-main">
-          {route === undefined ? <NotFoundPage path={path} /> : route.render()}
+          {path === "/onboarding" ? (
+            <OnboardingPage />
+          ) : route === undefined ? (
+            <NotFoundPage path={path} />
+          ) : (
+            route.render()
+          )}
         </main>
       </div>
     </NavigationProvider>

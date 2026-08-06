@@ -1,0 +1,66 @@
+// The first-login hook's one route: mounted at `/api/onboarding` in
+// the hub's native tenant middleware, outside any tenant scope (a
+// brand-new user belongs to none yet). Follows the same route-factory
+// idiom as every other extension — one `app.route` line in the
+// composition root, nothing more architectural.
+
+import type { AppEnv } from "@intx/hub-api";
+import {
+  createHubAPI,
+  type ModelSource,
+  type WorkflowPusher,
+} from "@workbench/cli";
+import { Hono } from "hono";
+import { provisionPersonalOrgIfNeeded } from "./provision";
+
+export type CreateOnboardingRoutesDeps = {
+  hubUrl: string;
+  operatorTenantId?: string;
+  seedModel?: ModelSource;
+  pushWorkflow: WorkflowPusher;
+  log: (line: string) => void;
+};
+
+function cookiesFromHeader(header: string | null): string[] {
+  if (!header) return [];
+  return header
+    .split(";")
+    .map((pair) => pair.trim())
+    .filter((pair) => pair.length > 0);
+}
+
+export function createOnboardingRoutes(
+  deps: CreateOnboardingRoutesDeps,
+): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const api = createHubAPI(deps.hubUrl);
+
+  app.post("/provision", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return c.json(
+        { error: { code: "unauthorized", message: "Authentication required" } },
+        401,
+      );
+    }
+
+    const cookies = cookiesFromHeader(c.req.header("cookie") ?? null);
+    const result = await provisionPersonalOrgIfNeeded({
+      api,
+      cookies,
+      hubUrl: deps.hubUrl,
+      userId: user.id,
+      userEmail: user.email,
+      ...(deps.operatorTenantId
+        ? { operatorTenantId: deps.operatorTenantId }
+        : {}),
+      ...(deps.seedModel ? { seedModel: deps.seedModel } : {}),
+      pushWorkflow: deps.pushWorkflow,
+      log: deps.log,
+    });
+
+    return c.json(result, 200);
+  });
+
+  return app;
+}

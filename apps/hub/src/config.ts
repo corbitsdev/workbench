@@ -4,14 +4,21 @@
 // signed, and where durable state and the built interface live on disk.
 // Anything else the hub learns is data in the database, never
 // configuration.
+//
+// A handful of variables are optional groups rather than single
+// values: the hub-owned seed model credential (used to deploy the
+// default workflow set for a freshly self-served org) is either fully
+// configured or entirely absent — never partial.
 
 import { type } from "arktype";
+
+const HTTP_URL = /^https?:\/\/.+$/;
 
 const HubEnv = type({
   DATABASE_URL: type(/^postgres(ql)?:\/\/.+$/).describe(
     "a Postgres connection URL, e.g. postgres://workbench:workbench@localhost:5432/workbench",
   ),
-  BASE_URL: type(/^https?:\/\/.+$/).describe(
+  BASE_URL: type(HTTP_URL).describe(
     "an http(s) origin, e.g. http://localhost:3000",
   ),
   SESSION_SECRET: type("string >= 32").describe(
@@ -23,7 +30,30 @@ const HubEnv = type({
   HUB_STATIC_DIR: type("string > 0").describe(
     "a directory of built user-interface files the hub serves, e.g. apps/hub/public",
   ),
+  "OPERATOR_TENANT_ID?": type("string > 0").describe(
+    "the tenant id every self-served personal org is parented under; absent until an operator tenant exists (see CL-5431)",
+  ),
+  "SIGNUP_RATE_LIMIT_WINDOW_SECONDS?": type(/^[1-9]\d*$/).describe(
+    "the per-IP sign-up rate-limit window, in seconds, e.g. 60",
+  ),
+  "SIGNUP_RATE_LIMIT_MAX?": type(/^[1-9]\d*$/).describe(
+    "the maximum sign-ups a single IP may make per window, e.g. 5",
+  ),
+  "WORKBENCH_SEED_MODEL_PROVIDER?": type("string > 0"),
+  "WORKBENCH_SEED_MODEL?": type("string > 0"),
+  "WORKBENCH_SEED_MODEL_BASE_URL?": type(HTTP_URL),
+  "WORKBENCH_SEED_MODEL_API_KEY?": type("string > 0"),
 });
+
+const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
+const DEFAULT_SIGNUP_RATE_LIMIT_MAX = 5;
+
+export type ModelSource = {
+  readonly provider: string;
+  readonly model: string;
+  readonly baseURL: string;
+  readonly apiKey: string;
+};
 
 export type HubConfig = {
   readonly databaseUrl: string;
@@ -31,7 +61,55 @@ export type HubConfig = {
   readonly sessionSecret: string;
   readonly hubDataDir: string;
   readonly hubStaticDir: string;
+  readonly operatorTenantId?: string;
+  readonly signupRateLimit: {
+    readonly windowSeconds: number;
+    readonly max: number;
+  };
+  readonly seedModel?: ModelSource;
 };
+
+type ParsedHubEnv = typeof HubEnv.infer;
+
+/** A credential group is either fully present or fully absent; a
+ * partial group is a configuration mistake, reported loudly rather
+ * than silently treated as absent. */
+function requireGroupOrNone(
+  problems: string[],
+  groupName: string,
+  fields: Record<string, string | undefined>,
+): boolean {
+  const present = Object.entries(fields).filter(([, v]) => v !== undefined);
+  const missing = Object.entries(fields).filter(([, v]) => v === undefined);
+  if (present.length === 0) return false;
+  if (missing.length > 0) {
+    problems.push(
+      `${groupName}: set all of (${Object.keys(fields).join(", ")}) or none — ` +
+        `missing ${missing.map(([k]) => k).join(", ")}`,
+    );
+    return false;
+  }
+  return true;
+}
+
+function seedModelFrom(
+  parsed: ParsedHubEnv,
+  problems: string[],
+): ModelSource | undefined {
+  const complete = requireGroupOrNone(problems, "hub seed model credential", {
+    WORKBENCH_SEED_MODEL_PROVIDER: parsed.WORKBENCH_SEED_MODEL_PROVIDER,
+    WORKBENCH_SEED_MODEL: parsed.WORKBENCH_SEED_MODEL,
+    WORKBENCH_SEED_MODEL_BASE_URL: parsed.WORKBENCH_SEED_MODEL_BASE_URL,
+    WORKBENCH_SEED_MODEL_API_KEY: parsed.WORKBENCH_SEED_MODEL_API_KEY,
+  });
+  if (!complete) return undefined;
+  return {
+    provider: parsed.WORKBENCH_SEED_MODEL_PROVIDER as string,
+    model: parsed.WORKBENCH_SEED_MODEL as string,
+    baseURL: parsed.WORKBENCH_SEED_MODEL_BASE_URL as string,
+    apiKey: parsed.WORKBENCH_SEED_MODEL_API_KEY as string,
+  };
+}
 
 /**
  * Parse the hub's configuration out of an environment map. Throws at
@@ -52,11 +130,35 @@ export function readHubConfig(
       ].join("\n"),
     );
   }
+
+  const problems: string[] = [];
+  const seedModel = seedModelFrom(parsed, problems);
+  if (problems.length > 0) {
+    throw new Error(
+      [
+        `invalid hub environment: ${problems.join("; ")}`,
+        "Set the values above in .env; see .env.example for the expected shape of each.",
+      ].join("\n"),
+    );
+  }
+
   return {
     databaseUrl: parsed.DATABASE_URL,
     baseUrl: parsed.BASE_URL,
     sessionSecret: parsed.SESSION_SECRET,
     hubDataDir: parsed.HUB_DATA_DIR,
     hubStaticDir: parsed.HUB_STATIC_DIR,
+    ...(parsed.OPERATOR_TENANT_ID
+      ? { operatorTenantId: parsed.OPERATOR_TENANT_ID }
+      : {}),
+    signupRateLimit: {
+      windowSeconds: parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS
+        ? Number(parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS)
+        : DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS,
+      max: parsed.SIGNUP_RATE_LIMIT_MAX
+        ? Number(parsed.SIGNUP_RATE_LIMIT_MAX)
+        : DEFAULT_SIGNUP_RATE_LIMIT_MAX,
+    },
+    ...(seedModel ? { seedModel } : {}),
   };
 }
