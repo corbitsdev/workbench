@@ -1,5 +1,5 @@
 // Shown when the first-login hook's provisioning call fails outright.
-// A signed-in user with zero orgs and a failed provisioning attempt has
+// A signed-in user with zero benches and a failed provisioning attempt has
 // nothing useful to do anywhere else in the app, so this replaces the
 // whole shell rather than a toast a user could miss or dismiss past.
 

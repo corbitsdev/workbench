@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { ApiCall } from "@workbench/hub-client";
 import type { WorkflowPusher } from "@workbench/hub-client";
 import {
-  personalOrgSlug,
-  provisionPersonalOrgIfNeeded,
+  personalTenantSlug,
+  provisionPersonalTenantIfNeeded,
 } from "../src/provision";
 
 const TENANT_ID = "ten_new";
@@ -25,19 +25,19 @@ function collector() {
   return { lines, log: (line: string) => lines.push(line) };
 }
 
-describe("personalOrgSlug", () => {
+describe("personalTenantSlug", () => {
   test("derives a lowercase-kebab slug from the email and a user-id fragment", () => {
-    expect(personalOrgSlug("Alice.Smith@example.com", "user_id_1")).toBe(
+    expect(personalTenantSlug("Alice.Smith@example.com", "user_id_1")).toBe(
       "alice-smith-userid1",
     );
   });
 
   test("never produces an empty component", () => {
-    expect(personalOrgSlug("@example.com", "")).toBe("org-personal");
+    expect(personalTenantSlug("@example.com", "")).toBe("bench-personal");
   });
 });
 
-describe("provisionPersonalOrgIfNeeded", () => {
+describe("provisionPersonalTenantIfNeeded", () => {
   test("an existing member is left alone: no tenant is created", async () => {
     let tenantCreateCalls = 0;
     const api: ApiCall = async (method, path) => {
@@ -68,7 +68,7 @@ describe("provisionPersonalOrgIfNeeded", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    const result = await provisionPersonalOrgIfNeeded({
+    const result = await provisionPersonalTenantIfNeeded({
       api,
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
@@ -94,7 +94,7 @@ describe("provisionPersonalOrgIfNeeded", () => {
             cookies: [],
           };
         }
-        // The race's winner already created the org by the time this
+        // The race's winner already created the bench by the time this
         // caller re-checks after its own create lost with a 409.
         return {
           status: 200,
@@ -125,7 +125,7 @@ describe("provisionPersonalOrgIfNeeded", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    const result = await provisionPersonalOrgIfNeeded({
+    const result = await provisionPersonalTenantIfNeeded({
       api,
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
@@ -138,7 +138,7 @@ describe("provisionPersonalOrgIfNeeded", () => {
     expect(result).toEqual({ kind: "existing-member" });
   });
 
-  test("a slug conflict that still leaves the caller orgless is a real failure", async () => {
+  test("a slug conflict that still leaves the caller benchless is a real failure", async () => {
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === "/api/me/principals") {
         return {
@@ -158,7 +158,7 @@ describe("provisionPersonalOrgIfNeeded", () => {
     };
 
     await expect(
-      provisionPersonalOrgIfNeeded({
+      provisionPersonalTenantIfNeeded({
         api,
         cookies: ["session=abc"],
         hubUrl: "http://localhost:3000",
@@ -170,7 +170,7 @@ describe("provisionPersonalOrgIfNeeded", () => {
     ).rejects.toThrow(/slug conflict/);
   });
 
-  test("zero principals with no seed model: provisions the org and reports the seed skip loudly", async () => {
+  test("zero principals with no seed model: provisions the bench and reports the seed skip loudly", async () => {
     let principalsCalls = 0;
     const { lines, log } = collector();
     const api: ApiCall = async (method, path, body) => {
@@ -221,7 +221,7 @@ describe("provisionPersonalOrgIfNeeded", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    const result = await provisionPersonalOrgIfNeeded({
+    const result = await provisionPersonalTenantIfNeeded({
       api,
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
@@ -379,7 +379,7 @@ describe("provisionPersonalOrgIfNeeded", () => {
     };
 
     const { log } = collector();
-    const result = await provisionPersonalOrgIfNeeded({
+    const result = await provisionPersonalTenantIfNeeded({
       api,
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
@@ -564,7 +564,7 @@ describe("provisionPersonalOrgIfNeeded", () => {
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
-    const firstAttempt = provisionPersonalOrgIfNeeded({
+    const firstAttempt = provisionPersonalTenantIfNeeded({
       api,
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
@@ -578,7 +578,7 @@ describe("provisionPersonalOrgIfNeeded", () => {
     expect(tenantCreated).toBe(true);
 
     const { log } = collector();
-    const retry = await provisionPersonalOrgIfNeeded({
+    const retry = await provisionPersonalTenantIfNeeded({
       api,
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",

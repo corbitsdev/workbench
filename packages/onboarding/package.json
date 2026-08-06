@@ -1,7 +1,7 @@
 {
   "name": "@workbench/onboarding",
   "private": true,
-  "description": "First-login provisioning: a signed-in session with zero principals anywhere gets its own personal org, parented under the operator tenant when one is configured, and seeded with the default workflow set",
+  "description": "First-login provisioning: a signed-in session with zero principals anywhere gets its own personal bench, parented under the operator tenant when one is configured, and seeded with the default workflow set",
   "version": "0.0.1",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",

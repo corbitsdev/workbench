@@ -7,7 +7,7 @@
 //
 // A handful of variables are optional groups rather than single
 // values: the hub-owned seed model credential (used to deploy the
-// default workflow set for a freshly self-served org) is either fully
+// default workflow set for a freshly self-served bench) is either fully
 // configured or entirely absent — never partial.
 
 import { type } from "arktype";
@@ -31,7 +31,7 @@ const HubEnv = type({
     "a directory of built user-interface files the hub serves, e.g. apps/hub/public",
   ),
   "OPERATOR_TENANT_ID?": type("string > 0").describe(
-    "the tenant id every self-served personal org is parented under; absent until an operator tenant exists (see CL-5431)",
+    "the tenant id every self-served personal bench is parented under; absent until an operator tenant exists (see CL-5431)",
   ),
   "SIGNUP_RATE_LIMIT_WINDOW_SECONDS?": type(/^[1-9]\d*$/).describe(
     "the per-IP sign-up rate-limit window, in seconds, e.g. 60",

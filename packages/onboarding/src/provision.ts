@@ -1,5 +1,5 @@
 // The first-login decision: a signed-in session with zero principals
-// anywhere gets a personal org, minted through the native tenant-
+// anywhere gets a personal bench, minted through the native tenant-
 // creation route (never a product-owned tenant table of our own),
 // parented under the operator tenant when one is configured, and
 // seeded with the default workflow set when the hub carries a seed
@@ -45,11 +45,11 @@ export type ProvisionArgs = {
   log: (line: string) => void;
 };
 
-/** A lowercase-kebab personal-org slug, unique per user without a
+/** A lowercase-kebab personal-bench slug, unique per user without a
  * coordinating registry: the local part of the email plus a short
  * fragment of the user's own id, which the platform already treats as
  * unique. */
-export function personalOrgSlug(email: string, userId: string): string {
+export function personalTenantSlug(email: string, userId: string): string {
   const local = email.split("@")[0] ?? email;
   const kebab = local
     .toLowerCase()
@@ -59,7 +59,7 @@ export function personalOrgSlug(email: string, userId: string): string {
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(-8)
     .toLowerCase();
-  return `${kebab || "org"}-${suffix || "personal"}`;
+  return `${kebab || "bench"}-${suffix || "personal"}`;
 }
 
 async function fetchPrincipals(
@@ -131,20 +131,20 @@ async function isFullySeeded(
 
 /**
  * Runs the first-login hook: checks whether the caller already belongs
- * to any tenant and, if not, provisions and seeds a personal org for
+ * to any tenant and, if not, provisions and seeds a personal bench for
  * them. Safe to call on every sign-in — an existing member is a single
  * read and nothing else.
  */
-export async function provisionPersonalOrgIfNeeded(
+export async function provisionPersonalTenantIfNeeded(
   args: ProvisionArgs,
 ): Promise<ProvisionResult> {
-  const expectedSlug = personalOrgSlug(args.userEmail, args.userId);
+  const expectedSlug = personalTenantSlug(args.userEmail, args.userId);
   const before = await fetchPrincipals(args.api, args.cookies);
   if (before.length > 0) {
-    // A membership already exists. If it is not the personal org this
-    // hook itself owns, there is nothing to recover — some other org
+    // A membership already exists. If it is not the personal bench this
+    // hook itself owns, there is nothing to recover — some other bench
     // added this user, and that is none of this hook's business. If it
-    // is our own personal org, an earlier call may have created the
+    // is our own personal bench, an earlier call may have created the
     // tenant and then failed before seeding it; re-seed rather than
     // silently treating "created but never seeded" as done.
     const own = before.find((p) => p.tenantSlug === expectedSlug);
@@ -196,18 +196,18 @@ export async function provisionPersonalOrgIfNeeded(
   if (created.status === 409) {
     // Lost a race: another concurrent first-login call for this same
     // user already created the (deterministically-slugged) personal
-    // org between our own "zero principals" read and this create. The
+    // bench between our own "zero principals" read and this create. The
     // loser recognizes "someone already provisioned me" rather than
     // surfacing the native route's slug conflict as a failure.
     const afterRace = await fetchPrincipals(args.api, args.cookies);
     if (afterRace.length > 0) return { kind: "existing-member" };
     throw new Error(
-      `first-login provisioning hit a slug conflict creating a personal org, but the caller still has no principal anywhere: ${JSON.stringify(created.data)}`,
+      `first-login provisioning hit a slug conflict creating a personal bench, but the caller still has no principal anywhere: ${JSON.stringify(created.data)}`,
     );
   }
   if (created.status !== 201) {
     throw new Error(
-      `first-login provisioning could not create a personal org (status ${created.status}): ${JSON.stringify(created.data)}`,
+      `first-login provisioning could not create a personal bench (status ${created.status}): ${JSON.stringify(created.data)}`,
     );
   }
   const tenant = parseAs(TenantResponse, created.data, "tenant response");
@@ -216,14 +216,14 @@ export async function provisionPersonalOrgIfNeeded(
   const membership = after.find((p) => p.tenantId === tenant.id);
   if (!membership) {
     throw new Error(
-      `personal org ${tenant.id} was created but the caller has no principal in it`,
+      `personal bench ${tenant.id} was created but the caller has no principal in it`,
     );
   }
 
   if (!args.seedModel) {
     const seedSkipReason =
-      "no hub-owned seed model credential is configured (WORKBENCH_SEED_MODEL_*); the org was provisioned without the default workflow set";
-    args.log(`org ${tenant.slug}: ${seedSkipReason}`);
+      "no hub-owned seed model credential is configured (WORKBENCH_SEED_MODEL_*); the bench was provisioned without the default workflow set";
+    args.log(`bench ${tenant.slug}: ${seedSkipReason}`);
     return {
       kind: "provisioned",
       tenantId: tenant.id,

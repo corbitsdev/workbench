@@ -41,7 +41,7 @@ function Root() {
   // the hub whether this is a session with zero principals anywhere.
   // Idempotent on the hub side, so re-running it on a page reload for
   // an existing member costs one read and nothing else. A failure here
-  // blocks the shell entirely — a signed-in user with no org and a
+  // blocks the shell entirely — a signed-in user with no bench and a
   // failed provisioning attempt has nothing useful to do in the app.
   const [provisioningError, setProvisioningError] = useState<string | null>(
     null,

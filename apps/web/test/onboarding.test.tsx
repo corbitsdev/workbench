@@ -2,7 +2,7 @@
 // must not collapse to "nothing to do". `triggerFirstLoginProvisioning`
 // should report it as a distinct error outcome, and the app shell must
 // render a full blocking screen for it rather than silently continuing
-// into a shell with zero orgs.
+// into a shell with zero benches.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";

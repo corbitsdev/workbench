@@ -168,7 +168,7 @@ export async function createHub(config: HubConfig) {
 
   // The first-login hook has no tenant yet, so it mounts outside the
   // tenant prefix: one authenticated route that provisions a personal
-  // org for a session with zero principals anywhere, parented under
+  // bench for a session with zero principals anywhere, parented under
   // the operator tenant once one is configured (CL-5431), and seeds it
   // with the default workflow set when a hub-owned model credential is
   // configured.

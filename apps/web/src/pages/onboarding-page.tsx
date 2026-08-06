@@ -1,6 +1,6 @@
 // Landing point for a session the first-login hook just provisioned a
-// personal org for. The real stepper (welcome, invite teammates, first
-// workflow) is CL-5295's job; this page only confirms the org exists
+// personal bench for. The real stepper (welcome, invite teammates, first
+// workflow) is CL-5295's job; this page only confirms the bench exists
 // and gets out of the way.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
@@ -14,7 +14,7 @@ export function OnboardingPage() {
       <EmptyState
         icon={<PartyPopper />}
         title="Your workbench is ready"
-        description="We've set up a personal org for you with the default workflows deployed."
+        description="We've set up a personal bench for you with the default workflows deployed."
         action={
           <Button asChild>
             <Link to="/">Go to your workbench</Link>

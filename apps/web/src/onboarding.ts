@@ -1,10 +1,10 @@
 // The browser side of the first-login hook: one call against the
 // hub's native onboarding route, made once per session. A session with
-// zero principals anywhere gets a personal org provisioned server-side
+// zero principals anywhere gets a personal bench provisioned server-side
 // (see @workbench/onboarding); this just learns whether that happened
 // so the interface can route into the onboarding placeholder — and
 // distinguishes a real failure from "nothing to do", so a broken
-// provisioning call never leaves the user silently orgless.
+// provisioning call never leaves the user silently benchless.
 
 import { type } from "arktype";
 
@@ -63,7 +63,7 @@ export async function triggerFirstLoginProvisioning(): Promise<ProvisionOutcome>
       return {
         kind: "error",
         message:
-          "Unexpected provisioning response: a provisioned org is missing its tenant details.",
+          "Unexpected provisioning response: a provisioned bench is missing its tenant details.",
       };
     }
     return {

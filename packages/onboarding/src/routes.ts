@@ -12,7 +12,7 @@ import {
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { Hono } from "hono";
-import { provisionPersonalOrgIfNeeded } from "./provision";
+import { provisionPersonalTenantIfNeeded } from "./provision";
 
 export type CreateOnboardingRoutesDeps = {
   hubUrl: string;
@@ -47,22 +47,23 @@ export function createOnboardingRoutes(
 
     const cookies = cookiesFromHeader(c.req.header("cookie"));
     try {
-      const provisionArgs: Parameters<typeof provisionPersonalOrgIfNeeded>[0] =
-        {
-          api,
-          cookies,
-          hubUrl: deps.hubUrl,
-          userId: user.id,
-          userEmail: user.email,
-          pushWorkflow: deps.pushWorkflow,
-          log: deps.log,
-        };
+      const provisionArgs: Parameters<
+        typeof provisionPersonalTenantIfNeeded
+      >[0] = {
+        api,
+        cookies,
+        hubUrl: deps.hubUrl,
+        userId: user.id,
+        userEmail: user.email,
+        pushWorkflow: deps.pushWorkflow,
+        log: deps.log,
+      };
       if (deps.operatorTenantId !== undefined)
         provisionArgs.operatorTenantId = deps.operatorTenantId;
       if (deps.seedModel !== undefined)
         provisionArgs.seedModel = deps.seedModel;
 
-      const result = await provisionPersonalOrgIfNeeded(provisionArgs);
+      const result = await provisionPersonalTenantIfNeeded(provisionArgs);
 
       return c.json(result, 200);
     } catch (cause) {

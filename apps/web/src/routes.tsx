@@ -20,7 +20,7 @@ import { RunsRoute } from "./pages/runs-page";
 import { SettingsRoute } from "./pages/settings-page";
 
 /** Landing point for a session the first-login hook just provisioned a
- * personal org for. Not one of `APP_ROUTES`: it has no sidebar entry,
+ * personal bench for. Not one of `APP_ROUTES`: it has no sidebar entry,
  * it is only ever reached by the first-login redirect. */
 export const ONBOARDING_PATH = "/onboarding";
 
