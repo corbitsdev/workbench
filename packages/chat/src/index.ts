@@ -37,3 +37,20 @@ export type {
   ControlApplyResult,
   RelayPlan,
 } from "./relay";
+
+export { presetForKind } from "./kinds";
+export type { ChannelKindPreset } from "./kinds";
+
+export { createChatRoutes } from "./routes";
+export type {
+  ChatPlatform,
+  ChatChannelEvent,
+  CreateChatRoutesDeps,
+  LaunchedChannel,
+  ListedMail,
+  ListedMailItem,
+  SentMail,
+} from "./routes";
+
+export { createDrizzleChatStore } from "./store";
+export type { ChatDb, ChatStore } from "./store";

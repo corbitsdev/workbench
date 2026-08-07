@@ -1,0 +1,271 @@
+// Persistence for the two chat product tables, kept apart from route
+// wiring so the HTTP layer never touches drizzle directly. `settings`
+// is record-as-truth: callers read and write the whole namespaced
+// jsonb blob, and this module never interprets any `chat/*` key —
+// that parsing lives in `routes.ts`, next to the request boundary it
+// guards.
+//
+// `ChatStore` is the seam `routes.ts` actually depends on; `createDrizzleChatStore`
+// is its one production implementation, over the two tables in `./schema.ts`.
+// Routing against the interface (rather than a raw drizzle handle) keeps the
+// route layer testable with a plain in-memory fake, with no database and no
+// drizzle SQL-condition internals involved.
+import { and, eq } from "drizzle-orm";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+
+import { channelReadState, channelSettings } from "./schema";
+
+/**
+ * The drizzle handle `createDrizzleChatStore` operates against. Typed
+ * structurally against the query builder rather than a concrete schema, so a
+ * host can hand in its own `drizzle(sql, { schema })` instance without
+ * `@corbits/chat` needing to know the platform's full schema.
+ */
+export type ChatDb = PostgresJsDatabase<Record<string, never>>;
+
+export interface ChannelSettingsRow {
+  readonly tenantId: string;
+  readonly channelId: string;
+  readonly settings: Record<string, unknown>;
+  readonly updatedBy: string;
+  readonly updatedAt: Date;
+}
+
+export interface CreateChannelSettingsInput {
+  readonly tenantId: string;
+  readonly channelId: string;
+  readonly settings: Record<string, unknown>;
+  readonly updatedBy: string;
+}
+
+export interface UpdateChannelSettingsInput {
+  readonly tenantId: string;
+  readonly channelId: string;
+  readonly settings: Record<string, unknown>;
+  readonly updatedBy: string;
+}
+
+export interface ReadStateRow {
+  readonly tenantId: string;
+  readonly channelId: string;
+  readonly principalId: string;
+  readonly lastSeenCreatedAt: Date;
+  readonly lastSeenId: string;
+}
+
+export interface PutReadStateInput {
+  readonly tenantId: string;
+  readonly channelId: string;
+  readonly principalId: string;
+  readonly lastSeenCreatedAt: Date;
+  readonly lastSeenId: string;
+}
+
+export interface ChatStore {
+  createChannelSettings(
+    input: CreateChannelSettingsInput,
+  ): Promise<ChannelSettingsRow>;
+  getChannelSettings(
+    tenantId: string,
+    channelId: string,
+  ): Promise<ChannelSettingsRow | undefined>;
+  listChannelSettings(
+    tenantId: string,
+    kind?: string,
+  ): Promise<ChannelSettingsRow[]>;
+  updateChannelSettings(
+    input: UpdateChannelSettingsInput,
+  ): Promise<ChannelSettingsRow>;
+  getReadState(
+    tenantId: string,
+    channelId: string,
+    principalId: string,
+  ): Promise<ReadStateRow | undefined>;
+  putReadState(input: PutReadStateInput): Promise<ReadStateRow>;
+}
+
+/**
+ * The production `ChatStore`, backed by the `channel_settings` and
+ * `channel_read_state` tables declared in `./schema.ts`.
+ */
+export function createDrizzleChatStore(db: ChatDb): ChatStore {
+  return {
+    async createChannelSettings(input) {
+      const now = new Date();
+      const [row] = await db
+        .insert(channelSettings)
+        .values({
+          tenantId: input.tenantId,
+          channelId: input.channelId,
+          settings: input.settings,
+          updatedBy: input.updatedBy,
+          updatedAt: now,
+        })
+        .returning();
+      if (row === undefined) {
+        throw new Error("createChannelSettings: insert returned no row");
+      }
+      return row as ChannelSettingsRow;
+    },
+
+    async getChannelSettings(tenantId, channelId) {
+      const [selected] = await db
+        .select()
+        .from(channelSettings)
+        .where(
+          and(
+            eq(channelSettings.tenantId, tenantId),
+            eq(channelSettings.channelId, channelId),
+          ),
+        )
+        .limit(1);
+      return selected as ChannelSettingsRow | undefined;
+    },
+
+    async listChannelSettings(tenantId, kind) {
+      const rows = await db
+        .select()
+        .from(channelSettings)
+        .where(eq(channelSettings.tenantId, tenantId));
+      const typed = rows as ChannelSettingsRow[];
+      if (kind === undefined) return typed;
+      return typed.filter((row) => row.settings["chat/kind"] === kind);
+    },
+
+    async updateChannelSettings(input) {
+      const [row] = await db
+        .update(channelSettings)
+        .set({
+          settings: input.settings,
+          updatedBy: input.updatedBy,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(channelSettings.tenantId, input.tenantId),
+            eq(channelSettings.channelId, input.channelId),
+          ),
+        )
+        .returning();
+      if (row === undefined) {
+        throw new Error(
+          `updateChannelSettings: no channel_settings row for channel ${input.channelId}`,
+        );
+      }
+      return row as ChannelSettingsRow;
+    },
+
+    async getReadState(tenantId, channelId, principalId) {
+      const [row] = await db
+        .select()
+        .from(channelReadState)
+        .where(
+          and(
+            eq(channelReadState.tenantId, tenantId),
+            eq(channelReadState.channelId, channelId),
+            eq(channelReadState.principalId, principalId),
+          ),
+        )
+        .limit(1);
+      return row as ReadStateRow | undefined;
+    },
+
+    async putReadState(input) {
+      const [row] = await db
+        .insert(channelReadState)
+        .values(input)
+        .onConflictDoUpdate({
+          target: [
+            channelReadState.tenantId,
+            channelReadState.channelId,
+            channelReadState.principalId,
+          ],
+          set: {
+            lastSeenCreatedAt: input.lastSeenCreatedAt,
+            lastSeenId: input.lastSeenId,
+          },
+        })
+        .returning();
+      if (row === undefined) {
+        throw new Error("putReadState: upsert returned no row");
+      }
+      return row as ReadStateRow;
+    },
+  };
+}
+
+/**
+ * An in-memory `ChatStore`, for tests and any host that wants chat
+ * routes without a database. Not exported from the package's public
+ * surface — it is a testing convenience, not a supported deployment
+ * target.
+ */
+export function createInMemoryChatStore(): ChatStore {
+  const settingsByKey = new Map<string, ChannelSettingsRow>();
+  const readStateByKey = new Map<string, ReadStateRow>();
+
+  const settingsKey = (tenantId: string, channelId: string) =>
+    `${tenantId}:${channelId}`;
+  const readStateKey = (
+    tenantId: string,
+    channelId: string,
+    principalId: string,
+  ) => `${tenantId}:${channelId}:${principalId}`;
+
+  return {
+    async createChannelSettings(input) {
+      const row: ChannelSettingsRow = {
+        tenantId: input.tenantId,
+        channelId: input.channelId,
+        settings: input.settings,
+        updatedBy: input.updatedBy,
+        updatedAt: new Date(),
+      };
+      settingsByKey.set(settingsKey(input.tenantId, input.channelId), row);
+      return row;
+    },
+
+    async getChannelSettings(tenantId, channelId) {
+      return settingsByKey.get(settingsKey(tenantId, channelId));
+    },
+
+    async listChannelSettings(tenantId, kind) {
+      const rows = [...settingsByKey.values()].filter(
+        (row) => row.tenantId === tenantId,
+      );
+      if (kind === undefined) return rows;
+      return rows.filter((row) => row.settings["chat/kind"] === kind);
+    },
+
+    async updateChannelSettings(input) {
+      const key = settingsKey(input.tenantId, input.channelId);
+      const existing = settingsByKey.get(key);
+      if (existing === undefined) {
+        throw new Error(
+          `updateChannelSettings: no channel_settings row for channel ${input.channelId}`,
+        );
+      }
+      const row: ChannelSettingsRow = {
+        ...existing,
+        settings: input.settings,
+        updatedBy: input.updatedBy,
+        updatedAt: new Date(),
+      };
+      settingsByKey.set(key, row);
+      return row;
+    },
+
+    async getReadState(tenantId, channelId, principalId) {
+      return readStateByKey.get(readStateKey(tenantId, channelId, principalId));
+    },
+
+    async putReadState(input) {
+      const row: ReadStateRow = { ...input };
+      readStateByKey.set(
+        readStateKey(input.tenantId, input.channelId, input.principalId),
+        row,
+      );
+      return row;
+    },
+  };
+}

@@ -98,6 +98,9 @@
       "name": "@corbits/chat",
       "version": "0.0.1",
       "dependencies": {
+        "@intx/hub-api": "workspace:*",
+        "@intx/hub-common": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
