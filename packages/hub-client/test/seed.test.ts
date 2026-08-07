@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { CliError } from "../src/errors";
 import {
   DEFAULT_WORKFLOWS,
-  seedInferenceSource,
+  seedCatalog,
   seedTenant,
   type SeedTenantArgs,
   type WorkflowPusher,
@@ -341,13 +341,6 @@ describe("seedTenant", () => {
 
 const TIMESTAMP = "2026-01-01T00:00:00.000Z";
 
-const SOURCE = {
-  provider: "anthropic",
-  model: "claude-sonnet-5",
-  baseURL: "https://api.anthropic.com/v1",
-  apiKey: "sk-test",
-};
-
 function providerRow(id: string, name: string) {
   return {
     id,
@@ -413,7 +406,39 @@ function catalogOfferingRow(id: string, modelId: string, providerId: string) {
   };
 }
 
-describe("seedInferenceSource", () => {
+describe("seedCatalog", () => {
+  test("no apiKey and no placeholderCredential plants only the catalog model", async () => {
+    const { lines, log } = collector();
+    let providerPosts = 0;
+    const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`) {
+        providerPosts += 1;
+        return { status: 201, data: providerRow("prv_1", "anthropic") };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "claude-sonnet-5"),
+        };
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      log,
+    });
+
+    expect(providerPosts).toBe(0);
+    const output = lines.join("\n");
+    expect(output).toContain("created catalog model claude-sonnet-5");
+    expect(output).toContain("seeded without a credential");
+  });
+
   test("fresh run creates the full provider-to-offering chain", async () => {
     const { lines, log } = collector();
     const handler: FakeHandler = (method, path, body) => {
@@ -453,11 +478,11 @@ describe("seedInferenceSource", () => {
       return undefined;
     };
 
-    await seedInferenceSource({
+    await seedCatalog({
       api: fakeAPI(handler),
       cookies: [],
       tenantId: TENANT_ID,
-      source: SOURCE,
+      apiKey: "sk-test",
       log,
     });
 
@@ -467,9 +492,7 @@ describe("seedInferenceSource", () => {
     expect(output).toContain("created catalog model claude-sonnet-5");
     expect(output).toContain("created catalog provider anthropic");
     expect(output).toContain("created catalog offering");
-    expect(output).toContain(
-      "inference source ready: anthropic/claude-sonnet-5",
-    );
+    expect(output).toContain("catalog ready: anthropic/claude-sonnet-5");
   });
 
   test("re-run finds every step already seeded and creates nothing twice", async () => {
@@ -553,11 +576,11 @@ describe("seedInferenceSource", () => {
       return undefined;
     };
 
-    await seedInferenceSource({
+    await seedCatalog({
       api: fakeAPI(handler),
       cookies: [],
       tenantId: TENANT_ID,
-      source: SOURCE,
+      apiKey: "sk-test",
       log,
     });
 
@@ -584,17 +607,25 @@ describe("seedInferenceSource", () => {
   test("an unexpected status from the provider route is a loud failure", async () => {
     const { log } = collector();
     const handler: FakeHandler = (method, path) => {
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "claude-sonnet-5"),
+        };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
         return { status: 500, data: { error: "boom" } };
       return undefined;
     };
 
     expect(
-      seedInferenceSource({
+      seedCatalog({
         api: fakeAPI(handler),
         cookies: [],
         tenantId: TENANT_ID,
-        source: SOURCE,
+        apiKey: "sk-test",
         log,
       }),
     ).rejects.toThrow(CliError);

@@ -49,26 +49,21 @@ describe("readHubConfig", () => {
     expect(config.signupRateLimit).toEqual({ windowSeconds: 30, max: 2 });
   });
 
-  test("the hub seed model credential is all-or-nothing", () => {
-    expect(() =>
-      readHubConfig({
-        ...validEnv,
-        WORKBENCH_SEED_MODEL_PROVIDER: "anthropic",
-      }),
-    ).toThrow(/hub seed model credential/);
+  test("the seed model is absent when ANTHROPIC_API_KEY is not set", () => {
+    const config = readHubConfig(validEnv);
+    expect(config.seedModel).toBeUndefined();
+  });
 
+  test("ANTHROPIC_API_KEY builds an anthropic seed model with defaults", () => {
     const config = readHubConfig({
       ...validEnv,
-      WORKBENCH_SEED_MODEL_PROVIDER: "anthropic",
-      WORKBENCH_SEED_MODEL: "claude-sonnet-4-5",
-      WORKBENCH_SEED_MODEL_BASE_URL: "https://api.anthropic.com/v1",
-      WORKBENCH_SEED_MODEL_API_KEY: "sk-test",
+      ANTHROPIC_API_KEY: "sk-ant-test",
     });
     expect(config.seedModel).toEqual({
       provider: "anthropic",
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-5",
       baseURL: "https://api.anthropic.com/v1",
-      apiKey: "sk-test",
+      apiKey: "sk-ant-test",
     });
   });
 

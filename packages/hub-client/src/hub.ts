@@ -135,8 +135,8 @@ export async function authenticate(
   });
   if (signIn.status !== 200) {
     throw new CliError(
-      `${args.email} already exists on the hub but WORKBENCH_ADMIN_PASSWORD does not match it (sign-in returned ${signIn.status})`,
-      "set WORKBENCH_ADMIN_PASSWORD to the password this account was created with, or use a fresh WORKBENCH_ADMIN_EMAIL, then re-run the command",
+      `${args.email} already exists on the hub but HUB_ADMIN_PASSWORD does not match it (sign-in returned ${signIn.status})`,
+      "set HUB_ADMIN_PASSWORD to the password this account was created with, or use a fresh HUB_ADMIN_EMAIL, then re-run the command",
     );
   }
   const parsed = parseAs(AuthResponse, signIn.data, "sign-in response");

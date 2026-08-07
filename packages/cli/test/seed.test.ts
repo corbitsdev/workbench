@@ -14,22 +14,17 @@ import {
 
 const CONFIG: SeedConfig = {
   hubUrl: "http://localhost:3000",
+  adminDefaulted: false,
   adminEmail: "admin@example.com",
   adminPassword: "password123",
   orgSlug: "workbench",
   modelSource: {
     provider: "anthropic",
-    model: "claude-sonnet-4-5",
-    baseURL: "https://api.anthropic.com/v1",
-    apiKey: "sk-test",
-  },
-  inferenceSource: {
-    provider: "anthropic",
     model: "claude-sonnet-5",
     baseURL: "https://api.anthropic.com/v1",
     apiKey: "placeholder-not-a-real-key",
   },
-  inferenceApiKeyConfigured: false,
+  anthropicApiKeyConfigured: false,
 };
 
 function deps(overrides: Partial<SeedDeps> & Pick<SeedDeps, "api">): SeedDeps {
@@ -242,11 +237,183 @@ describe("runSeed", () => {
 
     const output = lines.join("\n");
     expect(output).toContain(
-      "SEED_INFERENCE_API_KEY is not set; seeding the tenant catalog with a placeholder credential",
+      "ANTHROPIC_API_KEY is not set; the tenant catalog is seeded with data only",
     );
-    expect(output).toContain(
-      "inference source ready: anthropic/claude-sonnet-5",
+    expect(output).toContain("created catalog model claude-sonnet-5");
+  });
+
+  test("placeholderCredential opts into a launchable catalog without a real key", async () => {
+    const { lines, log } = collector();
+    const TIMESTAMP = "2026-01-01T00:00:00.000Z";
+    let runsCalls = 0;
+    const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-up/email")
+        return signUpResponse();
+      if (method === "GET" && path === "/api/me/principals")
+        return principalsResponse();
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`)
+        return { status: 200, data: tenantRow() };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      )
+        return { status: 200, data: { data: [], nextCursor: null } };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`)
+        return { status: 201, data: {} };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`)
+        return { status: 201, data: { id: "tok_1", secret: "s3cret" } };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return {
+          status: 201,
+          data: {
+            id: "ast_1",
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: "echo",
+            displayName: null,
+            creatorPrincipalId: null,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+        };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      )
+        return {
+          status: 201,
+          data: {
+            id: "dep_1",
+            tenantId: TENANT_ID,
+            definitionAssetId: "ast_1",
+            status: "active",
+            createdAt: TIMESTAMP,
+          },
+        };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_1/mail`
+      )
+        return {
+          status: 202,
+          data: {
+            deploymentId: "dep_1",
+            address: "ins_dep_1@workbench.localhost",
+            messageId: "<m1@workbench.localhost>",
+          },
+        };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return {
+          status: 201,
+          data: {
+            id: "prv_1",
+            tenantId: TENANT_ID,
+            name: "anthropic",
+            plugin: "anthropic",
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+        };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 201,
+          data: {
+            id: "cre_1",
+            tenantId: TENANT_ID,
+            providerId: "prv_1",
+            name: "anthropic-default",
+            type: "api_key",
+            status: "active",
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: {
+            id: "mdl_1",
+            tenantId: TENANT_ID,
+            canonicalName: "claude-sonnet-5",
+            disabled: false,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: {
+            id: "cpv_1",
+            tenantId: TENANT_ID,
+            name: "anthropic",
+            plugin: "anthropic",
+            baseURL: "https://api.anthropic.com/v1",
+            credentialId: "cre_1",
+            disabled: false,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 201,
+          data: {
+            id: "off_1",
+            tenantId: TENANT_ID,
+            modelId: "mdl_1",
+            providerId: "cpv_1",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: [],
+            quirks: null,
+            disabled: false,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+        };
+      return undefined;
+    };
+
+    await runSeed(
+      deps({
+        api: fakeAPI(handler),
+        pushWorkflow: async () => "pushed",
+        log,
+        sleep: async () => {},
+        runStartTimeoutMs: 3,
+        runPollIntervalMs: 1,
+        placeholderCredential: true,
+      }),
     );
+
+    const output = lines.join("\n");
+    expect(output).not.toContain("seeded with data only");
+    expect(output).toContain("catalog ready: anthropic/claude-sonnet-5");
   });
 
   test("a missing bench points at workbench setup", async () => {

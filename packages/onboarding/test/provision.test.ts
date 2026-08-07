@@ -234,10 +234,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(result.kind).toBe("provisioned");
     if (result.kind !== "provisioned") throw new Error("unreachable");
     expect(result.seeded).toBe(false);
-    expect(result.seedSkipReason).toContain("WORKBENCH_SEED_MODEL");
-    expect(lines.some((line) => line.includes("WORKBENCH_SEED_MODEL"))).toBe(
-      true,
-    );
+    expect(result.seedSkipReason).toContain("ANTHROPIC_API_KEY");
+    expect(lines.some((line) => line.includes("ANTHROPIC_API_KEY"))).toBe(true);
   });
 
   test("zero principals with a seed model configured: provisions under the operator tenant and seeds the default workflow", async () => {

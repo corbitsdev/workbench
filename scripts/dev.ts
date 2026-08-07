@@ -290,15 +290,15 @@ async function requireDatabaseSetUp(config: HubConfig): Promise<void> {
 }
 
 /**
- * Create the development convenience account once the hub answers, so a
- * fresh checkout can sign in immediately. Runs beside the apps; skipped
- * when either DEV_SEED_EMAIL or DEV_SEED_PASSWORD is empty or absent.
+ * Create the administrator account once the hub answers, so a fresh
+ * checkout can sign in immediately. Runs beside the apps; unset
+ * identity variables fall back to the same defaults the CLI uses, so a
+ * zero-edit .env still yields a signable account.
  * "Already exists" is a skip, not an error — re-runs stay quiet.
  */
 async function seedDevAccount(config: HubConfig): Promise<void> {
-  const email = process.env["DEV_SEED_EMAIL"] ?? "";
-  const password = process.env["DEV_SEED_PASSWORD"] ?? "";
-  if (email === "" || password === "") return;
+  const email = process.env["HUB_ADMIN_EMAIL"] ?? "alice@example.com";
+  const password = process.env["HUB_ADMIN_PASSWORD"] ?? "password123";
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {

@@ -23,6 +23,7 @@ import {
 } from "@corbits/echo-workflow";
 import { CliError } from "./errors";
 import { parseAs, type ApiCall } from "./hub";
+import { catalogModel, catalogProvider } from "./catalog-seed-data";
 
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -752,30 +753,68 @@ async function ensureCatalogOffering(
   );
 }
 
-export type SeedInferenceSourceArgs = {
+// Named so it can never be mistaken for a real secret if it leaks into
+// a log line, a screenshot, or a bug report.
+export const PLACEHOLDER_CATALOG_API_KEY = "placeholder-not-a-real-key";
+
+export type SeedCatalogArgs = {
   api: ApiCall;
   cookies: string[];
   tenantId: string;
-  source: ModelSource;
   log: (line: string) => void;
+  /**
+   * A real Anthropic API key. When set, `seedCatalog` plants a
+   * credential row alongside the catalog data, making the seeded
+   * offering launchable.
+   */
+  apiKey?: string;
+  /**
+   * Explicit opt-in to plant a placeholder credential when `apiKey` is
+   * not set, so a keyless dev or CI run can still launch channel
+   * anchors. Plain `workbench seed` never sets this — only callers that
+   * need a launchable chain without a real key (the local dev
+   * bootstrap, the e2e harness) pass it.
+   */
+  placeholderCredential?: boolean;
 };
 
 /**
- * Plants the full launchable chain for one inference source in a
- * tenant's catalog — provider, credential, catalog model, catalog
- * provider, and offering — so interactive instances and deployed
- * workflows have a model to resolve against. Idempotent: an already
- * seeded chain is detected by name and skipped, never duplicated.
+ * Plants the workbench dev catalog (see `catalog-seed-data.ts`) in a
+ * tenant's catalog. The catalog model row is always planted — data
+ * only, viewable before any credential exists. The credential, catalog
+ * provider, and offering are planted only when a real `apiKey` is
+ * given or `placeholderCredential` is explicitly set; without either,
+ * the model is listable but nothing is launchable, and the caller is
+ * told so. Idempotent: an already seeded chain is detected by name and
+ * skipped, never duplicated.
  */
-export async function seedInferenceSource(
-  args: SeedInferenceSourceArgs,
-): Promise<void> {
-  const { api, cookies, tenantId, source, log } = args;
+export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
+  const { api, cookies, tenantId, log } = args;
+
+  const modelId = await ensureCatalogModel(
+    api,
+    cookies,
+    { tenantId, canonicalName: catalogModel.canonicalName },
+    log,
+  );
+
+  const credentialSecret =
+    args.apiKey ??
+    (args.placeholderCredential === true
+      ? PLACEHOLDER_CATALOG_API_KEY
+      : undefined);
+  if (credentialSecret === undefined) {
+    log(
+      `catalog model ${catalogModel.canonicalName} seeded without a credential; ` +
+        "no channel or workflow can launch against it until ANTHROPIC_API_KEY is set and `workbench seed` is re-run",
+    );
+    return;
+  }
 
   const providerId = await ensureProvider(
     api,
     cookies,
-    { tenantId, name: source.provider, plugin: source.provider },
+    { tenantId, name: catalogProvider.name, plugin: catalogProvider.plugin },
     log,
   );
   const credentialId = await ensureCredential(
@@ -784,15 +823,9 @@ export async function seedInferenceSource(
     {
       tenantId,
       providerId,
-      name: inferenceCredentialName(source.provider),
-      secret: source.apiKey,
+      name: inferenceCredentialName(catalogProvider.name),
+      secret: credentialSecret,
     },
-    log,
-  );
-  const modelId = await ensureCatalogModel(
-    api,
-    cookies,
-    { tenantId, canonicalName: source.model },
     log,
   );
   const catalogProviderId = await ensureCatalogProvider(
@@ -800,9 +833,9 @@ export async function seedInferenceSource(
     cookies,
     {
       tenantId,
-      name: source.provider,
-      plugin: source.provider,
-      baseURL: source.baseURL,
+      name: catalogProvider.name,
+      plugin: catalogProvider.plugin,
+      baseURL: catalogProvider.baseURL,
       credentialId,
     },
     log,
@@ -814,5 +847,5 @@ export async function seedInferenceSource(
     log,
   );
 
-  log(`inference source ready: ${source.provider}/${source.model}`);
+  log(`catalog ready: ${catalogProvider.name}/${catalogModel.canonicalName}`);
 }

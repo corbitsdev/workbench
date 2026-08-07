@@ -8,45 +8,46 @@ import { CliError } from "@workbench/hub-client";
 
 const VALID_SHARED = {
   BASE_URL: "http://localhost:3000",
-  WORKBENCH_ADMIN_EMAIL: "admin@example.com",
-  WORKBENCH_ADMIN_PASSWORD: "password123",
-};
-
-const VALID_MODEL = {
-  WORKBENCH_MODEL_PROVIDER: "anthropic",
-  WORKBENCH_MODEL: "claude-sonnet-4-5",
-  WORKBENCH_MODEL_BASE_URL: "https://api.anthropic.com/v1",
-  WORKBENCH_MODEL_API_KEY: "sk-test",
+  HUB_ADMIN_EMAIL: "admin@example.com",
+  HUB_ADMIN_PASSWORD: "password123",
 };
 
 describe("readSetupConfig", () => {
-  test("reports every missing variable at once with a fix", () => {
+  test("defaults the admin identity when the variables are unset", () => {
+    const config = readSetupConfig({ BASE_URL: "http://localhost:3000" });
+    expect(config.adminEmail).toBe("alice@example.com");
+    expect(config.adminPassword).toBe("password123");
+  });
+
+  test("reports a malformed admin email with a fix", () => {
     let caught: unknown;
     try {
-      readSetupConfig({});
+      readSetupConfig({
+        BASE_URL: "http://localhost:3000",
+        HUB_ADMIN_EMAIL: "not-an-email",
+      });
     } catch (error) {
       caught = error;
     }
     expect(caught).toBeInstanceOf(CliError);
     const error = caught as CliError;
-    expect(error.message).toContain("WORKBENCH_ADMIN_EMAIL");
-    expect(error.message).toContain("WORKBENCH_ADMIN_PASSWORD");
+    expect(error.message).toContain("HUB_ADMIN_EMAIL");
     expect(error.fix).toContain(".env");
   });
 
-  test("names the hub URL when neither WORKBENCH_HUB_URL nor BASE_URL is set", () => {
+  test("names the hub URL when neither HUB_URL nor BASE_URL is set", () => {
     expect(() =>
       readSetupConfig({
-        WORKBENCH_ADMIN_EMAIL: "admin@example.com",
-        WORKBENCH_ADMIN_PASSWORD: "password123",
+        HUB_ADMIN_EMAIL: "admin@example.com",
+        HUB_ADMIN_PASSWORD: "password123",
       }),
-    ).toThrow(/WORKBENCH_HUB_URL or BASE_URL/);
+    ).toThrow(/HUB_URL or BASE_URL/);
   });
 
-  test("resolves defaults at the edge and prefers WORKBENCH_HUB_URL", () => {
+  test("resolves defaults at the edge and prefers HUB_URL", () => {
     const config = readSetupConfig({
       ...VALID_SHARED,
-      WORKBENCH_HUB_URL: "http://hub.internal:8080",
+      HUB_URL: "http://hub.internal:8080",
     });
     expect(config.hubUrl).toBe("http://hub.internal:8080");
     expect(config.orgName).toBe("Workbench");
@@ -59,70 +60,39 @@ describe("readSetupConfig", () => {
 
   test("rejects a malformed bench slug", () => {
     expect(() =>
-      readSetupConfig({ ...VALID_SHARED, WORKBENCH_ORG_SLUG: "Not A Slug" }),
+      readSetupConfig({ ...VALID_SHARED, ORG_SLUG: "Not A Slug" }),
     ).toThrow(CliError);
   });
 });
 
 describe("readSeedConfig", () => {
-  test("names every missing model-credential variable at once", () => {
-    let caught: unknown;
-    try {
-      readSeedConfig(VALID_SHARED);
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(CliError);
-    const error = caught as CliError;
-    expect(error.message).toContain("WORKBENCH_MODEL_PROVIDER");
-    expect(error.message).toContain("WORKBENCH_MODEL ");
-    expect(error.message).toContain("WORKBENCH_MODEL_BASE_URL");
-    expect(error.message).toContain("WORKBENCH_MODEL_API_KEY");
-  });
-
-  test("assembles the model source", () => {
-    const config = readSeedConfig({ ...VALID_SHARED, ...VALID_MODEL });
+  test("ANTHROPIC_API_KEY is optional", () => {
+    const config = readSeedConfig(VALID_SHARED);
+    expect(config.anthropicApiKeyConfigured).toBe(false);
     expect(config.modelSource).toEqual({
-      provider: "anthropic",
-      model: "claude-sonnet-4-5",
-      baseURL: "https://api.anthropic.com/v1",
-      apiKey: "sk-test",
-    });
-  });
-
-  test("the credential checklist setup prints matches the variables seed reads", () => {
-    for (const entry of MODEL_CREDENTIAL_VARIABLES) {
-      const name = entry.split(" ")[0] ?? "";
-      expect(Object.keys(VALID_MODEL)).toContain(name);
-    }
-  });
-
-  test("defaults the catalog inference source and flags the placeholder key", () => {
-    const config = readSeedConfig({ ...VALID_SHARED, ...VALID_MODEL });
-    expect(config.inferenceSource).toEqual({
       provider: "anthropic",
       model: "claude-sonnet-5",
       baseURL: "https://api.anthropic.com/v1",
       apiKey: "placeholder-not-a-real-key",
     });
-    expect(config.inferenceApiKeyConfigured).toBe(false);
   });
 
-  test("a configured SEED_INFERENCE_API_KEY overrides the placeholder", () => {
+  test("a configured ANTHROPIC_API_KEY is used as the model source's key", () => {
     const config = readSeedConfig({
       ...VALID_SHARED,
-      ...VALID_MODEL,
-      SEED_INFERENCE_PROVIDER: "openai",
-      SEED_INFERENCE_MODEL: "gpt-5",
-      SEED_INFERENCE_BASE_URL: "https://api.openai.com/v1",
-      SEED_INFERENCE_API_KEY: "sk-real",
+      ANTHROPIC_API_KEY: "sk-ant-test",
     });
-    expect(config.inferenceSource).toEqual({
-      provider: "openai",
-      model: "gpt-5",
-      baseURL: "https://api.openai.com/v1",
-      apiKey: "sk-real",
+    expect(config.anthropicApiKeyConfigured).toBe(true);
+    expect(config.modelSource).toEqual({
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      baseURL: "https://api.anthropic.com/v1",
+      apiKey: "sk-ant-test",
     });
-    expect(config.inferenceApiKeyConfigured).toBe(true);
+  });
+
+  test("the credential checklist setup prints names ANTHROPIC_API_KEY", () => {
+    expect(MODEL_CREDENTIAL_VARIABLES.length).toBe(1);
+    expect(MODEL_CREDENTIAL_VARIABLES[0]).toContain("ANTHROPIC_API_KEY");
   });
 });

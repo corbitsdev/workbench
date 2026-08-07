@@ -10,10 +10,20 @@ export type {
   DefaultWorkflow,
   ModelSource,
   PushOutcome,
-  SeedInferenceSourceArgs,
+  SeedCatalogArgs,
   SeedTenant,
   SeedTenantArgs,
   WorkflowPusher,
 } from "./seed";
-export { DEFAULT_WORKFLOWS, seedInferenceSource, seedTenant } from "./seed";
+export {
+  DEFAULT_WORKFLOWS,
+  PLACEHOLDER_CATALOG_API_KEY,
+  seedCatalog,
+  seedTenant,
+} from "./seed";
+export {
+  catalogModel,
+  catalogOffering,
+  catalogProvider,
+} from "./catalog-seed-data";
 export { createGitWorkflowPusher } from "./workflow-push";

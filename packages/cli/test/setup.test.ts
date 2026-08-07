@@ -14,6 +14,7 @@ import {
 
 const CONFIG: SetupConfig = {
   hubUrl: "http://localhost:3000",
+  adminDefaulted: false,
   adminEmail: "admin@example.com",
   adminPassword: "password123",
   orgName: "Workbench",
@@ -53,7 +54,7 @@ describe("runSetup", () => {
     expect(output).toContain("created administrator admin@example.com");
     expect(output).toContain("created bench workbench");
     expect(output).toContain("role defaults in place: admin, member, owner");
-    expect(output).toContain("WORKBENCH_MODEL_API_KEY");
+    expect(output).toContain("ANTHROPIC_API_KEY");
     expect(output).toContain("workbench seed");
   });
 
@@ -135,7 +136,7 @@ describe("runSetup", () => {
       caught = error;
     }
     expect(caught).toBeInstanceOf(CliError);
-    expect((caught as CliError).fix).toContain("WORKBENCH_ADMIN_PASSWORD");
+    expect((caught as CliError).fix).toContain("HUB_ADMIN_PASSWORD");
   });
 
   test("an unresolvable tenant conflict fails with the failing status", async () => {

@@ -58,12 +58,17 @@ async function ensureTenant(
 
   throw new CliError(
     `the hub rejected creation of bench ${args.slug} with status ${created.status}: ${JSON.stringify(created.data)}`,
-    "pick a different WORKBENCH_ORG_SLUG, or check the hub logs for the underlying failure, then re-run: workbench setup",
+    "pick a different ORG_SLUG, or check the hub logs for the underlying failure, then re-run: workbench setup",
   );
 }
 
 export async function runSetup(deps: SetupDeps): Promise<void> {
   const { config, api, log } = deps;
+  if (config.adminDefaulted) {
+    log(
+      "using default admin alice@example.com — set HUB_ADMIN_EMAIL and HUB_ADMIN_PASSWORD for real deployments",
+    );
+  }
 
   log("initializing database...");
   await deps.runDbSetup();
@@ -110,10 +115,8 @@ export async function runSetup(deps: SetupDeps): Promise<void> {
   );
 
   log("");
-  log("setup complete. still required from you:");
-  log("  your model credential, as environment variables:");
+  log("setup complete. next: workbench seed");
   for (const variable of MODEL_CREDENTIAL_VARIABLES) {
-    log(`    ${variable}`);
+    log(`  ${variable}`);
   }
-  log("then deploy the default workflows: workbench seed");
 }

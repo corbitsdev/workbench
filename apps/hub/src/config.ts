@@ -5,10 +5,13 @@
 // Anything else the hub learns is data in the database, never
 // configuration.
 //
-// A handful of variables are optional groups rather than single
-// values: the hub-owned seed model credential (used to deploy the
-// default workflow set for a freshly self-served bench) is either fully
-// configured or entirely absent — never partial.
+// ANTHROPIC_API_KEY is the one model-related variable the hub reads,
+// and it is optional: when set, the hub carries a seed model
+// credential (anthropic/claude-sonnet-5) it hands to
+// `@workbench/onboarding` so a freshly self-served personal bench gets
+// the default workflow set deployed at first login. Left unset, that
+// deployment step is skipped — the bench is still provisioned, only
+// the default workflow deployment is skipped, and the skip is logged.
 
 import { type } from "arktype";
 
@@ -39,14 +42,17 @@ const HubEnv = type({
   "SIGNUP_RATE_LIMIT_MAX?": type(/^[1-9]\d*$/).describe(
     "the maximum sign-ups a single IP may make per window, e.g. 5",
   ),
-  "WORKBENCH_SEED_MODEL_PROVIDER?": type("string > 0"),
-  "WORKBENCH_SEED_MODEL?": type("string > 0"),
-  "WORKBENCH_SEED_MODEL_BASE_URL?": type(HTTP_URL),
-  "WORKBENCH_SEED_MODEL_API_KEY?": type("string > 0"),
+  "ANTHROPIC_API_KEY?": type("string > 0").describe(
+    "your Anthropic API key; optional, enables the default workflow set for freshly self-served benches",
+  ),
 });
 
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
 const DEFAULT_SIGNUP_RATE_LIMIT_MAX = 5;
+
+const SEED_MODEL_PROVIDER = "anthropic";
+const SEED_MODEL = "claude-sonnet-5";
+const SEED_MODEL_BASE_URL = "https://api.anthropic.com/v1";
 
 export type ModelSource = {
   readonly provider: string;
@@ -71,55 +77,15 @@ export type HubConfig = {
 
 type ParsedHubEnv = typeof HubEnv.infer;
 
-/** A credential group is either fully present or fully absent; a
- * partial group is a configuration mistake, reported loudly rather
- * than silently treated as absent. */
-function requireGroupOrNone(
-  problems: string[],
-  groupName: string,
-  fields: Record<string, string | undefined>,
-): boolean {
-  const present = Object.entries(fields).filter(([, v]) => v !== undefined);
-  const missing = Object.entries(fields).filter(([, v]) => v === undefined);
-  if (present.length === 0) return false;
-  if (missing.length > 0) {
-    problems.push(
-      `${groupName}: set all of (${Object.keys(fields).join(", ")}) or none — ` +
-        `missing ${missing.map(([k]) => k).join(", ")}`,
-    );
-    return false;
-  }
-  return true;
-}
-
-function seedModelFrom(
-  parsed: ParsedHubEnv,
-  problems: string[],
-): ModelSource | undefined {
-  const complete = requireGroupOrNone(problems, "hub seed model credential", {
-    WORKBENCH_SEED_MODEL_PROVIDER: parsed.WORKBENCH_SEED_MODEL_PROVIDER,
-    WORKBENCH_SEED_MODEL: parsed.WORKBENCH_SEED_MODEL,
-    WORKBENCH_SEED_MODEL_BASE_URL: parsed.WORKBENCH_SEED_MODEL_BASE_URL,
-    WORKBENCH_SEED_MODEL_API_KEY: parsed.WORKBENCH_SEED_MODEL_API_KEY,
-  });
-  if (!complete) return undefined;
-
-  const provider = parsed.WORKBENCH_SEED_MODEL_PROVIDER;
-  const model = parsed.WORKBENCH_SEED_MODEL;
-  const baseURL = parsed.WORKBENCH_SEED_MODEL_BASE_URL;
-  const apiKey = parsed.WORKBENCH_SEED_MODEL_API_KEY;
-  if (
-    typeof provider !== "string" ||
-    typeof model !== "string" ||
-    typeof baseURL !== "string" ||
-    typeof apiKey !== "string"
-  ) {
-    // requireGroupOrNone already confirmed all four fields are present;
-    // this is unreachable in practice and only here so the return below
-    // narrows without a cast.
-    return undefined;
-  }
-  return { provider, model, baseURL, apiKey };
+function seedModelFrom(parsed: ParsedHubEnv): ModelSource | undefined {
+  const apiKey = parsed.ANTHROPIC_API_KEY;
+  if (apiKey === undefined) return undefined;
+  return {
+    provider: SEED_MODEL_PROVIDER,
+    model: SEED_MODEL,
+    baseURL: SEED_MODEL_BASE_URL,
+    apiKey,
+  };
 }
 
 /**
@@ -142,16 +108,7 @@ export function readHubConfig(
     );
   }
 
-  const problems: string[] = [];
-  const seedModel = seedModelFrom(parsed, problems);
-  if (problems.length > 0) {
-    throw new Error(
-      [
-        `invalid hub environment: ${problems.join("; ")}`,
-        "Set the values above in .env; see .env.example for the expected shape of each.",
-      ].join("\n"),
-    );
-  }
+  const seedModel = seedModelFrom(parsed);
 
   const hubConfig: { -readonly [K in keyof HubConfig]: HubConfig[K] } = {
     databaseUrl: parsed.DATABASE_URL,

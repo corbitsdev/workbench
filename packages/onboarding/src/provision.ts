@@ -222,7 +222,7 @@ export async function provisionPersonalTenantIfNeeded(
 
   if (!args.seedModel) {
     const seedSkipReason =
-      "no hub-owned seed model credential is configured (WORKBENCH_SEED_MODEL_*); the bench was provisioned without the default workflow set";
+      "no hub-owned seed model credential is configured (ANTHROPIC_API_KEY); the bench was provisioned without the default workflow set";
     args.log(`bench ${tenant.slug}: ${seedSkipReason}`);
     return {
       kind: "provisioned",

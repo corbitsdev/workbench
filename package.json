@@ -19,6 +19,8 @@
     "test": "bun run scripts/run-all.ts test",
     "test:e2e": "bun test scripts/e2e",
     "dev": "bun run scripts/dev.ts",
+    "setup": "bun packages/cli/src/index.ts setup",
+    "seed": "bun packages/cli/src/index.ts seed",
     "check:deletion": "bun run scripts/checks/deletion.ts",
     "check:killdates": "bun run scripts/checks/killdates.ts",
     "check:packages": "bun run scripts/checks/packages.ts",

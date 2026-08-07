@@ -35,7 +35,7 @@ import path from "node:path";
 import { formatAgentAddress } from "../../vendor/intx/types/src/index.ts";
 import {
   createHubAPI,
-  seedInferenceSource,
+  seedCatalog,
   type ApiCall,
 } from "../../packages/hub-client/src/index.ts";
 import type { Part } from "../../packages/chat/src/index.ts";
@@ -263,16 +263,11 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     // chain against the tenant catalog before it will launch at all,
     // even though it never performs inference — the placeholder key
     // is never used to call a model.
-    await seedInferenceSource({
+    await seedCatalog({
       api,
       cookies: user1.cookies,
       tenantId,
-      source: {
-        provider: "anthropic",
-        model: "claude-sonnet-5",
-        baseURL: "https://inference.invalid",
-        apiKey: "e2e-placeholder",
-      },
+      placeholderCredential: true,
       log: () => undefined,
     });
   }, 120_000);

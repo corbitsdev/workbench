@@ -7,7 +7,7 @@ import { paginatedSchema, PrincipalSummary, TenantResponse } from "@intx/types";
 import {
   authenticate,
   parseAs,
-  seedInferenceSource,
+  seedCatalog,
   seedTenant,
   DEFAULT_WORKFLOWS,
   type ApiCall,
@@ -25,6 +25,14 @@ export type SeedDeps = {
   sleep?: (ms: number) => Promise<void>;
   runStartTimeoutMs?: number;
   runPollIntervalMs?: number;
+  /**
+   * Plant a placeholder catalog credential when ANTHROPIC_API_KEY is
+   * not set, so the tenant catalog is launchable without a real key.
+   * Plain `workbench seed` never sets this; the local dev bootstrap and
+   * the e2e harness do, since they need a launchable channel anchor
+   * without a real key.
+   */
+  placeholderCredential?: boolean;
 };
 
 async function resolveTenant(
@@ -70,6 +78,11 @@ export async function runSeed(
   workflows: readonly DefaultWorkflow[] = DEFAULT_WORKFLOWS,
 ): Promise<void> {
   const { config, api, log } = deps;
+  if (config.adminDefaulted) {
+    log(
+      "using default admin alice@example.com — set HUB_ADMIN_EMAIL and HUB_ADMIN_PASSWORD for real deployments",
+    );
+  }
 
   const session = await authenticate(api, {
     email: config.adminEmail,
@@ -97,16 +110,24 @@ export async function runSeed(
 
   await seedTenant(seedArgs);
 
-  if (!config.inferenceApiKeyConfigured) {
+  if (
+    !config.anthropicApiKeyConfigured &&
+    deps.placeholderCredential !== true
+  ) {
     log(
-      "SEED_INFERENCE_API_KEY is not set; seeding the tenant catalog with a placeholder credential — inference will error until you set SEED_INFERENCE_API_KEY and re-run: workbench seed",
+      "ANTHROPIC_API_KEY is not set; the tenant catalog is seeded with data only — no credential is planted, so channels and workflows cannot launch until you set it and re-run: workbench seed",
     );
   }
-  await seedInferenceSource({
+  await seedCatalog({
     api,
     cookies,
     tenantId: tenant.tenantId,
-    source: config.inferenceSource,
     log,
+    ...(config.anthropicApiKeyConfigured
+      ? { apiKey: config.modelSource.apiKey }
+      : {}),
+    ...(deps.placeholderCredential === true
+      ? { placeholderCredential: true }
+      : {}),
   });
 }

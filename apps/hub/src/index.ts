@@ -45,9 +45,9 @@ const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
-// Falls back to the same anthropic/claude-sonnet-5 pairing the workbench
-// seed plants when no seed model credential is configured for this hub,
-// so a channel host can always resolve an inference source.
+// The same anthropic/claude-sonnet-5 pairing the workbench seed plants
+// in the tenant catalog, so a channel host can always resolve an
+// inference source against it.
 const DEFAULT_CHANNEL_HOST_INFERENCE_PREFERENCES = [
   { provider: "anthropic", model: "claude-sonnet-5" },
 ];
@@ -204,15 +204,11 @@ export async function createHub(config: HubConfig) {
       conditionRegistry: chatConditionRegistry,
     }),
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
-    channelHostInferencePreferences:
-      config.seedModel !== undefined
-        ? [
-            {
-              provider: config.seedModel.provider,
-              model: config.seedModel.model,
-            },
-          ]
-        : DEFAULT_CHANNEL_HOST_INFERENCE_PREFERENCES,
+    // Always the constant default: the hub's own seed model credential
+    // (config.seedModel) never names a different provider or model, so
+    // there is nothing for it to override here — only the onboarding
+    // path below cares whether a real credential is configured.
+    channelHostInferencePreferences: DEFAULT_CHANNEL_HOST_INFERENCE_PREFERENCES,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
 
