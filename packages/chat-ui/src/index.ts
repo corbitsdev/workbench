@@ -2,6 +2,7 @@ export { ChatWorkspace } from "./chat-workspace";
 export type { TenantResolution } from "./chat-workspace";
 
 export { ChannelTimeline } from "./timeline";
+export type { CurrentUser } from "./timeline";
 export { Composer } from "./composer";
 export { ChatSidebar } from "./sidebar";
 export { NewChannelDialog } from "./new-channel-dialog";

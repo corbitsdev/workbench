@@ -10,6 +10,9 @@ import { Composer } from "../src/composer";
 import { ChatSidebar } from "../src/sidebar";
 import { ChannelTimeline } from "../src/timeline";
 
+/** The floor: no rendered text may ever contain a raw identifier. */
+const RAW_ID_PATTERN = /\b(prn_|ins_|tnt_)[a-z0-9]/i;
+
 const channel = (overrides: Partial<Channel>): Channel => ({
   id: "c1",
   title: "General",
@@ -107,20 +110,35 @@ describe("ChannelTimeline", () => {
     expect(markup).toContain("Researcher");
   });
 
-  test("falls back to the sender's address local part with no name and no matching participant", () => {
+  test("falls back to a deterministic 'Member' label with no name and no matching participant", () => {
     const withSender: MessageItem[] = [
       {
         id: "m5",
         createdAt: "2026-01-01T00:04:00.000Z",
         parts: [{ kind: "text", text: "hi" }],
-        sender: { name: null, address: "researcher@agents.example" },
+        sender: { name: null, address: "prn_a1b2c3@agents.example" },
       },
     ];
     const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
-    expect(markup).toContain("researcher");
+    expect(markup).toContain("Member");
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
-  test("shows a matching participant's friendly handle over the raw local part", () => {
+  test("falls back to 'Member' for any unmatched sender address, agent-shaped or not", () => {
+    const withSender: MessageItem[] = [
+      {
+        id: "m5b",
+        createdAt: "2026-01-01T00:04:30.000Z",
+        parts: [{ kind: "text", text: "hi" }],
+        sender: { name: null, address: "ins_unknown1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    expect(markup).toContain("Member");
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
+  });
+
+  test("shows a matching participant's friendly handle over the raw local part, badged as an agent", () => {
     const withSender: MessageItem[] = [
       {
         id: "m6",
@@ -137,13 +155,64 @@ describe("ChannelTimeline", () => {
         ]}
       />,
     );
-    expect(markup).toContain("echo");
-    expect(markup).not.toContain("ins_cd03d8e3");
+    expect(markup).toContain("@echo");
+    expect(markup).toContain("Agent");
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
-  test("renders an event part as an inline line", () => {
+  test("renders the signed-in user's own message as 'You'", () => {
+    const withSender: MessageItem[] = [
+      {
+        id: "m7",
+        createdAt: "2026-01-01T00:06:00.000Z",
+        parts: [{ kind: "text", text: "hi" }],
+        sender: { name: null, address: "prn_self1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline
+        items={withSender}
+        currentUser={{ principalId: "prn_self1" }}
+      />,
+    );
+    expect(markup).toContain("You");
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
+  });
+
+  test("renders an event part as a friendly humanized line", () => {
     const markup = renderToStaticMarkup(<ChannelTimeline items={items} />);
-    expect(markup).toContain("member.joined");
+    expect(markup).toContain("member joined");
+    expect(markup).not.toContain("member.joined");
+  });
+
+  test("renders an agent-joined event by the joining agent's handle, never its address", () => {
+    const joinItems: MessageItem[] = [
+      {
+        id: "m8",
+        createdAt: "2026-01-01T00:07:00.000Z",
+        parts: [
+          {
+            kind: "event",
+            event: "channel.agent-joined",
+            data: {
+              address: "ins_newagent1@agents.example",
+              definitionId: "wfd_echo",
+              invitedBy: "prn_inviter1",
+            },
+          },
+        ],
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline
+        items={joinItems}
+        participants={[
+          { address: "ins_newagent1@agents.example", handle: "echo" },
+        ]}
+      />,
+    );
+    expect(markup).toContain("@echo joined");
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
   test("renders any other part kind as a labeled fallback block", () => {
@@ -179,5 +248,82 @@ describe("Composer", () => {
       />,
     );
     expect(markup).not.toContain("@undefined");
+  });
+});
+
+describe("no raw identifiers on screen", () => {
+  test("across the whole workspace's fixture surface — channels, an agent participant, an unknown sender, and a join event", () => {
+    const channels: Channel[] = [
+      channel({ id: "c1", title: "General" }),
+      channel({ id: "c2", title: "", kind: "chat" }),
+    ];
+    const participants = [
+      { address: "ins_cd03d8e3@agents.example", handle: "echo" },
+      { address: "prn_teammate1@agents.example", handle: "ada" },
+    ];
+    const messageItems: MessageItem[] = [
+      {
+        id: "m1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        parts: [{ kind: "text", text: "hello there" }],
+        sender: { name: null, address: "ins_cd03d8e3@agents.example" },
+      },
+      {
+        id: "m2",
+        createdAt: "2026-01-01T00:01:00.000Z",
+        parts: [{ kind: "text", text: "hi all" }],
+        sender: { name: null, address: "prn_unknown1@agents.example" },
+      },
+      {
+        id: "m3",
+        createdAt: "2026-01-01T00:02:00.000Z",
+        parts: [
+          {
+            kind: "event",
+            event: "channel.agent-joined",
+            data: {
+              address: "ins_cd03d8e3@agents.example",
+              definitionId: "wfd_echo",
+              invitedBy: "prn_inviter1",
+            },
+          },
+        ],
+      },
+    ];
+
+    const markup = [
+      renderToStaticMarkup(
+        <ChatSidebar
+          channels={channels}
+          chats={[]}
+          activeChannelId="c1"
+          onSelect={() => undefined}
+          onNewChannel={() => undefined}
+        />,
+      ),
+      renderToStaticMarkup(
+        <ChannelTimeline
+          items={messageItems}
+          participants={participants}
+          currentUser={{ principalId: "prn_teammate1" }}
+        />,
+      ),
+      renderToStaticMarkup(
+        <Composer
+          agents={[
+            {
+              id: "ins_cd03d8e3@agents.example",
+              handle: "echo",
+              label: "Echo",
+            },
+          ]}
+          onSend={() => undefined}
+        />,
+      ),
+    ].join("\n");
+
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
+    expect(markup).toContain("Untitled channel");
+    expect(markup).toContain("@echo joined");
   });
 });

@@ -42,6 +42,7 @@ import { NewChannelDialog } from "./new-channel-dialog";
 import { ChatSidebar } from "./sidebar";
 import { CHAT_STRINGS } from "./strings";
 import { ChannelTimeline } from "./timeline";
+import type { CurrentUser } from "./timeline";
 import { useChannelStream } from "./use-channel-stream";
 
 /**
@@ -111,10 +112,12 @@ function ChatWorkspaceInner({
   tenantId,
   channelId: controlledChannelId,
   onChannelChange,
+  currentUser,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
   readonly onChannelChange?: (channelId: string) => void;
+  readonly currentUser?: CurrentUser;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -315,6 +318,7 @@ function ChatWorkspaceInner({
               <ChannelTimeline
                 items={messagesState.items}
                 participants={activeChannel?.participants ?? []}
+                {...(currentUser !== undefined ? { currentUser } : {})}
               />
               <Composer
                 agents={mentionCandidatesFromParticipants(
@@ -360,12 +364,20 @@ export function ChatWorkspace({
   tenant,
   channelId = null,
   onChannelChange,
+  currentUser,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
   readonly channelId?: string | null;
   /** Fired when the user selects a channel, so the app can reflect it in the URL. */
   readonly onChannelChange?: (channelId: string) => void;
+  /**
+   * The signed-in account, so its own messages render as "You" (or its
+   * name) instead of matching no participant and falling back to
+   * "Member". Host-supplied, the same way `tenant` is — this package
+   * never resolves a session itself.
+   */
+  readonly currentUser?: CurrentUser;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -374,6 +386,7 @@ export function ChatWorkspace({
           tenantId={tenant.tenantId}
           channelId={channelId}
           {...(onChannelChange !== undefined ? { onChannelChange } : {})}
+          {...(currentUser !== undefined ? { currentUser } : {})}
         />
       );
     case "empty":

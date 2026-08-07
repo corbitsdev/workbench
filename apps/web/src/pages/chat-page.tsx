@@ -28,17 +28,22 @@ export function ChatPage({
   const principals = useAPIQuery("/api/me/principals", PrincipalsSchema);
 
   let tenant: TenantResolution;
+  let principalId: string | undefined;
   if (principals.kind !== "ready") {
     tenant = principals;
   } else {
-    const tenantId = principals.data.data[0]?.tenantId;
+    const membership = principals.data.data[0];
+    principalId = membership?.principalId;
     tenant =
-      tenantId === undefined ? { kind: "empty" } : { kind: "ready", tenantId };
+      membership === undefined
+        ? { kind: "empty" }
+        : { kind: "ready", tenantId: membership.tenantId };
   }
 
   return (
     <ChatWorkspace
       tenant={tenant}
+      {...(principalId !== undefined ? { currentUser: { principalId } } : {})}
       channelId={channelIdFromPath(path)}
       onChannelChange={(channelId) =>
         navigate(`${CHAT_PATH_PREFIX}/${encodeURIComponent(channelId)}`)
