@@ -67,32 +67,36 @@ export function ChatSidebar({
         />
       ) : (
         <>
-          <div className="chat-sidebar-section">
-            <div className="chat-sidebar-section-label">
-              {CHAT_STRINGS.channelsSectionLabel}
+          {channels.length > 0 && (
+            <div className="chat-sidebar-section">
+              <div className="chat-sidebar-section-label">
+                {CHAT_STRINGS.channelsSectionLabel}
+              </div>
+              {channels.map((channel) => (
+                <ChannelRow
+                  key={channel.id}
+                  channel={channel}
+                  active={channel.id === activeChannelId}
+                  onSelect={() => onSelect(channel)}
+                />
+              ))}
             </div>
-            {channels.map((channel) => (
-              <ChannelRow
-                key={channel.id}
-                channel={channel}
-                active={channel.id === activeChannelId}
-                onSelect={() => onSelect(channel)}
-              />
-            ))}
-          </div>
-          <div className="chat-sidebar-section">
-            <div className="chat-sidebar-section-label">
-              {CHAT_STRINGS.chatsSectionLabel}
+          )}
+          {chats.length > 0 && (
+            <div className="chat-sidebar-section">
+              <div className="chat-sidebar-section-label">
+                {CHAT_STRINGS.chatsSectionLabel}
+              </div>
+              {chats.map((channel) => (
+                <ChannelRow
+                  key={channel.id}
+                  channel={channel}
+                  active={channel.id === activeChannelId}
+                  onSelect={() => onSelect(channel)}
+                />
+              ))}
             </div>
-            {chats.map((channel) => (
-              <ChannelRow
-                key={channel.id}
-                channel={channel}
-                active={channel.id === activeChannelId}
-                onSelect={() => onSelect(channel)}
-              />
-            ))}
-          </div>
+          )}
         </>
       )}
     </div>

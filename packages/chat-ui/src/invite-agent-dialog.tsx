@@ -44,11 +44,13 @@ export function InviteAgentDialog({
 }) {
   const [state, setState] = useState<ListState>({ kind: "loading" });
   const [invitingId, setInvitingId] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setState({ kind: "loading" });
+    setInviteError(null);
     listInvitableDefinitions(tenantId, channelId)
       .then((items) => {
         if (!cancelled) setState({ kind: "ready", items });
@@ -68,9 +70,12 @@ export function InviteAgentDialog({
 
   async function handleInvite(definitionId: string) {
     setInvitingId(definitionId);
+    setInviteError(null);
     try {
       await onInvite(definitionId);
       onOpenChange(false);
+    } catch {
+      setInviteError(CHAT_STRINGS.inviteAgentInviteError);
     } finally {
       setInvitingId(null);
     }
@@ -86,6 +91,11 @@ export function InviteAgentDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
+          {inviteError !== null && (
+            <p className="chat-dialog-error" role="alert">
+              {inviteError}
+            </p>
+          )}
           {state.kind === "loading" ? (
             <Skeleton className="query-skeleton" />
           ) : state.kind === "error" ? (

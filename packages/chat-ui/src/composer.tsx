@@ -18,16 +18,30 @@ import {
 import type { MentionCandidate, MentionQuery } from "./mentions";
 import { CHAT_STRINGS } from "./strings";
 
+/**
+ * The B2 fix, isolated as a pure rule: a successful send clears the draft;
+ * a failed one keeps exactly what the user had typed so nothing is lost.
+ */
+export function draftAfterSend(
+  previousValue: string,
+  succeeded: boolean,
+): string {
+  return succeeded ? "" : previousValue;
+}
+
 export function Composer({
   agents,
   onSend,
 }: {
   readonly agents: readonly MentionCandidate[];
-  readonly onSend: (text: string) => void;
+  /** Resolves to whether the send succeeded; the composer decides what to do with the draft from that. */
+  readonly onSend: (text: string) => Promise<boolean>;
 }) {
   const [value, setValue] = useState("");
   const [mention, setMention] = useState<MentionQuery | null>(null);
   const [highlight, setHighlight] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [sendFailed, setSendFailed] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const candidates =
@@ -52,12 +66,19 @@ export function Composer({
     });
   }
 
-  function send() {
+  async function send() {
     const trimmed = value.trim();
-    if (trimmed.length === 0) return;
-    onSend(trimmed);
-    setValue("");
-    setMention(null);
+    if (trimmed.length === 0 || sending) return;
+    setSending(true);
+    setSendFailed(false);
+    const succeeded = await onSend(trimmed);
+    setSending(false);
+    setValue((previous) => draftAfterSend(previous, succeeded));
+    if (succeeded) {
+      setMention(null);
+    } else {
+      setSendFailed(true);
+    }
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -87,7 +108,7 @@ export function Composer({
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      send();
+      void send();
     }
   }
 
@@ -142,13 +163,18 @@ export function Composer({
           type="button"
           variant="primary"
           size="icon"
-          disabled={value.trim().length === 0}
-          onClick={send}
+          disabled={value.trim().length === 0 || sending}
+          onClick={() => void send()}
           aria-label={CHAT_STRINGS.composerSend}
         >
           <Send />
         </Button>
       </div>
+      {sendFailed && (
+        <div className="chat-composer-error" role="alert">
+          {CHAT_STRINGS.sendFailedMessage}
+        </div>
+      )}
     </div>
   );
 }

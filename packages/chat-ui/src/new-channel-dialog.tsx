@@ -22,11 +22,13 @@ export function NewChannelDialog({
   onOpenChange,
   onCreate,
   submitting,
+  error = null,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onCreate: (input: { name: string; kind: ChannelKind }) => void;
   readonly submitting: boolean;
+  readonly error?: string | null;
 }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<ChannelKind>("channel");
@@ -92,6 +94,11 @@ export function NewChannelDialog({
                 {CHAT_STRINGS.newChannelKindChat}
               </label>
             </fieldset>
+            {error !== null && (
+              <p className="chat-dialog-error" role="alert">
+                {error}
+              </p>
+            )}
           </form>
         </DialogBody>
         <DialogFooter>

@@ -9,6 +9,15 @@ import { useEffect, useRef, useState } from "react";
 
 export type ChannelStreamState = "connecting" | "live" | "polling";
 
+/**
+ * The S3 fix, isolated as a pure rule: with no active channel there is
+ * nothing to stream, so the hook must not open an `EventSource` or start a
+ * poll timer at all — an empty url is the caller's signal for that.
+ */
+export function shouldConnect(url: string): boolean {
+  return url !== "";
+}
+
 const BACKOFF_STEPS_MS = [500, 1000, 2000, 4000, 8000];
 const MAX_SSE_ATTEMPTS = BACKOFF_STEPS_MS.length;
 const POLL_INTERVAL_MS = 5000;
@@ -25,6 +34,8 @@ export function useChannelStream(
   onPollRef.current = onPoll;
 
   useEffect(() => {
+    if (!shouldConnect(url)) return;
+
     let cancelled = false;
     let attempts = 0;
     let source: EventSource | undefined;

@@ -77,10 +77,33 @@ type ChannelsState =
       readonly chats: readonly Channel[];
     };
 
-type MessagesState =
+export type MessagesState =
   | { readonly kind: "loading" }
   | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "ready"; readonly items: readonly MessageItem[] };
+
+export type MessagesLoadOutcome =
+  | { readonly kind: "success"; readonly items: readonly MessageItem[] }
+  | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The B1 fix, isolated as a pure rule: a background refresh (SSE/poll) never
+ * shows the loading skeleton and never replaces a `ready` timeline with an
+ * error page — it only ever moves `ready` state forward on success, and
+ * otherwise leaves whatever was on screen untouched. A foreground load
+ * (first load or channel switch) always reflects the outcome directly.
+ */
+export function nextMessagesState(
+  current: MessagesState,
+  outcome: MessagesLoadOutcome,
+  background: boolean,
+): MessagesState {
+  if (outcome.kind === "success") {
+    return { kind: "ready", items: outcome.items };
+  }
+  if (background) return current;
+  return { kind: "error", message: outcome.message };
+}
 
 function useChannelLists(tenantId: string, refreshKey: number) {
   const [state, setState] = useState<ChannelsState>({ kind: "loading" });
@@ -137,12 +160,22 @@ function ChatWorkspaceInner({
   });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [createChannelError, setCreateChannelError] = useState<string | null>(
+    null,
+  );
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 
   const unauthorizedRef = useRef(false);
+  // `background: true` is a refresh from SSE/polling: the previous ready
+  // items stay on screen (and the composer stays mounted) until fresh data
+  // lands, and a failed background refresh is swallowed rather than
+  // replacing the timeline with an error page. Only a first load or a
+  // channel switch (background left false) shows the loading skeleton or
+  // an error state.
   const loadMessages = useCallback(
-    async (channelId: string) => {
-      setMessagesState({ kind: "loading" });
+    async (channelId: string, options?: { readonly background?: boolean }) => {
+      const background = options?.background ?? false;
+      if (!background) setMessagesState({ kind: "loading" });
       try {
         const page = await listMessages(tenantId, channelId);
         // The server lists newest-first; the timeline renders top-to-bottom
@@ -153,7 +186,9 @@ function ChatWorkspaceInner({
             ? a.id.localeCompare(b.id)
             : a.createdAt.localeCompare(b.createdAt),
         );
-        setMessagesState({ kind: "ready", items });
+        setMessagesState((current) =>
+          nextMessagesState(current, { kind: "success", items }, background),
+        );
         const last = items.at(-1);
         if (last !== undefined) {
           await putReadState(tenantId, channelId, {
@@ -168,10 +203,10 @@ function ChatWorkspaceInner({
         if (cause instanceof ChatApiError && cause.status === 401) {
           unauthorizedRef.current = true;
         }
-        setMessagesState({
-          kind: "error",
-          message: cause instanceof Error ? cause.message : String(cause),
-        });
+        const message = cause instanceof Error ? cause.message : String(cause);
+        setMessagesState((current) =>
+          nextMessagesState(current, { kind: "error", message }, background),
+        );
       }
     },
     [tenantId],
@@ -191,9 +226,11 @@ function ChatWorkspaceInner({
 
   const refreshUnlessUnauthorized = () => {
     if (unauthorizedRef.current) return;
-    if (activeChannelId !== null) void loadMessages(activeChannelId);
+    if (activeChannelId !== null) {
+      void loadMessages(activeChannelId, { background: true });
+    }
   };
-  useChannelStream(
+  const streamState = useChannelStream(
     activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
     refreshUnlessUnauthorized,
     refreshUnlessUnauthorized,
@@ -204,14 +241,14 @@ function ChatWorkspaceInner({
     kind: ChannelKind;
   }) {
     setCreating(true);
+    setCreateChannelError(null);
     try {
       const created = await createChannel(tenantId, input);
       setDialogOpen(false);
       setChannelsRefresh((value) => value + 1);
       setActiveChannelId(created.id);
     } catch {
-      // The dialog stays open; the sidebar's own error state on the next
-      // reload is the loud failure surface here.
+      setCreateChannelError(CHAT_STRINGS.newChannelCreateError);
     } finally {
       setCreating(false);
     }
@@ -227,12 +264,15 @@ function ChatWorkspaceInner({
     await loadMessages(activeChannelId);
   }
 
-  async function handleSend(text: string) {
-    if (activeChannelId === null) return;
-    await sendMessage(tenantId, activeChannelId, [
-      { kind: "text", text },
-    ]).catch(() => undefined);
-    await loadMessages(activeChannelId);
+  async function handleSend(text: string): Promise<boolean> {
+    if (activeChannelId === null) return false;
+    try {
+      await sendMessage(tenantId, activeChannelId, [{ kind: "text", text }]);
+      await loadMessages(activeChannelId, { background: true });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   const activeChannel =
@@ -287,7 +327,10 @@ function ChatWorkspaceInner({
             chats={channelsState.chats}
             activeChannelId={activeChannelId}
             onSelect={(channel) => setActiveChannelId(channel.id)}
-            onNewChannel={() => setDialogOpen(true)}
+            onNewChannel={() => {
+              setCreateChannelError(null);
+              setDialogOpen(true);
+            }}
           />
         )}
         <div className="chat-main">
@@ -315,6 +358,11 @@ function ChatWorkspaceInner({
             />
           ) : (
             <>
+              {streamState !== "live" ? (
+                <div className="chat-stream-indicator" role="status">
+                  {CHAT_STRINGS.reconnectingMessage}
+                </div>
+              ) : null}
               <ChannelTimeline
                 items={messagesState.items}
                 participants={activeChannel?.participants ?? []}
@@ -324,7 +372,7 @@ function ChatWorkspaceInner({
                 agents={mentionCandidatesFromParticipants(
                   activeChannel?.participants ?? [],
                 )}
-                onSend={(text) => void handleSend(text)}
+                onSend={handleSend}
               />
             </>
           )}
@@ -335,6 +383,7 @@ function ChatWorkspaceInner({
         onOpenChange={setDialogOpen}
         onCreate={(input) => void handleCreateChannel(input)}
         submitting={creating}
+        error={createChannelError}
       />
       {activeChannelId !== null ? (
         <InviteAgentDialog

@@ -43,6 +43,37 @@ function formatTimestamp(iso: string): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function isSameCalendarDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/**
+ * "Today" / "Yesterday" for the two nearby cases, otherwise a medium-length
+ * date ("Jan 3, 2026") — never a raw ISO string.
+ */
+function formatDayLabel(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+
+  const now = new Date();
+  if (isSameCalendarDay(date, now)) return CHAT_STRINGS.dayDividerToday;
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (isSameCalendarDay(date, yesterday))
+    return CHAT_STRINGS.dayDividerYesterday;
+
+  return date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 /**
  * Two-letter initials for an avatar, derived only from a friendly string
  * already safe to show (a name, a handle, or one of the fallback labels)
@@ -136,10 +167,14 @@ function TextBubble({
   currentUser: CurrentUser | undefined;
 }) {
   const display = senderDisplay(sender, participants, currentUser);
+  const isOwn =
+    currentUser !== undefined &&
+    sender !== undefined &&
+    localPartOf(sender.address) === currentUser.principalId;
   return (
-    <div className="chat-bubble-row">
+    <div className="chat-bubble-row" data-own={isOwn}>
       {display !== undefined && <SenderAvatar initials={display.initials} />}
-      <div className="chat-bubble">
+      <div className="chat-bubble" data-own={isOwn}>
         {display !== undefined && (
           <span className="chat-bubble-sender">
             {display.label}
@@ -216,7 +251,17 @@ function FallbackPart({ part }: { part: Part }) {
       <span className="chat-fallback-label">
         {CHAT_STRINGS.fallbackPartLabel(part.kind)}
       </span>
-      <pre className="chat-fallback-body">{JSON.stringify(part, null, 2)}</pre>
+      <span className="chat-fallback-body">
+        {CHAT_STRINGS.fallbackPartUnsupported}
+      </span>
+    </div>
+  );
+}
+
+function DayDivider({ createdAt }: { createdAt: string }) {
+  return (
+    <div className="chat-day-divider">
+      <span>{formatDayLabel(createdAt)}</span>
     </div>
   );
 }
@@ -225,13 +270,16 @@ function MessageParts({
   item,
   participants,
   currentUser,
+  showDayDivider,
 }: {
   readonly item: MessageItem;
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
+  readonly showDayDivider: boolean;
 }) {
   return (
     <>
+      {showDayDivider && <DayDivider createdAt={item.createdAt} />}
       {item.parts.map((part, index) => {
         const key = `${item.id}-${index}`;
         if (part.kind === "text") {
@@ -271,10 +319,28 @@ export function ChannelTimeline({
   readonly participants?: readonly ParticipantRecord[];
   readonly currentUser?: CurrentUser;
 }) {
-  const endRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  // Starts true so a channel's first render always lands pinned to the
+  // bottom; afterward it tracks whether the reader is near the bottom so a
+  // background message doesn't yank them away from history they're reading.
+  const pinnedRef = useRef(true);
+
+  const BOTTOM_PIN_THRESHOLD_PX = 40;
+
+  const handleScroll = () => {
+    const container = containerRef.current;
+    if (container === null) return;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    pinnedRef.current = distanceFromBottom <= BOTTOM_PIN_THRESHOLD_PX;
+  };
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
+    const container = containerRef.current;
+    if (container === null) return;
+    if (pinnedRef.current) {
+      container.scrollTop = container.scrollHeight;
+    }
   }, [items.length]);
 
   if (items.length === 0) {
@@ -290,16 +356,25 @@ export function ChannelTimeline({
   }
 
   return (
-    <div className="chat-timeline">
-      {items.map((item) => (
-        <MessageParts
-          key={item.id}
-          item={item}
-          participants={participants}
-          currentUser={currentUser}
-        />
-      ))}
-      <div ref={endRef} />
+    <div className="chat-timeline" ref={containerRef} onScroll={handleScroll}>
+      {items.map((item, index) => {
+        const previous = index > 0 ? items[index - 1] : undefined;
+        const showDayDivider =
+          previous === undefined ||
+          !isSameCalendarDay(
+            new Date(previous.createdAt),
+            new Date(item.createdAt),
+          );
+        return (
+          <MessageParts
+            key={item.id}
+            item={item}
+            participants={participants}
+            currentUser={currentUser}
+            showDayDivider={showDayDivider}
+          />
+        );
+      })}
     </div>
   );
 }

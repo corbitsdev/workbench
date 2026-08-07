@@ -51,4 +51,10 @@ export const CHAT_STRINGS = {
     "Deploy a workflow definition on this bench before inviting it here.",
   inviteAgentLoadError: "Couldn't load invitable agents",
   inviteAgentInviting: "Inviting…",
+  inviteAgentInviteError: "Couldn't invite that agent — try again.",
+  newChannelCreateError: "Couldn't create that channel — try again.",
+  sendFailedMessage: "Couldn't send — retry",
+  fallbackPartUnsupported: "Unsupported content",
+  dayDividerToday: "Today",
+  dayDividerYesterday: "Yesterday",
 } as const;

@@ -52,6 +52,20 @@ describe("ChatSidebar", () => {
     expect(markup).toContain('aria-current="true"');
   });
 
+  test("hides the Channels heading when there are channels but no pinned channels", () => {
+    const markup = renderToStaticMarkup(
+      <ChatSidebar
+        channels={[]}
+        chats={[channel({ id: "c2", title: "DM with Ada", kind: "chat" })]}
+        activeChannelId="c2"
+        onSelect={() => undefined}
+        onNewChannel={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain("Channels");
+    expect(markup).toContain("Chats");
+  });
+
   test("shows the empty state with no channels or chats", () => {
     const markup = renderToStaticMarkup(
       <ChatSidebar
@@ -185,6 +199,48 @@ describe("ChannelTimeline", () => {
     expect(markup).not.toContain("member.joined");
   });
 
+  test("renders the signed-in user's own bubble right-aligned, others left-aligned", () => {
+    const bothSenders: MessageItem[] = [
+      {
+        id: "m-own",
+        createdAt: "2026-01-01T00:10:00.000Z",
+        parts: [{ kind: "text", text: "mine" }],
+        sender: { name: null, address: "prn_self1@agents.example" },
+      },
+      {
+        id: "m-other",
+        createdAt: "2026-01-01T00:11:00.000Z",
+        parts: [{ kind: "text", text: "theirs" }],
+        sender: { name: null, address: "prn_other1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline
+        items={bothSenders}
+        currentUser={{ principalId: "prn_self1" }}
+      />,
+    );
+    expect(markup).toContain('data-own="true"');
+    expect(markup).toContain('data-own="false"');
+  });
+
+  test("inserts a day divider between items on different calendar days", () => {
+    const acrossDays: MessageItem[] = [
+      {
+        id: "d1",
+        createdAt: "2026-01-01T23:59:00.000Z",
+        parts: [{ kind: "text", text: "before midnight" }],
+      },
+      {
+        id: "d2",
+        createdAt: "2026-01-02T00:01:00.000Z",
+        parts: [{ kind: "text", text: "after midnight" }],
+      },
+    ];
+    const markup = renderToStaticMarkup(<ChannelTimeline items={acrossDays} />);
+    expect(markup).toContain("chat-day-divider");
+  });
+
   test("renders an agent-joined event by the joining agent's handle, never its address", () => {
     const joinItems: MessageItem[] = [
       {
@@ -215,9 +271,12 @@ describe("ChannelTimeline", () => {
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
-  test("renders any other part kind as a labeled fallback block", () => {
+  test("renders any other part kind as a labeled fallback block, never the raw payload", () => {
     const markup = renderToStaticMarkup(<ChannelTimeline items={items} />);
     expect(markup).toContain("[tool-trace]");
+    expect(markup).toContain("Unsupported content");
+    expect(markup).not.toContain("search");
+    expect(markup).not.toContain('"q"');
   });
 
   test("shows the empty timeline state with no messages", () => {
@@ -229,7 +288,7 @@ describe("ChannelTimeline", () => {
 describe("Composer", () => {
   test("disables send while the draft is empty", () => {
     const markup = renderToStaticMarkup(
-      <Composer agents={[]} onSend={() => undefined} />,
+      <Composer agents={[]} onSend={() => Promise.resolve(true)} />,
     );
     expect(markup).toMatch(/<button[^>]*disabled[^>]*>/);
   });
@@ -244,7 +303,7 @@ describe("Composer", () => {
             label: "Researcher",
           },
         ]}
-        onSend={() => undefined}
+        onSend={() => Promise.resolve(true)}
       />,
     );
     expect(markup).not.toContain("@undefined");
@@ -317,7 +376,7 @@ describe("no raw identifiers on screen", () => {
               label: "Echo",
             },
           ]}
-          onSend={() => undefined}
+          onSend={() => Promise.resolve(true)}
         />,
       ),
     ].join("\n");

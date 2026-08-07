@@ -5,6 +5,11 @@
    prebuilt stylesheet and the theme's tokens. */
 
 .chat-workspace {
+  /* Summit Blue accent for the agent badge — the one literal allowed by the
+     brand review, defined once here as a token rather than sprinkled at the
+     usage site. Swap this for a consumed theme token if/when one ships. */
+  --chat-agent-accent: #607c9a;
+
   display: flex;
   flex: 1;
   min-height: 0;
@@ -52,10 +57,16 @@
   font: inherit;
   color: var(--foreground);
   cursor: pointer;
+  transition: background-color 150ms ease;
 }
 
 .chat-sidebar-item:hover {
   background: var(--accent);
+}
+
+.chat-sidebar-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .chat-sidebar-item[data-active="true"] {
@@ -90,8 +101,20 @@
 .chat-bubble-row {
   display: flex;
   align-items: flex-end;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 0.5rem;
+}
+
+.chat-bubble-row[data-own="true"] {
+  justify-content: flex-end;
+}
+
+.chat-day-divider {
+  display: flex;
+  justify-content: center;
+  padding: 0.25rem 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
 }
 
 .chat-sender-avatar {
@@ -110,7 +133,8 @@
 
 .chat-agent-badge {
   border-radius: 999px;
-  border: 1px solid currentColor;
+  border: 1px solid var(--chat-agent-accent);
+  color: var(--chat-agent-accent);
   padding: 0 0.375rem;
   margin-left: 0.375rem;
   font-size: 0.625rem;
@@ -119,15 +143,24 @@
   letter-spacing: 0.02em;
 }
 
+/* Own messages get the Bedrock Charcoal foreground-on-dark surface, never
+   the brand's Breakthrough Orange — the brand reserves that color for
+   primary CTAs, not a recurring message surface. Everyone else's messages
+   render on the theme's muted/card surface with dark text. */
 .chat-bubble {
   display: flex;
   max-width: 32rem;
   flex-direction: column;
   gap: 0.25rem;
   border-radius: calc(var(--radius) + 2px);
-  background: var(--primary);
+  background: var(--muted);
   padding: 0.625rem 0.875rem;
-  color: var(--primary-foreground);
+  color: var(--foreground);
+}
+
+.chat-bubble[data-own="true"] {
+  background: var(--foreground);
+  color: var(--background);
 }
 
 .chat-bubble-sender {
@@ -144,7 +177,8 @@
 
 .chat-bubble-time {
   align-self: flex-end;
-  font-size: 0.6875rem;
+  font-family: "Space Mono", monospace;
+  font-size: 0.8125rem;
   opacity: 0.75;
 }
 
@@ -157,6 +191,8 @@
 }
 
 .chat-event-time {
+  font-family: "Space Mono", monospace;
+  font-size: 0.8125rem;
   opacity: 0.75;
 }
 
@@ -215,11 +251,13 @@
   width: 16rem;
   flex-direction: column;
   overflow-y: auto;
-  border: 1px solid var(--border);
   border-radius: calc(var(--radius) - 2px);
   margin-bottom: 0.5rem;
   background: var(--popover, var(--background));
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.06),
+    0 4px 8px rgb(0 0 0 / 0.08),
+    0 12px 24px rgb(0 0 0 / 0.12);
 }
 
 .chat-mention-option {
@@ -233,6 +271,12 @@
   font: inherit;
   color: var(--foreground);
   cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.chat-mention-option:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .chat-mention-label {
@@ -272,4 +316,22 @@
   gap: 0.5rem;
   font-size: 0.875rem;
   font-weight: 400;
+}
+
+.chat-composer-error {
+  padding: 0.25rem 0.75rem 0;
+  font-size: 0.75rem;
+  color: var(--destructive);
+}
+
+.chat-dialog-error {
+  font-size: 0.8125rem;
+  color: var(--destructive);
+  margin: 0;
+}
+
+.chat-stream-indicator {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
 }
