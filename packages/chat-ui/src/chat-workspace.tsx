@@ -21,10 +21,11 @@ import {
   TopBarTitle,
 } from "@corbits/react-ui";
 import { CircleAlert, Lock, MessageSquare, UserPlus } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
+  ChatApiError,
   createChannel,
   inviteAgent,
   listChannels,
@@ -120,6 +121,7 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
   const [creating, setCreating] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 
+  const unauthorizedRef = useRef(false);
   const loadMessages = useCallback(
     async (channelId: string) => {
       setMessagesState({ kind: "loading" });
@@ -134,6 +136,12 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
           }).catch(() => undefined);
         }
       } catch (cause) {
+        // A 401 is terminal for this session: keep polling and the app
+        // would hammer the hub unauthenticated forever. Halt refreshes
+        // until the user switches channels or signs back in.
+        if (cause instanceof ChatApiError && cause.status === 401) {
+          unauthorizedRef.current = true;
+        }
         setMessagesState({
           kind: "error",
           message: cause instanceof Error ? cause.message : String(cause),
@@ -151,17 +159,18 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
   }, [channelsState, activeChannelId]);
 
   useEffect(() => {
+    unauthorizedRef.current = false;
     if (activeChannelId !== null) void loadMessages(activeChannelId);
   }, [activeChannelId, loadMessages]);
 
+  const refreshUnlessUnauthorized = () => {
+    if (unauthorizedRef.current) return;
+    if (activeChannelId !== null) void loadMessages(activeChannelId);
+  };
   useChannelStream(
     activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
-    () => {
-      if (activeChannelId !== null) void loadMessages(activeChannelId);
-    },
-    () => {
-      if (activeChannelId !== null) void loadMessages(activeChannelId);
-    },
+    refreshUnlessUnauthorized,
+    refreshUnlessUnauthorized,
   );
 
   async function handleCreateChannel(input: {
