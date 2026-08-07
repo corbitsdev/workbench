@@ -45,6 +45,15 @@ export type { ChannelKindPreset } from "./kinds";
 
 export { localPartOf, domainOf } from "./agent-address";
 export { isAgentAddress, mentionedParticipants } from "./mentions";
+export {
+  ParticipantEntry,
+  ParticipantsSetting,
+  parseParticipants,
+  handleFromName,
+  dedupeHandle,
+  addParticipant,
+} from "./participants";
+export type { ParticipantRecord } from "./participants";
 
 export { createChatRoutes } from "./routes";
 export type {

@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./migrations": "./src/migrations.ts",
     "./mentions": "./src/mentions.ts",
+    "./participants": "./src/participants.ts",
     "./agent-address": "./src/agent-address.ts"
   },
   "scripts": {

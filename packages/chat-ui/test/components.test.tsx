@@ -107,7 +107,7 @@ describe("ChannelTimeline", () => {
     expect(markup).toContain("Researcher");
   });
 
-  test("falls back to the sender's address local part with no name", () => {
+  test("falls back to the sender's address local part with no name and no matching participant", () => {
     const withSender: MessageItem[] = [
       {
         id: "m5",
@@ -118,6 +118,27 @@ describe("ChannelTimeline", () => {
     ];
     const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
     expect(markup).toContain("researcher");
+  });
+
+  test("shows a matching participant's friendly handle over the raw local part", () => {
+    const withSender: MessageItem[] = [
+      {
+        id: "m6",
+        createdAt: "2026-01-01T00:05:00.000Z",
+        parts: [{ kind: "text", text: "hi" }],
+        sender: { name: null, address: "ins_cd03d8e3@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline
+        items={withSender}
+        participants={[
+          { address: "ins_cd03d8e3@agents.example", handle: "echo" },
+        ]}
+      />,
+    );
+    expect(markup).toContain("echo");
+    expect(markup).not.toContain("ins_cd03d8e3");
   });
 
   test("renders an event part as an inline line", () => {

@@ -2,15 +2,21 @@
 // bubbles, event parts as inline system lines, everything else as a labeled
 // fallback block. `sender` is an optional field on `MessageItem` (see
 // api.ts) while packages/chat rolls it out, so a bubble shows the sender's
-// name — falling back to the local part of its address, then to nothing —
-// alongside its timestamp.
+// name — falling back to its matching participant record's mention handle,
+// then to the raw local part of its address, then to nothing — alongside
+// its timestamp.
 
 import { localPartOf } from "@corbits/chat/agent-address";
 import { EmptyState } from "@corbits/react-ui";
 import { MessageSquare } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-import type { MessageItem, MessageSender, Part } from "./api";
+import type {
+  MessageItem,
+  MessageSender,
+  ParticipantRecord,
+  Part,
+} from "./api";
 import { CHAT_STRINGS } from "./strings";
 
 function formatTimestamp(iso: string): string {
@@ -19,21 +25,30 @@ function formatTimestamp(iso: string): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function senderLabel(sender: MessageSender | undefined): string | undefined {
+function senderLabel(
+  sender: MessageSender | undefined,
+  participants: readonly ParticipantRecord[],
+): string | undefined {
   if (sender === undefined) return undefined;
-  return sender.name ?? localPartOf(sender.address);
+  if (sender.name !== null) return sender.name;
+  const matched = participants.find(
+    (participant) => participant.address === sender.address,
+  );
+  return matched?.handle ?? localPartOf(sender.address);
 }
 
 function TextBubble({
   text,
   createdAt,
   sender,
+  participants,
 }: {
   text: string;
   createdAt: string;
   sender: MessageSender | undefined;
+  participants: readonly ParticipantRecord[];
 }) {
-  const label = senderLabel(sender);
+  const label = senderLabel(sender, participants);
   return (
     <div className="chat-bubble-row">
       <div className="chat-bubble">
@@ -73,7 +88,13 @@ function FallbackPart({ part }: { part: Part }) {
   );
 }
 
-function MessageParts({ item }: { readonly item: MessageItem }) {
+function MessageParts({
+  item,
+  participants,
+}: {
+  readonly item: MessageItem;
+  readonly participants: readonly ParticipantRecord[];
+}) {
   return (
     <>
       {item.parts.map((part, index) => {
@@ -85,6 +106,7 @@ function MessageParts({ item }: { readonly item: MessageItem }) {
               text={part.text}
               createdAt={item.createdAt}
               sender={item.sender}
+              participants={participants}
             />
           );
         }
@@ -99,8 +121,10 @@ function MessageParts({ item }: { readonly item: MessageItem }) {
 
 export function ChannelTimeline({
   items,
+  participants = [],
 }: {
   readonly items: readonly MessageItem[];
+  readonly participants?: readonly ParticipantRecord[];
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -123,7 +147,7 @@ export function ChannelTimeline({
   return (
     <div className="chat-timeline">
       {items.map((item) => (
-        <MessageParts key={item.id} item={item} />
+        <MessageParts key={item.id} item={item} participants={participants} />
       ))}
       <div ref={endRef} />
     </div>

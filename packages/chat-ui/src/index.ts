@@ -30,6 +30,7 @@ export {
   Part,
   ChannelKind,
   MessageSender,
+  ParticipantRecord,
   ChatApiError,
   listChannels,
   createChannel,

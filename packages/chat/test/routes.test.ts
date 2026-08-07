@@ -48,7 +48,12 @@ function fakePlatform(
     }) => Promise<{ instanceId: string; address: string }>;
   } = {},
 ): ChatPlatform & {
-  sentMail: { channelId: string; principalId: string; content: MailContent }[];
+  sentMail: {
+    channelId: string;
+    principalId: string;
+    content: MailContent;
+    fromChannelId?: string;
+  }[];
   launchInviteCalls: {
     tenantId: string;
     creatorPrincipalId: string;
@@ -59,6 +64,7 @@ function fakePlatform(
     channelId: string;
     principalId: string;
     content: MailContent;
+    fromChannelId?: string;
   }[] = [];
   const launchInviteCalls: {
     tenantId: string;
@@ -162,7 +168,7 @@ interface ChannelView {
   title: string;
   kind: string;
   pinned: boolean;
-  participants: string[];
+  participants: { address: string; handle: string }[];
 }
 
 async function createChannel(
@@ -501,7 +507,7 @@ describe("POST /channels/:id/invite", () => {
       channel.id,
     );
     expect(settingsRow?.settings["chat/participants"]).toEqual([
-      "ins_invited1@acme.example",
+      { address: "ins_invited1@acme.example", handle: "ins_invited1" },
     ]);
 
     expect(platform.sentMail).toHaveLength(1);
@@ -537,8 +543,36 @@ describe("POST /channels/:id/invite", () => {
       channel.id,
     );
     expect(settingsRow?.settings["chat/participants"]).toEqual([
-      "existing@acme.example",
-      "ins_invited1@acme.example",
+      { address: "existing@acme.example", handle: "existing" },
+      { address: "ins_invited1@acme.example", handle: "ins_invited1" },
+    ]);
+  });
+
+  test("derives the mention handle from the invited definition's name, de-duplicating within the channel", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [{ id: "wfd_echo", name: "Echo" }],
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["echo@acme.example"],
+    });
+
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    const settingsRow = await deps.store.getChannelSettings(
+      TENANT.id,
+      channel.id,
+    );
+    expect(settingsRow?.settings["chat/participants"]).toEqual([
+      { address: "echo@acme.example", handle: "echo" },
+      { address: "ins_invited1@acme.example", handle: "echo-2" },
     ]);
   });
 

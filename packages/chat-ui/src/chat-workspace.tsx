@@ -280,7 +280,10 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
             />
           ) : (
             <>
-              <ChannelTimeline items={messagesState.items} />
+              <ChannelTimeline
+                items={messagesState.items}
+                participants={activeChannel?.participants ?? []}
+              />
               <Composer
                 agents={mentionCandidatesFromParticipants(
                   activeChannel?.participants ?? [],

@@ -48,12 +48,24 @@ export type Part = typeof Part.infer;
 export const ChannelKind = type("'channel' | 'chat'");
 export type ChannelKind = typeof ChannelKind.infer;
 
+// A channel participant's mention-friendly record — an address plus the
+// short handle a mention actually types (`@echo`), never the raw
+// instance-id local part. Mirrors `@corbits/chat`'s `ParticipantRecord`
+// (see `packages/chat/src/participants.ts`) structurally, kept local for
+// the same reason `Part` is above: this wire contract should not shift
+// out from under the app mid-edit of that package.
+export const ParticipantRecord = type({
+  address: "string",
+  handle: "string",
+});
+export type ParticipantRecord = typeof ParticipantRecord.infer;
+
 const Channel = type({
   id: "string",
   title: "string",
   kind: "string",
   pinned: "boolean",
-  participants: "string[]",
+  participants: ParticipantRecord.array(),
 });
 export type Channel = typeof Channel.infer;
 

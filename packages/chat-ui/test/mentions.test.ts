@@ -30,12 +30,12 @@ describe("activeMentionQuery", () => {
 });
 
 describe("mentionCandidatesFromParticipants", () => {
-  test("keeps only agent-address participants, keyed by the local part", () => {
+  test("keeps only agent-address participants, keyed by their own handle", () => {
     expect(
       mentionCandidatesFromParticipants([
-        "researcher@agents.example",
-        "user_abc123",
-        "launch-planner@agents.example",
+        { address: "researcher@agents.example", handle: "researcher" },
+        { address: "user_abc123", handle: "user_abc123" },
+        { address: "launch-planner@agents.example", handle: "launch-planner" },
       ]),
     ).toEqual([
       {
@@ -51,8 +51,22 @@ describe("mentionCandidatesFromParticipants", () => {
     ]);
   });
 
+  test("a handle friendlier than the local part is used verbatim", () => {
+    expect(
+      mentionCandidatesFromParticipants([
+        { address: "ins_cd03d8e3@agents.example", handle: "echo" },
+      ]),
+    ).toEqual([
+      { id: "ins_cd03d8e3@agents.example", handle: "echo", label: "Echo" },
+    ]);
+  });
+
   test("returns nothing when no participant is an agent address", () => {
-    expect(mentionCandidatesFromParticipants(["user_abc123"])).toEqual([]);
+    expect(
+      mentionCandidatesFromParticipants([
+        { address: "user_abc123", handle: "user_abc123" },
+      ]),
+    ).toEqual([]);
   });
 });
 

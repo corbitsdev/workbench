@@ -33,6 +33,13 @@ import { presetForKind } from "./kinds";
 import { localPartOf } from "./agent-address";
 import { mentionedParticipants } from "./mentions";
 import {
+  addParticipant,
+  handleFromName,
+  parseParticipants,
+  ParticipantsSetting,
+  type ParticipantRecord,
+} from "./participants";
+import {
   buildChannelHostWorkflow,
   serializeChannelHostWorkflow,
 } from "./channel-workflow";
@@ -194,7 +201,7 @@ const ChatNamespaceSchemas: Readonly<Record<string, Type<unknown>>> = {
   "chat/kind": type("string"),
   "chat/name": type("string"),
   "chat/pinned": type("boolean"),
-  "chat/participants": type("string[]"),
+  "chat/participants": ParticipantsSetting,
 };
 
 class SettingsValidationError extends Error {}
@@ -242,7 +249,7 @@ function channelView(row: {
   title: string;
   kind: string;
   pinned: boolean;
-  participants: string[];
+  participants: ParticipantRecord[];
 } {
   const kind =
     typeof row.settings["chat/kind"] === "string"
@@ -256,22 +263,19 @@ function channelView(row: {
     typeof row.settings["chat/pinned"] === "boolean"
       ? (row.settings["chat/pinned"] as boolean)
       : presetForKind(kind).pinned;
-  const participants = Array.isArray(row.settings["chat/participants"])
-    ? (row.settings["chat/participants"] as string[])
-    : [];
   return {
     id: row.channelId,
     title: name ?? row.channelId,
     kind,
     pinned,
-    participants,
+    participants: participantsOf(row.settings),
   };
 }
 
-function participantsOf(settings: Record<string, unknown>): string[] {
-  return Array.isArray(settings["chat/participants"])
-    ? (settings["chat/participants"] as string[])
-    : [];
+function participantsOf(
+  settings: Record<string, unknown>,
+): ParticipantRecord[] {
+  return parseParticipants(settings["chat/participants"]);
 }
 
 type ChannelSubscriber = (event: ChatChannelEvent) => void;
@@ -349,10 +353,20 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       });
 
       const preset = presetForKind(body.kind);
+      // Initial participants arrive as bare addresses; each gets a
+      // handle derived from its own local part, de-duplicated the same
+      // way an invited agent's handle is (see `POST .../invite` below)
+      // — settings always hold records, never bare strings.
+      const initialParticipants = (body.participants ?? []).reduce<
+        ParticipantRecord[]
+      >(
+        (acc, address) => addParticipant(acc, address, localPartOf(address)),
+        [],
+      );
       const settings: Record<string, unknown> = {
         "chat/kind": body.kind,
         "chat/pinned": preset.pinned,
-        "chat/participants": body.participants ?? [],
+        "chat/participants": initialParticipants,
         ...(body.name !== undefined ? { "chat/name": body.name } : {}),
       };
 
@@ -505,6 +519,21 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         definitionId: body.definitionId,
       });
 
+      // The invited definition's name becomes the friendly mention
+      // handle (e.g. "echo" for a definition named "Echo"), rather than
+      // the invited run's own unusable instance-id local part; a
+      // definition the listing no longer carries falls back to that
+      // local part. Either way it is de-duplicated against every handle
+      // already in the channel ("echo", "echo-2", ...).
+      const invitable = await deps.platform.listInvitableDefinitions(tenant.id);
+      const invitedDefinition = invitable.find(
+        (definition) => definition.id === body.definitionId,
+      );
+      const desiredHandle =
+        invitedDefinition !== undefined
+          ? handleFromName(invitedDefinition.name, launched.address)
+          : localPartOf(launched.address);
+
       // The record is updated before the join event is posted, matching
       // the settings PATCH route's record-then-mail ordering: the
       // participant list is the durable source of truth, so a failure
@@ -515,7 +544,11 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         channelId,
         settings: {
           ...existing.settings,
-          "chat/participants": [...participants, launched.address],
+          "chat/participants": addParticipant(
+            participants,
+            launched.address,
+            desiredHandle,
+          ),
         },
         updatedBy: principal.id,
       });
@@ -590,7 +623,20 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         throw err;
       }
 
-      const merged = { ...existing.settings, ...patch };
+      // `chat/participants` is normalized to records on write even when
+      // a caller PATCHes it with bare addresses (as the settings-control
+      // wire path does) — settings always hold records, never strings.
+      const merged: Record<string, unknown> = {
+        ...existing.settings,
+        ...patch,
+        ...(patch["chat/participants"] !== undefined
+          ? {
+              "chat/participants": parseParticipants(
+                patch["chat/participants"],
+              ),
+            }
+          : {}),
+      };
       // The settings record itself is the durable source of truth; it
       // is updated before anything else here fires, so a failure
       // below never leaves the record unwritten and the audit trail
@@ -608,14 +654,20 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // anchor's mailbox. A failure here is loud (unhandled), never
       // swallowed, since the timeline is the record of what changed.
       const priorState: ChannelParticipantState = {
-        participants: participantsOf(existing.settings),
+        participants: participantsOf(existing.settings).map(
+          (participant) => participant.address,
+        ),
         settings: existing.settings,
       };
       const controlPayload: ChannelControlPayload = {
         namespace: CHANNEL_CONTROL_NAMESPACE,
         settings: patch,
-        ...(Array.isArray(patch["chat/participants"])
-          ? { participants: patch["chat/participants"] as string[] }
+        ...(patch["chat/participants"] !== undefined
+          ? {
+              participants: parseParticipants(patch["chat/participants"]).map(
+                (participant) => participant.address,
+              ),
+            }
           : {}),
       };
       const { events } = applyControlPayload(

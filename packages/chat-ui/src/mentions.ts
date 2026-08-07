@@ -1,18 +1,21 @@
 // Pure @-mention logic for the composer: detecting an in-progress mention at
-// the caret, deriving mentionable candidates from a channel's participants,
-// filtering them against the query, and splicing a chosen handle back into
-// the draft. No DOM, no fetch — kept pure so it is unit-testable without
-// mounting anything.
+// the caret, deriving mentionable candidates from a channel's participant
+// records, filtering them against the query, and splicing a chosen handle
+// back into the draft. No DOM, no fetch — kept pure so it is unit-testable
+// without mounting anything.
 //
-// Matching and handle derivation delegate to `@corbits/chat`'s
-// `isAgentAddress`/`localPartOf` — the same functions
-// `mentionedParticipants` in packages/chat/src/routes.ts uses — so the
-// candidate's `handle` (the text actually spliced in) is always exactly
-// what the server's fan-out will match, never a display name; `label`
-// is a friendlier string shown alongside it in the popover only.
+// A candidate's `handle` comes straight off the participant record the hub
+// returns (`chat/participants`, settings-backed — see
+// `packages/chat/src/participants.ts`), the same friendly, deduplicated
+// mention name `mentionedParticipants` in `packages/chat/src/routes.ts`
+// matches against — never the instance-id local part. Filtering to agent
+// addresses delegates to `@corbits/chat`'s `isAgentAddress`, the same
+// function the server's fan-out uses, so the candidate set is always
+// exactly the set the server will fan a copy to. `label` is a friendlier
+// string shown alongside the handle in the popover only.
 
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { localPartOf } from "@corbits/chat/agent-address";
+import type { ParticipantRecord } from "./api";
 
 export type MentionCandidate = {
   readonly id: string;
@@ -36,16 +39,19 @@ function readableLabel(handle: string): string {
 /**
  * The mentionable candidates for a channel: its agent-address participants
  * (the same set `mentionedParticipants` fans a copy to on the server), each
- * keyed by the local part of its address so a picked candidate always
+ * keyed by its own settings-held handle so a picked candidate always
  * inserts text the server will actually match.
  */
 export function mentionCandidatesFromParticipants(
-  participants: readonly string[],
+  participants: readonly ParticipantRecord[],
 ): readonly MentionCandidate[] {
-  return participants.filter(isAgentAddress).map((address) => {
-    const handle = localPartOf(address);
-    return { id: address, handle, label: readableLabel(handle) };
-  });
+  return participants
+    .filter((participant) => isAgentAddress(participant.address))
+    .map((participant) => ({
+      id: participant.address,
+      handle: participant.handle,
+      label: readableLabel(participant.handle),
+    }));
 }
 
 export type MentionQuery = {

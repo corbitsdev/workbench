@@ -611,8 +611,10 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     }
 
     // The invited agent's own run's address joined this channel's
-    // participants, and the join event landed on this channel's own
-    // timeline.
+    // participants — as a record carrying a friendly mention handle
+    // derived from the invited definition's name ("echo"), never the
+    // unusable raw local part — and the join event landed on this
+    // channel's own timeline.
     const settingsAfterInvite = await api(
       "GET",
       `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
@@ -624,8 +626,16 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       settingsAfterInvite.data,
       "participants",
       "get settings after invite",
+    ) as { address: string; handle: string }[];
+    const invitedParticipant = participantsAfterInvite.find(
+      (participant) => participant.address === invitedAddress,
     );
-    expect(participantsAfterInvite).toContain(invitedAddress);
+    if (invitedParticipant === undefined) {
+      throw new Error(
+        `invited participant record missing: ${JSON.stringify(participantsAfterInvite)}`,
+      );
+    }
+    expect(invitedParticipant.handle).toBe("echo");
 
     // The join event itself lands on this channel's timeline as an
     // `EventPart` (see `POST /channels/:id/invite` in
@@ -641,14 +651,15 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     // this test never calls `listMessages` on `channelId` again below —
     // only on the invited agent's own, still-clean channel.
 
-    // @mentioning the invited agent's local part fans a copy into its
-    // own run's mailbox — the same fan-out pattern the earlier
+    // @mentioning the invited agent's friendly handle fans a copy into
+    // its own run's mailbox — the same fan-out pattern the earlier
     // "mention fan-out" test proves for a channel-to-channel mention,
-    // now proving it reaches an invited agent's run. The invited
-    // agent's reply is never asserted: its inference source is a
-    // placeholder key in CI, so its own reply attempt errors, which is
-    // expected and irrelevant to this assertion.
-    const mentionText = `hey @${invitedLocalPart} welcome ${crypto.randomUUID()}`;
+    // now proving it reaches an invited agent's run by its handle
+    // rather than its raw instance-id local part. The invited agent's
+    // reply is never asserted: its inference source is a placeholder
+    // key in CI, so its own reply attempt errors, which is expected and
+    // irrelevant to this assertion.
+    const mentionText = `hey @${invitedParticipant.handle} welcome ${crypto.randomUUID()}`;
     await postMessage(user1.cookies, channelId, mentionText);
 
     const invitedMailbox = await listMessages(user1.cookies, invitedLocalPart);
@@ -738,8 +749,8 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       fetched.data,
       "participants",
       "get settings",
-    );
-    expect(participants).toContain(newParticipant);
+    ) as { address: string; handle: string }[];
+    expect(participants.some((p) => p.address === newParticipant)).toBe(true);
 
     const items = await listMessages(user1.cookies, channelId);
     const events = items.flatMap((item) =>
