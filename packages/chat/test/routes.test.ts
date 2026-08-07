@@ -38,13 +38,32 @@ function principal(id: string) {
   };
 }
 
-function fakePlatform(): ChatPlatform & {
+function fakePlatform(
+  opts: {
+    invitable?: { id: string; name: string }[];
+    launchInvite?: (input: {
+      tenantId: string;
+      creatorPrincipalId: string;
+      definitionId: string;
+    }) => Promise<{ instanceId: string; address: string }>;
+  } = {},
+): ChatPlatform & {
   sentMail: { channelId: string; principalId: string; content: MailContent }[];
+  launchInviteCalls: {
+    tenantId: string;
+    creatorPrincipalId: string;
+    definitionId: string;
+  }[];
 } {
   const sentMail: {
     channelId: string;
     principalId: string;
     content: MailContent;
+  }[] = [];
+  const launchInviteCalls: {
+    tenantId: string;
+    creatorPrincipalId: string;
+    definitionId: string;
   }[] = [];
   const mailByChannel = new Map<
     string,
@@ -54,8 +73,20 @@ function fakePlatform(): ChatPlatform & {
 
   return {
     sentMail,
+    launchInviteCalls,
     async launchChannel() {
       return { instanceId: "launched" };
+    },
+    async launchInvite(input) {
+      launchInviteCalls.push(input);
+      if (opts.launchInvite !== undefined) return opts.launchInvite(input);
+      return {
+        instanceId: "ins_invited1",
+        address: "ins_invited1@acme.example",
+      };
+    },
+    async listInvitableDefinitions() {
+      return opts.invitable ?? [];
     },
     async sendMail(input) {
       sentMail.push({
@@ -374,6 +405,164 @@ describe("read-state", () => {
 
     expect(aliceRead.lastSeenId).toBe("mail_alice");
     expect(bobRead.lastSeenId).toBe("mail_bob");
+  });
+});
+
+describe("GET /channels/:id/invitable", () => {
+  test("lists the platform's invitable definitions", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [{ id: "wfd_echo", name: "echo" }],
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(`/channels/${channel.id}/invitable`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      items: { id: string; name: string }[];
+    };
+    expect(body.items).toEqual([{ id: "wfd_echo", name: "echo" }]);
+  });
+
+  test("a denied grant is rejected", async () => {
+    const deps = buildDeps({
+      requireGrant: () => async (c) =>
+        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request(`/channels/ins_x/invitable`);
+    expect(response.status).toBe(403);
+  });
+});
+
+describe("POST /channels/:id/invite", () => {
+  test("launches the definition, appends the participant, and posts a join event", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      address: string;
+      definitionId: string;
+    };
+    expect(body).toEqual({
+      address: "ins_invited1@acme.example",
+      definitionId: "wfd_echo",
+    });
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.launchInviteCalls).toEqual([
+      {
+        tenantId: TENANT.id,
+        creatorPrincipalId: "prn_alice",
+        definitionId: "wfd_echo",
+      },
+    ]);
+
+    const settingsRow = await deps.store.getChannelSettings(
+      TENANT.id,
+      channel.id,
+    );
+    expect(settingsRow?.settings["chat/participants"]).toEqual([
+      "ins_invited1@acme.example",
+    ]);
+
+    expect(platform.sentMail).toHaveLength(1);
+    const sent = platform.sentMail[0];
+    expect(sent?.channelId).toBe(channel.id);
+    const decoded = JSON.parse(
+      Buffer.from(
+        (sent?.content.attachments?.[0]?.data ?? "") as string,
+        "base64",
+      ).toString("utf-8"),
+    ) as { kind: string; event: string; data: { address: string } };
+    expect(decoded.kind).toBe("event");
+    expect(decoded.event).toBe("channel.agent-joined");
+    expect(decoded.data.address).toBe("ins_invited1@acme.example");
+  });
+
+  test("appends onto an existing participant list rather than replacing it", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["existing@acme.example"],
+    });
+
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    const settingsRow = await deps.store.getChannelSettings(
+      TENANT.id,
+      channel.id,
+    );
+    expect(settingsRow?.settings["chat/participants"]).toEqual([
+      "existing@acme.example",
+      "ins_invited1@acme.example",
+    ]);
+  });
+
+  test("a malformed body is rejected with the structured error envelope", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("bad_request");
+  });
+
+  test("a missing channel is a 404", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request(`/channels/ins_missing/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  test("a denied grant is rejected before any launch is attempted", async () => {
+    const platform = fakePlatform();
+    const deps = buildDeps({
+      platform,
+      requireGrant: () => async (c) =>
+        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request(`/channels/ins_x/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(
+      (platform as ReturnType<typeof fakePlatform>).launchInviteCalls,
+    ).toHaveLength(0);
   });
 });
 

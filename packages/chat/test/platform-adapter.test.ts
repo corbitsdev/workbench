@@ -127,6 +127,13 @@ function createFakeDb(opts: {
     | { id: string; address: string | null; principalId: string | null }
     | undefined;
   sessionMailRow?: { id: string; raw: Uint8Array } | undefined;
+  workflowDefinitionRow?:
+    | { id: string; tenantId: string; status: string; assetId: string | null }
+    | undefined;
+  workflowDefinitionRows?:
+    | { id: string; tenantId: string; status: string; name: string }[]
+    | undefined;
+  tenantRow?: { id: string; domain: string } | undefined;
 }) {
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
@@ -164,6 +171,13 @@ function createFakeDb(opts: {
       },
       sessionMail: {
         findFirst: async () => opts.sessionMailRow,
+      },
+      workflowDefinition: {
+        findFirst: async () => opts.workflowDefinitionRow,
+        findMany: async () => opts.workflowDefinitionRows ?? [],
+      },
+      tenant: {
+        findFirst: async () => opts.tenantRow,
       },
     },
     select(..._cols: unknown[]) {
@@ -268,10 +282,12 @@ function createFakeSessionService(): SessionService & {
   };
 }
 
-function createFakeAssetService() {
+function createFakeAssetService(opts: { assetBlob?: Uint8Array } = {}) {
   const createAssetCalls: unknown[] = [];
+  const readAssetBlobCalls: unknown[] = [];
   return {
     createAssetCalls,
+    readAssetBlobCalls,
     async createAsset(params: unknown) {
       createAssetCalls.push(params);
       return {
@@ -288,8 +304,9 @@ function createFakeAssetService() {
     async populateAsset() {
       return { commitSha: "unused" };
     },
-    async readAssetBlob() {
-      return new Uint8Array();
+    async readAssetBlob(params: unknown) {
+      readAssetBlobCalls.push(params);
+      return opts.assetBlob ?? new Uint8Array();
     },
     async listAssetBlobs() {
       return [];
@@ -701,6 +718,176 @@ describe("createHubChatPlatform", () => {
     expect(sidecarRouter.dispatchAgentEventCalls[0]?.address).toBe(
       "ins_channel1@ten1.workbench.test",
     );
+  });
+
+  test("launchInvite hydrates the target definition's body from its asset and deploys via deployInstanceAtHead", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "channel-1",
+        displayName: null,
+      },
+      definitionId: "wfd_channel1",
+      workflowDefinitionRow: {
+        id: "wfd_echo",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_echo",
+      },
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+    });
+    const sessionService = createFakeSessionService();
+    const assetService = createFakeAssetService({
+      assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+    });
+    const sidecarRouter = createFakeSidecarRouter();
+    const eventCollectors = createFakeEventCollectors();
+
+    const platform = createHubChatPlatform({
+      db: db as never,
+      sessionService,
+      assetService,
+      sidecarRouter,
+      eventCollectors,
+    });
+
+    const launched = await platform.launchInvite({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      definitionId: "wfd_echo",
+    });
+
+    expect(launched.instanceId).toMatch(/^ins_/);
+    expect(launched.address).toBe(`${launched.instanceId}@ten1.workbench.test`);
+
+    expect(assetService.readAssetBlobCalls).toEqual([
+      { assetId: "asst_echo", path: "workflow.json" },
+    ]);
+
+    expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+      agentAddress: string;
+      instanceId: string;
+    };
+    expect(deployed.agentAddress).toBe(launched.address);
+    expect(deployed.instanceId).toBe(launched.instanceId);
+
+    const runInsert = db.inserted.find((row) => row.table === workflowRun);
+    expect(runInsert?.values).toMatchObject({
+      id: launched.instanceId,
+      definitionId: "wfd_echo",
+      deploymentId: null,
+      tenantId: "ten_1",
+      address: launched.address,
+      status: "running",
+    });
+  });
+
+  test("launchInvite fails loud when the definition is not deployed", async () => {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "channel-1",
+        displayName: null,
+      },
+      definitionId: "wfd_channel1",
+      workflowDefinitionRow: {
+        id: "wfd_echo",
+        tenantId: "ten_1",
+        status: "stopped",
+        assetId: "asst_echo",
+      },
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+    });
+    const platform = createHubChatPlatform({
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter(),
+    });
+
+    await expect(
+      platform.launchInvite({
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        definitionId: "wfd_echo",
+      }),
+    ).rejects.toThrow(/not in a launchable state/);
+  });
+
+  test("launchInvite fails loud when no such definition exists for the tenant", async () => {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "channel-1",
+        displayName: null,
+      },
+      definitionId: "wfd_channel1",
+      workflowDefinitionRow: undefined,
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+    });
+    const platform = createHubChatPlatform({
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter(),
+    });
+
+    await expect(
+      platform.launchInvite({
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        definitionId: "wfd_missing",
+      }),
+    ).rejects.toThrow(/no definition/);
+  });
+
+  test("listInvitableDefinitions lists deployed definitions, excluding channel hosts", async () => {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "channel-1",
+        displayName: null,
+      },
+      definitionId: "wfd_channel1",
+      workflowDefinitionRows: [
+        { id: "wfd_echo", tenantId: "ten_1", status: "deployed", name: "echo" },
+        {
+          id: "wfd_host1",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "ins-channel1",
+        },
+      ],
+    });
+    const platform = createHubChatPlatform({
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter(),
+    });
+
+    const items = await platform.listInvitableDefinitions("ten_1");
+    expect(items).toEqual([{ id: "wfd_echo", name: "echo" }]);
   });
 
   test("subscribeToChannel resolves the run's address and subscribes on the sidecar router", async () => {

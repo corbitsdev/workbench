@@ -103,6 +103,19 @@ export type Deployment = typeof Deployment.infer;
 
 const DeploymentsResponse = Deployment.array();
 
+// `GET /channels/:id/invitable` (see packages/chat/src/routes.ts): the
+// tenant's deployed, launchable workflow definitions this channel can
+// invite an agent from — never including the channel's own host.
+const InvitableDefinition = type({ id: "string", name: "string" });
+export type InvitableDefinition = typeof InvitableDefinition.infer;
+
+const InvitableDefinitionsResponse = type({
+  items: InvitableDefinition.array(),
+});
+
+const InvitedAgent = type({ address: "string", definitionId: "string" });
+export type InvitedAgent = typeof InvitedAgent.infer;
+
 export class ChatApiError extends Error {
   constructor(
     message: string,
@@ -214,6 +227,28 @@ export function listDeployedAgents(
   return request(
     `/api/tenants/${tenantId}/workflows/instances`,
     DeploymentsResponse,
+  );
+}
+
+export function listInvitableDefinitions(
+  tenantId: string,
+  channelId: string,
+): Promise<readonly InvitableDefinition[]> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/invitable`,
+    InvitableDefinitionsResponse,
+  ).then((page) => page.items);
+}
+
+export function inviteAgent(
+  tenantId: string,
+  channelId: string,
+  definitionId: string,
+): Promise<InvitedAgent> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/invite`,
+    InvitedAgent,
+    { method: "POST", body: JSON.stringify({ definitionId }) },
   );
 }
 

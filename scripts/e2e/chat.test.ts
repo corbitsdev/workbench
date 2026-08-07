@@ -39,6 +39,10 @@ import {
   type ApiCall,
 } from "../../packages/hub-client/src/index.ts";
 import type { Part } from "../../packages/chat/src/index.ts";
+import {
+  buildEchoWorkflow,
+  serializeEchoWorkflow,
+} from "../../workflows/echo/src/index.ts";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
@@ -46,6 +50,7 @@ import {
   expectStatus,
   freePort,
   provisionSidecar,
+  pushWorkflowJson,
   startHub,
   startSidecar,
   type ApiResult,
@@ -270,6 +275,97 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       placeholderCredential: true,
       log: () => undefined,
     });
+
+    // Seed the echo workflow as a deployed, invitable definition: the
+    // same asset-publish → git-token → smart-HTTP push → native deploy
+    // path `scripts/e2e/walking-skeleton.test.ts` proves end to end.
+    // The native deploy call's own inference source is a placeholder
+    // (that deployment's own execution is never exercised here); the
+    // invite launch this suite proves instead resolves its source
+    // against the tenant catalog seeded just above, matching the
+    // provider/model this workflow declares.
+    const echoAssetCreated = await api(
+      "POST",
+      `/api/tenants/${tenantId}/assets`,
+      { kind: "workflow", name: "echo" },
+      user1.cookies,
+    );
+    expectStatus("create echo workflow asset", echoAssetCreated, 201);
+    const echoAssetId = stringField(
+      echoAssetCreated.data,
+      "id",
+      "create echo workflow asset",
+    );
+
+    const echoGitToken = await api(
+      "POST",
+      `/api/tenants/${tenantId}/git-tokens`,
+      {
+        name: "chat-e2e-echo-push",
+        resource: "asset:*",
+        refPattern: "**",
+        actions: ["can_read", "can_push"],
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      },
+      user1.cookies,
+    );
+    expectStatus("mint echo git token", echoGitToken, 201);
+
+    await pushWorkflowJson({
+      baseUrl: hub.baseUrl,
+      tenantId,
+      assetName: "echo",
+      tokenSecret: stringField(echoGitToken.data, "secret", "mint git token"),
+      workflowJson: serializeEchoWorkflow(
+        buildEchoWorkflow({
+          triggerAddress: `echo@${domain}`,
+          inferencePreferences: [
+            { provider: "anthropic", model: "claude-sonnet-5" },
+          ],
+          turnTimeoutMs: 60_000,
+        }),
+      ),
+    });
+
+    // Retries while the hub still answers 502 (the sidecar's dial-in
+    // may not have completed yet), matching `createChannel`'s own
+    // retry loop below.
+    const echoDeployDeadline = Date.now() + 60_000;
+    let echoDeployed: ApiResult;
+    for (;;) {
+      if (sidecar.exited()) {
+        throw new Error(
+          `sidecar exited before echo deploy; output:\n${sidecar.output()}`,
+        );
+      }
+      echoDeployed = await api(
+        "POST",
+        `/api/tenants/${tenantId}/workflows/instances`,
+        {
+          assetId: echoAssetId,
+          sources: [
+            {
+              id: "src-echo-e2e",
+              provider: "anthropic",
+              baseURL: "https://inference.invalid",
+              apiKey: "e2e-placeholder",
+              model: "claude-sonnet-5",
+            },
+          ],
+          defaultSource: "src-echo-e2e",
+        },
+        user1.cookies,
+      );
+      if (echoDeployed.status !== 502) break;
+      if (Date.now() > echoDeployDeadline) {
+        throw new Error(
+          `echo workflow never became deployable (hub kept answering 502): ` +
+            `${JSON.stringify(echoDeployed.data)}\nsidecar output:\n${sidecar.output()}`,
+        );
+      }
+      await Bun.sleep(1000);
+    }
+    expectStatus("deploy echo workflow", echoDeployed, 201);
   }, 120_000);
 
   // Launching a channel is the go/no-go signal for the whole suite: it
@@ -472,6 +568,96 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         .map((p) => p.text),
     );
     expect(mentionedTexts).toContain(mentionText);
+  }, 90_000);
+
+  test("inviting the echo agent launches its own run, joins the channel, and receives @mentions", async () => {
+    const invitableRes = await api(
+      "GET",
+      `/api/tenants/${tenantId}/chat/channels/${channelId}/invitable`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus("list invitable definitions", invitableRes, 200);
+    const invitable = arrayField(
+      invitableRes.data,
+      "items",
+      "list invitable definitions",
+    ) as { id: string; name: string }[];
+    const echoDefinition = invitable.find((item) => item.name === "echo");
+    if (echoDefinition === undefined) {
+      throw new Error(
+        `no invitable definition named "echo": ${JSON.stringify(invitable)}`,
+      );
+    }
+
+    const invited = await api(
+      "POST",
+      `/api/tenants/${tenantId}/chat/channels/${channelId}/invite`,
+      { definitionId: echoDefinition.id },
+      user1.cookies,
+    );
+    expectStatus("invite echo agent", invited, 201);
+    const invitedAddress = stringField(
+      invited.data,
+      "address",
+      "invite echo agent",
+    );
+    expect(stringField(invited.data, "definitionId", "invite echo agent")).toBe(
+      echoDefinition.id,
+    );
+    const invitedLocalPart = invitedAddress.split("@")[0];
+    if (invitedLocalPart === undefined || invitedLocalPart === "") {
+      throw new Error(`malformed invited agent address: ${invitedAddress}`);
+    }
+
+    // The invited agent's own run's address joined this channel's
+    // participants, and the join event landed on this channel's own
+    // timeline.
+    const settingsAfterInvite = await api(
+      "GET",
+      `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus("get settings after invite", settingsAfterInvite, 200);
+    const participantsAfterInvite = arrayField(
+      settingsAfterInvite.data,
+      "participants",
+      "get settings after invite",
+    );
+    expect(participantsAfterInvite).toContain(invitedAddress);
+
+    // The join event itself lands on this channel's timeline as an
+    // `EventPart` (see `POST /channels/:id/invite` in
+    // packages/chat/src/routes.ts), the same way a settings-changed
+    // event does — but this suite cannot read it back via
+    // `GET .../messages` any more than the "settings update" test
+    // below can: an `EventPart` rides as a lone `application/json` MIME
+    // attachment, and reading any attachment back hits the same
+    // pre-existing `@intx/mime` `walkParts` defect that test documents
+    // (vendor/intx is out of this suite's file scope to fix). Once this
+    // channel's timeline carries that attachment, `GET .../messages`
+    // 500s for it for the rest of the suite's run, which is exactly why
+    // this test never calls `listMessages` on `channelId` again below —
+    // only on the invited agent's own, still-clean channel.
+
+    // @mentioning the invited agent's local part fans a copy into its
+    // own run's mailbox — the same fan-out pattern the earlier
+    // "mention fan-out" test proves for a channel-to-channel mention,
+    // now proving it reaches an invited agent's run. The invited
+    // agent's reply is never asserted: its inference source is a
+    // placeholder key in CI, so its own reply attempt errors, which is
+    // expected and irrelevant to this assertion.
+    const mentionText = `hey @${invitedLocalPart} welcome ${crypto.randomUUID()}`;
+    await postMessage(user1.cookies, channelId, mentionText);
+
+    const invitedMailbox = await listMessages(user1.cookies, invitedLocalPart);
+    const invitedTexts = invitedMailbox.flatMap((item) =>
+      item.parts
+        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
+        .map((p) => p.text),
+    );
+    expect(invitedTexts).toContain(mentionText);
   }, 90_000);
 
   test("kind filter excludes and includes by kind", async () => {

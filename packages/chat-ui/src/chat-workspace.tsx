@@ -17,14 +17,16 @@ import {
   EmptyState,
   Skeleton,
   TopBar,
+  TopBarActions,
   TopBarTitle,
 } from "@corbits/react-ui";
-import { CircleAlert, Lock, MessageSquare } from "lucide-react";
+import { CircleAlert, Lock, MessageSquare, UserPlus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
   createChannel,
+  inviteAgent,
   listChannels,
   listMessages,
   putReadState,
@@ -33,6 +35,7 @@ import {
 } from "./api";
 import type { Channel, ChannelKind, MessageItem } from "./api";
 import { Composer } from "./composer";
+import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
 import { ChatSidebar } from "./sidebar";
@@ -115,6 +118,7 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
   });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 
   const loadMessages = useCallback(
     async (channelId: string) => {
@@ -178,6 +182,16 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
     }
   }
 
+  async function handleInvite(definitionId: string) {
+    if (activeChannelId === null) return;
+    await inviteAgent(tenantId, activeChannelId, definitionId);
+    // The invited agent's address lands on the channel's participants
+    // (the mention popover picks it up via the reload below) and its
+    // join event lands on the timeline.
+    setChannelsRefresh((value) => value + 1);
+    await loadMessages(activeChannelId);
+  }
+
   async function handleSend(text: string) {
     if (activeChannelId === null) return;
     await sendMessage(tenantId, activeChannelId, [
@@ -205,6 +219,18 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
         >
           Chat
         </TopBarTitle>
+        {activeChannelId !== null ? (
+          <TopBarActions>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setInviteDialogOpen(true)}
+            >
+              <UserPlus />
+              {CHAT_STRINGS.inviteAgentAction}
+            </Button>
+          </TopBarActions>
+        ) : null}
       </TopBar>
       <div className="chat-workspace">
         {channelsState.kind === "loading" ? (
@@ -271,6 +297,15 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
         onCreate={(input) => void handleCreateChannel(input)}
         submitting={creating}
       />
+      {activeChannelId !== null ? (
+        <InviteAgentDialog
+          open={inviteDialogOpen}
+          onOpenChange={setInviteDialogOpen}
+          tenantId={tenantId}
+          channelId={activeChannelId}
+          onInvite={handleInvite}
+        />
+      ) : null}
     </>
   );
 }

@@ -8,8 +8,10 @@ import {
   ChatApiError,
   createChannel,
   deploymentDisplayName,
+  inviteAgent,
   listChannels,
   listDeployedAgents,
+  listInvitableDefinitions,
   listMessages,
   sendMessage,
 } from "../src/api";
@@ -205,6 +207,49 @@ describe("listDeployedAgents", () => {
     expect(deployment !== undefined && deploymentDisplayName(deployment)).toBe(
       "workflow",
     );
+  });
+});
+
+describe("listInvitableDefinitions", () => {
+  test("fetches the channel's invitable definitions", async () => {
+    const calls = stubFetch(() =>
+      json({ items: [{ id: "wfd_echo", name: "echo" }] }),
+    );
+    const items = await listInvitableDefinitions("tenant_1", "chan_1");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/channels/chan_1/invitable",
+    );
+    expect(items).toEqual([{ id: "wfd_echo", name: "echo" }]);
+  });
+
+  test("throws a ChatApiError on a malformed response", async () => {
+    stubFetch(() => json({ items: [{ id: "wfd_echo" }] }));
+    await expect(
+      listInvitableDefinitions("tenant_1", "chan_1"),
+    ).rejects.toBeInstanceOf(ChatApiError);
+  });
+});
+
+describe("inviteAgent", () => {
+  test("posts the definitionId and returns the launched agent's address", async () => {
+    const calls = stubFetch(() =>
+      json(
+        { address: "ins_invited1@acme.example", definitionId: "wfd_echo" },
+        201,
+      ),
+    );
+    const invited = await inviteAgent("tenant_1", "chan_1", "wfd_echo");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/channels/chan_1/invite",
+    );
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      definitionId: "wfd_echo",
+    });
+    expect(invited).toEqual({
+      address: "ins_invited1@acme.example",
+      definitionId: "wfd_echo",
+    });
   });
 });
 

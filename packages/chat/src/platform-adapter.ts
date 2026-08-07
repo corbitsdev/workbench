@@ -31,6 +31,8 @@ import {
   agentSession,
   principal as principalTable,
   sessionMail,
+  tenant as tenantTable,
+  workflowDefinition,
   workflowRun,
 } from "@intx/db/schema";
 import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
@@ -40,6 +42,7 @@ import {
   ensureWorkflowDefinitionForAsset,
   resolveRunSessionId,
   SessionLaunchError,
+  WORKFLOW_JSON_PATH,
 } from "@intx/hub-sessions";
 import type {
   AssetService,
@@ -49,12 +52,16 @@ import type {
 } from "@intx/hub-sessions";
 import { resolveDefinitionSources } from "@intx/hub-api";
 import { extractFoldedBody } from "@intx/workflow-deploy";
+import type { FoldedBody } from "@intx/workflow-deploy";
+import { formatAgentAddress } from "@intx/types";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type {
   ChatChannelEvent,
   ChatPlatform,
+  InvitableDefinition,
   LaunchedChannel,
+  LaunchedInvite,
   ListedMail,
   SentMail,
 } from "./routes";
@@ -88,6 +95,43 @@ function assetNameForChannel(channelId: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+// Every channel host's workflow asset is named via `assetNameForChannel`
+// off a `generateId("instance")` id (`ins_<hex>`), which always yields
+// this prefix once slugified — `listInvitableDefinitions` uses it to
+// exclude channel hosts from the invitable set without needing a
+// separate "is this a channel host" column.
+const CHANNEL_HOST_ASSET_NAME_PREFIX = "ins-";
+
+/**
+ * Reads a workflow definition's body back out of its materialized
+ * asset. Reimplemented here rather than imported from
+ * `@intx/hub-api`'s `run-grant-materialization.ts` (the reference
+ * `POST /workflows/runs` route's own helper): that module is
+ * hub-api-internal, not part of its published surface, matching the
+ * same module-privacy reason `channel-workflow.ts` reimplements
+ * `assertJsonPortable` rather than reaching into another package's
+ * internals.
+ */
+async function hydrateDefinitionFromAsset(
+  assetService: AssetService,
+  assetId: string,
+): Promise<WorkflowDefinition> {
+  const raw = await assetService.readAssetBlob({
+    assetId,
+    path: WORKFLOW_JSON_PATH,
+  });
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(raw));
+  } catch (cause) {
+    throw new Error(
+      `workflow asset ${assetId} ${WORKFLOW_JSON_PATH} is not valid JSON`,
+      { cause },
+    );
+  }
+  return parsed as WorkflowDefinition;
 }
 
 function domainOf(address: string): string {
@@ -160,6 +204,169 @@ export function createHubChatPlatform(
     return sessionId;
   }
 
+  /**
+   * The launch core shared by `launchChannel` (host) and `launchInvite`
+   * (invited agent): resolve inference sources against the tenant
+   * catalog, write the folded run's principal/session/run rows, open
+   * the event collector, and deploy via `deployInstanceAtHead` — with
+   * the same failure-path cleanup either caller needs on a deploy
+   * failure. Only how the launch body (`foldedBody`) and the instance's
+   * identity (`instanceId`/`triggerAddress`/`definitionId`) are sourced
+   * differs between the two callers; that sourcing stays in each of
+   * them, not here.
+   */
+  async function launchCore(params: {
+    tenantId: string;
+    instanceId: string;
+    triggerAddress: string;
+    definitionId: string;
+    foldedBody: FoldedBody;
+    /** Named in the "seed a tenant catalog source" error, e.g. "the channel host" or "the invited agent". */
+    launchLabel: string;
+  }): Promise<void> {
+    // The launched run's inference sources are resolved against the
+    // tenant catalog exactly like any folded launch, even when the
+    // launched agent never actually performs inference (the channel
+    // host) — the folded address family requires a resolvable source
+    // chain to launch at all (see the module doc). A tenant with no
+    // seeded catalog source cannot launch until one exists; that is a
+    // deploy-time precondition, surfaced loudly here rather than
+    // silently launching an unlistable run.
+    const resolution = await resolveDefinitionSources({
+      db: deps.db,
+      tenantId: params.tenantId,
+      modelRequirements: null,
+      fallbackModel: params.foldedBody.model,
+      invokerPreferences: {},
+    });
+    if (!resolution.ok) {
+      throw new Error(
+        `launch: cannot resolve an inference source for ${params.launchLabel} ` +
+          `(${resolution.message}); seed a tenant catalog source (provider, ` +
+          `credential, catalog model/provider/offering) before launching`,
+      );
+    }
+
+    const instancePrincipalId = generateId("principal");
+    const sessionId = generateId("session");
+    const now = new Date();
+
+    await deps.db.transaction(async (tx) => {
+      // A folded run's principal is `workflow`-kind, converging on
+      // the native run's principal shape; its `refId` is the
+      // instance id, matching `POST /workflows/runs`.
+      await tx.insert(principalTable).values({
+        id: instancePrincipalId,
+        tenantId: params.tenantId,
+        kind: "workflow",
+        refId: params.instanceId,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // The session is keyed to the folded definition (`agentId`)
+      // and to the run's own principal — the shared-principal
+      // bridge `resolveRunSessionId`/`resolveRunIdForSession` read.
+      await tx.insert(agentSession).values({
+        id: sessionId,
+        tenantId: params.tenantId,
+        agentId: params.definitionId,
+        principalId: instancePrincipalId,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // The folded run IS the launched instance: `deploymentId` is
+      // null (a folded run has no deployment), which is what puts
+      // it in the address family the platform's run-scoped mail
+      // surfaces actually resolve.
+      await tx.insert(workflowRun).values({
+        id: params.instanceId,
+        definitionId: params.definitionId,
+        deploymentId: null,
+        tenantId: params.tenantId,
+        principalId: instancePrincipalId,
+        address: params.triggerAddress,
+        status: "running",
+        modelPreferences: null,
+        createdAt: now,
+      });
+    });
+
+    // Opened before the deploy call, mirroring the reference route: the
+    // run's runtime status/readiness (health, SSE replay) is read off
+    // this collector by address, and a launch that never opens one reads
+    // as permanently "not_ready" and leaks into the generic instance
+    // list with broken health.
+    deps.eventCollectors?.create(
+      params.triggerAddress,
+      params.tenantId,
+      sessionId,
+      params.instanceId,
+    );
+
+    try {
+      await deps.sessionService.deployInstanceAtHead({
+        agentAddress: params.triggerAddress,
+        agentId: params.instanceId,
+        instanceId: params.instanceId,
+        config: {
+          sessionId,
+          agentId: params.instanceId,
+          tenantId: params.tenantId,
+          principalId: instancePrincipalId,
+          agentAddress: params.triggerAddress,
+          systemPrompt: params.foldedBody.systemPrompt,
+          tools: [],
+          grants: [],
+          sources: resolution.sources,
+          defaultSource: resolution.defaultSource,
+        },
+        deployContent: { systemPrompt: params.foldedBody.systemPrompt },
+        toolPackagePins: params.foldedBody.toolPackagePins,
+      });
+    } catch (err) {
+      // Mirrors the reference route's failure-path cleanup: a deploy
+      // failure must not leave the just-committed principal/session/run
+      // rows behind as a permanently "running" ghost that nothing is
+      // listening on.
+      deps.eventCollectors?.abandon(params.triggerAddress);
+
+      const failedAt = new Date();
+
+      await deps.db
+        .update(agentSession)
+        .set({ status: "ended", endedAt: failedAt, updatedAt: failedAt })
+        .where(eq(agentSession.id, sessionId));
+
+      const leaked = err instanceof SessionLaunchError && err.leakedAgent;
+
+      // A leaked deploy left a running child; mark the run failed but
+      // leave it routable (endedAt null) so the leaked child stays
+      // reachable to inspect or clean up. Otherwise roll the run back
+      // entirely.
+      if (leaked) {
+        await deps.db
+          .update(workflowRun)
+          .set({ status: "failed" })
+          .where(eq(workflowRun.id, params.instanceId));
+      } else {
+        await deps.db
+          .delete(workflowRun)
+          .where(eq(workflowRun.id, params.instanceId));
+      }
+
+      await deps.db
+        .update(principalTable)
+        .set({ status: "deactivated", updatedAt: failedAt })
+        .where(eq(principalTable.id, instancePrincipalId));
+
+      throw err;
+    }
+  }
+
   return {
     async launchChannel(input): Promise<LaunchedChannel> {
       // Validates the address shape early, mirroring every other path
@@ -179,155 +386,90 @@ export function createHubChatPlatform(
       const definition = JSON.parse(input.definition) as WorkflowDefinition;
       const foldedBody = extractFoldedBody(definition);
 
-      // The anchor's inference sources are resolved against the tenant
-      // catalog exactly like any folded launch, even though the anchor
-      // never actually performs inference — the folded address family
-      // requires a resolvable source chain to launch at all (see the
-      // module doc). A tenant with no seeded catalog source cannot
-      // create channels until one exists (the workbench seed provides
-      // one); that is a deploy-time precondition, surfaced loudly here
-      // rather than silently launching an unlistable anchor.
-      // This definition carries no `modelRequirements` manifest (it is
-      // synthesized fresh per channel, never authored against one), so
-      // resolution always derives requirements from the folded step's
-      // own declared model, exactly like a manifest-less definition
-      // launched through `POST /workflows/runs`.
-      const resolution = await resolveDefinitionSources({
-        db: deps.db,
+      await launchCore({
         tenantId: input.tenantId,
-        modelRequirements: null,
-        fallbackModel: foldedBody.model,
-        invokerPreferences: {},
+        instanceId: input.channelId,
+        triggerAddress: input.triggerAddress,
+        definitionId,
+        foldedBody,
+        launchLabel: "the channel host",
       });
-      if (!resolution.ok) {
+
+      return { instanceId: input.channelId };
+    },
+
+    async launchInvite(input): Promise<LaunchedInvite> {
+      const definitionRow = await deps.db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, input.definitionId),
+          eq(workflowDefinition.tenantId, input.tenantId),
+        ),
+      });
+      if (definitionRow === undefined) {
         throw new Error(
-          `launchChannel: cannot resolve an inference source for the ` +
-            `channel host (${resolution.message}); seed a tenant catalog ` +
-            `source (provider, credential, catalog model/provider/offering) ` +
-            `before creating channels`,
+          `launchInvite: no definition "${input.definitionId}" for this tenant`,
+        );
+      }
+      if (definitionRow.status !== "deployed") {
+        throw new Error(
+          `launchInvite: definition "${input.definitionId}" is not in a ` +
+            `launchable state (status: ${definitionRow.status})`,
+        );
+      }
+      if (definitionRow.assetId === null) {
+        throw new Error(
+          `launchInvite: definition "${input.definitionId}" has not been ` +
+            `materialized`,
         );
       }
 
-      const instancePrincipalId = generateId("principal");
-      const sessionId = generateId("session");
-      const now = new Date();
-
-      await deps.db.transaction(async (tx) => {
-        // A folded run's principal is `workflow`-kind, converging on
-        // the native run's principal shape; its `refId` is the
-        // instance id, matching `POST /workflows/runs`.
-        await tx.insert(principalTable).values({
-          id: instancePrincipalId,
-          tenantId: input.tenantId,
-          kind: "workflow",
-          refId: input.channelId,
-          status: "active",
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        // The session is keyed to the folded definition (`agentId`)
-        // and to the run's own principal — the shared-principal
-        // bridge `resolveRunSessionId`/`resolveRunIdForSession` read.
-        await tx.insert(agentSession).values({
-          id: sessionId,
-          tenantId: input.tenantId,
-          agentId: definitionId,
-          principalId: instancePrincipalId,
-          status: "active",
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        // The folded run IS the launched channel: `deploymentId` is
-        // null (a folded run has no deployment), which is what puts
-        // it in the address family the platform's run-scoped mail
-        // surfaces actually resolve.
-        await tx.insert(workflowRun).values({
-          id: input.channelId,
-          definitionId,
-          deploymentId: null,
-          tenantId: input.tenantId,
-          principalId: instancePrincipalId,
-          address: input.triggerAddress,
-          status: "running",
-          modelPreferences: null,
-          createdAt: now,
-        });
+      const tenantRow = await deps.db.query.tenant.findFirst({
+        where: eq(tenantTable.id, input.tenantId),
       });
-
-      // Opened before the deploy call, mirroring the reference route: the
-      // anchor's runtime status/readiness (health, SSE replay) is read off
-      // this collector by address, and a launch that never opens one reads
-      // as permanently "not_ready" and leaks into the generic instance
-      // list with broken health.
-      deps.eventCollectors?.create(
-        input.triggerAddress,
-        input.tenantId,
-        sessionId,
-        input.channelId,
-      );
-
-      try {
-        await deps.sessionService.deployInstanceAtHead({
-          agentAddress: input.triggerAddress,
-          agentId: input.channelId,
-          instanceId: input.channelId,
-          config: {
-            sessionId,
-            agentId: input.channelId,
-            tenantId: input.tenantId,
-            principalId: instancePrincipalId,
-            agentAddress: input.triggerAddress,
-            systemPrompt: foldedBody.systemPrompt,
-            tools: [],
-            grants: [],
-            sources: resolution.sources,
-            defaultSource: resolution.defaultSource,
-          },
-          deployContent: { systemPrompt: foldedBody.systemPrompt },
-          toolPackagePins: foldedBody.toolPackagePins,
-        });
-      } catch (err) {
-        // Mirrors the reference route's failure-path cleanup: a deploy
-        // failure must not leave the just-committed principal/session/run
-        // rows behind as a permanently "running" ghost that nothing is
-        // listening on.
-        deps.eventCollectors?.abandon(input.triggerAddress);
-
-        const failedAt = new Date();
-
-        await deps.db
-          .update(agentSession)
-          .set({ status: "ended", endedAt: failedAt, updatedAt: failedAt })
-          .where(eq(agentSession.id, sessionId));
-
-        const leaked = err instanceof SessionLaunchError && err.leakedAgent;
-
-        // A leaked deploy left a running child; mark the run failed but
-        // leave it routable (endedAt null) so the leaked child stays
-        // reachable to inspect or clean up. Otherwise roll the run back
-        // entirely.
-        if (leaked) {
-          await deps.db
-            .update(workflowRun)
-            .set({ status: "failed" })
-            .where(eq(workflowRun.id, input.channelId));
-        } else {
-          await deps.db
-            .delete(workflowRun)
-            .where(eq(workflowRun.id, input.channelId));
-        }
-
-        await deps.db
-          .update(principalTable)
-          .set({ status: "deactivated", updatedAt: failedAt })
-          .where(eq(principalTable.id, instancePrincipalId));
-
-        throw err;
+      if (tenantRow === undefined) {
+        throw new Error(`launchInvite: no tenant "${input.tenantId}"`);
       }
 
-      return { instanceId: input.channelId };
+      const definition = await hydrateDefinitionFromAsset(
+        deps.assetService,
+        definitionRow.assetId,
+      );
+      const foldedBody = extractFoldedBody(definition);
+      if (foldedBody.systemPrompt === "") {
+        throw new Error(
+          `launchInvite: definition "${input.definitionId}" cannot be ` +
+            `launched without a system prompt configured`,
+        );
+      }
+
+      const instanceId = generateId("instance");
+      const triggerAddress = formatAgentAddress(instanceId, tenantRow.domain);
+
+      await launchCore({
+        tenantId: input.tenantId,
+        instanceId,
+        triggerAddress,
+        definitionId: input.definitionId,
+        foldedBody,
+        launchLabel: "the invited agent",
+      });
+
+      return { instanceId, address: triggerAddress };
+    },
+
+    async listInvitableDefinitions(
+      tenantId,
+    ): Promise<readonly InvitableDefinition[]> {
+      const rows = await deps.db.query.workflowDefinition.findMany({
+        where: and(
+          eq(workflowDefinition.tenantId, tenantId),
+          eq(workflowDefinition.status, "deployed"),
+        ),
+        orderBy: desc(workflowDefinition.createdAt),
+      });
+      return rows
+        .filter((row) => !row.name.startsWith(CHANNEL_HOST_ASSET_NAME_PREFIX))
+        .map((row) => ({ id: row.id, name: row.name }));
     },
 
     async sendMail(input): Promise<SentMail> {

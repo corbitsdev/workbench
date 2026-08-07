@@ -48,6 +48,16 @@ export interface LaunchedChannel {
   readonly instanceId: string;
 }
 
+export interface LaunchedInvite {
+  readonly instanceId: string;
+  readonly address: string;
+}
+
+export interface InvitableDefinition {
+  readonly id: string;
+  readonly name: string;
+}
+
 export interface SentMail {
   readonly id: string;
   readonly createdAt: string;
@@ -84,6 +94,29 @@ export interface ChatPlatform {
     readonly triggerAddress: string;
     readonly definition: string;
   }): Promise<LaunchedChannel>;
+
+  /**
+   * Launches an interactive instance of an already-deployed workflow
+   * definition — the invited agent's own run, distinct from the
+   * channel's own anchor run — and returns its mail address. Uses the
+   * same `deployInstanceAtHead` machinery `launchChannel` uses for the
+   * host, sharing its launch core; only the source of the launch body
+   * (an existing definition id vs. a freshly synthesized one) differs.
+   */
+  launchInvite(input: {
+    readonly tenantId: string;
+    readonly creatorPrincipalId: string;
+    readonly definitionId: string;
+  }): Promise<LaunchedInvite>;
+
+  /**
+   * Lists the tenant's deployed, launchable workflow definitions an
+   * "invite agent" affordance can offer — never including a channel's
+   * own host definition.
+   */
+  listInvitableDefinitions(
+    tenantId: string,
+  ): Promise<readonly InvitableDefinition[]>;
 
   sendMail(input: {
     readonly tenantId: string;
@@ -135,6 +168,10 @@ const CreateChannelBody = type({
   kind: "string",
   "name?": "string",
   "participants?": "string[]",
+});
+
+const InviteAgentBody = type({
+  definitionId: "string",
 });
 
 const PatchSettingsBody = type("Record<string, unknown>");
@@ -415,6 +452,89 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       return c.json({ id: sent.id, createdAt: sent.createdAt }, 201);
+    },
+  );
+
+  app.get(
+    "/channels/:id/invitable",
+    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const items = await deps.platform.listInvitableDefinitions(tenant.id);
+      return c.json({ items });
+    },
+  );
+
+  app.post(
+    "/channels/:id/invite",
+    deps.requireGrant("workflow-run:*", "create"),
+    async (c) => {
+      const body = InviteAgentBody(await c.req.json().catch(() => undefined));
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope("bad_request", `invalid invite body: ${body.summary}`),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const channelId = c.req.param("id");
+
+      const existing = await deps.store.getChannelSettings(
+        tenant.id,
+        channelId,
+      );
+      if (existing === undefined) {
+        return c.json(ErrorEnvelope("not_found", "Channel not found"), 404);
+      }
+
+      const launched = await deps.platform.launchInvite({
+        tenantId: tenant.id,
+        creatorPrincipalId: principal.id,
+        definitionId: body.definitionId,
+      });
+
+      // The record is updated before the join event is posted, matching
+      // the settings PATCH route's record-then-mail ordering: the
+      // participant list is the durable source of truth, so a failure
+      // below never leaves it unwritten.
+      const participants = participantsOf(existing.settings);
+      const row = await deps.store.updateChannelSettings({
+        tenantId: tenant.id,
+        channelId,
+        settings: {
+          ...existing.settings,
+          "chat/participants": [...participants, launched.address],
+        },
+        updatedBy: principal.id,
+      });
+
+      const joinEvent: PartType = {
+        kind: "event",
+        event: "channel.agent-joined",
+        data: {
+          address: launched.address,
+          definitionId: body.definitionId,
+          invitedBy: principal.id,
+        },
+      };
+      await deps.platform.sendMail({
+        tenantId: tenant.id,
+        channelId,
+        principalId: principal.id,
+        content: encodeParts([joinEvent]),
+      });
+
+      registry.publish(channelId, {
+        type: "chat.settings",
+        data: { updatedBy: principal.id, settings: row.settings },
+      });
+
+      return c.json(
+        { address: launched.address, definitionId: body.definitionId },
+        201,
+      );
     },
   );
 

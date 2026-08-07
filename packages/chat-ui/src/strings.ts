@@ -34,4 +34,13 @@ export const CHAT_STRINGS = {
   mentionEmpty: "No matching agents",
   unnamedChannel: "Untitled",
   fallbackPartLabel: (kind: string) => `[${kind}]`,
+  inviteAgentAction: "Invite agent",
+  inviteAgentDialogTitle: "Invite an agent",
+  inviteAgentDialogDescription:
+    "Launch one of your bench's deployed agents into this channel.",
+  inviteAgentEmptyTitle: "No agents to invite",
+  inviteAgentEmptyDescription:
+    "Deploy a workflow definition on this bench before inviting it here.",
+  inviteAgentLoadError: "Couldn't load invitable agents",
+  inviteAgentInviting: "Inviting…",
 } as const;

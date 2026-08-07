@@ -1,0 +1,130 @@
+// The "invite agent" affordance: a small dialog listing the tenant's
+// deployed, launchable workflow definitions (never the channel's own
+// host — the server-side list already excludes it), each with an
+// "Invite" action that launches it into the current channel. Modeled on
+// `NewChannelDialog`'s shape, but the list itself carries its own
+// loading/empty/error states since it is fetched fresh every time the
+// dialog opens.
+
+import {
+  Button,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  EmptyState,
+  Skeleton,
+} from "@corbits/react-ui";
+import { CircleAlert, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { listInvitableDefinitions } from "./api";
+import type { InvitableDefinition } from "./api";
+import { CHAT_STRINGS } from "./strings";
+
+type ListState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error"; readonly message: string }
+  | { readonly kind: "ready"; readonly items: readonly InvitableDefinition[] };
+
+export function InviteAgentDialog({
+  open,
+  onOpenChange,
+  tenantId,
+  channelId,
+  onInvite,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly tenantId: string;
+  readonly channelId: string;
+  readonly onInvite: (definitionId: string) => Promise<void>;
+}) {
+  const [state, setState] = useState<ListState>({ kind: "loading" });
+  const [invitingId, setInvitingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setState({ kind: "loading" });
+    listInvitableDefinitions(tenantId, channelId)
+      .then((items) => {
+        if (!cancelled) setState({ kind: "ready", items });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setState({
+            kind: "error",
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, tenantId, channelId]);
+
+  async function handleInvite(definitionId: string) {
+    setInvitingId(definitionId);
+    try {
+      await onInvite(definitionId);
+      onOpenChange(false);
+    } finally {
+      setInvitingId(null);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{CHAT_STRINGS.inviteAgentDialogTitle}</DialogTitle>
+          <DialogDescription>
+            {CHAT_STRINGS.inviteAgentDialogDescription}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          {state.kind === "loading" ? (
+            <Skeleton className="query-skeleton" />
+          ) : state.kind === "error" ? (
+            <EmptyState
+              icon={<CircleAlert />}
+              title={CHAT_STRINGS.inviteAgentLoadError}
+              description={state.message}
+            />
+          ) : state.items.length === 0 ? (
+            <EmptyState
+              icon={<Users />}
+              title={CHAT_STRINGS.inviteAgentEmptyTitle}
+              description={CHAT_STRINGS.inviteAgentEmptyDescription}
+            />
+          ) : (
+            <ul className="chat-invitable-list">
+              {state.items.map((definition) => (
+                <li
+                  key={definition.id}
+                  className="chat-invitable-item"
+                  data-testid="invitable-definition"
+                >
+                  <span>{definition.name}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={invitingId !== null}
+                    onClick={() => void handleInvite(definition.id)}
+                  >
+                    {invitingId === definition.id
+                      ? CHAT_STRINGS.inviteAgentInviting
+                      : CHAT_STRINGS.inviteAgentAction}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
+  );
+}

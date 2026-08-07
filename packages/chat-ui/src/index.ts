@@ -5,6 +5,7 @@ export { ChannelTimeline } from "./timeline";
 export { Composer } from "./composer";
 export { ChatSidebar } from "./sidebar";
 export { NewChannelDialog } from "./new-channel-dialog";
+export { InviteAgentDialog } from "./invite-agent-dialog";
 
 export { useChannelStream } from "./use-channel-stream";
 export type { ChannelStreamState } from "./use-channel-stream";
@@ -36,7 +37,16 @@ export {
   sendMessage,
   putReadState,
   listDeployedAgents,
+  listInvitableDefinitions,
+  inviteAgent,
   channelStreamUrl,
   deploymentDisplayName,
 } from "./api";
-export type { Channel, MessageItem, MessagesResponse, Deployment } from "./api";
+export type {
+  Channel,
+  MessageItem,
+  MessagesResponse,
+  Deployment,
+  InvitableDefinition,
+  InvitedAgent,
+} from "./api";
