@@ -198,6 +198,7 @@ export async function createHub(config: HubConfig) {
       assetService,
       sidecarRouter,
       eventCollectors,
+      lifecycle: { idleSleepMs: 60_000 },
     }),
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,

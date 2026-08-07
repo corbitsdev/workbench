@@ -26,6 +26,7 @@
 // that catalog seeding is a deploy-time precondition of this address
 // family, not an inference requirement of the anchor.
 import { and, desc, eq } from "drizzle-orm";
+import { createAgentLifecycle } from "@corbits/agent-lifecycle";
 import type { DB } from "@intx/db";
 import {
   agentSession,
@@ -83,6 +84,19 @@ export type CreateHubChatPlatformDeps = {
    * that does pass one gets the fix in full.
    */
   eventCollectors?: EventCollectorRegistry;
+  /**
+   * Opt-in idle-sleep for every launched instance (channel hosts and
+   * invited agents alike): absent here, the adapter keeps today's
+   * behavior exactly (nothing ever sleeps, no interval runs). When
+   * present, this adapter builds a `@corbits/agent-lifecycle` instance
+   * from it, wiring its `isRoutable`/`undeploy`/`wake` ports onto
+   * `sidecarRouter` and this adapter's own redeploy-at-head closure —
+   * `@corbits/agent-lifecycle` itself never imports the hub or this
+   * package. Its sweep tears down instances idle for `idleSleepMs` via
+   * `sidecarRouter.sendAgentUndeploy`, and `sendMail` calls
+   * `ensureAwake` to redeploy a non-routable target before sending.
+   */
+  lifecycle?: { idleSleepMs: number; sweepIntervalMs?: number };
 };
 
 const BLOB_ID_PATTERN = /^blob_(.+?)_(\d[\d.]*)$/;
@@ -134,6 +148,77 @@ async function hydrateDefinitionFromAsset(
     );
   }
   return parsed as WorkflowDefinition;
+}
+
+/**
+ * The deploy-only step shared by a fresh launch (`launchCore`) and a
+ * wake (re-deploying an instance the sidecar no longer has resident):
+ * resolve inference sources against the tenant catalog, (re)open the
+ * event collector, and call `deployInstanceAtHead`. Callers that just
+ * wrote new principal/session/run rows (`launchCore`) still own their
+ * own failure-path rollback of those rows — this function only throws.
+ */
+async function deployAtHead(
+  deps: Pick<
+    CreateHubChatPlatformDeps,
+    "db" | "sessionService" | "eventCollectors"
+  >,
+  params: {
+    tenantId: string;
+    instanceId: string;
+    triggerAddress: string;
+    principalId: string;
+    sessionId: string;
+    foldedBody: FoldedBody;
+    /** Named in the "seed a tenant catalog source" error, e.g. "the channel host", "the invited agent", or "the woken instance". */
+    launchLabel: string;
+  },
+): Promise<void> {
+  const resolution = await resolveDefinitionSources({
+    db: deps.db,
+    tenantId: params.tenantId,
+    modelRequirements: null,
+    fallbackModel: params.foldedBody.model,
+    invokerPreferences: {},
+  });
+  if (!resolution.ok) {
+    throw new Error(
+      `launch: cannot resolve an inference source for ${params.launchLabel} ` +
+        `(${resolution.message}); seed a tenant catalog source (provider, ` +
+        `credential, catalog model/provider/offering) before launching`,
+    );
+  }
+
+  // `create` replaces any collector already registered for this
+  // address (see `EventCollectorRegistry.create`), so this is
+  // idempotent whether this is a fresh launch or a wake of an instance
+  // whose collector never got torn down.
+  deps.eventCollectors?.create(
+    params.triggerAddress,
+    params.tenantId,
+    params.sessionId,
+    params.instanceId,
+  );
+
+  await deps.sessionService.deployInstanceAtHead({
+    agentAddress: params.triggerAddress,
+    agentId: params.instanceId,
+    instanceId: params.instanceId,
+    config: {
+      sessionId: params.sessionId,
+      agentId: params.instanceId,
+      tenantId: params.tenantId,
+      principalId: params.principalId,
+      agentAddress: params.triggerAddress,
+      systemPrompt: params.foldedBody.systemPrompt,
+      tools: [],
+      grants: [],
+      sources: resolution.sources,
+      defaultSource: resolution.defaultSource,
+    },
+    deployContent: { systemPrompt: params.foldedBody.systemPrompt },
+    toolPackagePins: params.foldedBody.toolPackagePins,
+  });
 }
 
 function domainOf(address: string): string {
@@ -226,29 +311,6 @@ export function createHubChatPlatform(
     /** Named in the "seed a tenant catalog source" error, e.g. "the channel host" or "the invited agent". */
     launchLabel: string;
   }): Promise<void> {
-    // The launched run's inference sources are resolved against the
-    // tenant catalog exactly like any folded launch, even when the
-    // launched agent never actually performs inference (the channel
-    // host) — the folded address family requires a resolvable source
-    // chain to launch at all (see the module doc). A tenant with no
-    // seeded catalog source cannot launch until one exists; that is a
-    // deploy-time precondition, surfaced loudly here rather than
-    // silently launching an unlistable run.
-    const resolution = await resolveDefinitionSources({
-      db: deps.db,
-      tenantId: params.tenantId,
-      modelRequirements: null,
-      fallbackModel: params.foldedBody.model,
-      invokerPreferences: {},
-    });
-    if (!resolution.ok) {
-      throw new Error(
-        `launch: cannot resolve an inference source for ${params.launchLabel} ` +
-          `(${resolution.message}); seed a tenant catalog source (provider, ` +
-          `credential, catalog model/provider/offering) before launching`,
-      );
-    }
-
     const instancePrincipalId = generateId("principal");
     const sessionId = generateId("session");
     const now = new Date();
@@ -297,37 +359,20 @@ export function createHubChatPlatform(
       });
     });
 
-    // Opened before the deploy call, mirroring the reference route: the
-    // run's runtime status/readiness (health, SSE replay) is read off
-    // this collector by address, and a launch that never opens one reads
-    // as permanently "not_ready" and leaks into the generic instance
-    // list with broken health.
-    deps.eventCollectors?.create(
-      params.triggerAddress,
-      params.tenantId,
-      sessionId,
-      params.instanceId,
-    );
-
     try {
-      await deps.sessionService.deployInstanceAtHead({
-        agentAddress: params.triggerAddress,
-        agentId: params.instanceId,
+      // Opened/deployed via the shared `deployAtHead` step, mirroring
+      // the reference route: the run's runtime status/readiness
+      // (health, SSE replay) is read off the collector by address, and
+      // a launch that never opens one reads as permanently "not_ready"
+      // and leaks into the generic instance list with broken health.
+      await deployAtHead(deps, {
+        tenantId: params.tenantId,
         instanceId: params.instanceId,
-        config: {
-          sessionId,
-          agentId: params.instanceId,
-          tenantId: params.tenantId,
-          principalId: instancePrincipalId,
-          agentAddress: params.triggerAddress,
-          systemPrompt: params.foldedBody.systemPrompt,
-          tools: [],
-          grants: [],
-          sources: resolution.sources,
-          defaultSource: resolution.defaultSource,
-        },
-        deployContent: { systemPrompt: params.foldedBody.systemPrompt },
-        toolPackagePins: params.foldedBody.toolPackagePins,
+        triggerAddress: params.triggerAddress,
+        principalId: instancePrincipalId,
+        sessionId,
+        foldedBody: params.foldedBody,
+        launchLabel: params.launchLabel,
       });
     } catch (err) {
       // Mirrors the reference route's failure-path cleanup: a deploy
@@ -367,7 +412,102 @@ export function createHubChatPlatform(
 
       throw err;
     }
+
+    lifecycle?.track(params.triggerAddress);
+    lifecycle?.recordActivity(params.triggerAddress);
   }
+
+  async function findRunByAddress(address: string) {
+    return deps.db.query.workflowRun.findFirst({
+      where: eq(workflowRun.address, address),
+    });
+  }
+
+  /**
+   * Re-deploys an instance the sidecar no longer has resident —
+   * either it slept (the lifecycle package's own sweep) or the stack
+   * restarted and never relaunched it. Hydrates the launch body back
+   * off the definition's materialized asset, exactly as `launchInvite`
+   * does for a fresh launch, and reuses `deployAtHead` rather than the
+   * fresh-launch row-writing path in `launchCore`: no new
+   * principal/session/run rows are needed, only a redeploy against the
+   * ones already on file. This closure — not `@corbits/agent-lifecycle`
+   * itself — is where the redeploy logic lives, since only this
+   * adapter knows how to hydrate a folded definition's launch body;
+   * the lifecycle package only ever calls it as an injected `wake`
+   * port and knows nothing about definitions or assets.
+   */
+  async function wakeInstance(run: {
+    id: string;
+    address: string;
+    definitionId: string;
+    principalId: string | null;
+  }): Promise<void> {
+    if (run.principalId === null) {
+      throw new Error(`wake: run "${run.id}" has no principal`);
+    }
+    const definitionRow = await deps.db.query.workflowDefinition.findFirst({
+      where: eq(workflowDefinition.id, run.definitionId),
+    });
+    if (definitionRow?.assetId == null) {
+      throw new Error(
+        `wake: definition "${run.definitionId}" has not been materialized`,
+      );
+    }
+    const definition = await hydrateDefinitionFromAsset(
+      deps.assetService,
+      definitionRow.assetId,
+    );
+    const foldedBody = extractFoldedBody(definition);
+    const sessionId = await sessionIdForRun(run);
+
+    await deployAtHead(deps, {
+      tenantId: definitionRow.tenantId,
+      instanceId: run.id,
+      triggerAddress: run.address,
+      principalId: run.principalId,
+      sessionId,
+      foldedBody,
+      launchLabel: "the woken instance",
+    });
+  }
+
+  async function wakeByAddress(address: string): Promise<void> {
+    const run = await findRunByAddress(address);
+    if (run === undefined || run.address === null) {
+      throw new Error(`wake: no run found for address "${address}"`);
+    }
+    await wakeInstance({
+      id: run.id,
+      address: run.address,
+      definitionId: run.definitionId,
+      principalId: run.principalId,
+    });
+  }
+
+  // Built from `@corbits/agent-lifecycle` — the idle-sleep sweep and
+  // wake-coalescing logic live entirely in that package, imported as a
+  // published dependency rather than reimplemented here; this adapter
+  // only wires its ports onto `sidecarRouter` (routability, undeploy)
+  // and `wakeByAddress` (this module's own redeploy-at-head closure).
+  // `undefined` when `deps.lifecycle` is unset, matching today's
+  // behavior exactly: nothing is tracked, no sweep runs, `sendMail`
+  // never calls `ensureAwake`.
+  const lifecycle =
+    deps.lifecycle !== undefined
+      ? createAgentLifecycle({
+          idleSleepMs: deps.lifecycle.idleSleepMs,
+          ...(deps.lifecycle.sweepIntervalMs !== undefined
+            ? { sweepIntervalMs: deps.lifecycle.sweepIntervalMs }
+            : {}),
+          isRoutable: (address) =>
+            deps.sidecarRouter.getRoutableAddresses().includes(address),
+          undeploy: (address, reason) =>
+            deps.sidecarRouter.sendAgentUndeploy(address, reason),
+          wake: wakeByAddress,
+          log: getLogger(["chat", "lifecycle"]),
+        })
+      : undefined;
 
   // Reply bridges: one live subscription per invited agent, translating
   // its connector.reply events into channel messages. The platform's
@@ -494,11 +634,22 @@ export function createHubChatPlatform(
         );
       }
 
+      // Wake before send: a sleeping instance (the lifecycle package's
+      // own sweep) or one that never came back up after a stack
+      // restart is not in the sidecar's routable set. Re-deploying it
+      // here — and letting a wake failure propagate — means the send
+      // fails loud rather than vanishing into an agent nothing is
+      // listening on. This is also how a mention fan-out copy reaches
+      // a sleeping invited agent: every send, including fan-out
+      // copies, goes through this one `sendMail` choke point.
+      await lifecycle?.ensureAwake(run.address);
+
       const sessionId = await sessionIdForRun(run);
       const mailId = crypto.randomUUID();
       const now = new Date();
       const domain = domainOf(run.address);
       let from = `${input.principalId}@${domain}`;
+      let originAddress: string | undefined;
       if (input.fromChannelId !== undefined) {
         const origin = await findChannelRun(input.fromChannelId);
         if (origin?.address == null) {
@@ -507,6 +658,7 @@ export function createHubChatPlatform(
           );
         }
         from = origin.address;
+        originAddress = origin.address;
       }
       const cryptoProvider = await cryptoProviderFor(input.channelId);
 
@@ -553,6 +705,9 @@ export function createHubChatPlatform(
           receivedAt: mailCreatedAt.toISOString(),
         },
       });
+
+      lifecycle?.recordActivity(run.address);
+      if (originAddress !== undefined) lifecycle?.recordActivity(originAddress);
 
       return { id: mailId, createdAt: mailCreatedAt.toISOString() };
     },
@@ -662,6 +817,11 @@ export function createHubChatPlatform(
         unsubscribe = deps.sidecarRouter.subscribeAgent(
           agentAddress,
           (event) => {
+            // Any event at all counts as activity, not just
+            // `connector.reply` below — an agent mid-inference must
+            // never be undeployed out from under itself by the idle
+            // sweep just because it hasn't replied yet.
+            lifecycle?.recordActivity(agentAddress);
             if (
               typeof event !== "object" ||
               event === null ||

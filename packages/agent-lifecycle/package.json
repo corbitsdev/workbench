@@ -1,0 +1,22 @@
+{
+  "name": "@corbits/agent-lifecycle",
+  "private": true,
+  "description": "Idle-sleep and wake-on-mail lifecycle for launched agent instances, hosted-service-agnostic",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/log": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

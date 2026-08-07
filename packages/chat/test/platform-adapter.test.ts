@@ -124,7 +124,12 @@ function createFakeDb(opts: {
   };
   definitionId: string;
   workflowRunRow?:
-    | { id: string; address: string | null; principalId: string | null }
+    | {
+        id: string;
+        address: string | null;
+        principalId: string | null;
+        definitionId?: string;
+      }
     | undefined;
   sessionMailRow?: { id: string; raw: Uint8Array } | undefined;
   workflowDefinitionRow?:
@@ -314,25 +319,55 @@ function createFakeAssetService(opts: { assetBlob?: Uint8Array } = {}) {
   };
 }
 
-function createFakeSidecarRouter(): SidecarRouter & {
+function createFakeSidecarRouter(
+  opts: { routableAddresses?: string[] } = {},
+): SidecarRouter & {
   subscribeAgentCalls: { address: string }[];
   dispatchAgentEventCalls: { address: string; event: unknown }[];
+  sendAgentUndeployCalls: { address: string; reason: string }[];
+  routableAddresses: string[];
+  agentCallbacks: Map<string, (event: unknown) => void>;
 } {
   const subscribeAgentCalls: { address: string }[] = [];
   const dispatchAgentEventCalls: { address: string; event: unknown }[] = [];
+  const sendAgentUndeployCalls: { address: string; reason: string }[] = [];
+  // Existing tests never exercise wake-on-mail and predate
+  // `getRoutableAddresses` entirely; defaulting to "everything is
+  // routable" (rather than an empty list) keeps them passing without
+  // every one of them having to name its own address as routable.
+  // Tests that specifically exercise the idle-sleep/wake behavior pass
+  // `routableAddresses` explicitly.
+  const routableAll = opts.routableAddresses === undefined;
+  const routableAddresses = opts.routableAddresses ?? [];
+  const agentCallbacks = new Map<string, (event: unknown) => void>();
   return {
     subscribeAgentCalls,
     dispatchAgentEventCalls,
-    subscribeAgent(address: string, _cb: (event: unknown) => void) {
+    sendAgentUndeployCalls,
+    routableAddresses,
+    agentCallbacks,
+    subscribeAgent(address: string, cb: (event: unknown) => void) {
       subscribeAgentCalls.push({ address });
+      agentCallbacks.set(address, cb);
       return () => undefined;
     },
     dispatchAgentEvent(address: string, event: unknown) {
       dispatchAgentEventCalls.push({ address, event });
     },
+    async sendAgentUndeploy(address: string, reason: string) {
+      sendAgentUndeployCalls.push({ address, reason });
+    },
+    getRoutableAddresses() {
+      return routableAll
+        ? ({ includes: () => true } as unknown as string[])
+        : routableAddresses;
+    },
   } as unknown as SidecarRouter & {
     subscribeAgentCalls: { address: string }[];
     dispatchAgentEventCalls: { address: string; event: unknown }[];
+    sendAgentUndeployCalls: { address: string; reason: string }[];
+    routableAddresses: string[];
+    agentCallbacks: Map<string, (event: unknown) => void>;
   };
 }
 
@@ -930,5 +965,157 @@ describe("createHubChatPlatform", () => {
     ]);
 
     unsubscribe();
+  });
+
+  // The idle-sleep sweep's own gates (idle sleeps, active/busy/untracked
+  // spared, first-sighting grace) and `ensureAwake`'s coalescing are
+  // `@corbits/agent-lifecycle`'s own contract, proven in
+  // `packages/agent-lifecycle/test/index.test.ts`, not re-proven here.
+  // What belongs here is the wiring: that `createHubChatPlatform` only
+  // builds a lifecycle (and only ever calls `ensureAwake`/`recordActivity`)
+  // when `deps.lifecycle` is configured, and that `sendMail` actually
+  // redeploys a non-routable target before sending.
+  describe("lifecycle wiring", () => {
+    test("sendMail wakes a non-routable channel by redeploying before sending, then sends", async () => {
+      resolveDefinitionSourcesResult = {
+        ok: true,
+        sources: [
+          {
+            id: "off_1",
+            provider: "anthropic",
+            baseURL: "https://inference.invalid",
+            apiKey: "placeholder",
+            model: "claude-sonnet-5",
+          },
+        ],
+        defaultSource: "off_1",
+      };
+
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+        workflowRunRow: {
+          id: "ins_channel1",
+          address: "ins_channel1@ten1.workbench.test",
+          principalId: "prin_run1",
+          definitionId: "wfd_channel1",
+        },
+        workflowDefinitionRow: {
+          id: "wfd_channel1",
+          tenantId: "ten_1",
+          status: "deployed",
+          assetId: "asst_channel1",
+        },
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_run1" },
+      });
+
+      const sessionService = createFakeSessionService();
+      // Not in the sidecar's routable set: this channel is asleep (or
+      // never came back after a restart) when the send arrives.
+      const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
+      const eventCollectors = createFakeEventCollectors();
+      const assetService = createFakeAssetService({
+        assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+      });
+
+      const platform = createHubChatPlatform({
+        db: db as never,
+        sessionService,
+        assetService,
+        sidecarRouter,
+        eventCollectors,
+        lifecycle: { idleSleepMs: 60_000 },
+      });
+
+      const sent = await platform.sendMail({
+        tenantId: "ten_1",
+        channelId: "ins_channel1",
+        principalId: "prin_sender",
+        content: { content: "wake up" },
+      });
+
+      expect(sent.id).toBeTruthy();
+      // The redeploy happened...
+      expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+      const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+        agentAddress: string;
+        instanceId: string;
+      };
+      expect(deployed.agentAddress).toBe("ins_channel1@ten1.workbench.test");
+      expect(deployed.instanceId).toBe("ins_channel1");
+      // ...before the send.
+      expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+    });
+
+    test("createHubChatPlatform installs no sweep interval when lifecycle is not configured", () => {
+      const originalSetInterval = globalThis.setInterval;
+      let setIntervalCalls = 0;
+      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
+        setIntervalCalls += 1;
+        return originalSetInterval(...args);
+      }) as typeof setInterval;
+
+      try {
+        const db = createFakeDb({
+          assetRow: {
+            tenantId: "ten_1",
+            creatorPrincipalId: "prin_creator",
+            name: "channel-1",
+            displayName: null,
+          },
+          definitionId: "wfd_channel1",
+        });
+        createHubChatPlatform({
+          db: db as never,
+          sessionService: createFakeSessionService(),
+          assetService: createFakeAssetService(),
+          sidecarRouter: createFakeSidecarRouter(),
+        });
+        expect(setIntervalCalls).toBe(0);
+      } finally {
+        globalThis.setInterval = originalSetInterval;
+      }
+    });
+
+    test("createHubChatPlatform installs a sweep interval when lifecycle is configured", () => {
+      const originalSetInterval = globalThis.setInterval;
+      let setIntervalCalls = 0;
+      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
+        setIntervalCalls += 1;
+        const timer = originalSetInterval(...args);
+        timer.unref?.();
+        return timer;
+      }) as typeof setInterval;
+
+      try {
+        const db = createFakeDb({
+          assetRow: {
+            tenantId: "ten_1",
+            creatorPrincipalId: "prin_creator",
+            name: "channel-1",
+            displayName: null,
+          },
+          definitionId: "wfd_channel1",
+        });
+        createHubChatPlatform({
+          db: db as never,
+          sessionService: createFakeSessionService(),
+          assetService: createFakeAssetService(),
+          sidecarRouter: createFakeSidecarRouter(),
+          lifecycle: { idleSleepMs: 60_000 },
+        });
+        expect(setIntervalCalls).toBe(1);
+      } finally {
+        globalThis.setInterval = originalSetInterval;
+      }
+    });
   });
 });
