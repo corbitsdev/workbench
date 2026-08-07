@@ -72,7 +72,7 @@ describe("readSeedConfig", () => {
     expect(config.modelSource).toEqual({
       provider: "anthropic",
       model: "claude-sonnet-5",
-      baseURL: "https://api.anthropic.com/v1",
+      baseURL: "https://api.anthropic.com",
       apiKey: "placeholder-not-a-real-key",
     });
   });
@@ -86,7 +86,7 @@ describe("readSeedConfig", () => {
     expect(config.modelSource).toEqual({
       provider: "anthropic",
       model: "claude-sonnet-5",
-      baseURL: "https://api.anthropic.com/v1",
+      baseURL: "https://api.anthropic.com",
       apiKey: "sk-ant-test",
     });
   });

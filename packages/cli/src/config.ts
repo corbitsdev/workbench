@@ -56,7 +56,7 @@ const SeedEnv = type({
 
 const DEFAULT_MODEL_PROVIDER = "anthropic";
 const DEFAULT_MODEL = "claude-sonnet-5";
-const DEFAULT_MODEL_BASE_URL = "https://api.anthropic.com/v1";
+const DEFAULT_MODEL_BASE_URL = "https://api.anthropic.com";
 
 export type SetupConfig = {
   readonly hubUrl: string;

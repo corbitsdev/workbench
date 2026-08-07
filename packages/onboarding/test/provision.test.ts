@@ -14,7 +14,7 @@ const DEPLOYMENT_ID = "dep_1";
 const MODEL = {
   provider: "anthropic",
   model: "claude-sonnet-4-5",
-  baseURL: "https://api.anthropic.com/v1",
+  baseURL: "https://api.anthropic.com",
   apiKey: "sk-test",
 };
 

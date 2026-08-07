@@ -35,7 +35,7 @@ export const catalogModel: CatalogModelSpec = {
 export const catalogProvider: CatalogProviderSpec = {
   name: "anthropic",
   plugin: "anthropic",
-  baseURL: "https://api.anthropic.com/v1",
+  baseURL: "https://api.anthropic.com",
 };
 
 export const catalogOffering: CatalogOfferingSpec = {

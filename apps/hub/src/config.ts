@@ -55,7 +55,7 @@ const DEFAULT_SIGNUP_RATE_LIMIT_MAX = 5;
 
 const SEED_MODEL_PROVIDER = "anthropic";
 const SEED_MODEL = "claude-sonnet-5";
-const SEED_MODEL_BASE_URL = "https://api.anthropic.com/v1";
+const SEED_MODEL_BASE_URL = "https://api.anthropic.com";
 
 export type ModelSource = {
   readonly provider: string;

@@ -22,7 +22,7 @@ import {
 const MODEL = {
   provider: "anthropic",
   model: "claude-sonnet-4-5",
-  baseURL: "https://api.anthropic.com/v1",
+  baseURL: "https://api.anthropic.com",
   apiKey: "sk-test",
 };
 
@@ -382,7 +382,7 @@ function catalogProviderRow(id: string, name: string, credentialId: string) {
     tenantId: TENANT_ID,
     name,
     plugin: name,
-    baseURL: "https://api.anthropic.com/v1",
+    baseURL: "https://api.anthropic.com",
     credentialId,
     disabled: false,
     createdAt: TIMESTAMP,
