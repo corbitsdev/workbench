@@ -107,13 +107,28 @@ function useChannelLists(tenantId: string, refreshKey: number) {
   return { state, reload };
 }
 
-function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
+function ChatWorkspaceInner({
+  tenantId,
+  channelId: controlledChannelId,
+  onChannelChange,
+}: {
+  readonly tenantId: string;
+  readonly channelId?: string | null;
+  readonly onChannelChange?: (channelId: string) => void;
+}) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
     tenantId,
     channelsRefresh,
   );
-  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
+    null,
+  );
+  const activeChannelId = controlledChannelId ?? selectedChannelId;
+  const setActiveChannelId = (id: string) => {
+    setSelectedChannelId(id);
+    onChannelChange?.(id);
+  };
   const [messagesState, setMessagesState] = useState<MessagesState>({
     kind: "loading",
   });
@@ -127,8 +142,16 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
       setMessagesState({ kind: "loading" });
       try {
         const page = await listMessages(tenantId, channelId);
-        setMessagesState({ kind: "ready", items: page.items });
-        const last = page.items.at(-1);
+        // The server lists newest-first; the timeline renders top-to-bottom
+        // oldest-first with the viewport pinned to the end, so order once
+        // here — .at(-1) below is then genuinely the newest message.
+        const items = [...page.items].sort((a, b) =>
+          a.createdAt === b.createdAt
+            ? a.id.localeCompare(b.id)
+            : a.createdAt.localeCompare(b.createdAt),
+        );
+        setMessagesState({ kind: "ready", items });
+        const last = items.at(-1);
         if (last !== undefined) {
           await putReadState(tenantId, channelId, {
             lastSeenCreatedAt: last.createdAt,
@@ -335,12 +358,24 @@ function ChatWorkspaceFrame({ children }: { readonly children: ReactNode }) {
 
 export function ChatWorkspace({
   tenant,
+  channelId = null,
+  onChannelChange,
 }: {
   readonly tenant: TenantResolution;
+  /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
+  readonly channelId?: string | null;
+  /** Fired when the user selects a channel, so the app can reflect it in the URL. */
+  readonly onChannelChange?: (channelId: string) => void;
 }) {
   switch (tenant.kind) {
     case "ready":
-      return <ChatWorkspaceInner tenantId={tenant.tenantId} />;
+      return (
+        <ChatWorkspaceInner
+          tenantId={tenant.tenantId}
+          channelId={channelId}
+          {...(onChannelChange !== undefined ? { onChannelChange } : {})}
+        />
+      );
     case "empty":
       return (
         <ChatWorkspaceFrame>

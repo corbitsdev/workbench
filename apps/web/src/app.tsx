@@ -24,7 +24,7 @@ import {
 import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
-import { APP_ROUTES, ONBOARDING_PATH } from "./routes";
+import { APP_ROUTES, matchesRoute, ONBOARDING_PATH } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 
 function AppNav({ path }: { readonly path: string }) {
@@ -36,7 +36,7 @@ function AppNav({ path }: { readonly path: string }) {
           key={route.path}
           href={route.path}
           onClick={(event) => handleLinkClick(event, route.path, navigate)}
-          active={path === route.path}
+          active={matchesRoute(route.path, path)}
           icon={route.icon}
         >
           {route.label}
@@ -67,7 +67,9 @@ function Shell({
   readonly onSignOut: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const route = APP_ROUTES.find((candidate) => candidate.path === path);
+  const route = APP_ROUTES.find((candidate) =>
+    matchesRoute(candidate.path, path),
+  );
   return (
     <NavigationProvider navigate={navigate}>
       <div className="app-frame">
@@ -98,7 +100,7 @@ function Shell({
           ) : route === undefined ? (
             <NotFoundPage path={path} />
           ) : (
-            route.render()
+            route.render(path, navigate)
           )}
         </main>
       </div>

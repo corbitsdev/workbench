@@ -28,8 +28,23 @@ export type AppRoute = {
   readonly path: string;
   readonly label: string;
   readonly icon: ReactNode;
-  readonly render: () => ReactElement;
+  readonly render: (
+    path: string,
+    navigate: (to: string) => void,
+  ) => ReactElement;
 };
+
+/**
+ * Matches /chat and /chat/:channelId — the channel id segment is the
+ * chat page's own concern; the shell only needs to know the page owns
+ * the whole /chat prefix.
+ */
+export function matchesRoute(routePath: string, path: string): boolean {
+  if (routePath === "/chat") {
+    return path === "/chat" || path.startsWith("/chat/");
+  }
+  return routePath === path;
+}
 
 export const APP_ROUTES: readonly AppRoute[] = [
   { path: "/", label: "Home", icon: <Home />, render: () => <HomeRoute /> },
@@ -37,7 +52,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: "/chat",
     label: "Chat",
     icon: <MessageSquare />,
-    render: () => <ChatPage />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <ChatPage path={path} navigate={navigate} />
+    ),
   },
   {
     path: "/runs",
