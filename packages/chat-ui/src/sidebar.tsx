@@ -4,11 +4,13 @@
 // this is a second, page-local list nested inside the Chat route's content
 // area, styled to match via the same design tokens.
 
+import { isAgentAddress } from "@corbits/chat/mentions";
 import { Button, EmptyState } from "@corbits/react-ui";
 import { Plus } from "lucide-react";
 
 import type { Channel } from "./api";
 import { CHAT_STRINGS } from "./strings";
+import { AgentBadge } from "./timeline";
 
 function ChannelRow({
   channel,
@@ -19,6 +21,12 @@ function ChannelRow({
   readonly active: boolean;
   readonly onSelect: () => void;
 }) {
+  const agentParticipant =
+    channel.kind === "chat"
+      ? channel.participants.find((participant) =>
+          isAgentAddress(participant.address),
+        )
+      : undefined;
   return (
     <button
       type="button"
@@ -27,7 +35,8 @@ function ChannelRow({
       data-active={active}
       onClick={onSelect}
     >
-      {channel.title || CHAT_STRINGS.unnamedChannel}
+      <span>{channel.title || CHAT_STRINGS.unnamedChannel}</span>
+      {agentParticipant !== undefined ? <AgentBadge /> : null}
     </button>
   );
 }

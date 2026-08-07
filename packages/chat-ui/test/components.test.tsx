@@ -7,6 +7,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { Channel, MessageItem } from "../src/api";
 import { Composer } from "../src/composer";
+import {
+  canSubmitNewChannel,
+  newChannelPayload,
+} from "../src/new-channel-dialog";
 import { ChatSidebar } from "../src/sidebar";
 import { ChannelTimeline } from "../src/timeline";
 
@@ -77,6 +81,42 @@ describe("ChatSidebar", () => {
       />,
     );
     expect(markup).toContain("No channels yet");
+  });
+
+  test("badges a chat row by its fixed agent, never a raw address", () => {
+    const markup = renderToStaticMarkup(
+      <ChatSidebar
+        channels={[]}
+        chats={[
+          channel({
+            id: "c2",
+            title: "echo",
+            kind: "chat",
+            participants: [
+              { address: "ins_cd03d8e3@agents.example", handle: "echo" },
+            ],
+          }),
+        ]}
+        activeChannelId="c2"
+        onSelect={() => undefined}
+        onNewChannel={() => undefined}
+      />,
+    );
+    expect(markup).toContain("Agent");
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
+  });
+
+  test("shows no agent badge on a channel row", () => {
+    const markup = renderToStaticMarkup(
+      <ChatSidebar
+        channels={[channel({ id: "c1", title: "General" })]}
+        chats={[]}
+        activeChannelId="c1"
+        onSelect={() => undefined}
+        onNewChannel={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain("Agent");
   });
 });
 
@@ -307,6 +347,53 @@ describe("Composer", () => {
       />,
     );
     expect(markup).not.toContain("@undefined");
+  });
+});
+
+// `NewChannelDialog` itself renders through `@corbits/react-ui`'s Radix
+// `Dialog.Portal`, which needs a real DOM container and produces no markup
+// under `renderToStaticMarkup` — same reason `InviteAgentDialog` has never
+// had a render test here. Its create-eligibility and payload-shaping logic
+// is pulled out as pure functions instead (mirrors `nextMessagesState` and
+// `draftAfterSend`) and tested directly.
+describe("canSubmitNewChannel / newChannelPayload (the new-chat create flow)", () => {
+  test("a channel needs a name", () => {
+    expect(canSubmitNewChannel("channel", "", null)).toBe(false);
+    expect(canSubmitNewChannel("channel", "  ", null)).toBe(false);
+    expect(canSubmitNewChannel("channel", "Ops", null)).toBe(true);
+  });
+
+  test("a chat needs an agent picked, not a name", () => {
+    expect(canSubmitNewChannel("chat", "", null)).toBe(false);
+    expect(canSubmitNewChannel("chat", "", "wfd_echo")).toBe(true);
+    expect(canSubmitNewChannel("chat", "My chat", null)).toBe(false);
+  });
+
+  test("a channel's payload never carries a definitionId", () => {
+    expect(newChannelPayload("channel", "Ops", null)).toEqual({
+      kind: "channel",
+      name: "Ops",
+    });
+    expect(newChannelPayload("channel", "  ", null)).toBeNull();
+  });
+
+  test("a chat's payload includes the picked definitionId with no name when none was typed", () => {
+    expect(newChannelPayload("chat", "", "wfd_echo")).toEqual({
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+  });
+
+  test("a chat's payload includes a typed name alongside the definitionId, never guessing one when blank", () => {
+    expect(newChannelPayload("chat", "My research chat", "wfd_echo")).toEqual({
+      kind: "chat",
+      definitionId: "wfd_echo",
+      name: "My research chat",
+    });
+  });
+
+  test("a chat with no agent picked yields no payload at all", () => {
+    expect(newChannelPayload("chat", "My research chat", null)).toBeNull();
   });
 });
 

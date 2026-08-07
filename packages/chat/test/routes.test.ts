@@ -256,9 +256,80 @@ describe("POST /channels", () => {
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
-    const { response } = await createChannel(app, { kind: "chat" });
+    const { response } = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
 
     expect(response.status).toBe(403);
+  });
+
+  test("creating a chat without definitionId is a 400", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+
+    const response = await app.request("/channels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat" }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("bad_request");
+  });
+
+  test("creating a chat auto-invites its agent and titles it by handle", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response, body } = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    expect(response.status).toBe(201);
+    expect(body.kind).toBe("chat");
+    expect(body.title).toBe("echo");
+    expect(body.participants).toEqual([
+      { address: "ins_invited1@acme.example", handle: "echo" },
+    ]);
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.launchInviteCalls).toEqual([
+      {
+        tenantId: TENANT.id,
+        creatorPrincipalId: "prn_alice",
+        definitionId: "wfd_echo",
+      },
+    ]);
+    expect(platform.replyBridges).toHaveLength(1);
+    expect(platform.sentMail).toHaveLength(1);
+    const decoded = JSON.parse(
+      Buffer.from(
+        (platform.sentMail[0]?.content.attachments?.[0]?.data ?? "") as string,
+        "base64",
+      ).toString("utf-8"),
+    ) as { kind: string; event: string };
+    expect(decoded.kind).toBe("event");
+    expect(decoded.event).toBe("channel.agent-joined");
+  });
+
+  test("creating a chat with an explicit name keeps that name as the title", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response, body } = await createChannel(app, {
+      kind: "chat",
+      name: "My Assistant",
+      definitionId: "wfd_echo",
+    });
+
+    expect(response.status).toBe(201);
+    expect(body.title).toBe("My Assistant");
   });
 });
 
@@ -320,6 +391,76 @@ describe("messages", () => {
     const copy = platform.sentMail[1];
     expect(copy?.channelId).toBe("ins_echo1");
     expect(copy?.fromChannelId).toBe(channel.id);
+  });
+
+  test("a message to a chat delivers to its agent without a mention", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const mailBefore = platform.sentMail.length; // the join event
+
+    const parts: Part[] = [{ kind: "text", text: "hello, no mention here" }];
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(parts),
+    });
+
+    expect(response.status).toBe(201);
+    expect(platform.sentMail).toHaveLength(mailBefore + 2); // to the chat, then fanned to the agent
+    const fanned = platform.sentMail[platform.sentMail.length - 1];
+    expect(fanned?.channelId).toBe("ins_invited1");
+    expect(fanned?.fromChannelId).toBe(channel.id);
+  });
+
+  test("a message to a channel still requires a mention to fan out", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    const parts: Part[] = [{ kind: "text", text: "no mention at all" }];
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(parts),
+    });
+
+    expect(response.status).toBe(201);
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.sentMail).toHaveLength(1); // only to the channel itself
+  });
+
+  test("inviting into a chat is rejected with a 409", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    const response = await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("conflict");
   });
 
   test("inviting an agent arms its reply bridge", async () => {

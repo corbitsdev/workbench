@@ -20,7 +20,7 @@ import {
 import { CircleAlert, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { listInvitableDefinitions } from "./api";
+import { ChatApiError, listInvitableDefinitions } from "./api";
 import type { InvitableDefinition } from "./api";
 import { CHAT_STRINGS } from "./strings";
 
@@ -74,8 +74,12 @@ export function InviteAgentDialog({
     try {
       await onInvite(definitionId);
       onOpenChange(false);
-    } catch {
-      setInviteError(CHAT_STRINGS.inviteAgentInviteError);
+    } catch (cause) {
+      setInviteError(
+        cause instanceof ChatApiError && cause.status === 409
+          ? CHAT_STRINGS.inviteAgentConflictError
+          : CHAT_STRINGS.inviteAgentInviteError,
+      );
     } finally {
       setInvitingId(null);
     }

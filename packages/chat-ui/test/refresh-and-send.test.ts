@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { nextMessagesState } from "../src/chat-workspace";
+import { canInviteAgent, nextMessagesState } from "../src/chat-workspace";
 import type { MessagesState } from "../src/chat-workspace";
 import { draftAfterSend } from "../src/composer";
 import { shouldConnect } from "../src/use-channel-stream";
@@ -74,6 +74,20 @@ describe("draftAfterSend (B2: a failed send keeps the draft)", () => {
 
   test("keeps exactly what was typed when the send fails", () => {
     expect(draftAfterSend("hello there", false)).toBe("hello there");
+  });
+});
+
+describe("canInviteAgent (a chat's agent is fixed at creation; the server 409s an invite into one)", () => {
+  test("is false for a chat", () => {
+    expect(canInviteAgent("chat")).toBe(false);
+  });
+
+  test("is true for a channel", () => {
+    expect(canInviteAgent("channel")).toBe(true);
+  });
+
+  test("defaults true with no resolved channel yet", () => {
+    expect(canInviteAgent(undefined)).toBe(true);
   });
 });
 

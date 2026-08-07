@@ -197,6 +197,7 @@ const CreateChannelBody = type({
   kind: "string",
   "name?": "string",
   "participants?": "string[]",
+  "definitionId?": "string",
 });
 
 const InviteAgentBody = type({
@@ -254,6 +255,18 @@ function validateSettingsPatch(body: unknown): Record<string, unknown> {
   return validated;
 }
 
+/**
+ * A channel's kind, read off its settings — the same "settings is the
+ * source of truth" surface `participantsOf` reads. Defaults to
+ * `"chat"` for a settings blob carrying no `chat/kind` at all, matching
+ * `presetForKind`'s unrecognized-kind default.
+ */
+function kindOf(settings: Record<string, unknown>): string {
+  return typeof settings["chat/kind"] === "string"
+    ? (settings["chat/kind"] as string)
+    : "chat";
+}
+
 function channelView(row: {
   readonly channelId: string;
   readonly settings: Record<string, unknown>;
@@ -264,10 +277,7 @@ function channelView(row: {
   pinned: boolean;
   participants: ParticipantRecord[];
 } {
-  const kind =
-    typeof row.settings["chat/kind"] === "string"
-      ? (row.settings["chat/kind"] as string)
-      : "chat";
+  const kind = kindOf(row.settings);
   const name =
     typeof row.settings["chat/name"] === "string"
       ? (row.settings["chat/name"] as string)
@@ -332,6 +342,103 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const registry = createChannelSubscriberRegistry();
 
+  /**
+   * The invite core: launches the definition's own instance, derives
+   * its friendly mention handle, appends the participant record, posts
+   * the join event onto the channel's timeline, and arms the reply
+   * bridge. Shared by `POST .../invite` and chat creation (a chat's
+   * single agent is invited exactly this way, at creation) so the two
+   * paths can never drift.
+   */
+  async function launchAndJoinAgent(input: {
+    readonly tenantId: string;
+    readonly principalId: string;
+    readonly channelId: string;
+    readonly definitionId: string;
+    readonly existingSettings: Record<string, unknown>;
+  }): Promise<{
+    readonly address: string;
+    readonly definitionId: string;
+    readonly handle: string;
+    readonly settings: Record<string, unknown>;
+  }> {
+    const launched = await deps.platform.launchInvite({
+      tenantId: input.tenantId,
+      creatorPrincipalId: input.principalId,
+      definitionId: input.definitionId,
+    });
+
+    // The invited definition's name becomes the friendly mention
+    // handle (e.g. "echo" for a definition named "Echo"), rather than
+    // the invited run's own unusable instance-id local part; a
+    // definition the listing no longer carries falls back to that
+    // local part. Either way it is de-duplicated against every handle
+    // already in the channel ("echo", "echo-2", ...).
+    const invitable = await deps.platform.listInvitableDefinitions(
+      input.tenantId,
+    );
+    const invitedDefinition = invitable.find(
+      (definition) => definition.id === input.definitionId,
+    );
+    const desiredHandle =
+      invitedDefinition !== undefined
+        ? handleFromName(invitedDefinition.name, launched.address)
+        : localPartOf(launched.address);
+
+    // The record is updated before the join event is posted, matching
+    // the settings PATCH route's record-then-mail ordering: the
+    // participant list is the durable source of truth, so a failure
+    // below never leaves it unwritten.
+    const participants = participantsOf(input.existingSettings);
+    const row = await deps.store.updateChannelSettings({
+      tenantId: input.tenantId,
+      channelId: input.channelId,
+      settings: {
+        ...input.existingSettings,
+        "chat/participants": addParticipant(
+          participants,
+          launched.address,
+          desiredHandle,
+        ),
+      },
+      updatedBy: input.principalId,
+    });
+
+    const joinEvent: PartType = {
+      kind: "event",
+      event: "channel.agent-joined",
+      data: {
+        address: launched.address,
+        definitionId: input.definitionId,
+        invitedBy: input.principalId,
+      },
+    };
+    await deps.platform.sendMail({
+      tenantId: input.tenantId,
+      channelId: input.channelId,
+      principalId: input.principalId,
+      content: encodeParts([joinEvent]),
+    });
+
+    deps.platform.ensureReplyBridge({
+      tenantId: input.tenantId,
+      channelId: input.channelId,
+      agentChannelId: localPartOf(launched.address),
+    });
+
+    registry.publish(input.channelId, {
+      type: "chat.settings",
+      data: { updatedBy: input.principalId, settings: row.settings },
+    });
+
+    return {
+      address: launched.address,
+      definitionId: input.definitionId,
+      handle: desiredHandle,
+      settings: row.settings,
+    };
+  }
+
   app.post(
     "/channels",
     deps.requireGrant("workflow-run:*", "create"),
@@ -340,6 +447,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (body instanceof type.errors) {
         return c.json(
           ErrorEnvelope("bad_request", `invalid channel body: ${body.summary}`),
+          400,
+        );
+      }
+
+      if (body.kind === "chat" && body.definitionId === undefined) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            "creating a chat requires a definitionId naming the single " +
+              "agent it launches with",
+          ),
           400,
         );
       }
@@ -390,7 +508,41 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         updatedBy: principal.id,
       });
 
-      return c.json(channelView(row), 201);
+      if (body.kind !== "chat") {
+        return c.json(channelView(row), 201);
+      }
+
+      // A chat's agent is chosen at creation, not invited later: the
+      // same launch-and-join core `POST .../invite` uses, run inline
+      // here so the chat comes back from this single call already
+      // carrying its one agent participant.
+      const definitionId = body.definitionId;
+      if (definitionId === undefined) {
+        throw new Error("unreachable: chat definitionId was validated above");
+      }
+      const joined = await launchAndJoinAgent({
+        tenantId: tenant.id,
+        principalId: principal.id,
+        channelId,
+        definitionId,
+        existingSettings: row.settings,
+      });
+
+      // The chat's default title, when the caller passes no name, is
+      // its agent's handle.
+      const finalSettings =
+        body.name === undefined
+          ? (
+              await deps.store.updateChannelSettings({
+                tenantId: tenant.id,
+                channelId,
+                settings: { ...joined.settings, "chat/name": joined.handle },
+                updatedBy: principal.id,
+              })
+            ).settings
+          : joined.settings;
+
+      return c.json(channelView({ channelId, settings: finalSettings }), 201);
     },
   );
 
@@ -486,18 +638,27 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         content: encodeParts(messageParts),
       });
 
-      // Fan out to every @mentioned agent participant, each as a
-      // single-recipient copy referencing this channel — never a relay
-      // workflow, and never CC (the platform's mail send is
-      // single-recipient; see `channel-workflow.ts`).
+      // A chat delivers to its one agent unconditionally, no @mention
+      // required (its agent is chosen at creation, fixed for the
+      // chat's lifetime); a channel (or anything else) keeps the
+      // mention-only fan-out. Never hardcoded to "one agent" even for
+      // a chat — a chat has exactly one by construction, but this
+      // still iterates every agent participant the settings carry.
       const settingsRow = await deps.store.getChannelSettings(
         tenant.id,
         channelId,
       );
       const participants =
         settingsRow !== undefined ? participantsOf(settingsRow.settings) : [];
-      const mentioned = mentionedParticipants(messageParts, participants);
-      for (const participant of mentioned) {
+      const kind =
+        settingsRow !== undefined ? kindOf(settingsRow.settings) : "chat";
+      const recipients =
+        kind === "chat"
+          ? participants
+              .filter((participant) => isAgentAddress(participant.address))
+              .map((participant) => participant.address)
+          : mentionedParticipants(messageParts, participants);
+      for (const participant of recipients) {
         await deps.platform.sendMail({
           tenantId: tenant.id,
           channelId: localPartOf(participant),
@@ -545,75 +706,27 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json(ErrorEnvelope("not_found", "Channel not found"), 404);
       }
 
-      const launched = await deps.platform.launchInvite({
-        tenantId: tenant.id,
-        creatorPrincipalId: principal.id,
-        definitionId: body.definitionId,
-      });
-
-      // The invited definition's name becomes the friendly mention
-      // handle (e.g. "echo" for a definition named "Echo"), rather than
-      // the invited run's own unusable instance-id local part; a
-      // definition the listing no longer carries falls back to that
-      // local part. Either way it is de-duplicated against every handle
-      // already in the channel ("echo", "echo-2", ...).
-      const invitable = await deps.platform.listInvitableDefinitions(tenant.id);
-      const invitedDefinition = invitable.find(
-        (definition) => definition.id === body.definitionId,
-      );
-      const desiredHandle =
-        invitedDefinition !== undefined
-          ? handleFromName(invitedDefinition.name, launched.address)
-          : localPartOf(launched.address);
-
-      // The record is updated before the join event is posted, matching
-      // the settings PATCH route's record-then-mail ordering: the
-      // participant list is the durable source of truth, so a failure
-      // below never leaves it unwritten.
-      const participants = participantsOf(existing.settings);
-      const row = await deps.store.updateChannelSettings({
-        tenantId: tenant.id,
-        channelId,
-        settings: {
-          ...existing.settings,
-          "chat/participants": addParticipant(
-            participants,
-            launched.address,
-            desiredHandle,
+      if (kindOf(existing.settings) === "chat") {
+        return c.json(
+          ErrorEnvelope(
+            "conflict",
+            "a chat has exactly one agent, fixed at creation; invite is " +
+              "only for channels",
           ),
-        },
-        updatedBy: principal.id,
-      });
+          409,
+        );
+      }
 
-      const joinEvent: PartType = {
-        kind: "event",
-        event: "channel.agent-joined",
-        data: {
-          address: launched.address,
-          definitionId: body.definitionId,
-          invitedBy: principal.id,
-        },
-      };
-      await deps.platform.sendMail({
+      const joined = await launchAndJoinAgent({
         tenantId: tenant.id,
-        channelId,
         principalId: principal.id,
-        content: encodeParts([joinEvent]),
-      });
-
-      deps.platform.ensureReplyBridge({
-        tenantId: tenant.id,
         channelId,
-        agentChannelId: localPartOf(launched.address),
-      });
-
-      registry.publish(channelId, {
-        type: "chat.settings",
-        data: { updatedBy: principal.id, settings: row.settings },
+        definitionId: body.definitionId,
+        existingSettings: existing.settings,
       });
 
       return c.json(
-        { address: launched.address, definitionId: body.definitionId },
+        { address: joined.address, definitionId: joined.definitionId },
         201,
       );
     },

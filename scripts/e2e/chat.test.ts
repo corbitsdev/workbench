@@ -671,8 +671,33 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     expect(invitedTexts).toContain(mentionText);
   }, 90_000);
 
+  async function echoDefinitionId(): Promise<string> {
+    const invitableRes = await api(
+      "GET",
+      `/api/tenants/${tenantId}/chat/channels/${channelId}/invitable`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus("list invitable definitions", invitableRes, 200);
+    const invitable = arrayField(
+      invitableRes.data,
+      "items",
+      "list invitable definitions",
+    ) as { id: string; name: string }[];
+    const echoDefinition = invitable.find((item) => item.name === "echo");
+    if (echoDefinition === undefined) {
+      throw new Error(
+        `no invitable definition named "echo": ${JSON.stringify(invitable)}`,
+      );
+    }
+    return echoDefinition.id;
+  }
+
   test("kind filter excludes and includes by kind", async () => {
-    const throwaway = await createChannel({ kind: "chat" });
+    const throwaway = await createChannel({
+      kind: "chat",
+      definitionId: await echoDefinitionId(),
+    });
     expectStatus("create throwaway chat", throwaway, 201);
     const throwawayId = stringField(
       throwaway.data,
@@ -708,6 +733,59 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       "list kind=chat",
     ).map((item) => (item as { id: string }).id);
     expect(chatKindIds).toContain(throwawayId);
+  }, 90_000);
+
+  test("a chat auto-invites the echo agent and delivers un-mentioned messages to it", async () => {
+    const chatCreated = await createChannel({
+      kind: "chat",
+      definitionId: await echoDefinitionId(),
+    });
+    expectStatus("create chat", chatCreated, 201);
+    expect(stringField(chatCreated.data, "kind", "create chat")).toBe("chat");
+    expect(stringField(chatCreated.data, "title", "create chat")).toBe("echo");
+    const chatId = stringField(chatCreated.data, "id", "create chat");
+
+    const chatParticipants = arrayField(
+      chatCreated.data,
+      "participants",
+      "create chat",
+    ) as { address: string; handle: string }[];
+    const chatAgent = chatParticipants.find((p) => p.handle === "echo");
+    if (chatAgent === undefined) {
+      throw new Error(
+        `chat has no "echo" agent participant: ${JSON.stringify(chatParticipants)}`,
+      );
+    }
+    const chatAgentLocalPart = chatAgent.address.split("@")[0];
+    if (chatAgentLocalPart === undefined || chatAgentLocalPart === "") {
+      throw new Error(`malformed chat agent address: ${chatAgent.address}`);
+    }
+
+    // Inviting into a chat is rejected — a chat's agent is fixed at
+    // creation.
+    const secondInvite = await api(
+      "POST",
+      `/api/tenants/${tenantId}/chat/channels/${chatId}/invite`,
+      { definitionId: await echoDefinitionId() },
+      user1.cookies,
+    );
+    expectStatus("invite into a chat is rejected", secondInvite, 409);
+
+    // No @mention is needed: a chat delivers every message to its one
+    // agent unconditionally. The agent's own inference source is a
+    // placeholder key in CI, so its reply attempt is expected to error
+    // and is never asserted here — only that the fan-out mail reached
+    // it.
+    const unmentionedText = `no mention needed ${crypto.randomUUID()}`;
+    await postMessage(user1.cookies, chatId, unmentionedText);
+
+    const agentMailbox = await listMessages(user1.cookies, chatAgentLocalPart);
+    const agentTexts = agentMailbox.flatMap((item) =>
+      item.parts
+        .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
+        .map((p) => p.text),
+    );
+    expect(agentTexts).toContain(unmentionedText);
   }, 90_000);
 
   // Settings is exercised last: `PATCH .../settings` folds the patch

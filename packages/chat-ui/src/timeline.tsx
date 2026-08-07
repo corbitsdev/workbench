@@ -147,7 +147,7 @@ function SenderAvatar({ initials }: { initials: string }) {
   );
 }
 
-function AgentBadge() {
+export function AgentBadge() {
   return (
     <span className="chat-agent-badge">{CHAT_STRINGS.agentBadgeLabel}</span>
   );

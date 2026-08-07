@@ -112,6 +112,58 @@ describe("createChannel", () => {
     });
     expect(channel.id).toBe("c2");
   });
+
+  test("posts the definitionId (and no name) for a chat with no explicit name", async () => {
+    const calls = stubFetch(() =>
+      json(
+        {
+          id: "c3",
+          title: "echo",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        },
+        201,
+      ),
+    );
+    const channel = await createChannel("tenant_1", {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/channels");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    // With no explicit name, the server titles the chat by the agent's
+    // handle — the client sends no name at all rather than guessing one.
+    expect(channel.title).toBe("echo");
+  });
+
+  test("posts the definitionId alongside an explicit name for a chat", async () => {
+    const calls = stubFetch(() =>
+      json(
+        {
+          id: "c4",
+          title: "My research chat",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        },
+        201,
+      ),
+    );
+    await createChannel("tenant_1", {
+      kind: "chat",
+      definitionId: "wfd_echo",
+      name: "My research chat",
+    });
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      kind: "chat",
+      definitionId: "wfd_echo",
+      name: "My research chat",
+    });
+  });
 });
 
 describe("sendMessage", () => {

@@ -12,6 +12,7 @@
 // `TenantResolution` value rather than importing app code: the same
 // narrow-port shape `@corbits/chat`'s `routes.ts` uses for `ChatPlatform`.
 
+import { isAgentAddress } from "@corbits/chat/mentions";
 import {
   Button,
   EmptyState,
@@ -34,14 +35,14 @@ import {
   sendMessage,
   channelStreamUrl,
 } from "./api";
-import type { Channel, ChannelKind, MessageItem } from "./api";
+import type { Channel, CreateChannelInput, MessageItem } from "./api";
 import { Composer } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
 import { ChatSidebar } from "./sidebar";
 import { CHAT_STRINGS } from "./strings";
-import { ChannelTimeline } from "./timeline";
+import { AgentBadge, ChannelTimeline } from "./timeline";
 import type { CurrentUser } from "./timeline";
 import { useChannelStream } from "./use-channel-stream";
 
@@ -103,6 +104,16 @@ export function nextMessagesState(
   }
   if (background) return current;
   return { kind: "error", message: outcome.message };
+}
+
+/**
+ * A chat's agent is fixed at creation — the server 409s an invite into one
+ * — so the "invite agent" affordance only ever makes sense on a channel.
+ * Undefined (no channel resolved yet) defaults to showing it, matching the
+ * affordance's prior always-shown behavior before there was a kind to ask.
+ */
+export function canInviteAgent(kind: string | undefined): boolean {
+  return kind !== "chat";
 }
 
 function useChannelLists(tenantId: string, refreshKey: number) {
@@ -236,10 +247,7 @@ function ChatWorkspaceInner({
     refreshUnlessUnauthorized,
   );
 
-  async function handleCreateChannel(input: {
-    name: string;
-    kind: ChannelKind;
-  }) {
+  async function handleCreateChannel(input: CreateChannelInput) {
     setCreating(true);
     setCreateChannelError(null);
     try {
@@ -247,8 +255,12 @@ function ChatWorkspaceInner({
       setDialogOpen(false);
       setChannelsRefresh((value) => value + 1);
       setActiveChannelId(created.id);
-    } catch {
-      setCreateChannelError(CHAT_STRINGS.newChannelCreateError);
+    } catch (cause) {
+      const message =
+        cause instanceof ChatApiError && cause.status === 400
+          ? CHAT_STRINGS.newChannelMissingAgentError
+          : CHAT_STRINGS.newChannelCreateError;
+      setCreateChannelError(message);
     } finally {
       setCreating(false);
     }
@@ -281,6 +293,12 @@ function ChatWorkspaceInner({
           (channel) => channel.id === activeChannelId,
         )
       : undefined;
+  const isActiveChat = activeChannel?.kind === "chat";
+  const activeChatAgent = isActiveChat
+    ? activeChannel?.participants.find((participant) =>
+        isAgentAddress(participant.address),
+      )
+    : undefined;
 
   return (
     <>
@@ -294,7 +312,8 @@ function ChatWorkspaceInner({
         >
           Chat
         </TopBarTitle>
-        {activeChannelId !== null ? (
+        {activeChatAgent !== undefined ? <AgentBadge /> : null}
+        {activeChannelId !== null && canInviteAgent(activeChannel?.kind) ? (
           <TopBarActions>
             <Button
               variant="outline"
@@ -382,6 +401,7 @@ function ChatWorkspaceInner({
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onCreate={(input) => void handleCreateChannel(input)}
+        tenantId={tenantId}
         submitting={creating}
         error={createChannelError}
       />

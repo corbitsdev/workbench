@@ -187,9 +187,22 @@ export function listChannels(
   );
 }
 
+// A chat is a single-agent direct thread: the agent is picked at creation
+// via `definitionId` and the name is optional (the server titles it by the
+// agent's handle when omitted). A channel is the pinned, multiplayer kind:
+// name-only, no agent attached at creation. See `packages/chat/src/routes.ts`
+// `POST /channels` for the server side of this union.
+export type CreateChannelInput =
+  | { readonly kind: "channel"; readonly name: string }
+  | {
+      readonly kind: "chat";
+      readonly definitionId: string;
+      readonly name?: string;
+    };
+
 export function createChannel(
   tenantId: string,
-  input: { readonly kind: ChannelKind; readonly name: string },
+  input: CreateChannelInput,
 ): Promise<Channel> {
   return request(`/api/tenants/${tenantId}/chat/channels`, Channel, {
     method: "POST",
