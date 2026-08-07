@@ -1,0 +1,30 @@
+{
+  "name": "@corbits/chat-ui",
+  "private": true,
+  "description": "The chat surface's UI: the workspace, timeline, composer, and sidebar composed from the published component library",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/chat": "workspace:*",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#4fd32be5d07f046a0c3bb5450d343b3cedfd94a6",
+    "arktype": "catalog:",
+    "lucide-react": "^1.27.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "typescript": "catalog:"
+  }
+}

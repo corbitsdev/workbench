@@ -5,7 +5,7 @@ import {
   filterMentionCandidates,
   insertMention,
   mentionCandidatesFromParticipants,
-} from "../../src/chat/mentions";
+} from "../src/mentions";
 
 describe("activeMentionQuery", () => {
   test("detects an open mention right after the @", () => {

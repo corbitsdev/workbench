@@ -5,10 +5,10 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { Channel, MessageItem } from "../../src/chat/api";
-import { Composer } from "../../src/chat/composer";
-import { ChatSidebar } from "../../src/chat/sidebar";
-import { ChannelTimeline } from "../../src/chat/timeline";
+import type { Channel, MessageItem } from "../src/api";
+import { Composer } from "../src/composer";
+import { ChatSidebar } from "../src/sidebar";
+import { ChannelTimeline } from "../src/timeline";
 
 const channel = (overrides: Partial<Channel>): Channel => ({
   id: "c1",

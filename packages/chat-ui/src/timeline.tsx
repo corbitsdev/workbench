@@ -5,6 +5,7 @@
 // name — falling back to the local part of its address, then to nothing —
 // alongside its timestamp.
 
+import { localPartOf } from "@corbits/chat/agent-address";
 import { EmptyState } from "@corbits/react-ui";
 import { MessageSquare } from "lucide-react";
 import { useEffect, useRef } from "react";
@@ -16,11 +17,6 @@ function formatTimestamp(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function localPartOf(address: string): string {
-  const at = address.indexOf("@");
-  return at === -1 ? address : address.slice(0, at);
 }
 
 function senderLabel(sender: MessageSender | undefined): string | undefined {

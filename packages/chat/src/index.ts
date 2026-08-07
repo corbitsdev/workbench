@@ -43,6 +43,9 @@ export type {
 export { presetForKind } from "./kinds";
 export type { ChannelKindPreset } from "./kinds";
 
+export { localPartOf, domainOf } from "./agent-address";
+export { isAgentAddress, mentionedParticipants } from "./mentions";
+
 export { createChatRoutes } from "./routes";
 export type {
   ChatPlatform,

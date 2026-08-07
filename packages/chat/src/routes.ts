@@ -30,6 +30,8 @@ import { idResource } from "@intx/hub-api";
 import { decodeMail, encodeParts, senderOf, type MailContent } from "./codec";
 import { Part, type Part as PartType } from "./parts";
 import { presetForKind } from "./kinds";
+import { localPartOf } from "./agent-address";
+import { mentionedParticipants } from "./mentions";
 import {
   buildChannelHostWorkflow,
   serializeChannelHostWorkflow,
@@ -218,45 +220,6 @@ function channelView(row: {
     pinned,
     participants,
   };
-}
-
-function localPartOf(address: string): string {
-  const at = address.indexOf("@");
-  return at === -1 ? address : address.slice(0, at);
-}
-
-// A participant entry is an agent address (mention-fannable) rather
-// than a bare principal id when it carries the "@domain" shape every
-// agent address has. Bare principal ids are never fanned a copy: only
-// mentions of other runs' anchors are, since a human participant reads
-// the channel's own timeline directly.
-function isAgentAddress(participant: string): boolean {
-  return participant.includes("@");
-}
-
-/**
- * The participants an ordinary message @mentions, restricted to agent
- * addresses: the fan-out set for `POST /channels/:id/messages`. A
- * mention is structural — the address's local part, `@`-prefixed,
- * appearing in any `TextPart` of the message — not a full parse of
- * mention syntax; kept minimal per the anchor-mailbox rework's scope.
- */
-function mentionedParticipants(
-  parts: readonly PartType[],
-  participants: readonly string[],
-): string[] {
-  const texts = parts
-    .filter(
-      (part): part is Extract<PartType, { kind: "text" }> =>
-        part.kind === "text",
-    )
-    .map((part) => part.text);
-  if (texts.length === 0) return [];
-  return participants.filter((participant) => {
-    if (!isAgentAddress(participant)) return false;
-    const mentionToken = `@${localPartOf(participant)}`;
-    return texts.some((text) => text.includes(mentionToken));
-  });
 }
 
 function participantsOf(settings: Record<string, unknown>): string[] {

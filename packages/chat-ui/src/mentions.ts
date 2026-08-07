@@ -4,27 +4,21 @@
 // the draft. No DOM, no fetch — kept pure so it is unit-testable without
 // mounting anything.
 //
-// The inserted text must match the server's matching semantics
-// (`mentionedParticipants` in packages/chat/src/routes.ts): it looks for
-// `@<local part of the participant's address>` in the message text. So the
-// candidate's `handle` — the text actually spliced in — is always the local
-// part of an agent address, never a display name; `label` is a friendlier
-// string shown alongside it in the popover only.
+// Matching and handle derivation delegate to `@corbits/chat`'s
+// `isAgentAddress`/`localPartOf` — the same functions
+// `mentionedParticipants` in packages/chat/src/routes.ts uses — so the
+// candidate's `handle` (the text actually spliced in) is always exactly
+// what the server's fan-out will match, never a display name; `label`
+// is a friendlier string shown alongside it in the popover only.
+
+import { isAgentAddress } from "@corbits/chat/mentions";
+import { localPartOf } from "@corbits/chat/agent-address";
 
 export type MentionCandidate = {
   readonly id: string;
   readonly handle: string;
   readonly label: string;
 };
-
-function isAgentAddress(participant: string): boolean {
-  return participant.includes("@");
-}
-
-function localPartOf(address: string): string {
-  const at = address.indexOf("@");
-  return at === -1 ? address : address.slice(0, at);
-}
 
 /**
  * A softer label for a handle like `launch-planner` or `qa_bot`:

@@ -3,8 +3,14 @@
 // sidebar, timeline, and composer together for whichever channel is
 // selected. The chat API has no tenant switcher of its own yet — like the
 // onboarding flow's personal bench, this uses the account's first bench
-// membership, from the same `/api/me/principals` call the Home and Settings
-// pages already use.
+// membership.
+//
+// Resolving *which* bench that is is host-specific (it rides on
+// whatever session/query plumbing the embedding app already has — in
+// `@workbench/web` that is the same `/api/me/principals` call the Home
+// and Settings pages use), so `ChatWorkspace` takes a small
+// `TenantResolution` value rather than importing app code: the same
+// narrow-port shape `@corbits/chat`'s `routes.ts` uses for `ChatPlatform`.
 
 import {
   Button,
@@ -13,12 +19,10 @@ import {
   TopBar,
   TopBarTitle,
 } from "@corbits/react-ui";
-import { CircleAlert, MessageSquare } from "lucide-react";
+import { CircleAlert, Lock, MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 
-import { PrincipalsSchema, useAPIQuery } from "../api";
-import { subtitleProp } from "../optional-props";
-import { QueryView } from "../query-view";
 import {
   createChannel,
   listChannels,
@@ -35,6 +39,29 @@ import { ChatSidebar } from "./sidebar";
 import { CHAT_STRINGS } from "./strings";
 import { ChannelTimeline } from "./timeline";
 import { useChannelStream } from "./use-channel-stream";
+
+/**
+ * The host's answer to "which bench does this account chat in": mirrors
+ * the loading/unauthenticated/error/ready shape every hub-backed query
+ * in the embedding app already uses, plus `"empty"` for an
+ * authenticated account with no bench membership at all.
+ */
+export type TenantResolution =
+  | { readonly kind: "loading" }
+  | { readonly kind: "unauthenticated" }
+  | { readonly kind: "error"; readonly message: string }
+  | { readonly kind: "empty" }
+  | { readonly kind: "ready"; readonly tenantId: string };
+
+/**
+ * This workspace compiles under `exactOptionalPropertyTypes`, and the
+ * component library's optional props are declared without
+ * `| undefined` — so an absent prop has to be omitted, not passed as
+ * `undefined`.
+ */
+function subtitleProp(subtitle: string | undefined): { subtitle?: string } {
+  return subtitle === undefined ? {} : { subtitle };
+}
 
 type ChannelsState =
   | { readonly kind: "loading" }
@@ -248,34 +275,60 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
   );
 }
 
-export function ChatWorkspace() {
-  const principals = useAPIQuery("/api/me/principals", PrincipalsSchema);
-  if (principals.kind === "ready") {
-    const tenantId = principals.data.data[0]?.tenantId;
-    if (tenantId !== undefined) {
-      return <ChatWorkspaceInner tenantId={tenantId} />;
-    }
-    return (
-      <>
-        <TopBar>
-          <TopBarTitle>Chat</TopBarTitle>
-        </TopBar>
-        <EmptyState
-          icon={<MessageSquare />}
-          title={CHAT_STRINGS.noChannelsTitle}
-          description="This account is not a member of any bench yet, so there is nowhere to chat."
-        />
-      </>
-    );
-  }
+function ChatWorkspaceFrame({ children }: { readonly children: ReactNode }) {
   return (
     <>
       <TopBar>
         <TopBarTitle>Chat</TopBarTitle>
       </TopBar>
-      <QueryView query={principals} label="your benches">
-        {() => null}
-      </QueryView>
+      {children}
     </>
   );
+}
+
+export function ChatWorkspace({
+  tenant,
+}: {
+  readonly tenant: TenantResolution;
+}) {
+  switch (tenant.kind) {
+    case "ready":
+      return <ChatWorkspaceInner tenantId={tenant.tenantId} />;
+    case "empty":
+      return (
+        <ChatWorkspaceFrame>
+          <EmptyState
+            icon={<MessageSquare />}
+            title={CHAT_STRINGS.noChannelsTitle}
+            description="This account is not a member of any bench yet, so there is nowhere to chat."
+          />
+        </ChatWorkspaceFrame>
+      );
+    case "loading":
+      return (
+        <ChatWorkspaceFrame>
+          <Skeleton className="query-skeleton" />
+        </ChatWorkspaceFrame>
+      );
+    case "unauthenticated":
+      return (
+        <ChatWorkspaceFrame>
+          <EmptyState
+            icon={<Lock />}
+            title="Sign in required"
+            description="Your session has ended. Reload the page to sign in again."
+          />
+        </ChatWorkspaceFrame>
+      );
+    case "error":
+      return (
+        <ChatWorkspaceFrame>
+          <EmptyState
+            icon={<CircleAlert />}
+            title="Couldn't load your benches"
+            description={tenant.message}
+          />
+        </ChatWorkspaceFrame>
+      );
+  }
 }

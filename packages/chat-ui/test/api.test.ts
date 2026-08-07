@@ -12,7 +12,7 @@ import {
   listDeployedAgents,
   listMessages,
   sendMessage,
-} from "../../src/chat/api";
+} from "../src/api";
 
 const realFetch = globalThis.fetch;
 
