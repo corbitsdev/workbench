@@ -93,6 +93,9 @@ function fakePlatform(
         channelId: input.channelId,
         principalId: input.principalId,
         content: input.content,
+        ...(input.fromChannelId !== undefined
+          ? { fromChannelId: input.fromChannelId }
+          : {}),
       });
       const id = `mail_${++mailCounter}`;
       const createdAt = new Date().toISOString();
@@ -269,6 +272,30 @@ describe("messages", () => {
     expect(platform.sentMail).toHaveLength(1);
     expect(platform.sentMail[0]?.principalId).toBe("prn_alice");
     expect(platform.sentMail[0]?.content).toEqual({ content: "hello" });
+  });
+
+  test("fan-out copies to mentioned agents are sent from the channel", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "demo",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    const parts: Part[] = [{ kind: "text", text: "hi @ins_echo1" }];
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(parts),
+    });
+
+    expect(response.status).toBe(201);
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.sentMail).toHaveLength(2);
+    const copy = platform.sentMail[1];
+    expect(copy?.channelId).toBe("ins_echo1");
+    expect(copy?.fromChannelId).toBe(channel.id);
   });
 
   test("POST rejects a malformed message body with the 400 envelope", async () => {

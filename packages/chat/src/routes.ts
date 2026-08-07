@@ -123,6 +123,15 @@ export interface ChatPlatform {
     readonly channelId: string;
     readonly principalId: string;
     readonly content: MailContent;
+    /**
+     * Send the mail from another channel's address instead of the
+     * principal's. Fan-out copies to mentioned agents carry the origin
+     * channel here: an agent's reply router answers the From address of
+     * the mail it received, and a principal address has no mailbox — a
+     * reply to it vanishes. From-the-channel means agents answer into
+     * the mailbox every participant reads.
+     */
+    readonly fromChannelId?: string;
   }): Promise<SentMail>;
 
   listMail(input: {
@@ -448,6 +457,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           channelId: localPartOf(participant),
           principalId: principal.id,
           content: encodeParts(messageParts, { replyTo: channelId }),
+          fromChannelId: channelId,
         });
       }
 

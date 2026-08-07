@@ -487,7 +487,16 @@ export function createHubChatPlatform(
       const mailId = crypto.randomUUID();
       const now = new Date();
       const domain = domainOf(run.address);
-      const from = `${input.principalId}@${domain}`;
+      let from = `${input.principalId}@${domain}`;
+      if (input.fromChannelId !== undefined) {
+        const origin = await findChannelRun(input.fromChannelId);
+        if (origin?.address == null) {
+          throw new Error(
+            `sendMail: origin channel "${input.fromChannelId}" has no address`,
+          );
+        }
+        from = origin.address;
+      }
       const cryptoProvider = await cryptoProviderFor(input.channelId);
 
       const attachments = input.content.attachments?.map(
