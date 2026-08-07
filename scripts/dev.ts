@@ -178,7 +178,7 @@ const apps: App[] = [
     label: "web",
     dir: join(repoRoot, "apps", "web"),
     command: [
-      join(repoRoot, "node_modules", ".bin", "vite"),
+      join(repoRoot, "apps", "web", "node_modules", ".bin", "vite"),
       "build",
       "--watch",
     ],
