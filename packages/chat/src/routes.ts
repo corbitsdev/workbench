@@ -31,7 +31,7 @@ import { decodeMail, encodeParts, senderOf, type MailContent } from "./codec";
 import { Part, type Part as PartType } from "./parts";
 import { presetForKind } from "./kinds";
 import { localPartOf } from "./agent-address";
-import { mentionedParticipants } from "./mentions";
+import { isAgentAddress, mentionedParticipants } from "./mentions";
 import {
   addParticipant,
   handleFromName,
@@ -148,6 +148,19 @@ export interface ChatPlatform {
   }): Promise<ListedMail>;
 
   fetchBlob(channelId: string, blobId: string): Promise<string | Uint8Array>;
+
+  /**
+   * Arm (idempotently) the bridge that turns an invited agent's
+   * connector.reply events into channel messages — the event stream is
+   * the only surface an agent's reply appears on, so without an armed
+   * bridge a mentioned agent answers into the void. Called at invite
+   * and re-armed lazily when a channel is read after a host restart.
+   */
+  ensureReplyBridge(input: {
+    readonly tenantId: string;
+    readonly channelId: string;
+    readonly agentChannelId: string;
+  }): void;
 
   subscribeToChannel(
     channelId: string,
@@ -406,6 +419,25 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         ...(cursor !== undefined ? { cursor } : {}),
       });
 
+      // Reply bridges are in-memory; a host restart loses them. Reading
+      // a channel is the natural moment to re-arm its agents' bridges —
+      // idempotent, so steady-state reads cost a map lookup each.
+      const settingsRow = await deps.store.getChannelSettings(
+        tenant.id,
+        channelId,
+      );
+      if (settingsRow !== undefined) {
+        for (const record of participantsOf(settingsRow.settings)) {
+          if (isAgentAddress(record.address)) {
+            deps.platform.ensureReplyBridge({
+              tenantId: tenant.id,
+              channelId,
+              agentChannelId: localPartOf(record.address),
+            });
+          }
+        }
+      }
+
       const items = await Promise.all(
         listed.items.map(async (item) => ({
           id: item.id,
@@ -567,6 +599,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         channelId,
         principalId: principal.id,
         content: encodeParts([joinEvent]),
+      });
+
+      deps.platform.ensureReplyBridge({
+        tenantId: tenant.id,
+        channelId,
+        agentChannelId: localPartOf(launched.address),
       });
 
       registry.publish(channelId, {

@@ -37,7 +37,9 @@ import {
 } from "@intx/db/schema";
 import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
 import { generateId } from "@intx/hub-common";
+import { getLogger } from "@intx/log";
 import { extractPartByPath, parseMailToEmail } from "@intx/mime";
+import { encodeParts } from "./codec";
 import {
   ensureWorkflowDefinitionForAsset,
   resolveRunSessionId,
@@ -367,7 +369,16 @@ export function createHubChatPlatform(
     }
   }
 
-  return {
+  // Reply bridges: one live subscription per invited agent, translating
+  // its connector.reply events into channel messages. The platform's
+  // event stream is the ONLY place an agent's reply surfaces at this
+  // Interchange version — replies never persist as session mail — so
+  // without this bridge a mentioned agent answers into the void.
+  // Keyed by agent run id; idempotent to arm, cheap to consult.
+  const replyBridges = new Map<string, () => void>();
+  const bridgeLog = getLogger(["chat", "reply-bridge"]);
+
+  const platform: ChatPlatform = {
     async launchChannel(input): Promise<LaunchedChannel> {
       // Validates the address shape early, mirroring every other path
       // here that reads a domain off an agent address.
@@ -631,5 +642,53 @@ export function createHubChatPlatform(
         unsubscribeAgent?.();
       };
     },
+
+    ensureReplyBridge(input: {
+      tenantId: string;
+      channelId: string;
+      agentChannelId: string;
+    }): void {
+      if (replyBridges.has(input.agentChannelId)) return;
+      // Reserve the slot synchronously so concurrent calls stay idempotent;
+      // the subscription attaches once the agent's address resolves.
+      let unsubscribe: (() => void) | undefined;
+      replyBridges.set(input.agentChannelId, () => unsubscribe?.());
+      void findChannelRun(input.agentChannelId).then((run) => {
+        if (run === undefined || run.address === null) {
+          replyBridges.delete(input.agentChannelId);
+          return;
+        }
+        const agentAddress = run.address;
+        unsubscribe = deps.sidecarRouter.subscribeAgent(
+          agentAddress,
+          (event) => {
+            if (
+              typeof event !== "object" ||
+              event === null ||
+              (event as { type?: unknown }).type !== "connector.reply"
+            ) {
+              return;
+            }
+            const data = (event as { data?: { content?: unknown } }).data;
+            const content = data?.content;
+            if (typeof content !== "string" || content === "") return;
+            void platform
+              .sendMail({
+                tenantId: input.tenantId,
+                channelId: input.channelId,
+                principalId: input.agentChannelId,
+                content: encodeParts([{ kind: "text", text: content }]),
+                fromChannelId: input.agentChannelId,
+              })
+              .catch((cause: unknown) => {
+                bridgeLog.error`reply bridge: failed to post ${agentAddress}'s reply into channel ${input.channelId}: ${
+                  cause instanceof Error ? cause.message : String(cause)
+                }`;
+              });
+          },
+        );
+      });
+    },
   };
+  return platform;
 }

@@ -59,7 +59,17 @@ function fakePlatform(
     creatorPrincipalId: string;
     definitionId: string;
   }[];
+  replyBridges: {
+    tenantId: string;
+    channelId: string;
+    agentChannelId: string;
+  }[];
 } {
+  const replyBridges: {
+    tenantId: string;
+    channelId: string;
+    agentChannelId: string;
+  }[] = [];
   const sentMail: {
     channelId: string;
     principalId: string;
@@ -79,6 +89,7 @@ function fakePlatform(
 
   return {
     sentMail,
+    replyBridges,
     launchInviteCalls,
     async launchChannel() {
       return { instanceId: "launched" };
@@ -127,6 +138,13 @@ function fakePlatform(
     },
     subscribeToChannel() {
       return () => undefined;
+    },
+    ensureReplyBridge(input: {
+      tenantId: string;
+      channelId: string;
+      agentChannelId: string;
+    }) {
+      replyBridges.push(input);
     },
   };
 }
@@ -302,6 +320,40 @@ describe("messages", () => {
     const copy = platform.sentMail[1];
     expect(copy?.channelId).toBe("ins_echo1");
     expect(copy?.fromChannelId).toBe(channel.id);
+  });
+
+  test("inviting an agent arms its reply bridge", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    expect(response.status).toBe(201);
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.replyBridges).toHaveLength(1);
+    expect(platform.replyBridges[0]?.channelId).toBe(channel.id);
+  });
+
+  test("reading a channel re-arms bridges for agent participants", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    const response = await app.request(`/channels/${channel.id}/messages`);
+    expect(response.status).toBe(200);
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.replyBridges).toHaveLength(1);
+    expect(platform.replyBridges[0]?.agentChannelId).toBe("ins_echo1");
   });
 
   test("POST rejects a malformed message body with the 400 envelope", async () => {
