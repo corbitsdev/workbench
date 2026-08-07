@@ -7,6 +7,7 @@ import { paginatedSchema, PrincipalSummary, TenantResponse } from "@intx/types";
 import {
   authenticate,
   parseAs,
+  seedInferenceSource,
   seedTenant,
   DEFAULT_WORKFLOWS,
   type ApiCall,
@@ -95,4 +96,17 @@ export async function runSeed(
     seedArgs.runPollIntervalMs = deps.runPollIntervalMs;
 
   await seedTenant(seedArgs);
+
+  if (!config.inferenceApiKeyConfigured) {
+    log(
+      "SEED_INFERENCE_API_KEY is not set; seeding the tenant catalog with a placeholder credential — inference will error until you set SEED_INFERENCE_API_KEY and re-run: workbench seed",
+    );
+  }
+  await seedInferenceSource({
+    api,
+    cookies,
+    tenantId: tenant.tenantId,
+    source: config.inferenceSource,
+    log,
+  });
 }

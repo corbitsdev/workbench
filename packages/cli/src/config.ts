@@ -47,7 +47,32 @@ const SeedEnv = type({
   WORKBENCH_MODEL_API_KEY: type("string > 0").describe(
     "your API key at the provider; the hub never generates this for you",
   ),
+  "SEED_INFERENCE_PROVIDER?": type("string > 0").describe(
+    "the inference provider to plant in the tenant catalog, e.g. anthropic",
+  ),
+  "SEED_INFERENCE_MODEL?": type("string > 0").describe(
+    "the canonical model name to plant in the tenant catalog, e.g. claude-sonnet-5",
+  ),
+  "SEED_INFERENCE_BASE_URL?": type(HTTP_URL).describe(
+    "the catalog provider's API base URL, e.g. https://api.anthropic.com/v1",
+  ),
+  "SEED_INFERENCE_API_KEY?": type("string > 0").describe(
+    "your real API key at the provider; left unset, seeding plants the catalog chain with a placeholder credential and inference errors until this is set",
+  ),
 });
+
+// Defaults for the tenant catalog's inference source. Distinct from
+// WORKBENCH_MODEL_* (which configures the model the default workflow
+// set deploys with): this is the source `workbench seed` plants in the
+// tenant catalog so interactive instances have a model to resolve
+// against, independent of any workflow deployment.
+const DEFAULT_INFERENCE_PROVIDER = "anthropic";
+const DEFAULT_INFERENCE_MODEL = "claude-sonnet-5";
+const DEFAULT_INFERENCE_BASE_URL = "https://api.anthropic.com/v1";
+
+// Named so it can never be mistaken for a real secret if it leaks into
+// a log line, a screenshot, or a bug report.
+export const PLACEHOLDER_INFERENCE_API_KEY = "placeholder-not-a-real-key";
 
 export type SetupConfig = {
   readonly hubUrl: string;
@@ -65,6 +90,8 @@ export type SeedConfig = {
   readonly adminPassword: string;
   readonly orgSlug: string;
   readonly modelSource: ModelSource;
+  readonly inferenceSource: ModelSource;
+  readonly inferenceApiKeyConfigured: boolean;
 };
 
 function environmentError(command: string, problems: string[]): CliError {
@@ -129,6 +156,13 @@ export function readSeedConfig(
       baseURL: parsed.WORKBENCH_MODEL_BASE_URL,
       apiKey: parsed.WORKBENCH_MODEL_API_KEY,
     },
+    inferenceSource: {
+      provider: parsed.SEED_INFERENCE_PROVIDER ?? DEFAULT_INFERENCE_PROVIDER,
+      model: parsed.SEED_INFERENCE_MODEL ?? DEFAULT_INFERENCE_MODEL,
+      baseURL: parsed.SEED_INFERENCE_BASE_URL ?? DEFAULT_INFERENCE_BASE_URL,
+      apiKey: parsed.SEED_INFERENCE_API_KEY ?? PLACEHOLDER_INFERENCE_API_KEY,
+    },
+    inferenceApiKeyConfigured: parsed.SEED_INFERENCE_API_KEY !== undefined,
   };
 }
 

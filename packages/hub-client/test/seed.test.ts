@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { CliError } from "../src/errors";
 import {
   DEFAULT_WORKFLOWS,
+  seedInferenceSource,
   seedTenant,
   type SeedTenantArgs,
   type WorkflowPusher,
@@ -335,5 +336,267 @@ describe("seedTenant", () => {
   test("the default set is non-empty and starts with the echo workflow", () => {
     expect(DEFAULT_WORKFLOWS.length).toBeGreaterThan(0);
     expect(DEFAULT_WORKFLOWS[0]?.assetName).toBe("echo");
+  });
+});
+
+const TIMESTAMP = "2026-01-01T00:00:00.000Z";
+
+const SOURCE = {
+  provider: "anthropic",
+  model: "claude-sonnet-5",
+  baseURL: "https://api.anthropic.com/v1",
+  apiKey: "sk-test",
+};
+
+function providerRow(id: string, name: string) {
+  return {
+    id,
+    tenantId: TENANT_ID,
+    name,
+    plugin: name,
+    createdAt: TIMESTAMP,
+    updatedAt: TIMESTAMP,
+  };
+}
+
+function credentialRow(id: string, providerId: string, name: string) {
+  return {
+    id,
+    tenantId: TENANT_ID,
+    providerId,
+    name,
+    type: "api_key",
+    status: "active",
+    createdAt: TIMESTAMP,
+    updatedAt: TIMESTAMP,
+  };
+}
+
+function catalogModelRow(id: string, canonicalName: string) {
+  return {
+    id,
+    tenantId: TENANT_ID,
+    canonicalName,
+    disabled: false,
+    createdAt: TIMESTAMP,
+    updatedAt: TIMESTAMP,
+  };
+}
+
+function catalogProviderRow(id: string, name: string, credentialId: string) {
+  return {
+    id,
+    tenantId: TENANT_ID,
+    name,
+    plugin: name,
+    baseURL: "https://api.anthropic.com/v1",
+    credentialId,
+    disabled: false,
+    createdAt: TIMESTAMP,
+    updatedAt: TIMESTAMP,
+  };
+}
+
+function catalogOfferingRow(id: string, modelId: string, providerId: string) {
+  return {
+    id,
+    tenantId: TENANT_ID,
+    modelId,
+    providerId,
+    priority: 0,
+    deploymentTags: [],
+    capabilities: [],
+    quirks: null,
+    disabled: false,
+    createdAt: TIMESTAMP,
+    updatedAt: TIMESTAMP,
+  };
+}
+
+describe("seedInferenceSource", () => {
+  test("fresh run creates the full provider-to-offering chain", async () => {
+    const { lines, log } = collector();
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "anthropic") };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 201,
+          data: credentialRow("cre_1", "prv_1", "anthropic-default"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "claude-sonnet-5"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow("cpv_1", "anthropic", "cre_1"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        expect(body).toEqual({ modelId: "mdl_1", providerId: "cpv_1" });
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      }
+      return undefined;
+    };
+
+    await seedInferenceSource({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      source: SOURCE,
+      log,
+    });
+
+    const output = lines.join("\n");
+    expect(output).toContain("created provider anthropic");
+    expect(output).toContain("created credential anthropic-default");
+    expect(output).toContain("created catalog model claude-sonnet-5");
+    expect(output).toContain("created catalog provider anthropic");
+    expect(output).toContain("created catalog offering");
+    expect(output).toContain(
+      "inference source ready: anthropic/claude-sonnet-5",
+    );
+  });
+
+  test("re-run finds every step already seeded and creates nothing twice", async () => {
+    const { lines, log } = collector();
+    let providerPosts = 0;
+    let credentialPosts = 0;
+    let modelPosts = 0;
+    let catalogProviderPosts = 0;
+    let offeringPosts = 0;
+    const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`) {
+        providerPosts += 1;
+        return { status: 409, data: { error: "name taken" } };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
+      )
+        return {
+          status: 200,
+          data: { data: [providerRow("prv_1", "anthropic")], nextCursor: null },
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/credentials`
+      ) {
+        credentialPosts += 1;
+        return { status: 409, data: { error: "name taken" } };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 200,
+          data: {
+            data: [credentialRow("cre_1", "prv_1", "anthropic-default")],
+            nextCursor: null,
+          },
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        modelPosts += 1;
+        return { status: 409, data: { error: "name taken" } };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 200,
+          data: {
+            data: [catalogModelRow("mdl_1", "claude-sonnet-5")],
+            nextCursor: null,
+          },
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        catalogProviderPosts += 1;
+        return { status: 409, data: { error: "name taken" } };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 200,
+          data: {
+            data: [catalogProviderRow("cpv_1", "anthropic", "cre_1")],
+            nextCursor: null,
+          },
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        offeringPosts += 1;
+        return { status: 409, data: { error: "already exists" } };
+      }
+      return undefined;
+    };
+
+    await seedInferenceSource({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      source: SOURCE,
+      log,
+    });
+
+    expect(providerPosts).toBe(1);
+    expect(credentialPosts).toBe(1);
+    expect(modelPosts).toBe(1);
+    expect(catalogProviderPosts).toBe(1);
+    expect(offeringPosts).toBe(1);
+
+    const output = lines.join("\n");
+    expect(output).toContain("provider anthropic already exists (skipped)");
+    expect(output).toContain(
+      "credential anthropic-default already exists (skipped",
+    );
+    expect(output).toContain(
+      "catalog model claude-sonnet-5 already exists (skipped)",
+    );
+    expect(output).toContain(
+      "catalog provider anthropic already exists (skipped)",
+    );
+    expect(output).toContain("catalog offering already exists (skipped)");
+  });
+
+  test("an unexpected status from the provider route is a loud failure", async () => {
+    const { log } = collector();
+    const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 500, data: { error: "boom" } };
+      return undefined;
+    };
+
+    expect(
+      seedInferenceSource({
+        api: fakeAPI(handler),
+        cookies: [],
+        tenantId: TENANT_ID,
+        source: SOURCE,
+        log,
+      }),
+    ).rejects.toThrow(CliError);
   });
 });

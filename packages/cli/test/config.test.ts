@@ -96,4 +96,33 @@ describe("readSeedConfig", () => {
       expect(Object.keys(VALID_MODEL)).toContain(name);
     }
   });
+
+  test("defaults the catalog inference source and flags the placeholder key", () => {
+    const config = readSeedConfig({ ...VALID_SHARED, ...VALID_MODEL });
+    expect(config.inferenceSource).toEqual({
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      baseURL: "https://api.anthropic.com/v1",
+      apiKey: "placeholder-not-a-real-key",
+    });
+    expect(config.inferenceApiKeyConfigured).toBe(false);
+  });
+
+  test("a configured SEED_INFERENCE_API_KEY overrides the placeholder", () => {
+    const config = readSeedConfig({
+      ...VALID_SHARED,
+      ...VALID_MODEL,
+      SEED_INFERENCE_PROVIDER: "openai",
+      SEED_INFERENCE_MODEL: "gpt-5",
+      SEED_INFERENCE_BASE_URL: "https://api.openai.com/v1",
+      SEED_INFERENCE_API_KEY: "sk-real",
+    });
+    expect(config.inferenceSource).toEqual({
+      provider: "openai",
+      model: "gpt-5",
+      baseURL: "https://api.openai.com/v1",
+      apiKey: "sk-real",
+    });
+    expect(config.inferenceApiKeyConfigured).toBe(true);
+  });
 });

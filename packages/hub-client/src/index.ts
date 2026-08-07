@@ -10,9 +10,10 @@ export type {
   DefaultWorkflow,
   ModelSource,
   PushOutcome,
+  SeedInferenceSourceArgs,
   SeedTenant,
   SeedTenantArgs,
   WorkflowPusher,
 } from "./seed";
-export { DEFAULT_WORKFLOWS, seedTenant } from "./seed";
+export { DEFAULT_WORKFLOWS, seedInferenceSource, seedTenant } from "./seed";
 export { createGitWorkflowPusher } from "./workflow-push";

@@ -8,7 +8,12 @@
 import {
   AssetResponse,
   AssetWithOriginResponse,
+  CredentialResponse,
   GrantResponse,
+  ModelOfferingResponse,
+  ModelProviderResponse,
+  ModelResponse,
+  ProviderResponse,
   paginatedSchema,
 } from "@intx/types";
 import { type } from "arktype";
@@ -493,4 +498,321 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     );
   }
   log(`seed complete: ${confirmed} workflow(s) deployed and confirmed`);
+}
+
+// The credential name a seeded inference source stores its secret
+// under; distinct from the provider name so re-runs and manual
+// inspection are never ambiguous about which is which.
+function inferenceCredentialName(providerName: string): string {
+  return `${providerName}-default`;
+}
+
+async function ensureProvider(
+  api: ApiCall,
+  cookies: string[],
+  args: { tenantId: string; name: string; plugin: string },
+  log: (line: string) => void,
+): Promise<string> {
+  const created = await api(
+    "POST",
+    `/api/tenants/${args.tenantId}/providers`,
+    { name: args.name, plugin: args.plugin },
+    cookies,
+  );
+  if (created.status === 201) {
+    const provider = parseAs(
+      ProviderResponse,
+      created.data,
+      "provider response",
+    );
+    log(`created provider ${args.name}`);
+    return provider.id;
+  }
+  if (created.status !== 409) {
+    throw new CliError(
+      `the hub rejected creation of provider ${args.name} with status ${created.status}: ${JSON.stringify(created.data)}`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+
+  const listed = await api(
+    "GET",
+    `/api/tenants/${args.tenantId}/providers?inherited=false`,
+    undefined,
+    cookies,
+  );
+  const providers = parseAs(
+    paginatedSchema(ProviderResponse),
+    listed.data,
+    "providers response",
+  ).data;
+  const existing = providers.find((p) => p.name === args.name);
+  if (!existing) {
+    throw new CliError(
+      `provider ${args.name} reported a name conflict but is not listable on the bench`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+  log(`provider ${args.name} already exists (skipped)`);
+  return existing.id;
+}
+
+async function ensureCredential(
+  api: ApiCall,
+  cookies: string[],
+  args: { tenantId: string; providerId: string; name: string; secret: string },
+  log: (line: string) => void,
+): Promise<string> {
+  const created = await api(
+    "POST",
+    `/api/tenants/${args.tenantId}/credentials`,
+    {
+      providerId: args.providerId,
+      name: args.name,
+      type: "api_key",
+      secret: args.secret,
+    },
+    cookies,
+  );
+  if (created.status === 201) {
+    const credential = parseAs(
+      CredentialResponse,
+      created.data,
+      "credential response",
+    );
+    log(`created credential ${args.name}`);
+    return credential.id;
+  }
+  if (created.status !== 409) {
+    throw new CliError(
+      `the hub rejected creation of credential ${args.name} with status ${created.status}: ${JSON.stringify(created.data)}`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+
+  const listed = await api(
+    "GET",
+    `/api/tenants/${args.tenantId}/credentials`,
+    undefined,
+    cookies,
+  );
+  const credentials = parseAs(
+    paginatedSchema(CredentialResponse),
+    listed.data,
+    "credentials response",
+  ).data;
+  const existing = credentials.find((c) => c.name === args.name);
+  if (!existing) {
+    throw new CliError(
+      `credential ${args.name} reported a name conflict but is not listable on the bench`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+  log(
+    `credential ${args.name} already exists (skipped; its secret is not updated by seeding)`,
+  );
+  return existing.id;
+}
+
+async function ensureCatalogModel(
+  api: ApiCall,
+  cookies: string[],
+  args: { tenantId: string; canonicalName: string },
+  log: (line: string) => void,
+): Promise<string> {
+  const created = await api(
+    "POST",
+    `/api/tenants/${args.tenantId}/catalog/models`,
+    { canonicalName: args.canonicalName },
+    cookies,
+  );
+  if (created.status === 201) {
+    const model = parseAs(
+      ModelResponse,
+      created.data,
+      "catalog model response",
+    );
+    log(`created catalog model ${args.canonicalName}`);
+    return model.id;
+  }
+  if (created.status !== 409) {
+    throw new CliError(
+      `the hub rejected creation of catalog model ${args.canonicalName} with status ${created.status}: ${JSON.stringify(created.data)}`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+
+  const listed = await api(
+    "GET",
+    `/api/tenants/${args.tenantId}/catalog/models`,
+    undefined,
+    cookies,
+  );
+  const models = parseAs(
+    paginatedSchema(ModelResponse),
+    listed.data,
+    "catalog models response",
+  ).data;
+  const existing = models.find((m) => m.canonicalName === args.canonicalName);
+  if (!existing) {
+    throw new CliError(
+      `catalog model ${args.canonicalName} reported a name conflict but is not listable on the bench`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+  log(`catalog model ${args.canonicalName} already exists (skipped)`);
+  return existing.id;
+}
+
+async function ensureCatalogProvider(
+  api: ApiCall,
+  cookies: string[],
+  args: {
+    tenantId: string;
+    name: string;
+    plugin: string;
+    baseURL: string;
+    credentialId: string;
+  },
+  log: (line: string) => void,
+): Promise<string> {
+  const created = await api(
+    "POST",
+    `/api/tenants/${args.tenantId}/catalog/providers`,
+    {
+      name: args.name,
+      plugin: args.plugin,
+      baseURL: args.baseURL,
+      credentialId: args.credentialId,
+    },
+    cookies,
+  );
+  if (created.status === 201) {
+    const provider = parseAs(
+      ModelProviderResponse,
+      created.data,
+      "catalog provider response",
+    );
+    log(`created catalog provider ${args.name}`);
+    return provider.id;
+  }
+  if (created.status !== 409) {
+    throw new CliError(
+      `the hub rejected creation of catalog provider ${args.name} with status ${created.status}: ${JSON.stringify(created.data)}`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+
+  const listed = await api(
+    "GET",
+    `/api/tenants/${args.tenantId}/catalog/providers`,
+    undefined,
+    cookies,
+  );
+  const providers = parseAs(
+    paginatedSchema(ModelProviderResponse),
+    listed.data,
+    "catalog providers response",
+  ).data;
+  const existing = providers.find((p) => p.name === args.name);
+  if (!existing) {
+    throw new CliError(
+      `catalog provider ${args.name} reported a name conflict but is not listable on the bench`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+  log(`catalog provider ${args.name} already exists (skipped)`);
+  return existing.id;
+}
+
+async function ensureCatalogOffering(
+  api: ApiCall,
+  cookies: string[],
+  args: { tenantId: string; modelId: string; providerId: string },
+  log: (line: string) => void,
+): Promise<void> {
+  const created = await api(
+    "POST",
+    `/api/tenants/${args.tenantId}/catalog/offerings`,
+    { modelId: args.modelId, providerId: args.providerId },
+    cookies,
+  );
+  if (created.status === 201) {
+    parseAs(ModelOfferingResponse, created.data, "catalog offering response");
+    log("created catalog offering");
+    return;
+  }
+  if (created.status === 409) {
+    log("catalog offering already exists (skipped)");
+    return;
+  }
+  throw new CliError(
+    `the hub rejected creation of the catalog offering with status ${created.status}: ${JSON.stringify(created.data)}`,
+    "check the hub logs for the underlying failure, then re-run: workbench seed",
+  );
+}
+
+export type SeedInferenceSourceArgs = {
+  api: ApiCall;
+  cookies: string[];
+  tenantId: string;
+  source: ModelSource;
+  log: (line: string) => void;
+};
+
+/**
+ * Plants the full launchable chain for one inference source in a
+ * tenant's catalog — provider, credential, catalog model, catalog
+ * provider, and offering — so interactive instances and deployed
+ * workflows have a model to resolve against. Idempotent: an already
+ * seeded chain is detected by name and skipped, never duplicated.
+ */
+export async function seedInferenceSource(
+  args: SeedInferenceSourceArgs,
+): Promise<void> {
+  const { api, cookies, tenantId, source, log } = args;
+
+  const providerId = await ensureProvider(
+    api,
+    cookies,
+    { tenantId, name: source.provider, plugin: source.provider },
+    log,
+  );
+  const credentialId = await ensureCredential(
+    api,
+    cookies,
+    {
+      tenantId,
+      providerId,
+      name: inferenceCredentialName(source.provider),
+      secret: source.apiKey,
+    },
+    log,
+  );
+  const modelId = await ensureCatalogModel(
+    api,
+    cookies,
+    { tenantId, canonicalName: source.model },
+    log,
+  );
+  const catalogProviderId = await ensureCatalogProvider(
+    api,
+    cookies,
+    {
+      tenantId,
+      name: source.provider,
+      plugin: source.provider,
+      baseURL: source.baseURL,
+      credentialId,
+    },
+    log,
+  );
+  await ensureCatalogOffering(
+    api,
+    cookies,
+    { tenantId, modelId, providerId: catalogProviderId },
+    log,
+  );
+
+  log(`inference source ready: ${source.provider}/${source.model}`);
 }
