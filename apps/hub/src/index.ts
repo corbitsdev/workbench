@@ -239,7 +239,12 @@ if (import.meta.main) {
   const hub = await createHub(config);
   const url = new URL(config.baseUrl);
   const port =
-    url.port === "" ? (url.protocol === "https:" ? 443 : 80) : Number(url.port);
+    config.listenPort ??
+    (url.port === ""
+      ? url.protocol === "https:"
+        ? 443
+        : 80
+      : Number(url.port));
   const server = Bun.serve({
     fetch: hub.app.fetch,
     websocket,

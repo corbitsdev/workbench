@@ -24,6 +24,9 @@ const HubEnv = type({
   BASE_URL: type(HTTP_URL).describe(
     "an http(s) origin, e.g. http://localhost:3000",
   ),
+  "PORT?": type(/^\d{1,5}$/).describe(
+    "the local port to listen on when it differs from BASE_URL's — set this when a reverse proxy (Tailscale serve, nginx) fronts the hub and BASE_URL is the public https origin",
+  ),
   SESSION_SECRET: type("string >= 32").describe(
     "a session-signing secret of at least 32 characters",
   ),
@@ -64,6 +67,7 @@ export type ModelSource = {
 export type HubConfig = {
   readonly databaseUrl: string;
   readonly baseUrl: string;
+  readonly listenPort?: number;
   readonly sessionSecret: string;
   readonly hubDataDir: string;
   readonly hubStaticDir: string;
@@ -127,6 +131,7 @@ export function readHubConfig(
   };
   if (parsed.OPERATOR_TENANT_ID !== undefined)
     hubConfig.operatorTenantId = parsed.OPERATOR_TENANT_ID;
+  if (parsed.PORT !== undefined) hubConfig.listenPort = Number(parsed.PORT);
   if (seedModel !== undefined) hubConfig.seedModel = seedModel;
   return hubConfig;
 }
