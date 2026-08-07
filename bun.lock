@@ -98,6 +98,7 @@
       "name": "@corbits/chat",
       "version": "0.0.1",
       "dependencies": {
+        "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
