@@ -643,6 +643,11 @@ export function createHubChatPlatform(
       // a sleeping invited agent: every send, including fan-out
       // copies, goes through this one `sendMail` choke point.
       await lifecycle?.ensureAwake(run.address);
+      // Tracking here (not only at launch) brings instances that were
+      // already resident before this hub process started — restored by
+      // a sidecar reconnect, launched by an earlier run — under the
+      // idle sweep the moment they see traffic.
+      lifecycle?.track(run.address);
 
       const sessionId = await sessionIdForRun(run);
       const mailId = crypto.randomUUID();
@@ -814,6 +819,10 @@ export function createHubChatPlatform(
           return;
         }
         const agentAddress = run.address;
+        // Arming a bridge is proof this agent belongs to a live channel:
+        // put it under the idle sweep even if it predates this hub
+        // process and has not yet received mail through it.
+        lifecycle?.track(agentAddress);
         unsubscribe = deps.sidecarRouter.subscribeAgent(
           agentAddress,
           (event) => {
