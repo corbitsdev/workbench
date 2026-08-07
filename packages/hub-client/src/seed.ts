@@ -214,7 +214,11 @@ async function mintGitToken(
     "POST",
     `/api/tenants/${tenantId}/git-tokens`,
     {
-      name: "workbench-seed-push",
+      // Unique per run: a token's secret is only returned at mint, so a
+      // re-run can never reuse the previous token — and an active token
+      // with the same (user, name) makes the mint violate the hub's
+      // uniqueness index. The short TTL reaps the leftovers.
+      name: `workbench-seed-push-${crypto.randomUUID().slice(0, 8)}`,
       resource: "asset:*",
       refPattern: "**",
       actions: ["can_read", "can_push"],
