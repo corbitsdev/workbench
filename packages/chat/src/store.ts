@@ -16,12 +16,15 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { channelReadState, channelSettings } from "./schema";
 
 /**
- * The drizzle handle `createDrizzleChatStore` operates against. Typed
- * structurally against the query builder rather than a concrete schema, so a
- * host can hand in its own `drizzle(sql, { schema })` instance without
- * `@corbits/chat` needing to know the platform's full schema.
+ * The drizzle handle `createDrizzleChatStore` operates against. Generic over
+ * the host's schema record because every query below is table-based (the
+ * chat tables from `./schema.ts` are passed to the builder directly), so the
+ * host hands in its own `drizzle(sql, { schema })` instance unchanged —
+ * whatever its schema — and no cast is ever needed at the call site.
  */
-export type ChatDb = PostgresJsDatabase<Record<string, never>>;
+export type ChatDb<
+  TSchema extends Record<string, unknown> = Record<string, never>,
+> = PostgresJsDatabase<TSchema>;
 
 export interface ChannelSettingsRow {
   readonly tenantId: string;
@@ -88,7 +91,9 @@ export interface ChatStore {
  * The production `ChatStore`, backed by the `channel_settings` and
  * `channel_read_state` tables declared in `./schema.ts`.
  */
-export function createDrizzleChatStore(db: ChatDb): ChatStore {
+export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
+  db: ChatDb<TSchema>,
+): ChatStore {
   return {
     async createChannelSettings(input) {
       const now = new Date();

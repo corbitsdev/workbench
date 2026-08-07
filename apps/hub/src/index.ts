@@ -16,7 +16,6 @@ import {
   createChatRoutes,
   createDrizzleChatStore,
   createHubChatPlatform,
-  type ChatDb,
 } from "@corbits/chat";
 import {
   createAgentRepoStore,
@@ -192,12 +191,7 @@ export async function createHub(config: HubConfig) {
     time_window: timeWindowEvaluator,
   };
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
-    // `ChatDb` is typed structurally against the query builder over an
-    // empty schema record; the hub's `db` carries the platform's full
-    // schema, which `exactOptionalPropertyTypes` treats as a structural
-    // mismatch even though every method `createDrizzleChatStore` calls
-    // is present. The cast is local to this call site.
-    store: createDrizzleChatStore(db as unknown as ChatDb),
+    store: createDrizzleChatStore(db),
     platform: createHubChatPlatform({
       db,
       sessionService,
