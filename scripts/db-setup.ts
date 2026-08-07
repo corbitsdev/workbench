@@ -1,11 +1,16 @@
-// Database bootstrap for the platform schema. The hub's schema is
-// defined entirely by @intx/db's shipped migrations; nothing in this
-// repository authors SQL. This script makes the database in
-// DATABASE_URL runnable: it creates the database if it is missing,
-// applies the platform migrations (which include the better-auth
-// tables) into the target schema, and records exactly which migration
-// files it applied so a re-run can tell "already done" from "done by
-// something else" — and says so out loud either way.
+// Database bootstrap for the platform schema plus any installed
+// package's own migrations. The hub's schema is defined entirely by
+// @intx/db's shipped migrations; this repository authors no SQL for
+// the platform itself. Installed packages may ship their own product
+// tables, though — @corbits/chat is the first — and this script
+// applies each installed package's migration set right after the
+// platform's, as an explicit literal list below. This script makes
+// the database in DATABASE_URL runnable: it creates the database if
+// it is missing, applies the platform migrations (which include the
+// better-auth tables) into the target schema, records exactly which
+// migration files it applied so a re-run can tell "already done" from
+// "done by something else", then applies the installed packages'
+// migrations on top — and says so out loud either way.
 //
 // The platform dependencies are resolved through apps/hub on purpose:
 // the schema this script creates is the hub's schema, so it must be
@@ -23,8 +28,49 @@
 import path from "node:path";
 import { readdir } from "node:fs/promises";
 
+import { applyChatMigrations } from "../packages/chat/src/migrations";
+
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
+
+/**
+ * Installed packages that ship their own product-table migrations,
+ * applied after the platform's. Explicit and literal on purpose: no
+ * discovery magic, no globbing for migrations. @corbits/chat is the
+ * first installed package to need this seam.
+ */
+const INSTALLED_PACKAGE_MIGRATIONS: readonly {
+  name: string;
+  apply: (databaseUrl: string) => Promise<{ applied: string[] }>;
+}[] = [{ name: "@corbits/chat", apply: applyChatMigrations }];
+
+/**
+ * Apply every installed package's migration set, in the explicit
+ * order listed above, right after the platform's own migrations. Each
+ * package owns its own idempotence and bookkeeping (see
+ * applyChatMigrations); this only sequences them and reports what ran.
+ */
+async function applyInstalledPackageMigrations(
+  databaseUrl: string,
+): Promise<void> {
+  for (const { name, apply } of INSTALLED_PACKAGE_MIGRATIONS) {
+    try {
+      const { applied } = await apply(databaseUrl);
+      if (applied.length > 0) {
+        console.log(
+          `db-setup: applied ${applied.length} migration(s) for ${name}: ` +
+            applied.join(", "),
+        );
+      }
+    } catch (error) {
+      throw new Error(
+        `db-setup: failed applying migrations for installed package ${name}: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+  }
+}
 
 // --- hub-resolved platform dependencies ------------------------------
 
@@ -374,6 +420,7 @@ export async function setupDatabase(
         applied.length === shipped.length &&
         applied.every((file, i) => file === shipped[i]);
       if (same) {
+        await applyInstalledPackageMigrations(databaseUrl);
         return {
           database: target.database,
           schema,
@@ -418,6 +465,7 @@ export async function setupDatabase(
         [file],
       );
     }
+    await applyInstalledPackageMigrations(databaseUrl);
     return {
       database: target.database,
       schema,

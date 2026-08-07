@@ -99,7 +99,9 @@
       "version": "0.0.1",
       "dependencies": {
         "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
+        "postgres": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",

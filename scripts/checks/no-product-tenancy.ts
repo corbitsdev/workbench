@@ -9,6 +9,16 @@
 // naming convention or a string that merely mentions tenancy — a
 // comment or variable name that happens to say "tenant" is never a
 // violation, only a real call is.
+//
+// One documented exception: the signed structure doc grants
+// @corbits/chat exactly two product tables — `channel_settings` and
+// `channel_read_state` — because they are product-domain state (chat
+// settings, per-principal read cursors) that the platform deliberately
+// does not own, unlike tenancy, principals, and grants, which stay
+// native. The allowlist below names the single file this applies to
+// and enforces the count strictly: any OTHER `pgTable(` occurrence
+// anywhere in the scanned tree still fails, and the allowlisted file
+// itself fails if it ever grows past two.
 import { Glob } from "bun";
 import path from "node:path";
 import {
@@ -19,7 +29,11 @@ import {
 } from "./lib/repo";
 
 const SCAN_DIRS = ["apps", "packages", "workflows"];
-const PGTABLE_CALL_PATTERN = /\bpgTable\s*\(/;
+const PGTABLE_CALL_PATTERN = /\bpgTable\s*\(/g;
+
+const ALLOWLIST: readonly { relPath: string; maxOccurrences: number }[] = [
+  { relPath: "packages/chat/src/schema.ts", maxOccurrences: 2 },
+];
 
 export async function scanFiles(
   root: string,
@@ -40,19 +54,42 @@ export async function scanFiles(
   return files;
 }
 
+function countPgTableCalls(contents: string): number {
+  return [...contents.matchAll(PGTABLE_CALL_PATTERN)].length;
+}
+
 export function auditProductTenancy(
   files: readonly { relPath: string; contents: string }[],
 ): CheckReport {
   const report = emptyReport();
   for (const { relPath, contents } of files) {
-    if (PGTABLE_CALL_PATTERN.test(contents)) {
+    const occurrences = countPgTableCalls(contents);
+    if (occurrences === 0) continue;
+
+    const allowed = ALLOWLIST.find((entry) => entry.relPath === relPath);
+    if (allowed === undefined) {
       report.violations.push(
         `${relPath}: calls pgTable(...). All persistent state is native ` +
           `Interchange schema under vendor/intx/db — a drizzle table ` +
           `declared in apps/, packages/, or workflows/ is a product-owned ` +
           `duplicate of platform schema, never a design choice.`,
       );
+      continue;
     }
+    if (occurrences > allowed.maxOccurrences) {
+      report.violations.push(
+        `${relPath}: declares ${occurrences} pgTable(...) call(s), more than ` +
+          `the ${allowed.maxOccurrences} the signed structure doc grants ` +
+          `@corbits/chat (channel_settings, channel_read_state). Any new ` +
+          `product table needs its own explicit ruling, not a quiet addition ` +
+          `to this file.`,
+      );
+      continue;
+    }
+    report.notes.push(
+      `${relPath}: ${occurrences} pgTable(...) call(s) allowed by the ` +
+        `documented @corbits/chat exception`,
+    );
   }
   return report;
 }

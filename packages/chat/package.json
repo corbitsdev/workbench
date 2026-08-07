@@ -6,7 +6,8 @@
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -14,7 +15,9 @@
   },
   "dependencies": {
     "arktype": "catalog:",
-    "hono": "^4.11.9"
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
