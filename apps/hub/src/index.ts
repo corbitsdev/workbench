@@ -7,9 +7,16 @@
 
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { createDB } from "@intx/db";
+import { createDB, createGrantStore } from "@intx/db";
 import { generateKeyPair } from "@intx/crypto";
-import { createApp, type AppEnv } from "@intx/hub-api";
+import { timeWindowEvaluator } from "@intx/authz";
+import type { ConditionRegistry } from "@intx/types/authz";
+import { createApp, createRequireGrant, type AppEnv } from "@intx/hub-api";
+import {
+  createChatRoutes,
+  createDrizzleChatStore,
+  type ChatDb,
+} from "@corbits/chat";
 import {
   createAgentRepoStore,
   createAssetService,
@@ -31,12 +38,14 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, type Next } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { readHubConfig, type HubConfig } from "./config";
+import { createHubChatPlatform } from "./chat-platform";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
+const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Open signup is safe by enumeration: BYOK means there is nothing free
 // to burn, and the hosted deployment only ever runs Corbits-signed
@@ -165,6 +174,37 @@ export async function createHub(config: HubConfig) {
   // platform's native tenant middleware, so every extension handler
   // runs with c.get("tenant") / c.get("principal") resolved.
   app.route(`${TENANT_PREFIX}/echo`, createEchoRoutes());
+
+  // Chat's own grant store/condition registry, built the same way
+  // `createApp` builds its default when none is supplied (see
+  // `@intx/hub-api`'s `mountHubRoutes`): a db-backed grant store and
+  // the time-window condition evaluator. `createRequireGrant` is the
+  // published construction the platform's own internal instance is
+  // not exported for.
+  const chatGrantStore = createGrantStore(db);
+  const chatConditionRegistry: ConditionRegistry = {
+    time_window: timeWindowEvaluator,
+  };
+  const chatDeps: Parameters<typeof createChatRoutes>[0] = {
+    // `ChatDb` is typed structurally against the query builder over an
+    // empty schema record; the hub's `db` carries the platform's full
+    // schema, which `exactOptionalPropertyTypes` treats as a structural
+    // mismatch even though every method `createDrizzleChatStore` calls
+    // is present. The cast is local to this call site.
+    store: createDrizzleChatStore(db as unknown as ChatDb),
+    platform: createHubChatPlatform({
+      db,
+      sessionService,
+      assetService,
+      sidecarRouter,
+    }),
+    requireGrant: createRequireGrant({
+      grantStore: chatGrantStore,
+      conditionRegistry: chatConditionRegistry,
+    }),
+    turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+  };
+  app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
 
   // The first-login hook mounts outside the tenant prefix, since the
   // session it serves belongs to no tenant yet. The route is

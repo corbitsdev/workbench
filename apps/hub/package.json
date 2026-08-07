@@ -12,13 +12,16 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/chat": "workspace:*",
     "@intx/authz": "workspace:*",
     "@intx/crypto": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "workspace:*",
+    "@intx/mime": "workspace:*",
     "@intx/types": "workspace:*",
+    "@intx/workflow": "workspace:*",
     "@workbench/echo": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@workbench/onboarding": "workspace:*",
