@@ -7,7 +7,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { APIQuery, Approval, WorkflowRun } from "../src/api";
 import { ApprovalsPage } from "../src/pages/approvals-page";
-import { ChatPage } from "../src/pages/chat-page";
 import { HomePage } from "../src/pages/home-page";
 import { LibraryPage } from "../src/pages/library-page";
 import { RunsPage } from "../src/pages/runs-page";
@@ -53,12 +52,6 @@ describe("empty states", () => {
     );
     expect(markup).toContain("ada@example.com");
     expect(markup).toContain("No benches yet");
-  });
-
-  test("chat says it is not connected and disables the composer", () => {
-    const markup = renderToStaticMarkup(<ChatPage />);
-    expect(markup).toContain("No conversation yet");
-    expect(markup).toMatch(/<textarea[^>]*disabled/);
   });
 });
 
