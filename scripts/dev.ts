@@ -157,16 +157,31 @@ function sidecarEnv(config: HubConfig, token: string): Record<string, string> {
   };
 }
 
+// Each command IS the final long-running process — never a `bun run`
+// script wrapper. Killing a wrapper leaves its grandchild running, which
+// is exactly how orphaned hubs end up squatting the port after Ctrl-C.
 const apps: App[] = [
-  { label: "hub", dir: join(repoRoot, "apps", "hub") },
-  { label: "sidecar", dir: join(repoRoot, "apps", "sidecar") },
+  {
+    label: "hub",
+    dir: join(repoRoot, "apps", "hub"),
+    command: ["bun", "--watch", "--env-file=../../.env", "src/index.ts"],
+  },
+  {
+    label: "sidecar",
+    dir: join(repoRoot, "apps", "sidecar"),
+    command: ["bun", "--watch", "src/index.ts"],
+  },
   // The hub serves the web app's build output as static files, so dev
   // watches and rebuilds that output on every source change — a browser
   // refresh then picks up the fresh bundle, no manual build step.
   {
     label: "web",
     dir: join(repoRoot, "apps", "web"),
-    command: ["bun", "run", "watch"],
+    command: [
+      join(repoRoot, "node_modules", ".bin", "vite"),
+      "build",
+      "--watch",
+    ],
   },
 ];
 
