@@ -10,8 +10,13 @@ export {
   Part,
   parsePart,
 } from "./parts";
-export { encodeParts, decodeParts, decodeMail } from "./codec";
-export type { MailContent, MailReadContent, FetchBlob } from "./codec";
+export { encodeParts, decodeParts, decodeMail, senderOf } from "./codec";
+export type {
+  MailContent,
+  MailReadContent,
+  FetchBlob,
+  MailSender,
+} from "./codec";
 
 export {
   CHANNEL_HOST_WORKFLOW_ID,

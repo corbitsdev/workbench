@@ -39,9 +39,11 @@ import { extractPartByPath, parseMailToEmail } from "@intx/mime";
 import {
   ensureWorkflowDefinitionForAsset,
   resolveRunSessionId,
+  SessionLaunchError,
 } from "@intx/hub-sessions";
 import type {
   AssetService,
+  EventCollectorRegistry,
   SessionService,
   SidecarRouter,
 } from "@intx/hub-sessions";
@@ -62,6 +64,16 @@ export type CreateHubChatPlatformDeps = {
   sessionService: SessionService;
   assetService: AssetService;
   sidecarRouter: SidecarRouter;
+  /**
+   * Optional only because `apps/hub`'s current `createHubChatPlatform`
+   * call site does not build/pass one yet — a separate wiring task
+   * needs to add `createEventCollectorRegistry`'s registry here. Until
+   * then, `launchChannel` skips opening/abandoning a collector rather
+   * than throwing, which reproduces (does not fix) the "anchor reads
+   * not_ready forever" gap for that caller specifically; any caller
+   * that does pass one gets the fix in full.
+   */
+  eventCollectors?: EventCollectorRegistry;
 };
 
 const BLOB_ID_PATTERN = /^blob_(.+?)_(\d[\d.]*)$/;
@@ -244,25 +256,76 @@ export function createHubChatPlatform(
         });
       });
 
-      await deps.sessionService.deployInstanceAtHead({
-        agentAddress: input.triggerAddress,
-        agentId: input.channelId,
-        instanceId: input.channelId,
-        config: {
-          sessionId,
-          agentId: input.channelId,
-          tenantId: input.tenantId,
-          principalId: instancePrincipalId,
+      // Opened before the deploy call, mirroring the reference route: the
+      // anchor's runtime status/readiness (health, SSE replay) is read off
+      // this collector by address, and a launch that never opens one reads
+      // as permanently "not_ready" and leaks into the generic instance
+      // list with broken health.
+      deps.eventCollectors?.create(
+        input.triggerAddress,
+        input.tenantId,
+        sessionId,
+        input.channelId,
+      );
+
+      try {
+        await deps.sessionService.deployInstanceAtHead({
           agentAddress: input.triggerAddress,
-          systemPrompt: foldedBody.systemPrompt,
-          tools: [],
-          grants: [],
-          sources: resolution.sources,
-          defaultSource: resolution.defaultSource,
-        },
-        deployContent: { systemPrompt: foldedBody.systemPrompt },
-        toolPackagePins: foldedBody.toolPackagePins,
-      });
+          agentId: input.channelId,
+          instanceId: input.channelId,
+          config: {
+            sessionId,
+            agentId: input.channelId,
+            tenantId: input.tenantId,
+            principalId: instancePrincipalId,
+            agentAddress: input.triggerAddress,
+            systemPrompt: foldedBody.systemPrompt,
+            tools: [],
+            grants: [],
+            sources: resolution.sources,
+            defaultSource: resolution.defaultSource,
+          },
+          deployContent: { systemPrompt: foldedBody.systemPrompt },
+          toolPackagePins: foldedBody.toolPackagePins,
+        });
+      } catch (err) {
+        // Mirrors the reference route's failure-path cleanup: a deploy
+        // failure must not leave the just-committed principal/session/run
+        // rows behind as a permanently "running" ghost that nothing is
+        // listening on.
+        deps.eventCollectors?.abandon(input.triggerAddress);
+
+        const failedAt = new Date();
+
+        await deps.db
+          .update(agentSession)
+          .set({ status: "ended", endedAt: failedAt, updatedAt: failedAt })
+          .where(eq(agentSession.id, sessionId));
+
+        const leaked = err instanceof SessionLaunchError && err.leakedAgent;
+
+        // A leaked deploy left a running child; mark the run failed but
+        // leave it routable (endedAt null) so the leaked child stays
+        // reachable to inspect or clean up. Otherwise roll the run back
+        // entirely.
+        if (leaked) {
+          await deps.db
+            .update(workflowRun)
+            .set({ status: "failed" })
+            .where(eq(workflowRun.id, input.channelId));
+        } else {
+          await deps.db
+            .delete(workflowRun)
+            .where(eq(workflowRun.id, input.channelId));
+        }
+
+        await deps.db
+          .update(principalTable)
+          .set({ status: "deactivated", updatedAt: failedAt })
+          .where(eq(principalTable.id, instancePrincipalId));
+
+        throw err;
+      }
 
       return { instanceId: input.channelId };
     },

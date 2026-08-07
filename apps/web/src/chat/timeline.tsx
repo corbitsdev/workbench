@@ -1,14 +1,15 @@
 // Renders a channel's `MessageItem[]` oldest→newest: text parts as chat
 // bubbles, event parts as inline system lines, everything else as a labeled
-// fallback block. The API's current `/messages` response carries no sender
-// field (see api.ts), so a bubble shows only its timestamp — the moment the
-// route grows a sender, this is the only file that needs it.
+// fallback block. `sender` is an optional field on `MessageItem` (see
+// api.ts) while packages/chat rolls it out, so a bubble shows the sender's
+// name — falling back to the local part of its address, then to nothing —
+// alongside its timestamp.
 
 import { EmptyState } from "@corbits/react-ui";
 import { MessageSquare } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-import type { MessageItem, Part } from "./api";
+import type { MessageItem, MessageSender, Part } from "./api";
 import { CHAT_STRINGS } from "./strings";
 
 function formatTimestamp(iso: string): string {
@@ -17,10 +18,32 @@ function formatTimestamp(iso: string): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function TextBubble({ text, createdAt }: { text: string; createdAt: string }) {
+function localPartOf(address: string): string {
+  const at = address.indexOf("@");
+  return at === -1 ? address : address.slice(0, at);
+}
+
+function senderLabel(sender: MessageSender | undefined): string | undefined {
+  if (sender === undefined) return undefined;
+  return sender.name ?? localPartOf(sender.address);
+}
+
+function TextBubble({
+  text,
+  createdAt,
+  sender,
+}: {
+  text: string;
+  createdAt: string;
+  sender: MessageSender | undefined;
+}) {
+  const label = senderLabel(sender);
   return (
     <div className="chat-bubble-row">
       <div className="chat-bubble">
+        {label !== undefined && (
+          <span className="chat-bubble-sender">{label}</span>
+        )}
         <p className="chat-bubble-text">{text}</p>
         <span className="chat-bubble-time">{formatTimestamp(createdAt)}</span>
       </div>
@@ -61,7 +84,12 @@ function MessageParts({ item }: { readonly item: MessageItem }) {
         const key = `${item.id}-${index}`;
         if (part.kind === "text") {
           return (
-            <TextBubble key={key} text={part.text} createdAt={item.createdAt} />
+            <TextBubble
+              key={key}
+              text={part.text}
+              createdAt={item.createdAt}
+              sender={item.sender}
+            />
           );
         }
         if (part.kind === "event") {

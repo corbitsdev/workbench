@@ -73,6 +73,7 @@ function fakePlatform(): ChatPlatform & {
           textBody: [{ partId: "1", type: "text/plain" }],
           bodyValues: { "1": { value: input.content.content } },
           attachments: [],
+          from: [{ name: null, email: `${input.principalId}@acme.example` }],
         },
       });
       mailByChannel.set(input.channelId, list);
@@ -268,11 +269,18 @@ describe("messages", () => {
 
     const response = await app.request(`/channels/${channel.id}/messages`);
     const body = (await response.json()) as {
-      items: { parts: Part[] }[];
+      items: {
+        parts: Part[];
+        sender: { name: string | null; address: string };
+      }[];
     };
 
     expect(body.items).toHaveLength(1);
     expect(body.items[0]?.parts).toEqual([{ kind: "text", text: "hi there" }]);
+    expect(body.items[0]?.sender).toEqual({
+      name: null,
+      address: "prn_alice@acme.example",
+    });
   });
 });
 

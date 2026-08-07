@@ -4,6 +4,7 @@ import {
   activeMentionQuery,
   filterMentionCandidates,
   insertMention,
+  mentionCandidatesFromParticipants,
 } from "../../src/chat/mentions";
 
 describe("activeMentionQuery", () => {
@@ -28,16 +29,43 @@ describe("activeMentionQuery", () => {
   });
 });
 
+describe("mentionCandidatesFromParticipants", () => {
+  test("keeps only agent-address participants, keyed by the local part", () => {
+    expect(
+      mentionCandidatesFromParticipants([
+        "researcher@agents.example",
+        "user_abc123",
+        "launch-planner@agents.example",
+      ]),
+    ).toEqual([
+      {
+        id: "researcher@agents.example",
+        handle: "researcher",
+        label: "Researcher",
+      },
+      {
+        id: "launch-planner@agents.example",
+        handle: "launch-planner",
+        label: "Launch Planner",
+      },
+    ]);
+  });
+
+  test("returns nothing when no participant is an agent address", () => {
+    expect(mentionCandidatesFromParticipants(["user_abc123"])).toEqual([]);
+  });
+});
+
 describe("filterMentionCandidates", () => {
   const agents = [
-    { id: "1", name: "Researcher" },
-    { id: "2", name: "Reviewer" },
-    { id: "3", name: "Summarizer" },
+    { id: "1", handle: "researcher", label: "Researcher" },
+    { id: "2", handle: "reviewer", label: "Reviewer" },
+    { id: "3", handle: "summarizer", label: "Summarizer" },
   ];
 
-  test("matches by case-insensitive prefix", () => {
+  test("matches by case-insensitive prefix on the handle", () => {
     expect(filterMentionCandidates(agents, "re")).toEqual(
-      agents.filter((agent) => agent.name.startsWith("Re")),
+      agents.filter((agent) => agent.handle.startsWith("re")),
     );
   });
 
@@ -56,9 +84,9 @@ describe("insertMention", () => {
       "hi @re",
       6,
       { start: 3, query: "re" },
-      "Researcher",
+      "researcher",
     );
-    expect(result.text).toBe("hi @Researcher ");
+    expect(result.text).toBe("hi @researcher ");
     expect(result.caret).toBe(result.text.length);
   });
 
@@ -67,8 +95,8 @@ describe("insertMention", () => {
       "hi @re please",
       6,
       { start: 3, query: "re" },
-      "Researcher",
+      "researcher",
     );
-    expect(result.text).toBe("hi @Researcher  please");
+    expect(result.text).toBe("hi @researcher  please");
   });
 });

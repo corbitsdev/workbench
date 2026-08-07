@@ -145,6 +145,45 @@ describe("listMessages", () => {
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.parts[0]).toEqual({ kind: "text", text: "hi" });
   });
+
+  test("decodes a message carrying the new sender field", async () => {
+    stubFetch(() =>
+      json({
+        items: [
+          {
+            id: "m2",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            parts: [{ kind: "text", text: "hi" }],
+            sender: {
+              name: "Researcher",
+              address: "researcher@agents.example",
+            },
+          },
+        ],
+      }),
+    );
+    const page = await listMessages("tenant_1", "chan_1");
+    expect(page.items[0]?.sender).toEqual({
+      name: "Researcher",
+      address: "researcher@agents.example",
+    });
+  });
+
+  test("tolerates a response with no sender field", async () => {
+    stubFetch(() =>
+      json({
+        items: [
+          {
+            id: "m3",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            parts: [{ kind: "text", text: "hi" }],
+          },
+        ],
+      }),
+    );
+    const page = await listMessages("tenant_1", "chan_1");
+    expect(page.items[0]?.sender).toBeUndefined();
+  });
 });
 
 describe("listDeployedAgents", () => {

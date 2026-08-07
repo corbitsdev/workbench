@@ -392,6 +392,12 @@ aside[data-collapsed="true"] .app-wordmark {
   color: var(--primary-foreground);
 }
 
+.chat-bubble-sender {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
 .chat-bubble-text {
   margin: 0;
   overflow-wrap: break-word;
@@ -479,6 +485,9 @@ aside[data-collapsed="true"] .app-wordmark {
 }
 
 .chat-mention-option {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
   border: none;
   background: none;
   padding: 0.5rem 0.75rem;
@@ -486,6 +495,11 @@ aside[data-collapsed="true"] .app-wordmark {
   font: inherit;
   color: var(--foreground);
   cursor: pointer;
+}
+
+.chat-mention-label {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
 }
 
 .chat-mention-option[data-highlighted="true"],

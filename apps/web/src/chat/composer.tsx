@@ -1,6 +1,6 @@
 // The message composer: a plain textarea (Enter sends, Shift+Enter breaks
 // the line), disabled while empty, with an @-mention popover listing the
-// tenant's deployed agents. Kept local and simple rather than adopting the
+// active channel's agent participants. Kept local and simple rather than adopting the
 // library's `ChatInput` — that component is built around the agent-chat
 // `ChatMessage` model (working/stop, attachments) this surface does not use,
 // and its send affordance does not compose with an inline mention popover.
@@ -43,7 +43,7 @@ export function Composer({
     const textarea = textareaRef.current;
     if (mention === null || textarea === null) return;
     const caret = textarea.selectionStart;
-    const result = insertMention(value, caret, mention, candidate.name);
+    const result = insertMention(value, caret, mention, candidate.handle);
     setValue(result.text);
     setMention(null);
     requestAnimationFrame(() => {
@@ -113,7 +113,10 @@ export function Composer({
                   pickMention(candidate);
                 }}
               >
-                @{candidate.name}
+                <span className="chat-mention-handle">@{candidate.handle}</span>
+                {candidate.label !== candidate.handle && (
+                  <span className="chat-mention-label">{candidate.label}</span>
+                )}
               </button>
             ))
           )}

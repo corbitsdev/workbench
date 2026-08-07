@@ -138,8 +138,34 @@ const MailReadContent = type({
     type: "string",
     size: "number",
   }).array(),
+  "from?": type({ name: "string | null", email: "string" }).array(),
 });
 export type MailReadContent = typeof MailReadContent.infer;
+
+export type MailSender = {
+  readonly name: string | null;
+  readonly address: string;
+};
+
+/**
+ * Derives the sender identity off the platform's JMAP `from` envelope —
+ * the counterpart to `decodeMail` that surfaces who sent a message
+ * rather than what it contains. `from` always carries at least one
+ * entry for real mail (chat-authored or otherwise); a mail read shape
+ * with no `from` at all is a broken invariant, not a normal state, so
+ * this throws loudly rather than fabricating an anonymous sender.
+ */
+export function senderOf(mail: unknown): MailSender {
+  const parsed = MailReadContent(mail);
+  if (parsed instanceof type.errors) {
+    throw new Error(`invalid mail read content: ${parsed.summary}`);
+  }
+  const from = parsed.from?.[0];
+  if (from === undefined) {
+    throw new Error('mail carries no envelope "from" to derive a sender from');
+  }
+  return { name: from.name, address: from.email };
+}
 
 const BodyValue = type({ value: "string" });
 

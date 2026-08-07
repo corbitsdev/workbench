@@ -3,6 +3,7 @@ import {
   decodeMail,
   decodeParts,
   encodeParts,
+  senderOf,
   type FetchBlob,
   type MailContent,
   type MailReadContent,
@@ -333,5 +334,46 @@ describe("decodeMail", () => {
     await expect(
       decodeMail({ textBody: [] }, { fetchBlob: fakeFetchBlob({}) }),
     ).rejects.toThrow(/invalid mail read content/);
+  });
+});
+
+describe("senderOf", () => {
+  test("fixture mail with a from envelope returns the sender's name and address", () => {
+    const mail: MailReadContent & {
+      from: { name: string | null; email: string }[];
+    } = {
+      textBody: [{ partId: "1", type: "text/plain" }],
+      bodyValues: { "1": { value: "hi" } },
+      attachments: [],
+      from: [{ name: "Alice", email: "alice@acme.example" }],
+    };
+    expect(senderOf(mail)).toEqual({
+      name: "Alice",
+      address: "alice@acme.example",
+    });
+  });
+
+  test("bare non-chat mail still derives a sender from its from envelope", () => {
+    const mail: MailReadContent & {
+      from: { name: string | null; email: string }[];
+    } = {
+      textBody: [{ partId: "1", type: "text/plain" }],
+      bodyValues: { "1": { value: "sent from a plain mail client" } },
+      attachments: [],
+      from: [{ name: null, email: "channel1@acme.example" }],
+    };
+    expect(senderOf(mail)).toEqual({
+      name: null,
+      address: "channel1@acme.example",
+    });
+  });
+
+  test("mail with no from envelope throws loudly rather than fabricating a sender", () => {
+    const mail: MailReadContent = {
+      textBody: [],
+      bodyValues: {},
+      attachments: [],
+    };
+    expect(() => senderOf(mail)).toThrow(/no envelope "from"/);
   });
 });

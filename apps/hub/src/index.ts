@@ -203,6 +203,7 @@ export async function createHub(config: HubConfig) {
       sessionService,
       assetService,
       sidecarRouter,
+      eventCollectors,
     }),
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,

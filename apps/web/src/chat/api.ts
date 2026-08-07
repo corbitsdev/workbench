@@ -59,10 +59,17 @@ export type Channel = typeof Channel.infer;
 
 const ChannelsResponse = type({ items: Channel.array() });
 
+// `sender` is landing on `GET /channels/:id/messages` in packages/chat
+// alongside this change (see routes.ts) — kept optional here so the UI
+// tolerates responses from either side of that rollout.
+export const MessageSender = type({ name: "string | null", address: "string" });
+export type MessageSender = typeof MessageSender.infer;
+
 const MessageItem = type({
   id: "string",
   createdAt: "string",
   parts: Part.array(),
+  "sender?": MessageSender,
 });
 export type MessageItem = typeof MessageItem.infer;
 

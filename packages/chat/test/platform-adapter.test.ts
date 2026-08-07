@@ -32,7 +32,12 @@ import {
   workflowDefinitionVersion,
   workflowRun,
 } from "@intx/db/schema";
-import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
+import { SessionLaunchError } from "@intx/hub-sessions";
+import type {
+  EventCollectorRegistry,
+  SessionService,
+  SidecarRouter,
+} from "@intx/hub-sessions";
 import type { DefinitionSourceResolution } from "@intx/hub-api";
 import {
   buildChannelHostWorkflow,
@@ -102,6 +107,14 @@ function insertChain(returningRows: unknown[]): InsertChain {
  * `transaction` runs its callback against the same fake, recording
  * inserts into the same `inserted` list as a top-level `insert` would.
  */
+type UpdateChain = {
+  set(values: unknown): { where(...args: unknown[]): Promise<void> };
+};
+
+type DeleteChain = {
+  where(...args: unknown[]): Promise<void>;
+};
+
 function createFakeDb(opts: {
   assetRow: {
     tenantId: string;
@@ -116,6 +129,22 @@ function createFakeDb(opts: {
   sessionMailRow?: { id: string; raw: Uint8Array } | undefined;
 }) {
   const inserted: { table: unknown; values: unknown }[] = [];
+  const updated: { table: unknown; values: unknown }[] = [];
+  const deleted: { table: unknown }[] = [];
+
+  function updateOn(table: unknown): UpdateChain {
+    return {
+      set(values: unknown) {
+        updated.push({ table, values });
+        return { where: async () => undefined };
+      },
+    };
+  }
+
+  function deleteOn(table: unknown): DeleteChain {
+    deleted.push({ table });
+    return { where: async () => undefined };
+  }
 
   function insertOn(table: unknown, values: unknown): InsertChain {
     inserted.push({ table, values });
@@ -158,6 +187,12 @@ function createFakeDb(opts: {
     insert(table: unknown) {
       return { values: (values: unknown) => insertOn(table, values) };
     },
+    update(table: unknown) {
+      return updateOn(table);
+    },
+    delete(table: unknown) {
+      return deleteOn(table);
+    },
     async transaction(fn: (tx: unknown) => Promise<void>) {
       await fn({
         insert(table: unknown) {
@@ -166,8 +201,37 @@ function createFakeDb(opts: {
       });
     },
     inserted,
+    updated,
+    deleted,
   };
   return fake;
+}
+
+function createFakeEventCollectors(): EventCollectorRegistry & {
+  createCalls: unknown[];
+  abandonCalls: string[];
+} {
+  const createCalls: unknown[] = [];
+  const abandonCalls: string[] = [];
+  return {
+    createCalls,
+    abandonCalls,
+    create(...args: unknown[]) {
+      createCalls.push(args);
+    },
+    abandon(address: string) {
+      abandonCalls.push(address);
+    },
+    has: () => false,
+    getStatus: () => undefined,
+    getAccumulatedText: () => undefined,
+    getCurrentTurnId: () => undefined,
+    getLastTurnId: () => undefined,
+    dispatch: () => undefined,
+  } as unknown as EventCollectorRegistry & {
+    createCalls: unknown[];
+    abandonCalls: string[];
+  };
 }
 
 function createFakeSessionService(): SessionService & {
@@ -292,6 +356,7 @@ describe("createHubChatPlatform", () => {
     const sessionService = createFakeSessionService();
     const assetService = createFakeAssetService();
     const sidecarRouter = createFakeSidecarRouter();
+    const eventCollectors = createFakeEventCollectors();
 
     const platform = createHubChatPlatform({
       // Fake db, not a real drizzle instance.
@@ -299,6 +364,7 @@ describe("createHubChatPlatform", () => {
       sessionService,
       assetService,
       sidecarRouter,
+      eventCollectors,
     });
 
     const launched = await platform.launchChannel({
@@ -310,6 +376,20 @@ describe("createHubChatPlatform", () => {
     });
 
     expect(launched.instanceId).toBe("ins_channel1");
+
+    // The anchor's event collector is opened before the deploy call, so
+    // its runtime status/readiness (health, SSE replay) is never
+    // permanently "not_ready".
+    expect(eventCollectors.createCalls).toEqual([
+      [
+        "ins_channel1@ten1.workbench.test",
+        "ten_1",
+        expect.any(String),
+        "ins_channel1",
+      ],
+    ]);
+    expect(eventCollectors.abandonCalls).toEqual([]);
+
     expect(assetService.createAssetCalls).toEqual([
       {
         tenantId: "ten_1",
@@ -384,6 +464,132 @@ describe("createHubChatPlatform", () => {
     expect((runInsert?.values as { principalId: string }).principalId).toBe(
       principalId,
     );
+  });
+
+  test("launchChannel rolls back the committed rows and abandons the collector when the deploy fails", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "channel-1",
+        displayName: null,
+      },
+      definitionId: "wfd_channel1",
+    });
+    const sessionService = createFakeSessionService();
+    const deployError = new Error("sidecar unreachable");
+    sessionService.deployInstanceAtHead = async () => {
+      throw deployError;
+    };
+    const assetService = createFakeAssetService();
+    const sidecarRouter = createFakeSidecarRouter();
+    const eventCollectors = createFakeEventCollectors();
+
+    const platform = createHubChatPlatform({
+      db: db as never,
+      sessionService,
+      assetService,
+      sidecarRouter,
+      eventCollectors,
+    });
+
+    await expect(
+      platform.launchChannel({
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        channelId: "ins_channel1",
+        triggerAddress: "ins_channel1@ten1.workbench.test",
+        definition: CHANNEL_WORKFLOW_JSON,
+      }),
+    ).rejects.toThrow(deployError);
+
+    // The collector opened before the deploy attempt is abandoned, not
+    // left registered against an address nothing will ever deploy to.
+    expect(eventCollectors.abandonCalls).toEqual([
+      "ins_channel1@ten1.workbench.test",
+    ]);
+
+    // The committed session is ended, and -- since this error is not a
+    // SessionLaunchError with leakedAgent, i.e. no child was left
+    // running on the sidecar -- the run is rolled back entirely rather
+    // than left "running" as a permanently unlistenable ghost, and the
+    // instance principal is deactivated.
+    const sessionUpdate = db.updated.find((row) => row.table === agentSession);
+    expect(sessionUpdate?.values).toMatchObject({ status: "ended" });
+
+    expect(db.deleted).toEqual([{ table: workflowRun }]);
+
+    const principalUpdate = db.updated.find((row) => row.table === principal);
+    expect(principalUpdate?.values).toMatchObject({ status: "deactivated" });
+  });
+
+  test("launchChannel marks the run failed (not deleted) when the deploy leaks a running child", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "channel-1",
+        displayName: null,
+      },
+      definitionId: "wfd_channel1",
+    });
+    const sessionService = createFakeSessionService();
+    sessionService.deployInstanceAtHead = async () => {
+      throw new SessionLaunchError("start", new Error("ack timeout"), true);
+    };
+    const assetService = createFakeAssetService();
+    const sidecarRouter = createFakeSidecarRouter();
+    const eventCollectors = createFakeEventCollectors();
+
+    const platform = createHubChatPlatform({
+      db: db as never,
+      sessionService,
+      assetService,
+      sidecarRouter,
+      eventCollectors,
+    });
+
+    await expect(
+      platform.launchChannel({
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        channelId: "ins_channel1",
+        triggerAddress: "ins_channel1@ten1.workbench.test",
+        definition: CHANNEL_WORKFLOW_JSON,
+      }),
+    ).rejects.toThrow(SessionLaunchError);
+
+    expect(db.deleted).toEqual([]);
+    const runUpdate = db.updated.find((row) => row.table === workflowRun);
+    expect(runUpdate?.values).toEqual({ status: "failed" });
   });
 
   test("launchChannel fails loud when the tenant catalog has no launchable source", async () => {

@@ -21,9 +21,7 @@ import { subtitleProp } from "../optional-props";
 import { QueryView } from "../query-view";
 import {
   createChannel,
-  deploymentDisplayName,
   listChannels,
-  listDeployedAgents,
   listMessages,
   putReadState,
   sendMessage,
@@ -31,7 +29,7 @@ import {
 } from "./api";
 import type { Channel, ChannelKind, MessageItem } from "./api";
 import { Composer } from "./composer";
-import type { MentionCandidate } from "./mentions";
+import { mentionCandidatesFromParticipants } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
 import { ChatSidebar } from "./sidebar";
 import { CHAT_STRINGS } from "./strings";
@@ -78,39 +76,12 @@ function useChannelLists(tenantId: string, refreshKey: number) {
   return { state, reload };
 }
 
-function useAgentMentions(tenantId: string): readonly MentionCandidate[] {
-  const [agents, setAgents] = useState<readonly MentionCandidate[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void listDeployedAgents(tenantId)
-      .then((deployments) => {
-        if (cancelled) return;
-        setAgents(
-          deployments.map((deployment) => ({
-            id: deployment.id,
-            name: deploymentDisplayName(deployment),
-          })),
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setAgents([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId]);
-
-  return agents;
-}
-
 function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
     tenantId,
     channelsRefresh,
   );
-  const agents = useAgentMentions(tenantId);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [messagesState, setMessagesState] = useState<MessagesState>({
     kind: "loading",
@@ -258,7 +229,9 @@ function ChatWorkspaceInner({ tenantId }: { readonly tenantId: string }) {
             <>
               <ChannelTimeline items={messagesState.items} />
               <Composer
-                agents={agents}
+                agents={mentionCandidatesFromParticipants(
+                  activeChannel?.participants ?? [],
+                )}
                 onSend={(text) => void handleSend(text)}
               />
             </>

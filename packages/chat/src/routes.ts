@@ -27,7 +27,7 @@ import type { TenantEnv } from "@intx/hub-api";
 import type { RequireGrant } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
 
-import { decodeMail, encodeParts, type MailContent } from "./codec";
+import { decodeMail, encodeParts, senderOf, type MailContent } from "./codec";
 import { Part, type Part as PartType } from "./parts";
 import { presetForKind } from "./kinds";
 import {
@@ -387,6 +387,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         listed.items.map(async (item) => ({
           id: item.id,
           createdAt: item.createdAt,
+          sender: senderOf(item.mail),
           parts: await decodeMail(item.mail, {
             fetchBlob: (blobId) => deps.platform.fetchBlob(channelId, blobId),
           }),
