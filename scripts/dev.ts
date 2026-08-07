@@ -126,6 +126,8 @@ interface App {
   label: string;
   dir: string;
   env?: Record<string, string>;
+  /** Command to run in `dir`; defaults to the app's own dev script. */
+  command?: string[];
 }
 
 const DEV_SIDECAR_ID = "sidecar-dev";
@@ -158,6 +160,14 @@ function sidecarEnv(config: HubConfig, token: string): Record<string, string> {
 const apps: App[] = [
   { label: "hub", dir: join(repoRoot, "apps", "hub") },
   { label: "sidecar", dir: join(repoRoot, "apps", "sidecar") },
+  // The hub serves the web app's build output as static files, so dev
+  // watches and rebuilds that output on every source change — a browser
+  // refresh then picks up the fresh bundle, no manual build step.
+  {
+    label: "web",
+    dir: join(repoRoot, "apps", "web"),
+    command: ["bun", "run", "watch"],
+  },
 ];
 
 function requireApps(): void {
@@ -176,16 +186,12 @@ function requireApps(): void {
 }
 
 // HUB_STATIC_DIR resolves against the hub's working directory and
-// defaults to the web app's build output, which is not checked in — a
-// fresh clone has no index.html to serve. Build it here so the first
-// `bun run dev` serves the interface instead of a 404; when the build
-// output already exists this stays quiet.
+// defaults to the web app's build output, which is not checked in. Build
+// it on every dev start so the hub never serves a stale bundle from an
+// earlier session; the web watcher keeps it fresh from there.
 async function requireWebBuild(config: HubConfig): Promise<void> {
   const staticDir = resolve(join(repoRoot, "apps", "hub"), config.hubStaticDir);
-  if (existsSync(join(staticDir, "index.html"))) return;
-  console.log(
-    `[dev] no index.html in ${staticDir}; building the web app first`,
-  );
+  console.log(`[dev] building the web app into ${staticDir}`);
   const build = Bun.spawn(["bun", "run", "build"], {
     cwd: join(repoRoot, "apps", "web"),
     stdout: "inherit",
@@ -231,7 +237,7 @@ async function forwardWithPrefix(
 
 async function startApps(): Promise<never> {
   const processes = apps.map((app) => {
-    const proc = Bun.spawn(["bun", "run", "dev"], {
+    const proc = Bun.spawn(app.command ?? ["bun", "run", "dev"], {
       cwd: app.dir,
       env: { ...process.env, ...app.env },
       stdout: "pipe",

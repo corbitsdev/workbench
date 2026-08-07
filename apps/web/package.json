@@ -9,6 +9,7 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "build": "vite build",
+    "watch": "vite build --watch",
     "test": "bun test"
   },
   "dependencies": {
