@@ -41,6 +41,7 @@ import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { extractPartByPath, parseMailToEmail } from "@intx/mime";
 import { encodeParts } from "./codec";
+import { channelLaunch } from "./schema";
 import {
   ensureWorkflowDefinitionForAsset,
   resolveRunSessionId,
@@ -357,6 +358,17 @@ export function createHubChatPlatform(
         modelPreferences: null,
         createdAt: now,
       });
+
+      // The launch body is persisted with the launch itself so a wake
+      // can rebuild the deploy config without reaching for the
+      // definition's asset — a channel host's asset never holds a
+      // workflow.json, so this row is the only wake-time source.
+      await tx.insert(channelLaunch).values({
+        tenantId: params.tenantId,
+        instanceId: params.instanceId,
+        foldedBody: params.foldedBody,
+        createdAt: now,
+      });
     });
 
     try {
@@ -426,16 +438,17 @@ export function createHubChatPlatform(
   /**
    * Re-deploys an instance the sidecar no longer has resident —
    * either it slept (the lifecycle package's own sweep) or the stack
-   * restarted and never relaunched it. Hydrates the launch body back
-   * off the definition's materialized asset, exactly as `launchInvite`
-   * does for a fresh launch, and reuses `deployAtHead` rather than the
-   * fresh-launch row-writing path in `launchCore`: no new
-   * principal/session/run rows are needed, only a redeploy against the
-   * ones already on file. This closure — not `@corbits/agent-lifecycle`
-   * itself — is where the redeploy logic lives, since only this
-   * adapter knows how to hydrate a folded definition's launch body;
-   * the lifecycle package only ever calls it as an injected `wake`
-   * port and knows nothing about definitions or assets.
+   * restarted and never relaunched it. Reads the launch body back off
+   * the `channel_launch` row `launchCore` wrote in the launch
+   * transaction (a channel host's asset never materializes a
+   * workflow.json, so the definition's asset cannot be the wake
+   * source) and reuses `deployAtHead` rather than the fresh-launch
+   * row-writing path in `launchCore`: no new principal/session/run
+   * rows are needed, only a redeploy against the ones already on
+   * file. This closure — not `@corbits/agent-lifecycle` itself — is
+   * where the redeploy logic lives; the lifecycle package only ever
+   * calls it as an injected `wake` port and knows nothing about
+   * definitions or launch bodies.
    */
   async function wakeInstance(run: {
     id: string;
@@ -446,23 +459,24 @@ export function createHubChatPlatform(
     if (run.principalId === null) {
       throw new Error(`wake: run "${run.id}" has no principal`);
     }
-    const definitionRow = await deps.db.query.workflowDefinition.findFirst({
-      where: eq(workflowDefinition.id, run.definitionId),
-    });
-    if (definitionRow?.assetId == null) {
+    const launchRows = await deps.db
+      .select()
+      .from(channelLaunch)
+      .where(eq(channelLaunch.instanceId, run.id))
+      .limit(1);
+    const launchRow = launchRows[0];
+    if (launchRow === undefined) {
       throw new Error(
-        `wake: definition "${run.definitionId}" has not been materialized`,
+        `wake: no channel_launch row for instance "${run.id}"; instances ` +
+          `launched before launch-body persistence existed cannot be woken — ` +
+          `archive the channel and create a new one`,
       );
     }
-    const definition = await hydrateDefinitionFromAsset(
-      deps.assetService,
-      definitionRow.assetId,
-    );
-    const foldedBody = extractFoldedBody(definition);
+    const foldedBody = launchRow.foldedBody as FoldedBody;
     const sessionId = await sessionIdForRun(run);
 
     await deployAtHead(deps, {
-      tenantId: definitionRow.tenantId,
+      tenantId: launchRow.tenantId,
       instanceId: run.id,
       triggerAddress: run.address,
       principalId: run.principalId,

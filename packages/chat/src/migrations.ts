@@ -46,6 +46,18 @@ export const chatMigrations: readonly ChatMigration[] = [
       );
     `,
   },
+  {
+    name: "0003_channel_launch",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "channel_launch" (
+        "tenant_id" text NOT NULL,
+        "instance_id" text NOT NULL,
+        "folded_body" jsonb NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("instance_id")
+      );
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named

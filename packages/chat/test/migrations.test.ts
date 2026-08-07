@@ -61,6 +61,7 @@ describeIfDb("applyChatMigrations", () => {
     expect(first.applied).toEqual([
       "0001_channel_settings",
       "0002_channel_read_state",
+      "0003_channel_launch",
     ]);
 
     const second = await applyChatMigrations(scratchUrl);
@@ -68,6 +69,7 @@ describeIfDb("applyChatMigrations", () => {
     expect(second.alreadyApplied.sort()).toEqual([
       "0001_channel_settings",
       "0002_channel_read_state",
+      "0003_channel_launch",
     ]);
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
@@ -75,9 +77,10 @@ describeIfDb("applyChatMigrations", () => {
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'public' AND table_name IN ` +
-          `('channel_settings', 'channel_read_state')`,
+          `('channel_settings', 'channel_read_state', 'channel_launch')`,
       );
       expect(tables.map((row) => String(row["table_name"])).sort()).toEqual([
+        "channel_launch",
         "channel_read_state",
         "channel_settings",
       ]);

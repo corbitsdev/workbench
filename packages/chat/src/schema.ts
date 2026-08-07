@@ -53,3 +53,20 @@ export const channelReadState = pgTable(
     }),
   ],
 );
+
+/**
+ * The folded launch body of every instance this package launches —
+ * channel hosts and invited agents alike — written in the launch
+ * transaction and read back to wake a slept instance. A channel host's
+ * definition exists nowhere else (its workflow asset is never pushed
+ * a workflow.json), so this row is the single wake-time source for
+ * both launch kinds.
+ */
+export const channelLaunch = pgTable("channel_launch", {
+  tenantId: text("tenant_id").notNull(),
+  instanceId: text("instance_id").primaryKey(),
+  foldedBody: jsonb("folded_body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

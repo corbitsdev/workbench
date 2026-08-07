@@ -32,6 +32,7 @@ import {
   workflowDefinitionVersion,
   workflowRun,
 } from "@intx/db/schema";
+import { channelLaunch } from "../src/schema";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type {
   EventCollectorRegistry,
@@ -139,6 +140,8 @@ function createFakeDb(opts: {
     | { id: string; tenantId: string; status: string; name: string }[]
     | undefined;
   tenantRow?: { id: string; domain: string } | undefined;
+  channelLaunchRow?:
+    { tenantId: string; instanceId: string; foldedBody: unknown } | undefined;
 }) {
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
@@ -189,6 +192,13 @@ function createFakeDb(opts: {
       return {
         from(table: unknown) {
           if (table === asset) return selectChain([opts.assetRow]);
+          if (table === channelLaunch) {
+            return selectChain(
+              opts.channelLaunchRow !== undefined
+                ? [opts.channelLaunchRow]
+                : [],
+            );
+          }
           if (table === agentSession) {
             // `resolveRunSessionId` selects `{ id }` filtered by
             // principalId; this fake ignores the filter and returns
@@ -1010,6 +1020,15 @@ describe("createHubChatPlatform", () => {
           tenantId: "ten_1",
           status: "deployed",
           assetId: "asst_channel1",
+        },
+        channelLaunchRow: {
+          tenantId: "ten_1",
+          instanceId: "ins_channel1",
+          foldedBody: {
+            systemPrompt: "host prompt",
+            model: "claude-sonnet-5",
+            toolPackagePins: [],
+          },
         },
       });
       db.inserted.push({
