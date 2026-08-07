@@ -377,3 +377,56 @@ describe("senderOf", () => {
     expect(() => senderOf(mail)).toThrow(/no envelope "from"/);
   });
 });
+
+describe("decodeMail leaf-header compensation", () => {
+  const mailWith = (blobId: string) => ({
+    textBody: [],
+    bodyValues: {},
+    attachments: [
+      { blobId, name: "part.json", type: "application/json", size: 10 },
+    ],
+  });
+
+  test("strips a leaf attachment's own MIME header block before parsing", async () => {
+    const raw =
+      'Content-Type: application/json\r\nContent-Transfer-Encoding: 7bit\r\n\r\n{"kind":"event","event":"channel.agent-joined","data":{"address":"a@b"}}';
+    const parts = await decodeMail(mailWith("blob_x_1.2"), {
+      fetchBlob: async () => raw,
+    });
+    expect(parts).toEqual([
+      {
+        kind: "event",
+        event: "channel.agent-joined",
+        data: { address: "a@b" },
+      },
+    ]);
+  });
+
+  test("decodes a base64 transfer-encoded leaf body", async () => {
+    const json = '{"kind":"text","text":"encoded"}';
+    const raw =
+      "Content-Type: application/json\r\nContent-Transfer-Encoding: base64\r\n\r\n" +
+      Buffer.from(json, "utf8").toString("base64");
+    const parts = await decodeMail(mailWith("blob_x_1.3"), {
+      fetchBlob: async () => raw,
+    });
+    expect(parts).toEqual([{ kind: "text", text: "encoded" }]);
+  });
+
+  test("leaves header-free blobs untouched", async () => {
+    const parts = await decodeMail(mailWith("blob_x_2"), {
+      fetchBlob: async () => '{"kind":"text","text":"clean"}',
+    });
+    expect(parts).toEqual([{ kind: "text", text: "clean" }]);
+  });
+
+  test("JSON that merely resembles a header line still parses", async () => {
+    const tricky = '{"kind":"text","text":"Content-Type: not a header"}';
+    const parts = await decodeMail(mailWith("blob_x_3"), {
+      fetchBlob: async () => tricky,
+    });
+    expect(parts).toEqual([
+      { kind: "text", text: "Content-Type: not a header" },
+    ]);
+  });
+});

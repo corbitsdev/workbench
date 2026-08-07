@@ -219,11 +219,44 @@ export async function decodeMail(
     }
   }
 
+  /**
+   * Compensates for a defect in the platform's MIME part extraction: the
+   * blob route returns a leaf attachment's raw MIME slice — its own
+   * header block still attached — instead of the header-stripped body
+   * every intermediate depth already produces. Until the upstream fix
+   * lands (walkParts in the platform's mime package should strip the
+   * leaf the way it strips every level above it), fetched blob text that
+   * begins with a well-formed header block has that block removed here.
+   * Delete this function the moment blobs arrive header-free; the codec
+   * tests carry both fixtures so the removal is a red/green edit.
+   */
+  function stripLeafMimeHeaders(text: string): string {
+    const separator = text.indexOf("\r\n\r\n");
+    if (separator === -1) return text;
+    const head = text.slice(0, separator);
+    const headerShaped = head
+      .split("\r\n")
+      .every(
+        (line) =>
+          /^[\x21-\x39\x3b-\x7e]+:\s?.*$/.test(line) || /^[ \t]/.test(line),
+      );
+    if (!headerShaped || !/^content-/im.test(head)) return text;
+    const body = text.slice(separator + 4);
+    // The raw slice was never transfer-decoded either; honor the encoding
+    // named by the header block being stripped.
+    if (/^content-transfer-encoding:\s*base64\s*$/im.test(head)) {
+      return Buffer.from(body.replace(/\s+/g, ""), "base64").toString("utf8");
+    }
+    return body;
+  }
+
   for (const attachment of parsed.attachments) {
     const label = attachment.name ?? attachment.blobId;
 
     if (attachment.type === "application/json") {
-      const text = blobToText(await opts.fetchBlob(attachment.blobId));
+      const text = stripLeafMimeHeaders(
+        blobToText(await opts.fetchBlob(attachment.blobId)),
+      );
       let json: unknown;
       try {
         json = JSON.parse(text);
@@ -240,7 +273,9 @@ export async function decodeMail(
     }
 
     if (attachment.type === "text/plain") {
-      const text = blobToText(await opts.fetchBlob(attachment.blobId));
+      const text = stripLeafMimeHeaders(
+        blobToText(await opts.fetchBlob(attachment.blobId)),
+      );
       parts.push({ kind: "text", text });
       continue;
     }
