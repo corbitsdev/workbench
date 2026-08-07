@@ -20,6 +20,13 @@ export type MailContent = {
     data: string;
     name?: string;
   }[];
+  /**
+   * Set when this mail is a mention fan-out copy: the id of the
+   * channel the message originated in, carried as a reply-to
+   * reference rather than a relay hop. Absent on ordinary mail,
+   * including everything sent directly to a channel's own anchor.
+   */
+  replyTo?: string;
 };
 
 function encodeBase64(text: string): string {
@@ -40,9 +47,17 @@ function decodeBase64(data: string): string {
  * the part's JSON as the attachment body. `content` itself carries no
  * information in this case and is left empty.
  */
-export function encodeParts(parts: Part[]): MailContent {
+export function encodeParts(
+  parts: Part[],
+  opts?: { replyTo?: string },
+): MailContent {
+  const replyTo = opts?.replyTo;
+
   if (parts.length === 1 && parts[0]?.kind === "text") {
-    return { content: parts[0].text };
+    return {
+      content: parts[0].text,
+      ...(replyTo !== undefined ? { replyTo } : {}),
+    };
   }
 
   const attachments = parts.map((part, index) => {
@@ -60,7 +75,11 @@ export function encodeParts(parts: Part[]): MailContent {
     };
   });
 
-  return { content: "", attachments };
+  return {
+    content: "",
+    attachments,
+    ...(replyTo !== undefined ? { replyTo } : {}),
+  };
 }
 
 /**

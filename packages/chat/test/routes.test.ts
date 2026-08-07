@@ -115,6 +115,9 @@ function buildDeps(
       await next();
     },
     turnTimeoutMs: 60_000,
+    channelHostInferencePreferences: [
+      { provider: "anthropic", model: "claude-sonnet-5" },
+    ],
     ...overrides,
   };
 }

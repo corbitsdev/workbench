@@ -14,14 +14,13 @@ export { encodeParts, decodeParts, decodeMail } from "./codec";
 export type { MailContent, MailReadContent, FetchBlob } from "./codec";
 
 export {
-  CHANNEL_WORKFLOW_ID,
-  CHANNEL_SECTION_ID,
-  CHANNEL_RELAY_STEP_ID,
-  CHANNEL_RELAY_HANDLER,
-  buildChannelWorkflow,
-  serializeChannelWorkflow,
+  CHANNEL_HOST_WORKFLOW_ID,
+  CHANNEL_HOST_STEP_ID,
+  CHANNEL_HOST_SYSTEM_PROMPT,
+  buildChannelHostWorkflow,
+  serializeChannelHostWorkflow,
 } from "./channel-workflow";
-export type { ChannelWorkflowInput } from "./channel-workflow";
+export type { ChannelHostWorkflowInput } from "./channel-workflow";
 
 export {
   CHANNEL_CONTROL_NAMESPACE,
@@ -30,13 +29,11 @@ export {
   isControlMessage,
   parseControlPayload,
   applyControlPayload,
-  planRelay,
-} from "./relay";
+} from "./settings-control";
 export type {
   ChannelParticipantState,
   ControlApplyResult,
-  RelayPlan,
-} from "./relay";
+} from "./settings-control";
 
 export { presetForKind } from "./kinds";
 export type { ChannelKindPreset } from "./kinds";
@@ -52,5 +49,8 @@ export type {
   SentMail,
 } from "./routes";
 
-export { createDrizzleChatStore } from "./store";
+export { createDrizzleChatStore, createInMemoryChatStore } from "./store";
 export type { ChatDb, ChatStore } from "./store";
+
+export { createHubChatPlatform } from "./platform-adapter";
+export type { CreateHubChatPlatformDeps } from "./platform-adapter";

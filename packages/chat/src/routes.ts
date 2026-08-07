@@ -17,6 +17,7 @@
 // underlying calls and injects here, exactly as `@workbench/onboarding`
 // injects `pushWorkflow` instead of reimplementing workflow push.
 import { formatAgentAddress } from "@intx/types";
+import type { InferencePreference } from "@intx/agent";
 import { generateId } from "@intx/hub-common";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -30,10 +31,15 @@ import { decodeMail, encodeParts, type MailContent } from "./codec";
 import { Part, type Part as PartType } from "./parts";
 import { presetForKind } from "./kinds";
 import {
-  buildChannelWorkflow,
-  serializeChannelWorkflow,
+  buildChannelHostWorkflow,
+  serializeChannelHostWorkflow,
 } from "./channel-workflow";
-import { CHANNEL_CONTROL_NAMESPACE, type ChannelControlPayload } from "./relay";
+import {
+  CHANNEL_CONTROL_NAMESPACE,
+  applyControlPayload,
+  type ChannelControlPayload,
+  type ChannelParticipantState,
+} from "./settings-control";
 import type { ChatStore } from "./store";
 
 export interface LaunchedChannel {
@@ -102,8 +108,21 @@ export type CreateChatRoutesDeps = {
   store: ChatStore;
   platform: ChatPlatform;
   requireGrant: RequireGrant;
-  /** Per-occurrence timeout for the channel workflow's relay step. */
+  /** Per-occurrence timeout for the channel host's step. */
   turnTimeoutMs: number;
+  /**
+   * The provider/model chain the channel host's definition declares.
+   * The anchor never actually performs inference — its system prompt
+   * forbids replying — but a folded interactive-instance launch still
+   * resolves and pins a real inference source chain against the
+   * tenant catalog before it will launch at all (see
+   * `platform-adapter.ts`), so this must name a model a seeded
+   * catalog source can resolve. Omitting it (or seeding no catalog
+   * source for it) is a valid host configuration up front, but
+   * `ChatPlatform.launchChannel` then fails loud at channel-creation
+   * time rather than launching an unlaunchable anchor.
+   */
+  channelHostInferencePreferences?: readonly InferencePreference[];
 };
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -201,6 +220,51 @@ function channelView(row: {
   };
 }
 
+function localPartOf(address: string): string {
+  const at = address.indexOf("@");
+  return at === -1 ? address : address.slice(0, at);
+}
+
+// A participant entry is an agent address (mention-fannable) rather
+// than a bare principal id when it carries the "@domain" shape every
+// agent address has. Bare principal ids are never fanned a copy: only
+// mentions of other runs' anchors are, since a human participant reads
+// the channel's own timeline directly.
+function isAgentAddress(participant: string): boolean {
+  return participant.includes("@");
+}
+
+/**
+ * The participants an ordinary message @mentions, restricted to agent
+ * addresses: the fan-out set for `POST /channels/:id/messages`. A
+ * mention is structural — the address's local part, `@`-prefixed,
+ * appearing in any `TextPart` of the message — not a full parse of
+ * mention syntax; kept minimal per the anchor-mailbox rework's scope.
+ */
+function mentionedParticipants(
+  parts: readonly PartType[],
+  participants: readonly string[],
+): string[] {
+  const texts = parts
+    .filter(
+      (part): part is Extract<PartType, { kind: "text" }> =>
+        part.kind === "text",
+    )
+    .map((part) => part.text);
+  if (texts.length === 0) return [];
+  return participants.filter((participant) => {
+    if (!isAgentAddress(participant)) return false;
+    const mentionToken = `@${localPartOf(participant)}`;
+    return texts.some((text) => text.includes(mentionToken));
+  });
+}
+
+function participantsOf(settings: Record<string, unknown>): string[] {
+  return Array.isArray(settings["chat/participants"])
+    ? (settings["chat/participants"] as string[])
+    : [];
+}
+
 type ChannelSubscriber = (event: ChatChannelEvent) => void;
 
 /**
@@ -259,9 +323,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const channelId = generateId("instance");
       const triggerAddress = formatAgentAddress(channelId, tenant.domain);
-      const definition = serializeChannelWorkflow(
-        buildChannelWorkflow({
+      const definition = serializeChannelHostWorkflow(
+        buildChannelHostWorkflow({
           triggerAddress,
+          inferencePreferences: deps.channelHostInferencePreferences ?? [],
           turnTimeoutMs: deps.turnTimeoutMs,
         }),
       );
@@ -356,13 +421,34 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
       const channelId = c.req.param("id");
+      const messageParts = parsed as PartType[];
 
       const sent = await deps.platform.sendMail({
         tenantId: tenant.id,
         channelId,
         principalId: principal.id,
-        content: encodeParts(parsed as PartType[]),
+        content: encodeParts(messageParts),
       });
+
+      // Fan out to every @mentioned agent participant, each as a
+      // single-recipient copy referencing this channel — never a relay
+      // workflow, and never CC (the platform's mail send is
+      // single-recipient; see `channel-workflow.ts`).
+      const settingsRow = await deps.store.getChannelSettings(
+        tenant.id,
+        channelId,
+      );
+      const participants =
+        settingsRow !== undefined ? participantsOf(settingsRow.settings) : [];
+      const mentioned = mentionedParticipants(messageParts, participants);
+      for (const participant of mentioned) {
+        await deps.platform.sendMail({
+          tenantId: tenant.id,
+          channelId: localPartOf(participant),
+          principalId: principal.id,
+          content: encodeParts(messageParts, { replyTo: channelId }),
+        });
+      }
 
       return c.json({ id: sent.id, createdAt: sent.createdAt }, 201);
     },
@@ -411,6 +497,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const merged = { ...existing.settings, ...patch };
+      // The settings record itself is the durable source of truth; it
+      // is updated before anything else here fires, so a failure
+      // below never leaves the record unwritten and the audit trail
+      // silently ahead of it.
       const row = await deps.store.updateChannelSettings({
         tenantId: tenant.id,
         channelId,
@@ -418,6 +508,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         updatedBy: principal.id,
       });
 
+      // The audit trail lives in the anchor's own timeline: fold the
+      // patch through the same control/settings logic the old relay
+      // workflow used, then post each resulting event part into the
+      // anchor's mailbox. A failure here is loud (unhandled), never
+      // swallowed, since the timeline is the record of what changed.
+      const priorState: ChannelParticipantState = {
+        participants: participantsOf(existing.settings),
+        settings: existing.settings,
+      };
       const controlPayload: ChannelControlPayload = {
         namespace: CHANNEL_CONTROL_NAMESPACE,
         settings: patch,
@@ -425,17 +524,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ? { participants: patch["chat/participants"] as string[] }
           : {}),
       };
-      await deps.platform.sendMail({
-        tenantId: tenant.id,
-        channelId,
-        principalId: principal.id,
-        content: encodeParts([
-          {
-            kind: "block",
-            block: { type: CHANNEL_CONTROL_NAMESPACE, data: controlPayload },
-          },
-        ]),
-      });
+      const { events } = applyControlPayload(
+        priorState,
+        controlPayload,
+        principal.id,
+      );
+      for (const event of events) {
+        await deps.platform.sendMail({
+          tenantId: tenant.id,
+          channelId,
+          principalId: principal.id,
+          content: encodeParts([event]),
+        });
+      }
 
       registry.publish(channelId, {
         type: "chat.settings",

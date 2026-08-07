@@ -1,16 +1,20 @@
-// Pure relay and participant-state logic for the channel workflow,
-// isolated from `@intx/workflow` so it is unit-testable without the
-// runtime. `channel-workflow.ts` wires this logic behind the
-// definition's action-step handler; nothing here touches mail
-// transport, run state persistence, or any other host effect.
+// Pure control/settings logic for a channel: recognizing a control
+// message structurally, parsing its payload, and folding it onto
+// participant state as timeline events. Isolated from `@intx/workflow`
+// and from any transport so it stays unit-testable without a runtime.
+//
+// `routes.ts` is this module's only consumer: the settings PATCH route
+// uses it to turn a validated settings patch into the event parts it
+// posts onto the anchor's timeline as the audit trail. There is no
+// relay workflow anymore for this logic to be reached from otherwise
+// (see `channel-workflow.ts`).
 
 import { type } from "arktype";
 import type { EventPart, Part } from "./parts";
 
 // A control mail is structurally distinguished (never by a magic
 // subject string): exactly one `BlockPart` whose `block.type` is this
-// namespace. Every other inbound message is an ordinary chat message
-// to relay.
+// namespace. Every other inbound message is an ordinary chat message.
 export const CHANNEL_CONTROL_NAMESPACE = "chat/channel-settings";
 
 export const ChannelControlPayload = type({
@@ -114,27 +118,4 @@ export function applyControlPayload(
   }
 
   return { state: { participants, settings }, events };
-}
-
-export interface RelayPlan {
-  /** Addresses to send the inbound message on to, sender excluded. */
-  readonly recipients: readonly string[];
-}
-
-/**
- * Plan the hub-and-spoke fan-out for an ordinary inbound message: every
- * participant except the sender, in participant order. An empty
- * participant list (or a sender who is the only participant) plans no
- * recipients — never an error — because the message still lands in the
- * run's own mailbox, which is the channel's timeline of record.
- */
-export function planRelay(
-  state: ChannelParticipantState,
-  senderId: string,
-): RelayPlan {
-  return {
-    recipients: state.participants.filter(
-      (participant) => participant !== senderId,
-    ),
-  };
 }

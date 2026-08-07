@@ -1,8 +1,12 @@
-// The channel workflow: the multi-turn definition whose long-lived run
-// IS a channel. It parks awaiting mail at `triggerAddress`, and each
-// inbound mail either updates participant state (a control message —
-// see `relay.ts`) or relays onward to every other participant as
-// single-recipient mail (hub-and-spoke).
+// The channel host workflow: the folded, single-agent definition whose
+// long-lived interactive run IS a channel. It launches credential-free
+// exactly like `workflows/echo`'s definition (see the empirical spike
+// this rework is grounded in), and holds the channel's shared mailbox
+// as the anchor every participant's mail lands in. It performs no
+// relaying of its own: `routes.ts` sends the caller's message to the
+// anchor for the record, then fans mentioned participants their own
+// copies directly through the platform port. No `onTrigger`/`action`
+// relay DAG lives here anymore.
 //
 // This package is installable data. It imports only published
 // platform packages, and nothing imports it statically: a host
@@ -10,90 +14,78 @@
 // it through the platform's deploy machinery; the execution host
 // materializes it at runtime from the deploy alone.
 //
-// Modeled on `workflows/echo`'s `buildEchoWorkflow`/`serializeEchoWorkflow`
-// split, but the section is an `onTrigger` body driving a deterministic
-// `action` step rather than a single agent `step`: the relay is zero
-// inference by requirement, so no `AgentDefinition` belongs anywhere in
-// this definition.
+// Modeled directly on `workflows/echo`'s `buildEchoWorkflow`/
+// `serializeEchoWorkflow` split: a single mail-triggered agent step,
+// the shape a folded interactive instance launch requires.
 
-import { action, defineWorkflow, onTrigger } from "@intx/workflow";
+import { defineAgent } from "@intx/agent";
+import type { InferencePreference } from "@intx/agent";
+import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 
-export const CHANNEL_WORKFLOW_ID = "wf_channel";
-export const CHANNEL_SECTION_ID = "inbound";
-export const CHANNEL_RELAY_STEP_ID = "relay";
+export const CHANNEL_HOST_WORKFLOW_ID = "wf_channel_host";
+export const CHANNEL_HOST_STEP_ID = "host";
 
-/**
- * The string ref an execution host resolves to the relay's `action`
- * handler, mirroring how a `step`'s `agent` is resolved by
- * `invokeStep`. Kept a string so the definition stays hashable and
- * JSON-portable; the handler itself lives in host wiring, not in this
- * package.
- */
-export const CHANNEL_RELAY_HANDLER = "chat/channel-relay";
+export const CHANNEL_HOST_SYSTEM_PROMPT =
+  "You are a channel anchor. You exist only to hold this channel's " +
+  "shared mailbox and conversation record on behalf of its " +
+  "participants. Never reply, comment, summarize, or take any action " +
+  "on anything sent to you.";
 
 /**
  * Everything the definition needs that is per-deployment data. The
- * trigger address names a specific channel instance's inbox — Fork 3's
- * "a channel is an interactive instance launch of this definition" —
- * so a definition built here is per-channel by construction.
+ * trigger address names a specific channel instance's inbox — a
+ * channel is an interactive instance launch of this definition — so a
+ * definition built here is per-channel by construction.
  */
-export interface ChannelWorkflowInput {
+export interface ChannelHostWorkflowInput {
   /** The channel's mail address; every mail to it is a run occurrence. */
   readonly triggerAddress: string;
-  /** Per-occurrence timeout in milliseconds, enforced on the relay step. */
+  /**
+   * Provider/model preferences, in order. The anchor never actually
+   * performs inference (its system prompt forbids replying), so this
+   * may be omitted; when present it is resolved the same way `echo`'s
+   * is, at deploy time.
+   */
+  readonly inferencePreferences?: readonly InferencePreference[];
+  /** Per-occurrence timeout in milliseconds, enforced on the host step. */
   readonly turnTimeoutMs: number;
 }
 
 /**
- * Builds the channel definition. A single `onTrigger` section is the
- * entire body: the section IS the parked-awaiting-mail loop (the
- * platform's snapshot-less input park), and each mail occurrence runs
- * the body once as a child run sharing the one living workflow run's
- * state and event log — the channel's timeline.
- *
- * The body's only step is a deterministic `action`, never a `step`:
- * an `action` cannot carry an `agent`, which is the structural
- * guarantee that this definition performs zero inference. The action
- * declares the `mail:send` effect capability it needs to relay —
- * nothing else — so the deploy capability walk surfaces exactly that
- * grant for operator approval.
- *
- * The definition carries no `state.schema`: `WorkflowDefinition.state`
- * is untyped JSON asset data, and `relay.ts`'s `ChannelParticipantState`
- * is described with arktype `type()`, whose `Type` instances are
- * function-bearing and not JSON-portable — embedding one here would
- * make `serializeChannelWorkflow` fail on every definition. The action
- * handler owns reading and writing that state from the run's own
- * storage across occurrences; `relay.ts` is its pure, host-independent
- * core.
+ * Builds the channel host definition. Exactly one step, mirroring
+ * `buildEchoWorkflow`: the single-step shape is what makes a folded
+ * instance launch conversational (the execution host keeps one warm
+ * agent with durable memory across runs), which is what lets the
+ * anchor's run stay the channel's one long-lived timeline.
  */
-export function buildChannelWorkflow(
-  input: ChannelWorkflowInput,
+export function buildChannelHostWorkflow(
+  input: ChannelHostWorkflowInput,
 ): WorkflowDefinition {
   if (input.triggerAddress === "") {
-    throw new Error("buildChannelWorkflow requires a non-empty triggerAddress");
+    throw new Error(
+      "buildChannelHostWorkflow requires a non-empty triggerAddress",
+    );
   }
   if (!Number.isInteger(input.turnTimeoutMs) || input.turnTimeoutMs <= 0) {
     throw new Error(
-      "buildChannelWorkflow requires turnTimeoutMs to be a positive integer",
+      "buildChannelHostWorkflow requires turnTimeoutMs to be a positive integer",
     );
   }
   return defineWorkflow({
-    id: CHANNEL_WORKFLOW_ID,
+    id: CHANNEL_HOST_WORKFLOW_ID,
+    trigger: { type: "mail", to: input.triggerAddress },
     steps: {
-      [CHANNEL_SECTION_ID]: onTrigger({
-        on: { type: "mail", to: input.triggerAddress },
-        body: defineWorkflow({
-          id: `${CHANNEL_WORKFLOW_ID}_${CHANNEL_SECTION_ID}`,
-          steps: {
-            [CHANNEL_RELAY_STEP_ID]: action({
-              handler: CHANNEL_RELAY_HANDLER,
-              effect: { requires: ["mail:send"] },
-              timeout: input.turnTimeoutMs,
-            }),
-          },
+      [CHANNEL_HOST_STEP_ID]: step({
+        agent: defineAgent({
+          id: CHANNEL_HOST_STEP_ID,
+          description: "Holds a channel's shared mailbox as its anchor run",
+          systemPrompt: CHANNEL_HOST_SYSTEM_PROMPT,
+          tools: [],
+          capabilities: [],
+          inference: { sources: input.inferencePreferences ?? [] },
         }),
+        timeout: input.turnTimeoutMs,
       }),
     },
   });
@@ -110,7 +102,7 @@ export function buildChannelWorkflow(
  * imported: `workflows/echo`'s copy is module-private, and this
  * package must not reach into another package's internals to get it.
  */
-export function serializeChannelWorkflow(
+export function serializeChannelHostWorkflow(
   definition: WorkflowDefinition,
 ): string {
   assertJsonPortable(definition, "definition");

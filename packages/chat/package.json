@@ -14,10 +14,16 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/crypto": "workspace:*",
+    "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/mime": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
+    "@intx/workflow-deploy": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",
