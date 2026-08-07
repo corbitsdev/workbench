@@ -77,6 +77,9 @@ inference errors until you set it and re-run `bun run seed`.
 | `packages/`  | Domain packages — all product logic lives here             |
 | `workflows/` | Workflow definition packages, deployed as assets           |
 
+Chat — the shared conversation surface humans and agents both use — is
+documented separately in [docs/CHAT.md](docs/CHAT.md).
+
 ## Development
 
 - `bun run check` — the full gate: typecheck, lint, test

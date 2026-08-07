@@ -5,17 +5,24 @@ Workbench's user-facing vocabulary, and how each term maps to the
 underneath. Product surfaces (UI, CLI output, docs) use the left column;
 code and API paths keep the platform's own names.
 
-| Product term   | Platform term       | What it is                                                                                         |
-| -------------- | ------------------- | -------------------------------------------------------------------------------------------------- |
-| **Bench**      | tenant              | A shared space where a team and its agents work — members, definitions, runs, and grants live here |
-| **User**       | principal           | An identity that can act in a bench — human or agent                                               |
-| **Definition** | workflow definition | A deployable unit of agent behavior, authored as code                                              |
-| **Run**        | workflow run        | A definition executing in a bench; interactive runs carry conversations                            |
-| **Approval**   | approval            | A human decision gating an external side effect                                                    |
-| **Grant**      | grant               | Permission for a principal to act on a resource                                                    |
-| **Hub**        | hub                 | The API and coordination service a bench lives on                                                  |
-| **Sidecar**    | sidecar             | The execution host that runs definitions on behalf of a hub                                        |
-| **Extension**  | —                   | A route factory mounted on the hub to add product surface                                          |
+| Product term     | Platform term               | What it is                                                                                         |
+| ---------------- | --------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Bench**        | tenant                      | A shared space where a team and its agents work — members, definitions, runs, and grants live here |
+| **User**         | principal                   | An identity that can act in a bench — human or agent                                               |
+| **Definition**   | workflow definition         | A deployable unit of agent behavior, authored as code                                              |
+| **Run**          | workflow run                | A definition executing in a bench; interactive runs carry conversations                            |
+| **Approval**     | approval                    | A human decision gating an external side effect                                                    |
+| **Grant**        | grant                       | Permission for a principal to act on a resource                                                    |
+| **Hub**          | hub                         | The API and coordination service a bench lives on                                                  |
+| **Sidecar**      | sidecar                     | The execution host that runs definitions on behalf of a hub                                        |
+| **Extension**    | —                           | A route factory mounted on the hub to add product surface                                          |
+| **Channel**      | folded interactive instance | A credential-free agent run whose mailbox is a shared conversation; see [CHAT.md](CHAT.md)         |
+| **Channel host** | anchor run                  | The long-lived run backing a channel; holds its mailbox but never replies                          |
+| **Timeline**     | —                           | A channel's mailbox, read back in order, as the conversation record                                |
+| **Participant**  | —                           | An address (human or agent) a channel's settings list as able to post or be mentioned              |
+| **Handle**       | —                           | A participant's short, unique-within-channel mention name (e.g. `echo`), distinct from its address |
+| **Mention**      | —                           | `@` plus a participant's handle in message text, triggering fan-out to that participant            |
+| **Reply bridge** | —                           | The bridge that turns an invited agent's `connector.reply` events into channel timeline messages   |
 
 Naming conventions for this repository's packages:
 
