@@ -28,6 +28,10 @@ the main pane. The widths themselves are fluid (`clamp`/`vw`), so a future
 chat dock squeezing the content area resizes the columns instead of
 clipping them.
 
+A new page needs one entry in `NAV_ROUTES` (`src/routes.tsx`) — the rail's
+icon, the contextual column's labeled row, and the route switch all read
+from that single table, so a page cannot appear in one without the other.
+
 ## Screens
 
 | Path         | What it shows                                                                     |
