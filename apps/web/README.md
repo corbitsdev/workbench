@@ -8,14 +8,21 @@ serves from its own origin (`vite build`, then point `HUB_STATIC_DIR` at
 ## Layout
 
 Every signed-in screen renders inside the same four-column shell
-(`src/shell/`), assembled from `@corbits/react-ui`'s sidebar rail and
-sidebar panel pieces:
+(`src/shell/`), built from `@corbits/react-ui`'s sidebar panel pieces plus a
+workbench-composed rail:
 
-1. **Rail** — the global page icons, one per screen, each carrying its page
-   name as its accessible name and hover/focus tooltip.
-2. **Contextual column** — the active page's own options: channels,
-   routines, the page list in full labels, with the bench switcher and the
-   signed-in account pinned to the bottom.
+1. **Rail** — global and stable: it never changes with navigation or with
+   the selected bench. One icon per screen with its name captioned
+   underneath (not tooltip-only), plus the bench switcher and the
+   signed-in account's settings/sign-out at the bottom. Answers "where am I
+   in the product, and which bench am I in". Fixed width at every
+   breakpoint — it never joins the columns that withdraw as the viewport
+   narrows.
+2. **Contextual column** — bench-scoped and live: channels, chats, running
+   routines, and notifications for the _currently selected_ bench. It
+   refetches when the bench changes, not when the route does, so its
+   contents can persist or travel across page navigation rather than being
+   a per-page list. Answers "what is happening in this bench right now".
 3. **Main pane** — whatever the route renders, taking all remaining width.
 4. **Canvas** — an optional fourth column for running agents, live
    workflow walkthroughs and analytics. Collapsed by default and collapsed
@@ -29,8 +36,15 @@ chat dock squeezing the content area resizes the columns instead of
 clipping them.
 
 A new page needs one entry in `NAV_ROUTES` (`src/routes.tsx`) — the rail's
-icon, the contextual column's labeled row, and the route switch all read
-from that single table, so a page cannot appear in one without the other.
+icon and the route switch both read from that single table, so a page
+cannot appear in one without the other. The contextual column no longer
+reads `NAV_ROUTES` at all: it has nothing to do with which pages exist.
+
+Running routines in the contextual column are sourced today from
+`@corbits/chat-ui`'s workflow-run listing (`src/shell/routine-activity.ts`)
+rather than a dedicated routines package, which isn't published yet — the
+column depends only on that file's `RoutineActivityItem` shape, so swapping
+in a real `@corbits/routines` listing later touches nothing else.
 
 ## Screens
 
