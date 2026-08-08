@@ -17,7 +17,6 @@
     "@corbits/commands": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
     "@corbits/routines": "workspace:*",
-    "@corbits/schedules": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@intx/authz": "workspace:*",
     "@intx/crypto": "workspace:*",

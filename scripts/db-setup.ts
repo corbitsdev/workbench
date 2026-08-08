@@ -30,8 +30,8 @@ import { readdir } from "node:fs/promises";
 
 import { applyChatMigrations } from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
-import { applyScheduleMigrations } from "../packages/schedules/src/migrations";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
+import { applyRoutineMigrations } from "../packages/routines/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -48,7 +48,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
 }[] = [
   { name: "@corbits/chat", apply: applyChatMigrations },
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
-  { name: "@corbits/schedules", apply: applyScheduleMigrations },
+  { name: "@corbits/routines", apply: applyRoutineMigrations },
   { name: "@corbits/notify", apply: applyNotifyMigrations },
 ];
 
