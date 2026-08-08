@@ -13,6 +13,7 @@ import { timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
 import { createApp, createRequireGrant, type AppEnv } from "@intx/hub-api";
 import {
+  createChatOrchestrator,
   createChatRoutes,
   createDrizzleChatStore,
   createHubChatPlatform,
@@ -195,16 +196,34 @@ export async function createHub(config: HubConfig) {
   const chatConditionRegistry: ConditionRegistry = {
     time_window: timeWindowEvaluator,
   };
+  const chatStore = createDrizzleChatStore(db);
+  const chatPlatform = createHubChatPlatform({
+    db,
+    sessionService,
+    assetService,
+    sidecarRouter,
+    eventCollectors,
+    lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
+  });
+  // Built once, beside the platform, for the process's lifetime: turns
+  // an invited agent's `connector.reply` events into channel messages
+  // by subscribing to the sidecar's own event stream, replacing the
+  // old per-agent reply-bridge machinery armed (and re-armed) from
+  // inside the routes. `chatPlatform.recordActivity` is the same
+  // idle-sleep lifecycle `chatPlatform` itself drives — wiring it here
+  // too is what keeps a replying agent's activity clock current even
+  // though the reply never goes through `chatPlatform.sendMail`'s own
+  // `recordActivity` call.
+  const chatOrchestrator = createChatOrchestrator({
+    db,
+    store: chatStore,
+    platform: chatPlatform,
+    events: sidecarRouter.events,
+    recordActivity: chatPlatform.recordActivity,
+  });
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
-    store: createDrizzleChatStore(db),
-    platform: createHubChatPlatform({
-      db,
-      sessionService,
-      assetService,
-      sidecarRouter,
-      eventCollectors,
-      lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
-    }),
+    store: chatStore,
+    platform: chatPlatform,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
@@ -235,7 +254,14 @@ export async function createHub(config: HubConfig) {
   app.route("/api/onboarding", createOnboardingRoutes(onboardingDeps));
 
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
-  return { app, db, close };
+  return {
+    app,
+    db,
+    close: async () => {
+      chatOrchestrator.dispose();
+      await close();
+    },
+  };
 }
 
 if (import.meta.main) {

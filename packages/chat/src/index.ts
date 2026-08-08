@@ -72,4 +72,13 @@ export { createDrizzleChatStore, createInMemoryChatStore } from "./store";
 export type { ChatDb, ChatStore } from "./store";
 
 export { createHubChatPlatform } from "./platform-adapter";
-export type { CreateHubChatPlatformDeps } from "./platform-adapter";
+export type {
+  CreateHubChatPlatformDeps,
+  HubChatPlatform,
+} from "./platform-adapter";
+
+export { createChatOrchestrator } from "./chat-orchestrator";
+export type {
+  ChatOrchestrator,
+  ChatOrchestratorDeps,
+} from "./chat-orchestrator";

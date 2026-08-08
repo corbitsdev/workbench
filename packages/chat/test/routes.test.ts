@@ -50,7 +50,7 @@ function fakePlatform(
 ): ChatPlatform & {
   sentMail: {
     channelId: string;
-    principalId: string;
+    principalId?: string;
     content: MailContent;
     fromChannelId?: string;
   }[];
@@ -59,20 +59,10 @@ function fakePlatform(
     creatorPrincipalId: string;
     definitionId: string;
   }[];
-  replyBridges: {
-    tenantId: string;
-    channelId: string;
-    agentChannelId: string;
-  }[];
 } {
-  const replyBridges: {
-    tenantId: string;
-    channelId: string;
-    agentChannelId: string;
-  }[] = [];
   const sentMail: {
     channelId: string;
-    principalId: string;
+    principalId?: string;
     content: MailContent;
     fromChannelId?: string;
   }[] = [];
@@ -89,7 +79,6 @@ function fakePlatform(
 
   return {
     sentMail,
-    replyBridges,
     launchInviteCalls,
     async launchChannel() {
       return { instanceId: "launched" };
@@ -108,7 +97,9 @@ function fakePlatform(
     async sendMail(input) {
       sentMail.push({
         channelId: input.channelId,
-        principalId: input.principalId,
+        ...(input.principalId !== undefined
+          ? { principalId: input.principalId }
+          : {}),
         content: input.content,
         ...(input.fromChannelId !== undefined
           ? { fromChannelId: input.fromChannelId }
@@ -117,6 +108,7 @@ function fakePlatform(
       const id = `mail_${++mailCounter}`;
       const createdAt = new Date().toISOString();
       const list = mailByChannel.get(input.channelId) ?? [];
+      const fromLocal = input.principalId ?? input.fromChannelId ?? "unknown";
       list.push({
         id,
         createdAt,
@@ -124,7 +116,7 @@ function fakePlatform(
           textBody: [{ partId: "1", type: "text/plain" }],
           bodyValues: { "1": { value: input.content.content } },
           attachments: [],
-          from: [{ name: null, email: `${input.principalId}@acme.example` }],
+          from: [{ name: null, email: `${fromLocal}@acme.example` }],
         },
       });
       mailByChannel.set(input.channelId, list);
@@ -140,13 +132,6 @@ function fakePlatform(
     },
     subscribeToChannel() {
       return () => undefined;
-    },
-    ensureReplyBridge(input: {
-      tenantId: string;
-      channelId: string;
-      agentChannelId: string;
-    }) {
-      replyBridges.push(input);
     },
   };
 }
@@ -306,7 +291,6 @@ describe("POST /channels", () => {
         definitionId: "wfd_echo",
       },
     ]);
-    expect(platform.replyBridges).toHaveLength(1);
     expect(platform.sentMail).toHaveLength(1);
     const decoded = JSON.parse(
       Buffer.from(
@@ -591,7 +575,7 @@ describe("messages", () => {
     expect(body.error.code).toBe("conflict");
   });
 
-  test("inviting an agent arms its reply bridge", async () => {
+  test("inviting an agent joins it into the channel and posts the join event", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "echo" }] }),
     });
@@ -606,23 +590,12 @@ describe("messages", () => {
 
     expect(response.status).toBe(201);
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.replyBridges).toHaveLength(1);
-    expect(platform.replyBridges[0]?.channelId).toBe(channel.id);
-  });
-
-  test("reading a channel re-arms bridges for agent participants", async () => {
-    const deps = buildDeps();
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, {
-      kind: "channel",
-      participants: ["ins_echo1@acme.example"],
-    });
-
-    const response = await app.request(`/channels/${channel.id}/messages`);
-    expect(response.status).toBe(200);
-    const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.replyBridges).toHaveLength(1);
-    expect(platform.replyBridges[0]?.agentChannelId).toBe("ins_echo1");
+    // Reply routing for the invited agent is the chat orchestrator's
+    // concern now (see `chat-orchestrator.test.ts`), not a bridge this
+    // route arms — this route only proves the join event was sent.
+    expect(platform.sentMail.some((m) => m.channelId === channel.id)).toBe(
+      true,
+    );
   });
 
   test("POST rejects a malformed message body with the 400 envelope", async () => {

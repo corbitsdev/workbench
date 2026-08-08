@@ -134,15 +134,23 @@ export interface ChatPlatform {
   sendMail(input: {
     readonly tenantId: string;
     readonly channelId: string;
-    readonly principalId: string;
+    /**
+     * The sending principal, when the send is a human/participant
+     * message — the address it sends from is derived as
+     * `${principalId}@<channel's domain>`. Omit when `fromChannelId`
+     * is given instead; exactly one of the two must be present, and
+     * the adapter throws loud if neither is.
+     */
+    readonly principalId?: string;
     readonly content: MailContent;
     /**
      * Send the mail from another channel's address instead of the
-     * principal's. Fan-out copies to mentioned agents carry the origin
-     * channel here: an agent's reply router answers the From address of
-     * the mail it received, and a principal address has no mailbox — a
-     * reply to it vanishes. From-the-channel means agents answer into
-     * the mailbox every participant reads.
+     * principal's. Fan-out copies to mentioned agents, and the chat
+     * orchestrator's posted replies, carry the origin channel here: an
+     * agent's reply router answers the From address of the mail it
+     * received, and a principal address has no mailbox — a reply to it
+     * vanishes. From-the-channel means agents answer into the mailbox
+     * every participant reads.
      */
     readonly fromChannelId?: string;
   }): Promise<SentMail>;
@@ -154,19 +162,6 @@ export interface ChatPlatform {
   }): Promise<ListedMail>;
 
   fetchBlob(channelId: string, blobId: string): Promise<string | Uint8Array>;
-
-  /**
-   * Arm (idempotently) the bridge that turns an invited agent's
-   * connector.reply events into channel messages — the event stream is
-   * the only surface an agent's reply appears on, so without an armed
-   * bridge a mentioned agent answers into the void. Called at invite
-   * and re-armed lazily when a channel is read after a host restart.
-   */
-  ensureReplyBridge(input: {
-    readonly tenantId: string;
-    readonly channelId: string;
-    readonly agentChannelId: string;
-  }): void;
 
   subscribeToChannel(
     channelId: string,
@@ -544,12 +539,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       content: encodeParts([joinEvent]),
     });
 
-    deps.platform.ensureReplyBridge({
-      tenantId: input.tenantId,
-      channelId: input.channelId,
-      agentChannelId: localPartOf(launched.address),
-    });
-
     registry.publish(input.channelId, {
       type: "chat.settings",
       data: { updatedBy: input.principalId, settings: row.settings },
@@ -695,25 +684,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         ...(cursor !== undefined ? { cursor } : {}),
       });
 
-      // Reply bridges are in-memory; a host restart loses them. Reading
-      // a channel is the natural moment to re-arm its agents' bridges —
-      // idempotent, so steady-state reads cost a map lookup each.
-      const settingsRow = await deps.store.getChannelSettings(
-        tenant.id,
-        channelId,
-      );
-      if (settingsRow !== undefined) {
-        for (const record of participantsOf(settingsRow.settings)) {
-          if (isAgentAddress(record.address)) {
-            deps.platform.ensureReplyBridge({
-              tenantId: tenant.id,
-              channelId,
-              agentChannelId: localPartOf(record.address),
-            });
-          }
-        }
-      }
-
       const items = await Promise.all(
         listed.items.map(async (item) => ({
           id: item.id,
@@ -807,15 +777,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           : messageParts;
 
       for (const participant of recipients) {
-        // Armed BEFORE the delivery, not lazily on a later read: reply
-        // bridges are in-memory and a host restart loses them, and a
-        // reply can arrive seconds after this send — arming here makes
-        // every delivery self-sufficient regardless of restart history.
-        deps.platform.ensureReplyBridge({
-          tenantId: tenant.id,
-          channelId,
-          agentChannelId: localPartOf(participant),
-        });
+        // The chat orchestrator (built once by the host, subscribed to
+        // the sidecar's own event stream) is what turns this
+        // participant's eventual `connector.reply` back into a channel
+        // message — no per-delivery arming needed here anymore.
         await deps.platform.sendMail({
           tenantId: tenant.id,
           channelId: localPartOf(participant),
