@@ -47,3 +47,31 @@ export function renderChannelContext(input: {
   );
   return [CONTEXT_HEADER, ...lines].join("\n");
 }
+
+/**
+ * Merges a rendered context block into a message's first text part —
+ * never as a part of its own. A second part turns the fan-out copy
+ * into multipart MIME, and the agent-side mail parser at the current
+ * platform version fails the whole run on multipart bodies (the same
+ * defect family scripts/repro/WALKPARTS.md documents on the read
+ * side); one text part keeps the copy a single text/plain body. A
+ * message with no text part gets the context as its leading text part
+ * instead — there is nothing to merge into.
+ */
+export function mergeContextIntoParts<T extends { kind: string }>(
+  contextText: string,
+  parts: readonly T[],
+): readonly (T | { kind: "text"; text: string })[] {
+  const firstTextAt = parts.findIndex((part) => part.kind === "text");
+  if (firstTextAt === -1) {
+    return [{ kind: "text", text: contextText }, ...parts];
+  }
+  return parts.map((part, index) =>
+    index === firstTextAt
+      ? {
+          kind: "text",
+          text: `${contextText}\n\n${(part as T & { text: string }).text}`,
+        }
+      : part,
+  );
+}

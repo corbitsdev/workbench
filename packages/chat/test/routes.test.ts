@@ -473,23 +473,22 @@ describe("messages", () => {
     const copy = platform.sentMail[platform.sentMail.length - 1];
     const decoded = decodeParts(copy?.content ?? { content: "" });
 
-    expect(decoded).toHaveLength(2);
-    const [contextPart, messagePart] = decoded;
-    expect(contextPart?.kind).toBe("text");
-    expect(messagePart).toEqual({ kind: "text", text: "hi @ins_echo1" });
-
-    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
-    expect(contextText).toContain(
-      "[Channel context — the most recent messages in this channel",
-    );
-    expect(contextText.split("\n")).toEqual([
+    // Exactly ONE text part: the context is merged into the message's
+    // text, never sent as a part of its own — a second part makes the
+    // copy multipart MIME, which the agent-side mail parser fails on.
+    expect(decoded).toHaveLength(1);
+    const [merged] = decoded;
+    expect(merged?.kind).toBe("text");
+    const mergedText = merged?.kind === "text" ? merged.text : "";
+    expect(mergedText.split("\n")).toEqual([
       "[Channel context — the most recent messages in this channel, oldest " +
         "first. The actual message addressed to you follows after this " +
         "block.]",
       "user: first message",
       "user: second message",
+      "",
+      "hi @ins_echo1",
     ]);
-    expect(contextText).not.toContain("hi @ins_echo1");
   });
 
   test("no prior messages means no context part at all, copy identical to today", async () => {

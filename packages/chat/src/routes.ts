@@ -34,6 +34,7 @@ import { presetForKind } from "./kinds";
 import { localPartOf } from "./agent-address";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
 import {
+  mergeContextIntoParts,
   renderChannelContext,
   type ChannelContextItem,
 } from "./channel-context";
@@ -800,9 +801,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                   : DEFAULT_CONTEXT_WINDOW,
             })
           : undefined;
-      const fanoutParts: PartType[] =
+      const fanoutParts =
         contextText !== undefined
-          ? [{ kind: "text", text: contextText }, ...messageParts]
+          ? (mergeContextIntoParts(contextText, messageParts) as PartType[])
           : messageParts;
 
       for (const participant of recipients) {
