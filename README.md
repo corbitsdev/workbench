@@ -69,6 +69,13 @@ their configuration from `.env` (see `.env.example`) and are safe to re-run.
 is actually launchable; without it, everything above still runs, but
 inference errors until you set it and re-run `bun run seed`.
 
+Leaving `ANTHROPIC_API_KEY` unset doesn't just apply to the administrator
+account: anyone who signs up gets a personal bench with no default routines
+deployed, and first-run tells them exactly that. Onboarding walks them
+through pasting their own Anthropic key, proves it with a real call before
+storing anything, then deploys and confirms the default routines on the
+spot — no separate `bun run seed` step, no docs to read.
+
 ### OAuth sign-in
 
 Email/password sign-in always works. To let people sign in with an
