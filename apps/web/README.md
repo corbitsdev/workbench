@@ -5,6 +5,29 @@ composed from `@corbits/react-ui`, and builds to a static bundle the hub
 serves from its own origin (`vite build`, then point `HUB_STATIC_DIR` at
 `apps/web/dist`).
 
+## Layout
+
+Every signed-in screen renders inside the same four-column shell
+(`src/shell/`), assembled from `@corbits/react-ui`'s sidebar rail and
+sidebar panel pieces:
+
+1. **Rail** — the global page icons, one per screen, each carrying its page
+   name as its accessible name and hover/focus tooltip.
+2. **Contextual column** — the active page's own options: channels,
+   routines, the page list in full labels, with the bench switcher and the
+   signed-in account pinned to the bottom.
+3. **Main pane** — whatever the route renders, taking all remaining width.
+4. **Canvas** — an optional fourth column for running agents, live
+   workflow walkthroughs and analytics. Collapsed by default and collapsed
+   to zero width, so the main pane holds the space until it is opened.
+
+The shell reflows as the viewport narrows rather than scrolling sideways:
+the canvas column (and its toggle) is withdrawn first below roughly 1100px,
+and the contextual column follows below roughly 700px, leaving the rail and
+the main pane. The widths themselves are fluid (`clamp`/`vw`), so a future
+chat dock squeezing the content area resizes the columns instead of
+clipping them.
+
 ## Screens
 
 | Path         | What it shows                                                                     |
