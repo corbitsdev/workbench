@@ -19,6 +19,13 @@ import {
   createHubChatPlatform,
   createNoopInferenceRoutes,
 } from "@corbits/chat";
+import { createCryptoProviderCache } from "@corbits/folded-runs";
+import {
+  createDrizzleWebhookTriggerStore,
+  createWebhookIngressRoutes,
+  createWebhookTriggerRoutes,
+  launchWebhookTrigger,
+} from "@corbits/webhook-triggers";
 import {
   createAgentRepoStore,
   createAssetService,
@@ -246,6 +253,49 @@ export async function createHub(config: HubConfig) {
     channelHostInferencePreferences: DEFAULT_CHANNEL_HOST_INFERENCE_PREFERENCES,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
+
+  // Webhook triggers: tenant-scoped management (create/list/rotate/
+  // enable/disable/delete) mounts under the tenant prefix like chat,
+  // so it inherits session + tenant-membership resolution and grant
+  // checks for free. The ingress endpoint that actually receives an
+  // external delivery (`POST /api/webhooks/:triggerId`) is mounted
+  // separately below, OUTSIDE the tenant prefix — a webhook sender
+  // carries no session cookie and is never a tenant member, so it
+  // must never pass through `resolveTenant`. Its own tenant scoping
+  // comes from the trigger row the id resolves to, and the only trust
+  // it is granted comes from the HMAC signature check in
+  // `createWebhookIngressRoutes` itself.
+  const webhookTriggerStore = createDrizzleWebhookTriggerStore(db);
+  const webhookCryptoProviders = createCryptoProviderCache();
+  app.route(
+    `${TENANT_PREFIX}/webhook-triggers`,
+    createWebhookTriggerRoutes({
+      store: webhookTriggerStore,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
+  app.route(
+    "/api/webhooks",
+    createWebhookIngressRoutes({
+      store: webhookTriggerStore,
+      launch: (trigger, payload) =>
+        launchWebhookTrigger(
+          {
+            db,
+            sessionService,
+            assetService,
+            sidecarRouter,
+            eventCollectors,
+            cryptoProviderCache: webhookCryptoProviders,
+          },
+          trigger,
+          payload,
+        ),
+    }),
+  );
 
   // The first-login hook mounts outside the tenant prefix, since the
   // session it serves belongs to no tenant yet. The route is

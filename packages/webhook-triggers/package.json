@@ -1,0 +1,33 @@
+{
+  "name": "@corbits/webhook-triggers",
+  "private": true,
+  "description": "Webhook-triggered workflow launches: an external service (e.g. Granola) posts a payload that maps to input for an existing tenant workflow definition, launched through the same folded-run path chat uses.",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/folded-runs": "workspace:*",
+    "@intx/db": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "@intx/hub-common": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/log": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

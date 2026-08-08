@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@corbits/chat": "workspace:*",
+    "@corbits/folded-runs": "workspace:*",
+    "@corbits/webhook-triggers": "workspace:*",
     "@intx/authz": "workspace:*",
     "@intx/crypto": "workspace:*",
     "@intx/db": "workspace:*",

@@ -29,6 +29,7 @@ import path from "node:path";
 import { readdir } from "node:fs/promises";
 
 import { applyChatMigrations } from "../packages/chat/src/migrations";
+import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -42,7 +43,10 @@ const HUB_DIR = path.join(repoRoot, "apps", "hub");
 const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   name: string;
   apply: (databaseUrl: string) => Promise<{ applied: string[] }>;
-}[] = [{ name: "@corbits/chat", apply: applyChatMigrations }];
+}[] = [
+  { name: "@corbits/chat", apply: applyChatMigrations },
+  { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
+];
 
 /**
  * Apply every installed package's migration set, in the explicit

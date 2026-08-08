@@ -22,6 +22,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/chat": "workspace:*",
+        "@corbits/folded-runs": "workspace:*",
+        "@corbits/webhook-triggers": "workspace:*",
         "@intx/authz": "workspace:*",
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
@@ -269,6 +271,27 @@
         "@types/bun": "catalog:",
         "@types/react": "^19.2.2",
         "@types/react-dom": "^19.2.1",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/webhook-triggers": {
+      "name": "@corbits/webhook-triggers",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/folded-runs": "workspace:*",
+        "@intx/db": "workspace:*",
+        "@intx/hub-api": "workspace:*",
+        "@intx/hub-common": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "^4.11.9",
+        "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -666,6 +689,8 @@
     "@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#4fd32be", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-slot": "^1.2.3", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-4fd32be", "sha512-EseC72pNBetyV1/yDqetglbduSOvK+ACtDKbn6cjJAJPJWvwqa2yevNUWqV/KfkHsCP/F9f/ErOSe80H1FgtNg=="],
 
     "@corbits/settings-ui": ["@corbits/settings-ui@workspace:packages/settings-ui"],
+
+    "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
 
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.10.2", "", {}, "sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w=="],
 
