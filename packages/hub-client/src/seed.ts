@@ -25,6 +25,10 @@ import {
   buildEchoWorkflow,
   serializeEchoWorkflow,
 } from "@corbits/echo-workflow";
+import {
+  buildHeartbeatWorkflow,
+  serializeHeartbeatWorkflow,
+} from "@corbits/heartbeat-workflow";
 import { CliError } from "./errors";
 import { parseAs, type ApiCall } from "./hub";
 import { catalogModel, catalogProvider } from "./catalog-seed-data";
@@ -32,6 +36,11 @@ import { catalogModel, catalogProvider } from "./catalog-seed-data";
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+// Short: heartbeat runs on a tight, continuous schedule to exercise
+// scheduling itself, so a wedged noop-inference call should surface
+// fast rather than tie up a run slot for the full two minutes the
+// conversational workflows above allow.
+const HEARTBEAT_TURN_TIMEOUT_MS = 30 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
@@ -104,8 +113,8 @@ export type DefaultWorkflow = {
   buildJson: (tenantDomain: string, model: ModelSource) => string;
   /**
    * Overrides the deploy's inference source for this workflow only,
-   * given the hub's own base URL. Lets a workflow that must stay free
-   * to run continuously (a catalog-test workflow, in particular) name
+   * given the hub's own base URL. Present on the catalog-test workflow
+   * `heartbeat`, which must stay free to run continuously: it names
    * `NOOP_MODEL_SOURCE` instead of the tenant's real catalog model.
    * Absent on every conversational workflow, which deploys against the
    * tenant's real model as before.
@@ -114,9 +123,13 @@ export type DefaultWorkflow = {
 };
 
 /**
- * The workflow set a bench starts with: the echo walking-skeleton and
- * the general-purpose assistant. Growing the set is adding an entry
- * here, nothing more.
+ * The workflow set every real tenant starts with: the echo
+ * walking-skeleton and the general-purpose assistant. This is what
+ * `provisionPersonalTenantIfNeeded` (`@workbench/onboarding`) deploys
+ * on first login for every real user — growing it is adding an entry
+ * here, nothing more, but an entry here reaches every signup, so it is
+ * never the place for a workflow that exists only to exercise the
+ * platform itself. See `CATALOG_TEST_WORKFLOWS` for those.
  */
 export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
   {
@@ -144,6 +157,33 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
           turnTimeoutMs: ASSISTANT_TURN_TIMEOUT_MS,
         }),
       ),
+  },
+];
+
+/**
+ * Zero-cost workflows that exist to exercise the platform continuously
+ * — `heartbeat` proves the scheduling and mail-trigger paths — never
+ * to give a real user something to use. Pinned at `NOOP_MODEL_SOURCE`
+ * so running it on a tight schedule costs nothing. Deliberately absent
+ * from `DEFAULT_WORKFLOWS`: a real signup goes through
+ * `provisionPersonalTenantIfNeeded`, which never seeds this set. Only
+ * an explicit, dev/CI-specific caller (`workbench seed` with
+ * `WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS` set) opts in.
+ */
+export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
+  {
+    assetName: "heartbeat",
+    buildJson: (tenantDomain, model) =>
+      serializeHeartbeatWorkflow(
+        buildHeartbeatWorkflow({
+          triggerAddress: `heartbeat@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: HEARTBEAT_TURN_TIMEOUT_MS,
+        }),
+      ),
+    modelSource: NOOP_MODEL_SOURCE,
   },
 ];
 

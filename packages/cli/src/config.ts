@@ -52,6 +52,9 @@ const SeedEnv = type({
   "ANTHROPIC_API_KEY?": type("string > 0").describe(
     "your Anthropic API key; optional, but required for the tenant catalog to be launchable",
   ),
+  "WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS?": type("string").describe(
+    "set to 1 to also deploy the zero-cost catalog-test workflow (heartbeat); a dev/CI-only opt-in, never set for a real bench",
+  ),
 });
 
 const DEFAULT_MODEL_PROVIDER = "anthropic";
@@ -80,6 +83,13 @@ export type SeedConfig = {
    * deploys. */
   readonly modelSource: ModelSource;
   readonly anthropicApiKeyConfigured: boolean;
+  /**
+   * Opt-in, from WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS: also deploy
+   * the zero-cost catalog-test workflow (heartbeat)
+   * alongside the real default set. Unset for a real bench — these
+   * exist only to exercise the platform, not for a real user.
+   */
+  readonly seedCatalogTestWorkflows: boolean;
 };
 
 function environmentError(command: string, problems: string[]): CliError {
@@ -170,6 +180,8 @@ export function readSeedConfig(
       apiKey: apiKey ?? PLACEHOLDER_CATALOG_API_KEY,
     },
     anthropicApiKeyConfigured: apiKey !== undefined,
+    seedCatalogTestWorkflows:
+      parsed.WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS === "1",
   };
 }
 

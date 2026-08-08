@@ -16,6 +16,7 @@ export type {
   WorkflowPusher,
 } from "./seed";
 export {
+  CATALOG_TEST_WORKFLOWS,
   DEFAULT_WORKFLOWS,
   PLACEHOLDER_CATALOG_API_KEY,
   seedCatalog,

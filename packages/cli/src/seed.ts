@@ -9,6 +9,7 @@ import {
   parseAs,
   seedCatalog,
   seedTenant,
+  CATALOG_TEST_WORKFLOWS,
   DEFAULT_WORKFLOWS,
   type ApiCall,
   type DefaultWorkflow,
@@ -73,14 +74,36 @@ async function resolveTenant(
   };
 }
 
+/**
+ * The workflow set a plain `workbench seed` deploys: the real default
+ * set every tenant gets, plus the zero-cost catalog-test workflows
+ * only when the caller has explicitly opted in via
+ * `WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS`. A real bench never sets
+ * that variable, so it only ever gets `DEFAULT_WORKFLOWS` — the same
+ * set `provisionPersonalTenantIfNeeded` deploys on first login.
+ */
+export function resolveSeedWorkflows(
+  config: Pick<SeedConfig, "seedCatalogTestWorkflows">,
+): readonly DefaultWorkflow[] {
+  return config.seedCatalogTestWorkflows
+    ? [...DEFAULT_WORKFLOWS, ...CATALOG_TEST_WORKFLOWS]
+    : DEFAULT_WORKFLOWS;
+}
+
 export async function runSeed(
   deps: SeedDeps,
-  workflows: readonly DefaultWorkflow[] = DEFAULT_WORKFLOWS,
+  workflows?: readonly DefaultWorkflow[],
 ): Promise<void> {
   const { config, api, log } = deps;
   if (config.adminDefaulted) {
     log(
       "using default admin alice@example.com — set HUB_ADMIN_EMAIL and HUB_ADMIN_PASSWORD for real deployments",
+    );
+  }
+  const resolvedWorkflows = workflows ?? resolveSeedWorkflows(config);
+  if (config.seedCatalogTestWorkflows) {
+    log(
+      "WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS=1: also deploying the zero-cost catalog-test workflow (heartbeat)",
     );
   }
 
@@ -100,7 +123,7 @@ export async function runSeed(
     model: config.modelSource,
     pushWorkflow: deps.pushWorkflow,
     log,
-    workflows,
+    workflows: resolvedWorkflows,
   };
   if (deps.sleep !== undefined) seedArgs.sleep = deps.sleep;
   if (deps.runStartTimeoutMs !== undefined)
