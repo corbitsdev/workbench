@@ -6,13 +6,15 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { BenchMember, BenchMembership } from "../src/api";
+import { BenchSwitcherList, BenchSwitcherTrigger } from "../src/bench-switcher";
 import { canInviteMember } from "../src/invite-member-dialog";
 import { canCreateBench, deriveBenchSlug } from "../src/membership";
 import { MemberList } from "../src/member-list";
-import { MembershipsTable } from "../src/memberships-table";
 
 /** The floor: no rendered text may ever contain a raw identifier. */
 const RAW_ID_PATTERN = /\b(prn_|ins_|tnt_|role_|grant_)[a-z0-9]/i;
+
+const noop = () => undefined;
 
 function membership(overrides: Partial<BenchMembership>): BenchMembership {
   return {
@@ -42,31 +44,69 @@ function member(overrides: Partial<BenchMember>): BenchMember {
   };
 }
 
-describe("MembershipsTable", () => {
-  test("renders bench names and role labels, never a tenant id", () => {
+describe("BenchSwitcherTrigger", () => {
+  test("shows the active bench name and announces the popover", () => {
     const markup = renderToStaticMarkup(
-      <MembershipsTable
-        memberships={[membership({ tenantName: "Ada's Bench" })]}
+      <BenchSwitcherTrigger
+        activeName="Ada's Bench"
+        open={false}
+        onToggle={noop}
       />,
     );
     expect(markup).toContain("Ada&#x27;s Bench");
-    expect(markup).toContain("owner");
+    expect(markup).toContain('aria-haspopup="listbox"');
+    expect(markup).toContain('aria-expanded="false"');
+  });
+
+  test("says so when the account has no benches", () => {
+    const markup = renderToStaticMarkup(
+      <BenchSwitcherTrigger activeName={null} open={false} onToggle={noop} />,
+    );
+    expect(markup).toContain("No benches");
+  });
+});
+
+describe("BenchSwitcherList", () => {
+  test("lists bench names as listbox options, never a tenant id", () => {
+    const markup = renderToStaticMarkup(
+      <BenchSwitcherList
+        memberships={[
+          membership({ tenantId: "tnt_1", tenantName: "Acme" }),
+          membership({ tenantId: "tnt_2", tenantName: "Launch Team" }),
+        ]}
+        activeTenantId="tnt_1"
+        onSelect={noop}
+        onCreate={noop}
+      />,
+    );
+    expect(markup).toContain('role="listbox"');
+    expect(markup).toContain("Acme");
+    expect(markup).toContain("Launch Team");
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
-  test("shows the empty state with no memberships", () => {
-    const markup = renderToStaticMarkup(<MembershipsTable memberships={[]} />);
-    expect(markup).toContain("No benches yet");
-  });
-
-  test("marks the active bench current", () => {
+  test("marks the active bench selected", () => {
     const markup = renderToStaticMarkup(
-      <MembershipsTable
+      <BenchSwitcherList
         memberships={[membership({ tenantId: "tnt_1" })]}
         activeTenantId="tnt_1"
+        onSelect={noop}
+        onCreate={noop}
       />,
     );
-    expect(markup).toContain('aria-current="true"');
+    expect(markup).toContain('aria-selected="true"');
+  });
+
+  test("always offers the create-bench affordance", () => {
+    const markup = renderToStaticMarkup(
+      <BenchSwitcherList
+        memberships={[]}
+        activeTenantId={null}
+        onSelect={noop}
+        onCreate={noop}
+      />,
+    );
+    expect(markup).toContain("New bench");
   });
 });
 
@@ -125,10 +165,10 @@ describe("canInviteMember (the invite-member form)", () => {
 });
 
 describe("no raw identifiers on screen", () => {
-  test("across the whole bench surface's fixture surface — memberships and members", () => {
+  test("across the whole bench surface's fixture surface — switcher and members", () => {
     const markup = [
       renderToStaticMarkup(
-        <MembershipsTable
+        <BenchSwitcherList
           memberships={[
             membership({ tenantId: "tnt_1", tenantName: "Acme" }),
             membership({
@@ -138,6 +178,8 @@ describe("no raw identifiers on screen", () => {
             }),
           ]}
           activeTenantId="tnt_1"
+          onSelect={noop}
+          onCreate={noop}
         />,
       ),
       renderToStaticMarkup(
