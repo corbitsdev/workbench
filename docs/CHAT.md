@@ -21,6 +21,11 @@ Because a channel is an ordinary folded run, it goes through the same
 launch, addressing, and mail machinery any other interactive agent run
 uses — chat adds no parallel transport of its own.
 
+A channel is also its own tenant, parented under the bench it was created
+in, so its membership and permissions are native grants rather than a
+chat-specific system — see [channel-tenancy.md](channel-tenancy.md) for
+the mint, listing, and move mechanics.
+
 ```mermaid
 flowchart LR
     subgraph Channel
@@ -90,20 +95,21 @@ one.
 `@corbits/chat` mounts one router, under a tenant-scoped prefix, with the
 following routes:
 
-| Method & path                  | What it does                                                               |
-| ------------------------------ | -------------------------------------------------------------------------- |
-| `POST /channels`               | Creates a channel: launches its host and writes its initial settings       |
-| `GET /channels`                | Lists the tenant's channels, optionally filtered by kind                   |
-| `GET /channels/:id/messages`   | Reads the channel's timeline, decoded into parts, paginated by cursor      |
-| `POST /channels/:id/messages`  | Posts a message, fanning a copy to every @mentioned agent participant      |
-| `GET /channels/:id/invitable`  | Lists the tenant's deployed definitions that can be invited into a channel |
-| `POST /channels/:id/invite`    | Launches a definition into the channel and adds it as a participant        |
-| `GET /channels/:id/settings`   | Reads a channel's settings                                                 |
-| `PATCH /channels/:id/settings` | Updates settings, recording each change as a timeline event                |
-| `GET /channels/:id/read-state` | Reads the calling principal's last-seen cursor for the channel             |
-| `PUT /channels/:id/read-state` | Advances the calling principal's last-seen cursor                          |
-| `POST /channels/:id/typing`    | Publishes an ephemeral typing indicator to the channel's live stream       |
-| `GET /channels/:id/stream`     | Server-Sent Events stream of live channel activity                         |
+| Method & path                  | What it does                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------------- |
+| `POST /channels`               | Mints the channel's own tenant, launches its host, and writes its initial settings |
+| `GET /channels`                | Lists the tenant's channels, optionally filtered by kind                           |
+| `GET /channels/:id/messages`   | Reads the channel's timeline, decoded into parts, paginated by cursor              |
+| `POST /channels/:id/messages`  | Posts a message, fanning a copy to every @mentioned agent participant              |
+| `GET /channels/:id/invitable`  | Lists the tenant's deployed definitions that can be invited into a channel         |
+| `POST /channels/:id/invite`    | Launches a definition into the channel and adds it as a participant                |
+| `POST /channels/:id/move`      | Re-parents a channel's own tenant to a different bench                             |
+| `GET /channels/:id/settings`   | Reads a channel's settings                                                         |
+| `PATCH /channels/:id/settings` | Updates settings, recording each change as a timeline event                        |
+| `GET /channels/:id/read-state` | Reads the calling principal's last-seen cursor for the channel                     |
+| `PUT /channels/:id/read-state` | Advances the calling principal's last-seen cursor                                  |
+| `POST /channels/:id/typing`    | Publishes an ephemeral typing indicator to the channel's live stream               |
+| `GET /channels/:id/stream`     | Server-Sent Events stream of live channel activity                                 |
 
 Every route runs behind the hub's tenant-scoped middleware, so the calling
 tenant and principal are always resolved before a handler runs; principals

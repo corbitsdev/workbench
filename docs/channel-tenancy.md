@@ -6,6 +6,19 @@ hierarchy (`tenant.parentId`). This document describes the model, the seams
 `@corbits/chat` owns because no native route covers them, and the gaps
 still open upstream.
 
+## Why channels are tenants
+
+A channel needs its own membership and permissions — who can post, who can
+invite an agent, who can move it — distinct from the bench it lives in.
+Rather than invent a parallel, channel-scoped permission system alongside
+Interchange's native grants, a channel is minted as an ordinary tenant: it
+gets its own `owner`/`admin`/`member` roles and grants, seeded exactly as a
+bench is, so a channel's membership is enforced with the same `@intx/authz`
+machinery — `evaluateGrants`, `requireGrant` — every other tenant boundary
+in the platform already uses. The tenant hierarchy (`tenant.parentId`) then
+gives a channel a bench of origin without needing a second, chat-specific
+notion of "which bench owns this channel."
+
 ## What creation does
 
 `POST /api/tenants/:tenantId/chat/channels` (`packages/chat/src/routes.ts`):
@@ -161,6 +174,34 @@ neither constraint indexes. Migration `0006_channel_tenancy_parent_index`
 adds `channel_tenancy_parent_tenant_id_idx` on `parent_tenant_id` so that
 read stays an index scan as the table grows, rather than a sequential
 scan on every listing request.
+
+## Scaling
+
+Minting a channel tenant is not a single row. `createChannelTenant` seeds a
+tenant, its three system roles, one owner principal, one principal-role
+assignment, and five system grants (one on `owner`, three on `admin`, one
+on `member`), plus the `channel_tenancy` link — a dozen native rows for
+every channel created, on top of the `channel_settings` and
+`channel_launch` rows chat already wrote before this feature. A workspace
+with heavy channel churn multiplies its `tenant`/`role`/`principal`/
+`grant` row counts accordingly; nothing about the mint amortizes this
+across channels, since each one needs its own independent grant surface.
+
+## Recovering an orphaned tenant
+
+A tenant can be left behind with no channel pointing at it in exactly one
+window: the mint's transaction commits, then the process dies before the
+channel host launch call returns — there is no automated sweep for this
+case, only the loud `channel-tenancy` log line `compensateChannelTenant`
+already emits for the double-failure case (mint succeeded, launch failed,
+_and_ compensation itself failed). Either way, an orphaned tenant is a
+`tenant` row with no matching `channel_tenancy.tenant_id` and no
+`channel_settings` row referencing it — reachable by diffing
+`channel_tenancy` against `tenant.parentId` for the bench in question. It
+carries no channel state, only its own owner principal, roles, and grants,
+so deleting it (cascading through `role`, `principal`, `principal_role`,
+`grant`) is safe once confirmed orphaned; there is no data recovery
+question, only cleanup.
 
 ## What still lives in the parent bench
 
