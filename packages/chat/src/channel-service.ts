@@ -138,6 +138,76 @@ export async function launchAndJoinAgent(
   };
 }
 
+export type StartWorkflowCommandDeps = {
+  readonly store: Pick<
+    ChatStore,
+    "getChannelSettings" | "updateChannelSettings"
+  >;
+  readonly platform: ChannelLauncher & Pick<ChannelMail, "sendMail">;
+  readonly publish: (channelId: string, event: ChatChannelEvent) => void;
+};
+
+export type StartWorkflowCommandInput = {
+  readonly tenantId: string;
+  readonly principalId: string;
+  readonly channelId: string;
+  readonly definitionId: string;
+  readonly args: string;
+};
+
+export type StartWorkflowCommandResult = {
+  readonly handle: string;
+  readonly address: string;
+};
+
+/**
+ * The `WorkflowCommandDeps.startWorkflow` implementation `@corbits/chat`
+ * gives `@corbits/commands`' workflow-command registrar: invites the
+ * named definition into the channel exactly as `POST .../invite` does
+ * (`launchAndJoinAgent`, so the two paths can never drift), then, when
+ * the invocation carried args, sends them as the newly-joined agent's
+ * opening mail the same way a mention fan-out delivers a copy — from
+ * the channel's own address, so a reply lands back in the channel's
+ * mailbox. An empty invocation ("/echo" with nothing after it) still
+ * starts the run, mirroring corbits-code's own workflow dispatch: no
+ * args is "Continue.", not "nothing to do".
+ */
+export async function startWorkflowCommand(
+  deps: StartWorkflowCommandDeps,
+  input: StartWorkflowCommandInput,
+): Promise<StartWorkflowCommandResult> {
+  const existing = await deps.store.getChannelSettings(
+    input.tenantId,
+    input.channelId,
+  );
+  if (existing === undefined) {
+    throw new Error(`No channel "${input.channelId}" to start a workflow in`);
+  }
+
+  const joined = await launchAndJoinAgent(
+    { store: deps.store, platform: deps.platform, publish: deps.publish },
+    {
+      tenantId: input.tenantId,
+      principalId: input.principalId,
+      channelId: input.channelId,
+      definitionId: input.definitionId,
+      existingSettings: existing.settings,
+    },
+  );
+
+  const openingText =
+    input.args.trim() !== "" ? input.args.trim() : "Continue.";
+  await deps.platform.sendMail({
+    tenantId: input.tenantId,
+    channelId: localPartOf(joined.address),
+    principalId: input.principalId,
+    content: encodeParts([{ kind: "text", text: openingText }]),
+    fromChannelId: input.channelId,
+  });
+
+  return { handle: joined.handle, address: joined.address };
+}
+
 /**
  * The label a sender renders as inside a channel context block: an
  * agent participant renders as its channel handle (`@echo`), matching

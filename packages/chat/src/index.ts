@@ -75,6 +75,22 @@ export { createDrizzleChatStore, createInMemoryChatStore } from "./store";
 export type { ChatDb, ChatStore } from "./store";
 
 export { createNoopInferenceRoutes } from "./noop-inference";
+export {
+  launchAndJoinAgent,
+  sendChannelMessage,
+  startWorkflowCommand,
+} from "./channel-service";
+export type {
+  LaunchAndJoinAgentDeps,
+  LaunchAndJoinAgentInput,
+  LaunchAndJoinAgentResult,
+  SendChannelMessageDeps,
+  SendChannelMessageInput,
+  SendChannelMessageResult,
+  StartWorkflowCommandDeps,
+  StartWorkflowCommandInput,
+  StartWorkflowCommandResult,
+} from "./channel-service";
 
 export { createHubChatPlatform } from "./platform-adapter";
 export type {

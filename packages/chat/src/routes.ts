@@ -52,6 +52,12 @@ import {
 } from "./channel-events";
 import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
+import {
+  dispatchAtCommand,
+  dispatchSlashCommand,
+  resolveAtCommand,
+} from "@corbits/commands";
+import type { CommandRegistry, CommandResult } from "@corbits/commands";
 
 export type {
   ChannelEvents,
@@ -82,6 +88,16 @@ export type CreateChatRoutesDeps = {
    * up front, but `launchChannel` then fails loud at creation time.
    */
   channelHostInferencePreferences?: readonly InferencePreference[];
+  /**
+   * The `/name args` and `@name args` command registry — see
+   * `@corbits/commands`. Omitted entirely, a message is always posted
+   * verbatim regardless of a leading "/" or "@"; every deployment that
+   * wants the command system wires this the same way it wires
+   * `channelHostInferencePreferences`, by injecting a fully-composed
+   * registry (its workflow-command plugin already bound to this same
+   * `platform`).
+   */
+  commands?: CommandRegistry;
 };
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -115,10 +131,92 @@ const InviteAgentBody = type({
   definitionId: "string",
 });
 
+/** The message's own text, joined across every text part in send order
+ * — the same shape `mentionedParticipants` reads a message's mentions
+ * off of. Used only to decide whether a message opens the command
+ * path; a command's own args always come from the grammar's parsed
+ * remainder, never from this joined text. */
+function textOf(parts: readonly PartType[]): string {
+  return parts
+    .filter(
+      (part): part is Extract<PartType, { kind: "text" }> =>
+        part.kind === "text",
+    )
+    .map((part) => part.text)
+    .join(" ");
+}
+
+/** The system-style text a `CommandResult` posts back into the
+ * channel's timeline, or `undefined` for the `"noop"` result, which
+ * posts nothing at all. */
+function textForCommandResult(result: CommandResult): string | undefined {
+  switch (result.type) {
+    case "message":
+      return result.text;
+    case "workflow-started":
+      return `Started @${result.handle}.`;
+    case "noop":
+      return undefined;
+  }
+}
+
 const PutReadStateBody = type({
   lastSeenCreatedAt: "string",
   lastSeenId: "string",
 });
+
+/**
+ * Decides whether an incoming channel message opens the command path
+ * at all, and if so, dispatches it. `undefined` — the caller's cue to
+ * post the message normally — for: no registry injected; text that is
+ * neither slash- nor `@`-shaped; or an `@name` that names an existing
+ * agent participant's handle rather than a command (mention fan-out
+ * keeps owning that case exactly as before this rollout).
+ */
+async function dispatchChannelCommand(
+  deps: CreateChatRoutesDeps,
+  input: {
+    tenantId: string;
+    principalId: string;
+    channelId: string;
+    text: string;
+  },
+): Promise<CommandResult | undefined> {
+  if (deps.commands === undefined) return undefined;
+  const ctx = {
+    tenantId: input.tenantId,
+    principalId: input.principalId,
+    channelId: input.channelId,
+  };
+
+  if (input.text.startsWith("/")) {
+    return dispatchSlashCommand(deps.commands, input.text, ctx);
+  }
+
+  if (input.text.startsWith("@")) {
+    const resolved = await resolveAtCommand(
+      deps.commands,
+      input.text,
+      input.tenantId,
+    );
+    if (resolved === undefined) return undefined;
+
+    const existing = await deps.store.getChannelSettings(
+      input.tenantId,
+      input.channelId,
+    );
+    const participants =
+      existing !== undefined ? participantsOf(existing.settings) : [];
+    const namesKnownHandle = participants.some(
+      (participant) => participant.handle === resolved.name,
+    );
+    if (namesKnownHandle) return undefined;
+
+    return dispatchAtCommand(deps.commands, input.text, ctx);
+  }
+
+  return undefined;
+}
 
 export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
@@ -296,6 +394,33 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const principal = c.get("principal");
       const channelId = c.req.param("id");
       const messageParts = parsed as PartType[];
+
+      // Slash messages, and `@name` messages whose name resolves to a
+      // command rather than an already-invited agent participant, are
+      // intercepted here and never posted as mail themselves — only
+      // the command's result is, as a system-style message. An
+      // `@mention` of an existing agent participant is untouched:
+      // resolving it against the registry only runs once it is
+      // confirmed not to name a known handle, so that mention keeps
+      // its ordinary fan-out behavior exactly as before.
+      const commandResult = await dispatchChannelCommand(deps, {
+        tenantId: tenant.id,
+        principalId: principal.id,
+        channelId,
+        text: textOf(messageParts),
+      });
+      if (commandResult !== undefined) {
+        const resultText = textForCommandResult(commandResult);
+        if (resultText !== undefined) {
+          await deps.platform.sendMail({
+            tenantId: tenant.id,
+            channelId,
+            principalId: principal.id,
+            content: encodeParts([{ kind: "text", text: resultText }]),
+          });
+        }
+        return c.json({ command: commandResult }, 201);
+      }
 
       const sent = await sendChannelMessage(
         { store: deps.store, platform: deps.platform },
