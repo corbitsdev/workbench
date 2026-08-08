@@ -45,13 +45,36 @@ describe("approximateNextRun", () => {
     ).toBeNull();
   });
 
-  test("interval adds its step to now", () => {
+  test("interval adds its step to now when now sits on a boundary", () => {
     const now = new Date("2026-01-01T00:00:00Z");
     const next = approximateNextRun(
       { kind: "interval", unit: "minutes", every: 15 },
       now,
     );
     expect(next?.toISOString()).toBe("2026-01-01T00:15:00.000Z");
+  });
+
+  test("interval is wall-clock aligned, not an offset from the viewing moment", () => {
+    // The routine fires on `*/10 * * * *` — minutes 0, 10, 20, ... Viewed
+    // at :07, the real next fire is :10 (three minutes away), never
+    // "ten minutes from now."
+    const now = new Date("2026-01-01T00:07:00Z");
+    const next = approximateNextRun(
+      { kind: "interval", unit: "minutes", every: 10 },
+      now,
+    );
+    expect(next?.toISOString()).toBe("2026-01-01T00:10:00.000Z");
+  });
+
+  test("hourly interval is wall-clock aligned to the hour", () => {
+    // `0 */2 * * *` fires at hour 0, 2, 4, ... Viewed at 01:00, the next
+    // fire is 02:00, not 03:00 ("2 hours from now").
+    const now = new Date("2026-01-01T01:00:00Z");
+    const next = approximateNextRun(
+      { kind: "interval", unit: "hours", every: 2 },
+      now,
+    );
+    expect(next?.toISOString()).toBe("2026-01-01T02:00:00.000Z");
   });
 
   test("daily rolls to tomorrow once today's time has passed", () => {
