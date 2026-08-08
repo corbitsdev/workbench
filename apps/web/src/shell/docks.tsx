@@ -50,9 +50,10 @@ export function BenchDock() {
   );
 }
 
-/** Bottom dock B: who is signed in (initials avatar + email — never an
- * id), with settings and sign-out. */
-export function IdentityDock({
+/** Rail footer: who is signed in (initials avatar, tooltip-only email —
+ * never an id) plus settings and sign-out, stacked to fit the narrow rail
+ * rather than the wide row the contextual panel used to have room for. */
+export function RailIdentity({
   path,
   user,
   onSignOut,
@@ -64,20 +65,24 @@ export function IdentityDock({
   const navigate = useNavigate();
   const settingsActive = matchesRoute(SETTINGS_PATH, path);
   return (
-    <div className="shell-identity-dock">
-      <span className="shell-identity-avatar" aria-hidden title={user.email}>
-        {initialsOf(user.name, user.email)}
-      </span>
+    <div className="shell-rail-identity">
       <a
         aria-current={settingsActive ? "page" : undefined}
         href={SETTINGS_PATH}
         title="Settings"
         aria-label="Settings"
-        className="shell-identity-settings"
+        className="shell-rail-identity-settings"
         onClick={(event) => handleLinkClick(event, SETTINGS_PATH, navigate)}
       >
         <Settings size={17} />
       </a>
+      <span
+        className="shell-rail-identity-avatar"
+        aria-hidden
+        title={user.email}
+      >
+        {initialsOf(user.name, user.email)}
+      </span>
       <Button
         variant="ghost"
         size="sm"
@@ -87,7 +92,6 @@ export function IdentityDock({
       >
         <LogOut />
       </Button>
-      <span className="shell-identity-email">{user.email}</span>
     </div>
   );
 }
