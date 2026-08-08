@@ -126,6 +126,18 @@ export interface RoutineStore {
     routineId: string,
     now: Date,
   ): Promise<RoutineRow | undefined>;
+  /**
+   * Undoes a claim whose launch failed: restores `nextFireAt` to
+   * `revertNextFireAt` (the moment the claim was made for) so the next
+   * scheduler poll sees the fire as due again instead of silently
+   * skipping it until the trigger's following occurrence. Called only
+   * after `claimRoutineFire` returned a row and the subsequent launch
+   * threw — a claim that was never granted needs no compensation.
+   */
+  compensateFailedFire(
+    routineId: string,
+    revertNextFireAt: Date,
+  ): Promise<void>;
 }
 
 // `@intx/hub-common`'s `generateId` is closed over the platform's own
@@ -281,30 +293,47 @@ export function createDrizzleRoutineStore<
     },
 
     async claimRoutineFire(routineId, now) {
-      const [current] = await db
-        .select()
-        .from(routine)
-        .where(eq(routine.id, routineId))
-        .limit(1);
-      if (current === undefined || current.trigger === null) {
-        return undefined;
-      }
-      const nextFireAt = computeNextFireAt(
-        current.trigger as RoutineTriggerT,
-        now,
-      );
-      const [claimed] = await db
+      // A transaction with `FOR UPDATE` locks the row for the read
+      // that decides `nextFireAt`'s new value, so a concurrent `PATCH`
+      // of this routine's trigger can't sneak in between "read the
+      // trigger" and "write the value computed from it" — it blocks
+      // until this transaction commits, then (having already recomputed
+      // its own `nextFireAt` off the new trigger in `updateRoutine`)
+      // is never clobbered by a value computed from the stale one.
+      return await db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(routine)
+          .where(eq(routine.id, routineId))
+          .for("update")
+          .limit(1);
+        if (current === undefined || current.trigger === null) {
+          return undefined;
+        }
+        const nextFireAt = computeNextFireAt(
+          current.trigger as RoutineTriggerT,
+          now,
+        );
+        const [claimed] = await tx
+          .update(routine)
+          .set({ nextFireAt, lastFireAt: now })
+          .where(
+            and(
+              eq(routine.id, routineId),
+              eq(routine.enabled, true),
+              lte(routine.nextFireAt, now),
+            ),
+          )
+          .returning();
+        return claimed as RoutineRow | undefined;
+      });
+    },
+
+    async compensateFailedFire(routineId, revertNextFireAt) {
+      await db
         .update(routine)
-        .set({ nextFireAt, lastFireAt: now })
-        .where(
-          and(
-            eq(routine.id, routineId),
-            eq(routine.enabled, true),
-            lte(routine.nextFireAt, now),
-          ),
-        )
-        .returning();
-      return claimed as RoutineRow | undefined;
+        .set({ nextFireAt: revertNextFireAt })
+        .where(eq(routine.id, routineId));
     },
 
     async recordRoutineRun(input) {
@@ -458,6 +487,15 @@ export function createInMemoryRoutineStore(): RoutineStore {
       };
       routinesById.set(routineId, claimed);
       return claimed;
+    },
+
+    async compensateFailedFire(routineId, revertNextFireAt) {
+      const current = routinesById.get(routineId);
+      if (current === undefined) return;
+      routinesById.set(routineId, {
+        ...current,
+        nextFireAt: revertNextFireAt,
+      });
     },
 
     async recordRoutineRun(input) {
