@@ -1,4 +1,3 @@
-import { BenchSwitcher } from "@corbits/bench-ui";
 import {
   BootScreen,
   Button,
@@ -12,11 +11,11 @@ import {
   SidebarItem,
   SidebarSection,
 } from "@corbits/react-ui";
-import { CircleAlert, LogOut } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { useState } from "react";
 
 import { AuthScreen } from "./auth-screen";
-import { BenchProvider, useBench } from "./bench-context";
+import { BenchProvider } from "./bench-context";
 import {
   handleLinkClick,
   NavigationProvider,
@@ -26,14 +25,20 @@ import {
 import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
-import { APP_ROUTES, matchesRoute, ONBOARDING_PATH } from "./routes";
+import {
+  APP_ROUTES,
+  matchesRoute,
+  NAV_ROUTES,
+  ONBOARDING_PATH,
+} from "./routes";
 import type { SessionState, SessionUser } from "./session";
+import { BenchDock, IdentityDock } from "./sidebar";
 
 function AppNav({ path }: { readonly path: string }) {
   const navigate = useNavigate();
   return (
     <SidebarSection label="Workbench">
-      {APP_ROUTES.map((route) => (
+      {NAV_ROUTES.map((route) => (
         <SidebarItem
           key={route.path}
           href={route.path}
@@ -54,18 +59,6 @@ function Brand() {
       <CorbitsMark decorative className="app-mark" />
       <span className="app-wordmark">Workbench</span>
     </>
-  );
-}
-
-function AppBenchSwitcher() {
-  const { memberships, selectedTenantId, selectTenant } = useBench();
-  if (memberships.kind !== "ready") return null;
-  return (
-    <BenchSwitcher
-      memberships={memberships.data.data}
-      activeTenantId={selectedTenantId}
-      onSelect={selectTenant}
-    />
   );
 }
 
@@ -96,22 +89,12 @@ function Shell({
               />
               <Brand />
             </SidebarHeader>
-            {!collapsed && (
-              <div className="app-bench-switcher">
-                <AppBenchSwitcher />
-              </div>
-            )}
             <SidebarContent>
               <AppNav path={path} />
             </SidebarContent>
             <SidebarFooter>
-              <div className="app-session">
-                <span className="app-session-email">{user.email}</span>
-                <Button variant="ghost" size="sm" onClick={onSignOut}>
-                  <LogOut />
-                  <span className="app-session-label">Sign out</span>
-                </Button>
-              </div>
+              {!collapsed && <BenchDock />}
+              <IdentityDock path={path} user={user} onSignOut={onSignOut} />
             </SidebarFooter>
           </Sidebar>
           <main className="app-main">

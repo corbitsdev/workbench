@@ -13,11 +13,12 @@ import {
   TopBarTitle,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import { Activity } from "lucide-react";
+import { Workflow } from "lucide-react";
 
 import { RunsSchema, useAPIQuery } from "../api";
 import { countProp } from "../optional-props";
-import type { APIQuery, RunsPage as RunsPageData, WorkflowRun } from "../api";
+import type { APIQuery, RunsPage, WorkflowRun } from "../api";
+import { purposeRuns } from "../purpose-runs";
 import { QueryView } from "../query-view";
 
 const STATUS_TONE: Record<WorkflowRun["status"], BadgeTone> = {
@@ -28,11 +29,11 @@ const STATUS_TONE: Record<WorkflowRun["status"], BadgeTone> = {
   error: "danger",
 };
 
-export function RunsPage({
+export function WorkflowsPage({
   runs,
   now = Date.now(),
 }: {
-  readonly runs: APIQuery<RunsPageData>;
+  readonly runs: APIQuery<RunsPage>;
   /** Reference time for the Started column; injectable for deterministic tests. */
   readonly now?: number;
 }) {
@@ -41,39 +42,46 @@ export function RunsPage({
       <TopBar>
         <TopBarTitle
           {...countProp(
-            runs.kind === "ready" ? runs.data.data.length : undefined,
+            runs.kind === "ready"
+              ? purposeRuns(runs.data.data).length
+              : undefined,
           )}
-          subtitle="Workflow runs executing across your benches"
+          subtitle="Workflows executing across your benches"
         >
-          Runs
+          Workflows
         </TopBarTitle>
       </TopBar>
-      <PageShell className="page-fill">
-        <QueryView query={runs} label="your runs">
-          {(page) =>
-            page.data.length === 0 ? (
+      <PageShell width="full" className="page-fill">
+        <QueryView query={runs} label="your workflows">
+          {(page) => {
+            const rows = purposeRuns(page.data);
+            return rows.length === 0 ? (
               <EmptyState
-                icon={<Activity />}
-                title="No active runs"
-                description="When a workflow run is executing in one of your benches it appears here."
+                icon={<Workflow />}
+                title="No active workflows"
+                description="When a workflow is executing in one of your benches it appears here."
               />
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Definition</TableHead>
+                    <TableHead>Workflow</TableHead>
                     <TableHead>Bench</TableHead>
-                    <TableHead>Address</TableHead>
+                    <TableHead className="wf-col-address">Address</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Started</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {page.data.map((run) => (
+                  {rows.map((run) => (
                     <TableRow key={run.id}>
-                      <TableCell>{run.definitionName}</TableCell>
-                      <TableCell>{run.tenantName}</TableCell>
-                      <TableCell>
+                      <TableCell title={run.definitionName}>
+                        {run.definitionName}
+                      </TableCell>
+                      <TableCell title={run.tenantName}>
+                        {run.tenantName}
+                      </TableCell>
+                      <TableCell className="wf-col-address" title={run.address}>
                         <code>{run.address}</code>
                       </TableCell>
                       <TableCell>
@@ -88,15 +96,15 @@ export function RunsPage({
                   ))}
                 </TableBody>
               </Table>
-            )
-          }
+            );
+          }}
         </QueryView>
       </PageShell>
     </>
   );
 }
 
-export function RunsRoute() {
+export function WorkflowsRoute() {
   const runs = useAPIQuery("/api/me/workflows/runs", RunsSchema);
-  return <RunsPage runs={runs} />;
+  return <WorkflowsPage runs={runs} />;
 }

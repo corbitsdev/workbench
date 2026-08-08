@@ -1,30 +1,33 @@
 // The route table: one entry per screen, consumed by both the sidebar (label,
 // icon) and the route switch (render), so navigation and pages cannot drift
-// apart.
+// apart. Settings renders like any other route but is reached from the
+// sidebar's identity dock, not the top nav — `NAV_ROUTES` is what the nav
+// list shows.
 
 import {
-  Activity,
-  Building2,
   Home,
   Library,
   MessageSquare,
   Settings,
   ShieldCheck,
+  Workflow,
 } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
 import { ApprovalsRoute } from "./pages/approvals-page";
-import { BenchesRoute } from "./pages/benches-page";
 import { ChatPage } from "./pages/chat-page";
 import { HomeRoute } from "./pages/home-page";
 import { LibraryRoute } from "./pages/library-page";
-import { RunsRoute } from "./pages/runs-page";
 import { SettingsRoute } from "./pages/settings-page";
+import { WorkflowsRoute } from "./pages/workflows-page";
 
 /** Landing point for a session the first-login hook just provisioned a
  * personal bench for. Not one of `APP_ROUTES`: it has no sidebar entry,
  * it is only ever reached by the first-login redirect. */
 export const ONBOARDING_PATH = "/onboarding";
+
+/** Settings lives in the sidebar's identity dock, not the top nav. */
+export const SETTINGS_PATH = "/settings";
 
 export type AppRoute = {
   readonly path: string;
@@ -59,10 +62,10 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
-    path: "/runs",
-    label: "Runs",
-    icon: <Activity />,
-    render: () => <RunsRoute />,
+    path: "/workflows",
+    label: "Workflows",
+    icon: <Workflow />,
+    render: () => <WorkflowsRoute />,
   },
   {
     path: "/library",
@@ -77,15 +80,15 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: () => <ApprovalsRoute />,
   },
   {
-    path: "/benches",
-    label: "Benches",
-    icon: <Building2 />,
-    render: () => <BenchesRoute />,
-  },
-  {
-    path: "/settings",
+    path: SETTINGS_PATH,
     label: "Settings",
     icon: <Settings />,
     render: () => <SettingsRoute />,
   },
 ];
+
+/** What the sidebar's top nav lists: every route except Settings, which
+ * the identity dock owns. */
+export const NAV_ROUTES: readonly AppRoute[] = APP_ROUTES.filter(
+  (route) => route.path !== SETTINGS_PATH,
+);

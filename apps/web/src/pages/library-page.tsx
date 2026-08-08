@@ -12,6 +12,7 @@ import { Bot } from "lucide-react";
 
 import { RunsSchema, useAPIQuery } from "../api";
 import { countProp } from "../optional-props";
+import { purposeRuns } from "../purpose-runs";
 import type { APIQuery, RunsPage, WorkflowRun } from "../api";
 import { QueryView } from "../query-view";
 
@@ -20,9 +21,9 @@ import { QueryView } from "../query-view";
  * the definitions behind the caller's running workflow runs: one card per
  * distinct definition, taken from the run summaries.
  */
-function distinctDefinitions(runs: readonly WorkflowRun[]): WorkflowRun[] {
+function distinctDefinitions(allRuns: readonly WorkflowRun[]): WorkflowRun[] {
   const byDefinition = new Map<string, WorkflowRun>();
-  for (const run of runs) {
+  for (const run of purposeRuns(allRuns)) {
     if (!byDefinition.has(run.definitionId)) {
       byDefinition.set(run.definitionId, run);
     }
@@ -45,7 +46,7 @@ export function LibraryPage({ runs }: { readonly runs: APIQuery<RunsPage> }) {
           Library
         </TopBarTitle>
       </TopBar>
-      <PageShell className="page-fill">
+      <PageShell width="full" className="page-fill">
         <QueryView query={runs} label="the library">
           {(page) => {
             const definitions = distinctDefinitions(page.data);

@@ -11,7 +11,7 @@ import { Link } from "../navigation";
 
 export function OnboardingPage() {
   return (
-    <PageShell className="page-fill">
+    <PageShell width="full" className="page-fill">
       <EmptyState
         icon={<PartyPopper />}
         title="Your workbench is ready"

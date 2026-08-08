@@ -5,7 +5,7 @@ import { Link } from "../navigation";
 
 export function NotFoundPage({ path }: { readonly path: string }) {
   return (
-    <PageShell className="page-fill">
+    <PageShell width="full" className="page-fill">
       <EmptyState
         icon={<Compass />}
         title="Page not found"

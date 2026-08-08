@@ -38,15 +38,45 @@
   height: 100dvh;
 }
 
-.app-session {
+/* Bottom dock A: the bench switcher, above the identity row. */
+.app-bench-dock {
+  border-top: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+}
+
+/* Bottom dock B: initials avatar + email + settings/sign-out. */
+.app-identity-dock {
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 1rem;
 }
 
-.app-session-email {
+.app-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.app-identity-avatar {
+  display: grid;
+  height: 30px;
+  width: 30px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 9999px;
+  background: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--primary-foreground);
+}
+
+.app-identity-email {
+  max-width: 110px;
   overflow: hidden;
   font-size: 0.75rem;
   color: var(--muted-foreground);
@@ -54,14 +84,35 @@
   white-space: nowrap;
 }
 
-aside[data-collapsed="true"] .app-session-email,
-aside[data-collapsed="true"] .app-session-label,
+.app-identity-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.app-identity-settings {
+  display: grid;
+  height: 34px;
+  width: 34px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--muted-foreground);
+  transition: color 150ms;
+}
+
+.app-identity-settings:hover,
+.app-identity-settings[aria-current="page"] {
+  color: var(--foreground);
+}
+
+aside[data-collapsed="true"] .app-identity-email,
 aside[data-collapsed="true"] .app-mark {
   display: none;
 }
 
-.app-bench-switcher {
-  padding: 0 0.75rem 0.5rem;
+aside[data-collapsed="true"] .app-identity-dock {
+  flex-direction: column;
+  padding-inline: 0.5rem;
 }
 
 /* Auth screen — the two-column corbits.dev sign-in shell. The right panel is
@@ -240,6 +291,28 @@ aside[data-collapsed="true"] .app-wordmark {
   height: auto;
   flex: 1;
   min-height: 0;
+}
+
+/* Tables fit their page slot instead of scrolling sideways: fixed
+   layout, one line per cell, ellipsis on overflow (cells that can
+   truncate carry a title tooltip with the full value). */
+.page-fill table {
+  table-layout: fixed;
+}
+
+.page-fill th,
+.page-fill td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The Address column is the widest and least essential — drop it
+   before the table would have to squeeze the name columns away. */
+@media (max-width: 56rem) {
+  .wf-col-address {
+    display: none;
+  }
 }
 
 .page-body {

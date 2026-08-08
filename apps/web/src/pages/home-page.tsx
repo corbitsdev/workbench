@@ -17,6 +17,7 @@ import { useAPIQuery } from "../api";
 import { PrincipalsSchema, ProfileSchema, RunsSchema } from "../api";
 import type { APIQuery, PrincipalsPage, Profile, RunsPage } from "../api";
 import { Link } from "../navigation";
+import { purposeRuns } from "../purpose-runs";
 import { subtitleProp } from "../optional-props";
 import { SignedOutNotice } from "../query-view";
 
@@ -27,9 +28,9 @@ const SHORTCUTS = [
     description: "Talk to an agent in a streaming conversation.",
   },
   {
-    to: "/runs",
-    title: "Runs",
-    description: "Watch the workflow runs executing right now.",
+    to: "/workflows",
+    title: "Workflows",
+    description: "Watch the workflows executing right now.",
   },
   {
     to: "/library",
@@ -48,6 +49,11 @@ function tileValue(query: APIQuery<{ data: unknown[] }>): ReactNode {
     case "error":
       return "unavailable";
   }
+}
+
+function workflowTileValue(query: APIQuery<RunsPage>): ReactNode {
+  if (query.kind === "ready") return purposeRuns(query.data.data).length;
+  return tileValue(query);
 }
 
 export function HomePage({
@@ -72,7 +78,7 @@ export function HomePage({
           Home
         </TopBarTitle>
       </TopBar>
-      <PageShell className="page-fill">
+      <PageShell width="full" className="page-fill">
         {profile.kind === "unauthenticated" ? (
           <SignedOutNotice />
         ) : (
@@ -83,7 +89,10 @@ export function HomePage({
             >
               <StatGrid>
                 <StatTile label="Benches" value={tileValue(principals)} />
-                <StatTile label="Active runs" value={tileValue(runs)} />
+                <StatTile
+                  label="Active workflows"
+                  value={workflowTileValue(runs)}
+                />
               </StatGrid>
             </Section>
             <Section

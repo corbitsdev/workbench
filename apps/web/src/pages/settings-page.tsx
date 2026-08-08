@@ -42,7 +42,7 @@ export function SettingsRoute() {
           Settings
         </TopBarTitle>
       </TopBar>
-      <PageShell width="prose" className="page-fill">
+      <PageShell width="full" className="page-fill">
         <SettingsShell
           sections={SETTINGS_SECTIONS}
           context={{ tenantId: selectedTenantId }}

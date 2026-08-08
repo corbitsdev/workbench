@@ -14,7 +14,7 @@ export function ProvisioningErrorPage({
   readonly onRetry: () => void;
 }) {
   return (
-    <PageShell className="page-fill">
+    <PageShell width="full" className="page-fill">
       <EmptyState
         icon={<CircleAlert />}
         title="Couldn't set up your workbench"

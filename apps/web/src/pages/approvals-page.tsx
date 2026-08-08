@@ -38,7 +38,7 @@ export function ApprovalsPage({
           Approvals
         </TopBarTitle>
       </TopBar>
-      <PageShell className="page-fill">
+      <PageShell width="full" className="page-fill">
         <QueryView query={approvals} label="approvals">
           {(rows) =>
             rows.length === 0 ? (
@@ -61,8 +61,12 @@ export function ApprovalsPage({
                 <TableBody>
                   {rows.map((approval) => (
                     <TableRow key={approval.id}>
-                      <TableCell>{approval.definitionName}</TableCell>
-                      <TableCell>{approval.tenantName}</TableCell>
+                      <TableCell title={approval.definitionName}>
+                        {approval.definitionName}
+                      </TableCell>
+                      <TableCell title={approval.tenantName}>
+                        {approval.tenantName}
+                      </TableCell>
                       <TableCell>
                         <code>{approval.resource}</code>
                       </TableCell>
