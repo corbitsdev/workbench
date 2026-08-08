@@ -133,10 +133,17 @@ export interface RoutineStore {
    * skipping it until the trigger's following occurrence. Called only
    * after `claimRoutineFire` returned a row and the subsequent launch
    * threw — a claim that was never granted needs no compensation.
+   *
+   * Conditional on `nextFireAt` still being `claimedNextFireAt` — the
+   * value the claim itself wrote. If a trigger edit landed during the
+   * failure window, `updateRoutine` already recomputed `nextFireAt`
+   * off the new trigger, and that newer value must win: this restore
+   * is a no-op rather than clobbering it with the stale one.
    */
   compensateFailedFire(
     routineId: string,
     revertNextFireAt: Date,
+    claimedNextFireAt: Date,
   ): Promise<void>;
 }
 
@@ -329,11 +336,16 @@ export function createDrizzleRoutineStore<
       });
     },
 
-    async compensateFailedFire(routineId, revertNextFireAt) {
+    async compensateFailedFire(routineId, revertNextFireAt, claimedNextFireAt) {
       await db
         .update(routine)
         .set({ nextFireAt: revertNextFireAt })
-        .where(eq(routine.id, routineId));
+        .where(
+          and(
+            eq(routine.id, routineId),
+            eq(routine.nextFireAt, claimedNextFireAt),
+          ),
+        );
     },
 
     async recordRoutineRun(input) {
@@ -489,9 +501,12 @@ export function createInMemoryRoutineStore(): RoutineStore {
       return claimed;
     },
 
-    async compensateFailedFire(routineId, revertNextFireAt) {
+    async compensateFailedFire(routineId, revertNextFireAt, claimedNextFireAt) {
       const current = routinesById.get(routineId);
       if (current === undefined) return;
+      if (current.nextFireAt?.getTime() !== claimedNextFireAt.getTime()) {
+        return;
+      }
       routinesById.set(routineId, {
         ...current,
         nextFireAt: revertNextFireAt,

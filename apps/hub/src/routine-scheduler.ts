@@ -67,9 +67,18 @@ export async function tickRoutineScheduler(
       // The claim already advanced `nextFireAt` past `at`; since the
       // launch never happened, restore it to `at` so the next poll
       // retries this fire instead of silently dropping it until the
-      // trigger's following occurrence.
+      // trigger's following occurrence. `claimed.nextFireAt` is the
+      // value the claim itself just wrote (never null — a claim only
+      // succeeds for a triggered routine), passed through so the
+      // restore is conditional and can't clobber a newer trigger edit.
       try {
-        await deps.store.compensateFailedFire(claimed.id, at);
+        if (claimed.nextFireAt !== null) {
+          await deps.store.compensateFailedFire(
+            claimed.id,
+            at,
+            claimed.nextFireAt,
+          );
+        }
       } catch (compensateErr) {
         log.error`compensating routine ${claimed.id}'s failed fire also failed: ${
           compensateErr instanceof Error
