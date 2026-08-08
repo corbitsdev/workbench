@@ -13,6 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
     "arktype": "catalog:",
     "@corbits/assistant-workflow": "workspace:*",

@@ -261,6 +261,7 @@
       "dependencies": {
         "@corbits/assistant-workflow": "workspace:*",
         "@corbits/echo-workflow": "workspace:*",
+        "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
       },

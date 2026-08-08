@@ -82,3 +82,66 @@ export async function triggerFirstLoginProvisioning(): Promise<ProvisionOutcome>
     };
   }
 }
+
+const CredentialSeeded = type({
+  kind: "'seeded'",
+  tenantSlug: "string",
+  workflows: "string[]",
+});
+
+export type CredentialOutcome =
+  | {
+      readonly kind: "seeded";
+      readonly tenantSlug: string;
+      readonly workflows: string[];
+    }
+  | { readonly kind: "rejected"; readonly message: string }
+  | { readonly kind: "error"; readonly message: string };
+
+/**
+ * Hands a user's own Anthropic key to the hub, which proves it with a
+ * real call before doing anything else with it, then seeds the
+ * caller's personal bench and confirms every default routine answers.
+ * A rejected key is reported by name (`"rejected"`) rather than folded
+ * into the same `"error"` bucket a broken hub call gets — the retry
+ * story is different for each.
+ */
+export async function submitCredential(
+  apiKey: string,
+): Promise<CredentialOutcome> {
+  try {
+    const response = await fetch("/api/onboarding/credential", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey }),
+    });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const envelope = ErrorEnvelope(body);
+      const message =
+        envelope instanceof type.errors
+          ? `The hub answered ${response.status} while checking your key.`
+          : envelope.error.message;
+      return response.status === 422
+        ? { kind: "rejected", message }
+        : { kind: "error", message };
+    }
+    const parsed = CredentialSeeded(body);
+    if (parsed instanceof type.errors) {
+      return {
+        kind: "error",
+        message: `Unexpected credential response shape: ${parsed.summary}`,
+      };
+    }
+    return {
+      kind: "seeded",
+      tenantSlug: parsed.tenantSlug,
+      workflows: parsed.workflows,
+    };
+  } catch (cause) {
+    return {
+      kind: "error",
+      message: cause instanceof Error ? cause.message : String(cause),
+    };
+  }
+}

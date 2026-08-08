@@ -27,3 +27,8 @@ export {
   catalogProvider,
 } from "./catalog-seed-data";
 export { createGitWorkflowPusher } from "./workflow-push";
+export { testAnthropicCredential } from "./credential-test";
+export type {
+  CredentialTestResult,
+  TestAnthropicCredentialArgs,
+} from "./credential-test";
