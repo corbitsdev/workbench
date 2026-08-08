@@ -39,10 +39,9 @@ describe("route table", () => {
     expect(APP_ROUTES.map((route) => route.path)).toEqual([
       "/",
       "/chat",
-      "/runs",
+      "/workflows",
       "/library",
       "/approvals",
-      "/benches",
       "/settings",
     ]);
   });

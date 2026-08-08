@@ -9,7 +9,7 @@ import type { APIQuery, Approval, WorkflowRun } from "../src/api";
 import { ApprovalsPage } from "../src/pages/approvals-page";
 import { HomePage } from "../src/pages/home-page";
 import { LibraryPage } from "../src/pages/library-page";
-import { RunsPage } from "../src/pages/runs-page";
+import { WorkflowsPage } from "../src/pages/workflows-page";
 
 function ready<T>(data: T): APIQuery<T> {
   return { kind: "ready", data };
@@ -28,9 +28,9 @@ const profile = ready({
 });
 
 describe("empty states", () => {
-  test("runs says it has no active runs", () => {
-    const markup = renderToStaticMarkup(<RunsPage runs={emptyPage} />);
-    expect(markup).toContain("No active runs");
+  test("workflows says it has no active workflows", () => {
+    const markup = renderToStaticMarkup(<WorkflowsPage runs={emptyPage} />);
+    expect(markup).toContain("No active workflows");
   });
 
   test("library says it is empty", () => {
@@ -71,9 +71,9 @@ describe("live data", () => {
     createdAt: "2026-08-05T11:00:00.000Z",
   };
 
-  test("runs renders a running workflow run from hub data", () => {
+  test("workflows renders a running workflow from hub data", () => {
     const markup = renderToStaticMarkup(
-      <RunsPage
+      <WorkflowsPage
         runs={ready({ data: [run], nextCursor: null })}
         now={Date.parse("2026-08-05T12:00:00.000Z")}
       />,
@@ -82,6 +82,37 @@ describe("live data", () => {
     expect(markup).toContain("run_1@acme.localhost");
     expect(markup).toContain("running");
     expect(markup).toContain("ago");
+  });
+
+  test("workflows filters the chat anchor machinery's channel-host runs out", () => {
+    const channelHostRun: WorkflowRun = {
+      ...run,
+      id: "run_2",
+      definitionId: "wfd_2",
+      definitionName: "ins-cd03d8e3",
+      address: "run_2@acme.localhost",
+    };
+    const markup = renderToStaticMarkup(
+      <WorkflowsPage
+        runs={ready({ data: [run, channelHostRun], nextCursor: null })}
+        now={Date.parse("2026-08-05T12:00:00.000Z")}
+      />,
+    );
+    expect(markup).toContain("Researcher");
+    expect(markup).not.toContain("ins-cd03d8e3");
+  });
+
+  test("workflows shows the empty state when only channel-host runs exist", () => {
+    const channelHostRun: WorkflowRun = {
+      ...run,
+      definitionName: "ins-cd03d8e3",
+    };
+    const markup = renderToStaticMarkup(
+      <WorkflowsPage
+        runs={ready({ data: [channelHostRun], nextCursor: null })}
+      />,
+    );
+    expect(markup).toContain("No active workflows");
   });
 
   test("library shows each definition once across its runs", () => {
@@ -101,6 +132,23 @@ describe("live data", () => {
     expect(markup).toContain("Researcher");
     expect(markup).toContain("Acme");
     expect(markup.match(/Researcher/g)?.length).toBe(1);
+  });
+
+  test("library never shows a channel-host definition card", () => {
+    const channelHostRun: WorkflowRun = {
+      ...run,
+      id: "run_2",
+      definitionId: "wfd_2",
+      definitionName: "ins-cd03d8e3",
+      address: "run_2@acme.localhost",
+    };
+    const markup = renderToStaticMarkup(
+      <LibraryPage
+        runs={ready({ data: [run, channelHostRun], nextCursor: null })}
+      />,
+    );
+    expect(markup).toContain("Researcher");
+    expect(markup).not.toContain("ins-cd03d8e3");
   });
 
   test("library shows a card per distinct definition", () => {
