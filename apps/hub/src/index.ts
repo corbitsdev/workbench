@@ -41,6 +41,10 @@ import {
   createWorkflowCommandPlugin,
 } from "@corbits/commands";
 import {
+  createDrizzleRoutineStore,
+  createRoutineRoutes,
+} from "@corbits/routines";
+import {
   createAgentRepoStore,
   createAssetService,
   createEventCollectorRegistry,
@@ -61,6 +65,9 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, type Next } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { readHubConfig, type HubConfig } from "./config";
+import { createHubRoutineLauncher } from "./routine-launcher";
+import { createHubRunSummaryResolver } from "./routine-run-summary";
+import { createRoutineScheduler } from "./routine-scheduler";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -424,6 +431,47 @@ export async function createHub(config: HubConfig) {
     }),
   );
 
+  // Routines: its own grant store (routines authorize against the
+  // `workflow-run:*` resource family, the same one native run routes
+  // use — see `@corbits/routines`' routes.ts), the launcher adapter
+  // that turns a routine's `launchRoutineRun` call into a real folded
+  // run via `@corbits/folded-runs` (routine-launcher.ts), and a run
+  // summary resolver so `GET /routines/:id/runs` reports each fire's
+  // real status instead of a bare run id.
+  const routineGrantStore = createGrantStore(db);
+  const routineStore = createDrizzleRoutineStore(db);
+  const routineLauncher = createHubRoutineLauncher({
+    db,
+    sessionService,
+    assetService,
+    sidecarRouter,
+    eventCollectors,
+  });
+  app.route(
+    `${TENANT_PREFIX}/routines`,
+    createRoutineRoutes({
+      store: routineStore,
+      launcher: routineLauncher,
+      requireGrant: createRequireGrant({
+        grantStore: routineGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      runSummaryResolver: createHubRunSummaryResolver(db),
+    }),
+  );
+  // Recurring auto-fire: a minimal in-process poller (routine-scheduler.ts)
+  // over `@corbits/routines`' own `fireScheduledRoutine` — this hub has no
+  // general job-runner today, so this loop is scoped to exactly one job
+  // (fire due routines) rather than standing up a bespoke cron daemon as a
+  // hidden dependency. A real multi-instance deployment needs a leader
+  // election or a single dedicated worker process before this scales past
+  // one hub replica; tracked as a known limitation, not solved here.
+  const routineScheduler = createRoutineScheduler({
+    db,
+    store: routineStore,
+    launcher: routineLauncher,
+  });
+
   // The first-login hook mounts outside the tenant prefix, since the
   // session it serves belongs to no tenant yet. The route is
   // `@workbench/onboarding`'s; what it decides is documented in that
@@ -456,6 +504,7 @@ export async function createHub(config: HubConfig) {
     close: async () => {
       scheduler.stop();
       chatOrchestrator.dispose();
+      routineScheduler.stop();
       await close();
     },
   };
