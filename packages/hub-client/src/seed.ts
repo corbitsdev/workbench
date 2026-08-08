@@ -40,6 +40,34 @@ const RUN_POLL_INTERVAL_MS = 1000;
 // is exactly one honest value for it.
 const SEED_SOURCE_ID = "default";
 
+// The provider/model pair `noop-inference` (packages/chat/src/noop-inference.ts)
+// answers for any request, regardless of what is actually sent — the
+// route ignores its body and `x-api-key` entirely. Naming a distinct
+// pair here (rather than reusing the tenant's real model id) keeps a
+// noop-pinned deployment visually distinct from a real one in the hub's
+// UI and logs.
+const NOOP_PROVIDER = "anthropic";
+const NOOP_MODEL = "noop";
+
+/**
+ * A `ModelSource` pointed at the hub's own `noop-inference` endpoint
+ * instead of a real provider — the same substitution
+ * `packages/chat/src/platform-adapter.ts`'s `noopSourcesOverride` makes
+ * for channel-host launches, reused here so a workflow deployed with
+ * this source resolves every turn instantly against a constant,
+ * locally served reply and never reaches a real model. `hubUrl` is the
+ * same base URL `seedTenant` already receives, so no new configuration
+ * is required to use it.
+ */
+export function NOOP_MODEL_SOURCE(hubUrl: string): ModelSource {
+  return {
+    provider: NOOP_PROVIDER,
+    model: NOOP_MODEL,
+    baseURL: `${hubUrl}/api/chat/noop-inference`,
+    apiKey: "noop",
+  };
+}
+
 const GitTokenMintResponse = type({ id: "string", secret: "string" });
 const WorkflowDeploymentResponse = type({
   id: "string",
@@ -74,6 +102,15 @@ export type DefaultWorkflow = {
   /** Asset name; lowercase-kebab so the smart-HTTP repo path is clean. */
   assetName: string;
   buildJson: (tenantDomain: string, model: ModelSource) => string;
+  /**
+   * Overrides the deploy's inference source for this workflow only,
+   * given the hub's own base URL. Lets a workflow that must stay free
+   * to run continuously (a catalog-test workflow, in particular) name
+   * `NOOP_MODEL_SOURCE` instead of the tenant's real catalog model.
+   * Absent on every conversational workflow, which deploys against the
+   * tenant's real model as before.
+   */
+  modelSource?: (hubUrl: string) => ModelSource;
 };
 
 /**
@@ -468,6 +505,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
 
   let confirmed = 0;
   for (const workflow of workflows) {
+    const workflowModel = workflow.modelSource?.(hubUrl) ?? model;
     const assetId = await ensureWorkflowAsset(
       api,
       cookies,
@@ -479,7 +517,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     const outcome = await args.pushWorkflow({
       remoteUrl: `${hubUrl}/api/tenants/${tenant.tenantId}/assets/workflow/${workflow.assetName}.git`,
       tokenSecret,
-      workflowJson: workflow.buildJson(tenant.domain, model),
+      workflowJson: workflow.buildJson(tenant.domain, workflowModel),
     });
     log(
       outcome === "pushed"
@@ -494,7 +532,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
         tenantId: tenant.tenantId,
         assetId,
         assetName: workflow.assetName,
-        model,
+        model: workflowModel,
       },
       log,
     );
