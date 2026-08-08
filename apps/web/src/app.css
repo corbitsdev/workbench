@@ -8,6 +8,7 @@
    in here via a CSS @import instead of a second entry-point import. */
 @import "@corbits/chat-ui/styles.css";
 @import "@corbits/bench-ui/styles.css";
+@import "@corbits/settings-ui/styles.css";
 
 .app-frame {
   display: flex;

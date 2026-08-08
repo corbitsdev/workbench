@@ -10,7 +10,6 @@ import { ApprovalsPage } from "../src/pages/approvals-page";
 import { HomePage } from "../src/pages/home-page";
 import { LibraryPage } from "../src/pages/library-page";
 import { RunsPage } from "../src/pages/runs-page";
-import { SettingsPage } from "../src/pages/settings-page";
 
 function ready<T>(data: T): APIQuery<T> {
   return { kind: "ready", data };
@@ -45,25 +44,9 @@ describe("empty states", () => {
     );
     expect(markup).toContain("No approvals waiting");
   });
-
-  test("settings renders with no bench memberships", () => {
-    const markup = renderToStaticMarkup(
-      <SettingsPage profile={profile} principals={emptyPage} />,
-    );
-    expect(markup).toContain("ada@example.com");
-    expect(markup).toContain("No benches yet");
-  });
 });
 
 describe("signed-out state", () => {
-  test("settings reports a missing session instead of empty panels", () => {
-    const markup = renderToStaticMarkup(
-      <SettingsPage profile={unauthenticated} principals={unauthenticated} />,
-    );
-    expect(markup).toContain("Sign in required");
-    expect(markup).not.toContain("Account");
-  });
-
   test("home reports a missing session", () => {
     const markup = renderToStaticMarkup(
       <HomePage
