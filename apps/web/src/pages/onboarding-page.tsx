@@ -18,6 +18,7 @@ import {
   Input,
   PageShell,
   ProgressChecklist,
+  ProviderMark,
   Section,
 } from "@corbits/react-ui";
 import type { ChecklistStep, WorkflowStep } from "@corbits/react-ui";
@@ -33,7 +34,12 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 import { Link, useNavigate } from "../navigation";
-import { submitCredential, triggerFirstLoginProvisioning } from "../onboarding";
+import {
+  CREDENTIAL_PROVIDERS,
+  submitCredential,
+  triggerFirstLoginProvisioning,
+} from "../onboarding";
+import type { CredentialProvider } from "../onboarding";
 
 const GUIDANCE_CARDS = [
   {
@@ -125,9 +131,43 @@ function wizardSteps(phase: WizardState["phase"]): WorkflowStep[] {
   ];
 }
 
+function ProviderPicker({
+  selected,
+  onSelect,
+  disabled,
+}: {
+  readonly selected: CredentialProvider;
+  readonly onSelect: (provider: CredentialProvider) => void;
+  readonly disabled: boolean;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Inference provider"
+      className="onboarding-provider-picker"
+    >
+      {CREDENTIAL_PROVIDERS.map((provider) => (
+        <Button
+          key={provider.id}
+          type="button"
+          role="radio"
+          aria-checked={provider.id === selected}
+          variant={provider.id === selected ? "primary" : "outline"}
+          disabled={disabled}
+          onClick={() => onSelect(provider.id)}
+        >
+          <ProviderMark provider={provider.id} size="sm" />
+          {provider.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 export function OnboardingPage() {
   const navigate = useNavigate();
   const [state, setState] = useState<WizardState>({ phase: "loading" });
+  const [provider, setProvider] = useState<CredentialProvider>("anthropic");
   const [apiKey, setApiKey] = useState("");
 
   const runProvisioning = useCallback(() => {
@@ -150,7 +190,7 @@ export function OnboardingPage() {
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       setState({ phase: "submitting" });
-      void submitCredential(apiKey).then((outcome) => {
+      void submitCredential(provider, apiKey).then((outcome) => {
         if (outcome.kind === "seeded") {
           setState({
             phase: "seeded",
@@ -162,7 +202,7 @@ export function OnboardingPage() {
         }
       });
     },
-    [apiKey],
+    [provider, apiKey],
   );
 
   if (state.phase === "loading") {
@@ -219,7 +259,7 @@ export function OnboardingPage() {
       <PageShell width="full" className="page-fill">
         <Section
           title="Your first routines are running"
-          description="Your Anthropic key checked out, and every default routine on your bench has already fired and answered."
+          description="Your key checked out, and every default routine on your bench has already fired and answered."
         >
           <HorizontalStepper steps={wizardSteps(state.phase)} />
           <ProgressChecklist steps={checklist} label="Default routines" />
@@ -233,23 +273,31 @@ export function OnboardingPage() {
 
   const submitting = state.phase === "submitting";
   const error = state.phase === "credential" ? state.error : null;
+  const activeProvider = CREDENTIAL_PROVIDERS.find((p) => p.id === provider);
 
   return (
     <PageShell width="full" className="page-fill">
       <Section
-        title="Add your Anthropic key"
-        description="Your workbench needs an inference credential before any agent or routine can run. This one is yours — used only for this bench."
+        title="Add an inference credential"
+        description="Your workbench needs an inference credential before any agent or routine can run. Pick a provider and paste your own key — it's used only for this bench."
       >
         <HorizontalStepper steps={wizardSteps(state.phase)} />
         <form
           onSubmit={handleSubmitCredential}
           className="onboarding-credential-form"
         >
-          <label htmlFor="onboarding-api-key">Anthropic API key</label>
+          <ProviderPicker
+            selected={provider}
+            onSelect={setProvider}
+            disabled={submitting}
+          />
+          <label htmlFor="onboarding-api-key">
+            {activeProvider?.label} API key
+          </label>
           <Input
             id="onboarding-api-key"
             type="text"
-            placeholder="sk-ant-..."
+            placeholder={`${activeProvider?.keyHint}...`}
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
             required
@@ -258,13 +306,13 @@ export function OnboardingPage() {
           />
           <p id="onboarding-api-key-help">
             <a
-              href="https://console.anthropic.com/settings/keys"
+              href={activeProvider?.keyConsoleUrl}
               target="_blank"
               rel="noreferrer"
             >
-              Get a key from the Anthropic console
+              Get a key from the {activeProvider?.label} console
             </a>{" "}
-            — it starts with <code>sk-ant-</code>.
+            — it starts with <code>{activeProvider?.keyHint}</code>.
           </p>
           {error !== null && (
             <EmptyState

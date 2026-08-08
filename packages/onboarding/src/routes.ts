@@ -7,7 +7,10 @@
 import type { AppEnv } from "@intx/hub-api";
 import {
   createHubAPI,
+  supportedCredentialProviders,
+  testProviderCredential,
   type ModelSource,
+  type SupportedCredentialProvider,
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { Hono } from "hono";
@@ -15,7 +18,15 @@ import { type } from "arktype";
 import { provisionPersonalTenantIfNeeded } from "./provision";
 import { completeCredentialSetup } from "./complete-credential";
 
-const SubmitCredential = type({ apiKey: "string > 0" });
+const PROVIDER_IDS = supportedCredentialProviders().map((p) => p.id) as [
+  SupportedCredentialProvider,
+  ...SupportedCredentialProvider[],
+];
+
+const SubmitCredential = type({
+  provider: type.enumerated(...PROVIDER_IDS),
+  apiKey: "string > 0",
+});
 
 export type CreateOnboardingRoutesDeps = {
   hubUrl: string;
@@ -87,7 +98,12 @@ export function createOnboardingRoutes(
     }
   });
 
-  app.post("/credential", async (c) => {
+  // A pure test: proves a key against the provider's real API before the
+  // caller commits to anything. No credential is stored here — storage
+  // and the rest of seeding only happen from `/complete`, and even that
+  // stores through the hub's own `POST /api/tenants/:id/credentials`
+  // route (see `complete-credential.ts`), never by reimplementing it.
+  app.post("/credential/test", async (c) => {
     const user = c.get("user");
     if (!user) {
       return c.json(
@@ -103,7 +119,43 @@ export function createOnboardingRoutes(
         {
           error: {
             code: "invalid_request",
-            message: `An Anthropic API key is required: ${parsed.summary}`,
+            message: `A provider and an API key are required: ${parsed.summary}`,
+          },
+        },
+        400,
+      );
+    }
+
+    const result = await testProviderCredential({
+      provider: parsed.provider,
+      apiKey: parsed.apiKey,
+    });
+    if (!result.ok) {
+      return c.json(
+        { error: { code: "invalid_credential", message: result.message } },
+        422,
+      );
+    }
+    return c.json({ ok: true }, 200);
+  });
+
+  app.post("/complete", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return c.json(
+        { error: { code: "unauthorized", message: "Authentication required" } },
+        401,
+      );
+    }
+
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = SubmitCredential(body);
+    if (parsed instanceof type.errors) {
+      return c.json(
+        {
+          error: {
+            code: "invalid_request",
+            message: `A provider and an API key are required: ${parsed.summary}`,
           },
         },
         400,
@@ -118,6 +170,7 @@ export function createOnboardingRoutes(
         hubUrl: deps.hubUrl,
         userId: user.id,
         userEmail: user.email,
+        provider: parsed.provider,
         apiKey: parsed.apiKey,
         pushWorkflow: deps.pushWorkflow,
         log: deps.log,
