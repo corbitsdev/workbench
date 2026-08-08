@@ -1,0 +1,22 @@
+{
+  "name": "@corbits/artifact-ui",
+  "private": true,
+  "description": "The artifact library's domain seam: the ArtifactSummary type a Library page renders, plus the sort, filter, and kind-coloring rules every artifact surface shares",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
