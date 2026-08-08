@@ -103,7 +103,7 @@ export async function runSeed(
   const resolvedWorkflows = workflows ?? resolveSeedWorkflows(config);
   if (config.seedCatalogTestWorkflows) {
     log(
-      "WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS=1: also deploying the zero-cost catalog-test workflow (heartbeat)",
+      "WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS=1: also deploying the zero-cost catalog-test workflows (heartbeat, channel-digest)",
     );
   }
 

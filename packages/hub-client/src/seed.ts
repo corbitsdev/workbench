@@ -22,6 +22,10 @@ import {
   serializeAssistantWorkflow,
 } from "@corbits/assistant-workflow";
 import {
+  buildChannelDigestWorkflow,
+  serializeChannelDigestWorkflow,
+} from "@corbits/channel-digest-workflow";
+import {
   buildEchoWorkflow,
   serializeEchoWorkflow,
 } from "@corbits/echo-workflow";
@@ -36,11 +40,12 @@ import { catalogModel, catalogProvider } from "./catalog-seed-data";
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
-// Short: heartbeat runs on a tight, continuous schedule to exercise
+// Short: these two run on a tight, continuous schedule to exercise
 // scheduling itself, so a wedged noop-inference call should surface
 // fast rather than tie up a run slot for the full two minutes the
 // conversational workflows above allow.
 const HEARTBEAT_TURN_TIMEOUT_MS = 30 * 1000;
+const CHANNEL_DIGEST_TURN_TIMEOUT_MS = 30 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
@@ -113,11 +118,11 @@ export type DefaultWorkflow = {
   buildJson: (tenantDomain: string, model: ModelSource) => string;
   /**
    * Overrides the deploy's inference source for this workflow only,
-   * given the hub's own base URL. Present on the catalog-test workflow
-   * `heartbeat`, which must stay free to run continuously: it names
-   * `NOOP_MODEL_SOURCE` instead of the tenant's real catalog model.
-   * Absent on every conversational workflow, which deploys against the
-   * tenant's real model as before.
+   * given the hub's own base URL. Present on the catalog-test workflows
+   * `heartbeat` and `channel-digest`, which must stay free to run
+   * continuously: it names `NOOP_MODEL_SOURCE` instead of the tenant's
+   * real catalog model. Absent on every conversational workflow, which
+   * deploys against the tenant's real model as before.
    */
   modelSource?: (hubUrl: string) => ModelSource;
 };
@@ -162,13 +167,14 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
 
 /**
  * Zero-cost workflows that exist to exercise the platform continuously
- * — `heartbeat` proves the scheduling and mail-trigger paths — never
- * to give a real user something to use. Pinned at `NOOP_MODEL_SOURCE`
- * so running it on a tight schedule costs nothing. Deliberately absent
- * from `DEFAULT_WORKFLOWS`: a real signup goes through
- * `provisionPersonalTenantIfNeeded`, which never seeds this set. Only
- * an explicit, dev/CI-specific caller (`workbench seed` with
- * `WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS` set) opts in.
+ * — `heartbeat` proves the scheduling and mail-trigger paths,
+ * `channel-digest` proves the channel-mail-posting path — never to
+ * give a real user something to use. Both are pinned at
+ * `NOOP_MODEL_SOURCE` so running them on a tight schedule costs
+ * nothing. Deliberately absent from `DEFAULT_WORKFLOWS`: a real signup
+ * goes through `provisionPersonalTenantIfNeeded`, which never seeds
+ * this set. Only an explicit, dev/CI-specific caller (`workbench
+ * seed` with `WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS` set) opts in.
  */
 export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
   {
@@ -181,6 +187,20 @@ export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
             { provider: model.provider, model: model.model },
           ],
           turnTimeoutMs: HEARTBEAT_TURN_TIMEOUT_MS,
+        }),
+      ),
+    modelSource: NOOP_MODEL_SOURCE,
+  },
+  {
+    assetName: "channel-digest",
+    buildJson: (tenantDomain, model) =>
+      serializeChannelDigestWorkflow(
+        buildChannelDigestWorkflow({
+          triggerAddress: `channel-digest@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: CHANNEL_DIGEST_TURN_TIMEOUT_MS,
         }),
       ),
     modelSource: NOOP_MODEL_SOURCE,

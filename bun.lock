@@ -279,7 +279,9 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/assistant-workflow": "workspace:*",
+        "@corbits/channel-digest-workflow": "workspace:*",
         "@corbits/echo-workflow": "workspace:*",
+        "@corbits/heartbeat-workflow": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
@@ -669,8 +671,32 @@
         "typescript": "catalog:",
       },
     },
+    "workflows/channel-digest": {
+      "name": "@corbits/channel-digest-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/echo": {
       "name": "@corbits/echo-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/heartbeat": {
+      "name": "@corbits/heartbeat-workflow",
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
@@ -771,6 +797,8 @@
 
     "@corbits/bench-ui": ["@corbits/bench-ui@workspace:packages/bench-ui"],
 
+    "@corbits/channel-digest-workflow": ["@corbits/channel-digest-workflow@workspace:workflows/channel-digest"],
+
     "@corbits/chat": ["@corbits/chat@workspace:packages/chat"],
 
     "@corbits/chat-ui": ["@corbits/chat-ui@workspace:packages/chat-ui"],
@@ -780,6 +808,8 @@
     "@corbits/echo-workflow": ["@corbits/echo-workflow@workspace:workflows/echo"],
 
     "@corbits/folded-runs": ["@corbits/folded-runs@workspace:packages/folded-runs"],
+
+    "@corbits/heartbeat-workflow": ["@corbits/heartbeat-workflow@workspace:workflows/heartbeat"],
 
     "@corbits/notify": ["@corbits/notify@workspace:packages/notify"],
 

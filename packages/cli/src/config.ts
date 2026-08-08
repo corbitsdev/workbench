@@ -53,7 +53,7 @@ const SeedEnv = type({
     "your Anthropic API key; optional, but required for the tenant catalog to be launchable",
   ),
   "WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS?": type("string").describe(
-    "set to 1 to also deploy the zero-cost catalog-test workflow (heartbeat); a dev/CI-only opt-in, never set for a real bench",
+    "set to 1 to also deploy the zero-cost catalog-test workflows (heartbeat, channel-digest); a dev/CI-only opt-in, never set for a real bench",
   ),
 });
 
@@ -85,7 +85,7 @@ export type SeedConfig = {
   readonly anthropicApiKeyConfigured: boolean;
   /**
    * Opt-in, from WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS: also deploy
-   * the zero-cost catalog-test workflow (heartbeat)
+   * the zero-cost catalog-test workflows (heartbeat, channel-digest)
    * alongside the real default set. Unset for a real bench — these
    * exist only to exercise the platform, not for a real user.
    */

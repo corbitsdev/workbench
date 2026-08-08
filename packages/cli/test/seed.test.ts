@@ -50,7 +50,7 @@ describe("resolveSeedWorkflows", () => {
     const names = resolveSeedWorkflows({
       seedCatalogTestWorkflows: true,
     }).map((w) => w.assetName);
-    expect(names).toEqual(["echo", "assistant", "heartbeat"]);
+    expect(names).toEqual(["echo", "assistant", "heartbeat", "channel-digest"]);
   });
 });
 
