@@ -84,6 +84,7 @@ export async function bootIsolationHub(
       hubDataDir: string;
       hubStaticDir: string;
       signupRateLimit: { windowSeconds: number; max: number };
+      socialProviders: Record<string, unknown>;
     }): Promise<{ app: AppLike; close(): Promise<void> }>;
   };
 
@@ -96,6 +97,10 @@ export async function bootIsolationHub(
     hubDataDir: dataDir,
     hubStaticDir: staticDir,
     signupRateLimit: { windowSeconds: 60, max: 5 },
+    // No OAuth social sign-in is under test here; an empty map is the
+    // same "none configured" state `readHubConfig` produces when no
+    // provider's credential pair is set in the environment.
+    socialProviders: {},
   });
 
   return {
