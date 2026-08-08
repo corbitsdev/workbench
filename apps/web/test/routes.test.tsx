@@ -34,17 +34,20 @@ function pageHeading(markup: string): string | undefined {
   return /<h1[^>]*>(.*?)<\/h1>/.exec(markup)?.[1];
 }
 
-/** The rail marks exactly one page active at a time (an icon button, not a
- * link — see `shell/rail.tsx`); this resolves its tooltip text so a test can
- * confirm it is the *right* page, not merely that some page is active. */
+/** The rail marks exactly one page active at a time (an icon+label button,
+ * not a link — see `shell/rail.tsx`); this resolves its visible caption so a
+ * test can confirm it is the *right* page, not merely that some page is
+ * active. */
 function activeRailLabel(markup: string): string | undefined {
   const active =
-    /data-slot="sidebar-rail-item"[^>]*aria-current="page"[^>]*aria-describedby="([^"]+)"/.exec(
+    /data-slot="sidebar-rail-item"[^>]*aria-current="page"[^>]*>[\s\S]*?<\/button>/.exec(
       markup,
     );
   if (active === null) return undefined;
-  const tooltip = new RegExp(`id="${active[1]}"[^>]*>([^<]*)<`).exec(markup);
-  return tooltip?.[1];
+  const label = /<span class="shell-rail-item-label">([^<]*)<\/span>/.exec(
+    active[0],
+  );
+  return label?.[1];
 }
 
 describe("route table", () => {
@@ -68,8 +71,8 @@ describe("routes render", () => {
       const markup = renderApp(route.path);
       expect(pageHeading(markup)).toBe(route.label);
       if (route.path === SETTINGS_PATH) {
-        // Settings has no rail entry — it is reached from the contextual
-        // panel's identity dock instead.
+        // Settings has no page-nav entry in the rail — it is reached from
+        // the rail's own identity dock instead.
         expect(markup).toMatch(/aria-current="page"[^>]*href="\/settings"/);
       } else {
         expect(activeRailLabel(markup)).toBe(route.label);

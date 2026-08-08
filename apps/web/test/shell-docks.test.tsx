@@ -1,12 +1,12 @@
-// The sidebar's bottom docks: the identity row shows the signed-in
-// human as initials + email (never an id, never a network-fetched
-// avatar), and the initials derivation holds up against thin accounts.
+// The rail's bottom identity dock shows the signed-in human as initials
+// (never an id, never a network-fetched avatar) with the email as a
+// tooltip, and the initials derivation holds up against thin accounts.
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { NavigationProvider } from "../src/navigation";
-import { IdentityDock, initialsOf } from "../src/shell/docks";
+import { RailIdentity, initialsOf } from "../src/shell/docks";
 
 const noNavigate = () => undefined;
 const noop = () => undefined;
@@ -14,7 +14,7 @@ const noop = () => undefined;
 function renderDock(path: string): string {
   return renderToStaticMarkup(
     <NavigationProvider navigate={noNavigate}>
-      <IdentityDock
+      <RailIdentity
         path={path}
         user={{ id: "user_1", name: "Ada Lovelace", email: "ada@example.com" }}
         onSignOut={noop}
@@ -38,7 +38,7 @@ describe("initialsOf", () => {
   });
 });
 
-describe("IdentityDock", () => {
+describe("RailIdentity", () => {
   test("shows the avatar initials, the email, and the settings link", () => {
     const markup = renderDock("/");
     expect(markup).toContain("AL");
