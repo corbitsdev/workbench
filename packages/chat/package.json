@@ -11,7 +11,8 @@
     "./mentions": "./src/mentions.ts",
     "./participants": "./src/participants.ts",
     "./parts": "./src/parts.ts",
-    "./agent-address": "./src/agent-address.ts"
+    "./agent-address": "./src/agent-address.ts",
+    "./channel-host-naming": "./src/channel-host-naming.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

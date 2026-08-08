@@ -36,6 +36,10 @@ import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { extractPartByPath } from "@intx/mime";
 import { channelLaunch } from "./schema";
+import {
+  CHANNEL_HOST_ASSET_NAME_PREFIX,
+  channelHostAssetName,
+} from "./channel-host-naming";
 import { ensureWorkflowDefinitionForAsset } from "@intx/hub-sessions";
 import type {
   AssetService,
@@ -95,23 +99,10 @@ export type CreateHubChatPlatformDeps = {
   lifecycle?: { idleSleepMs: number; sweepIntervalMs?: number };
 };
 
-// Asset names are constrained to `^[a-z0-9]+(-[a-z0-9]+)*$`; a channel
-// id (`generateId("instance")`) may carry characters outside that set,
-// so this derives a compliant name deterministically rather than
-// storing a second identifier.
-function assetNameForChannel(channelId: string): string {
-  return channelId
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-// Every channel host's workflow asset is named via `assetNameForChannel`
-// off a `generateId("instance")` id (`ins_<hex>`), which always yields
-// this prefix once slugified — `listInvitableDefinitions` uses it to
-// exclude channel hosts from the invitable set without needing a
-// separate "is this a channel host" column.
-const CHANNEL_HOST_ASSET_NAME_PREFIX = "ins-";
+// Channel-host asset naming lives in `./channel-host-naming` — a
+// browser-safe module shared with the UIs that filter anchor runs out
+// of workflow listings — so the derivation and the predicate over the
+// resulting names can never drift apart.
 
 // The `InferenceSource.id`/`InferenceSource.model` a channel-host pin
 // carries — never read by anything (the noop endpoint ignores both),
@@ -253,7 +244,7 @@ export function createHubChatPlatform(
       const asset = await deps.assetService.createAsset({
         tenantId: input.tenantId,
         kind: "workflow",
-        name: assetNameForChannel(input.channelId),
+        name: channelHostAssetName(input.channelId),
         creatorPrincipalId: input.creatorPrincipalId,
       });
       const { definitionId } = await ensureWorkflowDefinitionForAsset(
