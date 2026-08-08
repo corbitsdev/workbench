@@ -341,6 +341,91 @@ export function expectStatus(
   }
 }
 
+export type RunEvent = { seq: number; type: string; body: unknown };
+
+function runEvents(data: unknown): RunEvent[] {
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    "events" in data &&
+    Array.isArray((data as Record<string, unknown>)["events"])
+  ) {
+    return (data as { events: RunEvent[] }).events;
+  }
+  throw new Error(`expected a run events array: ${JSON.stringify(data)}`);
+}
+
+const TERMINAL_EVENT_TYPES = ["RunCompleted", "RunFailed", "RunCancelled"];
+
+/**
+ * Polls a run's event log until a terminal event lands, then requires
+ * it to be `RunCompleted` — not merely that the run started. A trigger
+ * accepted by the hub only proves the mail route works; a broken
+ * agent launch, a wedged inference call, or a rejected step surfaces
+ * as `RunFailed` (or no terminal event at all before the deadline),
+ * either of which fails this loudly instead of a workflow silently
+ * "succeeding" on nothing more than its own acceptance.
+ */
+export async function waitForRunCompletion(
+  baseUrl: string,
+  tenantId: string,
+  deploymentId: string,
+  runId: string,
+  cookies: string[],
+  timeoutMs: number,
+): Promise<RunEvent[]> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const res = await api(
+      baseUrl,
+      "GET",
+      `/api/tenants/${tenantId}/workflows/${deploymentId}/runs/${runId}/events`,
+      undefined,
+      cookies,
+    );
+    expectStatus("read run events", res, 200);
+    const events = runEvents(res.data);
+    const terminal = events.find((e) => TERMINAL_EVENT_TYPES.includes(e.type));
+    if (terminal !== undefined) {
+      if (terminal.type !== "RunCompleted") {
+        throw new Error(
+          `run ${runId} ended in ${terminal.type}, not RunCompleted: ` +
+            JSON.stringify(terminal.body),
+        );
+      }
+      return events;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `run ${runId} reached no terminal event within ${Math.round(timeoutMs / 1000)}s; ` +
+          `events so far: ${JSON.stringify(events)}`,
+      );
+    }
+    await Bun.sleep(500);
+  }
+}
+
+/**
+ * Asserts the run's event log recorded a completed step with the
+ * given step id — the actual per-step execution, not just the run's
+ * own start/stop bookkeeping.
+ */
+export function expectStepCompleted(events: RunEvent[], stepId: string): void {
+  const completed = events.find(
+    (e) =>
+      e.type === "StepCompleted" &&
+      typeof e.body === "object" &&
+      e.body !== null &&
+      "stepId" in e.body &&
+      (e.body as Record<string, unknown>)["stepId"] === stepId,
+  );
+  if (completed === undefined) {
+    throw new Error(
+      `no StepCompleted event for step "${stepId}"; events: ${JSON.stringify(events)}`,
+    );
+  }
+}
+
 // --- workflow asset content over git smart-HTTP -----------------------
 
 interface GitResult {
