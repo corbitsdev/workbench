@@ -87,6 +87,7 @@
         "@corbits/bench-ui": "workspace:*",
         "@corbits/chat": "workspace:*",
         "@corbits/chat-ui": "workspace:*",
+        "@corbits/command-palette": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#bebe1ed596637a912e69dbdb857c3e043861e192",
         "@corbits/settings-ui": "workspace:*",
         "@intx/types": "workspace:*",
@@ -224,6 +225,14 @@
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
       },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/command-palette": {
+      "name": "@corbits/command-palette",
+      "version": "0.0.1",
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -774,6 +783,8 @@
     "@corbits/chat": ["@corbits/chat@workspace:packages/chat"],
 
     "@corbits/chat-ui": ["@corbits/chat-ui@workspace:packages/chat-ui"],
+
+    "@corbits/command-palette": ["@corbits/command-palette@workspace:packages/command-palette"],
 
     "@corbits/commands": ["@corbits/commands@workspace:packages/commands"],
 
