@@ -1,3 +1,4 @@
+import { BenchSwitcher } from "@corbits/bench-ui";
 import {
   BootScreen,
   Button,
@@ -15,6 +16,7 @@ import { CircleAlert, LogOut } from "lucide-react";
 import { useState } from "react";
 
 import { AuthScreen } from "./auth-screen";
+import { BenchProvider, useBench } from "./bench-context";
 import {
   handleLinkClick,
   NavigationProvider,
@@ -55,6 +57,18 @@ function Brand() {
   );
 }
 
+function AppBenchSwitcher() {
+  const { memberships, selectedTenantId, selectTenant } = useBench();
+  if (memberships.kind !== "ready") return null;
+  return (
+    <BenchSwitcher
+      memberships={memberships.data.data}
+      activeTenantId={selectedTenantId}
+      onSelect={selectTenant}
+    />
+  );
+}
+
 function Shell({
   path,
   navigate,
@@ -72,38 +86,45 @@ function Shell({
   );
   return (
     <NavigationProvider navigate={navigate}>
-      <div className="app-frame">
-        <Sidebar collapsed={collapsed}>
-          <SidebarHeader>
-            <SidebarCollapseToggle
-              collapsed={collapsed}
-              onToggle={() => setCollapsed((value) => !value)}
-            />
-            <Brand />
-          </SidebarHeader>
-          <SidebarContent>
-            <AppNav path={path} />
-          </SidebarContent>
-          <SidebarFooter>
-            <div className="app-session">
-              <span className="app-session-email">{user.email}</span>
-              <Button variant="ghost" size="sm" onClick={onSignOut}>
-                <LogOut />
-                <span className="app-session-label">Sign out</span>
-              </Button>
-            </div>
-          </SidebarFooter>
-        </Sidebar>
-        <main className="app-main">
-          {path === ONBOARDING_PATH ? (
-            <OnboardingPage />
-          ) : route === undefined ? (
-            <NotFoundPage path={path} />
-          ) : (
-            route.render(path, navigate)
-          )}
-        </main>
-      </div>
+      <BenchProvider>
+        <div className="app-frame">
+          <Sidebar collapsed={collapsed}>
+            <SidebarHeader>
+              <SidebarCollapseToggle
+                collapsed={collapsed}
+                onToggle={() => setCollapsed((value) => !value)}
+              />
+              <Brand />
+            </SidebarHeader>
+            {!collapsed && (
+              <div className="app-bench-switcher">
+                <AppBenchSwitcher />
+              </div>
+            )}
+            <SidebarContent>
+              <AppNav path={path} />
+            </SidebarContent>
+            <SidebarFooter>
+              <div className="app-session">
+                <span className="app-session-email">{user.email}</span>
+                <Button variant="ghost" size="sm" onClick={onSignOut}>
+                  <LogOut />
+                  <span className="app-session-label">Sign out</span>
+                </Button>
+              </div>
+            </SidebarFooter>
+          </Sidebar>
+          <main className="app-main">
+            {path === ONBOARDING_PATH ? (
+              <OnboardingPage />
+            ) : route === undefined ? (
+              <NotFoundPage path={path} />
+            ) : (
+              route.render(path, navigate)
+            )}
+          </main>
+        </div>
+      </BenchProvider>
     </NavigationProvider>
   );
 }

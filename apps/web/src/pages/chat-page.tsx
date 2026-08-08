@@ -1,14 +1,13 @@
-// Adapts this app's `/api/me/principals` query into `@corbits/chat-ui`'s
-// `TenantResolution`: the account's first bench membership, the same
-// personal-bench convention the onboarding flow uses. The chat surface
-// itself is entirely `@corbits/chat-ui`'s — this file resolves which
-// bench it talks to and mirrors the active channel into the URL as
-// /chat/:channelId so conversations are linkable.
+// Adapts this app's bench selection (see ../bench-context.tsx) into
+// `@corbits/chat-ui`'s `TenantResolution`. The chat surface itself is
+// entirely `@corbits/chat-ui`'s — this file resolves which bench it talks
+// to and mirrors the active channel into the URL as /chat/:channelId so
+// conversations are linkable.
 
 import { ChatWorkspace } from "@corbits/chat-ui";
 import type { TenantResolution } from "@corbits/chat-ui";
 
-import { PrincipalsSchema, useAPIQuery } from "../api";
+import { useBench } from "../bench-context";
 
 const CHAT_PATH_PREFIX = "/chat";
 
@@ -25,20 +24,18 @@ export function ChatPage({
   readonly path: string;
   readonly navigate: (to: string) => void;
 }) {
-  const principals = useAPIQuery("/api/me/principals", PrincipalsSchema);
+  const { memberships, selectedTenantId, selectedPrincipalId } = useBench();
 
   let tenant: TenantResolution;
-  let principalId: string | undefined;
-  if (principals.kind !== "ready") {
-    tenant = principals;
+  if (memberships.kind !== "ready") {
+    tenant = memberships;
   } else {
-    const membership = principals.data.data[0];
-    principalId = membership?.principalId;
     tenant =
-      membership === undefined
+      selectedTenantId === null
         ? { kind: "empty" }
-        : { kind: "ready", tenantId: membership.tenantId };
+        : { kind: "ready", tenantId: selectedTenantId };
   }
+  const principalId = selectedPrincipalId ?? undefined;
 
   return (
     <ChatWorkspace

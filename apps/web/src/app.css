@@ -7,6 +7,7 @@
    import); main.tsx is out of scope for this change, so it is pulled
    in here via a CSS @import instead of a second entry-point import. */
 @import "@corbits/chat-ui/styles.css";
+@import "@corbits/bench-ui/styles.css";
 
 .app-frame {
   display: flex;
@@ -56,6 +57,10 @@ aside[data-collapsed="true"] .app-session-email,
 aside[data-collapsed="true"] .app-session-label,
 aside[data-collapsed="true"] .app-mark {
   display: none;
+}
+
+.app-bench-switcher {
+  padding: 0 0.75rem 0.5rem;
 }
 
 /* Auth screen — the two-column corbits.dev sign-in shell. The right panel is

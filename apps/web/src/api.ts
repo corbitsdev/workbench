@@ -50,6 +50,9 @@ type Validator<T> = (data: unknown) => T | ArkErrors;
 export function useAPIQuery<T>(
   path: string,
   schema: Validator<T>,
+  /** Bump this to force a re-fetch of an otherwise-unchanged path, e.g.
+   * after a mutation the hub doesn't push updates for. */
+  reloadKey: number = 0,
 ): APIQuery<T> {
   const [state, setState] = useState<APIQuery<T>>({ kind: "loading" });
 
@@ -93,7 +96,7 @@ export function useAPIQuery<T>(
     return () => {
       cancelled = true;
     };
-  }, [path, schema]);
+  }, [path, schema, reloadKey]);
 
   return state;
 }

@@ -4,6 +4,7 @@
 
 import {
   Activity,
+  Building2,
   Home,
   Library,
   MessageSquare,
@@ -13,6 +14,7 @@ import {
 import type { ReactElement, ReactNode } from "react";
 
 import { ApprovalsRoute } from "./pages/approvals-page";
+import { BenchesRoute } from "./pages/benches-page";
 import { ChatPage } from "./pages/chat-page";
 import { HomeRoute } from "./pages/home-page";
 import { LibraryRoute } from "./pages/library-page";
@@ -73,6 +75,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     label: "Approvals",
     icon: <ShieldCheck />,
     render: () => <ApprovalsRoute />,
+  },
+  {
+    path: "/benches",
+    label: "Benches",
+    icon: <Building2 />,
+    render: () => <BenchesRoute />,
   },
   {
     path: "/settings",

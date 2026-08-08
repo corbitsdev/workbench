@@ -35,13 +35,14 @@ function pageHeading(markup: string): string | undefined {
 }
 
 describe("route table", () => {
-  test("covers the six screens", () => {
+  test("covers the seven screens", () => {
     expect(APP_ROUTES.map((route) => route.path)).toEqual([
       "/",
       "/chat",
       "/runs",
       "/library",
       "/approvals",
+      "/benches",
       "/settings",
     ]);
   });
