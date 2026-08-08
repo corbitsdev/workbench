@@ -13,7 +13,7 @@
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
-import { channelReadState, channelSettings } from "./schema";
+import { channelReadState, channelSettings, chatBenchSettings } from "./schema";
 
 /**
  * The drizzle handle `createDrizzleChatStore` operates against. Generic over
@@ -44,6 +44,19 @@ export interface CreateChannelSettingsInput {
 export interface UpdateChannelSettingsInput {
   readonly tenantId: string;
   readonly channelId: string;
+  readonly settings: Record<string, unknown>;
+  readonly updatedBy: string;
+}
+
+export interface ChatBenchSettingsRow {
+  readonly tenantId: string;
+  readonly settings: Record<string, unknown>;
+  readonly updatedBy: string;
+  readonly updatedAt: Date;
+}
+
+export interface UpsertBenchSettingsInput {
+  readonly tenantId: string;
   readonly settings: Record<string, unknown>;
   readonly updatedBy: string;
 }
@@ -79,6 +92,10 @@ export interface ChatStore {
   updateChannelSettings(
     input: UpdateChannelSettingsInput,
   ): Promise<ChannelSettingsRow>;
+  getBenchSettings(tenantId: string): Promise<ChatBenchSettingsRow | undefined>;
+  upsertBenchSettings(
+    input: UpsertBenchSettingsInput,
+  ): Promise<ChatBenchSettingsRow>;
   getReadState(
     tenantId: string,
     channelId: string,
@@ -160,6 +177,39 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
       return row as ChannelSettingsRow;
     },
 
+    async getBenchSettings(tenantId) {
+      const [selected] = await db
+        .select()
+        .from(chatBenchSettings)
+        .where(eq(chatBenchSettings.tenantId, tenantId))
+        .limit(1);
+      return selected as ChatBenchSettingsRow | undefined;
+    },
+
+    async upsertBenchSettings(input) {
+      const [row] = await db
+        .insert(chatBenchSettings)
+        .values({
+          tenantId: input.tenantId,
+          settings: input.settings,
+          updatedBy: input.updatedBy,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: chatBenchSettings.tenantId,
+          set: {
+            settings: input.settings,
+            updatedBy: input.updatedBy,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+      if (row === undefined) {
+        throw new Error("upsertBenchSettings: upsert returned no row");
+      }
+      return row as ChatBenchSettingsRow;
+    },
+
     async getReadState(tenantId, channelId, principalId) {
       const [row] = await db
         .select()
@@ -208,6 +258,7 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
 export function createInMemoryChatStore(): ChatStore {
   const settingsByKey = new Map<string, ChannelSettingsRow>();
   const readStateByKey = new Map<string, ReadStateRow>();
+  const benchSettingsByTenant = new Map<string, ChatBenchSettingsRow>();
 
   const settingsKey = (tenantId: string, channelId: string) =>
     `${tenantId}:${channelId}`;
@@ -257,6 +308,21 @@ export function createInMemoryChatStore(): ChatStore {
         updatedAt: new Date(),
       };
       settingsByKey.set(key, row);
+      return row;
+    },
+
+    async getBenchSettings(tenantId) {
+      return benchSettingsByTenant.get(tenantId);
+    },
+
+    async upsertBenchSettings(input) {
+      const row: ChatBenchSettingsRow = {
+        tenantId: input.tenantId,
+        settings: input.settings,
+        updatedBy: input.updatedBy,
+        updatedAt: new Date(),
+      };
+      benchSettingsByTenant.set(input.tenantId, row);
       return row;
     },
 

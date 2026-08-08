@@ -40,10 +40,13 @@ import {
   type ChannelParticipantState,
 } from "./settings-control";
 import {
+  benchContextWindowOf,
   channelView,
   kindOf,
   participantsOf,
+  resolveContextWindow,
   SettingsValidationError,
+  validateBenchSettingsPatch,
   validateSettingsPatch,
 } from "./channel-settings";
 import { launchAndJoinAgent, sendChannelMessage } from "./channel-service";
@@ -711,6 +714,70 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     },
   );
 
+  async function withResolvedContextWindow(
+    tenantId: string,
+    row: { channelId: string; settings: Record<string, unknown> },
+  ) {
+    const bench = await deps.store.getBenchSettings(tenantId);
+    const resolved = resolveContextWindow(
+      row.settings,
+      benchContextWindowOf(bench?.settings ?? {}),
+    );
+    return {
+      ...channelView(row),
+      settings: row.settings,
+      contextWindow: resolved,
+    };
+  }
+
+  app.get(
+    "/bench/settings",
+    deps.requireGrant("workflow-run:*", "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const row = await deps.store.getBenchSettings(tenant.id);
+      const settings = row?.settings ?? {};
+      return c.json({
+        settings,
+        contextWindow: benchContextWindowOf(settings),
+      });
+    },
+  );
+
+  app.patch(
+    "/bench/settings",
+    deps.requireGrant("workflow-run:*", "write"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+
+      let patch: Record<string, unknown>;
+      try {
+        patch = validateBenchSettingsPatch(
+          await c.req.json().catch(() => undefined),
+        );
+      } catch (err) {
+        if (err instanceof SettingsValidationError) {
+          return c.json(ErrorEnvelope("bad_request", err.message), 400);
+        }
+        throw err;
+      }
+
+      const existing = await deps.store.getBenchSettings(tenant.id);
+      const merged = { ...(existing?.settings ?? {}), ...patch };
+      const row = await deps.store.upsertBenchSettings({
+        tenantId: tenant.id,
+        settings: merged,
+        updatedBy: principal.id,
+      });
+
+      return c.json({
+        settings: row.settings,
+        contextWindow: benchContextWindowOf(row.settings),
+      });
+    },
+  );
+
   app.get(
     "/channels/:id/settings",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
@@ -721,7 +788,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (row === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
-      return c.json({ ...channelView(row), settings: row.settings });
+      return c.json(await withResolvedContextWindow(tenant.id, row));
     },
   );
 
@@ -819,7 +886,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         data: { updatedBy: principal.id, settings: row.settings },
       });
 
-      return c.json({ ...channelView(row), settings: row.settings });
+      return c.json(await withResolvedContextWindow(tenant.id, row));
     },
   );
 

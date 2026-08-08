@@ -20,10 +20,10 @@ import {
   type ParticipantRecord,
 } from "./participants";
 import {
-  contextWindowOf,
-  DEFAULT_CONTEXT_WINDOW,
+  benchContextWindowOf,
   kindOf,
   participantsOf,
+  resolveContextWindow,
 } from "./channel-settings";
 import type {
   ChannelLauncher,
@@ -300,7 +300,7 @@ async function loadChannelContext(input: {
 }
 
 export type SendChannelMessageDeps = {
-  readonly store: Pick<ChatStore, "getChannelSettings">;
+  readonly store: Pick<ChatStore, "getChannelSettings" | "getBenchSettings">;
   readonly platform: Pick<ChannelMail, "sendMail" | "listMail" | "fetchBlob">;
 };
 
@@ -363,10 +363,13 @@ export async function sendChannelMessage(
           channelId: input.channelId,
           excludeMailId: sent.id,
           participants,
-          contextWindow:
-            settingsRow !== undefined
-              ? contextWindowOf(settingsRow.settings)
-              : DEFAULT_CONTEXT_WINDOW,
+          contextWindow: resolveContextWindow(
+            settingsRow?.settings ?? {},
+            benchContextWindowOf(
+              (await deps.store.getBenchSettings(input.tenantId))?.settings ??
+                {},
+            ),
+          ).value,
         })
       : undefined;
   const fanoutParts =

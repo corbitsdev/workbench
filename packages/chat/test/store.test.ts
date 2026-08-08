@@ -75,6 +75,30 @@ test("updateChannelSettings replaces the settings blob and rejects a missing cha
   ).rejects.toThrow();
 });
 
+test("getBenchSettings is undefined until a bench sets defaults, then upsertBenchSettings replaces them", async () => {
+  const store = createInMemoryChatStore();
+  expect(await store.getBenchSettings("tnt_1")).toBeUndefined();
+
+  await store.upsertBenchSettings({
+    tenantId: "tnt_1",
+    settings: { "chat/contextWindow": 30 },
+    updatedBy: "prn_1",
+  });
+  const first = await store.getBenchSettings("tnt_1");
+  expect(first?.settings["chat/contextWindow"]).toBe(30);
+
+  await store.upsertBenchSettings({
+    tenantId: "tnt_1",
+    settings: { "chat/contextWindow": 45 },
+    updatedBy: "prn_2",
+  });
+  const second = await store.getBenchSettings("tnt_1");
+  expect(second?.settings["chat/contextWindow"]).toBe(45);
+  expect(second?.updatedBy).toBe("prn_2");
+
+  expect(await store.getBenchSettings("tnt_2")).toBeUndefined();
+});
+
 test("putReadState upserts a per-principal cursor without disturbing other principals", async () => {
   const store = createInMemoryChatStore();
   await store.putReadState({

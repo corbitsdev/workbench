@@ -16,24 +16,37 @@ import {
 
 const PatchSettingsBody = type("Record<string, unknown>");
 
+// `chat/contextWindow` is nullable: `null` (or the key's absence) means
+// "inherit the bench-wide default", a number is an explicit per-channel
+// override. This is the Discord "use server default" shape — see
+// `resolveContextWindow` below for how the two are told apart and folded
+// into one effective value.
 export const ChatNamespaceSchemas: Readonly<Record<string, Type<unknown>>> = {
   "chat/kind": type("string"),
   "chat/name": type("string"),
   "chat/pinned": type("boolean"),
   "chat/participants": ParticipantsSetting,
+  "chat/contextWindow": type("number | null"),
+};
+
+// The bench-wide chat defaults vocabulary: currently just the default
+// context window every channel inherits unless it sets its own override.
+// Kept as its own schema table (rather than folded into
+// `ChatNamespaceSchemas`) because a bench default is never nullable — there
+// is nothing beneath it to inherit from.
+export const ChatBenchNamespaceSchemas: Readonly<
+  Record<string, Type<unknown>>
+> = {
   "chat/contextWindow": type("number"),
 };
 
 export class SettingsValidationError extends Error {}
 
-/**
- * Validates a settings PATCH payload: `chat/*` keys are checked
- * against the package's own strict schema per key, while any other
- * `<pkg>/*` namespace passes through opaquely. That asymmetry is the
- * extension contract, not a fallback — a foreign package's settings
- * are simply not this package's to validate.
- */
-export function validateSettingsPatch(body: unknown): Record<string, unknown> {
+function validatePatchAgainst(
+  body: unknown,
+  schemas: Readonly<Record<string, Type<unknown>>>,
+  namespace: string,
+): Record<string, unknown> {
   const parsed = PatchSettingsBody(body);
   if (parsed instanceof type.errors) {
     throw new SettingsValidationError(
@@ -42,8 +55,8 @@ export function validateSettingsPatch(body: unknown): Record<string, unknown> {
   }
   const validated: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(parsed)) {
-    if (key.startsWith("chat/")) {
-      const schema = ChatNamespaceSchemas[key];
+    if (key.startsWith(namespace)) {
+      const schema = schemas[key];
       if (schema === undefined) {
         throw new SettingsValidationError(`unknown chat setting "${key}"`);
       }
@@ -59,6 +72,30 @@ export function validateSettingsPatch(body: unknown): Record<string, unknown> {
     }
   }
   return validated;
+}
+
+/**
+ * Validates a settings PATCH payload: `chat/*` keys are checked
+ * against the package's own strict schema per key, while any other
+ * `<pkg>/*` namespace passes through opaquely. That asymmetry is the
+ * extension contract, not a fallback — a foreign package's settings
+ * are simply not this package's to validate.
+ */
+export function validateSettingsPatch(body: unknown): Record<string, unknown> {
+  return validatePatchAgainst(body, ChatNamespaceSchemas, "chat/");
+}
+
+/**
+ * Validates a bench-wide settings PATCH payload the same way
+ * `validateSettingsPatch` validates a channel's, against the bench
+ * defaults vocabulary instead. A bench default carries no inherit case of
+ * its own, so every `chat/*` key here is required to be its real type,
+ * never `null`.
+ */
+export function validateBenchSettingsPatch(
+  body: unknown,
+): Record<string, unknown> {
+  return validatePatchAgainst(body, ChatBenchNamespaceSchemas, "chat/");
 }
 
 /**
@@ -80,21 +117,94 @@ export const DEFAULT_CONTEXT_WINDOW = 20;
  * value can never turn a mention fan-out into a token bomb. */
 export const MAX_CONTEXT_WINDOW = 200;
 
+function clampWindow(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) {
+    return undefined;
+  }
+  return Math.min(raw, MAX_CONTEXT_WINDOW);
+}
+
 /**
  * A channel's context-window size, read off its settings the same way
  * `kindOf` reads kind: a non-negative integer, where `0` disables the
  * channel-context block entirely. Absent or invalid values (wrong type,
- * negative, non-integer) fall back to `DEFAULT_CONTEXT_WINDOW` rather
- * than trusting the jsonb shape; anything above `MAX_CONTEXT_WINDOW` is
- * clamped down to it — validation at the trust boundary, not a
- * fallback path.
+ * negative, non-integer, `null`) fall back to `DEFAULT_CONTEXT_WINDOW`
+ * rather than trusting the jsonb shape; anything above
+ * `MAX_CONTEXT_WINDOW` is clamped down to it — validation at the trust
+ * boundary, not a fallback path.
+ *
+ * This reads the code-level default directly, with no notion of a
+ * bench-wide override — callers that have a bench default in hand should
+ * use `resolveContextWindow` instead, which is the inherit/override-aware
+ * successor to this function.
  */
 export function contextWindowOf(settings: Record<string, unknown>): number {
-  const raw = settings["chat/contextWindow"];
-  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) {
-    return DEFAULT_CONTEXT_WINDOW;
+  return clampWindow(settings["chat/contextWindow"]) ?? DEFAULT_CONTEXT_WINDOW;
+}
+
+/**
+ * A bench's default context window, read off its bench-wide settings the
+ * same way `contextWindowOf` reads a channel's: absent or invalid falls
+ * back to `DEFAULT_CONTEXT_WINDOW`, and anything oversized clamps to
+ * `MAX_CONTEXT_WINDOW`. A bench default is never itself "inherited" —
+ * there is nothing beneath it — so this never returns a null/override
+ * distinction, only a plain number.
+ */
+export function benchContextWindowOf(
+  settings: Record<string, unknown>,
+): number {
+  return clampWindow(settings["chat/contextWindow"]) ?? DEFAULT_CONTEXT_WINDOW;
+}
+
+export type ContextWindowSource = "inherit" | "override";
+
+export interface ResolvedContextWindow {
+  readonly value: number;
+  readonly source: ContextWindowSource;
+}
+
+const BenchDefaultInput = type("number.integer >= 0");
+
+/**
+ * Folds a channel's `chat/contextWindow` override against its bench's
+ * default into the one effective value a message send actually uses —
+ * the "Use bench default" vs "Override" distinction the channel settings
+ * panel renders as a two-state control.
+ *
+ * `null` or an absent key on the channel means inherit: the resolved
+ * value is the bench default, clamped the same way a channel override
+ * would be. Any other valid number is an explicit override, clamped to
+ * `MAX_CONTEXT_WINDOW` on its own. An invalid override (wrong type,
+ * negative, non-integer) is treated the same as absent — it inherits,
+ * rather than silently coercing to some other number.
+ *
+ * `benchDefault` is trusted to already be a valid, clamped context
+ * window (as `benchContextWindowOf` produces) — this throws loudly
+ * rather than accepting a malformed bench default, since a bad bench
+ * default would otherwise silently corrupt every inheriting channel's
+ * effective value.
+ */
+export function resolveContextWindow(
+  channelSettings: Record<string, unknown>,
+  benchDefault: number,
+): ResolvedContextWindow {
+  const validatedDefault = BenchDefaultInput(benchDefault);
+  if (validatedDefault instanceof type.errors) {
+    throw new Error(
+      `resolveContextWindow: invalid bench default: ${validatedDefault.summary}`,
+    );
   }
-  return Math.min(raw, MAX_CONTEXT_WINDOW);
+  const clampedDefault = Math.min(validatedDefault, MAX_CONTEXT_WINDOW);
+
+  const raw = channelSettings["chat/contextWindow"];
+  if (raw === undefined || raw === null) {
+    return { value: clampedDefault, source: "inherit" };
+  }
+  const override = clampWindow(raw);
+  if (override === undefined) {
+    return { value: clampedDefault, source: "inherit" };
+  }
+  return { value: override, source: "override" };
 }
 
 export function participantsOf(

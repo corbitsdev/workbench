@@ -86,6 +86,40 @@ export const chatMigrations: readonly ChatMigration[] = [
         ON "channel_tenancy" ("parent_tenant_id");
     `,
   },
+  {
+    name: "0007_chat_bench_settings",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat_bench_settings" (
+        "tenant_id" text NOT NULL,
+        "settings" jsonb NOT NULL,
+        "updated_by" text NOT NULL,
+        "updated_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id")
+      );
+    `,
+  },
+  // Before this rollout, `channel_settings.settings->>'chat/contextWindow'`
+  // had exactly one meaning: an explicit per-channel value, read back by
+  // `contextWindowOf` with a code-level fallback of 20 for any row that
+  // never set the key at all. There was no bench-wide default for a
+  // channel to "inherit" — every existing value already on a row is
+  // therefore a real, deliberately-set override, not some default that
+  // happened to get written. Introducing bench defaults must not
+  // silently reinterpret those rows as "inheriting" (they were never
+  // inheriting anything), so this migration leaves every row that
+  // already carries the key untouched — it stays an explicit override —
+  // and only touches rows with no key at all, making that absence
+  // explicit as `null` (inherit) rather than continuing to rely on an
+  // implicit, code-only fallback now that a real bench-wide default
+  // exists to inherit from.
+  {
+    name: "0008_channel_context_window_explicit_inherit",
+    sql: `
+      UPDATE "channel_settings"
+      SET "settings" = jsonb_set("settings", '{chat/contextWindow}', 'null'::jsonb)
+      WHERE NOT ("settings" ? 'chat/contextWindow');
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named
