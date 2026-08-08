@@ -138,6 +138,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/agent-lifecycle": "workspace:*",
+        "@corbits/commands": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@intx/agent": "workspace:*",
         "@intx/crypto": "workspace:*",
@@ -188,6 +189,19 @@
         "@intx/types": "workspace:*",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/commands": {
+      "name": "@corbits/commands",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/hub-api": "workspace:*",
+        "arktype": "catalog:",
+        "hono": "^4.11.9",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -705,6 +719,8 @@
     "@corbits/chat": ["@corbits/chat@workspace:packages/chat"],
 
     "@corbits/chat-ui": ["@corbits/chat-ui@workspace:packages/chat-ui"],
+
+    "@corbits/commands": ["@corbits/commands@workspace:packages/commands"],
 
     "@corbits/echo-workflow": ["@corbits/echo-workflow@workspace:workflows/echo"],
 
