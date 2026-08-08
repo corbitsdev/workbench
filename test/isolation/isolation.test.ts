@@ -229,6 +229,46 @@ if (!databaseUrl) {
   });
 
   describe("chat channel move", () => {
+    /** The `tenancy` annotation `GET .../chat/channels` carries for one
+     * channel id, or `undefined` if the id is absent from the list —
+     * the actual, current `channel_tenancy` state, read fresh on every
+     * call rather than trusted from an earlier response. */
+    async function readChannelTenancy(
+      tenantId: string,
+      cookie: string,
+      channelId: string,
+    ): Promise<{ tenantId: string; parentTenantId: string } | undefined> {
+      const response = await app.request(
+        `/api/tenants/${tenantId}/chat/channels`,
+        { headers: { cookie } },
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        items: {
+          id: string;
+          tenancy: { tenantId: string; parentTenantId: string } | null;
+        }[];
+      };
+      const item = body.items.find((entry) => entry.id === channelId);
+      return item?.tenancy ?? undefined;
+    }
+
+    /** The native `tenant.parentId` for a tenant, read straight from
+     * `GET /api/tenants/:id` rather than trusted from a prior write —
+     * the same route `provisionTenant` itself calls to prove a create
+     * landed. */
+    async function readTenantParentId(
+      tenantId: string,
+      cookie: string,
+    ): Promise<string | null> {
+      const response = await app.request(`/api/tenants/${tenantId}`, {
+        headers: { cookie },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { parentId: string | null };
+      return body.parentId;
+    }
+
     test("a member of A cannot move A's channel under B without standing in B", async () => {
       const createResponse = await app.request(
         `/api/tenants/${tenantA.tenantId}/chat/channels`,
@@ -242,7 +282,10 @@ if (!databaseUrl) {
         },
       );
       expect(createResponse.status).toBe(201);
-      const created = (await createResponse.json()) as { id: string };
+      const created = (await createResponse.json()) as {
+        id: string;
+        tenancy: { tenantId: string };
+      };
 
       // Tenant A's own member holds no principal at all in tenant B —
       // the destination-authorization check must refuse this before
@@ -267,6 +310,23 @@ if (!databaseUrl) {
         { headers: { cookie: tenantA.cookie } },
       );
       expect(settingsResponse.status).toBe(200);
+
+      // A denied move must leave no trace in either place it would
+      // have written: re-read both the chat-owned link and the native
+      // tenant row, straight from the database, rather than trusting
+      // the 403 response alone — a write-then-deny implementation
+      // would still return 403 here but would fail these reads.
+      const link = await readChannelTenancy(
+        tenantA.tenantId,
+        tenantA.cookie,
+        created.id,
+      );
+      expect(link?.parentTenantId).toBe(tenantA.tenantId);
+      const parentId = await readTenantParentId(
+        created.tenancy.tenantId,
+        tenantA.cookie,
+      );
+      expect(parentId).toBe(tenantA.tenantId);
     });
 
     test("a member of A holding only a read-only principal in B still cannot move A's channel into B", async () => {
@@ -282,7 +342,10 @@ if (!databaseUrl) {
         },
       );
       expect(createResponse.status).toBe(201);
-      const created = (await createResponse.json()) as { id: string };
+      const created = (await createResponse.json()) as {
+        id: string;
+        tenancy: { tenantId: string };
+      };
 
       // Give tenant A's owner a real, active foothold in tenant B —
       // invited onto B's own "member" system role (read-only grants
@@ -355,6 +418,87 @@ if (!databaseUrl) {
         { headers: { cookie: tenantA.cookie } },
       );
       expect(settingsResponse.status).toBe(200);
+
+      // Same non-negotiable as the sibling test: a real, active
+      // principal in the destination is still not a manage grant, and
+      // the denial must leave the actual rows untouched.
+      const link = await readChannelTenancy(
+        tenantA.tenantId,
+        tenantA.cookie,
+        created.id,
+      );
+      expect(link?.parentTenantId).toBe(tenantA.tenantId);
+      const parentId = await readTenantParentId(
+        created.tenancy.tenantId,
+        tenantA.cookie,
+      );
+      expect(parentId).toBe(tenantA.tenantId);
+    });
+
+    test("a member of A who genuinely manages tenant C can move A's channel there, and the write actually lands", async () => {
+      const createResponse = await app.request(
+        `/api/tenants/${tenantA.tenantId}/chat/channels`,
+        {
+          method: "POST",
+          headers: {
+            cookie: tenantA.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ kind: "channel", name: "Movable To Own" }),
+        },
+      );
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as {
+        id: string;
+        tenancy: { tenantId: string; parentTenantId: string };
+      };
+      expect(created.tenancy.parentTenantId).toBe(tenantA.tenantId);
+
+      // A second, real tenant owned by the same user as tenant A — a
+      // genuine manage grant in the destination, not a fake store's
+      // `Set`. `createDrizzleChannelTenancyStore` is the only
+      // implementation that takes the `SELECT ... FOR UPDATE` locks
+      // and calls the real `evaluateGrants`, so this is the only test
+      // that instantiates it end to end.
+      const tenantC: ProvisionedTenant = await provisionTenant(
+        app,
+        tenantA.cookie,
+        "c",
+        nonce,
+      );
+
+      const moveResponse = await app.request(
+        `/api/tenants/${tenantA.tenantId}/chat/channels/${created.id}/move`,
+        {
+          method: "POST",
+          headers: {
+            cookie: tenantA.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ newParentTenantId: tenantC.tenantId }),
+        },
+      );
+      expect(moveResponse.status).toBe(200);
+      const moved = (await moveResponse.json()) as {
+        tenancy: { tenantId: string; parentTenantId: string };
+      };
+      expect(moved.tenancy.parentTenantId).toBe(tenantC.tenantId);
+
+      // The response body alone proves nothing about what actually
+      // landed — re-read both places the move writes, fresh, to
+      // confirm the transaction really committed both halves: the
+      // chat-owned link row, and the native `tenant.parentId` column.
+      const link = await readChannelTenancy(
+        tenantA.tenantId,
+        tenantA.cookie,
+        created.id,
+      );
+      expect(link?.parentTenantId).toBe(tenantC.tenantId);
+      const parentId = await readTenantParentId(
+        created.tenancy.tenantId,
+        tenantA.cookie,
+      );
+      expect(parentId).toBe(tenantC.tenantId);
     });
   });
 }

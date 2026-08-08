@@ -64,6 +64,7 @@ describeIfDb("applyChatMigrations", () => {
       "0003_channel_launch",
       "0004_channel_launch_noop_inference",
       "0005_channel_tenancy",
+      "0006_channel_tenancy_parent_index",
     ]);
 
     const second = await applyChatMigrations(scratchUrl);
@@ -74,6 +75,7 @@ describeIfDb("applyChatMigrations", () => {
       "0003_channel_launch",
       "0004_channel_launch_noop_inference",
       "0005_channel_tenancy",
+      "0006_channel_tenancy_parent_index",
     ]);
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
@@ -89,6 +91,16 @@ describeIfDb("applyChatMigrations", () => {
         "channel_settings",
         "channel_tenancy",
       ]);
+
+      // `listChildChannelTenancies` filters on `parent_tenant_id` on
+      // every `GET /channels` call — without an index that is a
+      // sequential scan on every request.
+      const indexes = await sql.unsafe(
+        `SELECT indexname FROM pg_indexes WHERE tablename = 'channel_tenancy'`,
+      );
+      expect(indexes.map((row) => String(row["indexname"]))).toContain(
+        "channel_tenancy_parent_tenant_id_idx",
+      );
     } finally {
       await sql.end();
     }

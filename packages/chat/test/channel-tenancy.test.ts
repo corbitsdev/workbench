@@ -195,6 +195,92 @@ test("compensateChannelTenant removes the minted tenant and its tenancy link", a
   expect(outcome).toEqual({ kind: "destination_not_found" });
 });
 
+test("moveChannelTenancy rejects moving a channel into its own tenant", async () => {
+  const tenancy = createInMemoryChannelTenancyStore();
+  const minted = await tenancy.createChannelTenant({
+    parentTenantId: "tnt_bench_a",
+    channelId: "ins_general",
+    name: "General",
+    creatorUserId: "usr_alice",
+  });
+  // The creator holds a manage grant in its own tenant (seeded as
+  // owner) — proving the rejection is structural, not authorization,
+  // since a caller with every grant in the world is still refused.
+  tenancy.grantManageInTenant("usr_alice", minted.tenantId);
+
+  const outcome = await tenancy.moveChannelTenancy({
+    channelId: "ins_general",
+    newParentTenantId: minted.tenantId,
+    callerRefId: "usr_alice",
+  });
+
+  expect(outcome).toEqual({ kind: "cycle" });
+});
+
+test("moveChannelTenancy rejects a multi-node cycle: moving a channel into its own descendant", async () => {
+  const tenancy = createInMemoryChannelTenancyStore();
+  const parentChannel = await tenancy.createChannelTenant({
+    parentTenantId: "tnt_bench_a",
+    channelId: "ins_parent",
+    name: "Parent",
+    creatorUserId: "usr_alice",
+  });
+  const childChannel = await tenancy.createChannelTenant({
+    // The child channel's tenant is parented under the parent
+    // channel's tenant — a real, two-node chain — before the move
+    // under test ever runs.
+    parentTenantId: parentChannel.tenantId,
+    channelId: "ins_child",
+    name: "Child",
+    creatorUserId: "usr_alice",
+  });
+  tenancy.grantManageInTenant("usr_alice", childChannel.tenantId);
+
+  // Moving the parent channel into the child's tenant would make the
+  // parent its own grandchild's child — a cycle two hops deep, not
+  // just a direct self-parent.
+  const outcome = await tenancy.moveChannelTenancy({
+    channelId: "ins_parent",
+    newParentTenantId: childChannel.tenantId,
+    callerRefId: "usr_alice",
+  });
+
+  expect(outcome).toEqual({ kind: "cycle" });
+
+  // Neither tenancy link moved.
+  expect(await tenancy.getChannelTenancy("ins_parent")).toEqual(
+    expect.objectContaining({ parentTenantId: "tnt_bench_a" }),
+  );
+  expect(await tenancy.getChannelTenancy("ins_child")).toEqual(
+    expect.objectContaining({ parentTenantId: parentChannel.tenantId }),
+  );
+});
+
+test("moveChannelTenancy allows moving a channel into an unrelated tenant that happens to share a grandparent", async () => {
+  const tenancy = createInMemoryChannelTenancyStore();
+  tenancy.registerExistingTenant("tnt_root");
+  tenancy.registerExistingTenant("tnt_sibling", "tnt_root");
+  tenancy.grantManageInTenant("usr_alice", "tnt_sibling");
+  await tenancy.createChannelTenant({
+    parentTenantId: "tnt_root",
+    channelId: "ins_movable",
+    name: "Movable",
+    creatorUserId: "usr_alice",
+  });
+
+  // "tnt_sibling" shares an ancestor ("tnt_root") with the channel's
+  // current tenant but is not itself a descendant of it — a cycle
+  // check that only compared "is this the current parent" rather than
+  // walking the whole chain could wrongly flag this as related.
+  const outcome = await tenancy.moveChannelTenancy({
+    channelId: "ins_movable",
+    newParentTenantId: "tnt_sibling",
+    callerRefId: "usr_alice",
+  });
+
+  expect(outcome.kind).toBe("moved");
+});
+
 test("moveChannelTenancy reports no tenancy for a channel with no tenancy link, before the destination is even considered", async () => {
   const tenancy = createInMemoryChannelTenancyStore();
   const outcome = await tenancy.moveChannelTenancy({

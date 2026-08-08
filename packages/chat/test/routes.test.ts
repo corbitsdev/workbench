@@ -515,6 +515,35 @@ describe("channel tenancy", () => {
     expect(link?.parentTenantId).toBe(TENANT.id);
   });
 
+  test("POST /channels/:id/move is refused when the destination would make the channel its own ancestor", async () => {
+    const tenancy = createInMemoryChannelTenancyStore();
+    const deps = buildDeps({ tenancy });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Movable",
+    });
+    const link = await deps.tenancy.getChannelTenancy(channel.id);
+    if (link === undefined) throw new Error("expected a tenancy link");
+    // The caller manages its own channel's tenant (seeded as owner at
+    // creation) — proving this rejection is structural, not
+    // authorization: full grants and it is still refused.
+    tenancy.grantManageInTenant("prn_alice", link.tenantId);
+
+    const response = await app.request(`/channels/${channel.id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ newParentTenantId: link.tenantId }),
+    });
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("conflict");
+
+    const unchanged = await deps.tenancy.getChannelTenancy(channel.id);
+    expect(unchanged?.parentTenantId).toBe(TENANT.id);
+  });
+
   test("POST /channels/:id/move on a legacy channel is a loud 409, never a silent no-op", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
