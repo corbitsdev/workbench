@@ -39,6 +39,19 @@ still open upstream.
    re-raising the error. Both the failure and the compensation are
    logged loudly.
 
+   Compensation is itself a database write, and can itself fail — the
+   same outage that failed the launch, for instance, can just as
+   easily fail the cleanup. That double failure is caught separately:
+   a compensation error is logged loudly on its own, tagged with the
+   orphaned tenant id for an operator to clean up by hand, and the
+   route always re-raises the **original** launch error, never the
+   compensation error. A caller never sees "cleanup failed" in place
+   of "your channel failed to launch," and a double failure never
+   produces a silently swallowed exception — the accepted cost of a
+   double failure is one privileged orphan tenant sitting in the
+   database with a loud log line pointing at it, not data loss or a
+   hung request.
+
 Point 4's tenant/launch split is a deliberate, documented limitation —
 see "What still lives in the parent bench" below.
 
@@ -87,19 +100,32 @@ transaction (`ChannelTenancyStore.moveChannelTenancy`):
 A channel with no `channel_tenancy` link (a legacy channel) cannot be
 moved; the route returns `409 conflict` rather than silently no-op'ing.
 
-The route fails closed on the destination before either write happens,
-via `ChannelTenancyStore.authorizeMoveDestination`:
+The destination is verified and the move is written by the same call,
+inside the same transaction — `ChannelTenancyStore.moveChannelTenancy`
+takes the caller's `refId` alongside the channel and destination ids,
+and re-checks the destination from inside its own transaction rather
+than trusting a decision an earlier, separate read made:
 
 - `newParentTenantId` must name a tenant that actually exists — a bogus
   or fabricated id is rejected with `404 not_found` rather than being
   written straight into `channel_tenancy` and `tenant.parentId`.
 - The caller must hold an active principal in that destination tenant
-  carrying a manage-level grant, checked with the same `@intx/authz`
-  `authorize` call `requireGrant` itself uses, evaluated against the
-  destination tenant rather than the caller's own. A caller with only
-  standing in the channel's current bench — including the bench that
-  currently owns the channel — cannot move it into a tenant it has no
-  authority over; that request is rejected with `403 forbidden`.
+  carrying a manage-level grant, evaluated with the same `@intx/authz`
+  `evaluateGrants` logic `requireGrant` itself resolves against, against
+  the destination tenant rather than the caller's own. A caller with
+  only standing in the channel's current bench — including the bench
+  that currently owns the channel — cannot move it into a tenant it has
+  no authority over; that request is rejected with `403 forbidden`.
+
+Both checks run under row locks (`SELECT ... FOR UPDATE`) taken on the
+destination tenant row, the caller's principal row in that tenant, and
+every grant row that could resolve the decision — all inside the
+transaction that goes on to perform the two writes. This is not a
+"check, then separately act" sequence: a grant revocation or a
+destination-tenant deletion committed by another transaction blocks on
+these locks until the move's transaction finishes, rather than landing
+in a window between the check and the write and letting the move
+proceed on since-revoked authority.
 
 ## What still lives in the parent bench
 
@@ -137,9 +163,10 @@ relevant to this feature:
   since it mints the child tenant directly rather than going through that
   HTTP route.
 - **The move route does verify `newParentTenantId`, unlike the native
-  creation route.** `authorizeMoveDestination` checks the destination
-  tenant exists and that the caller holds a manage-level grant there
-  before either write happens (see "Movability" above) — a stricter
-  contract than `POST /api/tenants`'s unvalidated `parentId` enforces.
-  Tightening the native route to match is future work upstream, not
-  something this package can do from the outside.
+  creation route.** `ChannelTenancyStore.moveChannelTenancy` checks the
+  destination tenant exists and that the caller holds a manage-level
+  grant there, inside the same transaction that performs the move (see
+  "Movability" above) — a stricter contract than `POST /api/tenants`'s
+  unvalidated `parentId` enforces. Tightening the native route to match
+  is future work upstream, not something this package can do from the
+  outside.
