@@ -17,6 +17,7 @@
     "@corbits/bench-ui": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
+    "@corbits/command-palette": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#bebe1ed596637a912e69dbdb857c3e043861e192",
     "@intx/types": "workspace:*",
