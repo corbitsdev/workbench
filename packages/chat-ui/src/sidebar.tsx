@@ -9,6 +9,7 @@ import { Button, EmptyState } from "@corbits/react-ui";
 import { Plus } from "lucide-react";
 
 import type { Channel } from "./api";
+import { isKnownChannelKind } from "./api";
 import { CHAT_STRINGS } from "./strings";
 import { AgentBadge } from "./timeline";
 
@@ -21,8 +22,11 @@ function ChannelRow({
   readonly active: boolean;
   readonly onSelect: () => void;
 }) {
+  // A single-agent chat badges its fixed agent; a channel of the pinned
+  // kind never does. A kind this UI doesn't otherwise recognize renders
+  // through the same neutral path as a channel.
   const agentParticipant =
-    channel.kind === "chat"
+    isKnownChannelKind(channel.kind) && channel.kind === "chat"
       ? channel.participants.find((participant) =>
           isAgentAddress(participant.address),
         )

@@ -34,6 +34,7 @@ import {
   putReadState,
   sendMessage,
   channelStreamUrl,
+  isKnownChannelKind,
 } from "./api";
 import type { Channel, CreateChannelInput, MessageItem } from "./api";
 import { Composer } from "./composer";
@@ -88,11 +89,11 @@ export type MessagesLoadOutcome =
   | { readonly kind: "error"; readonly message: string };
 
 /**
- * The B1 fix, isolated as a pure rule: a background refresh (SSE/poll) never
- * shows the loading skeleton and never replaces a `ready` timeline with an
- * error page — it only ever moves `ready` state forward on success, and
- * otherwise leaves whatever was on screen untouched. A foreground load
- * (first load or channel switch) always reflects the outcome directly.
+ * A background refresh (SSE/poll) never shows the loading skeleton and
+ * never replaces a `ready` timeline with an error page — it only ever moves
+ * `ready` state forward on success, and otherwise leaves whatever was on
+ * screen untouched. A foreground load (first load or channel switch)
+ * always reflects the outcome directly.
  */
 export function nextMessagesState(
   current: MessagesState,
@@ -108,12 +109,13 @@ export function nextMessagesState(
 
 /**
  * A chat's agent is fixed at creation — the server 409s an invite into one
- * — so the "invite agent" affordance only ever makes sense on a channel.
- * Undefined (no channel resolved yet) defaults to showing it, matching the
- * affordance's prior always-shown behavior before there was a kind to ask.
+ * — so the "invite agent" affordance only ever makes sense on a channel or
+ * on a kind this UI doesn't otherwise recognize. Undefined (no channel
+ * resolved yet) defaults to showing it.
  */
 export function canInviteAgent(kind: string | undefined): boolean {
-  return kind !== "chat";
+  if (kind === undefined) return true;
+  return !isKnownChannelKind(kind) || kind !== "chat";
 }
 
 function useChannelLists(tenantId: string, refreshKey: number) {
@@ -293,7 +295,10 @@ function ChatWorkspaceInner({
           (channel) => channel.id === activeChannelId,
         )
       : undefined;
-  const isActiveChat = activeChannel?.kind === "chat";
+  const isActiveChat =
+    activeChannel !== undefined &&
+    isKnownChannelKind(activeChannel.kind) &&
+    activeChannel.kind === "chat";
   const activeChatAgent = isActiveChat
     ? activeChannel?.participants.find((participant) =>
         isAgentAddress(participant.address),

@@ -7,10 +7,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   ChatApiError,
   createChannel,
-  deploymentDisplayName,
+  runDisplayName,
   inviteAgent,
   listChannels,
-  listDeployedAgents,
+  listRuns,
   listInvitableDefinitions,
   listMessages,
   sendMessage,
@@ -191,6 +191,7 @@ describe("listMessages", () => {
             id: "m1",
             createdAt: "2026-01-01T00:00:00.000Z",
             parts: [{ kind: "text", text: "hi" }],
+            sender: { name: null, address: "someone@agents.example" },
           },
         ],
       }),
@@ -200,7 +201,7 @@ describe("listMessages", () => {
     expect(page.items[0]?.parts[0]).toEqual({ kind: "text", text: "hi" });
   });
 
-  test("decodes a message carrying the new sender field", async () => {
+  test("decodes a message's sender", async () => {
     stubFetch(() =>
       json({
         items: [
@@ -223,7 +224,7 @@ describe("listMessages", () => {
     });
   });
 
-  test("tolerates a response with no sender field", async () => {
+  test("throws a ChatApiError when a message is missing its sender", async () => {
     stubFetch(() =>
       json({
         items: [
@@ -235,13 +236,14 @@ describe("listMessages", () => {
         ],
       }),
     );
-    const page = await listMessages("tenant_1", "chan_1");
-    expect(page.items[0]?.sender).toBeUndefined();
+    await expect(listMessages("tenant_1", "chan_1")).rejects.toBeInstanceOf(
+      ChatApiError,
+    );
   });
 });
 
-describe("listDeployedAgents", () => {
-  test("parses the deployments listing", async () => {
+describe("listRuns", () => {
+  test("parses the runs listing", async () => {
     stubFetch(() =>
       json([
         {
@@ -253,12 +255,10 @@ describe("listDeployedAgents", () => {
         },
       ]),
     );
-    const deployments = await listDeployedAgents("tenant_1");
-    expect(deployments).toHaveLength(1);
-    const [deployment] = deployments;
-    expect(deployment !== undefined && deploymentDisplayName(deployment)).toBe(
-      "workflow",
-    );
+    const runs = await listRuns("tenant_1");
+    expect(runs).toHaveLength(1);
+    const [run] = runs;
+    expect(run !== undefined && runDisplayName(run)).toBe("workflow");
   });
 });
 
@@ -305,16 +305,16 @@ describe("inviteAgent", () => {
   });
 });
 
-describe("deploymentDisplayName", () => {
-  test("falls back to the raw asset id when it has no path shape", () => {
+describe("runDisplayName", () => {
+  test("never renders the raw asset id when it has no path shape", () => {
     expect(
-      deploymentDisplayName({
+      runDisplayName({
         id: "run_1",
         tenantId: "t1",
         definitionAssetId: "researcher",
         status: "deployed",
         createdAt: "2026-01-01T00:00:00.000Z",
       }),
-    ).toBe("researcher");
+    ).toBe("Untitled agent");
   });
 });

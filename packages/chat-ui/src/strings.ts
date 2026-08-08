@@ -43,6 +43,7 @@ export const CHAT_STRINGS = {
   reconnectingMessage: "Reconnecting to the channel…",
   mentionEmpty: "No matching agents",
   unnamedChannel: "Untitled channel",
+  unnamedRun: "Untitled agent",
   fallbackPartLabel: (kind: string) => `[${kind}]`,
   senderYou: "You",
   senderFallbackMember: "Member",

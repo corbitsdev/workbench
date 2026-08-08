@@ -126,11 +126,13 @@ describe("ChannelTimeline", () => {
       id: "m1",
       createdAt: "2026-01-01T00:00:00.000Z",
       parts: [{ kind: "text", text: "hello there" }],
+      sender: { name: null, address: "prn_fixture1@agents.example" },
     },
     {
       id: "m2",
       createdAt: "2026-01-01T00:01:00.000Z",
       parts: [{ kind: "event", event: "member.joined", data: {} }],
+      sender: { name: null, address: "prn_fixture1@agents.example" },
     },
     {
       id: "m3",
@@ -143,6 +145,7 @@ describe("ChannelTimeline", () => {
           status: "success",
         },
       ],
+      sender: { name: null, address: "prn_fixture1@agents.example" },
     },
   ];
 
@@ -270,11 +273,13 @@ describe("ChannelTimeline", () => {
         id: "d1",
         createdAt: "2026-01-01T23:59:00.000Z",
         parts: [{ kind: "text", text: "before midnight" }],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
       },
       {
         id: "d2",
         createdAt: "2026-01-02T00:01:00.000Z",
         parts: [{ kind: "text", text: "after midnight" }],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
       },
     ];
     const markup = renderToStaticMarkup(<ChannelTimeline items={acrossDays} />);
@@ -297,6 +302,7 @@ describe("ChannelTimeline", () => {
             },
           },
         ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
       },
     ];
     const markup = renderToStaticMarkup(
@@ -434,6 +440,7 @@ describe("no raw identifiers on screen", () => {
             },
           },
         ],
+        sender: { name: null, address: "ins_cd03d8e3@agents.example" },
       },
     ];
 

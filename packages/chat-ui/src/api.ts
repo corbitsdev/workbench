@@ -3,77 +3,65 @@
 // through a function here, and every response is parsed with an arktype
 // schema at the boundary — a route shape change is a one-file fix.
 //
-// The `Part` schema is defined locally rather than imported from
-// `packages/chat`: that package is under active development elsewhere, and a
-// wire contract this app parses untrusted data against should not shift out
-// from under it mid-edit. It is kept structurally identical to
-// `packages/chat/src/parts.ts` on purpose.
+// The wire-level `Part` and participant schemas are imported from
+// `@corbits/chat` rather than redefined here: this UI validates the wire
+// contract at its own boundary, but against the one real schema rather than
+// a second, hand-copied one.
 
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
+import { Part } from "@corbits/chat/parts";
+import { parseParticipants } from "@corbits/chat/participants";
+import type { ParticipantRecord } from "@corbits/chat/participants";
+import { CHAT_STRINGS } from "./strings";
 
-export const TextPart = type({ kind: "'text'", text: "string" });
-export const ReasoningPart = type({ kind: "'reasoning'", text: "string" });
-export const ToolTracePart = type({
-  kind: "'tool-trace'",
-  name: "string",
-  input: "unknown",
-  "output?": "unknown",
-  status: "'pending' | 'running' | 'success' | 'error'",
-});
-export const BlockPart = type({
-  kind: "'block'",
-  block: { type: "string", data: "unknown" },
-});
-export const FilePart = type({
-  kind: "'file'",
-  name: "string",
-  mediaType: "string",
-  "blobId?": "string",
-  "data?": "string",
-});
-export const EventPart = type({
-  kind: "'event'",
-  event: "string",
-  data: "unknown",
-});
-
-export const Part = TextPart.or(ReasoningPart)
-  .or(ToolTracePart)
-  .or(BlockPart)
-  .or(FilePart)
-  .or(EventPart);
-export type Part = typeof Part.infer;
+export {
+  TextPart,
+  ReasoningPart,
+  ToolTracePart,
+  BlockPart,
+  FilePart,
+  EventPart,
+  Part,
+} from "@corbits/chat/parts";
+export type { ParticipantRecord } from "@corbits/chat/participants";
 
 export const ChannelKind = type("'channel' | 'chat'");
 export type ChannelKind = typeof ChannelKind.infer;
 
-// A channel participant's mention-friendly record — an address plus the
-// short handle a mention actually types (`@echo`), never the raw
-// instance-id local part. Mirrors `@corbits/chat`'s `ParticipantRecord`
-// (see `packages/chat/src/participants.ts`) structurally, kept local for
-// the same reason `Part` is above: this wire contract should not shift
-// out from under the app mid-edit of that package.
-export const ParticipantRecord = type({
-  address: "string",
-  handle: "string",
-});
-export type ParticipantRecord = typeof ParticipantRecord.infer;
+/** Every channel kind this UI has bespoke handling for. Any other value on
+ * the wire is a channel kind the server knows about that this UI doesn't —
+ * it renders through the neutral, kind-agnostic path rather than being
+ * rejected at parse time. */
+export function isKnownChannelKind(kind: string): kind is ChannelKind {
+  return kind === "channel" || kind === "chat";
+}
 
-const Channel = type({
+const ChannelWire = type({
   id: "string",
   title: "string",
   kind: "string",
   pinned: "boolean",
-  participants: ParticipantRecord.array(),
+  participants: "unknown[]",
 });
-export type Channel = typeof Channel.infer;
 
-const ChannelsResponse = type({ items: Channel.array() });
+const Channel = ChannelWire.pipe((wire) => ({
+  ...wire,
+  participants: parseParticipants(wire.participants),
+}));
+export type Channel = Omit<typeof ChannelWire.infer, "participants"> & {
+  readonly participants: readonly ParticipantRecord[];
+};
 
-// `sender` is landing on `GET /channels/:id/messages` in packages/chat
-// alongside this change (see routes.ts) — kept optional here so the UI
-// tolerates responses from either side of that rollout.
+const ChannelsResponse = type({ items: ChannelWire.array() }).pipe(
+  (response) => ({
+    items: response.items.map((wire) => ({
+      ...wire,
+      participants: parseParticipants(wire.participants),
+    })),
+  }),
+);
+
 export const MessageSender = type({ name: "string | null", address: "string" });
 export type MessageSender = typeof MessageSender.infer;
 
@@ -81,7 +69,7 @@ const MessageItem = type({
   id: "string",
   createdAt: "string",
   parts: Part.array(),
-  "sender?": MessageSender,
+  sender: MessageSender,
 });
 export type MessageItem = typeof MessageItem.infer;
 
@@ -98,22 +86,21 @@ const ReadState = type({
   "lastSeenId?": "string | null",
 });
 
-// The shape `GET /api/tenants/:t/workflows/instances` returns (see
-// vendor/intx/hub-api/src/routes/workflows.ts): a deployed workflow, one row
-// per deployment. It carries no display name — only the id and the asset id
-// its definition was hydrated from — so the mention popover derives a
-// readable label from `definitionAssetId` (see `deploymentDisplayName`
-// below) until the platform exposes a real name here.
-const Deployment = type({
+// The shape `GET /api/tenants/:t/workflows/instances` returns: a run, one row
+// per definition executing in the bench. It carries no display name — only
+// the id and the asset id its definition was hydrated from — so the mention
+// popover derives a readable label from `definitionAssetId` (see
+// `runDisplayName` below).
+const Run = type({
   id: "string",
   tenantId: "string",
   definitionAssetId: "string",
   status: "string",
   createdAt: "string",
 });
-export type Deployment = typeof Deployment.infer;
+export type Run = typeof Run.infer;
 
-const DeploymentsResponse = Deployment.array();
+const RunsResponse = Run.array();
 
 // `GET /channels/:id/invitable` (see packages/chat/src/routes.ts): the
 // tenant's deployed, launchable workflow definitions this channel can
@@ -246,13 +233,8 @@ export function putReadState(
   ).then(() => undefined);
 }
 
-export function listDeployedAgents(
-  tenantId: string,
-): Promise<readonly Deployment[]> {
-  return request(
-    `/api/tenants/${tenantId}/workflows/instances`,
-    DeploymentsResponse,
-  );
+export function listRuns(tenantId: string): Promise<readonly Run[]> {
+  return request(`/api/tenants/${tenantId}/workflows/instances`, RunsResponse);
 }
 
 export function listInvitableDefinitions(
@@ -282,16 +264,17 @@ export function channelStreamUrl(tenantId: string, channelId: string): string {
 }
 
 /**
- * A readable name for a deployment, since the deployments listing carries no
- * name field: the asset id's final path segment with any extension
- * stripped, e.g. `researcher/workflow.json` → "workflow", falling back to
- * the raw asset id when it has no path shape at all.
+ * A readable name for a run, since the runs listing carries no name field:
+ * the asset id's final path segment with any extension stripped, e.g.
+ * `researcher/workflow.json` → "workflow". An asset id with no path shape
+ * at all carries no readable segment to extract, so it renders friendly
+ * placeholder copy — never the raw asset id.
  */
-export function deploymentDisplayName(deployment: Deployment): string {
-  const segment = deployment.definitionAssetId.split("/").at(-1);
-  if (segment === undefined || segment.length === 0) {
-    return deployment.definitionAssetId;
-  }
+export function runDisplayName(run: Run): string {
+  const slash = run.definitionAssetId.lastIndexOf("/");
+  if (slash < 0) return CHAT_STRINGS.unnamedRun;
+  const segment = run.definitionAssetId.slice(slash + 1);
+  if (segment.length === 0) return CHAT_STRINGS.unnamedRun;
   const dot = segment.lastIndexOf(".");
   return dot > 0 ? segment.slice(0, dot) : segment;
 }

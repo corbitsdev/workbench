@@ -19,6 +19,7 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
         id: "m1",
         createdAt: "2026-01-01T00:00:00.000Z",
         parts: [{ kind: "text", text: "hi" }],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
       },
     ],
   };
@@ -88,6 +89,10 @@ describe("canInviteAgent (a chat's agent is fixed at creation; the server 409s a
 
   test("defaults true with no resolved channel yet", () => {
     expect(canInviteAgent(undefined)).toBe(true);
+  });
+
+  test("is true for a kind this UI doesn't otherwise recognize", () => {
+    expect(canInviteAgent("archive")).toBe(true);
   });
 });
 
