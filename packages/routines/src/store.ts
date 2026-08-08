@@ -5,7 +5,7 @@
 // implementation, over the tables in `./schema.ts`.
 import { and, desc, eq, isNull, lte } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { hexEncode } from "@intx/types";
+import { generateId } from "@intx/hub-common";
 
 import { routine, routineRun } from "./schema";
 import { computeNextFireAt, type RoutineTriggerT } from "./trigger";
@@ -147,18 +147,6 @@ export interface RoutineStore {
   ): Promise<void>;
 }
 
-// `@intx/hub-common`'s `generateId` is closed over the platform's own
-// ID kinds (tenant, principal, session, ...), which a Routine is not —
-// it is a product entity this package owns, not a platform-native
-// resource. This mints ids with the exact same primitive
-// (`crypto.getRandomValues` + hex encoding) generateId uses, under its
-// own `rtn_` prefix, rather than smuggling a new kind into the
-// platform's enumeration.
-function generateRoutineId(): string {
-  const bytes = hexEncode(crypto.getRandomValues(new Uint8Array(16)));
-  return `rtn_${bytes}`;
-}
-
 export function createDrizzleRoutineStore<
   TSchema extends Record<string, unknown>,
 >(db: RoutineDb<TSchema>): RoutineStore {
@@ -168,7 +156,7 @@ export function createDrizzleRoutineStore<
       const [row] = await db
         .insert(routine)
         .values({
-          id: generateRoutineId(),
+          id: generateId("instance"),
           tenantId: input.tenantId,
           name: input.name,
           definitionId: input.definitionId,
@@ -385,7 +373,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
     async createRoutine(input) {
       const now = new Date();
       const row: RoutineRow = {
-        id: generateRoutineId(),
+        id: generateId("instance"),
         tenantId: input.tenantId,
         name: input.name,
         definitionId: input.definitionId,

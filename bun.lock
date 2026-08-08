@@ -345,7 +345,7 @@
       "dependencies": {
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/types": "workspace:*",
+        "@intx/hub-common": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
