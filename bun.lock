@@ -154,6 +154,7 @@
         "@corbits/commands": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@intx/agent": "workspace:*",
+        "@intx/authz": "workspace:*",
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",

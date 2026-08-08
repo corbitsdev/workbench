@@ -14,6 +14,7 @@
 import { formatAgentAddress } from "@intx/types";
 import type { InferencePreference } from "@intx/agent";
 import { generateId } from "@intx/hub-common";
+import { getLogger } from "@intx/log";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { type } from "arktype";
@@ -109,6 +110,8 @@ export type CreateChatRoutesDeps = {
    */
   commands?: CommandRegistry;
 };
+
+const log = getLogger(["chat", "routes"]);
 
 const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
@@ -298,11 +301,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
 
       // A channel is a child tenant of the bench it is created in from
-      // the moment it exists — minted before the channel host launches,
-      // so a launch failure never leaves an orphaned tenancy dangling
-      // ahead of the channel it names. The creator becomes that child
-      // tenant's native owner exactly as the native tenant-creation
-      // route seeds its own creator (see `channel-tenancy.ts`).
+      // the moment it exists — minted before the channel host launches.
+      // The mint itself is one transaction (see `channel-tenancy.ts`),
+      // so it never lands half-seeded; but the launch that follows it
+      // is a separate step against separate machinery, so a failure
+      // there is compensated for explicitly below rather than trusted
+      // to ordering alone. The creator becomes the child tenant's
+      // native owner exactly as the native tenant-creation route seeds
+      // its own creator (see `channel-tenancy.ts`).
       const channelTenant = await deps.tenancy.createChannelTenant({
         parentTenantId: tenant.id,
         channelId,
@@ -310,13 +316,23 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         creatorUserId: principal.refId,
       });
 
-      await deps.platform.launchChannel({
-        tenantId: tenant.id,
-        creatorPrincipalId: principal.id,
-        channelId,
-        triggerAddress,
-        definition,
-      });
+      try {
+        await deps.platform.launchChannel({
+          tenantId: tenant.id,
+          creatorPrincipalId: principal.id,
+          channelId,
+          triggerAddress,
+          definition,
+        });
+      } catch (err) {
+        log.error(
+          "Channel host launch failed for {channelId} after minting " +
+            "{tenantId}; compensating the orphaned tenant",
+          { channelId, tenantId: channelTenant.tenantId, err },
+        );
+        await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
+        throw err;
+      }
 
       const preset = presetForKind(body.kind);
       // Initial participants arrive as bare addresses; each gets a
@@ -612,6 +628,35 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               "is backfilled a tenancy",
           ),
           409,
+        );
+      }
+
+      const principal = c.get("principal");
+
+      // Fail closed on the destination: it must be a real tenant, and
+      // the caller must hold an active, manage-granted principal there
+      // — the same grant machinery `requireGrant` uses, evaluated
+      // against the destination tenant rather than the caller's own
+      // (see `ChannelTenancyStore.authorizeMoveDestination`). A caller
+      // with standing only in the channel's current bench can never
+      // move it into a tenant it has no authority over.
+      const destination = await deps.tenancy.authorizeMoveDestination({
+        newParentTenantId: body.newParentTenantId,
+        callerRefId: principal.refId,
+      });
+      if (!destination.tenantExists) {
+        return c.json(
+          ErrorEnvelope("not_found", "destination tenant not found"),
+          404,
+        );
+      }
+      if (!destination.callerHasManageGrant) {
+        return c.json(
+          ErrorEnvelope(
+            "forbidden",
+            "you do not have a manage grant in the destination tenant",
+          ),
+          403,
         );
       }
 

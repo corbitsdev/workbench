@@ -48,6 +48,7 @@ export const CHAT_STRINGS = {
   senderYou: "You",
   senderFallbackMember: "Member",
   agentBadgeLabel: "Agent",
+  legacyBadgeLabel: "Legacy",
   eventAgentJoined: (handle: string) => `@${handle} joined`,
   eventAgentJoinedUnknown: "An agent joined",
   eventMembershipChanged: "Channel membership updated",

@@ -5,7 +5,7 @@
 // area, styled to match via the same design tokens.
 
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { Button, EmptyState } from "@corbits/react-ui";
+import { Badge, Button, EmptyState } from "@corbits/react-ui";
 import { Plus } from "lucide-react";
 
 import type { Channel } from "./api";
@@ -41,6 +41,9 @@ function ChannelRow({
     >
       <span>{channel.title || CHAT_STRINGS.unnamedChannel}</span>
       {agentParticipant !== undefined ? <AgentBadge /> : null}
+      {channel.legacy === true ? (
+        <Badge tone="neutral">{CHAT_STRINGS.legacyBadgeLabel}</Badge>
+      ) : null}
     </button>
   );
 }

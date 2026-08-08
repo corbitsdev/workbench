@@ -43,6 +43,7 @@ const ChannelWire = type({
   kind: "string",
   pinned: "boolean",
   participants: "unknown[]",
+  "legacy?": "boolean",
 });
 
 const Channel = ChannelWire.pipe((wire) => ({
