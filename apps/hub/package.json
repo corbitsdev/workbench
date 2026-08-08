@@ -14,6 +14,7 @@
   "dependencies": {
     "@corbits/chat": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
+    "@corbits/schedules": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@intx/authz": "workspace:*",
     "@intx/crypto": "workspace:*",

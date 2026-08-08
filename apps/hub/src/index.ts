@@ -27,6 +27,12 @@ import {
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
 import {
+  createDrizzleScheduleStore,
+  createHubScheduleLauncher,
+  createScheduleRoutes,
+  createScheduler,
+} from "@corbits/schedules";
+import {
   createAgentRepoStore,
   createAssetService,
   createEventCollectorRegistry,
@@ -59,6 +65,11 @@ const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
 // mid-turn instance regardless of this value, so it only has to be
 // long enough that an agent between turns is never mistaken for idle.
 const CHAT_IDLE_SLEEP_MS = 60_000;
+// How often the schedules package checks for due schedules. Cron
+// expressions are minute-granular at best, so a tick faster than a
+// minute buys nothing; this stays well under that so a schedule fires
+// close to its minute rather than up to a full period late.
+const SCHEDULE_TICK_INTERVAL_MS = 15_000;
 // The same anthropic/claude-sonnet-5 pairing the workbench seed plants
 // in the tenant catalog, so a channel host can always resolve an
 // inference source against it.
@@ -296,6 +307,44 @@ export async function createHub(config: HubConfig) {
         ),
     }),
   );
+  // Scheduled workflow automations: its own grant store/condition
+  // registry (same construction as chat's, above — each extension owns
+  // one rather than sharing a single instance across unrelated
+  // resource kinds), its own store over `@corbits/schedules`' one
+  // product table, and a launcher built from `@corbits/folded-runs`
+  // via the same hub session services chat's platform adapter uses.
+  // The scheduler itself is started/stopped alongside the rest of the
+  // hub's process lifetime.
+  const scheduleGrantStore = createGrantStore(db);
+  const scheduleConditionRegistry: ConditionRegistry = {
+    time_window: timeWindowEvaluator,
+  };
+  const scheduleStore = createDrizzleScheduleStore(db);
+  const scheduleLauncher = createHubScheduleLauncher({
+    db,
+    sessionService,
+    assetService,
+    sidecarRouter,
+    eventCollectors,
+  });
+  const scheduler = createScheduler({
+    store: scheduleStore,
+    launcher: scheduleLauncher,
+    log: getLogger(["schedules"]),
+    tickIntervalMs: SCHEDULE_TICK_INTERVAL_MS,
+  });
+  scheduler.start();
+  app.route(
+    `${TENANT_PREFIX}/schedules`,
+    createScheduleRoutes({
+      store: scheduleStore,
+      launcher: scheduleLauncher,
+      requireGrant: createRequireGrant({
+        grantStore: scheduleGrantStore,
+        conditionRegistry: scheduleConditionRegistry,
+      }),
+    }),
+  );
 
   // The first-login hook mounts outside the tenant prefix, since the
   // session it serves belongs to no tenant yet. The route is
@@ -318,6 +367,7 @@ export async function createHub(config: HubConfig) {
     app,
     db,
     close: async () => {
+      scheduler.stop();
       chatOrchestrator.dispose();
       await close();
     },
