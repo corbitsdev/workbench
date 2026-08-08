@@ -22,6 +22,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/chat": "workspace:*",
+        "@corbits/commands": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@corbits/schedules": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",

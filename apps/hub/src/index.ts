@@ -18,6 +18,7 @@ import {
   createDrizzleChatStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
+  startWorkflowCommand,
 } from "@corbits/chat";
 import { createCryptoProviderCache } from "@corbits/folded-runs";
 import {
@@ -32,6 +33,11 @@ import {
   createScheduleRoutes,
   createScheduler,
 } from "@corbits/schedules";
+import {
+  createCommandRegistry,
+  createCommandRoutes,
+  createWorkflowCommandPlugin,
+} from "@corbits/commands";
 import {
   createAgentRepoStore,
   createAssetService,
@@ -249,6 +255,40 @@ export async function createHub(config: HubConfig) {
     events: sidecarRouter.events,
     recordActivity: chatPlatform.recordActivity,
   });
+  // The "/name args" and "@name args" command registry: every tenant's
+  // invitable workflow definitions, exposed as commands by
+  // `createWorkflowCommandPlugin`, resolved fresh on every list/lookup
+  // so a newly-deployed definition is a command on its very next use —
+  // no re-registration step. `startWorkflow` is `@corbits/chat`'s own
+  // `startWorkflowCommand`, sharing the exact invite-then-send core
+  // `POST .../invite` uses.
+  //
+  // `publish` here is a no-op: the live per-channel SSE publish
+  // function is built inside `createChatRoutes` itself (see
+  // `channel-events.ts`'s subscriber registry), not exposed to this
+  // composition root. A workflow started via a command still shows up
+  // once the channel's settings are next fetched or its timeline is
+  // next polled; it only misses the immediate live push a `POST
+  // .../invite` triggers. Flagged for review — closing this gap means
+  // either exposing that publish hook out of `createChatRoutes` or
+  // moving command dispatch inside it.
+  const commandRegistry = createCommandRegistry();
+  commandRegistry.registerCommandPlugin(
+    createWorkflowCommandPlugin({
+      listInvitableDefinitions: (tenantId) =>
+        chatPlatform.listInvitableDefinitions(tenantId),
+      startWorkflow: (input) =>
+        startWorkflowCommand(
+          {
+            store: chatStore,
+            platform: chatPlatform,
+            publish: () => undefined,
+          },
+          input,
+        ),
+    }),
+  );
+
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
     store: chatStore,
     platform: chatPlatform,
@@ -262,8 +302,19 @@ export async function createHub(config: HubConfig) {
     // there is nothing for it to override here — only the onboarding
     // path below cares whether a real credential is configured.
     channelHostInferencePreferences: DEFAULT_CHANNEL_HOST_INFERENCE_PREFERENCES,
+    commands: commandRegistry,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
+  app.route(
+    `${TENANT_PREFIX}/chat`,
+    createCommandRoutes({
+      registry: commandRegistry,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
 
   // Webhook triggers: tenant-scoped management (create/list/rotate/
   // enable/disable/delete) mounts under the tenant prefix like chat,

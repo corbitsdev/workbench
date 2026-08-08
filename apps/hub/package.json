@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@corbits/chat": "workspace:*",
+    "@corbits/commands": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
     "@corbits/schedules": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
