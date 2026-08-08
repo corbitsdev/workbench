@@ -194,6 +194,38 @@ describe("createRoutineRoutes", () => {
     expect(response.status).toBe(404);
   });
 
+  test("run history survives deleting the routine", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body: created } = await createRoutine(app, VALID_BODY);
+    const routineId = created["id"] as string;
+
+    await deps.store.recordRoutineRun({
+      tenantId: TENANT.id,
+      routineId,
+      runId: "run_before_delete",
+      triggeredBy: "manual",
+    });
+
+    const deleteResponse = await app.request(`/routines/${routineId}`, {
+      method: "DELETE",
+    });
+    expect(deleteResponse.status).toBe(204);
+
+    const runsResponse = await app.request(`/routines/${routineId}/runs`);
+    expect(runsResponse.status).toBe(200);
+    const body = (await runsResponse.json()) as { items: { runId: string }[] };
+    expect(body.items.map((item) => item.runId)).toContain("run_before_delete");
+
+    // A deleted routine is otherwise gone: it neither lists nor
+    // resolves by id, and a second delete still 404s.
+    const getResponse = await app.request(`/routines/${routineId}`);
+    expect(getResponse.status).toBe(404);
+    const listResponse = await app.request("/routines");
+    const listBody = (await listResponse.json()) as { items: unknown[] };
+    expect(listBody.items).toHaveLength(0);
+  });
+
   test("run summaries enrich when a resolver is wired, and are omitted without one", async () => {
     const deps = buildDeps({
       runSummaryResolver: {

@@ -3,6 +3,7 @@ import { type } from "arktype";
 
 import {
   RoutineTrigger,
+  computeNextFireAt,
   cronExpressionForTrigger,
   isValidCronExpression,
 } from "../src/trigger";
@@ -19,6 +20,26 @@ describe("isValidCronExpression", () => {
     expect(isValidCronExpression("* * * * * *")).toBe(false);
     expect(isValidCronExpression("not a cron string at all")).toBe(false);
     expect(isValidCronExpression("")).toBe(false);
+  });
+
+  test("rejects every field out of range, even though the format is fine", () => {
+    expect(isValidCronExpression("99 99 99 99 99")).toBe(false);
+    expect(isValidCronExpression("0 0 32 * *")).toBe(false);
+    expect(isValidCronExpression("0 0 * 13 *")).toBe(false);
+    expect(isValidCronExpression("60 * * * *")).toBe(false);
+    expect(isValidCronExpression("* * * * 7")).toBe(false);
+  });
+
+  test("rejects a reversed range, which would otherwise never match", () => {
+    expect(isValidCronExpression("10-5 * * * *")).toBe(false);
+  });
+
+  test("accepts the standard range-then-step idiom", () => {
+    expect(isValidCronExpression("5-10/2 * * * *")).toBe(true);
+  });
+
+  test("rejects a reversed range even when it also carries a step", () => {
+    expect(isValidCronExpression("10-5/2 * * * *")).toBe(false);
   });
 });
 
@@ -125,5 +146,29 @@ describe("cronExpressionForTrigger", () => {
     expect(
       cronExpressionForTrigger({ kind: "cron", expression: "1 2 3 4 5" }),
     ).toBe("1 2 3 4 5");
+  });
+});
+
+describe("computeNextFireAt", () => {
+  test("is null for a manual routine", () => {
+    expect(computeNextFireAt(null, new Date())).toBeNull();
+  });
+
+  test("finds the next matching minute for an interval preset", () => {
+    const after = new Date("2026-01-01T00:07:00Z");
+    const next = computeNextFireAt(
+      { kind: "interval", unit: "minutes", every: 10 },
+      after,
+    );
+    expect(next?.toISOString()).toBe("2026-01-01T00:10:00.000Z");
+  });
+
+  test("finds the next matching minute for a raw cron expression", () => {
+    const after = new Date("2026-01-01T00:00:00Z");
+    const next = computeNextFireAt(
+      { kind: "cron", expression: "0-5 * * * *" },
+      after,
+    );
+    expect(next?.toISOString()).toBe("2026-01-01T00:01:00.000Z");
   });
 });

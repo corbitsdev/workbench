@@ -5,6 +5,7 @@
 // raw-cron escape hatch's comma/range/step grammar.
 
 import { describe, expect, test } from "bun:test";
+import { isValidCronExpression } from "@corbits/routines";
 import { cronMatchesMinute, minuteKey } from "../src/cron-due.ts";
 
 describe("cronMatchesMinute", () => {
@@ -78,6 +79,31 @@ describe("cronMatchesMinute", () => {
 
   test("rejects an expression without exactly five fields", () => {
     expect(() => cronMatchesMinute("* * * *", new Date())).toThrow();
+  });
+});
+
+describe("isValidCronExpression (matcher and validator share one parser)", () => {
+  test("rejects out-of-range fields that would otherwise never match", () => {
+    for (const expression of [
+      "99 99 99 99 99",
+      "0 0 32 * *",
+      "0 0 * 13 *",
+      "60 * * * *",
+      "* * * * 7",
+      "10-5 * * * *",
+    ]) {
+      expect(isValidCronExpression(expression)).toBe(false);
+    }
+  });
+
+  test("accepts the range-then-step idiom the matcher already understands", () => {
+    expect(isValidCronExpression("5-10/2 * * * *")).toBe(true);
+    expect(
+      cronMatchesMinute("5-10/2 * * * *", new Date("2026-01-01T00:07:00Z")),
+    ).toBe(true);
+    expect(
+      cronMatchesMinute("5-10/2 * * * *", new Date("2026-01-01T00:08:00Z")),
+    ).toBe(false);
   });
 });
 

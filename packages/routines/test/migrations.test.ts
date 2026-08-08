@@ -56,13 +56,20 @@ describeIfDb("applyRoutineMigrations", () => {
 
   test("applies both tables and is idempotent on a second run", async () => {
     const first = await applyRoutineMigrations(scratchUrl);
-    expect(first.applied).toEqual(["0001_routine", "0002_routine_run"]);
+    expect(first.applied).toEqual([
+      "0001_routine",
+      "0002_routine_run",
+      "0003_routine_next_fire_at",
+      "0004_routine_soft_delete",
+    ]);
 
     const second = await applyRoutineMigrations(scratchUrl);
     expect(second.applied).toEqual([]);
     expect(second.alreadyApplied.sort()).toEqual([
       "0001_routine",
       "0002_routine_run",
+      "0003_routine_next_fire_at",
+      "0004_routine_soft_delete",
     ]);
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
