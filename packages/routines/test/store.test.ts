@@ -149,4 +149,60 @@ describe("listDueRoutines / claimRoutineFire", () => {
     expect(reEnabled.nextFireAt).not.toBeNull();
     expect(reEnabled.nextFireAt?.getTime()).toBeGreaterThan(Date.now());
   });
+
+  test("compensateFailedFire restores nextFireAt when nothing has changed since the claim", async () => {
+    const store = createInMemoryRoutineStore();
+    const routine = await store.createRoutine({
+      tenantId: TENANT_ID,
+      name: "Hourly",
+      definitionId: "def_1",
+      trigger: { kind: "interval", unit: "hours", every: 1 },
+      scope: "bench",
+      input: {},
+      createdBy: "user_1",
+    });
+    const fireAt = assertDate(routine.nextFireAt);
+    const claimed = assertDate(
+      (await store.claimRoutineFire(routine.id, fireAt))?.nextFireAt ?? null,
+    );
+
+    await store.compensateFailedFire(routine.id, fireAt, claimed);
+
+    const restored = await store.getRoutine(TENANT_ID, routine.id);
+    expect(restored?.nextFireAt?.toISOString()).toBe(fireAt.toISOString());
+  });
+
+  test("compensateFailedFire is a no-op when a trigger edit already moved nextFireAt", async () => {
+    const store = createInMemoryRoutineStore();
+    const routine = await store.createRoutine({
+      tenantId: TENANT_ID,
+      name: "Hourly",
+      definitionId: "def_1",
+      trigger: { kind: "interval", unit: "hours", every: 1 },
+      scope: "bench",
+      input: {},
+      createdBy: "user_1",
+    });
+    const fireAt = assertDate(routine.nextFireAt);
+    const claimedResult = await store.claimRoutineFire(routine.id, fireAt);
+    const claimedNextFireAt = assertDate(claimedResult?.nextFireAt ?? null);
+
+    // A trigger edit lands during the failure window, after the claim
+    // but before the launch's failure is handled — this already gave
+    // the routine a fresh, unrelated nextFireAt.
+    const edited = await store.updateRoutine(TENANT_ID, routine.id, {
+      trigger: { kind: "interval", unit: "minutes", every: 30 },
+    });
+    const editedNextFireAt = assertDate(edited.nextFireAt);
+    expect(editedNextFireAt.getTime()).not.toBe(claimedNextFireAt.getTime());
+
+    // Compensation must not clobber that newer value with the stale
+    // one computed from the pre-edit trigger.
+    await store.compensateFailedFire(routine.id, fireAt, claimedNextFireAt);
+
+    const afterCompensation = await store.getRoutine(TENANT_ID, routine.id);
+    expect(afterCompensation?.nextFireAt?.toISOString()).toBe(
+      editedNextFireAt.toISOString(),
+    );
+  });
 });
