@@ -92,6 +92,19 @@ export type {
   StartWorkflowCommandResult,
 } from "./channel-service";
 
+export {
+  createDrizzleChannelTenancyStore,
+  createInMemoryChannelTenancyStore,
+} from "./channel-tenancy";
+export type {
+  ChannelTenancyDb,
+  ChannelTenancyRow,
+  ChannelTenancyStore,
+  CreateChannelTenantInput,
+  CreateChannelTenantResult,
+  MoveChannelTenancyInput,
+} from "./channel-tenancy";
+
 export { createHubChatPlatform } from "./platform-adapter";
 export type {
   CreateHubChatPlatformDeps,

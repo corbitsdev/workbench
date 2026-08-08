@@ -81,3 +81,23 @@ export const channelLaunch = pgTable("channel_launch", {
    */
   noopInference: boolean("noop_inference").notNull().default(false),
 });
+
+/**
+ * The parent↔child link between a bench and the native tenant a
+ * channel was minted as (see `./channel-tenancy.ts`). No native
+ * child-tenant listing route exists upstream (`parentId` is stored on
+ * `tenant` but never queried by any hub-api route), so this table is
+ * the honest source for "which channels are child tenancies of this
+ * bench" — chat owns it rather than leaving the question unanswerable.
+ * `tenantId` is unique: a channel tenant is minted for exactly one
+ * channel, never shared.
+ */
+export const channelTenancy = pgTable("channel_tenancy", {
+  channelId: text("channel_id").primaryKey(),
+  tenantId: text("tenant_id").notNull().unique(),
+  parentTenantId: text("parent_tenant_id").notNull(),
+  slug: text("slug").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

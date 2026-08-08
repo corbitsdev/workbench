@@ -65,6 +65,20 @@ export const chatMigrations: readonly ChatMigration[] = [
         ADD COLUMN IF NOT EXISTS "noop_inference" boolean NOT NULL DEFAULT false;
     `,
   },
+  {
+    name: "0005_channel_tenancy",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "channel_tenancy" (
+        "channel_id" text NOT NULL,
+        "tenant_id" text NOT NULL,
+        "parent_tenant_id" text NOT NULL,
+        "slug" text NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("channel_id"),
+        UNIQUE ("tenant_id")
+      );
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named
