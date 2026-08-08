@@ -10,6 +10,7 @@
 // a run's mailbox actually listable through the platform's sanctioned
 // per-run surfaces.
 import { eq } from "drizzle-orm";
+import { type } from "arktype";
 import type { DBExecutor } from "@intx/db";
 import {
   agentSession,
@@ -19,8 +20,41 @@ import {
 import { SessionLaunchError } from "@intx/hub-sessions";
 import { resolveDefinitionSources } from "@intx/hub-api";
 import { generateId } from "@intx/hub-common";
+import { InferenceSource } from "@intx/types/runtime";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import type { FoldedRunsDeps } from "./types";
+
+/**
+ * A caller-supplied inference-source chain, used verbatim in place of
+ * catalog resolution (see `deployAtHead`). Exists for launches whose
+ * anchor never runs a real inference turn — a channel host's noop
+ * pin (`@corbits/chat`'s `platform-adapter.ts`) is the only caller
+ * today. Validated at the boundary since it crosses from a caller
+ * package into this one; a malformed override fails loud rather than
+ * reaching `deployInstanceAtHead` with a broken chain.
+ */
+export const SourcesOverride = type({
+  sources: InferenceSource.array().atLeastLength(1),
+  defaultSource: "string",
+});
+export type SourcesOverride = typeof SourcesOverride.infer;
+
+/**
+ * Parses `raw` as a `SourcesOverride` when present, throwing loud on a
+ * malformed shape rather than letting it reach `deployInstanceAtHead`.
+ * `undefined` in, `undefined` out — the ordinary "resolve from the
+ * catalog" path.
+ */
+export function parseSourcesOverride(
+  raw: SourcesOverride | undefined,
+): SourcesOverride | undefined {
+  if (raw === undefined) return undefined;
+  const parsed = SourcesOverride(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`invalid inference sources override: ${parsed.summary}`);
+  }
+  return parsed;
+}
 
 /**
  * The deploy-only step shared by a fresh launch (`launchFoldedRun`)
@@ -42,15 +76,27 @@ export async function deployAtHead(
     foldedBody: FoldedBody;
     /** Named in the "seed a tenant catalog source" error, e.g. "the channel host", "the invited agent", or "the woken instance". */
     launchLabel: string;
+    /**
+     * When present, used verbatim in place of `resolveDefinitionSources`
+     * — the tenant catalog is never touched, so a launch pinned this
+     * way needs no catalog source to exist at all. Absent, this is
+     * the ordinary catalog-resolved path every launch used before this
+     * override existed.
+     */
+    sources?: SourcesOverride;
   },
 ): Promise<void> {
-  const resolution = await resolveDefinitionSources({
-    db: deps.db,
-    tenantId: params.tenantId,
-    modelRequirements: null,
-    fallbackModel: params.foldedBody.model,
-    invokerPreferences: {},
-  });
+  const sourcesOverride = parseSourcesOverride(params.sources);
+  const resolution =
+    sourcesOverride !== undefined
+      ? { ok: true as const, ...sourcesOverride }
+      : await resolveDefinitionSources({
+          db: deps.db,
+          tenantId: params.tenantId,
+          modelRequirements: null,
+          fallbackModel: params.foldedBody.model,
+          invokerPreferences: {},
+        });
   if (!resolution.ok) {
     throw new Error(
       `cannot resolve an inference source for ${params.launchLabel} ` +
@@ -99,6 +145,11 @@ export type LaunchFoldedRunParams = {
   foldedBody: FoldedBody;
   /** Named in the "seed a tenant catalog source" error, e.g. "the channel host" or "the invited agent". */
   launchLabel: string;
+  /**
+   * When present, used verbatim in place of catalog resolution — see
+   * `deployAtHead`'s own doc on the same field.
+   */
+  sources?: SourcesOverride;
   /**
    * Invoked inside the same launch transaction, immediately after the
    * principal/session/run rows are written, so a caller-owned table
@@ -195,6 +246,7 @@ export async function launchFoldedRun(
       sessionId,
       foldedBody: params.foldedBody,
       launchLabel: params.launchLabel,
+      ...(params.sources !== undefined ? { sources: params.sources } : {}),
     });
   } catch (err) {
     // Mirrors the reference route's failure-path cleanup: a deploy

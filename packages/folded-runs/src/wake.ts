@@ -6,7 +6,7 @@
 // asset never materializes a workflow.json, so the definition's asset
 // cannot be the wake source, and `folded-runs` has no launch-body
 // table of its own to read.
-import { deployAtHead } from "./launch";
+import { deployAtHead, type SourcesOverride } from "./launch";
 import { resolveFoldedRunSessionId } from "./runs";
 import type { FoldedRunsDeps } from "./types";
 import type { FoldedBody } from "@intx/workflow-deploy";
@@ -17,6 +17,14 @@ export type WakeFoldedRunParams = {
   triggerAddress: string;
   principalId: string | null;
   foldedBody: FoldedBody;
+  /**
+   * When present, used verbatim in place of catalog resolution — see
+   * `deployAtHead`'s own doc on the same field. A wake re-deploys with
+   * whatever pin the caller decided at launch time (e.g.
+   * `@corbits/chat`'s `channel_launch.noopInference` column), never
+   * re-derives it.
+   */
+  sources?: SourcesOverride;
 };
 
 export async function wakeFoldedRun(
@@ -38,5 +46,6 @@ export async function wakeFoldedRun(
     sessionId,
     foldedBody: params.foldedBody,
     launchLabel: "the woken instance",
+    ...(params.sources !== undefined ? { sources: params.sources } : {}),
   });
 }

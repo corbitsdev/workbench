@@ -393,4 +393,93 @@ describe("launchFoldedRun", () => {
       ),
     ).rejects.toThrow(/seed a tenant catalog source/);
   });
+
+  test("uses a caller-supplied sources override verbatim, never touching the catalog", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    // Forced to fail if ever consulted: proves the override path skips
+    // `resolveDefinitionSources` entirely, not merely that it happens
+    // to succeed against it.
+    resolveDefinitionSourcesResult = {
+      ok: false,
+      message: "the catalog must not be consulted when an override is given",
+    };
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+
+    const override = {
+      sources: [
+        {
+          id: "noop",
+          provider: "anthropic",
+          baseURL: "https://hub.invalid/api/chat/noop-inference",
+          apiKey: "noop",
+          model: "noop",
+        },
+      ],
+      defaultSource: "noop",
+    };
+
+    const result = await launchFoldedRun(
+      {
+        db: db as never,
+        sessionService,
+        assetService: {} as never,
+        sidecarRouter: {} as never,
+        eventCollectors,
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_channel1",
+        triggerAddress: "ins_channel1@ten1.workbench.test",
+        definitionId: "wfd_channel1",
+        foldedBody: FOLDED_BODY,
+        launchLabel: "the channel host",
+        sources: override,
+      },
+    );
+
+    expect(result.sessionId).toBeTruthy();
+    expect(resolveDefinitionSourcesCalls).toHaveLength(0);
+    expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+    const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+      config: { sources: unknown[]; defaultSource: string };
+    };
+    expect(deployed.config.sources).toEqual(override.sources);
+    expect(deployed.config.defaultSource).toBe("noop");
+  });
+
+  test("fails loud on a malformed sources override rather than reaching deployInstanceAtHead", async () => {
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+
+    await expect(
+      launchFoldedRun(
+        {
+          db: db as never,
+          sessionService,
+          assetService: {} as never,
+          sidecarRouter: {} as never,
+          eventCollectors,
+        },
+        {
+          tenantId: "ten_1",
+          instanceId: "ins_channel1",
+          triggerAddress: "ins_channel1@ten1.workbench.test",
+          definitionId: "wfd_channel1",
+          foldedBody: FOLDED_BODY,
+          launchLabel: "the channel host",
+          // Missing `apiKey`/`model` on the source: malformed.
+          sources: {
+            sources: [{ id: "noop", provider: "anthropic" }] as never,
+            defaultSource: "noop",
+          },
+        },
+      ),
+    ).rejects.toThrow(/invalid inference sources override/);
+
+    expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(0);
+  });
 });

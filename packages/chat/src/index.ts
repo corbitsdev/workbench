@@ -74,6 +74,8 @@ export type {
 export { createDrizzleChatStore, createInMemoryChatStore } from "./store";
 export type { ChatDb, ChatStore } from "./store";
 
+export { createNoopInferenceRoutes } from "./noop-inference";
+
 export { createHubChatPlatform } from "./platform-adapter";
 export type {
   CreateHubChatPlatformDeps,

@@ -17,6 +17,7 @@ import {
   createChatRoutes,
   createDrizzleChatStore,
   createHubChatPlatform,
+  createNoopInferenceRoutes,
 } from "@corbits/chat";
 import {
   createAgentRepoStore,
@@ -197,12 +198,21 @@ export async function createHub(config: HubConfig) {
     time_window: timeWindowEvaluator,
   };
   const chatStore = createDrizzleChatStore(db);
+  // Mounted outside the tenant prefix — the sidecar reaches it as a
+  // plain inference endpoint, never through tenant-scoped auth, the
+  // same way it reaches a real provider's API. `config.baseUrl` (not
+  // `localhost`) is what makes the URL usable: the sidecar that
+  // deploys a channel host's instance is a separate process (often a
+  // separate machine) from this hub, so only the hub's own public
+  // origin resolves for it.
+  app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
   const chatPlatform = createHubChatPlatform({
     db,
     sessionService,
     assetService,
     sidecarRouter,
     eventCollectors,
+    noopInferenceBaseUrl: `${config.baseUrl}/api/chat/noop-inference`,
     lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
   });
   // Built once, beside the platform, for the process's lifetime: turns

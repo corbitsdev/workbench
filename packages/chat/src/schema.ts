@@ -4,6 +4,7 @@
 // platform schema under vendor/intx/db; these tables hold no tenancy
 // semantics of their own, only chat's own state, keyed by tenant.
 import {
+  boolean,
   jsonb,
   pgTable,
   primaryKey,
@@ -69,4 +70,14 @@ export const channelLaunch = pgTable("channel_launch", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  /**
+   * Set at launch time, never re-derived: `true` for a channel host
+   * (`launchChannel`), `false` for an invited agent (`launchInvite`).
+   * A wake (`wakeByAddress` in `platform-adapter.ts`) reads this to
+   * decide whether to pin the noop inference source again or resolve
+   * against the tenant catalog — the launch row is the only place
+   * that decision is recorded, so a wake never has to re-derive "is
+   * this a host" from the asset name or any other proxy.
+   */
+  noopInference: boolean("noop_inference").notNull().default(false),
 });

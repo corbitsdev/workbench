@@ -22,6 +22,8 @@ export {
 export {
   deployAtHead,
   launchFoldedRun,
+  parseSourcesOverride,
+  SourcesOverride,
   type LaunchFoldedRunParams,
   type LaunchedFoldedRun,
 } from "./launch";

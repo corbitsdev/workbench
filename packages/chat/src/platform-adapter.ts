@@ -23,7 +23,9 @@ import {
   wakeFoldedRun,
   FoldedBodySchema,
   type FoldedRunsDeps,
+  type SourcesOverride,
 } from "@corbits/folded-runs";
+import type { FoldedBody } from "@intx/workflow-deploy";
 import type { DB } from "@intx/db";
 import {
   sessionMail,
@@ -58,6 +60,18 @@ export type CreateHubChatPlatformDeps = {
   sessionService: SessionService;
   assetService: AssetService;
   sidecarRouter: SidecarRouter;
+  /**
+   * The hub's own noop-inference endpoint (see `./noop-inference.ts`),
+   * reachable over HTTP from the sidecar — never the catalog. Every
+   * channel-HOST launch and wake pins its `InferenceSource` here
+   * instead of resolving against the tenant catalog: a channel
+   * anchor's mailbox is the timeline and its system prompt forbids
+   * replying, so the real inference turn the ordinary launch path
+   * would otherwise run on every message is pure waste. Invited-agent
+   * launches and wakes are unaffected — they still resolve against the
+   * tenant catalog, since an invited agent's replies are real.
+   */
+  noopInferenceBaseUrl: string;
   /**
    * Every caller of `createHubChatPlatform` builds this via
    * `createEventCollectorRegistry` and passes it through — without it,
@@ -98,6 +112,39 @@ function assetNameForChannel(channelId: string): string {
 // exclude channel hosts from the invitable set without needing a
 // separate "is this a channel host" column.
 const CHANNEL_HOST_ASSET_NAME_PREFIX = "ins-";
+
+// The `InferenceSource.id`/`InferenceSource.model` a channel-host pin
+// carries — never read by anything (the noop endpoint ignores both),
+// but `InferenceSource` requires non-empty strings, and a channel
+// host's `foldedBody.model` is `null` whenever no catalog source was
+// ever resolved for it (see `buildChannelHostWorkflow`'s
+// `inferencePreferences` — empty when the hub has seeded none).
+const NOOP_INFERENCE_SOURCE_ID = "noop";
+const NOOP_INFERENCE_MODEL_FALLBACK = "noop";
+
+/**
+ * The `SourcesOverride` every channel-HOST launch and wake pins
+ * instead of resolving against the tenant catalog (see
+ * `CreateHubChatPlatformDeps.noopInferenceBaseUrl`'s doc). Invited
+ * agents never get this — they still resolve normally.
+ */
+function noopSourcesOverride(
+  noopInferenceBaseUrl: string,
+  foldedBody: FoldedBody,
+): SourcesOverride {
+  return {
+    sources: [
+      {
+        id: NOOP_INFERENCE_SOURCE_ID,
+        provider: "anthropic",
+        baseURL: noopInferenceBaseUrl,
+        apiKey: "noop",
+        model: foldedBody.model ?? NOOP_INFERENCE_MODEL_FALLBACK,
+      },
+    ],
+    defaultSource: NOOP_INFERENCE_SOURCE_ID,
+  };
+}
 
 /**
  * The concrete object `createHubChatPlatform` returns: the `ChatPlatform`
@@ -187,6 +234,14 @@ export function createHubChatPlatform(
       triggerAddress: run.address,
       principalId: run.principalId,
       foldedBody: parsedFoldedBody,
+      ...(launchRow.noopInference
+        ? {
+            sources: noopSourcesOverride(
+              deps.noopInferenceBaseUrl,
+              parsedFoldedBody,
+            ),
+          }
+        : {}),
     });
   }
 
@@ -221,18 +276,28 @@ export function createHubChatPlatform(
         definitionId,
         foldedBody,
         launchLabel: "the channel host",
+        // A channel host never replies — its mailbox is the
+        // timeline and its system prompt forbids answering — so its
+        // launch is pinned to the hub's own noop endpoint rather than
+        // resolved against the tenant catalog. This is what lets a
+        // channel launch (and, per `noopInference` below, every wake
+        // of it) succeed with zero catalog sources seeded.
+        sources: noopSourcesOverride(deps.noopInferenceBaseUrl, foldedBody),
         // The launch body is persisted with the launch itself, in the
         // same transaction, so a wake can rebuild the deploy config
         // without reaching for the definition's asset — a channel
         // host's asset never holds a workflow.json, so this row is
         // the only wake-time source. Chat owns this table; folded-runs
-        // never imports it.
+        // never imports it. `noopInference: true` records this launch
+        // as a host, so its wake pins the same noop source rather than
+        // re-deriving "is this a host" from anything else.
         persistExtra: async (tx) => {
           await tx.insert(channelLaunch).values({
             tenantId: input.tenantId,
             instanceId: input.channelId,
             foldedBody,
             createdAt: new Date(),
+            noopInference: true,
           });
         },
       });
@@ -296,12 +361,18 @@ export function createHubChatPlatform(
         definitionId: input.definitionId,
         foldedBody,
         launchLabel: "the invited agent",
+        // Unchanged from before this pin existed: an invited agent's
+        // replies are real, so its inference sources still resolve
+        // against the tenant catalog. `noopInference: false` (matching
+        // the column's own default) records this launch as not a
+        // host, so its wake resolves against the catalog too.
         persistExtra: async (tx) => {
           await tx.insert(channelLaunch).values({
             tenantId: input.tenantId,
             instanceId,
             foldedBody,
             createdAt: new Date(),
+            noopInference: false,
           });
         },
       });

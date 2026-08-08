@@ -58,6 +58,13 @@ export const chatMigrations: readonly ChatMigration[] = [
       );
     `,
   },
+  {
+    name: "0004_channel_launch_noop_inference",
+    sql: `
+      ALTER TABLE "channel_launch"
+        ADD COLUMN IF NOT EXISTS "noop_inference" boolean NOT NULL DEFAULT false;
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named

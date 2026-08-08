@@ -62,6 +62,7 @@ describeIfDb("applyChatMigrations", () => {
       "0001_channel_settings",
       "0002_channel_read_state",
       "0003_channel_launch",
+      "0004_channel_launch_noop_inference",
     ]);
 
     const second = await applyChatMigrations(scratchUrl);
@@ -70,6 +71,7 @@ describeIfDb("applyChatMigrations", () => {
       "0001_channel_settings",
       "0002_channel_read_state",
       "0003_channel_launch",
+      "0004_channel_launch_noop_inference",
     ]);
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });

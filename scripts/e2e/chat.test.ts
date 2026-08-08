@@ -567,7 +567,12 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
         .map((p) => p.text),
     );
-    expect(mentionedTexts).toContain(mentionText);
+    // The delivered copy carries the channel-context block merged ahead
+    // of the message in one text part, so the mention text is a suffix
+    // of the delivered body rather than the whole body.
+    expect(mentionedTexts.some((text) => text.endsWith(mentionText))).toBe(
+      true,
+    );
   }, 90_000);
 
   test("inviting the echo agent launches its own run, joins the channel, and receives @mentions", async () => {
@@ -668,7 +673,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
         .map((p) => p.text),
     );
-    expect(invitedTexts).toContain(mentionText);
+    expect(invitedTexts.some((text) => text.endsWith(mentionText))).toBe(true);
   }, 90_000);
 
   async function echoDefinitionId(): Promise<string> {

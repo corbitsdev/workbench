@@ -219,7 +219,13 @@ function createFakeDb(opts: {
     | undefined;
   tenantRow?: { id: string; domain: string } | undefined;
   channelLaunchRow?:
-    { tenantId: string; instanceId: string; foldedBody: unknown } | undefined;
+    | {
+        tenantId: string;
+        instanceId: string;
+        foldedBody: unknown;
+        noopInference?: boolean;
+      }
+    | undefined;
 }) {
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
@@ -475,20 +481,16 @@ const CHANNEL_WORKFLOW_JSON = serializeChannelHostWorkflow(
 );
 
 describe("createHubChatPlatform", () => {
-  test("launchChannel extracts the folded body, resolves sources, and deploys via deployInstanceAtHead", async () => {
+  test("launchChannel extracts the folded body, pins the noop inference source, and deploys via deployInstanceAtHead without touching the catalog", async () => {
     resolveDefinitionSourcesCalls.length = 0;
+    // Deliberately left `ok: false`: a host launch must never reach
+    // `resolveDefinitionSources` at all, so this stub result — which
+    // would fail the launch if it were ever consulted — proves the
+    // catalog path was skipped, not merely that it happened to
+    // succeed.
     resolveDefinitionSourcesResult = {
-      ok: true,
-      sources: [
-        {
-          id: "off_1",
-          provider: "anthropic",
-          baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
-          model: "claude-sonnet-5",
-        },
-      ],
-      defaultSource: "off_1",
+      ok: false,
+      message: "the catalog must not be consulted for a channel host",
     };
 
     const db = createFakeDb({
@@ -508,6 +510,7 @@ describe("createHubChatPlatform", () => {
     const platform = createHubChatPlatform({
       // Fake db, not a real drizzle instance.
       db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService,
       sidecarRouter,
@@ -546,12 +549,8 @@ describe("createHubChatPlatform", () => {
       },
     ]);
 
-    // Sources were resolved against the tenant catalog, not fabricated.
-    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
-    expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
-      tenantId: "ten_1",
-      fallbackModel: "claude-sonnet-5",
-    });
+    // The catalog was never consulted — the noop pin is used verbatim.
+    expect(resolveDefinitionSourcesCalls).toHaveLength(0);
 
     // The folded launch path, never the native workflow-deploy path.
     expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
@@ -561,7 +560,13 @@ describe("createHubChatPlatform", () => {
       instanceId: string;
       config: {
         systemPrompt: string;
-        sources: unknown[];
+        sources: {
+          id: string;
+          provider: string;
+          baseURL: string;
+          apiKey: string;
+          model: string;
+        }[];
         defaultSource: string;
         agentAddress: string;
         tenantId: string;
@@ -571,13 +576,27 @@ describe("createHubChatPlatform", () => {
     expect(deployed.agentId).toBe("ins_channel1");
     expect(deployed.instanceId).toBe("ins_channel1");
     expect(deployed.config.systemPrompt.length).toBeGreaterThan(0);
-    expect(deployed.config.sources).toEqual(
-      resolveDefinitionSourcesResult.ok
-        ? resolveDefinitionSourcesResult.sources
-        : [],
-    );
-    expect(deployed.config.defaultSource).toBe("off_1");
+    expect(deployed.config.sources).toEqual([
+      {
+        id: "noop",
+        provider: "anthropic",
+        baseURL: "https://hub.invalid/api/chat/noop-inference",
+        apiKey: "noop",
+        model: "claude-sonnet-5",
+      },
+    ]);
+    expect(deployed.config.defaultSource).toBe("noop");
     expect(deployed.config.tenantId).toBe("ten_1");
+
+    // The launch row records this as a host launch, so a later wake
+    // pins the same noop source rather than resolving against the
+    // catalog.
+    const channelLaunchInsert = db.inserted.find(
+      (row) => row.table === channelLaunch,
+    );
+    expect(channelLaunchInsert?.values).toMatchObject({
+      noopInference: true,
+    });
 
     // The run is written in the folded shape: no deploymentId, a real
     // principal, and a session keyed off that shared principal --
@@ -648,6 +667,7 @@ describe("createHubChatPlatform", () => {
 
     const platform = createHubChatPlatform({
       db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService,
       sidecarRouter,
@@ -718,6 +738,7 @@ describe("createHubChatPlatform", () => {
 
     const platform = createHubChatPlatform({
       db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService,
       sidecarRouter,
@@ -739,39 +760,13 @@ describe("createHubChatPlatform", () => {
     expect(runUpdate?.values).toEqual({ status: "failed" });
   });
 
-  test("launchChannel fails loud when the tenant catalog has no launchable source", async () => {
-    resolveDefinitionSourcesResult = {
-      ok: false,
-      message: 'No launchable inference source for model "claude-sonnet-5"',
-    };
-
-    const db = createFakeDb({
-      assetRow: {
-        tenantId: "ten_1",
-        creatorPrincipalId: "prin_creator",
-        name: "channel-1",
-        displayName: null,
-      },
-      definitionId: "wfd_channel1",
-    });
-    const platform = createHubChatPlatform({
-      db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
-      sidecarRouter: createFakeSidecarRouter(),
-      eventCollectors: createFakeEventCollectors(),
-    });
-
-    await expect(
-      platform.launchChannel({
-        tenantId: "ten_1",
-        creatorPrincipalId: "prin_creator",
-        channelId: "ins_channel1",
-        triggerAddress: "ins_channel1@ten1.workbench.test",
-        definition: CHANNEL_WORKFLOW_JSON,
-      }),
-    ).rejects.toThrow(/seed a tenant catalog source/);
-  });
+  // A channel host's noop pin is a deliberate improvement over the
+  // pre-existing behavior: launching a channel no longer needs any
+  // catalog source seeded at all (see the primary launchChannel test
+  // above, which proves this with `resolveDefinitionSourcesResult`
+  // forced to `ok: false`). An invited agent's launch is unaffected —
+  // its replies are real, so it still fails loud without a catalog
+  // source; proven alongside `launchInvite`'s other tests below.
 
   test("sendMail resolves the channel's run's session via the shared principal and delivers via sessionService", async () => {
     resolveDefinitionSourcesResult = {
@@ -814,6 +809,7 @@ describe("createHubChatPlatform", () => {
 
     const platform = createHubChatPlatform({
       db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService: createFakeAssetService(),
       sidecarRouter,
@@ -893,6 +889,7 @@ describe("createHubChatPlatform", () => {
 
     const platform = createHubChatPlatform({
       db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService,
       sidecarRouter,
@@ -929,6 +926,20 @@ describe("createHubChatPlatform", () => {
       address: launched.address,
       status: "running",
     });
+
+    // Sources were resolved against the tenant catalog, not pinned to
+    // the noop endpoint — only a channel host gets that pin.
+    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
+
+    // The launch row records this as not a host, so a later wake
+    // resolves against the catalog rather than pinning the noop
+    // source.
+    const channelLaunchInsert = db.inserted.find(
+      (row) => row.table === channelLaunch,
+    );
+    expect(channelLaunchInsert?.values).toMatchObject({
+      noopInference: false,
+    });
   });
 
   test("launchInvite fails loud when the definition is not deployed", async () => {
@@ -950,6 +961,7 @@ describe("createHubChatPlatform", () => {
     });
     const platform = createHubChatPlatform({
       db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
@@ -979,6 +991,7 @@ describe("createHubChatPlatform", () => {
     });
     const platform = createHubChatPlatform({
       db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
@@ -992,6 +1005,52 @@ describe("createHubChatPlatform", () => {
         definitionId: "wfd_missing",
       }),
     ).rejects.toThrow(/No definition/);
+  });
+
+  // Unlike a channel host, an invited agent's replies are real: its
+  // launch still resolves against the tenant catalog and still fails
+  // loud when the catalog has no launchable source — the noop pin
+  // never applies here.
+  test("launchInvite fails loud when the tenant catalog has no launchable source", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: false,
+      message: 'No launchable inference source for model "claude-sonnet-5"',
+    };
+
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "channel-1",
+        displayName: null,
+      },
+      definitionId: "wfd_channel1",
+      workflowDefinitionRow: {
+        id: "wfd_echo",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_echo",
+      },
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+    });
+    const platform = createHubChatPlatform({
+      db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService({
+        assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+      }),
+      sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
+    });
+
+    await expect(
+      platform.launchInvite({
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        definitionId: "wfd_echo",
+      }),
+    ).rejects.toThrow(/seed a tenant catalog source/);
   });
 
   test("listInvitableDefinitions lists deployed definitions, excluding channel hosts", async () => {
@@ -1015,6 +1074,7 @@ describe("createHubChatPlatform", () => {
     });
     const platform = createHubChatPlatform({
       db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
@@ -1046,6 +1106,7 @@ describe("createHubChatPlatform", () => {
 
     const platform = createHubChatPlatform({
       db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
       sessionService,
       assetService,
       sidecarRouter,
@@ -1120,6 +1181,7 @@ describe("createHubChatPlatform", () => {
 
       const platform = createHubChatPlatform({
         db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
         assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter(),
@@ -1244,6 +1306,7 @@ describe("createHubChatPlatform", () => {
 
       const platform = createHubChatPlatform({
         db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService,
         assetService,
         sidecarRouter,
@@ -1269,6 +1332,105 @@ describe("createHubChatPlatform", () => {
       expect(deployed.instanceId).toBe("ins_channel1");
       // ...before the send.
       expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+    });
+
+    test("waking a host launch pins the noop source again, never touching the catalog", async () => {
+      resolveDefinitionSourcesCalls.length = 0;
+      // Forced to fail if ever consulted, same posture as the
+      // launchChannel test above: proves the wake path skips the
+      // catalog entirely for a host launch, rather than merely
+      // happening to succeed against it.
+      resolveDefinitionSourcesResult = {
+        ok: false,
+        message: "the catalog must not be consulted for a host wake",
+      };
+
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+        workflowRunRow: {
+          id: "ins_channel1",
+          address: "ins_channel1@ten1.workbench.test",
+          principalId: "prin_run1",
+          definitionId: "wfd_channel1",
+        },
+        workflowDefinitionRow: {
+          id: "wfd_channel1",
+          tenantId: "ten_1",
+          status: "deployed",
+          assetId: "asst_channel1",
+        },
+        channelLaunchRow: {
+          tenantId: "ten_1",
+          instanceId: "ins_channel1",
+          noopInference: true,
+          foldedBody: {
+            systemPrompt: "host prompt",
+            model: "claude-sonnet-5",
+            toolPackagePins: [],
+            grantRequirements: [],
+            credentialBindings: [],
+          },
+        },
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_run1" },
+      });
+
+      const sessionService = createFakeSessionService();
+      const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
+      const eventCollectors = createFakeEventCollectors();
+      const assetService = createFakeAssetService({
+        assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+      });
+
+      const platform = createHubChatPlatform({
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService,
+        assetService,
+        sidecarRouter,
+        eventCollectors,
+        lifecycle: { idleSleepMs: 60_000 },
+      });
+
+      await platform.sendMail({
+        tenantId: "ten_1",
+        channelId: "ins_channel1",
+        principalId: "prin_sender",
+        content: { content: "wake up" },
+      });
+
+      expect(resolveDefinitionSourcesCalls).toHaveLength(0);
+      expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+      const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+        config: {
+          sources: {
+            id: string;
+            provider: string;
+            baseURL: string;
+            apiKey: string;
+            model: string;
+          }[];
+          defaultSource: string;
+        };
+      };
+      expect(deployed.config.sources).toEqual([
+        {
+          id: "noop",
+          provider: "anthropic",
+          baseURL: "https://hub.invalid/api/chat/noop-inference",
+          apiKey: "noop",
+          model: "claude-sonnet-5",
+        },
+      ]);
+      expect(deployed.config.defaultSource).toBe("noop");
     });
 
     test("the idle sweep never undeploys an address the event collector reports as busy", async () => {
@@ -1316,6 +1478,7 @@ describe("createHubChatPlatform", () => {
 
       const platform = createHubChatPlatform({
         db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
         sessionService: createFakeSessionService(),
         assetService: createFakeAssetService(),
         sidecarRouter,
@@ -1360,6 +1523,7 @@ describe("createHubChatPlatform", () => {
         });
         createHubChatPlatform({
           db: db as never,
+          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService: createFakeSessionService(),
           assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
@@ -1393,6 +1557,7 @@ describe("createHubChatPlatform", () => {
         });
         createHubChatPlatform({
           db: db as never,
+          noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
           sessionService: createFakeSessionService(),
           assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
