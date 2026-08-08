@@ -1,0 +1,541 @@
+// The "Grants" settings section: what each role or person is allowed,
+// denied, or asked about, and on what — filterable, creatable, revocable
+// over the native `/api/tenants/:tenantId/grants` route. The resource
+// vocabulary has no listing endpoint of its own (see the tenancy
+// inventory's gap list); `resource-vocabulary.ts` carries it as a constant.
+
+import {
+  Badge,
+  Button,
+  ConfirmButton,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  EmptyState,
+  FilterBar,
+  Input,
+  SettingsPanel,
+  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@corbits/react-ui";
+import { grantEffects, grantOrigins } from "@intx/types";
+import type { GrantEffect, GrantOrigin } from "@intx/types";
+import { CircleAlert } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+
+import { principalLabel } from "./identity";
+import { errorMessage, type LoadState } from "./load-state";
+import { GRANT_ACTIONS, GRANT_RESOURCES } from "./resource-vocabulary";
+import { SETTINGS_STRINGS } from "./strings";
+import {
+  createGrant,
+  listGrants,
+  listPrincipals,
+  listRoles,
+  revokeGrant,
+  type Grant,
+  type GrantFilters,
+  type Principal,
+  type Role,
+} from "./tenancy-api";
+
+const EFFECT_TONE: Record<GrantEffect, "success" | "danger" | "info"> = {
+  allow: "success",
+  deny: "danger",
+  ask: "info",
+};
+
+type GrantsData = {
+  readonly grants: readonly Grant[];
+  readonly roles: readonly Role[];
+  readonly principals: readonly Principal[];
+};
+
+export function GrantsSection({
+  tenantId,
+}: {
+  readonly tenantId: string | null;
+}) {
+  const [filters, setFilters] = useState<GrantFilters>({});
+  const [state, setState] = useState<LoadState<GrantsData>>({
+    kind: "loading",
+  });
+  const [reloadKey, setReloadKey] = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<string | null>(null);
+  const filtersKey = JSON.stringify(filters);
+
+  useEffect(() => {
+    if (tenantId === null) return;
+    let cancelled = false;
+    setState({ kind: "loading" });
+    Promise.all([
+      listGrants(tenantId, filters),
+      listRoles(tenantId),
+      listPrincipals(tenantId),
+    ])
+      .then(([grants, roles, principals]) => {
+        if (!cancelled)
+          setState({ kind: "ready", data: { grants, roles, principals } });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled)
+          setState({ kind: "error", message: errorMessage(cause) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, reloadKey, filtersKey]);
+
+  if (tenantId === null) {
+    return (
+      <EmptyState
+        title={SETTINGS_STRINGS.benchNoneSelectedTitle}
+        description={SETTINGS_STRINGS.benchNoneSelectedDescription}
+      />
+    );
+  }
+  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
+  if (state.kind === "error") {
+    return (
+      <EmptyState
+        icon={<CircleAlert />}
+        title={`Couldn't load ${SETTINGS_STRINGS.grantsLoadError}`}
+        description={state.message}
+      />
+    );
+  }
+
+  function reload() {
+    setReloadKey((value) => value + 1);
+  }
+
+  function handleCreate(input: {
+    readonly targetType: "role" | "principal";
+    readonly targetId: string;
+    readonly resource: string;
+    readonly action: string;
+    readonly effect: GrantEffect;
+    readonly origin: GrantOrigin;
+    readonly expiresAt: string | null;
+  }) {
+    if (tenantId === null) return;
+    setCreating(true);
+    setCreateError(null);
+    createGrant(tenantId, {
+      ...(input.targetType === "role"
+        ? { roleId: input.targetId }
+        : { principalId: input.targetId }),
+      resource: input.resource,
+      action: input.action,
+      effect: input.effect,
+      origin: input.origin,
+      ...(input.expiresAt !== null ? { expiresAt: input.expiresAt } : {}),
+    })
+      .then(() => {
+        setCreateOpen(false);
+        reload();
+      })
+      .catch(() => setCreateError(SETTINGS_STRINGS.grantsCreateError))
+      .finally(() => setCreating(false));
+  }
+
+  function handleRevoke(grant: Grant) {
+    if (tenantId === null) return;
+    setRowError(null);
+    revokeGrant(tenantId, grant.id)
+      .then(reload)
+      .catch(() => setRowError(SETTINGS_STRINGS.grantsRevokeError));
+  }
+
+  return (
+    <SettingsPanel
+      title={SETTINGS_STRINGS.grantsSectionTitle}
+      description={SETTINGS_STRINGS.grantsSectionDescription}
+    >
+      <GrantsFilterBar
+        filters={filters}
+        roles={state.data.roles}
+        principals={state.data.principals}
+        onChange={setFilters}
+      />
+      <div className="settings-section-toolbar">
+        <Button variant="primary" onClick={() => setCreateOpen(true)}>
+          {SETTINGS_STRINGS.grantsCreateAction}
+        </Button>
+      </div>
+      {rowError !== null && (
+        <p className="settings-inline-error" role="alert">
+          {rowError}
+        </p>
+      )}
+      <GrantsTable grants={state.data.grants} onRevoke={handleRevoke} />
+      <CreateGrantDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        roles={state.data.roles}
+        principals={state.data.principals}
+        onCreate={handleCreate}
+        submitting={creating}
+        error={createError}
+      />
+    </SettingsPanel>
+  );
+}
+
+function GrantsFilterBar({
+  filters,
+  roles,
+  principals,
+  onChange,
+}: {
+  readonly filters: GrantFilters;
+  readonly roles: readonly Role[];
+  readonly principals: readonly Principal[];
+  readonly onChange: (filters: GrantFilters) => void;
+}) {
+  return (
+    <FilterBar
+      filters={[
+        {
+          id: "principalId",
+          label: SETTINGS_STRINGS.grantsFilterPrincipal,
+          anyLabel: SETTINGS_STRINGS.grantsFilterAny,
+          value: filters.principalId ?? null,
+          options: principals.map((principal) => ({
+            value: principal.id,
+            label: principalLabel(principal.displayName).label,
+          })),
+        },
+        {
+          id: "roleId",
+          label: SETTINGS_STRINGS.grantsFilterRole,
+          anyLabel: SETTINGS_STRINGS.grantsFilterAny,
+          value: filters.roleId ?? null,
+          options: roles.map((role) => ({ value: role.id, label: role.name })),
+        },
+        {
+          id: "resource",
+          label: SETTINGS_STRINGS.grantsFilterResource,
+          anyLabel: SETTINGS_STRINGS.grantsFilterAny,
+          value: filters.resource ?? null,
+          options: GRANT_RESOURCES.map((resource) => ({
+            value: resource,
+            label: resource,
+          })),
+        },
+        {
+          id: "effect",
+          label: SETTINGS_STRINGS.grantsFilterEffect,
+          anyLabel: SETTINGS_STRINGS.grantsFilterAny,
+          value: filters.effect ?? null,
+          options: grantEffects.map((effect) => ({
+            value: effect,
+            label: effect,
+          })),
+        },
+      ]}
+      onChange={(id, value) => {
+        const { [id as keyof GrantFilters]: _removed, ...rest } = filters;
+        const next: GrantFilters =
+          value === null ? rest : ({ ...rest, [id]: value } as GrantFilters);
+        onChange(next);
+      }}
+    />
+  );
+}
+
+export function GrantsTable({
+  grants,
+  onRevoke,
+}: {
+  readonly grants: readonly Grant[];
+  readonly onRevoke: (grant: Grant) => void;
+}) {
+  if (grants.length === 0) {
+    return (
+      <EmptyState
+        title={SETTINGS_STRINGS.grantsEmptyTitle}
+        description={SETTINGS_STRINGS.grantsEmptyDescription}
+      />
+    );
+  }
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Applies to</TableHead>
+          <TableHead>Resource</TableHead>
+          <TableHead>Action</TableHead>
+          <TableHead>Effect</TableHead>
+          <TableHead>Origin</TableHead>
+          <TableHead>Expires</TableHead>
+          <TableHead>Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {grants.map((grant) => (
+          <TableRow key={grant.id}>
+            <TableCell>
+              {grant.roleName ?? grant.principalName ?? "—"}
+            </TableCell>
+            <TableCell>
+              <code>{grant.resource}</code>
+            </TableCell>
+            <TableCell>
+              <code>{grant.action}</code>
+            </TableCell>
+            <TableCell>
+              <Badge tone={EFFECT_TONE[grant.effect]}>{grant.effect}</Badge>
+            </TableCell>
+            <TableCell>{grant.origin}</TableCell>
+            <TableCell>
+              {grant.expiresAt ?? SETTINGS_STRINGS.grantsNoExpiry}
+            </TableCell>
+            <TableCell>
+              <ConfirmButton
+                variant="destructive"
+                size="sm"
+                confirmLabel={SETTINGS_STRINGS.grantsRevokeConfirm}
+                onConfirm={() => onRevoke(grant)}
+              >
+                {SETTINGS_STRINGS.grantsRevoke}
+              </ConfirmButton>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+export function CreateGrantDialog({
+  open,
+  onOpenChange,
+  roles,
+  principals,
+  onCreate,
+  submitting,
+  error = null,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly roles: readonly Role[];
+  readonly principals: readonly Principal[];
+  readonly onCreate: (input: {
+    readonly targetType: "role" | "principal";
+    readonly targetId: string;
+    readonly resource: string;
+    readonly action: string;
+    readonly effect: GrantEffect;
+    readonly origin: GrantOrigin;
+    readonly expiresAt: string | null;
+  }) => void;
+  readonly submitting: boolean;
+  readonly error?: string | null;
+}) {
+  const [targetType, setTargetType] = useState<"role" | "principal">("role");
+  const [targetId, setTargetId] = useState("");
+  const [resource, setResource] = useState<string>(GRANT_RESOURCES[0]);
+  const [action, setAction] = useState<string>(GRANT_ACTIONS[0]);
+  const [effect, setEffect] = useState<GrantEffect>("allow");
+  const [origin, setOrigin] = useState<GrantOrigin>("role");
+  const [expiresAt, setExpiresAt] = useState("");
+
+  const targetOptions = useMemo(
+    () =>
+      targetType === "role"
+        ? roles.map((role) => ({ id: role.id, label: role.name }))
+        : principals.map((principal) => ({
+            id: principal.id,
+            label: principalLabel(principal.displayName).label,
+          })),
+    [targetType, roles, principals],
+  );
+
+  const canSubmit = targetId.length > 0;
+
+  function reset() {
+    setTargetType("role");
+    setTargetId("");
+    setResource(GRANT_RESOURCES[0]);
+    setAction(GRANT_ACTIONS[0]);
+    setEffect("allow");
+    setOrigin("role");
+    setExpiresAt("");
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) reset();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{SETTINGS_STRINGS.grantsCreateDialogTitle}</DialogTitle>
+          <DialogDescription>
+            {SETTINGS_STRINGS.grantsCreateDialogDescription}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <form
+            id="create-grant-form"
+            className="settings-form-field"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (canSubmit) {
+                onCreate({
+                  targetType,
+                  targetId,
+                  resource,
+                  action,
+                  effect,
+                  origin,
+                  expiresAt:
+                    expiresAt.length === 0
+                      ? null
+                      : new Date(expiresAt).toISOString(),
+                });
+              }
+            }}
+          >
+            <label className="settings-form-field">
+              <span>{SETTINGS_STRINGS.grantsTargetTypeLabel}</span>
+              <select
+                className="settings-select"
+                value={targetType}
+                onChange={(event) => {
+                  setTargetType(event.target.value as "role" | "principal");
+                  setTargetId("");
+                }}
+              >
+                <option value="role">
+                  {SETTINGS_STRINGS.grantsTargetTypeRole}
+                </option>
+                <option value="principal">
+                  {SETTINGS_STRINGS.grantsTargetTypePrincipal}
+                </option>
+              </select>
+            </label>
+            <label className="settings-form-field">
+              <span>{SETTINGS_STRINGS.grantsTargetLabel}</span>
+              <select
+                className="settings-select"
+                value={targetId}
+                onChange={(event) => setTargetId(event.target.value)}
+                autoFocus
+              >
+                <option value="">—</option>
+                {targetOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="settings-form-field">
+              <span>{SETTINGS_STRINGS.grantsResourceLabel}</span>
+              <select
+                className="settings-select"
+                value={resource}
+                onChange={(event) => setResource(event.target.value)}
+              >
+                {GRANT_RESOURCES.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="settings-form-field">
+              <span>{SETTINGS_STRINGS.grantsActionLabel}</span>
+              <select
+                className="settings-select"
+                value={action}
+                onChange={(event) => setAction(event.target.value)}
+              >
+                {GRANT_ACTIONS.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="settings-form-field">
+              <span>{SETTINGS_STRINGS.grantsEffectLabel}</span>
+              <select
+                className="settings-select"
+                value={effect}
+                onChange={(event) =>
+                  setEffect(event.target.value as GrantEffect)
+                }
+              >
+                {grantEffects.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="settings-form-field">
+              <span>{SETTINGS_STRINGS.grantsOriginLabel}</span>
+              <select
+                className="settings-select"
+                value={origin}
+                onChange={(event) =>
+                  setOrigin(event.target.value as GrantOrigin)
+                }
+              >
+                {grantOrigins.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="settings-form-field">
+              <span>{SETTINGS_STRINGS.grantsExpiresLabel}</span>
+              <Input
+                type="date"
+                value={expiresAt}
+                onChange={(event) => setExpiresAt(event.target.value)}
+              />
+            </label>
+            {error !== null && (
+              <p className="settings-inline-error" role="alert">
+                {error}
+              </p>
+            )}
+          </form>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {SETTINGS_STRINGS.grantsCreateCancel}
+          </Button>
+          <Button
+            type="submit"
+            form="create-grant-form"
+            variant="primary"
+            disabled={!canSubmit || submitting}
+          >
+            {SETTINGS_STRINGS.grantsCreateSubmit}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

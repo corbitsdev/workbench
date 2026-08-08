@@ -40,7 +40,11 @@ describe("empty states", () => {
 
   test("approvals says nothing is waiting", () => {
     const markup = renderToStaticMarkup(
-      <ApprovalsPage approvals={ready<Approval[]>([])} />,
+      <ApprovalsPage
+        approvals={ready<Approval[]>([])}
+        onApprove={() => undefined}
+        onReject={() => undefined}
+      />,
     );
     expect(markup).toContain("No approvals waiting");
   });

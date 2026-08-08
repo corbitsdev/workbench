@@ -382,6 +382,22 @@ aside[data-collapsed="true"] .app-wordmark {
   width: 3rem;
 }
 
+.approvals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.approvals-reject-message {
+  width: 100%;
+  border-radius: var(--radius, 0.375rem);
+  border: 1px solid var(--input);
+  background: var(--card);
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  resize: vertical;
+}
+
 /* Chat surface styling ships with @corbits/chat-ui (see
    packages/chat-ui/src/styles.css) — imported in main.tsx alongside
    this file, mirroring how @corbits/react-ui/styles.css is consumed. */

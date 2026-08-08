@@ -10,10 +10,12 @@ import type { ReactElement } from "react";
 import { SETTINGS_STRINGS } from "./strings";
 
 /** Whatever shared context a section needs to do its own fetching: the
- * bench currently selected in the app's chrome. A section with no use for
- * it (Account, today) simply ignores the field. */
+ * bench currently selected in the app's chrome, and the signed-in account's
+ * principal on that bench (for permission probes). A section with no use
+ * for either (Account, today) simply ignores the field. */
 export type SettingsContext = {
   readonly tenantId: string | null;
+  readonly principalId: string | null;
 };
 
 export type SettingsSection = {

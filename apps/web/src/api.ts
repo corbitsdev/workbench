@@ -4,7 +4,7 @@
 // undefined leaking into a page.
 
 import {
-  ApprovalSummary,
+  ApprovalResponse,
   PrincipalSummary,
   UserProfile,
   WorkflowRunSummary,
@@ -17,12 +17,12 @@ import { useEffect, useState } from "react";
 export const ProfileSchema = UserProfile;
 export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
 export const RunsSchema = paginatedSchema(WorkflowRunSummary);
-export const ApprovalsSchema = ApprovalSummary.array();
+export const TenantApprovalsSchema = paginatedSchema(ApprovalResponse);
 
 export type Profile = typeof UserProfile.infer;
 export type Principal = typeof PrincipalSummary.infer;
 export type WorkflowRun = typeof WorkflowRunSummary.infer;
-export type Approval = typeof ApprovalSummary.infer;
+export type Approval = typeof ApprovalResponse.infer;
 
 /**
  * The envelope paginatedSchema validates, stated structurally: the generic
@@ -99,4 +99,76 @@ export function useAPIQuery<T>(
   }, [path, schema, reloadKey]);
 
   return state;
+}
+
+export class APIMutationError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * A one-shot POST against a hub route, parsed the same way `useAPIQuery`
+ * parses its GETs: loud on a non-2xx status and on a response shape that
+ * doesn't match the schema, never a silent fallback.
+ */
+async function postJSON<T>(
+  path: string,
+  schema: Validator<T>,
+  body: unknown,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (cause) {
+    throw new APIMutationError(
+      cause instanceof Error ? cause.message : String(cause),
+    );
+  }
+  if (!response.ok) {
+    throw new APIMutationError(
+      `The hub answered ${response.status} for ${path}.`,
+      response.status,
+    );
+  }
+  const parsed = schema(await response.json());
+  if (parsed instanceof type.errors) {
+    throw new APIMutationError(
+      `Unexpected response shape from ${path}: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+/** Approves a pending approval. Scope is always "once": the hub rejects
+ * "always" with a 400 (see `vendor/intx/hub-api/src/routes/approvals.ts`),
+ * so this surface never offers it. */
+export function approveApproval(
+  tenantId: string,
+  approvalId: string,
+): Promise<Approval> {
+  return postJSON(
+    `/api/tenants/${tenantId}/approvals/${approvalId}/approve`,
+    ApprovalResponse,
+    { scope: "once" },
+  );
+}
+
+export function rejectApproval(
+  tenantId: string,
+  approvalId: string,
+  message?: string,
+): Promise<Approval> {
+  return postJSON(
+    `/api/tenants/${tenantId}/approvals/${approvalId}/reject`,
+    ApprovalResponse,
+    message === undefined ? {} : { message },
+  );
 }
