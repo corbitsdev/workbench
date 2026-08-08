@@ -1,0 +1,31 @@
+{
+  "name": "@corbits/folded-runs",
+  "private": true,
+  "description": "Launch, wake, and mail machinery for folded interactive workflow runs, hosted-service-agnostic",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/crypto": "workspace:*",
+    "@intx/db": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "@intx/hub-common": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/mime": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@intx/workflow-deploy": "workspace:*",
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
