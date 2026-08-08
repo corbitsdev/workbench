@@ -41,16 +41,35 @@ export function AuthScreen({
   const [socialProviders, setSocialProviders] = useState<
     readonly SocialProviderId[]
   >([]);
+  const [authConfigUnavailable, setAuthConfigUnavailable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void fetchAuthConfig().then((providers) => {
-      if (!cancelled) setSocialProviders(providers);
+    void fetchAuthConfig().then((result) => {
+      if (cancelled) return;
+      if (result.kind === "unavailable") {
+        console.error(`Could not load sign-in options: ${result.message}`);
+        setAuthConfigUnavailable(true);
+        return;
+      }
+      setSocialProviders(result.providers);
     });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const retryAuthConfig = () => {
+    setAuthConfigUnavailable(false);
+    void fetchAuthConfig().then((result) => {
+      if (result.kind === "unavailable") {
+        console.error(`Could not load sign-in options: ${result.message}`);
+        setAuthConfigUnavailable(true);
+        return;
+      }
+      setSocialProviders(result.providers);
+    });
+  };
 
   const submit = async (credentials: {
     readonly email: string;
@@ -92,6 +111,18 @@ export function AuthScreen({
         error={error}
         footer={
           <>
+            {authConfigUnavailable && (
+              <p className="auth-config-notice">
+                Sign-in options couldn't be loaded.{" "}
+                <button
+                  type="button"
+                  className="auth-switch"
+                  onClick={retryAuthConfig}
+                >
+                  Retry
+                </button>
+              </p>
+            )}
             {socialProviders.length > 0 && (
               <div className="auth-social-providers">
                 {socialProviders.map((provider) => (

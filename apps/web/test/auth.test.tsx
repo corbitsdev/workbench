@@ -8,7 +8,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
 import { AuthScreen } from "../src/auth-screen";
-import { fetchSession, signIn, signOut, signUp } from "../src/session";
+import {
+  fetchAuthConfig,
+  fetchSession,
+  signIn,
+  signOut,
+  signUp,
+} from "../src/session";
 import type { SessionState } from "../src/session";
 
 const realFetch = globalThis.fetch;
@@ -145,6 +151,39 @@ describe("the gate", () => {
     const markup = renderApp({ kind: "error", message: "socket hang up" });
     expect(markup).toContain("socket hang up");
     expect(markup).toContain("Try again");
+  });
+});
+
+describe("auth config fetch", () => {
+  test("a genuinely empty provider list is ready, not unavailable", async () => {
+    stubFetch(() => json({ socialProviders: [] }));
+    const result = await fetchAuthConfig();
+    expect(result).toEqual({ kind: "ready", providers: [] });
+  });
+
+  test("a configured provider list is ready", async () => {
+    stubFetch(() => json({ socialProviders: ["google"] }));
+    const result = await fetchAuthConfig();
+    expect(result).toEqual({ kind: "ready", providers: ["google"] });
+  });
+
+  test("a non-2xx response is unavailable, not an empty list", async () => {
+    stubFetch(() => json({ message: "boom" }, 500));
+    const result = await fetchAuthConfig();
+    expect(result.kind).toBe("unavailable");
+  });
+
+  test("a body that fails the schema is unavailable", async () => {
+    stubFetch(() => json({ socialProviders: "not-an-array" }));
+    const result = await fetchAuthConfig();
+    expect(result.kind).toBe("unavailable");
+  });
+
+  test("a network failure is unavailable", async () => {
+    globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.reject(new Error("network down"))) as typeof fetch;
+    const result = await fetchAuthConfig();
+    expect(result).toEqual({ kind: "unavailable", message: "network down" });
   });
 });
 

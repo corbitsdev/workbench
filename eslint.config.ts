@@ -28,7 +28,7 @@ export default defineConfig(
       reportUnusedDisableDirectives: "error",
     },
     rules: {
-      "no-console": "error",
+      "no-console": ["error", { allow: ["error"] }],
       "@typescript-eslint/no-unused-expressions": [
         "error",
         { allowTaggedTemplates: true },

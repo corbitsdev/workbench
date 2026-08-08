@@ -118,24 +118,44 @@ export type SocialProviderId = typeof SocialProviderId.infer;
 
 const AuthConfig = type({ socialProviders: SocialProviderId.array() });
 
+export type AuthConfigResult =
+  | { readonly kind: "ready"; readonly providers: readonly SocialProviderId[] }
+  | { readonly kind: "unavailable"; readonly message: string };
+
 /**
  * Asks the hub which OAuth providers a full credential pair was
  * configured for, so the sign-in screen only draws buttons for
- * providers that actually work. Fails soft to "none configured" — a
- * broken auth-config fetch should degrade to email/password, never
- * block the auth screen from rendering at all.
+ * providers that actually work. Distinguishes "the hub answered and
+ * genuinely has none configured" (`ready` with an empty list) from a
+ * network failure, a non-2xx response, or an unparseable body
+ * (`unavailable`) — the auth screen still degrades to email/password
+ * either way, but only the latter is worth telling the operator about.
  */
-export async function fetchAuthConfig(): Promise<readonly SocialProviderId[]> {
+export async function fetchAuthConfig(): Promise<AuthConfigResult> {
   try {
     const response = await fetch("/api/auth-config", {
       headers: { accept: "application/json" },
     });
-    if (!response.ok) return [];
+    if (!response.ok) {
+      return {
+        kind: "unavailable",
+        message: `The hub answered ${response.status} for the auth config.`,
+      };
+    }
     const body: unknown = await response.json();
     const parsed = AuthConfig(body);
-    return parsed instanceof type.errors ? [] : parsed.socialProviders;
-  } catch {
-    return [];
+    if (parsed instanceof type.errors) {
+      return {
+        kind: "unavailable",
+        message: `Unexpected auth config shape: ${parsed.summary}`,
+      };
+    }
+    return { kind: "ready", providers: parsed.socialProviders };
+  } catch (cause) {
+    return {
+      kind: "unavailable",
+      message: cause instanceof Error ? cause.message : String(cause),
+    };
   }
 }
 
