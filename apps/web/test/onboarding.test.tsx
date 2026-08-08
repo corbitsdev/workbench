@@ -10,6 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/app";
 import {
   submitCredential,
+  testCredential,
   triggerFirstLoginProvisioning,
 } from "../src/onboarding";
 import type { SessionState } from "../src/session";
@@ -73,6 +74,31 @@ describe("triggerFirstLoginProvisioning", () => {
   });
 });
 
+describe("testCredential", () => {
+  test("a rejected key is reported with the hub's own reason", async () => {
+    let requestBody: unknown = null;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestBody = JSON.parse((init as RequestInit).body as string);
+      return json(
+        { error: { code: "invalid_credential", message: "invalid api key" } },
+        422,
+      );
+    }) as unknown as typeof fetch;
+
+    const result = await testCredential("openai", "sk-bad");
+    expect(result).toEqual({ ok: false, message: "invalid api key" });
+    expect(requestBody).toEqual({ provider: "openai", apiKey: "sk-bad" });
+  });
+
+  test("an accepted key reports ok", async () => {
+    globalThis.fetch = (async () =>
+      json({ ok: true })) as unknown as typeof fetch;
+
+    const result = await testCredential("anthropic", "sk-ant-good");
+    expect(result).toEqual({ ok: true });
+  });
+});
+
 describe("submitCredential", () => {
   test("a rejected key comes back as a rejected outcome with the hub's own reason", async () => {
     globalThis.fetch = (async () =>
@@ -81,24 +107,31 @@ describe("submitCredential", () => {
         422,
       )) as unknown as typeof fetch;
 
-    const result = await submitCredential("sk-ant-bad");
+    const result = await submitCredential("anthropic", "sk-ant-bad");
     expect(result).toEqual({ kind: "rejected", message: "invalid x-api-key" });
   });
 
   test("a seeded bench reports which routines were confirmed", async () => {
-    globalThis.fetch = (async () =>
-      json({
+    let requestBody: unknown = null;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestBody = JSON.parse((init as RequestInit).body as string);
+      return json({
         kind: "seeded",
         tenantId: "ten_1",
         tenantSlug: "ada-user1",
         workflows: ["echo", "assistant"],
-      })) as unknown as typeof fetch;
+      });
+    }) as unknown as typeof fetch;
 
-    const result = await submitCredential("sk-ant-good");
+    const result = await submitCredential("google-genai", "AIza-good");
     expect(result).toEqual({
       kind: "seeded",
       tenantSlug: "ada-user1",
       workflows: ["echo", "assistant"],
+    });
+    expect(requestBody).toEqual({
+      provider: "google-genai",
+      apiKey: "AIza-good",
     });
   });
 
@@ -107,7 +140,7 @@ describe("submitCredential", () => {
       throw new Error("connection refused");
     }) as unknown as typeof fetch;
 
-    const result = await submitCredential("sk-ant-good");
+    const result = await submitCredential("anthropic", "sk-ant-good");
     expect(result.kind).toBe("error");
     if (result.kind !== "error") throw new Error("unreachable");
     expect(result.message).toContain("connection refused");

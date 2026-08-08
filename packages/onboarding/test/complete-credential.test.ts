@@ -64,6 +64,7 @@ describe("completeCredentialSetup", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      provider: "anthropic",
       apiKey: "sk-ant-bad",
       pushWorkflow: noopPush,
       log: collector().log,
@@ -104,6 +105,7 @@ describe("completeCredentialSetup", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
       log: collector().log,
@@ -113,9 +115,10 @@ describe("completeCredentialSetup", () => {
     expect(result).toEqual({ kind: "no-personal-bench" });
   });
 
-  test("a valid key seeds the caller's own personal bench and reports what ran", async () => {
+  test("a valid Anthropic key seeds the catalog, the tenant, and reports what ran", async () => {
     const seedCatalogCalls: unknown[] = [];
-    const seedTenantCalls: unknown[] = [];
+    const seedTenantCalls: { model: { provider: string; model: string } }[] =
+      [];
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === "/api/me/principals") {
         return principalsResponse();
@@ -132,6 +135,7 @@ describe("completeCredentialSetup", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
       log: collector().log,
@@ -140,7 +144,7 @@ describe("completeCredentialSetup", () => {
         seedCatalogCalls.push(args);
       },
       seedTenantFn: async (args) => {
-        seedTenantCalls.push(args);
+        seedTenantCalls.push(args as never);
       },
     });
 
@@ -152,5 +156,50 @@ describe("completeCredentialSetup", () => {
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls).toHaveLength(1);
+    expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
+  });
+
+  test("a valid OpenAI key skips the Anthropic-only catalog but still seeds routines", async () => {
+    const seedCatalogCalls: unknown[] = [];
+    const seedTenantCalls: { model: { provider: string; model: string } }[] =
+      [];
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await completeCredentialSetup({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "openai",
+      apiKey: "sk-good",
+      pushWorkflow: noopPush,
+      log: collector().log,
+      testCredential: async () => ({ ok: true }),
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+      },
+      seedTenantFn: async (args) => {
+        seedTenantCalls.push(args as never);
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "seeded",
+      tenantId: TENANT_ID,
+      tenantSlug: TENANT_SLUG,
+      workflows: ["echo", "assistant"],
+    });
+    expect(seedCatalogCalls).toHaveLength(0);
+    expect(seedTenantCalls).toHaveLength(1);
+    expect(seedTenantCalls[0]?.model.provider).toBe("openai");
   });
 });
