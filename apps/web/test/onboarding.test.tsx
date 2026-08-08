@@ -89,6 +89,6 @@ describe("App with a provisioning error", () => {
     expect(markup).toContain(
       "Could not provision a workbench for this account.",
     );
-    expect(markup).not.toContain("app-frame");
+    expect(markup).not.toContain("shell-frame");
   });
 });

@@ -10,19 +10,6 @@
 @import "@corbits/bench-ui/styles.css";
 @import "@corbits/settings-ui/styles.css";
 
-.app-frame {
-  display: flex;
-  height: 100dvh;
-  overflow: hidden;
-}
-
-.app-main {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-}
-
 .app-mark {
   height: 1.375rem;
   width: auto;
@@ -38,34 +25,113 @@
   height: 100dvh;
 }
 
-/* Bottom dock A: the bench switcher, above the identity row. */
-.app-bench-dock {
-  border-top: 1px solid var(--border);
-  padding: 0.5rem 0.75rem;
-}
-
-/* Bottom dock B: initials avatar + email + settings/sign-out. */
-.app-identity-dock {
+/* The four-column app shell: rail, contextual panel, main pane, canvas.
+   Percentages in the comments below are against a 1440px desktop, the
+   spec's reference width — the actual columns are sized in rem/vw so they
+   hold roughly those proportions across viewports instead of clipping at a
+   fixed pixel width. */
+.shell-frame {
   display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  border-top: 1px solid var(--border);
-  padding: 0.75rem 1rem;
+  height: 100dvh;
+  overflow: hidden;
 }
 
-.app-identity {
+/* ~7-15% of a desktop viewport, narrowing gracefully at laptop widths. */
+:root {
+  --shell-contextual-width: clamp(12rem, 11vw, 16rem);
+}
+
+.shell-main {
   display: flex;
+  position: relative;
+  flex: 1;
   min-width: 0;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
 }
 
-.app-identity-avatar {
+.shell-main-toolbar {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  z-index: 10;
+}
+
+.shell-main-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* Column 4: collapses to zero width rather than being merely hidden, so the
+   main pane reclaims the space instead of leaving a gap. `overflow: hidden`
+   keeps the collapsing content clipped instead of reflowing the page while
+   the width animates; the inner wrapper's own transform/opacity transition
+   is what actually reads as "sliding" rather than "shrinking". */
+.shell-canvas-column {
+  overflow: hidden;
+  width: 0;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--card);
+  transition:
+    width 200ms ease,
+    border-color 200ms ease;
+}
+
+.shell-canvas-column[data-open="true"] {
+  width: min(24rem, 28vw);
+}
+
+.shell-canvas-column:not([data-open="true"]) {
+  border-left-color: transparent;
+}
+
+.shell-canvas-inner {
+  display: flex;
+  height: 100%;
+  width: min(24rem, 28vw);
+  flex-direction: column;
+  justify-content: center;
+  opacity: 0;
+  transform: translateX(0.75rem);
+  transition:
+    opacity 160ms ease,
+    transform 200ms ease;
+}
+
+.shell-canvas-column[data-open="true"] .shell-canvas-inner {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Reduced motion needs no rule here: the component library collapses every
+   animation and transition to a single frame at the foundation (see
+   `prefers-reduced-motion` in its theme.css), and these transitions inherit
+   that like any other. */
+
+/* Contextual panel footer: bench switcher above the identity row. */
+.shell-contextual-footer {
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-bench-dock {
+  padding: 0.25rem 0.25rem 0.5rem;
+}
+
+.shell-identity-dock {
   display: grid;
-  height: 30px;
-  width: 30px;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.25rem 0.25rem;
+}
+
+.shell-identity-avatar {
+  display: grid;
+  height: 28px;
+  width: 28px;
   flex-shrink: 0;
   place-items: center;
   border-radius: 9999px;
@@ -75,44 +141,28 @@
   color: var(--primary-foreground);
 }
 
-.app-identity-email {
-  max-width: 110px;
-  overflow: hidden;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.app-identity-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.app-identity-settings {
+.shell-identity-settings {
   display: grid;
-  height: 34px;
-  width: 34px;
+  height: 28px;
+  width: 28px;
   place-items: center;
   border-radius: 10px;
   color: var(--muted-foreground);
   transition: color 150ms;
 }
 
-.app-identity-settings:hover,
-.app-identity-settings[aria-current="page"] {
+.shell-identity-settings:hover,
+.shell-identity-settings[aria-current="page"] {
   color: var(--foreground);
 }
 
-aside[data-collapsed="true"] .app-identity-email,
-aside[data-collapsed="true"] .app-mark {
-  display: none;
-}
-
-aside[data-collapsed="true"] .app-identity-dock {
-  flex-direction: column;
-  padding-inline: 0.5rem;
+.shell-identity-email {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Auth screen — the two-column corbits.dev sign-in shell. The right panel is
@@ -288,10 +338,6 @@ aside[data-collapsed="true"] .app-identity-dock {
   font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
-}
-
-aside[data-collapsed="true"] .app-wordmark {
-  display: none;
 }
 
 .page-fill {

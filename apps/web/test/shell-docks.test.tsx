@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { NavigationProvider } from "../src/navigation";
-import { IdentityDock, initialsOf } from "../src/sidebar";
+import { IdentityDock, initialsOf } from "../src/shell/docks";
 
 const noNavigate = () => undefined;
 const noop = () => undefined;

@@ -143,7 +143,9 @@ describe("the gate", () => {
     const markup = renderApp({ kind: "signed-in", user });
     expect(markup).toContain("Sign out");
     expect(markup).toContain("ada@example.com");
-    expect(markup).toMatch(/aria-current="page"[^>]*href="\/"/);
+    expect(markup).toMatch(
+      /data-slot="sidebar-rail-item"[^>]*aria-current="page"/,
+    );
   });
 
   test("loading and error are their own screens, not a broken shell", () => {

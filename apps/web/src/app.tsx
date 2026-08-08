@@ -1,57 +1,15 @@
-import {
-  BootScreen,
-  Button,
-  CorbitsMark,
-  EmptyState,
-  Sidebar,
-  SidebarCollapseToggle,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarItem,
-  SidebarSection,
-} from "@corbits/react-ui";
+import { BootScreen, Button, CorbitsMark, EmptyState } from "@corbits/react-ui";
 import { CircleAlert } from "lucide-react";
-import { useState } from "react";
 
 import { AuthScreen } from "./auth-screen";
 import { BenchProvider } from "./bench-context";
-import {
-  handleLinkClick,
-  NavigationProvider,
-  useNavigate,
-  type Navigate,
-} from "./navigation";
+import { NavigationProvider, type Navigate } from "./navigation";
 import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
-import {
-  APP_ROUTES,
-  matchesRoute,
-  NAV_ROUTES,
-  ONBOARDING_PATH,
-} from "./routes";
+import { APP_ROUTES, matchesRoute, ONBOARDING_PATH } from "./routes";
 import type { SessionState, SessionUser } from "./session";
-import { BenchDock, IdentityDock } from "./sidebar";
-
-function AppNav({ path }: { readonly path: string }) {
-  const navigate = useNavigate();
-  return (
-    <SidebarSection label="Workbench">
-      {NAV_ROUTES.map((route) => (
-        <SidebarItem
-          key={route.path}
-          href={route.path}
-          onClick={(event) => handleLinkClick(event, route.path, navigate)}
-          active={matchesRoute(route.path, path)}
-          icon={route.icon}
-        >
-          {route.label}
-        </SidebarItem>
-      ))}
-    </SidebarSection>
-  );
-}
+import { AppShell } from "./shell/app-shell";
 
 function Brand() {
   return (
@@ -73,40 +31,21 @@ function Shell({
   readonly user: SessionUser;
   readonly onSignOut: () => void;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
   const route = APP_ROUTES.find((candidate) =>
     matchesRoute(candidate.path, path),
   );
   return (
     <NavigationProvider navigate={navigate}>
       <BenchProvider>
-        <div className="app-frame">
-          <Sidebar collapsed={collapsed}>
-            <SidebarHeader>
-              <SidebarCollapseToggle
-                collapsed={collapsed}
-                onToggle={() => setCollapsed((value) => !value)}
-              />
-              <Brand />
-            </SidebarHeader>
-            <SidebarContent>
-              <AppNav path={path} />
-            </SidebarContent>
-            <SidebarFooter>
-              {!collapsed && <BenchDock />}
-              <IdentityDock path={path} user={user} onSignOut={onSignOut} />
-            </SidebarFooter>
-          </Sidebar>
-          <main className="app-main">
-            {path === ONBOARDING_PATH ? (
-              <OnboardingPage />
-            ) : route === undefined ? (
-              <NotFoundPage path={path} />
-            ) : (
-              route.render(path, navigate)
-            )}
-          </main>
-        </div>
+        <AppShell path={path} user={user} onSignOut={onSignOut}>
+          {path === ONBOARDING_PATH ? (
+            <OnboardingPage />
+          ) : route === undefined ? (
+            <NotFoundPage path={path} />
+          ) : (
+            route.render(path, navigate)
+          )}
+        </AppShell>
       </BenchProvider>
     </NavigationProvider>
   );
