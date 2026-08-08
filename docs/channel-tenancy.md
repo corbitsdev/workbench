@@ -16,7 +16,11 @@ still open upstream.
    exactly as the native `POST /api/tenants` route seeds one it creates
    directly — the same `owner`/`admin`/`member` system roles, the same
    grant shapes — so it is indistinguishable from a tenant created by
-   hand through that route.
+   hand through that route. The mint (tenant, its three system roles,
+   the creator's owner principal and role assignment, every system
+   grant, and the `channel_tenancy` link) runs as one transaction, so it
+   either lands complete or not at all — there is no partially-seeded
+   tenant to observe.
 2. Seeds the child tenant's `owner` principal for the creator's own auth
    user id (`principal.refId`), so the creator is a first-class native
    member of the channel's own tenant, not just of the parent bench.
@@ -26,9 +30,17 @@ still open upstream.
 4. Launches the channel host and stores `channel_settings` /
    `channel_launch` unchanged from before this feature: both remain
    scoped to the parent bench's tenant id, not the new child tenant.
+   The mint and the launch are two separate steps against separate
+   machinery, so ordering them alone does not prevent an orphaned
+   tenant if the launch fails: `POST .../chat/channels` wraps the
+   launch call and, on failure, calls
+   `ChannelTenancyStore.compensateChannelTenant` to delete the
+   freshly-minted tenant (and everything cascaded onto it) before
+   re-raising the error. Both the failure and the compensation are
+   logged loudly.
 
-Point 4 is a deliberate, documented limitation — see "What still lives in
-the parent bench" below.
+Point 4's tenant/launch split is a deliberate, documented limitation —
+see "What still lives in the parent bench" below.
 
 ## The listing seam
 
@@ -49,13 +61,21 @@ link, when one exists:
   and the `legacy` field are filed for removal once every channel in a
   production database has been backfilled a tenancy; until then, dropping
   it silently would be exactly the kind of fallback AGENTS.md forbids, so
-  it stays explicit in the route and in this document instead.
+  it stays explicit in the route and in this document instead. The chat
+  sidebar (`packages/chat-ui/src/sidebar.tsx`) surfaces it too: a legacy
+  channel's row carries a muted "Legacy" badge alongside its title, so
+  the marker is visible to a human, not just present on the wire.
+
+  Backfilling every legacy channel a tenancy — so this branch, the
+  `legacy` field, and the badge can all be deleted — is tracked as a
+  follow-up item on CL-5647's list, not scheduled here.
 
 ## Movability
 
 `POST .../chat/channels/:id/move` re-parents a channel's tenancy to a new
 bench. There is no native `PATCH` for a tenant's `parentId`, so the move
-updates two places, both owned by this package's own service code:
+updates two places, both owned by this package's own service code, in one
+transaction (`ChannelTenancyStore.moveChannelTenancy`):
 
 1. The `channel_tenancy` link row (`parentTenantId`) — the source
    `listChildChannelTenancies` reads.
@@ -66,6 +86,20 @@ updates two places, both owned by this package's own service code:
 
 A channel with no `channel_tenancy` link (a legacy channel) cannot be
 moved; the route returns `409 conflict` rather than silently no-op'ing.
+
+The route fails closed on the destination before either write happens,
+via `ChannelTenancyStore.authorizeMoveDestination`:
+
+- `newParentTenantId` must name a tenant that actually exists — a bogus
+  or fabricated id is rejected with `404 not_found` rather than being
+  written straight into `channel_tenancy` and `tenant.parentId`.
+- The caller must hold an active principal in that destination tenant
+  carrying a manage-level grant, checked with the same `@intx/authz`
+  `authorize` call `requireGrant` itself uses, evaluated against the
+  destination tenant rather than the caller's own. A caller with only
+  standing in the channel's current bench — including the bench that
+  currently owns the channel — cannot move it into a tenant it has no
+  authority over; that request is rejected with `403 forbidden`.
 
 ## What still lives in the parent bench
 
@@ -102,10 +136,10 @@ relevant to this feature:
   gap `channel-tenancy.ts` does not introduce but also does not close,
   since it mints the child tenant directly rather than going through that
   HTTP route.
-- **The move route does not verify `newParentTenantId` names a real
-  tenant.** It writes the id straight through to both `channel_tenancy`
-  and `tenant.parentId`, mirroring the same unvalidated-`parentId`
-  posture as the native creation route above, rather than inventing a
-  stricter contract only this one path enforces. Tightening both at once
-  is future work, not something this rollout should do unilaterally to
-  only one of the two paths.
+- **The move route does verify `newParentTenantId`, unlike the native
+  creation route.** `authorizeMoveDestination` checks the destination
+  tenant exists and that the caller holds a manage-level grant there
+  before either write happens (see "Movability" above) — a stricter
+  contract than `POST /api/tenants`'s unvalidated `parentId` enforces.
+  Tightening the native route to match is future work upstream, not
+  something this package can do from the outside.
