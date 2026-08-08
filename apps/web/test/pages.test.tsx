@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ArtifactSummary } from "@corbits/artifact-ui";
 
-import type { APIQuery, Approval, WorkflowRun } from "../src/api";
+import type { APIQuery, Approval } from "../src/api";
 import type {
   AgentDefinition,
   AgentDirectoryData,
@@ -18,7 +18,6 @@ import { ApprovalsPage } from "../src/pages/approvals-page";
 import { HomePage } from "../src/pages/home-page";
 import { LibraryPage } from "../src/pages/library-page";
 import { SkillsPage } from "../src/pages/skills-page";
-import { WorkflowsPage } from "../src/pages/workflows-page";
 
 function ready<T>(data: T): APIQuery<T> {
   return { kind: "ready", data };
@@ -37,11 +36,6 @@ const profile = ready({
 });
 
 describe("empty states", () => {
-  test("workflows says it has no active workflows", () => {
-    const markup = renderToStaticMarkup(<WorkflowsPage runs={emptyPage} />);
-    expect(markup).toContain("No active workflows");
-  });
-
   test("library teaches what will appear once the seam is real", () => {
     const markup = renderToStaticMarkup(<LibraryPage artifacts={[]} />);
     expect(markup).toContain("No artifacts yet");
@@ -91,61 +85,6 @@ describe("signed-out state", () => {
 });
 
 describe("live data", () => {
-  const run: WorkflowRun = {
-    id: "run_1",
-    tenantId: "tenant_1",
-    tenantName: "Acme",
-    definitionId: "wfd_1",
-    definitionName: "Researcher",
-    address: "run_1@acme.localhost",
-    status: "running",
-    createdAt: "2026-08-05T11:00:00.000Z",
-  };
-
-  test("workflows renders a running workflow from hub data", () => {
-    const markup = renderToStaticMarkup(
-      <WorkflowsPage
-        runs={ready({ data: [run], nextCursor: null })}
-        now={Date.parse("2026-08-05T12:00:00.000Z")}
-      />,
-    );
-    expect(markup).toContain("Researcher");
-    expect(markup).toContain("run_1@acme.localhost");
-    expect(markup).toContain("running");
-    expect(markup).toContain("ago");
-  });
-
-  test("workflows filters the chat anchor machinery's channel-host runs out", () => {
-    const channelHostRun: WorkflowRun = {
-      ...run,
-      id: "run_2",
-      definitionId: "wfd_2",
-      definitionName: "ins-cd03d8e3",
-      address: "run_2@acme.localhost",
-    };
-    const markup = renderToStaticMarkup(
-      <WorkflowsPage
-        runs={ready({ data: [run, channelHostRun], nextCursor: null })}
-        now={Date.parse("2026-08-05T12:00:00.000Z")}
-      />,
-    );
-    expect(markup).toContain("Researcher");
-    expect(markup).not.toContain("ins-cd03d8e3");
-  });
-
-  test("workflows shows the empty state when only channel-host runs exist", () => {
-    const channelHostRun: WorkflowRun = {
-      ...run,
-      definitionName: "ins-cd03d8e3",
-    };
-    const markup = renderToStaticMarkup(
-      <WorkflowsPage
-        runs={ready({ data: [channelHostRun], nextCursor: null })}
-      />,
-    );
-    expect(markup).toContain("No active workflows");
-  });
-
   const reportArtifact: ArtifactSummary = {
     id: "art_1",
     title: "Q3 report",

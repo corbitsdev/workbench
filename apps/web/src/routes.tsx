@@ -6,13 +6,13 @@
 
 import {
   Bot,
+  Clock,
   Home,
   Library,
   MessageSquare,
   Settings,
   ShieldCheck,
   Sparkles,
-  Workflow,
 } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
@@ -21,9 +21,9 @@ import { ApprovalsRoute } from "./pages/approvals-page";
 import { ChatPage } from "./pages/chat-page";
 import { HomeRoute } from "./pages/home-page";
 import { LibraryRoute } from "./pages/library-page";
+import { RoutinesRoute } from "./pages/routines-page";
 import { SettingsRoute } from "./pages/settings-page";
 import { SkillsRoute } from "./pages/skills-page";
-import { WorkflowsRoute } from "./pages/workflows-page";
 
 /** Landing point for a session the first-login hook just provisioned a
  * personal bench for. Not one of `APP_ROUTES`: it has no sidebar entry,
@@ -52,6 +52,9 @@ export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === "/chat") {
     return path === "/chat" || path.startsWith("/chat/");
   }
+  if (routePath === "/routines") {
+    return path === "/routines" || path.startsWith("/routines/");
+  }
   return routePath === path;
 }
 
@@ -66,10 +69,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
-    path: "/workflows",
-    label: "Workflows",
-    icon: <Workflow />,
-    render: () => <WorkflowsRoute />,
+    path: "/routines",
+    label: "Routines",
+    icon: <Clock />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <RoutinesRoute path={path} navigate={navigate} />
+    ),
   },
   {
     path: "/library",
