@@ -168,12 +168,19 @@ infinite-loop on a cyclic tree with no way to detect how it got there.
 ## Indexing
 
 `channel_tenancy` carries a `PRIMARY KEY (channel_id)` and a
-`UNIQUE (tenant_id)`, but `listChildChannelTenancies` — read on every
-`GET .../chat/channels` call — filters on `parent_tenant_id`, a column
-neither constraint indexes. Migration `0006_channel_tenancy_parent_index`
-adds `channel_tenancy_parent_tenant_id_idx` on `parent_tenant_id` so that
+`UNIQUE (tenant_id)`, but `listChildChannelTenancies` filters on
+`parent_tenant_id`, a column neither constraint indexes. Migration
+`0006_channel_tenancy_parent_index` adds
+`channel_tenancy_parent_tenant_id_idx` on `parent_tenant_id` so that
 read stays an index scan as the table grows, rather than a sequential
-scan on every listing request.
+scan.
+
+`GET .../chat/channels` itself reads tenancy by `channel_id` (the
+primary key) instead, one call per listed row: a bench's channel
+listing is scoped to `channel_settings`, which keeps a channel's row
+forever in the bench it was created in even after a move, so annotating
+those rows by "children of this bench" would go stale the moment a
+channel moved elsewhere and wrongly report it as legacy.
 
 ## Scaling
 
