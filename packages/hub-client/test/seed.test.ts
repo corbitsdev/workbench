@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { CliError } from "../src/errors";
 import {
   DEFAULT_WORKFLOWS,
+  NOOP_MODEL_SOURCE,
   seedCatalog,
   seedTenant,
   type SeedTenantArgs,
@@ -434,6 +435,24 @@ describe("seedTenant", () => {
 
   test("the default set also includes the assistant workflow", () => {
     expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toContain("assistant");
+  });
+
+  test("NOOP_MODEL_SOURCE resolves to the hub's own noop-inference endpoint", () => {
+    const resolved = NOOP_MODEL_SOURCE("http://localhost:3000");
+    expect(resolved.baseURL).toBe(
+      "http://localhost:3000/api/chat/noop-inference",
+    );
+    expect(resolved.model).toBe("noop");
+  });
+
+  test("echo and assistant carry no modelSource override, so they deploy against the tenant's real model", () => {
+    const realModelWorkflows = DEFAULT_WORKFLOWS.filter(
+      (w) => w.assetName === "echo" || w.assetName === "assistant",
+    );
+    expect(realModelWorkflows).toHaveLength(2);
+    for (const workflow of realModelWorkflows) {
+      expect(workflow.modelSource).toBeUndefined();
+    }
   });
 });
 
