@@ -28,7 +28,68 @@ describe("readHubConfig", () => {
       sessionSecret: validEnv.SESSION_SECRET,
       hubDataDir: validEnv.HUB_DATA_DIR,
       hubStaticDir: validEnv.HUB_STATIC_DIR,
+      socialProviders: {},
       signupRateLimit: { windowSeconds: 60, max: 5 },
+    });
+  });
+
+  describe("social providers", () => {
+    test("absent by default", () => {
+      expect(readHubConfig(validEnv).socialProviders).toEqual({});
+    });
+
+    test("a full Google pair enables google", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        GOOGLE_CLIENT_ID: "google-id",
+        GOOGLE_CLIENT_SECRET: "google-secret",
+      });
+      expect(config.socialProviders).toEqual({
+        google: { clientId: "google-id", clientSecret: "google-secret" },
+      });
+    });
+
+    test("a full GitHub pair enables github, independently of google", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        GITHUB_CLIENT_ID: "github-id",
+        GITHUB_CLIENT_SECRET: "github-secret",
+      });
+      expect(config.socialProviders).toEqual({
+        github: { clientId: "github-id", clientSecret: "github-secret" },
+      });
+    });
+
+    test("both providers can be configured together", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        GOOGLE_CLIENT_ID: "google-id",
+        GOOGLE_CLIENT_SECRET: "google-secret",
+        GITHUB_CLIENT_ID: "github-id",
+        GITHUB_CLIENT_SECRET: "github-secret",
+      });
+      expect(Object.keys(config.socialProviders).sort()).toEqual([
+        "github",
+        "google",
+      ]);
+    });
+
+    test("a client id with no secret fails loudly at boot", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        GOOGLE_CLIENT_ID: "google-id",
+      });
+      expect(message).toContain("GOOGLE_CLIENT_ID");
+      expect(message).toContain("GOOGLE_CLIENT_SECRET");
+    });
+
+    test("a client secret with no id fails loudly at boot", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        GITHUB_CLIENT_SECRET: "github-secret",
+      });
+      expect(message).toContain("GITHUB_CLIENT_ID");
+      expect(message).toContain("GITHUB_CLIENT_SECRET");
     });
   });
 
