@@ -236,7 +236,6 @@ export async function createHub(config: HubConfig) {
   // origin resolves for it.
   app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
   const chatTenancy = createDrizzleChannelTenancyStore(db, {
-    grantStore: chatGrantStore,
     conditionRegistry: chatConditionRegistry,
   });
   const chatPlatform = createHubChatPlatform({

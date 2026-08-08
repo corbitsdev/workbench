@@ -13,12 +13,13 @@
 // consumption of `@intx/db`'s published schema, not a fork of the
 // vendored route: nothing in `vendor/intx` is read or written by this
 // module.
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { generateId } from "@intx/hub-common";
 import { grant, principal, principalRole, role, tenant } from "@intx/db/schema";
-import { authorize } from "@intx/authz";
-import type { ConditionRegistry, GrantStore } from "@intx/authz";
+import { parseGrantRow } from "@intx/db";
+import { evaluateGrants } from "@intx/authz";
+import type { ConditionRegistry, GrantRule } from "@intx/authz";
 import { getLogger } from "@intx/log";
 import { channelTenancy } from "./schema";
 
@@ -91,29 +92,32 @@ export interface CreateChannelTenantResult {
 export interface MoveChannelTenancyInput {
   readonly channelId: string;
   readonly newParentTenantId: string;
-}
-
-export interface AuthorizeMoveDestinationInput {
-  readonly newParentTenantId: string;
   /** The caller's auth user id (`principal.refId`) — moving tenants
    * looks up whatever principal that identity holds in the
    * destination tenant, not the principal id the caller authenticated
-   * with in its own tenant, since those are different rows. */
+   * with in its own tenant, since those are different rows. Checked
+   * inside the same transaction that performs the move (see
+   * `moveChannelTenancy` below), never as a separate round trip, so a
+   * grant revocation or destination-tenant deletion cannot land in a
+   * window between the check and the act. */
   readonly callerRefId: string;
 }
 
 /**
- * The result of checking whether a move to `newParentTenantId` is
- * allowed: the destination must exist, and the caller must hold an
- * active principal there carrying a manage-level grant. Both are
- * reported so a route can fail closed with the right status —
- * 404 when the destination itself is bogus, 403 when it is real but
- * the caller has no standing in it.
+ * The outcome of a move attempt. `"destination_not_found"` and
+ * `"forbidden"` are the two ways the destination fails closed — the
+ * first when `newParentTenantId` names no real tenant, the second when
+ * it is real but the caller holds no manage-granted principal there.
+ * `"no_tenancy"` is the pre-existing "legacy channel" case: nothing to
+ * move. All three, and the successful `"moved"` case, are reported by
+ * the same call so a route never has to reconcile results from two
+ * separate reads of a fact that can change between them.
  */
-export interface DestinationTenantAuthorization {
-  readonly tenantExists: boolean;
-  readonly callerHasManageGrant: boolean;
-}
+export type MoveChannelTenancyOutcome =
+  | { readonly kind: "moved"; readonly row: ChannelTenancyRow }
+  | { readonly kind: "destination_not_found" }
+  | { readonly kind: "forbidden" }
+  | { readonly kind: "no_tenancy" };
 
 export interface ChannelTenancyStore {
   /**
@@ -140,30 +144,26 @@ export interface ChannelTenancyStore {
   ): Promise<ChannelTenancyRow[]>;
 
   /**
-   * Re-parents a channel's tenancy: updates both the chat-owned link
-   * row (what workbench's own listing reads) and the native
-   * `tenant.parentId` column directly, through `@intx/db`'s published
-   * schema — there is no native PATCH for a tenant's `parentId`, so
-   * this is the only way to keep the two in sync. Throws for a channel
-   * with no tenancy link (nothing to move).
+   * Re-parents a channel's tenancy, but only after re-verifying —
+   * inside the very transaction that performs the move, under row
+   * locks — that `newParentTenantId` names a real tenant and that
+   * `callerRefId` holds an active, manage-granted principal there.
+   * The check and the act are not two round trips: a caller cannot
+   * pass authorization and then race a grant revocation or a
+   * destination-tenant deletion into the gap, because there is no gap
+   * — the destination tenant row, the caller's principal row, and
+   * every grant row that could resolve the decision are locked
+   * (`SELECT ... FOR UPDATE`) for the lifetime of the same transaction
+   * that writes both the chat-owned link row (what workbench's own
+   * listing reads) and the native `tenant.parentId` column — there is
+   * no native PATCH for a tenant's `parentId`, so this is the only way
+   * to keep the two in sync. Returns `{ kind: "no_tenancy" }` for a
+   * channel with no tenancy link (nothing to move), checked before the
+   * destination is even considered.
    */
   moveChannelTenancy(
     input: MoveChannelTenancyInput,
-  ): Promise<ChannelTenancyRow>;
-
-  /**
-   * Fails closed on a move destination: checks `newParentTenantId`
-   * names a real tenant, then — only if it does — whether
-   * `callerRefId` holds an active, manage-granted principal there.
-   * Queries the same grant machinery `requireGrant` uses
-   * (`@intx/authz`'s `authorize`), evaluated against the destination
-   * tenant rather than the caller's own. Neither `moveChannelTenancy`
-   * nor the route that calls it performs any authorization of its
-   * own — this is the one place that decision is made.
-   */
-  authorizeMoveDestination(
-    input: AuthorizeMoveDestinationInput,
-  ): Promise<DestinationTenantAuthorization>;
+  ): Promise<MoveChannelTenancyOutcome>;
 
   /**
    * Undoes a mint that a subsequent step (the channel host launch)
@@ -179,10 +179,16 @@ export interface ChannelTenancyStore {
 }
 
 export interface ChannelTenancyAuthzDeps {
-  /** The same grant store `requireGrant` collects from, so a
-   * destination-tenant check resolves against live grant rows rather
-   * than a second, hand-rolled authorization path. */
-  readonly grantStore: GrantStore;
+  /**
+   * Passed straight through to `evaluateGrants` for the destination
+   * check `moveChannelTenancy` runs inside its own transaction — no
+   * `GrantStore` here, deliberately: a `GrantStore` (as `requireGrant`
+   * uses) always reads outside any caller-supplied transaction, which
+   * is exactly the two-round-trip shape that let authorization and the
+   * write it gated drift apart. The destination check instead collects
+   * and locks its own grant rows directly against the move's own `tx`
+   * (see `moveChannelTenancy`).
+   */
   readonly conditionRegistry?: ConditionRegistry;
 }
 
@@ -348,63 +354,113 @@ export function createDrizzleChannelTenancyStore<
         .where(eq(channelTenancy.parentTenantId, parentTenantId));
     },
 
-    async authorizeMoveDestination({ newParentTenantId, callerRefId }) {
-      const [destinationTenant] = await db
-        .select()
-        .from(tenant)
-        .where(eq(tenant.id, newParentTenantId))
-        .limit(1);
-      if (destinationTenant === undefined) {
-        return { tenantExists: false, callerHasManageGrant: false };
-      }
-
-      const [destinationPrincipal] = await db
-        .select()
-        .from(principal)
-        .where(
-          and(
-            eq(principal.tenantId, newParentTenantId),
-            eq(principal.refId, callerRefId),
-            eq(principal.status, "active"),
-          ),
-        )
-        .limit(1);
-      if (destinationPrincipal === undefined) {
-        return { tenantExists: true, callerHasManageGrant: false };
-      }
-
-      const result = await authorize(
-        authz.grantStore,
-        destinationPrincipal.id,
-        newParentTenantId,
-        MOVE_DESTINATION_RESOURCE,
-        MOVE_DESTINATION_ACTION,
-        authz.conditionRegistry,
-      );
-      return {
-        tenantExists: true,
-        callerHasManageGrant: result.effect === "allow",
-      };
-    },
-
-    async moveChannelTenancy(input) {
+    async moveChannelTenancy({ channelId, newParentTenantId, callerRefId }) {
       return db.transaction(async (tx) => {
+        // Locks the link row for the lifetime of this transaction —
+        // a second, concurrent move of the same channel blocks here
+        // rather than racing this one to a write.
         const [linkRow] = await tx
-          .update(channelTenancy)
-          .set({ parentTenantId: input.newParentTenantId })
-          .where(eq(channelTenancy.channelId, input.channelId))
-          .returning();
+          .select()
+          .from(channelTenancy)
+          .where(eq(channelTenancy.channelId, channelId))
+          .for("update")
+          .limit(1);
         if (linkRow === undefined) {
+          return { kind: "no_tenancy" as const };
+        }
+
+        // Everything below re-verifies the destination from inside
+        // this same transaction, under row locks, rather than trusting
+        // a decision made by an earlier, independent round trip: a
+        // grant revocation or a destination-tenant deletion committed
+        // by another transaction blocks on these locks until this one
+        // finishes, instead of landing in a gap between "checked" and
+        // "acted on".
+        const [destinationTenant] = await tx
+          .select()
+          .from(tenant)
+          .where(eq(tenant.id, newParentTenantId))
+          .for("update")
+          .limit(1);
+        if (destinationTenant === undefined) {
+          return { kind: "destination_not_found" as const };
+        }
+
+        const [destinationPrincipal] = await tx
+          .select()
+          .from(principal)
+          .where(
+            and(
+              eq(principal.tenantId, newParentTenantId),
+              eq(principal.refId, callerRefId),
+              eq(principal.status, "active"),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (destinationPrincipal === undefined) {
+          return { kind: "forbidden" as const };
+        }
+
+        const roleAssignments = await tx
+          .select()
+          .from(principalRole)
+          .where(eq(principalRole.principalId, destinationPrincipal.id))
+          .for("update");
+        const roleIds = roleAssignments.map((assignment) => assignment.roleId);
+
+        const now = new Date();
+        const ownership = [eq(grant.principalId, destinationPrincipal.id)];
+        if (roleIds.length > 0) {
+          ownership.push(inArray(grant.roleId, roleIds));
+        }
+        const grantRows = await tx
+          .select()
+          .from(grant)
+          .where(
+            and(
+              eq(grant.tenantId, newParentTenantId),
+              or(...ownership),
+              or(isNull(grant.expiresAt), gt(grant.expiresAt, now)),
+            ),
+          )
+          .for("update");
+        const grantRules: GrantRule[] = grantRows.map((row) =>
+          parseGrantRow(row),
+        );
+
+        const decision = await evaluateGrants(
+          grantRules,
+          MOVE_DESTINATION_RESOURCE,
+          MOVE_DESTINATION_ACTION,
+          {
+            principalId: destinationPrincipal.id,
+            tenantId: newParentTenantId,
+            ...(authz.conditionRegistry
+              ? { registry: authz.conditionRegistry }
+              : {}),
+          },
+        );
+        if (decision.effect !== "allow") {
+          return { kind: "forbidden" as const };
+        }
+
+        const [movedLink] = await tx
+          .update(channelTenancy)
+          .set({ parentTenantId: newParentTenantId })
+          .where(eq(channelTenancy.channelId, channelId))
+          .returning();
+        if (movedLink === undefined) {
           throw new Error(
-            `No channel tenancy for channel "${input.channelId}"; a legacy ` +
-              `channel predating this rollout has nothing to move`,
+            `Channel tenancy for "${channelId}" vanished mid-transaction`,
           );
         }
         await tx
           .update(tenant)
-          .set({ parentId: input.newParentTenantId, updatedAt: new Date() })
-          .where(eq(tenant.id, linkRow.tenantId));
-        return linkRow;
+          .set({ parentId: newParentTenantId, updatedAt: now })
+          .where(eq(tenant.id, movedLink.tenantId));
+
+        return { kind: "moved" as const, row: movedLink };
       });
     },
 
@@ -435,8 +491,8 @@ export function createDrizzleChannelTenancyStore<
  * (`registerExistingTenant`, `grantManageInTenant`) are test-support
  * only: they let a unit test stand up "a real tenant the caller has
  * no standing in" and "a real tenant the caller manages" without a
- * database, exercising `authorizeMoveDestination`'s two failure modes
- * plus its success path.
+ * database, exercising `moveChannelTenancy`'s destination-check
+ * outcomes (`"destination_not_found"`, `"forbidden"`, `"moved"`).
  */
 export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
   registerExistingTenant(tenantId: string): void;
@@ -488,18 +544,6 @@ export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
       );
     },
 
-    async authorizeMoveDestination({ newParentTenantId, callerRefId }) {
-      if (!existingTenants.has(newParentTenantId)) {
-        return { tenantExists: false, callerHasManageGrant: false };
-      }
-      return {
-        tenantExists: true,
-        callerHasManageGrant: manageGrants.has(
-          manageGrantKey(callerRefId, newParentTenantId),
-        ),
-      };
-    },
-
     async compensateChannelTenant(tenantId) {
       existingTenants.delete(tenantId);
       for (const [channelId, row] of byChannelId) {
@@ -515,20 +559,27 @@ export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
       manageGrants.add(manageGrantKey(refId, tenantId));
     },
 
-    async moveChannelTenancy(input) {
-      const existing = byChannelId.get(input.channelId);
+    // Mirrors the drizzle store's fold of the destination check into
+    // the move itself: there is no separate pre-check call to race
+    // against, in-memory or not — every failure mode is an outcome of
+    // this one call.
+    async moveChannelTenancy({ channelId, newParentTenantId, callerRefId }) {
+      const existing = byChannelId.get(channelId);
       if (existing === undefined) {
-        throw new Error(
-          `No channel tenancy for channel "${input.channelId}"; a legacy ` +
-            `channel predating this rollout has nothing to move`,
-        );
+        return { kind: "no_tenancy" as const };
+      }
+      if (!existingTenants.has(newParentTenantId)) {
+        return { kind: "destination_not_found" as const };
+      }
+      if (!manageGrants.has(manageGrantKey(callerRefId, newParentTenantId))) {
+        return { kind: "forbidden" as const };
       }
       const moved: ChannelTenancyRow = {
         ...existing,
-        parentTenantId: input.newParentTenantId,
+        parentTenantId: newParentTenantId,
       };
-      byChannelId.set(input.channelId, moved);
-      return moved;
+      byChannelId.set(channelId, moved);
+      return { kind: "moved" as const, row: moved };
     },
   };
 }

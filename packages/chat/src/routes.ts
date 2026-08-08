@@ -330,7 +330,26 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             "{tenantId}; compensating the orphaned tenant",
           { channelId, tenantId: channelTenant.tenantId, err },
         );
-        await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
+        // Compensation can itself fail (a dropped connection, the same
+        // outage that failed the launch). That must never swallow the
+        // launch failure that triggered it: a caught-and-discarded
+        // compensation error here would silently leave a
+        // fully-privileged tenant behind with nothing in the response
+        // or the throw to say so. Compensation failure is instead its
+        // own loud log line, tagged with the orphaned tenant id for an
+        // operator to clean up by hand, and the ORIGINAL launch error
+        // is always what propagates.
+        try {
+          await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
+        } catch (compensationErr) {
+          log.error(
+            "Compensation failed for orphaned tenant {tenantId} after " +
+              "channel {channelId}'s launch failure; this tenant is now a " +
+              "privileged orphan with no channel pointing at it and " +
+              "requires manual cleanup",
+            { channelId, tenantId: channelTenant.tenantId, compensationErr },
+          );
+        }
         throw err;
       }
 
@@ -618,64 +637,63 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
-      const link = await deps.tenancy.getChannelTenancy(channelId);
-      if (link === undefined) {
-        return c.json(
-          ErrorEnvelope(
-            "conflict",
-            "this channel predates the child-tenancy rollout and carries " +
-              "no native tenant of its own; it cannot be moved until it " +
-              "is backfilled a tenancy",
-          ),
-          409,
-        );
-      }
-
       const principal = c.get("principal");
 
-      // Fail closed on the destination: it must be a real tenant, and
+      // The destination is verified and the move is written inside a
+      // single call: `newParentTenantId` must name a real tenant, and
       // the caller must hold an active, manage-granted principal there
       // — the same grant machinery `requireGrant` uses, evaluated
-      // against the destination tenant rather than the caller's own
-      // (see `ChannelTenancyStore.authorizeMoveDestination`). A caller
-      // with standing only in the channel's current bench can never
-      // move it into a tenant it has no authority over.
-      const destination = await deps.tenancy.authorizeMoveDestination({
+      // against the destination tenant rather than the caller's own —
+      // but re-checked from inside the very transaction that performs
+      // the write, under row locks, rather than as a separate round
+      // trip beforehand (see `ChannelTenancyStore.moveChannelTenancy`).
+      // A caller with standing only in the channel's current bench can
+      // never move it into a tenant it has no authority over, and
+      // nothing can revoke that authority in the gap between checking
+      // it and acting on it, because there is no gap.
+      const outcome = await deps.tenancy.moveChannelTenancy({
+        channelId,
         newParentTenantId: body.newParentTenantId,
         callerRefId: principal.refId,
       });
-      if (!destination.tenantExists) {
-        return c.json(
-          ErrorEnvelope("not_found", "destination tenant not found"),
-          404,
-        );
-      }
-      if (!destination.callerHasManageGrant) {
-        return c.json(
-          ErrorEnvelope(
-            "forbidden",
-            "you do not have a manage grant in the destination tenant",
-          ),
-          403,
-        );
-      }
 
-      const moved = await deps.tenancy.moveChannelTenancy({
-        channelId,
-        newParentTenantId: body.newParentTenantId,
-      });
-
-      return c.json(
-        {
-          channelId,
-          tenancy: {
-            tenantId: moved.tenantId,
-            parentTenantId: moved.parentTenantId,
-            slug: moved.slug,
-          },
-        },
-        200,
-      );
+      switch (outcome.kind) {
+        case "no_tenancy":
+          return c.json(
+            ErrorEnvelope(
+              "conflict",
+              "this channel predates the child-tenancy rollout and carries " +
+                "no native tenant of its own; it cannot be moved until it " +
+                "is backfilled a tenancy",
+            ),
+            409,
+          );
+        case "destination_not_found":
+          return c.json(
+            ErrorEnvelope("not_found", "destination tenant not found"),
+            404,
+          );
+        case "forbidden":
+          return c.json(
+            ErrorEnvelope(
+              "forbidden",
+              "you do not have a manage grant in the destination tenant",
+            ),
+            403,
+          );
+        case "moved":
+          return c.json(
+            {
+              channelId,
+              tenancy: {
+                tenantId: outcome.row.tenantId,
+                parentTenantId: outcome.row.parentTenantId,
+                slug: outcome.row.slug,
+              },
+            },
+            200,
+          );
+      }
     },
   );
 
