@@ -392,8 +392,11 @@ describe("channel tenancy", () => {
     expect(legacyRow?.tenancy).toBeNull();
   });
 
-  test("POST /channels/:id/move re-parents the channel's tenancy", async () => {
-    const deps = buildDeps();
+  test("POST /channels/:id/move re-parents the channel's tenancy when the caller manages the destination", async () => {
+    const tenancy = createInMemoryChannelTenancyStore();
+    tenancy.registerExistingTenant("tnt_new_bench");
+    tenancy.grantManageInTenant("prn_alice", "tnt_new_bench");
+    const deps = buildDeps({ tenancy });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: channel } = await createChannel(app, {
       kind: "channel",
@@ -414,6 +417,52 @@ describe("channel tenancy", () => {
 
     const link = await deps.tenancy.getChannelTenancy(channel.id);
     expect(link?.parentTenantId).toBe("tnt_new_bench");
+  });
+
+  test("POST /channels/:id/move is refused when the destination tenant does not exist", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Movable",
+    });
+
+    const response = await app.request(`/channels/${channel.id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ newParentTenantId: "tnt_does_not_exist" }),
+    });
+
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("not_found");
+
+    const link = await deps.tenancy.getChannelTenancy(channel.id);
+    expect(link?.parentTenantId).toBe(TENANT.id);
+  });
+
+  test("POST /channels/:id/move is refused when the caller has no standing in a real destination tenant", async () => {
+    const tenancy = createInMemoryChannelTenancyStore();
+    tenancy.registerExistingTenant("tnt_someone_elses_bench");
+    const deps = buildDeps({ tenancy });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Movable",
+    });
+
+    const response = await app.request(`/channels/${channel.id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ newParentTenantId: "tnt_someone_elses_bench" }),
+    });
+
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("forbidden");
+
+    const link = await deps.tenancy.getChannelTenancy(channel.id);
+    expect(link?.parentTenantId).toBe(TENANT.id);
   });
 
   test("POST /channels/:id/move on a legacy channel is a loud 409, never a silent no-op", async () => {

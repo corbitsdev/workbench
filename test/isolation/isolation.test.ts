@@ -227,4 +227,46 @@ if (!databaseUrl) {
       // extension: the body is the error envelope, never the echo.
     });
   });
+
+  describe("chat channel move", () => {
+    test("a member of A cannot move A's channel under B without standing in B", async () => {
+      const createResponse = await app.request(
+        `/api/tenants/${tenantA.tenantId}/chat/channels`,
+        {
+          method: "POST",
+          headers: {
+            cookie: tenantA.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ kind: "channel", name: "Movable" }),
+        },
+      );
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as { id: string };
+
+      // Tenant A's own member holds no principal at all in tenant B —
+      // the destination-authorization check must refuse this before
+      // either the channel_tenancy link or tenant.parentId is touched,
+      // even though the caller has full authority over the channel in
+      // its own bench.
+      const moveResponse = await app.request(
+        `/api/tenants/${tenantA.tenantId}/chat/channels/${created.id}/move`,
+        {
+          method: "POST",
+          headers: {
+            cookie: tenantA.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ newParentTenantId: tenantB.tenantId }),
+        },
+      );
+      await expectRefusal(moveResponse, 403, "forbidden", tenantB.markers);
+
+      const settingsResponse = await app.request(
+        `/api/tenants/${tenantA.tenantId}/chat/channels/${created.id}/settings`,
+        { headers: { cookie: tenantA.cookie } },
+      );
+      expect(settingsResponse.status).toBe(200);
+    });
+  });
 }
