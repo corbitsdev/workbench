@@ -61,3 +61,46 @@ describe("POST /provision", () => {
     expect(body.error.code).toBe("unauthorized");
   });
 });
+
+describe("POST /credential", () => {
+  test("an anonymous request is rejected before any credential is tested", async () => {
+    const routes = createOnboardingRoutes({
+      hubUrl: "http://127.0.0.1:0",
+      pushWorkflow: async () => "pushed",
+      log: () => undefined,
+    });
+
+    const response = await routes.request("/credential", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "sk-ant-whatever" }),
+    });
+
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("unauthorized");
+  });
+
+  test("a missing key is rejected with a specific message, no network call made", async () => {
+    const routes = createOnboardingRoutes({
+      hubUrl: "http://127.0.0.1:0",
+      pushWorkflow: async () => "pushed",
+      log: () => undefined,
+    });
+    const app = mountAuthenticated(routes);
+
+    const response = await app.request("/credential", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("invalid_request");
+  });
+});

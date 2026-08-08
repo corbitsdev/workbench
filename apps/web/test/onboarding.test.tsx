@@ -8,7 +8,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
-import { triggerFirstLoginProvisioning } from "../src/onboarding";
+import {
+  submitCredential,
+  triggerFirstLoginProvisioning,
+} from "../src/onboarding";
 import type { SessionState } from "../src/session";
 
 const realFetch = globalThis.fetch;
@@ -67,6 +70,47 @@ describe("triggerFirstLoginProvisioning", () => {
 
     const result = await triggerFirstLoginProvisioning();
     expect(result).toEqual({ kind: "existing-member" });
+  });
+});
+
+describe("submitCredential", () => {
+  test("a rejected key comes back as a rejected outcome with the hub's own reason", async () => {
+    globalThis.fetch = (async () =>
+      json(
+        { error: { code: "invalid_credential", message: "invalid x-api-key" } },
+        422,
+      )) as unknown as typeof fetch;
+
+    const result = await submitCredential("sk-ant-bad");
+    expect(result).toEqual({ kind: "rejected", message: "invalid x-api-key" });
+  });
+
+  test("a seeded bench reports which routines were confirmed", async () => {
+    globalThis.fetch = (async () =>
+      json({
+        kind: "seeded",
+        tenantId: "ten_1",
+        tenantSlug: "ada-user1",
+        workflows: ["echo", "assistant"],
+      })) as unknown as typeof fetch;
+
+    const result = await submitCredential("sk-ant-good");
+    expect(result).toEqual({
+      kind: "seeded",
+      tenantSlug: "ada-user1",
+      workflows: ["echo", "assistant"],
+    });
+  });
+
+  test("a network failure is reported, never mistaken for a bad key", async () => {
+    globalThis.fetch = (async () => {
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+
+    const result = await submitCredential("sk-ant-good");
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") throw new Error("unreachable");
+    expect(result.message).toContain("connection refused");
   });
 });
 
