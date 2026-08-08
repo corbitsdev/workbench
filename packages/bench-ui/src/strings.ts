@@ -5,16 +5,6 @@ export const BENCH_STRINGS = {
   switcherLabel: "Bench",
   switcherEmpty: "No benches",
 
-  pageTitle: "Benches",
-  pageSubtitle: "Every bench you belong to, and who else is on the current one",
-
-  membershipsSectionTitle: "Your benches",
-  membershipsSectionDescription:
-    "Every bench you belong to and your role in each.",
-  membershipsEmptyTitle: "No benches yet",
-  membershipsEmptyDescription: "Create a bench to get started.",
-  membershipsLoadError: "your benches",
-
   membersSectionTitle: "Members",
   membersSectionDescription: "Everyone on the current bench, and their roles.",
   membersEmptyTitle: "No members yet",
@@ -22,10 +12,6 @@ export const BENCH_STRINGS = {
   membersLoadError: "this bench's members",
   memberUnnamed: "Unnamed member",
   memberRoleNone: "none",
-
-  noBenchSelectedTitle: "Select a bench",
-  noBenchSelectedDescription:
-    "Choose a bench from the switcher to see its members.",
 
   createBenchAction: "New bench",
   createBenchDialogTitle: "New bench",

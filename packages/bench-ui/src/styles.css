@@ -1,6 +1,109 @@
-/* Bench management surface — layout glue only, same convention as
+/* Bench surface — layout glue only, same convention as
    `@corbits/chat-ui`'s stylesheet: visual styling comes from
    `@corbits/react-ui`'s prebuilt stylesheet and the theme's tokens. */
+
+.bench-switcher {
+  position: relative;
+}
+
+.bench-switcher-trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.625rem;
+  border: none;
+  border-radius: 10px;
+  padding: 0.5rem 0.625rem;
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    color 150ms,
+    background-color 150ms;
+}
+
+.bench-switcher-trigger:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.bench-switcher-name {
+  flex: 1;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bench-switcher-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  border: none;
+  background: transparent;
+  cursor: default;
+}
+
+.bench-switcher-popover {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 0.25rem);
+  z-index: 20;
+  max-height: 16.25rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.25rem 0;
+  background: var(--background);
+  box-shadow:
+    0 4px 6px rgb(0 0 0 / 0.07),
+    0 10px 15px rgb(0 0 0 / 0.1);
+}
+
+.bench-switcher-option,
+.bench-switcher-create {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    color 150ms,
+    background-color 150ms;
+}
+
+.bench-switcher-option:hover,
+.bench-switcher-create:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.bench-switcher-option {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bench-switcher-option[aria-selected="true"] {
+  color: var(--primary);
+}
+
+.bench-switcher-create {
+  border-top: 1px solid var(--border);
+  margin-top: 0.25rem;
+  padding-top: 0.625rem;
+}
 
 .bench-panel {
   display: flex;
@@ -22,8 +125,10 @@
   margin: 0;
 }
 
-.bench-panel-badge {
-  font-weight: normal;
+.bench-panel-header p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
 }
 
 .bench-form {
@@ -53,8 +158,4 @@
 .bench-member-email {
   color: var(--muted-foreground);
   font-size: 0.875rem;
-}
-
-.bench-row-selectable {
-  cursor: pointer;
 }

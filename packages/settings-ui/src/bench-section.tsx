@@ -1,12 +1,12 @@
-// The "Bench" settings section: the current bench's name and address, and a
-// link out to the full members list on the Benches page (member management
-// itself is `@corbits/bench-ui`'s to own — this section never re-implements
-// it). Renaming goes through the native `PATCH /api/tenants/:tenantId`
-// route; there is no native route for changing a bench's slug, so the
-// address stays read-only.
+// The "Bench" settings section: the current bench's name and address, plus
+// its member list (member management itself is `@corbits/bench-ui`'s to own
+// — this section mounts its `MembersPanel`, never re-implements it).
+// Renaming goes through the native `PATCH /api/tenants/:tenantId` route;
+// there is no native route for changing a bench's slug, so the address
+// stays read-only.
 
 import type { BenchMembership } from "@corbits/bench-ui";
-import { listMyMemberships } from "@corbits/bench-ui";
+import { listMyMemberships, MembersPanel } from "@corbits/bench-ui";
 import { EmptyState, Input, SettingsPanel, Skeleton } from "@corbits/react-ui";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -101,17 +101,20 @@ export function BenchSection({
   }
 
   return (
-    <BenchSectionView
-      name={name}
-      slug={state.data.tenantSlug}
-      dirty={dirty}
-      saving={saving}
-      error={saveError}
-      savedAt={savedAt}
-      onNameChange={setName}
-      onSave={handleSave}
-      onReset={() => setName(state.data.tenantName)}
-    />
+    <>
+      <BenchSectionView
+        name={name}
+        slug={state.data.tenantSlug}
+        dirty={dirty}
+        saving={saving}
+        error={saveError}
+        savedAt={savedAt}
+        onNameChange={setName}
+        onSave={handleSave}
+        onReset={() => setName(state.data.tenantName)}
+      />
+      <MembersPanel tenantId={tenantId} />
+    </>
   );
 }
 
@@ -164,9 +167,6 @@ export function BenchSectionView({
         <span>{SETTINGS_STRINGS.benchAddressLabel}</span>
         <Input value={slug} disabled readOnly />
       </label>
-      <a className="settings-bench-members-link" href="/benches">
-        {SETTINGS_STRINGS.benchMembersLink}
-      </a>
     </SettingsPanel>
   );
 }

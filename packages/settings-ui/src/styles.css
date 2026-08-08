@@ -37,12 +37,6 @@
   margin: 0;
 }
 
-.settings-bench-members-link {
-  align-self: flex-start;
-  color: var(--primary);
-  font-size: 0.875rem;
-}
-
 .settings-chat-section {
   display: flex;
   flex-direction: column;

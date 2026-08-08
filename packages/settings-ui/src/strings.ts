@@ -16,7 +16,6 @@ export const SETTINGS_STRINGS = {
   benchNoneSelectedTitle: "No bench selected",
   benchNoneSelectedDescription: "Choose a bench from the switcher first.",
   benchSaveError: "Couldn't rename this bench — try again.",
-  benchMembersLink: "See all members on the Benches page",
 
   chatSectionTitle: "Chats & channels",
   chatSectionDescription: "Pick a chat or channel to edit its settings.",
