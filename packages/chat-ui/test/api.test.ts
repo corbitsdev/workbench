@@ -14,6 +14,8 @@ import {
   listInvitableDefinitions,
   listMessages,
   sendMessage,
+  getChannelSettings,
+  patchChannelSettings,
 } from "../src/api";
 
 const realFetch = globalThis.fetch;
@@ -302,6 +304,60 @@ describe("inviteAgent", () => {
       address: "ins_invited1@acme.example",
       definitionId: "wfd_echo",
     });
+  });
+});
+
+describe("getChannelSettings", () => {
+  test("fetches a channel's settings by tenant and channel id", async () => {
+    const calls = stubFetch(() =>
+      json({
+        id: "c1",
+        title: "General",
+        kind: "channel",
+        pinned: true,
+        participants: [],
+        settings: { "chat/contextWindow": 5 },
+      }),
+    );
+    const settings = await getChannelSettings("tenant_1", "c1");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/channels/c1/settings",
+    );
+    expect(settings.settings["chat/contextWindow"]).toBe(5);
+  });
+});
+
+describe("patchChannelSettings", () => {
+  test("PATCHes the given chat/* keys and returns the updated settings", async () => {
+    const calls = stubFetch(() =>
+      json({
+        id: "c1",
+        title: "Renamed",
+        kind: "channel",
+        pinned: false,
+        participants: [],
+        settings: {
+          "chat/name": "Renamed",
+          "chat/pinned": false,
+          "chat/contextWindow": 0,
+        },
+      }),
+    );
+    const settings = await patchChannelSettings("tenant_1", "c1", {
+      "chat/name": "Renamed",
+      "chat/pinned": false,
+      "chat/contextWindow": 0,
+    });
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/channels/c1/settings",
+    );
+    expect(calls[0]?.init?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      "chat/name": "Renamed",
+      "chat/pinned": false,
+      "chat/contextWindow": 0,
+    });
+    expect(settings.title).toBe("Renamed");
   });
 });
 
