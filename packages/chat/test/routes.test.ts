@@ -469,6 +469,44 @@ describe("channel tenancy", () => {
     expect(link?.parentTenantId).toBe("tnt_new_bench");
   });
 
+  test("GET /channels still reports a moved channel's current tenancy from the bench it was created in", async () => {
+    // A channel's channel_settings row stays keyed to the bench it was
+    // created in forever — a move only ever changes the tenancy link's
+    // parent, never that row. The regression this guards against: GET
+    // /channels used to look up tenancy links by "children of this
+    // bench", which goes stale the moment a channel moves elsewhere,
+    // so the creating bench reported the moved channel as `legacy`
+    // with a null tenancy instead of its real, current parent.
+    const tenancy = createInMemoryChannelTenancyStore();
+    tenancy.registerExistingTenant("tnt_new_bench");
+    tenancy.grantManageInTenant("prn_alice", "tnt_new_bench");
+    const deps = buildDeps({ tenancy });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Movable",
+    });
+
+    const moveResponse = await app.request(`/channels/${channel.id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ newParentTenantId: "tnt_new_bench" }),
+    });
+    expect(moveResponse.status).toBe(200);
+
+    const listResponse = await app.request("/channels");
+    const body = (await listResponse.json()) as {
+      items: {
+        id: string;
+        legacy: boolean;
+        tenancy: { parentTenantId: string } | null;
+      }[];
+    };
+    const row = body.items.find((item) => item.id === channel.id);
+    expect(row?.legacy).toBe(false);
+    expect(row?.tenancy?.parentTenantId).toBe("tnt_new_bench");
+  });
+
   test("POST /channels/:id/move is refused when the destination tenant does not exist", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
