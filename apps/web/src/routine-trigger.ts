@@ -6,6 +6,15 @@
 // occurrence" here (the scheduler itself resolves that minute by minute;
 // see apps/hub/src/cron-due.ts) — it renders a plain description instead
 // of a guessed timestamp, never a wrong one dressed up as exact.
+//
+// The estimate for interval/daily/weekly presets is derived from the
+// exact cron expression the scheduler fires against (mirroring
+// `cronExpressionForTrigger` and a minute-by-minute search, the same
+// technique as `nextCronFireAfter` in packages/routines/src/cron.ts),
+// not from naive arithmetic on `now`. An interval preset in particular
+// fires on a wall-clock-aligned cadence (`*/N * * * *`), not N minutes
+// after whatever moment a viewer happens to load the page — "every 10
+// minutes" viewed at :07 fires at :10, four minutes away, not ten.
 import type { RoutineTrigger } from "./routines-api";
 
 const WEEKDAY_NAMES = [
@@ -38,6 +47,71 @@ export function cadenceLabel(trigger: RoutineTrigger): string {
   }
 }
 
+/** Renders the closed-form presets to the same cron shape the scheduler fires against. */
+function cronExpressionForPreset(
+  trigger: Exclude<RoutineTrigger, null | { kind: "cron" }>,
+): string {
+  switch (trigger.kind) {
+    case "interval":
+      return trigger.unit === "minutes"
+        ? `*/${trigger.every} * * * *`
+        : `0 */${trigger.every} * * *`;
+    case "daily":
+      return `${trigger.minute} ${trigger.hour} * * *`;
+    case "weekly":
+      return `${trigger.minute} ${trigger.hour} * * ${trigger.dayOfWeek}`;
+  }
+}
+
+function cronFieldMatches(field: string, value: number): boolean {
+  if (field === "*") return true;
+  const stepMatch = /^\*\/([0-9]+)$/.exec(field);
+  if (stepMatch?.[1] !== undefined) return value % Number(stepMatch[1]) === 0;
+  return value === Number(field);
+}
+
+/**
+ * Matches the subset of the 5-field cron grammar `cronExpressionForPreset`
+ * ever renders: `*`, a bare number, or a step of `*` (e.g. `star-slash-N`)
+ * — day-of-month and month are always `*` for these presets, so only
+ * minute/hour/day-of-week vary.
+ */
+function presetCronMatchesMinute(expression: string, at: Date): boolean {
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = expression.split(" ");
+  if (
+    minute === undefined ||
+    hour === undefined ||
+    dayOfMonth === undefined ||
+    month === undefined ||
+    dayOfWeek === undefined
+  ) {
+    return false;
+  }
+  return (
+    cronFieldMatches(minute, at.getUTCMinutes()) &&
+    cronFieldMatches(hour, at.getUTCHours()) &&
+    dayOfMonth === "*" &&
+    month === "*" &&
+    cronFieldMatches(dayOfWeek, at.getUTCDay())
+  );
+}
+
+const NEXT_RUN_LOOKAHEAD_MS = 8 * 24 * 60 * 60 * 1000;
+
+/** The next minute at or after `after` (exclusive) that `expression` matches. */
+function nextPresetFireAfter(expression: string, after: Date): Date | null {
+  const start = Math.floor(after.getTime() / 60_000) * 60_000 + 60_000;
+  for (
+    let candidateMs = start;
+    candidateMs - start <= NEXT_RUN_LOOKAHEAD_MS;
+    candidateMs += 60_000
+  ) {
+    const candidate = new Date(candidateMs);
+    if (presetCronMatchesMinute(expression, candidate)) return candidate;
+  }
+  return null;
+}
+
 /**
  * A best-effort next-fire estimate for display only — never fed back
  * into a launch decision, which is the scheduler's job
@@ -50,28 +124,5 @@ export function approximateNextRun(
   now: Date,
 ): Date | null {
   if (trigger === null || trigger.kind === "cron") return null;
-
-  if (trigger.kind === "interval") {
-    const stepMs =
-      trigger.every * (trigger.unit === "minutes" ? 60_000 : 3_600_000);
-    return new Date(now.getTime() + stepMs);
-  }
-
-  const next = new Date(now);
-  next.setUTCHours(trigger.hour, trigger.minute, 0, 0);
-
-  if (trigger.kind === "daily") {
-    if (next.getTime() <= now.getTime()) {
-      next.setUTCDate(next.getUTCDate() + 1);
-    }
-    return next;
-  }
-
-  // weekly
-  const daysUntil = (trigger.dayOfWeek - next.getUTCDay() + 7) % 7;
-  next.setUTCDate(next.getUTCDate() + daysUntil);
-  if (next.getTime() <= now.getTime()) {
-    next.setUTCDate(next.getUTCDate() + 7);
-  }
-  return next;
+  return nextPresetFireAfter(cronExpressionForPreset(trigger), now);
 }
