@@ -43,6 +43,8 @@ export {
   inviteAgent,
   channelStreamUrl,
   runDisplayName,
+  getChannelSettings,
+  patchChannelSettings,
 } from "./api";
 export type {
   Channel,
@@ -52,4 +54,6 @@ export type {
   Run,
   InvitableDefinition,
   InvitedAgent,
+  ChannelSettings,
+  ChannelSettingsPatch,
 } from "./api";

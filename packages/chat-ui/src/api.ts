@@ -263,6 +263,53 @@ export function channelStreamUrl(tenantId: string, channelId: string): string {
   return `/api/tenants/${tenantId}/chat/channels/${channelId}/stream`;
 }
 
+const ChannelSettingsResponse = ChannelWire.and({
+  settings: type("Record<string, unknown>"),
+}).pipe((wire) => ({
+  ...wire,
+  participants: parseParticipants(wire.participants),
+}));
+export type ChannelSettings = Omit<
+  typeof ChannelSettingsResponse.infer,
+  "participants"
+> & {
+  readonly participants: readonly ParticipantRecord[];
+};
+
+export function getChannelSettings(
+  tenantId: string,
+  channelId: string,
+): Promise<ChannelSettings> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
+    ChannelSettingsResponse,
+  );
+}
+
+/**
+ * A `chat/*`-namespaced settings patch: name, pinned, and context-window
+ * edits all go through this one function, matching the single `PATCH
+ * /channels/:id/settings` route in `packages/chat/src/routes.ts` that
+ * accepts any subset of them in one body.
+ */
+export type ChannelSettingsPatch = {
+  readonly "chat/name"?: string;
+  readonly "chat/pinned"?: boolean;
+  readonly "chat/contextWindow"?: number;
+};
+
+export function patchChannelSettings(
+  tenantId: string,
+  channelId: string,
+  patch: ChannelSettingsPatch,
+): Promise<ChannelSettings> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
+    ChannelSettingsResponse,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+}
+
 /**
  * A readable name for a run, since the runs listing carries no name field:
  * the asset id's final path segment with any extension stripped, e.g.
