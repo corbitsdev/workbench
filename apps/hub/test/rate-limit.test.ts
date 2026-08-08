@@ -7,6 +7,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import {
   bootIsolationHub,
+  ISOLATION_SIGNUP_RATE_LIMIT_MAX,
   prepareDatabase,
   resolveDatabaseUrl,
   type AppLike,
@@ -50,12 +51,14 @@ if (!databaseUrl) {
   describe("sign-up rate limiting", () => {
     test("the Nth sign-up past the configured max is rejected with 429", async () => {
       const nonce = Date.now().toString(36);
-      // bootIsolationHub configures signupRateLimit as
-      // { windowSeconds: 60, max: 5 } — five attempts must succeed
-      // (each a distinct email so the assertion is about the request
-      // rate, not colliding accounts), and the sixth must be rejected.
+      // bootIsolationHub's own sidecar-dial-in readiness probe already
+      // spent one sign-up against this IP's budget before this test
+      // ever runs, so only max - 1 of *this test's* attempts can
+      // succeed (each a distinct email so the assertion is about
+      // request rate, not colliding accounts) before the limit trips.
+      const remainingBudget = ISOLATION_SIGNUP_RATE_LIMIT_MAX - 1;
       const statuses: number[] = [];
-      for (let attempt = 0; attempt < 6; attempt += 1) {
+      for (let attempt = 0; attempt < remainingBudget + 1; attempt += 1) {
         const response = await signUpAttempt(
           app,
           `rate-limit-${nonce}-${attempt}@isolation.test`,
@@ -63,8 +66,10 @@ if (!databaseUrl) {
         statuses.push(response.status);
       }
 
-      expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
-      expect(statuses[5]).toBe(429);
+      expect(statuses.slice(0, remainingBudget)).toEqual(
+        new Array(remainingBudget).fill(200),
+      );
+      expect(statuses[remainingBudget]).toBe(429);
     });
   });
 }

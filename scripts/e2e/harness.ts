@@ -212,10 +212,14 @@ export async function startHub(options: {
   port: number;
   sessionSecret: string;
   dataDir: string;
+  /** Extra hub config env vars, e.g. SIGNUP_RATE_LIMIT_MAX for a
+   * caller whose own bootstrap traffic needs headroom in the limit. */
+  extraEnv?: Record<string, string>;
 }): Promise<HubHandle> {
   const baseUrl = `http://localhost:${options.port}`;
   const app = spawnApp("hub", HUB_DIR, {
     ...osEnv(),
+    ...options.extraEnv,
     DATABASE_URL: options.databaseUrl,
     BASE_URL: baseUrl,
     SESSION_SECRET: options.sessionSecret,

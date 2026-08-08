@@ -4,9 +4,18 @@
 // missing tenant filter shows up here as leaked data, not as a green
 // run.
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+
+import {
+  freePort,
+  provisionSidecar,
+  startHub,
+  startSidecar,
+  type HubHandle,
+  type SpawnedApp,
+} from "../../scripts/e2e/harness.ts";
 
 /**
  * The minimal surface of the hub the suite needs: a fetch-shaped
@@ -24,12 +33,39 @@ export type IsolationHub = {
 };
 
 /**
+ * The hub's sign-up rate limit as configured for every suite that
+ * boots through `bootIsolationHub`. Exported so a suite asserting on
+ * the limit itself (`apps/hub/test/rate-limit.test.ts`) never
+ * hardcodes a second copy of these numbers that could silently drift
+ * from what actually gets booted.
+ */
+export const ISOLATION_SIGNUP_RATE_LIMIT_MAX = 5;
+export const ISOLATION_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
+
+/**
  * The database the suite runs against. The suite never invents a
  * default: pointing it at a database is an explicit act, because it
- * creates real rows there.
+ * creates real rows there. Locally, an unconfigured database skips the
+ * suite (a fresh checkout still runs the unit gates); E2E_REQUIRED=1
+ * turns that same gap into a hard failure, mirroring
+ * scripts/e2e/harness.ts's e2eDatabaseUrl — this suite guards
+ * multi-tenant authorization, so it must never vanish from CI silently.
  */
 export function resolveDatabaseUrl(): string | undefined {
-  return process.env["ISOLATION_DATABASE_URL"] ?? process.env["DATABASE_URL"];
+  const isolationUrl = process.env["ISOLATION_DATABASE_URL"];
+  const url =
+    isolationUrl !== undefined && isolationUrl !== ""
+      ? isolationUrl
+      : process.env["DATABASE_URL"];
+  if (url !== undefined && url !== "") return url;
+  if (process.env["E2E_REQUIRED"] === "1") {
+    throw new Error(
+      "E2E_REQUIRED=1 but no database is configured for the isolation " +
+        "suite; set DATABASE_URL or ISOLATION_DATABASE_URL to a reachable " +
+        "Postgres.",
+    );
+  }
+  return undefined;
 }
 
 /**
@@ -59,57 +95,127 @@ export async function prepareDatabase(databaseUrl: string): Promise<void> {
 }
 
 /**
- * Boots a real hub against the given database. Imported dynamically so
- * merely loading this suite (for example under a repo-wide `bun test`
- * with no database configured) never requires the hub's dependency
- * tree.
+ * Boots the real hub and a real sidecar as spawned processes, exactly
+ * as `scripts/e2e/harness.ts` does for the walking skeleton — a
+ * chat-channel create launches a real agent instance over the
+ * sidecar's WebSocket dial-in, so an in-process hub with no sidecar
+ * attached cannot exercise the "chat channel move" block below; it
+ * would fail every one of those cases with "no sidecar available"
+ * rather than proving isolation. `AppLike.request` wraps `fetch`
+ * against the hub's real port, matching how a client actually reaches
+ * it.
  */
 export async function bootIsolationHub(
   databaseUrl: string,
 ): Promise<IsolationHub> {
   const root = mkdtempSync(path.join(tmpdir(), "isolation-suite-"));
-  const staticDir = path.join(root, "static");
-  mkdirSync(staticDir, { recursive: true });
-  writeFileSync(path.join(staticDir, "index.html"), "<html>shell</html>");
-  const dataDir = path.join(root, "data");
-  mkdirSync(dataDir, { recursive: true });
+  const hubDataDir = path.join(root, "hub-data");
+  const sidecarDataDir = path.join(root, "sidecar-data");
 
-  const hubModule = new URL("../../apps/hub/src/index.ts", import.meta.url)
-    .href;
-  const { createHub } = (await import(hubModule)) as {
-    createHub(config: {
-      databaseUrl: string;
-      baseUrl: string;
-      sessionSecret: string;
-      hubDataDir: string;
-      hubStaticDir: string;
-      signupRateLimit: { windowSeconds: number; max: number };
-      socialProviders: Record<string, unknown>;
-    }): Promise<{ app: AppLike; close(): Promise<void> }>;
-  };
+  // Unique per run: the `sidecar` table's id is a primary key, and a
+  // prior run's row is never cleaned up (the isolation suite runs
+  // against a shared database, never a scratch one it owns outright).
+  const sidecarId = `sidecar-isolation-suite-${crypto.randomUUID()}`;
+  const sidecarToken = crypto.randomUUID();
+  await provisionSidecar(databaseUrl, sidecarId, sidecarToken);
 
-  const hub = await createHub({
+  const hub: HubHandle = await startHub({
     databaseUrl,
-    // app.request() builds requests against http://localhost, so the
-    // configured origin must match for auth cookies to be issued.
-    baseUrl: "http://localhost",
+    port: freePort(),
     sessionSecret: "insecure-isolation-suite-secret-0000",
-    hubDataDir: dataDir,
-    hubStaticDir: staticDir,
-    signupRateLimit: { windowSeconds: 60, max: 5 },
-    // No OAuth social sign-in is under test here; an empty map is the
-    // same "none configured" state `readHubConfig` produces when no
-    // provider's credential pair is set in the environment.
-    socialProviders: {},
+    dataDir: hubDataDir,
+    extraEnv: {
+      SIGNUP_RATE_LIMIT_MAX: String(ISOLATION_SIGNUP_RATE_LIMIT_MAX),
+      SIGNUP_RATE_LIMIT_WINDOW_SECONDS: String(
+        ISOLATION_SIGNUP_RATE_LIMIT_WINDOW_SECONDS,
+      ),
+    },
   });
 
+  const sidecar: SpawnedApp = startSidecar({
+    hubPort: Number(new URL(hub.baseUrl).port),
+    sidecarId,
+    token: sidecarToken,
+    dataDir: sidecarDataDir,
+  });
+
+  const app: AppLike = {
+    request: (requestPath, init) => fetch(`${hub.baseUrl}${requestPath}`, init),
+  };
+
+  await waitForSidecarDialIn(app, sidecar);
+
   return {
-    app: hub.app,
+    app,
     shutdown: async () => {
-      await hub.close();
+      await sidecar.stop();
+      await hub.stop();
       rmSync(root, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * A channel-launching route has no "not yet connected" contract the
+ * way the native workflow-deploy route does (which answers 502 while
+ * the sidecar's dial-in is in flight, see `scripts/e2e/harness.ts`) —
+ * it fails outright. So this probes readiness itself: sign up a
+ * throwaway account, create a throwaway tenant, and retry a channel
+ * create until it succeeds or the sidecar visibly died or too much
+ * time passed. The probe tenant is left behind, same as every other
+ * tenant this suite mints — it is not the database under test's
+ * concern to stay clean.
+ */
+async function waitForSidecarDialIn(
+  app: AppLike,
+  sidecar: SpawnedApp,
+): Promise<void> {
+  const cookie = await signUpUser(
+    app,
+    `sidecar-probe-${crypto.randomUUID()}@isolation.test`,
+    "Sidecar Probe",
+  );
+  const tenantResponse = await app.request("/api/tenants", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({
+      name: "Sidecar Probe",
+      slug: `sidecar-probe-${crypto.randomUUID().slice(0, 8)}`,
+    }),
+  });
+  if (tenantResponse.status !== 201) {
+    throw new Error(
+      `sidecar readiness probe: tenant creation failed with ` +
+        `${tenantResponse.status}: ${await tenantResponse.text()}`,
+    );
+  }
+  const tenant = (await tenantResponse.json()) as { id: string };
+
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    if (sidecar.exited()) {
+      throw new Error(
+        `sidecar exited before dialing in; output:\n${sidecar.output()}`,
+      );
+    }
+    const channelResponse = await app.request(
+      `/api/tenants/${tenant.id}/chat/channels`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ kind: "channel", name: "sidecar-probe" }),
+      },
+    );
+    if (channelResponse.status === 201) return;
+    if (Date.now() > deadline) {
+      throw new Error(
+        `sidecar never dialed in within 30s (channel create kept ` +
+          `failing with ${channelResponse.status}): ` +
+          `${await channelResponse.text()}\nsidecar output:\n${sidecar.output()}`,
+      );
+    }
+    await Bun.sleep(500);
+  }
 }
 
 async function requireJson(
