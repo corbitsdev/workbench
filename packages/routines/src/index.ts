@@ -4,8 +4,12 @@ export {
   RoutineTrigger,
   isValidCronExpression,
   cronExpressionForTrigger,
+  computeNextFireAt,
+  cronMatchesMinute,
+  minuteKey,
 } from "./trigger";
 export type { RoutineTriggerT } from "./trigger";
+export { nextCronFireAfter } from "./cron";
 
 export { routine, routineRun } from "./schema";
 

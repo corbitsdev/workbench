@@ -33,6 +33,21 @@ export const routine = pgTable("routine", {
   enabled: boolean("enabled").notNull().default(true),
   deliveryChannelId: text("delivery_channel_id"),
   createdBy: text("created_by").notNull(),
+  // The due-fire clock: the next minute this routine's trigger matches,
+  // recomputed on create, on every trigger/enabled change, and on each
+  // fire. A scheduler tests `nextFireAt <= now`, not "does this exact
+  // instant match" — a fire due while the process was down stays due
+  // (and gets caught up) instead of being silently skipped. `null` for
+  // a manual or disabled routine, which never auto-fires.
+  nextFireAt: timestamp("next_fire_at", { withTimezone: true }),
+  // The last time this routine actually fired on its own schedule —
+  // observability only, never read back into a fire decision.
+  lastFireAt: timestamp("last_fire_at", { withTimezone: true }),
+  // Soft-delete: a deleted routine's run history must stay reachable
+  // (`GET /routines/:id/runs`), so deleting never removes the row —
+  // it stops the routine appearing in lists or firing, and nothing
+  // else.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

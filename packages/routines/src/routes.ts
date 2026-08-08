@@ -232,7 +232,13 @@ export function createRoutineRoutes(
     async (c) => {
       const tenant = c.get("tenant");
       const routineId = c.req.param("id");
-      const existing = await deps.store.getRoutine(tenant.id, routineId);
+      // Deliberately `getRoutineIncludingDeleted`, not `getRoutine`: a
+      // deleted routine's run history stays reachable (see store.ts),
+      // so only a *never-existed* id 404s here.
+      const existing = await deps.store.getRoutineIncludingDeleted(
+        tenant.id,
+        routineId,
+      );
       if (existing === undefined) {
         return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
       }

@@ -45,6 +45,20 @@ export const routineMigrations: readonly RoutineMigration[] = [
       );
     `,
   },
+  {
+    name: "0003_routine_next_fire_at",
+    sql: `
+      ALTER TABLE "routine" ADD COLUMN IF NOT EXISTS "next_fire_at" timestamptz;
+      ALTER TABLE "routine" ADD COLUMN IF NOT EXISTS "last_fire_at" timestamptz;
+      CREATE INDEX IF NOT EXISTS "routine_next_fire_at_idx" ON "routine" ("next_fire_at") WHERE "enabled" AND "next_fire_at" IS NOT NULL;
+    `,
+  },
+  {
+    name: "0004_routine_soft_delete",
+    sql: `
+      ALTER TABLE "routine" ADD COLUMN IF NOT EXISTS "deleted_at" timestamptz;
+    `,
+  },
 ];
 
 // Named distinctly from the platform's setup ledger and from any

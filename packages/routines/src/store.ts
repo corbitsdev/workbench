@@ -3,12 +3,12 @@
 // persistence from `routes.ts`. `RoutineStore` is the seam the route
 // layer depends on; `createDrizzleRoutineStore` is its one production
 // implementation, over the tables in `./schema.ts`.
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, lte } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { hexEncode } from "@intx/types";
 
 import { routine, routineRun } from "./schema";
-import type { RoutineTriggerT } from "./trigger";
+import { computeNextFireAt, type RoutineTriggerT } from "./trigger";
 
 export type RoutineDb<
   TSchema extends Record<string, unknown> = Record<string, never>,
@@ -27,6 +27,9 @@ export interface RoutineRow {
   readonly enabled: boolean;
   readonly deliveryChannelId: string | null;
   readonly createdBy: string;
+  readonly nextFireAt: Date | null;
+  readonly lastFireAt: Date | null;
+  readonly deletedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -60,16 +63,30 @@ export interface RoutineRunRow {
 
 export interface RoutineStore {
   createRoutine(input: CreateRoutineInput): Promise<RoutineRow>;
+  /** `undefined` for an unknown OR a soft-deleted routine. */
   getRoutine(
     tenantId: string,
     routineId: string,
   ): Promise<RoutineRow | undefined>;
+  /**
+   * Same lookup as `getRoutine`, but a soft-deleted routine is still
+   * returned — the one caller that needs this is run-history lookup
+   * (`GET /routines/:id/runs`), which must keep resolving a deleted
+   * routine's id so its history stays reachable, while every other
+   * caller (get/patch/run-now/list) treats "deleted" as "gone."
+   */
+  getRoutineIncludingDeleted(
+    tenantId: string,
+    routineId: string,
+  ): Promise<RoutineRow | undefined>;
+  /** Excludes soft-deleted routines. */
   listRoutines(tenantId: string): Promise<RoutineRow[]>;
   updateRoutine(
     tenantId: string,
     routineId: string,
     patch: UpdateRoutineInput,
   ): Promise<RoutineRow>;
+  /** Soft-delete: the row (and its run history) survive; see schema.ts. */
   deleteRoutine(tenantId: string, routineId: string): Promise<boolean>;
   /**
    * Records that `runId` was launched under `routineId` — called
@@ -86,6 +103,29 @@ export interface RoutineStore {
     tenantId: string,
     routineId: string,
   ): Promise<RoutineRunRow[]>;
+  /**
+   * Every enabled, timer-triggered routine whose `nextFireAt` is at or
+   * before `now` — across every tenant, the one cross-tenant read a
+   * scheduler needs and no per-request route ever does. "At or before,"
+   * not "equal to": a fire that was due while nothing was polling is
+   * still due, not skipped.
+   */
+  listDueRoutines(now: Date): Promise<RoutineRow[]>;
+  /**
+   * Atomically claims `routineId`'s current due fire: advances
+   * `nextFireAt` to the trigger's following occurrence and stamps
+   * `lastFireAt`, but only if `nextFireAt` is still `<= now` at the
+   * moment of the write. A second caller racing the same fire loses —
+   * the first claim already moved `nextFireAt` into the future, so the
+   * second claim's conditional write matches no row and returns
+   * `undefined`. This is the seam that makes a scheduled fire
+   * exactly-once under concurrent pollers: the claim happens before
+   * anything launches, never after.
+   */
+  claimRoutineFire(
+    routineId: string,
+    now: Date,
+  ): Promise<RoutineRow | undefined>;
 }
 
 // `@intx/hub-common`'s `generateId` is closed over the platform's own
@@ -119,6 +159,9 @@ export function createDrizzleRoutineStore<
           enabled: true,
           deliveryChannelId: input.deliveryChannelId ?? null,
           createdBy: input.createdBy,
+          nextFireAt: computeNextFireAt(input.trigger, now),
+          lastFireAt: null,
+          deletedAt: null,
           createdAt: now,
           updatedAt: now,
         })
@@ -133,6 +176,21 @@ export function createDrizzleRoutineStore<
       const [row] = await db
         .select()
         .from(routine)
+        .where(
+          and(
+            eq(routine.tenantId, tenantId),
+            eq(routine.id, routineId),
+            isNull(routine.deletedAt),
+          ),
+        )
+        .limit(1);
+      return row as RoutineRow | undefined;
+    },
+
+    async getRoutineIncludingDeleted(tenantId, routineId) {
+      const [row] = await db
+        .select()
+        .from(routine)
         .where(and(eq(routine.tenantId, tenantId), eq(routine.id, routineId)))
         .limit(1);
       return row as RoutineRow | undefined;
@@ -142,14 +200,49 @@ export function createDrizzleRoutineStore<
       const rows = await db
         .select()
         .from(routine)
-        .where(eq(routine.tenantId, tenantId));
+        .where(and(eq(routine.tenantId, tenantId), isNull(routine.deletedAt)));
       return rows as RoutineRow[];
     },
 
     async updateRoutine(tenantId, routineId, patch) {
+      const [existing] = await db
+        .select()
+        .from(routine)
+        .where(
+          and(
+            eq(routine.tenantId, tenantId),
+            eq(routine.id, routineId),
+            isNull(routine.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (existing === undefined) {
+        throw new Error(`updateRoutine: no routine row for id ${routineId}`);
+      }
+      const now = new Date();
+      const recomputeNextFire =
+        patch.trigger !== undefined || patch.enabled !== undefined;
+      const mergedTrigger =
+        patch.trigger !== undefined
+          ? patch.trigger
+          : (existing as RoutineRow).trigger;
+      const mergedEnabled =
+        patch.enabled !== undefined
+          ? patch.enabled
+          : (existing as RoutineRow).enabled;
       const [row] = await db
         .update(routine)
-        .set({ ...patch, updatedAt: new Date() })
+        .set({
+          ...patch,
+          ...(recomputeNextFire
+            ? {
+                nextFireAt: mergedEnabled
+                  ? computeNextFireAt(mergedTrigger, now)
+                  : null,
+              }
+            : {}),
+          updatedAt: now,
+        })
         .where(and(eq(routine.tenantId, tenantId), eq(routine.id, routineId)))
         .returning();
       if (row === undefined) {
@@ -160,10 +253,58 @@ export function createDrizzleRoutineStore<
 
     async deleteRoutine(tenantId, routineId) {
       const deleted = await db
-        .delete(routine)
-        .where(and(eq(routine.tenantId, tenantId), eq(routine.id, routineId)))
+        .update(routine)
+        .set({ deletedAt: new Date(), nextFireAt: null })
+        .where(
+          and(
+            eq(routine.tenantId, tenantId),
+            eq(routine.id, routineId),
+            isNull(routine.deletedAt),
+          ),
+        )
         .returning();
       return deleted.length > 0;
+    },
+
+    async listDueRoutines(now) {
+      const rows = await db
+        .select()
+        .from(routine)
+        .where(
+          and(
+            eq(routine.enabled, true),
+            isNull(routine.deletedAt),
+            lte(routine.nextFireAt, now),
+          ),
+        );
+      return rows as RoutineRow[];
+    },
+
+    async claimRoutineFire(routineId, now) {
+      const [current] = await db
+        .select()
+        .from(routine)
+        .where(eq(routine.id, routineId))
+        .limit(1);
+      if (current === undefined || current.trigger === null) {
+        return undefined;
+      }
+      const nextFireAt = computeNextFireAt(
+        current.trigger as RoutineTriggerT,
+        now,
+      );
+      const [claimed] = await db
+        .update(routine)
+        .set({ nextFireAt, lastFireAt: now })
+        .where(
+          and(
+            eq(routine.id, routineId),
+            eq(routine.enabled, true),
+            lte(routine.nextFireAt, now),
+          ),
+        )
+        .returning();
+      return claimed as RoutineRow | undefined;
     },
 
     async recordRoutineRun(input) {
@@ -213,6 +354,9 @@ export function createInMemoryRoutineStore(): RoutineStore {
         enabled: true,
         deliveryChannelId: input.deliveryChannelId ?? null,
         createdBy: input.createdBy,
+        nextFireAt: computeNextFireAt(input.trigger, now),
+        lastFireAt: null,
+        deletedAt: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -222,32 +366,98 @@ export function createInMemoryRoutineStore(): RoutineStore {
 
     async getRoutine(tenantId, routineId) {
       const row = routinesById.get(routineId);
+      if (row === undefined || row.tenantId !== tenantId) return undefined;
+      return row.deletedAt === null ? row : undefined;
+    },
+
+    async getRoutineIncludingDeleted(tenantId, routineId) {
+      const row = routinesById.get(routineId);
       return row?.tenantId === tenantId ? row : undefined;
     },
 
     async listRoutines(tenantId) {
       return [...routinesById.values()].filter(
-        (row) => row.tenantId === tenantId,
+        (row) => row.tenantId === tenantId && row.deletedAt === null,
       );
     },
 
     async updateRoutine(tenantId, routineId, patch) {
       const existing = routinesById.get(routineId);
-      if (existing === undefined || existing.tenantId !== tenantId) {
+      if (
+        existing === undefined ||
+        existing.tenantId !== tenantId ||
+        existing.deletedAt !== null
+      ) {
         throw new Error(`updateRoutine: no routine row for id ${routineId}`);
       }
-      const row: RoutineRow = { ...existing, ...patch, updatedAt: new Date() };
+      const now = new Date();
+      const recomputeNextFire =
+        patch.trigger !== undefined || patch.enabled !== undefined;
+      const mergedTrigger =
+        patch.trigger !== undefined ? patch.trigger : existing.trigger;
+      const mergedEnabled =
+        patch.enabled !== undefined ? patch.enabled : existing.enabled;
+      const row: RoutineRow = {
+        ...existing,
+        ...patch,
+        ...(recomputeNextFire
+          ? {
+              nextFireAt: mergedEnabled
+                ? computeNextFireAt(mergedTrigger, now)
+                : null,
+            }
+          : {}),
+        updatedAt: now,
+      };
       routinesById.set(routineId, row);
       return row;
     },
 
     async deleteRoutine(tenantId, routineId) {
       const existing = routinesById.get(routineId);
-      if (existing === undefined || existing.tenantId !== tenantId) {
+      if (
+        existing === undefined ||
+        existing.tenantId !== tenantId ||
+        existing.deletedAt !== null
+      ) {
         return false;
       }
-      routinesById.delete(routineId);
+      routinesById.set(routineId, {
+        ...existing,
+        deletedAt: new Date(),
+        nextFireAt: null,
+      });
       return true;
+    },
+
+    async listDueRoutines(now) {
+      return [...routinesById.values()].filter(
+        (row) =>
+          row.enabled &&
+          row.deletedAt === null &&
+          row.nextFireAt !== null &&
+          row.nextFireAt.getTime() <= now.getTime(),
+      );
+    },
+
+    async claimRoutineFire(routineId, now) {
+      const current = routinesById.get(routineId);
+      if (
+        current === undefined ||
+        current.trigger === null ||
+        !current.enabled ||
+        current.nextFireAt === null ||
+        current.nextFireAt.getTime() > now.getTime()
+      ) {
+        return undefined;
+      }
+      const claimed: RoutineRow = {
+        ...current,
+        nextFireAt: computeNextFireAt(current.trigger, now),
+        lastFireAt: now,
+      };
+      routinesById.set(routineId, claimed);
+      return claimed;
     },
 
     async recordRoutineRun(input) {

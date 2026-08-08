@@ -5,22 +5,9 @@
 // run-now-only automation, not an error state.
 import { type } from "arktype";
 
-const CRON_FIELD =
-  /^(\*|[0-9]+)(\/[0-9]+)?(-[0-9]+)?(,(\*|[0-9]+)(\/[0-9]+)?(-[0-9]+)?)*$/;
+import { isValidCronExpression, nextCronFireAfter } from "./cron";
 
-/**
- * Loud, eager validation for a raw 5-field cron expression
- * (minute hour day-of-month month day-of-week). Rejects anything that
- * isn't exactly five whitespace-separated fields built from the
- * standard `*`, `,`, `-`, `/` cron grammar — never silently accepts a
- * malformed schedule that would then fail at fire-time instead of at
- * save-time.
- */
-export function isValidCronExpression(expression: string): boolean {
-  const fields = expression.trim().split(/\s+/);
-  if (fields.length !== 5) return false;
-  return fields.every((field) => CRON_FIELD.test(field));
-}
+export { isValidCronExpression, cronMatchesMinute, minuteKey } from "./cron";
 
 const IntervalTrigger = type({
   kind: "'interval'",
@@ -86,4 +73,20 @@ export function cronExpressionForTrigger(
     case "cron":
       return trigger.expression;
   }
+}
+
+/**
+ * When a routine with this trigger next fires, strictly after `after` —
+ * `null` for a manual routine, which never auto-fires. Persisted as a
+ * routine's `nextFireAt` on every create, trigger/enabled change, and
+ * fire, so a schedule due while the hub is down is still due (not
+ * skipped) on restart: the scheduler's readiness test is `nextFireAt <=
+ * now`, not "does this exact instant match."
+ */
+export function computeNextFireAt(
+  trigger: RoutineTriggerT,
+  after: Date,
+): Date | null {
+  if (trigger === null) return null;
+  return nextCronFireAfter(cronExpressionForTrigger(trigger), after);
 }

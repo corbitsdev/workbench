@@ -413,11 +413,12 @@ export async function createHub(config: HubConfig) {
   // over `@corbits/routines`' own `fireScheduledRoutine` — this hub has no
   // general job-runner today, so this loop is scoped to exactly one job
   // (fire due routines) rather than standing up a bespoke cron daemon as a
-  // hidden dependency. A real multi-instance deployment needs a leader
-  // election or a single dedicated worker process before this scales past
-  // one hub replica; tracked as a known limitation, not solved here.
+  // hidden dependency. Every hub replica can safely run this poller: each
+  // fire is claimed with a conditional update on the routine's persisted
+  // `nextFireAt` before anything launches, so two replicas racing the same
+  // fire never both win, and a fire that falls due while every replica is
+  // down is caught up (not lost) the next time any of them polls.
   const routineScheduler = createRoutineScheduler({
-    db,
     store: routineStore,
     launcher: routineLauncher,
   });

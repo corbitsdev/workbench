@@ -3,32 +3,23 @@
 // `fireScheduledRoutine` for exactly this, but ships no scheduler: see
 // that package's routes.ts doc comment). This mirrors
 // `@corbits/agent-lifecycle`'s own `setInterval` sweep (the only other
-// periodic loop in this repo) rather than pulling in a new dependency: a
-// single-process, at-least-once poller, not a distributed cron engine.
+// periodic loop in this repo) rather than pulling in a new dependency.
 //
-// `routine`/`routineRun` are `@corbits/routines`' own exported schema
-// tables (its public surface, alongside `RoutineStore`) — read directly
-// here because `RoutineStore` is deliberately tenant-scoped
-// (`listRoutines(tenantId)`; see store.ts) and has no cross-tenant
-// enumeration, which a scheduler needs and a per-request route never
-// does. This is the same "read the extension's exported schema
-// directly" pattern chat's own routes use for `channel_launch`.
-import { desc, eq } from "drizzle-orm";
-import type { DB } from "@intx/db";
-import {
-  cronExpressionForTrigger,
-  fireScheduledRoutine,
-  routine,
-  routineRun,
-  type RoutineLauncher,
-  type RoutineRow,
-  type RoutineStore,
-} from "@corbits/routines";
+// Exactly-once, not "at-least-once": `RoutineStore.claimRoutineFire`
+// is a conditional update (`nextFireAt <= now` in its WHERE clause,
+// advanced to the trigger's next occurrence in its SET) — a second
+// hub replica racing the same fire loses, because the winner already
+// moved `nextFireAt` into the future before either replica launches
+// anything. And missed fires survive a restart: `nextFireAt` is
+// persisted, so "due" means `nextFireAt <= now`, not "does the current
+// wall-clock minute match" — a fire that was due while the hub was
+// down is still due (and gets caught up) the next time this loop
+// polls, exactly like `@corbits/schedules` before it.
+import type { RoutineLauncher, RoutineStore } from "@corbits/routines";
+import { fireScheduledRoutine } from "@corbits/routines";
 import { getLogger } from "@intx/log";
-import { cronMatchesMinute, minuteKey } from "./cron-due";
 
 export type RoutineSchedulerDeps = {
-  db: DB["db"];
   store: RoutineStore;
   launcher: RoutineLauncher;
   /** Injectable for deterministic tests; defaults to `Date.now`-backed wall time. */
@@ -37,44 +28,6 @@ export type RoutineSchedulerDeps = {
 
 const POLL_INTERVAL_MS = 30_000;
 const log = getLogger(["hub", "routine-scheduler"]);
-
-/**
- * Every enabled, timer-triggered routine, each paired with the minute key
- * of its own most recent scheduled fire (`undefined` if it has never
- * fired on a schedule before) — the guard that keeps a routine whose
- * cadence matches for the whole span of a tick from firing twice.
- */
-async function loadSchedulableRoutines(
-  db: DB["db"],
-): Promise<
-  readonly { routine: RoutineRow; lastFiredMinute: number | undefined }[]
-> {
-  const rows = (await db
-    .select()
-    .from(routine)
-    .where(eq(routine.enabled, true))) as RoutineRow[];
-  const timerRows = rows.filter((row) => row.trigger !== null);
-
-  const lastFiredByRoutine = new Map<string, number>();
-  const scheduledRuns = await db
-    .select({
-      routineId: routineRun.routineId,
-      createdAt: routineRun.createdAt,
-    })
-    .from(routineRun)
-    .where(eq(routineRun.triggeredBy, "schedule"))
-    .orderBy(desc(routineRun.createdAt));
-  for (const run of scheduledRuns) {
-    if (!lastFiredByRoutine.has(run.routineId)) {
-      lastFiredByRoutine.set(run.routineId, minuteKey(run.createdAt));
-    }
-  }
-
-  return timerRows.map((row) => ({
-    routine: row,
-    lastFiredMinute: lastFiredByRoutine.get(row.id),
-  }));
-}
 
 export function createRoutineScheduler(deps: RoutineSchedulerDeps) {
   const now = deps.now ?? (() => new Date());
@@ -85,20 +38,20 @@ export function createRoutineScheduler(deps: RoutineSchedulerDeps) {
     tickInFlight = true;
     try {
       const at = now();
-      const currentMinute = minuteKey(at);
-      const candidates = await loadSchedulableRoutines(deps.db);
-      for (const { routine: row, lastFiredMinute } of candidates) {
-        if (row.trigger === null) continue;
-        if (lastFiredMinute === currentMinute) continue;
-        const expression = cronExpressionForTrigger(row.trigger);
-        if (!cronMatchesMinute(expression, at)) continue;
+      const dueRoutines = await deps.store.listDueRoutines(at);
+      for (const candidate of dueRoutines) {
+        const claimed = await deps.store.claimRoutineFire(candidate.id, at);
+        // `undefined` means another replica already claimed this exact
+        // fire between `listDueRoutines` and this claim attempt — not
+        // an error, just the atomic claim doing its job.
+        if (claimed === undefined) continue;
         try {
           await fireScheduledRoutine(
             { store: deps.store, launcher: deps.launcher },
-            { tenantId: row.tenantId, routine: row },
+            { tenantId: claimed.tenantId, routine: claimed },
           );
         } catch (err) {
-          log.error`scheduled fire of routine ${row.id} failed: ${
+          log.error`scheduled fire of routine ${claimed.id} failed: ${
             err instanceof Error ? err.message : String(err)
           }`;
         }
