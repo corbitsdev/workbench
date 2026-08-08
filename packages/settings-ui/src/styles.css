@@ -1,0 +1,59 @@
+/* Settings surface — layout glue only, same convention as
+   `@corbits/bench-ui`'s and `@corbits/chat-ui`'s stylesheets: visual styling
+   comes from `@corbits/react-ui`'s prebuilt stylesheet and the theme's
+   tokens. */
+
+.settings-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.settings-form-field-inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-field-hint {
+  margin: -0.25rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.settings-detail-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.settings-detail-list dt {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.settings-detail-list dd {
+  margin: 0;
+}
+
+.settings-bench-members-link {
+  align-self: flex-start;
+  color: var(--primary);
+  font-size: 0.875rem;
+}
+
+.settings-chat-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.settings-channel-picker {
+  height: 2.25rem;
+  border-radius: var(--radius, 0.375rem);
+  border: 1px solid var(--input);
+  background: var(--card);
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+}
