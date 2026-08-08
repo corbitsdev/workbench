@@ -46,6 +46,32 @@ import {
 } from "../src/channel-workflow";
 
 const actualHubApi = await import("@intx/hub-api");
+const actualDrizzleOrm = await import("drizzle-orm");
+
+// `listMail`'s keyset pagination builds its next-page predicate with
+// real `lt`/`or`/`and`/`eq` calls (proven against a real Postgres in
+// integration, not here). This wrapper still delegates to the real
+// `lt` -- the fake `sessionMail` chain below has no SQL engine of its
+// own to evaluate the resulting condition against, so it reads the
+// cursor values straight off this spy instead, then filters/sorts a
+// synthetic in-memory row set the same way the real predicate would.
+const realLt = actualDrizzleOrm.lt;
+const ltCalls: { value: unknown }[] = [];
+mock.module("drizzle-orm", () => ({
+  ...actualDrizzleOrm,
+  // Pinning `realLt` to the function object captured above matters:
+  // calling `actualDrizzleOrm.lt(...)` here instead would resolve
+  // through the live module namespace binding, which `mock.module`
+  // has by then repointed at this very wrapper -- an infinite loop
+  // disguised as a hang, not a stack overflow.
+  lt: (column: unknown, value: unknown) => {
+    ltCalls.push({ value });
+    return realLt(
+      column as Parameters<typeof actualDrizzleOrm.lt>[0],
+      value as never,
+    );
+  },
+}));
 
 let resolveDefinitionSourcesResult: DefinitionSourceResolution = {
   ok: true,
@@ -83,6 +109,48 @@ function selectChain(rows: unknown[]): SelectChain {
     where: () => chain,
     orderBy: () => chain,
     limit: () => Promise.resolve(rows),
+  };
+  return chain;
+}
+
+/**
+ * `listMail`'s own `sessionMail` chain: `.where()` reads the cursor
+ * straight off `ltCalls` (the last two `lt(...)` calls the real
+ * `listMail` made to build its condition -- `createdAt` then `id`,
+ * per its `or(lt(createdAt, ...), and(eq(createdAt, ...), lt(id,
+ * ...)))` shape) rather than interpreting the opaque SQL condition
+ * object itself, then filters/sorts/limits a synthetic newest-first
+ * row set the same way the real predicate would.
+ */
+function sessionMailSelectChain(rows: { id: string; createdAt: Date }[]) {
+  let filtered = rows;
+  const chain = {
+    where(..._args: unknown[]) {
+      if (ltCalls.length >= 2) {
+        const createdAtCursor = ltCalls[ltCalls.length - 2]?.value as Date;
+        const idCursor = ltCalls[ltCalls.length - 1]?.value as string;
+        filtered = rows.filter(
+          (row) =>
+            row.createdAt.getTime() < createdAtCursor.getTime() ||
+            (row.createdAt.getTime() === createdAtCursor.getTime() &&
+              row.id < idCursor),
+        );
+      } else {
+        filtered = rows;
+      }
+      return chain;
+    },
+    orderBy(..._args: unknown[]) {
+      filtered = [...filtered].sort((a, b) => {
+        const byDate = b.createdAt.getTime() - a.createdAt.getTime();
+        if (byDate !== 0) return byDate;
+        return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+      });
+      return chain;
+    },
+    limit(n?: number) {
+      return Promise.resolve(n === undefined ? filtered : filtered.slice(0, n));
+    },
   };
   return chain;
 }
@@ -133,6 +201,16 @@ function createFakeDb(opts: {
       }
     | undefined;
   sessionMailRow?: { id: string; raw: Uint8Array } | undefined;
+  /**
+   * A full synthetic `session_mail` table, newest-first, for
+   * `listMail`'s keyset-pagination tests. `select().from(sessionMail)`
+   * filters it using the cursor values `ltCalls` captures off the real
+   * `lt` calls `listMail` makes, then re-sorts/limits -- the same
+   * predicate the real SQL condition encodes, evaluated in JS since
+   * this fake has no SQL engine of its own.
+   */
+  sessionMailRows?:
+    { id: string; createdAt: Date; raw: Uint8Array }[] | undefined;
   workflowDefinitionRow?:
     | { id: string; tenantId: string; status: string; assetId: string | null }
     | undefined;
@@ -209,6 +287,9 @@ function createFakeDb(opts: {
               .map((row) => ({ id: (row.values as { id: string }).id }));
             return selectChain(sessions);
           }
+          if (table === sessionMail) {
+            return sessionMailSelectChain(opts.sessionMailRows ?? []);
+          }
           return selectChain([]);
         },
       };
@@ -236,12 +317,15 @@ function createFakeDb(opts: {
   return fake;
 }
 
-function createFakeEventCollectors(): EventCollectorRegistry & {
+function createFakeEventCollectors(
+  opts: { busyAddresses?: Set<string> } = {},
+): EventCollectorRegistry & {
   createCalls: unknown[];
   abandonCalls: string[];
 } {
   const createCalls: unknown[] = [];
   const abandonCalls: string[] = [];
+  const busyAddresses = opts.busyAddresses ?? new Set<string>();
   return {
     createCalls,
     abandonCalls,
@@ -254,7 +338,8 @@ function createFakeEventCollectors(): EventCollectorRegistry & {
     has: () => false,
     getStatus: () => undefined,
     getAccumulatedText: () => undefined,
-    getCurrentTurnId: () => undefined,
+    getCurrentTurnId: (address: string) =>
+      busyAddresses.has(address) ? "turn_1" : null,
     getLastTurnId: () => undefined,
     dispatch: () => undefined,
   } as unknown as EventCollectorRegistry & {
@@ -674,6 +759,7 @@ describe("createHubChatPlatform", () => {
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
     });
 
     await expect(
@@ -731,6 +817,7 @@ describe("createHubChatPlatform", () => {
       sessionService,
       assetService: createFakeAssetService(),
       sidecarRouter,
+      eventCollectors: createFakeEventCollectors(),
     });
 
     const sent = await platform.sendMail({
@@ -866,6 +953,7 @@ describe("createHubChatPlatform", () => {
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
     });
 
     await expect(
@@ -894,6 +982,7 @@ describe("createHubChatPlatform", () => {
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
     });
 
     await expect(
@@ -902,7 +991,7 @@ describe("createHubChatPlatform", () => {
         creatorPrincipalId: "prin_creator",
         definitionId: "wfd_missing",
       }),
-    ).rejects.toThrow(/no definition/);
+    ).rejects.toThrow(/No definition/);
   });
 
   test("listInvitableDefinitions lists deployed definitions, excluding channel hosts", async () => {
@@ -929,6 +1018,7 @@ describe("createHubChatPlatform", () => {
       sessionService: createFakeSessionService(),
       assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
     });
 
     const items = await platform.listInvitableDefinitions("ten_1");
@@ -959,6 +1049,7 @@ describe("createHubChatPlatform", () => {
       sessionService,
       assetService,
       sidecarRouter,
+      eventCollectors: createFakeEventCollectors(),
     });
 
     const events: unknown[] = [];
@@ -975,6 +1066,110 @@ describe("createHubChatPlatform", () => {
     ]);
 
     unsubscribe();
+  });
+
+  describe("listMail", () => {
+    test("walks three pages via keyset pagination, with a stable order across a createdAt tie", async () => {
+      const RAW_MIME = new TextEncoder().encode(
+        "Content-Type: text/plain\r\n\r\nhello",
+      );
+      const totalRows = 105;
+      const baseTime = new Date("2024-01-01T00:00:00Z").getTime();
+      const sessionMailRows: {
+        id: string;
+        createdAt: Date;
+        raw: Uint8Array;
+      }[] = [];
+      for (let i = 0; i < totalRows; i++) {
+        sessionMailRows.push({
+          id: `mail_${String(999 - i).padStart(4, "0")}`,
+          createdAt: new Date(baseTime - i * 1_000),
+          raw: RAW_MIME,
+        });
+      }
+      // Force a tie: the two oldest rows share one createdAt, so only
+      // the id tiebreak (descending) can order them -- proving the
+      // cursor comparison is `(createdAt, id) < (cursor.createdAt,
+      // cursor.id)`, not `createdAt` alone.
+      const oldest = sessionMailRows[totalRows - 1];
+      const secondOldest = sessionMailRows[totalRows - 2];
+      if (oldest === undefined || secondOldest === undefined) {
+        throw new Error("unreachable: totalRows >= 2");
+      }
+      oldest.createdAt = secondOldest.createdAt;
+
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+        workflowRunRow: {
+          id: "ins_channel1",
+          address: "ins_channel1@ten1.workbench.test",
+          principalId: "prin_run1",
+        },
+        sessionMailRows,
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_run1" },
+      });
+
+      const platform = createHubChatPlatform({
+        db: db as never,
+        sessionService: createFakeSessionService(),
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter(),
+        eventCollectors: createFakeEventCollectors(),
+      });
+
+      const expectedIds = sessionMailRows.map((row) => row.id);
+
+      ltCalls.length = 0;
+      const page1 = await platform.listMail({
+        tenantId: "ten_1",
+        channelId: "ins_channel1",
+      });
+      expect(page1.items.map((item) => item.id)).toEqual(
+        expectedIds.slice(0, 50),
+      );
+      expect(page1.nextCursor).toBeDefined();
+
+      ltCalls.length = 0;
+      const nextCursorAfterPage1 = page1.nextCursor;
+      if (nextCursorAfterPage1 === undefined) {
+        throw new Error("unreachable: asserted defined above");
+      }
+      const page2 = await platform.listMail({
+        tenantId: "ten_1",
+        channelId: "ins_channel1",
+        cursor: nextCursorAfterPage1,
+      });
+      expect(page2.items.map((item) => item.id)).toEqual(
+        expectedIds.slice(50, 100),
+      );
+      expect(page2.nextCursor).toBeDefined();
+
+      ltCalls.length = 0;
+      const nextCursorAfterPage2 = page2.nextCursor;
+      if (nextCursorAfterPage2 === undefined) {
+        throw new Error("unreachable: asserted defined above");
+      }
+      const page3 = await platform.listMail({
+        tenantId: "ten_1",
+        channelId: "ins_channel1",
+        cursor: nextCursorAfterPage2,
+      });
+      // The last five rows, including the tie -- ordered by the id
+      // tiebreak, not left in storage order or truncated to [].
+      expect(page3.items.map((item) => item.id)).toEqual(
+        expectedIds.slice(100, 105),
+      );
+      expect(page3.nextCursor).toBeUndefined();
+    });
   });
 
   // The idle-sleep sweep's own gates (idle sleeps, active/busy/untracked
@@ -1028,6 +1223,8 @@ describe("createHubChatPlatform", () => {
             systemPrompt: "host prompt",
             model: "claude-sonnet-5",
             toolPackagePins: [],
+            grantRequirements: [],
+            credentialBindings: [],
           },
         },
       });
@@ -1074,6 +1271,75 @@ describe("createHubChatPlatform", () => {
       expect(sessionService.sendUserMessageCalls).toHaveLength(1);
     });
 
+    test("the idle sweep never undeploys an address the event collector reports as busy", async () => {
+      // The sweep's `setInterval` otherwise keeps the process's event
+      // loop alive past this test; `unref` it exactly as the
+      // sweep-interval tests below do.
+      const originalSetInterval = globalThis.setInterval;
+      globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => {
+        const timer = originalSetInterval(...args);
+        timer.unref?.();
+        return timer;
+      }) as typeof setInterval;
+
+      const address = "ins_channel1@ten1.workbench.test";
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "channel-1",
+          displayName: null,
+        },
+        definitionId: "wfd_channel1",
+        workflowRunRow: {
+          id: "ins_channel1",
+          address,
+          principalId: "prin_run1",
+        },
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_run1" },
+      });
+
+      const sidecarRouter = createFakeSidecarRouter({
+        routableAddresses: [address],
+      });
+      // The registry reports a live turn for this address -- the
+      // event-activity heuristic ("any event counts as activity") is
+      // not the only thing standing between a mid-turn agent and the
+      // idle sweep; `isBusy` must independently spare it too, and stay
+      // spared even once `recordActivity`'s own clock goes stale.
+      const eventCollectors = createFakeEventCollectors({
+        busyAddresses: new Set([address]),
+      });
+
+      const platform = createHubChatPlatform({
+        db: db as never,
+        sessionService: createFakeSessionService(),
+        assetService: createFakeAssetService(),
+        sidecarRouter,
+        eventCollectors,
+        lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
+      });
+
+      // A single send tracks the address and records one activity
+      // timestamp; nothing else touches it afterwards, so by the time
+      // the sweep ticks past `idleSleepMs` the event-activity heuristic
+      // alone would no longer spare it.
+      await platform.sendMail({
+        tenantId: "ten_1",
+        channelId: "ins_channel1",
+        principalId: "prin_sender",
+        content: { content: "hello" },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 40));
+
+      expect(sidecarRouter.sendAgentUndeployCalls).toEqual([]);
+      globalThis.setInterval = originalSetInterval;
+    });
+
     test("createHubChatPlatform installs no sweep interval when lifecycle is not configured", () => {
       const originalSetInterval = globalThis.setInterval;
       let setIntervalCalls = 0;
@@ -1097,6 +1363,7 @@ describe("createHubChatPlatform", () => {
           sessionService: createFakeSessionService(),
           assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
+          eventCollectors: createFakeEventCollectors(),
         });
         expect(setIntervalCalls).toBe(0);
       } finally {
@@ -1129,6 +1396,7 @@ describe("createHubChatPlatform", () => {
           sessionService: createFakeSessionService(),
           assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
+          eventCollectors: createFakeEventCollectors(),
           lifecycle: { idleSleepMs: 60_000 },
         });
         expect(setIntervalCalls).toBe(1);

@@ -25,7 +25,7 @@
 // pins a real inference source chain against the tenant catalog —
 // that catalog seeding is a deploy-time precondition of this address
 // family, not an inference requirement of the anchor.
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import { createAgentLifecycle } from "@corbits/agent-lifecycle";
 import type { DB } from "@intx/db";
 import {
@@ -55,11 +55,15 @@ import type {
   SidecarRouter,
 } from "@intx/hub-sessions";
 import { resolveDefinitionSources } from "@intx/hub-api";
-import { extractFoldedBody } from "@intx/workflow-deploy";
 import type { FoldedBody } from "@intx/workflow-deploy";
-import { formatAgentAddress } from "@intx/types";
+import {
+  formatAgentAddress,
+  GrantRequirement,
+  CredentialBinding,
+} from "@intx/types";
 import type { CryptoProvider } from "@intx/types/runtime";
-import type { WorkflowDefinition } from "@intx/workflow";
+import { ToolPackagePin } from "@intx/types/tool-packages";
+import { type } from "arktype";
 import type {
   ChatChannelEvent,
   ChatPlatform,
@@ -76,15 +80,13 @@ export type CreateHubChatPlatformDeps = {
   assetService: AssetService;
   sidecarRouter: SidecarRouter;
   /**
-   * Optional only because `apps/hub`'s current `createHubChatPlatform`
-   * call site does not build/pass one yet — a separate wiring task
-   * needs to add `createEventCollectorRegistry`'s registry here. Until
-   * then, `launchChannel` skips opening/abandoning a collector rather
-   * than throwing, which reproduces (does not fix) the "anchor reads
-   * not_ready forever" gap for that caller specifically; any caller
-   * that does pass one gets the fix in full.
+   * Every caller of `createHubChatPlatform` builds this via
+   * `createEventCollectorRegistry` and passes it through — without it,
+   * an anchor's runtime status/readiness (health, SSE replay) reads as
+   * permanently "not_ready", and the idle-sweep's `isBusy` guard (see
+   * the lifecycle construction below) has no signal at all.
    */
-  eventCollectors?: EventCollectorRegistry;
+  eventCollectors: EventCollectorRegistry;
   /**
    * Opt-in idle-sleep for every launched instance (channel hosts and
    * invited agents alike): absent here, the adapter keeps today's
@@ -122,7 +124,7 @@ function assetNameForChannel(channelId: string): string {
 const CHANNEL_HOST_ASSET_NAME_PREFIX = "ins-";
 
 /**
- * Reads a workflow definition's body back out of its materialized
+ * Reads a workflow definition's raw JSON back out of its materialized
  * asset. Reimplemented here rather than imported from
  * `@intx/hub-api`'s `run-grant-materialization.ts` (the reference
  * `POST /workflows/runs` route's own helper): that module is
@@ -131,24 +133,101 @@ const CHANNEL_HOST_ASSET_NAME_PREFIX = "ins-";
  * `assertJsonPortable` rather than reaching into another package's
  * internals.
  */
-async function hydrateDefinitionFromAsset(
+async function readDefinitionJSON(
   assetService: AssetService,
   assetId: string,
-): Promise<WorkflowDefinition> {
+): Promise<unknown> {
   const raw = await assetService.readAssetBlob({
     assetId,
     path: WORKFLOW_JSON_PATH,
   });
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(new TextDecoder().decode(raw));
+    return JSON.parse(new TextDecoder().decode(raw));
   } catch (cause) {
     throw new Error(
       `workflow asset ${assetId} ${WORKFLOW_JSON_PATH} is not valid JSON`,
       { cause },
     );
   }
-  return parsed as WorkflowDefinition;
+}
+
+/**
+ * The launch-relevant subset of a folded `WorkflowDefinition`'s single
+ * `step` primitive: `AgentDefinition` itself is not JSON-portable (its
+ * `toolFactories` are functions), so `@intx/workflow`'s real
+ * `WorkflowDefinition` type is not something a parsed JSON blob can
+ * ever honestly satisfy — narrowing to it with a cast would just
+ * assert the untyped parts into existence. This schema instead
+ * validates exactly the fields a folded definition's step carries that
+ * `readFoldedBody` below reads.
+ */
+const FoldedWorkflowStepSchema = type({
+  kind: "'step'",
+  agent: {
+    systemPrompt: "string",
+    "toolPackagePins?": ToolPackagePin.array(),
+    inference: {
+      sources: type({ "model?": "string | null" }).array(),
+    },
+  },
+});
+
+/** The launch-relevant subset of a folded `WorkflowDefinition` itself. */
+const FoldedWorkflowDefinitionSchema = type({
+  id: "string",
+  stepOrder: "string[]",
+  steps: "Record<string, unknown>",
+  "grantRequirements?": GrantRequirement.array(),
+  "credentialBindings?": CredentialBinding.array(),
+});
+
+const FoldedBodySchema = type({
+  systemPrompt: "string",
+  toolPackagePins: ToolPackagePin.array(),
+  grantRequirements: GrantRequirement.array(),
+  credentialBindings: CredentialBinding.array(),
+  model: "string | null",
+});
+
+/**
+ * Reads the launch body back out of parsed workflow-definition JSON —
+ * the same fields `@intx/workflow-deploy`'s `extractFoldedBody` reads
+ * off a real `WorkflowDefinition`, reimplemented against the validated
+ * JSON-portable subset above rather than casting a parsed blob into
+ * that richer, function-bearing type.
+ */
+function readFoldedBody(raw: unknown): FoldedBody {
+  const definition = FoldedWorkflowDefinitionSchema(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(`folded definition is malformed: ${definition.summary}`);
+  }
+  const [stepId, ...rest] = definition.stepOrder;
+  if (stepId === undefined || rest.length > 0) {
+    throw new Error(
+      `folded definition ${definition.id} is not single-step (${String(
+        definition.stepOrder.length,
+      )} steps)`,
+    );
+  }
+  const step = FoldedWorkflowStepSchema(definition.steps[stepId]);
+  if (step instanceof type.errors) {
+    throw new Error(
+      `folded definition ${definition.id} step ${stepId} is not a step primitive: ${step.summary}`,
+    );
+  }
+  const foldedBody = FoldedBodySchema({
+    systemPrompt: step.agent.systemPrompt,
+    toolPackagePins: step.agent.toolPackagePins ?? [],
+    grantRequirements: definition.grantRequirements ?? [],
+    credentialBindings: definition.credentialBindings ?? [],
+    model: step.agent.inference.sources[0]?.model ?? null,
+  });
+  if (foldedBody instanceof type.errors) {
+    throw new Error(
+      `folded definition ${definition.id} produced an invalid folded body: ${foldedBody.summary}`,
+    );
+  }
+  return foldedBody;
 }
 
 /**
@@ -184,7 +263,7 @@ async function deployAtHead(
   });
   if (!resolution.ok) {
     throw new Error(
-      `launch: cannot resolve an inference source for ${params.launchLabel} ` +
+      `cannot resolve an inference source for ${params.launchLabel} ` +
         `(${resolution.message}); seed a tenant catalog source (provider, ` +
         `credential, catalog model/provider/offering) before launching`,
     );
@@ -194,7 +273,7 @@ async function deployAtHead(
   // address (see `EventCollectorRegistry.create`), so this is
   // idempotent whether this is a fresh launch or a wake of an instance
   // whose collector never got torn down.
-  deps.eventCollectors?.create(
+  deps.eventCollectors.create(
     params.triggerAddress,
     params.tenantId,
     params.sessionId,
@@ -255,6 +334,12 @@ function decodeCursor(cursor: string): { createdAt: Date; id: string } {
 export function createHubChatPlatform(
   deps: CreateHubChatPlatformDeps,
 ): ChatPlatform {
+  // Never evicted: undeploying a channel host's address (idle sleep, a
+  // sweep) does not mean the channel itself is gone, so tearing this
+  // down on that signal would rotate the channel's signing key on the
+  // next wake for no reason. Grows only with the number of distinct
+  // channels this process ever sends mail for, which is bounded by the
+  // tenant's own channel count, not by traffic.
   const cryptoProviders = new Map<string, Promise<CryptoProvider>>();
 
   function cryptoProviderFor(channelId: string): Promise<CryptoProvider> {
@@ -291,6 +376,63 @@ export function createHubChatPlatform(
     }
     return sessionId;
   }
+
+  // Built from `@corbits/agent-lifecycle` — the idle-sleep sweep and
+  // wake-coalescing logic live entirely in that package, imported as a
+  // published dependency rather than reimplemented here; this adapter
+  // only wires its ports onto `sidecarRouter` (routability, undeploy),
+  // `deps.eventCollectors` (busy detection), and `wakeByAddress` (this
+  // module's own redeploy-at-head closure, declared below — a plain
+  // `function` declaration, so it is already hoisted by the time this
+  // closure is called). `undefined` when `deps.lifecycle` is unset,
+  // matching today's behavior exactly: nothing is tracked, no sweep
+  // runs, `sendMail` never calls `ensureAwake`.
+  const lifecycle =
+    deps.lifecycle !== undefined
+      ? createAgentLifecycle({
+          idleSleepMs: deps.lifecycle.idleSleepMs,
+          ...(deps.lifecycle.sweepIntervalMs !== undefined
+            ? { sweepIntervalMs: deps.lifecycle.sweepIntervalMs }
+            : {}),
+          isRoutable: (address) =>
+            deps.sidecarRouter.getRoutableAddresses().includes(address),
+          undeploy: async (address, reason) => {
+            await deps.sidecarRouter.sendAgentUndeploy(address, reason);
+            // The only correct eviction hook for a reply bridge: an
+            // undeployed address is never going to emit another
+            // `connector.reply` until it is woken and re-armed, so drop
+            // its bridge (and reverse-map entry) rather than leaving it
+            // in `replyBridges` for the rest of the process's lifetime.
+            for (const [
+              agentChannelId,
+              bridgeAddress,
+            ] of replyBridgeAddresses) {
+              if (bridgeAddress !== address) continue;
+              replyBridges.get(agentChannelId)?.();
+              replyBridges.delete(agentChannelId);
+              replyBridgeAddresses.delete(agentChannelId);
+            }
+          },
+          wake: wakeByAddress,
+          isBusy: (address) =>
+            typeof deps.eventCollectors.getCurrentTurnId(address) === "string",
+          log: getLogger(["chat", "lifecycle"]),
+        })
+      : undefined;
+
+  // Reply bridges: one live subscription per invited agent, translating
+  // its connector.reply events into channel messages. The platform's
+  // event stream is the ONLY place an agent's reply surfaces at this
+  // Interchange version — replies never persist as session mail — so
+  // without this bridge a mentioned agent answers into the void.
+  // Keyed by agent run id; idempotent to arm, cheap to consult. The
+  // reverse map (agent run id -> resolved address) exists only so the
+  // lifecycle's `undeploy` port above can find and drop a bridge when
+  // its agent sleeps; neither map is otherwise bounded by anything
+  // except the number of distinct invited agents a process ever sees.
+  const replyBridges = new Map<string, () => void>();
+  const replyBridgeAddresses = new Map<string, string>();
+  const bridgeLog = getLogger(["chat", "reply-bridge"]);
 
   /**
    * The launch core shared by `launchChannel` (host) and `launchInvite`
@@ -391,7 +533,7 @@ export function createHubChatPlatform(
       // failure must not leave the just-committed principal/session/run
       // rows behind as a permanently "running" ghost that nothing is
       // listening on.
-      deps.eventCollectors?.abandon(params.triggerAddress);
+      deps.eventCollectors.abandon(params.triggerAddress);
 
       const failedAt = new Date();
 
@@ -457,7 +599,7 @@ export function createHubChatPlatform(
     principalId: string | null;
   }): Promise<void> {
     if (run.principalId === null) {
-      throw new Error(`wake: run "${run.id}" has no principal`);
+      throw new Error(`Run "${run.id}" has no principal`);
     }
     const launchRows = await deps.db
       .select()
@@ -467,12 +609,17 @@ export function createHubChatPlatform(
     const launchRow = launchRows[0];
     if (launchRow === undefined) {
       throw new Error(
-        `wake: no channel_launch row for instance "${run.id}"; instances ` +
-          `launched before launch-body persistence existed cannot be woken — ` +
-          `archive the channel and create a new one`,
+        `No channel_launch row for instance "${run.id}"; instances ` +
+          `launched before launch-body persistence existed cannot be woken`,
       );
     }
-    const foldedBody = launchRow.foldedBody as FoldedBody;
+    const parsedFoldedBody = FoldedBodySchema(launchRow.foldedBody);
+    if (parsedFoldedBody instanceof type.errors) {
+      throw new Error(
+        `channel_launch row for instance "${run.id}" carries an invalid folded body: ${parsedFoldedBody.summary}`,
+      );
+    }
+    const foldedBody = parsedFoldedBody;
     const sessionId = await sessionIdForRun(run);
 
     await deployAtHead(deps, {
@@ -489,7 +636,7 @@ export function createHubChatPlatform(
   async function wakeByAddress(address: string): Promise<void> {
     const run = await findRunByAddress(address);
     if (run === undefined || run.address === null) {
-      throw new Error(`wake: no run found for address "${address}"`);
+      throw new Error(`No run found for address "${address}"`);
     }
     await wakeInstance({
       id: run.id,
@@ -498,39 +645,6 @@ export function createHubChatPlatform(
       principalId: run.principalId,
     });
   }
-
-  // Built from `@corbits/agent-lifecycle` — the idle-sleep sweep and
-  // wake-coalescing logic live entirely in that package, imported as a
-  // published dependency rather than reimplemented here; this adapter
-  // only wires its ports onto `sidecarRouter` (routability, undeploy)
-  // and `wakeByAddress` (this module's own redeploy-at-head closure).
-  // `undefined` when `deps.lifecycle` is unset, matching today's
-  // behavior exactly: nothing is tracked, no sweep runs, `sendMail`
-  // never calls `ensureAwake`.
-  const lifecycle =
-    deps.lifecycle !== undefined
-      ? createAgentLifecycle({
-          idleSleepMs: deps.lifecycle.idleSleepMs,
-          ...(deps.lifecycle.sweepIntervalMs !== undefined
-            ? { sweepIntervalMs: deps.lifecycle.sweepIntervalMs }
-            : {}),
-          isRoutable: (address) =>
-            deps.sidecarRouter.getRoutableAddresses().includes(address),
-          undeploy: (address, reason) =>
-            deps.sidecarRouter.sendAgentUndeploy(address, reason),
-          wake: wakeByAddress,
-          log: getLogger(["chat", "lifecycle"]),
-        })
-      : undefined;
-
-  // Reply bridges: one live subscription per invited agent, translating
-  // its connector.reply events into channel messages. The platform's
-  // event stream is the ONLY place an agent's reply surfaces at this
-  // Interchange version — replies never persist as session mail — so
-  // without this bridge a mentioned agent answers into the void.
-  // Keyed by agent run id; idempotent to arm, cheap to consult.
-  const replyBridges = new Map<string, () => void>();
-  const bridgeLog = getLogger(["chat", "reply-bridge"]);
 
   const platform: ChatPlatform = {
     async launchChannel(input): Promise<LaunchedChannel> {
@@ -548,8 +662,13 @@ export function createHubChatPlatform(
         asset.id,
       );
 
-      const definition = JSON.parse(input.definition) as WorkflowDefinition;
-      const foldedBody = extractFoldedBody(definition);
+      let definitionJSON: unknown;
+      try {
+        definitionJSON = JSON.parse(input.definition);
+      } catch (cause) {
+        throw new Error("channel definition is not valid JSON", { cause });
+      }
+      const foldedBody = readFoldedBody(definitionJSON);
 
       await launchCore({
         tenantId: input.tenantId,
@@ -572,19 +691,18 @@ export function createHubChatPlatform(
       });
       if (definitionRow === undefined) {
         throw new Error(
-          `launchInvite: no definition "${input.definitionId}" for this tenant`,
+          `No definition "${input.definitionId}" for this tenant`,
         );
       }
       if (definitionRow.status !== "deployed") {
         throw new Error(
-          `launchInvite: definition "${input.definitionId}" is not in a ` +
-            `launchable state (status: ${definitionRow.status})`,
+          `Definition "${input.definitionId}" is not in a launchable ` +
+            `state (status: ${definitionRow.status})`,
         );
       }
       if (definitionRow.assetId === null) {
         throw new Error(
-          `launchInvite: definition "${input.definitionId}" has not been ` +
-            `materialized`,
+          `Definition "${input.definitionId}" has not been materialized`,
         );
       }
 
@@ -592,18 +710,18 @@ export function createHubChatPlatform(
         where: eq(tenantTable.id, input.tenantId),
       });
       if (tenantRow === undefined) {
-        throw new Error(`launchInvite: no tenant "${input.tenantId}"`);
+        throw new Error(`No tenant "${input.tenantId}"`);
       }
 
-      const definition = await hydrateDefinitionFromAsset(
+      const definitionJSON = await readDefinitionJSON(
         deps.assetService,
         definitionRow.assetId,
       );
-      const foldedBody = extractFoldedBody(definition);
+      const foldedBody = readFoldedBody(definitionJSON);
       if (foldedBody.systemPrompt === "") {
         throw new Error(
-          `launchInvite: definition "${input.definitionId}" cannot be ` +
-            `launched without a system prompt configured`,
+          `Definition "${input.definitionId}" cannot be launched without ` +
+            `a system prompt configured`,
         );
       }
 
@@ -640,12 +758,10 @@ export function createHubChatPlatform(
     async sendMail(input): Promise<SentMail> {
       const run = await findChannelRun(input.channelId);
       if (run === undefined) {
-        throw new Error(`sendMail: no channel run for "${input.channelId}"`);
+        throw new Error(`No channel run for "${input.channelId}"`);
       }
       if (run.address === null) {
-        throw new Error(
-          `sendMail: channel run "${input.channelId}" has no address`,
-        );
+        throw new Error(`Channel run "${input.channelId}" has no address`);
       }
 
       // Wake before send: a sleeping instance (the lifecycle package's
@@ -665,6 +781,10 @@ export function createHubChatPlatform(
 
       const sessionId = await sessionIdForRun(run);
       const mailId = crypto.randomUUID();
+      // One clock read for both the MIME `Date` header and the
+      // `session_mail` row's `createdAt` — two separate reads would let
+      // the header and the row disagree by however long
+      // `sendUserMessage` takes to sign and serialize the MIME.
       const now = new Date();
       const domain = domainOf(run.address);
       let from = `${input.principalId}@${domain}`;
@@ -673,7 +793,7 @@ export function createHubChatPlatform(
         const origin = await findChannelRun(input.fromChannelId);
         if (origin?.address == null) {
           throw new Error(
-            `sendMail: origin channel "${input.fromChannelId}" has no address`,
+            `Origin channel "${input.fromChannelId}" has no address`,
           );
         }
         from = origin.address;
@@ -704,7 +824,6 @@ export function createHubChatPlatform(
         cryptoProvider,
       });
 
-      const mailCreatedAt = new Date();
       await deps.db.insert(sessionMail).values({
         id: mailId,
         sessionId,
@@ -713,7 +832,7 @@ export function createHubChatPlatform(
         direction: "inbound",
         status: "delivered",
         raw: rawMIME,
-        createdAt: mailCreatedAt,
+        createdAt: now,
       });
 
       deps.sidecarRouter.dispatchAgentEvent(run.address, {
@@ -721,56 +840,66 @@ export function createHubChatPlatform(
         data: {
           id: mailId,
           direction: "inbound",
-          receivedAt: mailCreatedAt.toISOString(),
+          receivedAt: now.toISOString(),
         },
       });
 
       lifecycle?.recordActivity(run.address);
       if (originAddress !== undefined) lifecycle?.recordActivity(originAddress);
 
-      return { id: mailId, createdAt: mailCreatedAt.toISOString() };
+      return { id: mailId, createdAt: now.toISOString() };
     },
 
     async listMail(input): Promise<ListedMail> {
       const run = await findChannelRun(input.channelId);
       if (run === undefined) {
-        throw new Error(`listMail: no channel run for "${input.channelId}"`);
+        throw new Error(`No channel run for "${input.channelId}"`);
       }
       const sessionId = await sessionIdForRun(run);
 
-      const conditions = [
+      // Keyset pagination on the same `(createdAt, id)` key the
+      // newest-first ordering sorts by: a cursor names the last row the
+      // caller has already seen, and this walks strictly older than it
+      // — `createdAt < cursor.createdAt`, or a tie broken by
+      // `id < cursor.id` — rather than re-fetching the newest page and
+      // searching for the cursor inside it, which only ever finds it on
+      // page one.
+      const scope = and(
         eq(sessionMail.tenantId, input.tenantId),
         eq(sessionMail.sessionId, sessionId),
-      ];
+      );
+      const cursor =
+        input.cursor === undefined ? undefined : decodeCursor(input.cursor);
+      const where =
+        cursor === undefined
+          ? scope
+          : and(
+              scope,
+              or(
+                lt(sessionMail.createdAt, cursor.createdAt),
+                and(
+                  eq(sessionMail.createdAt, cursor.createdAt),
+                  lt(sessionMail.id, cursor.id),
+                ),
+              ),
+            );
 
       const rows = await deps.db
         .select()
         .from(sessionMail)
-        .where(and(...conditions))
+        .where(where)
         .orderBy(desc(sessionMail.createdAt), desc(sessionMail.id))
         .limit(MAIL_PAGE_SIZE + 1);
 
-      const page =
-        input.cursor === undefined
-          ? rows
-          : (() => {
-              const { createdAt, id } = decodeCursor(input.cursor as string);
-              const startIndex = rows.findIndex(
-                (row) =>
-                  row.createdAt.getTime() === createdAt.getTime() &&
-                  row.id === id,
-              );
-              return startIndex === -1 ? [] : rows.slice(startIndex + 1);
-            })();
-
-      const hasMore = page.length > MAIL_PAGE_SIZE;
-      const items = page.slice(0, MAIL_PAGE_SIZE).map((row) => ({
+      const hasMore = rows.length > MAIL_PAGE_SIZE;
+      const page = rows.slice(0, MAIL_PAGE_SIZE);
+      const items = page.map((row) => ({
         id: row.id,
         createdAt: row.createdAt.toISOString(),
         mail: parseMailToEmail(row.raw, row.id),
       }));
 
-      const last = items.length > 0 ? page[items.length - 1] : undefined;
+      const last = page.length > 0 ? page[page.length - 1] : undefined;
       return {
         items,
         ...(hasMore && last !== undefined
@@ -782,16 +911,19 @@ export function createHubChatPlatform(
     async fetchBlob(_channelId, blobId): Promise<string | Uint8Array> {
       const match = BLOB_ID_PATTERN.exec(blobId);
       if (match === null) {
-        throw new Error(`fetchBlob: invalid blob id "${blobId}"`);
+        throw new Error(`Invalid blob id "${blobId}"`);
       }
       const [, mailId, partPath] = match;
+      if (mailId === undefined || partPath === undefined) {
+        throw new Error(`Invalid blob id "${blobId}"`);
+      }
       const mailRow = await deps.db.query.sessionMail.findFirst({
-        where: eq(sessionMail.id, mailId as string),
+        where: eq(sessionMail.id, mailId),
       });
       if (mailRow === undefined) {
-        throw new Error(`fetchBlob: no mail "${mailId}" for blob "${blobId}"`);
+        throw new Error(`No mail "${mailId}" for blob "${blobId}"`);
       }
-      return extractPartByPath(mailRow.raw, partPath as string);
+      return extractPartByPath(mailRow.raw, partPath);
     },
 
     subscribeToChannel(
@@ -833,6 +965,7 @@ export function createHubChatPlatform(
           return;
         }
         const agentAddress = run.address;
+        replyBridgeAddresses.set(input.agentChannelId, agentAddress);
         // Arming a bridge is proof this agent belongs to a live channel:
         // put it under the idle sweep even if it predates this hub
         // process and has not yet received mail through it.

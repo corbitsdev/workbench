@@ -45,6 +45,11 @@ const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
+// Shorter than CHAT_TURN_TIMEOUT_MS is fine: the lifecycle's own busy
+// guard (wired off the event collector's current-turn id) spares a
+// mid-turn instance regardless of this value, so it only has to be
+// long enough that an agent between turns is never mistaken for idle.
+const CHAT_IDLE_SLEEP_MS = 60_000;
 // The same anthropic/claude-sonnet-5 pairing the workbench seed plants
 // in the tenant catalog, so a channel host can always resolve an
 // inference source against it.
@@ -198,7 +203,7 @@ export async function createHub(config: HubConfig) {
       assetService,
       sidecarRouter,
       eventCollectors,
-      lifecycle: { idleSleepMs: 60_000 },
+      lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
     }),
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
