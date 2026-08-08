@@ -13,7 +13,7 @@ import { createChatRoutes } from "../src/routes";
 import type { ChatPlatform, CreateChatRoutesDeps } from "../src/routes";
 import { createInMemoryChatStore } from "../src/store";
 import type { Part } from "../src/parts";
-import type { MailContent } from "../src/codec";
+import { decodeParts, type MailContent } from "../src/codec";
 
 const TENANT = {
   id: "tnt_1",
@@ -131,7 +131,9 @@ function fakePlatform(
       return { id, createdAt };
     },
     async listMail(input) {
-      return { items: mailByChannel.get(input.channelId) ?? [] };
+      // Matches the real platform's contract: a page is newest-first.
+      const items = mailByChannel.get(input.channelId) ?? [];
+      return { items: [...items].reverse() };
     },
     async fetchBlob() {
       return "";
@@ -442,6 +444,133 @@ describe("messages", () => {
     expect(platform.sentMail).toHaveLength(1); // only to the channel itself
   });
 
+  test("a mention fan-out carries the prior channel conversation, excluding the just-sent message", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify([{ kind: "text", text: "first message" }]),
+    });
+    await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify([{ kind: "text", text: "second message" }]),
+    });
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify([{ kind: "text", text: "hi @ins_echo1" }]),
+    });
+    expect(response.status).toBe(201);
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    const decoded = decodeParts(copy?.content ?? { content: "" });
+
+    expect(decoded).toHaveLength(2);
+    const [contextPart, messagePart] = decoded;
+    expect(contextPart?.kind).toBe("text");
+    expect(messagePart).toEqual({ kind: "text", text: "hi @ins_echo1" });
+
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+    expect(contextText).toContain(
+      "[Channel context — the most recent messages in this channel",
+    );
+    expect(contextText.split("\n")).toEqual([
+      "[Channel context — the most recent messages in this channel, oldest " +
+        "first. The actual message addressed to you follows after this " +
+        "block.]",
+      "user: first message",
+      "user: second message",
+    ]);
+    expect(contextText).not.toContain("hi @ins_echo1");
+  });
+
+  test("no prior messages means no context part at all, copy identical to today", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify([{ kind: "text", text: "hi @ins_echo1" }]),
+    });
+    expect(response.status).toBe(201);
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    expect(copy?.content).toEqual({
+      content: "hi @ins_echo1",
+      replyTo: channel.id,
+    });
+  });
+
+  test("a chat's fan-out carries no context block, even with a full history", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify([{ kind: "text", text: "earlier turn" }]),
+    });
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify([{ kind: "text", text: "hello, no mention here" }]),
+    });
+    expect(response.status).toBe(201);
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const fanned = platform.sentMail[platform.sentMail.length - 1];
+    expect(fanned?.content).toEqual({
+      content: "hello, no mention here",
+      replyTo: channel.id,
+    });
+  });
+
+  test("a timeline load failure does not break the send; it fans out un-situated", async () => {
+    const platform = fakePlatform();
+    platform.listMail = () => {
+      throw new Error("boom: platform unavailable");
+    };
+    const deps = buildDeps({ platform });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify([{ kind: "text", text: "hi @ins_echo1" }]),
+    });
+
+    expect(response.status).toBe(201);
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    expect(copy?.content).toEqual({
+      content: "hi @ins_echo1",
+      replyTo: channel.id,
+    });
+  });
+
   test("inviting into a chat is rejected with a 409", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
@@ -538,6 +667,178 @@ describe("messages", () => {
       name: null,
       address: "prn_alice@acme.example",
     });
+  });
+});
+
+async function sendText(
+  app: Hono<TenantEnv>,
+  channelId: string,
+  text: string,
+): Promise<Response> {
+  return app.request(`/channels/${channelId}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify([{ kind: "text", text }]),
+  });
+}
+
+describe("chat/contextWindow", () => {
+  test("a window of 2 keeps only the last 2 prior messages in the block", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+    await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 2 }),
+    });
+
+    await sendText(app, channel.id, "one");
+    await sendText(app, channel.id, "two");
+    await sendText(app, channel.id, "three");
+    await sendText(app, channel.id, "hi @ins_echo1");
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    const [contextPart] = decodeParts(copy?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+
+    expect(contextText).not.toContain("user: one");
+    expect(contextText).toContain("user: two");
+    expect(contextText).toContain("user: three");
+  });
+
+  test("a window of 0 disables the context block entirely", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+    await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 0 }),
+    });
+
+    await sendText(app, channel.id, "one");
+    await sendText(app, channel.id, "hi @ins_echo1");
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    expect(copy?.content).toEqual({
+      content: "hi @ins_echo1",
+      replyTo: channel.id,
+    });
+  });
+
+  test("an absent setting falls back to the default of 20", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    for (let i = 0; i < 20; i++) {
+      await sendText(app, channel.id, `msg-${i}`);
+    }
+    await sendText(app, channel.id, "hi @ins_echo1");
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    const [contextPart] = decodeParts(copy?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+    expect(contextText).toContain("user: msg-0");
+    expect(contextText).toContain("user: msg-19");
+  });
+
+  test("an invalid value (negative or non-numeric) falls back to the default", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+    await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": -3 }),
+    });
+
+    for (let i = 0; i < 21; i++) {
+      await sendText(app, channel.id, `msg-${i}`);
+    }
+    await sendText(app, channel.id, "hi @ins_echo1");
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    const [contextPart] = decodeParts(copy?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+    // Default window is 20: the oldest of the 21 prior messages (msg-0)
+    // falls outside it.
+    expect(contextText).not.toContain("user: msg-0\n");
+    expect(contextText).toContain("user: msg-1");
+    expect(contextText).toContain("user: msg-20");
+  });
+
+  test("an oversized value clamps to the maximum of 200", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      participants: ["ins_echo1@acme.example"],
+    });
+    await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 10_000 }),
+    });
+
+    for (let i = 0; i < 25; i++) {
+      await sendText(app, channel.id, `msg-${i}`);
+    }
+    await sendText(app, channel.id, "hi @ins_echo1");
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const copy = platform.sentMail[platform.sentMail.length - 1];
+    const [contextPart] = decodeParts(copy?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+    // Clamped to 200, well above the 25 available, so all 25 survive.
+    expect(contextText).toContain("user: msg-0");
+    expect(contextText).toContain("user: msg-24");
+  });
+
+  test("chat/contextWindow round-trips through PATCH /channels/:id/settings", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 5 }),
+    });
+    expect(response.status).toBe(200);
+
+    const stored = await deps.store.getChannelSettings(TENANT.id, channel.id);
+    expect(stored?.settings["chat/contextWindow"]).toBe(5);
+  });
+
+  test("rejects a non-numeric chat/contextWindow value", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": "lots" }),
+    });
+    expect(response.status).toBe(400);
   });
 });
 

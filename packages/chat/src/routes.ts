@@ -19,6 +19,7 @@
 import { formatAgentAddress } from "@intx/types";
 import type { InferencePreference } from "@intx/agent";
 import { generateId } from "@intx/hub-common";
+import { getLogger } from "@intx/log";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { type, type Type } from "arktype";
@@ -32,6 +33,10 @@ import { Part, type Part as PartType } from "./parts";
 import { presetForKind } from "./kinds";
 import { localPartOf } from "./agent-address";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
+import {
+  renderChannelContext,
+  type ChannelContextItem,
+} from "./channel-context";
 import {
   addParticipant,
   handleFromName,
@@ -216,6 +221,7 @@ const ChatNamespaceSchemas: Readonly<Record<string, Type<unknown>>> = {
   "chat/name": type("string"),
   "chat/pinned": type("boolean"),
   "chat/participants": ParticipantsSetting,
+  "chat/contextWindow": type("number"),
 };
 
 class SettingsValidationError extends Error {}
@@ -267,6 +273,31 @@ function kindOf(settings: Record<string, unknown>): string {
     : "chat";
 }
 
+/** Default channel-context window (in prior text messages) when a
+ * channel's settings carry no `chat/contextWindow` at all. */
+const DEFAULT_CONTEXT_WINDOW = 20;
+
+/** Upper clamp on `chat/contextWindow`, so a bad or malicious setting
+ * value can never turn a mention fan-out into a token bomb. */
+const MAX_CONTEXT_WINDOW = 200;
+
+/**
+ * A channel's context-window size, read off its settings the same way
+ * `kindOf` reads kind: a non-negative integer, where `0` disables the
+ * channel-context block entirely. Absent or invalid values (wrong type,
+ * negative, non-integer) fall back to `DEFAULT_CONTEXT_WINDOW` rather
+ * than trusting the jsonb shape; anything above `MAX_CONTEXT_WINDOW` is
+ * clamped down to it — validation at the trust boundary, not a
+ * fallback path.
+ */
+function contextWindowOf(settings: Record<string, unknown>): number {
+  const raw = settings["chat/contextWindow"];
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) {
+    return DEFAULT_CONTEXT_WINDOW;
+  }
+  return Math.min(raw, MAX_CONTEXT_WINDOW);
+}
+
 function channelView(row: {
   readonly channelId: string;
   readonly settings: Record<string, unknown>;
@@ -299,6 +330,98 @@ function participantsOf(
   settings: Record<string, unknown>,
 ): ParticipantRecord[] {
   return parseParticipants(settings["chat/participants"]);
+}
+
+const contextLog = getLogger(["chat", "context"]);
+
+/**
+ * The label a sender renders as inside a channel context block: an agent
+ * participant renders as its channel handle (`@echo`), matching the
+ * mention syntax participants already type; anything else — the server
+ * has no human display names to draw on — renders as the literal string
+ * `"user"`. Never a raw address or principal id: this text reaches a
+ * model prompt and possibly logs.
+ */
+function labelForSender(
+  address: string,
+  participants: readonly ParticipantRecord[],
+): string {
+  // Mail's `from` always carries a full `id@domain` address regardless
+  // of sender kind (see `platform-adapter.ts`'s `sendMail`), so an
+  // agent sender is recognized by matching its local part against a
+  // known *agent* participant's local part — never by the mere presence
+  // of "@", which every mail sender address carries either way.
+  const known = participants.find(
+    (participant) =>
+      isAgentAddress(participant.address) &&
+      localPartOf(participant.address) === localPartOf(address),
+  );
+  return known !== undefined ? `@${known.handle}` : "user";
+}
+
+/**
+ * Loads and decodes the channel's recent timeline into context items for
+ * a mention fan-out copy, excluding the just-sent message (matched by
+ * mail id, since it is typically the newest item in the listing) and any
+ * decoded message with no text parts (event-only mail contributes
+ * nothing a context block can render). Capped to the channel's resolved
+ * `contextWindow` (most-recent-first before the final oldest-first
+ * slice, so a window of 0 loads nothing and a small window keeps only
+ * the newest few). Returns `undefined` on empty history — the "zero
+ * context" case, where a fan-out copy carries no context part at all —
+ * or when the timeline fails to load or decode: that failure must never
+ * break the send, so it is logged and swallowed here, leaving the caller
+ * to fan out un-situated.
+ */
+async function loadChannelContext(input: {
+  platform: ChatPlatform;
+  tenantId: string;
+  channelId: string;
+  excludeMailId: string;
+  participants: readonly ParticipantRecord[];
+  contextWindow: number;
+}): Promise<string | undefined> {
+  if (input.contextWindow === 0) return undefined;
+  try {
+    const listed = await input.platform.listMail({
+      tenantId: input.tenantId,
+      channelId: input.channelId,
+    });
+    const newestFirstExcludingSent = listed.items.filter(
+      (item) => item.id !== input.excludeMailId,
+    );
+    const oldestFirst = newestFirstExcludingSent
+      .slice(0, input.contextWindow)
+      .reverse();
+
+    const items: ChannelContextItem[] = [];
+    for (const item of oldestFirst) {
+      const parts = await decodeMail(item.mail, {
+        fetchBlob: (blobId) =>
+          input.platform.fetchBlob(input.channelId, blobId),
+      });
+      const texts = parts
+        .filter(
+          (part): part is Extract<PartType, { kind: "text" }> =>
+            part.kind === "text",
+        )
+        .map((part) => part.text);
+      if (texts.length === 0) continue;
+      const sender = senderOf(item.mail);
+      items.push({
+        label: labelForSender(sender.address, input.participants),
+        text: texts.join(" "),
+      });
+    }
+
+    if (items.length === 0) return undefined;
+    return renderChannelContext({ items });
+  } catch (err) {
+    contextLog.warn`failed to load channel context for mention fan-out on channel ${input.channelId}: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+    return undefined;
+  }
 }
 
 type ChannelSubscriber = (event: ChatChannelEvent) => void;
@@ -658,6 +781,30 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               .filter((participant) => isAgentAddress(participant.address))
               .map((participant) => participant.address)
           : mentionedParticipants(messageParts, participants);
+
+      // Situates a mentioned agent in the conversation it is being
+      // dropped into — a chat's one agent already receives every message
+      // and has full history via its own mailbox, so this only applies
+      // to a channel's mention fan-out.
+      const contextText =
+        kind === "channel" && recipients.length > 0
+          ? await loadChannelContext({
+              platform: deps.platform,
+              tenantId: tenant.id,
+              channelId,
+              excludeMailId: sent.id,
+              participants,
+              contextWindow:
+                settingsRow !== undefined
+                  ? contextWindowOf(settingsRow.settings)
+                  : DEFAULT_CONTEXT_WINDOW,
+            })
+          : undefined;
+      const fanoutParts: PartType[] =
+        contextText !== undefined
+          ? [{ kind: "text", text: contextText }, ...messageParts]
+          : messageParts;
+
       for (const participant of recipients) {
         // Armed BEFORE the delivery, not lazily on a later read: reply
         // bridges are in-memory and a host restart loses them, and a
@@ -672,7 +819,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenantId: tenant.id,
           channelId: localPartOf(participant),
           principalId: principal.id,
-          content: encodeParts(messageParts, { replyTo: channelId }),
+          content: encodeParts(fanoutParts, { replyTo: channelId }),
           fromChannelId: channelId,
         });
       }
