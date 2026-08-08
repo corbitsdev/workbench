@@ -18,7 +18,7 @@
     "@corbits/chat": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
-    "@corbits/react-ui": "github:corbitsdev/react-ui#d6837c6e59c5a52db4fa3402584344a17b561a68",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#bebe1ed596637a912e69dbdb857c3e043861e192",
     "@intx/types": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",
