@@ -69,6 +69,18 @@ their configuration from `.env` (see `.env.example`) and are safe to re-run.
 is actually launchable; without it, everything above still runs, but
 inference errors until you set it and re-run `bun run seed`.
 
+### OAuth sign-in
+
+Email/password sign-in always works. To let people sign in with an
+existing Google or GitHub account instead, set that provider's client id
+and secret in `.env` — `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` and/or
+`GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, each an independent pair. The
+matching button then appears on the sign-in screen automatically; leave
+both values of a pair unset to leave that provider off. Setting only one
+value of a pair is a boot-time error — the hub refuses to start rather than
+silently disable the provider. See `.env.example` for where to register
+each OAuth app and what redirect URI to configure.
+
 ## Repo layout
 
 | Path         | What lives here                                            |
