@@ -1,4 +1,5 @@
 import {
+  Button,
   Card,
   CardFooter,
   CardHeader,
@@ -11,6 +12,7 @@ import {
 import { Bot } from "lucide-react";
 
 import { RunsSchema, useAPIQuery } from "../api";
+import { Link } from "../navigation";
 import { countProp } from "../optional-props";
 import { purposeRuns } from "../purpose-runs";
 import type { APIQuery, RunsPage, WorkflowRun } from "../api";
@@ -54,7 +56,12 @@ export function LibraryPage({ runs }: { readonly runs: APIQuery<RunsPage> }) {
               <EmptyState
                 icon={<Bot />}
                 title="The library is empty"
-                description="Workflow definitions with a run executing in any of your benches appear here. None are running yet."
+                description="Workflow definitions with a run executing in any of your benches appear here. Ask an agent in chat to run a workflow to see one show up."
+                action={
+                  <Button asChild>
+                    <Link to="/chat">Go to chat</Link>
+                  </Button>
+                }
               />
             ) : (
               <div className="card-grid">

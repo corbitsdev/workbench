@@ -1,5 +1,6 @@
 import {
   Badge,
+  Button,
   EmptyState,
   formatRelativeTime,
   PageShell,
@@ -16,6 +17,7 @@ import type { BadgeTone } from "@corbits/react-ui";
 import { Workflow } from "lucide-react";
 
 import { RunsSchema, useAPIQuery } from "../api";
+import { Link } from "../navigation";
 import { countProp } from "../optional-props";
 import type { APIQuery, RunsPage, WorkflowRun } from "../api";
 import { purposeRuns } from "../purpose-runs";
@@ -59,7 +61,12 @@ export function WorkflowsPage({
               <EmptyState
                 icon={<Workflow />}
                 title="No active workflows"
-                description="When a workflow is executing in one of your benches it appears here."
+                description="When a workflow is executing in one of your benches it appears here. Ask an agent in chat to kick one off."
+                action={
+                  <Button asChild>
+                    <Link to="/chat">Go to chat</Link>
+                  </Button>
+                }
               />
             ) : (
               <Table>
