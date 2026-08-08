@@ -19,7 +19,7 @@ import type { SidecarEventEmitter } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
 import { encodeParts } from "./codec";
 import { parseParticipants } from "./participants";
-import type { ChatPlatform } from "./routes";
+import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
 
 const log = getLogger(["chat", "orchestrator"]);

@@ -1,0 +1,143 @@
+// The platform call surface `@corbits/chat` needs from its host:
+// launching an interactive channel instance, sending and listing its
+// mail, fetching attachment blobs, and subscribing to its live event
+// stream. The hub builds this from the same `SessionService`/db calls
+// `createInstanceRoutes` uses (see `vendor/intx/hub-api/src/routes/instances.ts`),
+// but that machinery — grant materialization, credential resolution,
+// model-source resolution, multi-table transactions — is internal
+// wiring specific to the hub, not a single callable service. Rather
+// than duplicating it inside this package (which would violate "apps
+// stay generic; packages own the domain" the other way around), this
+// package depends on this narrow port, injected by the hub exactly as
+// `@workbench/onboarding` injects `pushWorkflow` instead of
+// reimplementing workflow push.
+//
+// Split into its three real seams — launching, mail, and the live
+// event stream — rather than one flat interface, so a call site that
+// only ever sends and lists mail (the fan-out service, say) can depend
+// on `ChannelMail` alone. `ChatPlatform` remains the composed
+// convenience type the hub actually implements and injects.
+import type { MailContent } from "./codec";
+
+export interface LaunchedChannel {
+  readonly instanceId: string;
+}
+
+export interface LaunchedInvite {
+  readonly instanceId: string;
+  readonly address: string;
+}
+
+export interface InvitableDefinition {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface SentMail {
+  readonly id: string;
+  readonly createdAt: string;
+}
+
+export interface ListedMailItem {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly mail: unknown;
+}
+
+export interface ListedMail {
+  readonly items: readonly ListedMailItem[];
+  readonly nextCursor?: string;
+}
+
+export interface ChatChannelEvent {
+  readonly type: string;
+  readonly data: unknown;
+}
+
+/** Launching a channel host and inviting an already-deployed agent
+ * into one. */
+export interface ChannelLauncher {
+  launchChannel(input: {
+    readonly tenantId: string;
+    readonly creatorPrincipalId: string;
+    readonly channelId: string;
+    readonly triggerAddress: string;
+    readonly definition: string;
+  }): Promise<LaunchedChannel>;
+
+  /**
+   * Launches an interactive instance of an already-deployed workflow
+   * definition — the invited agent's own run, distinct from the
+   * channel's own anchor run — and returns its mail address. Uses the
+   * same `deployInstanceAtHead` machinery `launchChannel` uses for the
+   * host, sharing its launch core; only the source of the launch body
+   * (an existing definition id vs. a freshly synthesized one) differs.
+   */
+  launchInvite(input: {
+    readonly tenantId: string;
+    readonly creatorPrincipalId: string;
+    readonly definitionId: string;
+  }): Promise<LaunchedInvite>;
+
+  /**
+   * Lists the tenant's deployed, launchable workflow definitions an
+   * "invite agent" affordance can offer — never including a channel's
+   * own host definition.
+   */
+  listInvitableDefinitions(
+    tenantId: string,
+  ): Promise<readonly InvitableDefinition[]>;
+}
+
+/** Sending and reading a channel's mail, and fetching its attachment
+ * blobs. */
+export interface ChannelMail {
+  sendMail(input: {
+    readonly tenantId: string;
+    readonly channelId: string;
+    /**
+     * The sending principal, when the send is a human/participant
+     * message — the address it sends from is derived as
+     * `${principalId}@<channel's domain>`. Omit when `fromChannelId`
+     * is given instead; exactly one of the two must be present, and
+     * the adapter throws loud if neither is.
+     */
+    readonly principalId?: string;
+    readonly content: MailContent;
+    /**
+     * Send the mail from another channel's address instead of the
+     * principal's. Fan-out copies to mentioned agents, and the chat
+     * orchestrator's posted replies, carry the origin channel here: an
+     * agent's reply router answers the From address of the mail it
+     * received, and a principal address has no mailbox — a reply to it
+     * vanishes. From-the-channel means agents answer into the mailbox
+     * every participant reads.
+     */
+    readonly fromChannelId?: string;
+  }): Promise<SentMail>;
+
+  listMail(input: {
+    readonly tenantId: string;
+    readonly channelId: string;
+    readonly cursor?: string;
+  }): Promise<ListedMail>;
+
+  fetchBlob(channelId: string, blobId: string): Promise<string | Uint8Array>;
+}
+
+/** Subscribing to a channel's live event stream. */
+export interface ChannelEvents {
+  subscribeToChannel(
+    channelId: string,
+    onEvent: (event: ChatChannelEvent) => void,
+  ): () => void;
+}
+
+/**
+ * The composed port the hub actually implements and injects. Handlers
+ * and services that only need one seam should depend on that
+ * interface directly (`ChannelMail`, say) rather than the full
+ * composition — this type exists for the hub's own implementation and
+ * for wiring that genuinely spans all three.
+ */
+export type ChatPlatform = ChannelLauncher & ChannelMail & ChannelEvents;

@@ -51,7 +51,7 @@ import type {
   LaunchedInvite,
   ListedMail,
   SentMail,
-} from "./routes";
+} from "./platform-port";
 
 export type CreateHubChatPlatformDeps = {
   db: DB["db"];

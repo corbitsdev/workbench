@@ -56,17 +56,20 @@ export {
 export type { ParticipantRecord } from "./participants";
 
 export { createChatRoutes } from "./routes";
+export type { CreateChatRoutesDeps } from "./routes";
 export type {
+  ChannelEvents,
+  ChannelLauncher,
+  ChannelMail,
   ChatPlatform,
   ChatChannelEvent,
-  CreateChatRoutesDeps,
   InvitableDefinition,
   LaunchedChannel,
   LaunchedInvite,
   ListedMail,
   ListedMailItem,
   SentMail,
-} from "./routes";
+} from "./platform-port";
 
 export { createDrizzleChatStore, createInMemoryChatStore } from "./store";
 export type { ChatDb, ChatStore } from "./store";
