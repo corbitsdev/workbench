@@ -6,7 +6,8 @@
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./cron": "./src/cron.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

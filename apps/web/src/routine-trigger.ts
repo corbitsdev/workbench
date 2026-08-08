@@ -7,14 +7,19 @@
 // see apps/hub/src/cron-due.ts) — it renders a plain description instead
 // of a guessed timestamp, never a wrong one dressed up as exact.
 //
-// The estimate for interval/daily/weekly presets is derived from the
-// exact cron expression the scheduler fires against (mirroring
-// `cronExpressionForTrigger` and a minute-by-minute search, the same
-// technique as `nextCronFireAfter` in packages/routines/src/cron.ts),
-// not from naive arithmetic on `now`. An interval preset in particular
-// fires on a wall-clock-aligned cadence (`*/N * * * *`), not N minutes
-// after whatever moment a viewer happens to load the page — "every 10
+// The estimate for interval/daily/weekly presets is computed by
+// `nextCronFireAfter` from `@corbits/routines/cron` — the exact same
+// minute-by-minute search the hub's own scheduler runs against the
+// exact same rendered cron expression — never a second, hand-rolled
+// matcher that could drift from what actually fires. That subpath (not
+// the package's default export) is deliberate: the default export
+// pulls in `drizzle-orm` and `postgres` through `store.ts`, which have
+// no business in a browser bundle; `cron.ts` has zero imports and
+// bundles cleanly on its own. An interval preset in particular fires
+// on a wall-clock-aligned cadence (`*/N * * * *`), not N minutes after
+// whatever moment a viewer happens to load the page — "every 10
 // minutes" viewed at :07 fires at :10, four minutes away, not ten.
+import { nextCronFireAfter } from "@corbits/routines/cron";
 import type { RoutineTrigger } from "./routines-api";
 
 const WEEKDAY_NAMES = [
@@ -63,66 +68,23 @@ function cronExpressionForPreset(
   }
 }
 
-function cronFieldMatches(field: string, value: number): boolean {
-  if (field === "*") return true;
-  const stepMatch = /^\*\/([0-9]+)$/.exec(field);
-  if (stepMatch?.[1] !== undefined) return value % Number(stepMatch[1]) === 0;
-  return value === Number(field);
-}
-
-/**
- * Matches the subset of the 5-field cron grammar `cronExpressionForPreset`
- * ever renders: `*`, a bare number, or a step of `*` (e.g. `star-slash-N`)
- * — day-of-month and month are always `*` for these presets, so only
- * minute/hour/day-of-week vary.
- */
-function presetCronMatchesMinute(expression: string, at: Date): boolean {
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = expression.split(" ");
-  if (
-    minute === undefined ||
-    hour === undefined ||
-    dayOfMonth === undefined ||
-    month === undefined ||
-    dayOfWeek === undefined
-  ) {
-    return false;
-  }
-  return (
-    cronFieldMatches(minute, at.getUTCMinutes()) &&
-    cronFieldMatches(hour, at.getUTCHours()) &&
-    dayOfMonth === "*" &&
-    month === "*" &&
-    cronFieldMatches(dayOfWeek, at.getUTCDay())
-  );
-}
-
-const NEXT_RUN_LOOKAHEAD_MS = 8 * 24 * 60 * 60 * 1000;
-
-/** The next minute at or after `after` (exclusive) that `expression` matches. */
-function nextPresetFireAfter(expression: string, after: Date): Date | null {
-  const start = Math.floor(after.getTime() / 60_000) * 60_000 + 60_000;
-  for (
-    let candidateMs = start;
-    candidateMs - start <= NEXT_RUN_LOOKAHEAD_MS;
-    candidateMs += 60_000
-  ) {
-    const candidate = new Date(candidateMs);
-    if (presetCronMatchesMinute(expression, candidate)) return candidate;
-  }
-  return null;
-}
-
 /**
  * A best-effort next-fire estimate for display only — never fed back
  * into a launch decision, which is the scheduler's job
  * (apps/hub/src/routine-scheduler.ts) against the real clock. Returns
- * `null` for a manual routine or a raw-cron trigger (no closed form
- * without a full cron evaluator on the client).
+ * `null` for a manual routine, a raw-cron trigger (no closed form
+ * without rendering it through the same package the hub already does),
+ * or the vanishingly unlikely case of no match inside
+ * `nextCronFireAfter`'s multi-year lookahead.
  */
 export function approximateNextRun(
   trigger: RoutineTrigger,
   now: Date,
 ): Date | null {
   if (trigger === null || trigger.kind === "cron") return null;
-  return nextPresetFireAfter(cronExpressionForPreset(trigger), now);
+  try {
+    return nextCronFireAfter(cronExpressionForPreset(trigger), now);
+  } catch {
+    return null;
+  }
 }
