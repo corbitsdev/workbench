@@ -35,7 +35,8 @@ const SHORTCUTS = [
   {
     to: "/library",
     title: "Library",
-    description: "Browse the workflow definitions running across your benches.",
+    description:
+      "Browse the documents, exports, and artifacts your workflows produce.",
   },
 ] as const;
 

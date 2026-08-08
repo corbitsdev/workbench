@@ -5,20 +5,24 @@
 // list shows.
 
 import {
+  Bot,
   Home,
   Library,
   MessageSquare,
   Settings,
   ShieldCheck,
+  Sparkles,
   Workflow,
 } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
+import { AgentsRoute } from "./pages/agents-page";
 import { ApprovalsRoute } from "./pages/approvals-page";
 import { ChatPage } from "./pages/chat-page";
 import { HomeRoute } from "./pages/home-page";
 import { LibraryRoute } from "./pages/library-page";
 import { SettingsRoute } from "./pages/settings-page";
+import { SkillsRoute } from "./pages/skills-page";
 import { WorkflowsRoute } from "./pages/workflows-page";
 
 /** Landing point for a session the first-login hook just provisioned a
@@ -72,6 +76,18 @@ export const APP_ROUTES: readonly AppRoute[] = [
     label: "Library",
     icon: <Library />,
     render: () => <LibraryRoute />,
+  },
+  {
+    path: "/agents",
+    label: "Agents",
+    icon: <Bot />,
+    render: () => <AgentsRoute />,
+  },
+  {
+    path: "/skills",
+    label: "Skills",
+    icon: <Sparkles />,
+    render: () => <SkillsRoute />,
   },
   {
     path: "/approvals",

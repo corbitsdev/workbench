@@ -5,10 +5,15 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import type { ArtifactSummary } from "@corbits/artifact-ui";
+import type { Channel } from "@corbits/chat-ui";
+
 import type { APIQuery, Approval, WorkflowRun } from "../src/api";
+import { AgentsPage } from "../src/pages/agents-page";
 import { ApprovalsPage } from "../src/pages/approvals-page";
 import { HomePage } from "../src/pages/home-page";
 import { LibraryPage } from "../src/pages/library-page";
+import { SkillsPage } from "../src/pages/skills-page";
 import { WorkflowsPage } from "../src/pages/workflows-page";
 
 function ready<T>(data: T): APIQuery<T> {
@@ -33,9 +38,24 @@ describe("empty states", () => {
     expect(markup).toContain("No active workflows");
   });
 
-  test("library says it is empty", () => {
-    const markup = renderToStaticMarkup(<LibraryPage runs={emptyPage} />);
-    expect(markup).toContain("The library is empty");
+  test("library teaches what will appear once the seam is real", () => {
+    const markup = renderToStaticMarkup(<LibraryPage artifacts={[]} />);
+    expect(markup).toContain("No artifacts yet");
+    expect(markup).toContain("hub doesn");
+    expect(markup).toContain("expose an artifact store");
+  });
+
+  test("skills describes itself instead of faking content", () => {
+    const markup = renderToStaticMarkup(<SkillsPage />);
+    expect(markup).toContain("Skills aren");
+    expect(markup).toContain("built yet");
+  });
+
+  test("agents reports a missing session instead of empty panels", () => {
+    const markup = renderToStaticMarkup(
+      <AgentsPage tenant={unauthenticated} />,
+    );
+    expect(markup).toContain("Sign in required");
   });
 
   test("approvals says nothing is waiting", () => {
@@ -119,60 +139,53 @@ describe("live data", () => {
     expect(markup).toContain("No active workflows");
   });
 
-  test("library shows each definition once across its runs", () => {
-    const secondRunSameDefinition: WorkflowRun = {
-      ...run,
-      id: "run_2",
-      address: "run_2@acme.localhost",
-    };
+  const reportArtifact: ArtifactSummary = {
+    id: "art_1",
+    title: "Q3 report",
+    kind: "deck",
+    ownerName: "Ada",
+    createdAt: "2026-08-01T00:00:00.000Z",
+  };
+  const csvArtifact: ArtifactSummary = {
+    id: "art_2",
+    title: "Signups export",
+    kind: "csv",
+    ownerName: null,
+    createdAt: "2026-08-02T00:00:00.000Z",
+  };
+
+  test("library renders every artifact it's given", () => {
     const markup = renderToStaticMarkup(
-      <LibraryPage
-        runs={ready({
-          data: [run, secondRunSameDefinition],
-          nextCursor: null,
-        })}
-      />,
+      <LibraryPage artifacts={[reportArtifact, csvArtifact]} />,
     );
-    expect(markup).toContain("Researcher");
-    expect(markup).toContain("Acme");
-    expect(markup.match(/Researcher/g)?.length).toBe(1);
+    expect(markup).toContain("Q3 report");
+    expect(markup).toContain("Signups export");
   });
 
-  test("library never shows a channel-host definition card", () => {
-    const channelHostRun: WorkflowRun = {
-      ...run,
-      id: "run_2",
-      definitionId: "wfd_2",
-      definitionName: "ins-cd03d8e3",
-      address: "run_2@acme.localhost",
-    };
+  const channel: Channel = {
+    id: "chan_1",
+    title: "general",
+    kind: "channel",
+    pinned: false,
+    participants: [{ address: "echo@acme.localhost", handle: "echo" }],
+  };
+
+  test("agents lists channels and their participants by handle, not raw address", () => {
     const markup = renderToStaticMarkup(
-      <LibraryPage
-        runs={ready({ data: [run, channelHostRun], nextCursor: null })}
+      <AgentsPage
+        tenant={ready({ tenantId: "tenant_1", channels: [channel] })}
       />,
     );
-    expect(markup).toContain("Researcher");
-    expect(markup).not.toContain("ins-cd03d8e3");
+    expect(markup).toContain("general");
+    expect(markup).toContain("@echo");
+    expect(markup).toContain('title="echo@acme.localhost"');
   });
 
-  test("library shows a card per distinct definition", () => {
-    const runOfOtherDefinition: WorkflowRun = {
-      ...run,
-      id: "run_2",
-      definitionId: "wfd_2",
-      definitionName: "Summarizer",
-      address: "run_2@acme.localhost",
-    };
+  test("agents says there's no channel to invite into", () => {
     const markup = renderToStaticMarkup(
-      <LibraryPage
-        runs={ready({
-          data: [run, runOfOtherDefinition],
-          nextCursor: null,
-        })}
-      />,
+      <AgentsPage tenant={ready({ tenantId: "tenant_1", channels: [] })} />,
     );
-    expect(markup.match(/Researcher/g)?.length).toBe(1);
-    expect(markup.match(/Summarizer/g)?.length).toBe(1);
+    expect(markup).toContain("No channel to invite an agent into");
   });
 
   test("home counts what the hub reports", () => {
