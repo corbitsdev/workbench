@@ -125,7 +125,42 @@ transaction that goes on to perform the two writes. This is not a
 destination-tenant deletion committed by another transaction blocks on
 these locks until the move's transaction finishes, rather than landing
 in a window between the check and the write and letting the move
-proceed on since-revoked authority.
+proceed on since-revoked authority. `createDrizzleChannelTenancyStore`
+is the only implementation of this — the row locks, and the real
+`@intx/authz` `evaluateGrants` call, only exist on the Postgres-backed
+store, never on the in-memory test double — and `test/isolation`'s
+"chat channel move" suite drives it to a real `{ kind: "moved" }`
+outcome end to end against Postgres, then re-reads both
+`channel_tenancy.parent_tenant_id` and `tenant.parentId` fresh to
+confirm the writes actually landed, rather than trusting the response
+body alone.
+
+A third check, structural rather than authorization-based, runs
+alongside these two: `newParentTenantId` cannot be the channel's own
+tenant, or descend from it. `moveChannelTenancy` walks the
+destination's ancestor chain — under the same row locks, inside the
+same transaction — looking for the channel's own tenant id; finding it
+means completing the move would make the channel its own ancestor, so
+the move is rejected with `{ kind: "cycle" }` (`409 conflict` over
+HTTP) regardless of what grants the caller holds. `tenant.parentId` is
+a plain self-referencing foreign key with no cycle constraint of its
+own — Postgres will happily store a self-parent or a longer loop — so
+this check is the only thing standing between a hierarchy this document
+describes as a tree and one that, left unguarded, could become
+cyclic. Nothing today walks `parentId` upward except this check itself,
+so a cycle is not exploitable yet, but any future code that does
+(breadcrumbs, an ancestor-scoped query, an admin tenant tree) would
+infinite-loop on a cyclic tree with no way to detect how it got there.
+
+## Indexing
+
+`channel_tenancy` carries a `PRIMARY KEY (channel_id)` and a
+`UNIQUE (tenant_id)`, but `listChildChannelTenancies` — read on every
+`GET .../chat/channels` call — filters on `parent_tenant_id`, a column
+neither constraint indexes. Migration `0006_channel_tenancy_parent_index`
+adds `channel_tenancy_parent_tenant_id_idx` on `parent_tenant_id` so that
+read stays an index scan as the table grows, rather than a sequential
+scan on every listing request.
 
 ## What still lives in the parent bench
 
