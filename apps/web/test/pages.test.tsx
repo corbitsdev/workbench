@@ -178,7 +178,7 @@ describe("live data", () => {
     );
     expect(markup).toContain("general");
     expect(markup).toContain("@echo");
-    expect(markup).toContain('title="echo@acme.localhost"');
+    expect(markup).not.toContain("echo@acme.localhost");
   });
 
   test("agents says there's no channel to invite into", () => {
