@@ -7,9 +7,23 @@
 // stays extractable on its own.
 import postgres from "postgres";
 
+import { computeNextFireAt, type RoutineTriggerT } from "./trigger";
+
+type PostgresSql = ReturnType<typeof postgres>;
+
 export interface RoutineMigration {
   name: string;
   sql: string;
+  /**
+   * An optional JS-driven follow-up, run immediately after `sql` inside
+   * the same migration step — for work `sql` alone can't do, like
+   * backfilling a computed column from data already in the table. Kept
+   * separate from `sql` (rather than folding everything into one big
+   * function) so every migration's schema change stays a plain,
+   * reviewable SQL string; only the ones that need computed backfill
+   * carry one.
+   */
+  backfill?: (sql: PostgresSql) => Promise<void>;
 }
 
 export const routineMigrations: readonly RoutineMigration[] = [
@@ -52,6 +66,29 @@ export const routineMigrations: readonly RoutineMigration[] = [
       ALTER TABLE "routine" ADD COLUMN IF NOT EXISTS "last_fire_at" timestamptz;
       CREATE INDEX IF NOT EXISTS "routine_next_fire_at_idx" ON "routine" ("next_fire_at") WHERE "enabled" AND "next_fire_at" IS NOT NULL;
     `,
+    // The new column starts NULL for every pre-existing row, and
+    // `listDueRoutines`'s `nextFireAt <= now` treats NULL as "never
+    // due" — without this backfill, every routine that existed before
+    // this migration would stop firing forever, silently, the moment
+    // it deploys. Every enabled, non-deleted, timer-triggered routine
+    // gets a fresh `nextFireAt` computed from its own trigger, exactly
+    // the same way `createRoutine` computes one for a brand new row.
+    async backfill(sql) {
+      const rows = await sql<{ id: string; trigger: RoutineTriggerT }[]>`
+        SELECT "id", "trigger" FROM "routine"
+        WHERE "enabled" = true
+          AND "deleted_at" IS NULL
+          AND "trigger" IS NOT NULL
+          AND "next_fire_at" IS NULL
+      `;
+      const now = new Date();
+      for (const row of rows) {
+        const nextFireAt = computeNextFireAt(row.trigger, now);
+        await sql`
+          UPDATE "routine" SET "next_fire_at" = ${nextFireAt} WHERE "id" = ${row.id}
+        `;
+      }
+    },
   },
   {
     name: "0004_routine_soft_delete",
@@ -100,6 +137,9 @@ export async function applyRoutineMigrations(
       if (alreadyApplied.has(migration.name)) continue;
       try {
         await sql.unsafe(migration.sql);
+        if (migration.backfill !== undefined) {
+          await migration.backfill(sql);
+        }
         await sql.unsafe(
           `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
           [migration.name],
