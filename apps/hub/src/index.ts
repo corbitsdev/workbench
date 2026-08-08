@@ -85,13 +85,16 @@ const DEFAULT_CHANNEL_HOST_INFERENCE_PREFERENCES = [
 
 // Open signup is safe by enumeration: BYOK means there is nothing free
 // to burn, and the hosted deployment only ever runs Corbits-signed
-// packages, so signup mints no operator-credential grants. Only
-// email+password signup is wired up — it is the only path anything in
-// apps/web actually drives end to end. OTP verification and social
-// sign-in return once a transactional-email credential and real UI
-// exist for them; wiring either in ahead of that would be dead surface
-// that also risks logging a verification secret with nowhere honest to
-// send it.
+// packages, so signup mints no operator-credential grants.
+// Email+password signup is always wired up. Google/GitHub OAuth are
+// wired up too, but only the providers `readHubConfig` found a full
+// credential pair for — better-auth's own `socialProviders` map is
+// literally the set config.socialProviders resolved to, so a provider
+// with no credential here never appears on the hub's auth handler no
+// matter what the client asks for. OTP verification returns once a
+// transactional-email credential and real UI exist for it; wiring it
+// in ahead of that would be dead surface that also risks logging a
+// verification secret with nowhere honest to send it.
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
   return {
@@ -129,6 +132,7 @@ export async function createHub(config: HubConfig) {
     secret: config.sessionSecret,
     database: drizzleAdapter(db, { provider: "pg" }),
     emailAndPassword: { enabled: true },
+    socialProviders: config.socialProviders,
     rateLimit: {
       // Explicit and always on: better-auth's own default only enables
       // this in production (`enabled ?? isProduction`), which would
@@ -412,6 +416,15 @@ export async function createHub(config: HubConfig) {
     onboardingDeps.seedModel = config.seedModel;
 
   app.route("/api/onboarding", createOnboardingRoutes(onboardingDeps));
+
+  // Tells the signed-out screen which OAuth buttons to draw, without
+  // exposing the credentials themselves — just which providers a full
+  // pair was configured for. No session or tenant is required to ask,
+  // since this decides what the sign-in screen even offers.
+  const enabledSocialProviders = Object.keys(config.socialProviders);
+  app.get("/api/auth-config", (c) =>
+    c.json({ socialProviders: enabledSocialProviders }),
+  );
 
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
   return {

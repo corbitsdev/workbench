@@ -26,6 +26,7 @@ const config: HubConfig = {
   hubDataDir: path.join(root, "data"),
   hubStaticDir: staticDir,
   signupRateLimit: { windowSeconds: 60, max: 5 },
+  socialProviders: {},
 };
 
 const closers: (() => Promise<void>)[] = [];

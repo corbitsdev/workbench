@@ -170,6 +170,13 @@ aside[data-collapsed="true"] .app-identity-dock {
   max-width: 24rem;
 }
 
+.auth-social-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
 .auth-panel {
   position: relative;
   display: none;

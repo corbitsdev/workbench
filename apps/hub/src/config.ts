@@ -12,6 +12,12 @@
 // the default workflow set deployed at first login. Left unset, that
 // deployment step is skipped — the bench is still provisioned, only
 // the default workflow deployment is skipped, and the skip is logged.
+//
+// GOOGLE_CLIENT_ID/SECRET and GITHUB_CLIENT_ID/SECRET are each an
+// optional pair: set both to enable that OAuth provider on the sign-in
+// screen, leave both unset to leave it off — email/password remains
+// available either way. Setting only one half of a pair is a boot-time
+// error, never a silently-disabled provider.
 
 import { type } from "arktype";
 
@@ -48,6 +54,18 @@ const HubEnv = type({
   "ANTHROPIC_API_KEY?": type("string > 0").describe(
     "your Anthropic API key; optional, enables the default workflow set for freshly self-served benches",
   ),
+  "GOOGLE_CLIENT_ID?": type("string > 0").describe(
+    "Google OAuth client id; set together with GOOGLE_CLIENT_SECRET to enable Google sign-in",
+  ),
+  "GOOGLE_CLIENT_SECRET?": type("string > 0").describe(
+    "Google OAuth client secret; set together with GOOGLE_CLIENT_ID to enable Google sign-in",
+  ),
+  "GITHUB_CLIENT_ID?": type("string > 0").describe(
+    "GitHub OAuth client id; set together with GITHUB_CLIENT_SECRET to enable GitHub sign-in",
+  ),
+  "GITHUB_CLIENT_SECRET?": type("string > 0").describe(
+    "GitHub OAuth client secret; set together with GITHUB_CLIENT_ID to enable GitHub sign-in",
+  ),
 });
 
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
@@ -64,6 +82,13 @@ export type ModelSource = {
   readonly apiKey: string;
 };
 
+export type SocialProviderId = "google" | "github";
+
+export type SocialProviderCredential = {
+  readonly clientId: string;
+  readonly clientSecret: string;
+};
+
 export type HubConfig = {
   readonly databaseUrl: string;
   readonly baseUrl: string;
@@ -77,9 +102,61 @@ export type HubConfig = {
     readonly max: number;
   };
   readonly seedModel?: ModelSource;
+  readonly socialProviders: Readonly<
+    Partial<Record<SocialProviderId, SocialProviderCredential>>
+  >;
 };
 
 type ParsedHubEnv = typeof HubEnv.infer;
+
+const SOCIAL_PROVIDER_ENV_KEYS: Record<
+  SocialProviderId,
+  {
+    readonly id: "GOOGLE_CLIENT_ID" | "GITHUB_CLIENT_ID";
+    readonly secret: "GOOGLE_CLIENT_SECRET" | "GITHUB_CLIENT_SECRET";
+  }
+> = {
+  google: { id: "GOOGLE_CLIENT_ID", secret: "GOOGLE_CLIENT_SECRET" },
+  github: { id: "GITHUB_CLIENT_ID", secret: "GITHUB_CLIENT_SECRET" },
+};
+
+/**
+ * Builds the social-provider credential map. A provider is enabled only
+ * when both its id and secret are set; a half-configured pair (one set,
+ * the other missing) is a boot-time error — never a silently-disabled
+ * provider, per the DX mandate that misconfiguration fails loudly.
+ */
+function socialProvidersFrom(
+  parsed: ParsedHubEnv,
+): Readonly<Partial<Record<SocialProviderId, SocialProviderCredential>>> {
+  const providers: Partial<Record<SocialProviderId, SocialProviderCredential>> =
+    {};
+  const errors: string[] = [];
+  for (const [providerId, keys] of Object.entries(SOCIAL_PROVIDER_ENV_KEYS) as [
+    SocialProviderId,
+    (typeof SOCIAL_PROVIDER_ENV_KEYS)[SocialProviderId],
+  ][]) {
+    const clientId = parsed[keys.id];
+    const clientSecret = parsed[keys.secret];
+    if (clientId === undefined && clientSecret === undefined) continue;
+    if (clientId === undefined || clientSecret === undefined) {
+      errors.push(
+        `${keys.id} and ${keys.secret} must be set together to enable ${providerId} sign-in; only one is set`,
+      );
+      continue;
+    }
+    providers[providerId] = { clientId, clientSecret };
+  }
+  if (errors.length > 0) {
+    throw new Error(
+      [
+        `invalid hub environment: ${errors.join("; ")}`,
+        "Set both values in .env, or unset both to leave the provider disabled; see .env.example.",
+      ].join("\n"),
+    );
+  }
+  return providers;
+}
 
 function seedModelFrom(parsed: ParsedHubEnv): ModelSource | undefined {
   const apiKey = parsed.ANTHROPIC_API_KEY;
@@ -113,6 +190,7 @@ export function readHubConfig(
   }
 
   const seedModel = seedModelFrom(parsed);
+  const socialProviders = socialProvidersFrom(parsed);
 
   const hubConfig: { -readonly [K in keyof HubConfig]: HubConfig[K] } = {
     databaseUrl: parsed.DATABASE_URL,
@@ -120,6 +198,7 @@ export function readHubConfig(
     sessionSecret: parsed.SESSION_SECRET,
     hubDataDir: parsed.HUB_DATA_DIR,
     hubStaticDir: parsed.HUB_STATIC_DIR,
+    socialProviders,
     signupRateLimit: {
       windowSeconds: parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS
         ? Number(parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS)

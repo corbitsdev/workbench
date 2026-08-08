@@ -2,12 +2,13 @@
 // seeds a default dev account, and hosted deployments already have accounts —
 // with creating an account one click away in the form's footer.
 
+import { Button } from "@corbits/react-ui";
 import { LoginForm } from "@corbits/react-ui/blocks/login/login-form";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AuthLayout } from "./auth/auth-layout";
-import { signIn, signUp } from "./session";
-import type { SessionUser } from "./session";
+import { fetchAuthConfig, signIn, signInSocial, signUp } from "./session";
+import type { SessionUser, SocialProviderId } from "./session";
 
 type Mode = "sign-in" | "sign-up";
 
@@ -24,6 +25,11 @@ const COPY = {
   },
 } as const;
 
+const SOCIAL_PROVIDER_LABEL: Record<SocialProviderId, string> = {
+  google: "Continue with Google",
+  github: "Continue with GitHub",
+};
+
 export function AuthScreen({
   onSignedIn,
 }: {
@@ -32,6 +38,19 @@ export function AuthScreen({
   const [mode, setMode] = useState<Mode>("sign-in");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [socialProviders, setSocialProviders] = useState<
+    readonly SocialProviderId[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchAuthConfig().then((providers) => {
+      if (!cancelled) setSocialProviders(providers);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const submit = async (credentials: {
     readonly email: string;
@@ -51,6 +70,18 @@ export function AuthScreen({
     setBusy(false);
   };
 
+  const submitSocial = async (provider: SocialProviderId) => {
+    setBusy(true);
+    setError(null);
+    const result = await signInSocial(provider);
+    // A successful call already navigated the browser away to the
+    // provider; `result` only ever comes back non-null on failure.
+    if (result !== null && !result.ok) {
+      setError(result.message);
+      setBusy(false);
+    }
+  };
+
   const copy = COPY[mode];
   return (
     <AuthLayout>
@@ -61,6 +92,21 @@ export function AuthScreen({
         error={error}
         footer={
           <>
+            {socialProviders.length > 0 && (
+              <div className="auth-social-providers">
+                {socialProviders.map((provider) => (
+                  <Button
+                    key={provider}
+                    type="button"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void submitSocial(provider)}
+                  >
+                    {SOCIAL_PROVIDER_LABEL[provider]}
+                  </Button>
+                ))}
+              </div>
+            )}
             {copy.switchPrompt}{" "}
             <button
               type="button"

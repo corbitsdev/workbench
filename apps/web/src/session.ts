@@ -113,6 +113,85 @@ export function signUp(email: string, password: string): Promise<AuthResult> {
   return postAuth("/api/auth/sign-up/email", { name, email, password });
 }
 
+const SocialProviderId = type("'google' | 'github'");
+export type SocialProviderId = typeof SocialProviderId.infer;
+
+const AuthConfig = type({ socialProviders: SocialProviderId.array() });
+
+/**
+ * Asks the hub which OAuth providers a full credential pair was
+ * configured for, so the sign-in screen only draws buttons for
+ * providers that actually work. Fails soft to "none configured" — a
+ * broken auth-config fetch should degrade to email/password, never
+ * block the auth screen from rendering at all.
+ */
+export async function fetchAuthConfig(): Promise<readonly SocialProviderId[]> {
+  try {
+    const response = await fetch("/api/auth-config", {
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return [];
+    const body: unknown = await response.json();
+    const parsed = AuthConfig(body);
+    return parsed instanceof type.errors ? [] : parsed.socialProviders;
+  } catch {
+    return [];
+  }
+}
+
+const SocialSignInResponse = type({ url: "string" });
+
+/**
+ * Starts better-auth's OAuth redirect flow: better-auth's
+ * sign-in/social endpoint does not itself redirect the browser — it
+ * answers with the provider's authorization URL as JSON, and the
+ * client is the one that navigates there. The provider then redirects
+ * back to better-auth's own callback endpoint, which exchanges the
+ * code, sets the session cookie, and only then redirects the browser
+ * to `callbackURL` — so by the time this SPA reloads there, the normal
+ * `fetchSession` probe on mount already finds a signed-in session with
+ * no dedicated callback route needed on this side.
+ */
+export async function signInSocial(
+  provider: SocialProviderId,
+): Promise<AuthResult | null> {
+  try {
+    const response = await fetch("/api/auth/sign-in/social", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider,
+        callbackURL: window.location.origin,
+      }),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const failure = FailureBody(payload);
+      return {
+        ok: false,
+        message:
+          failure instanceof type.errors
+            ? `The hub answered ${response.status} starting ${provider} sign-in.`
+            : failure.message,
+      };
+    }
+    const parsed = SocialSignInResponse(payload);
+    if (parsed instanceof type.errors) {
+      return {
+        ok: false,
+        message: `Unexpected response starting ${provider} sign-in: ${parsed.summary}`,
+      };
+    }
+    window.location.assign(parsed.url);
+    return null;
+  } catch (cause) {
+    return {
+      ok: false,
+      message: cause instanceof Error ? cause.message : String(cause),
+    };
+  }
+}
+
 export async function signOut(): Promise<void> {
   await fetch("/api/auth/sign-out", {
     method: "POST",
