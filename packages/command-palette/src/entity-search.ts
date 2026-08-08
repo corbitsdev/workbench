@@ -42,16 +42,30 @@ export type SearchEntitiesInput = {
  * every run into the list the instant the palette opens would make the
  * static commands compete with noise for the first keystroke.
  */
-export function searchEntities({ query, channels, runs, pageSize, offset }: SearchEntitiesInput): EntitySearchPage {
+export function searchEntities({
+  query,
+  channels,
+  runs,
+  pageSize,
+  offset,
+}: SearchEntitiesInput): EntitySearchPage {
   if (query.trim().length === 0) return { results: [], hasMore: false };
 
   const matched: EntitySearchResult[] = [
     ...channels
       .filter((channel) => matchesQuery(channel.name, query))
-      .map((channel) => ({ id: channel.id, title: channel.name, category: "channels" as const })),
+      .map((channel) => ({
+        id: channel.id,
+        title: channel.name,
+        category: "channels" as const,
+      })),
     ...runs
       .filter((run) => matchesQuery(run.name, query))
-      .map((run) => ({ id: run.id, title: run.name, category: "routines" as const })),
+      .map((run) => ({
+        id: run.id,
+        title: run.name,
+        category: "routines" as const,
+      })),
   ];
 
   const page = matched.slice(offset, offset + pageSize);

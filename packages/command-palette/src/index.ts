@@ -8,4 +8,9 @@ export { buildStaticCommands, matchesQuery } from "./static-commands";
 export type { StaticCommand, StaticRoute } from "./static-commands";
 
 export { searchEntities } from "./entity-search";
-export type { EntitySearchPage, EntitySearchResult, SearchableEntity, SearchEntitiesInput } from "./entity-search";
+export type {
+  EntitySearchPage,
+  EntitySearchResult,
+  SearchableEntity,
+  SearchEntitiesInput,
+} from "./entity-search";

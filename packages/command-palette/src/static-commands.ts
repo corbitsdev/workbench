@@ -13,7 +13,9 @@ export type StaticRoute = {
   readonly label: string;
 };
 
-export function buildStaticCommands(routes: readonly StaticRoute[]): readonly StaticCommand[] {
+export function buildStaticCommands(
+  routes: readonly StaticRoute[],
+): readonly StaticCommand[] {
   return routes.map((route) => ({
     id: `route:${route.path}`,
     title: route.label,

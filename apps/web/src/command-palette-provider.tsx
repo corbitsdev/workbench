@@ -28,17 +28,26 @@ const STATIC_COMMANDS = buildStaticCommands(
  * switches to passing `@corbits/command-palette`'s `searchEntities` result
  * through `onQueryChange` instead — see docs/command-palette.md.
  */
-export function CommandPaletteProvider({ navigate }: { readonly navigate: Navigate }) {
+export function CommandPaletteProvider({
+  navigate,
+}: {
+  readonly navigate: Navigate;
+}) {
   const { selectedTenantId } = useBench();
   const [open, setOpen] = useState(false);
-  const [channels, setChannels] = useState<readonly { id: string; name: string }[]>([]);
+  const [channels, setChannels] = useState<
+    readonly { id: string; name: string }[]
+  >([]);
   const runsQuery = useAPIQuery("/api/me/workflows/runs", RunsSchema);
 
   useEffect(() => {
     if (!open || selectedTenantId === null) return;
     let cancelled = false;
     void listChannels(selectedTenantId, "channel").then((result) => {
-      if (!cancelled) setChannels(result.map((channel) => ({ id: channel.id, name: channel.title })));
+      if (!cancelled)
+        setChannels(
+          result.map((channel) => ({ id: channel.id, name: channel.title })),
+        );
     });
     return () => {
       cancelled = true;
