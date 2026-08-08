@@ -1,0 +1,30 @@
+{
+  "name": "@corbits/bench-ui",
+  "private": true,
+  "description": "Bench (tenant) management UI: the switcher, the benches page, and member/invite management, composed from the published component library over Interchange's native tenancy routes",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/react-ui": "github:corbitsdev/react-ui#4fd32be5d07f046a0c3bb5450d343b3cedfd94a6",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:",
+    "lucide-react": "^1.27.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "typescript": "catalog:"
+  }
+}
