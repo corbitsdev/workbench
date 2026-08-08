@@ -254,6 +254,28 @@
         "typescript": "catalog:",
       },
     },
+    "packages/schedules": {
+      "name": "@corbits/schedules",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/folded-runs": "workspace:*",
+        "@intx/db": "workspace:*",
+        "@intx/hub-api": "workspace:*",
+        "@intx/hub-common": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+        "croner": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "^4.11.9",
+        "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/settings-ui": {
       "name": "@corbits/settings-ui",
       "version": "0.0.1",
@@ -602,6 +624,7 @@
     "@types/semver": "^7.7.1",
     "arktype": "^2.2.0",
     "better-auth": "^1.4.18",
+    "croner": "^9.1.0",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.11.9",
     "isomorphic-git": "^1.27.2",
@@ -687,6 +710,8 @@
     "@corbits/folded-runs": ["@corbits/folded-runs@workspace:packages/folded-runs"],
 
     "@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#4fd32be", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-slot": "^1.2.3", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-4fd32be", "sha512-EseC72pNBetyV1/yDqetglbduSOvK+ACtDKbn6cjJAJPJWvwqa2yevNUWqV/KfkHsCP/F9f/ErOSe80H1FgtNg=="],
+
+    "@corbits/schedules": ["@corbits/schedules@workspace:packages/schedules"],
 
     "@corbits/settings-ui": ["@corbits/settings-ui@workspace:packages/settings-ui"],
 
@@ -1065,6 +1090,8 @@
     "convert-source-map": ["convert-source-map@2.0.0", "", {}, "sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg=="],
 
     "crc-32": ["crc-32@1.2.2", "", { "bin": { "crc32": "bin/crc32.njs" } }, "sha512-ROmzCKrTnOwybPcJApAA6WBWij23HVfGVNKqqrZpuyZOHqK2CwHSvpGuyt/UNNvaIjEd8X5IFGp4Mh+Ie1IHJQ=="],
+
+    "croner": ["croner@9.1.0", "", {}, "sha512-p9nwwR4qyT5W996vBZhdvBCnMhicY5ytZkR4D1Xj0wuTDEiMnjwR57Q3RXYY/s0EpX6Ay3vgIcfaR+ewGHsi+g=="],
 
     "cross-spawn": ["cross-spawn@7.0.6", "", { "dependencies": { "path-key": "^3.1.0", "shebang-command": "^2.0.0", "which": "^2.0.1" } }, "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA=="],
 
