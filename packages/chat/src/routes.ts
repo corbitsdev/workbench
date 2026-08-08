@@ -429,21 +429,25 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const kind = c.req.query("kind");
       const rows = await deps.store.listChannelSettings(tenant.id, kind);
       // Every channel_settings row here is scoped to this bench
-      // already — the child-tenancy link is annotated on top, never
-      // used to widen or narrow this query. A row with no link is a
-      // LEGACY channel: it predates this rollout (created before
-      // channel tenancy existed) and carries no native tenant of its
-      // own. Legacy rows are surfaced here, never silently dropped —
-      // "no fallbacks" means the gap stays visible until every legacy
-      // channel is backfilled a tenancy, at which point this branch
-      // and the `legacy` field below should both be deleted.
-      const links = await deps.tenancy.listChildChannelTenancies(tenant.id);
-      const linkByChannelId = new Map(
-        links.map((link) => [link.channelId, link]),
+      // already — the tenancy link is annotated on top, never used to
+      // widen or narrow this query. A moved channel keeps its
+      // channel_settings row in the bench it was created in forever,
+      // so its link must be read by its own channel id, never by
+      // "children of this bench" — that filter goes stale the moment
+      // a channel moves elsewhere and would wrongly report it as
+      // legacy. A row with no link at all is a genuine LEGACY channel:
+      // it predates this rollout (created before channel tenancy
+      // existed) and carries no native tenant of its own. Legacy rows
+      // are surfaced here, never silently dropped — "no fallbacks"
+      // means the gap stays visible until every legacy channel is
+      // backfilled a tenancy, at which point this branch and the
+      // `legacy` field below should both be deleted.
+      const links = await Promise.all(
+        rows.map((row) => deps.tenancy.getChannelTenancy(row.channelId)),
       );
       return c.json({
-        items: rows.map((row) => {
-          const link = linkByChannelId.get(row.channelId);
+        items: rows.map((row, index) => {
+          const link = links[index];
           return link !== undefined
             ? withTenancy(channelView(row), link)
             : { ...channelView(row), tenancy: null, legacy: true };
