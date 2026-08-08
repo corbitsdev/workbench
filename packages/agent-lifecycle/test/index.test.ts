@@ -203,6 +203,54 @@ describe("createAgentLifecycle", () => {
     expect(undeployCalls).toEqual([]);
   });
 
+  test("a sweep tick that blocks on undeploy is not re-entered by the next tick", async () => {
+    const undeployCalls: string[] = [];
+    const routable = new Set(["agent-1@t.test"]);
+    let releaseUndeploy: (() => void) | undefined;
+    let concurrentUndeploys = 0;
+    let maxConcurrentUndeploys = 0;
+
+    const lifecycle = createAgentLifecycle({
+      idleSleepMs: 10,
+      sweepIntervalMs: 5,
+      isRoutable: (address) => routable.has(address),
+      undeploy: async (address) => {
+        concurrentUndeploys += 1;
+        maxConcurrentUndeploys = Math.max(
+          maxConcurrentUndeploys,
+          concurrentUndeploys,
+        );
+        undeployCalls.push(address);
+        await new Promise<void>((resolve) => {
+          releaseUndeploy = resolve;
+        });
+        concurrentUndeploys -= 1;
+        routable.delete(address);
+      },
+      wake: async () => undefined,
+      log,
+    });
+    stop = lifecycle.stop;
+
+    lifecycle.track("agent-1@t.test");
+    lifecycle.recordActivity("agent-1@t.test");
+
+    // Let the address go idle, then let several sweepIntervalMs ticks
+    // land while the first sweep's undeploy is still pending. If ticks
+    // overlapped, this would call undeploy on the same address a
+    // second time before the first has resolved.
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    await waitForTicks(1);
+    expect(undeployCalls).toEqual(["agent-1@t.test"]);
+
+    await waitForTicks(5);
+    expect(undeployCalls).toEqual(["agent-1@t.test"]);
+    expect(maxConcurrentUndeploys).toBe(1);
+
+    releaseUndeploy?.();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  });
+
   test("ensureAwake no-ops when already routable", async () => {
     const wakeCalls: string[] = [];
     const routable = new Set(["agent-1@t.test"]);

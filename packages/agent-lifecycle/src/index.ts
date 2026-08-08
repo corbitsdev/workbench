@@ -1,10 +1,14 @@
-// Idle-sleep and wake-on-mail for launched agent instances, decoupled
-// from any particular host: every side effect (whether an address is
-// currently deployed, tearing one down, redeploying one, whether one
-// is mid-turn) arrives as an injected port. This package never imports
-// a hub, a sidecar, or `@corbits/chat` — a caller wires its own
-// `getRoutableAddresses`/`sendAgentUndeploy`/redeploy-at-head closure
-// in, Scout-style, exactly as `packages/chat`'s adapter does.
+// A host-agnostic idle-sleep/wake-on-mail scheduler for launched agent
+// instances. `createAgentLifecycle` owns two things: a periodic sweep
+// that tears down addresses idle past `idleSleepMs`, and `ensureAwake`,
+// which redeploys an address on demand and coalesces concurrent callers
+// onto one in-flight wake. Every side effect that touches a real
+// host — whether an address is currently deployed, tearing one down,
+// redeploying one, whether one is mid-turn — arrives as an injected
+// port; this package never imports a hub, a sidecar, or
+// `@corbits/chat`. A caller wires its own
+// `isRoutable`/`undeploy`/`wake` closures in, Scout-style, exactly as
+// `packages/chat`'s adapter does.
 import type { getLogger } from "@intx/log";
 
 type Logger = ReturnType<typeof getLogger>;
@@ -108,8 +112,27 @@ export function createAgentLifecycle(
     }
   }
 
+  let sweepInFlight = false;
+
+  async function sweepTick(): Promise<void> {
+    // A slow `undeploy` can outlive a single sweepIntervalMs tick.
+    // Without this guard, the next tick would start a second sweep
+    // over the same tracked addresses while the first is still
+    // awaiting its undeploys, double-undeploying whatever the first
+    // sweep hasn't gotten to yet. Ticks that land while a sweep is
+    // still running are dropped; the next one after it finishes picks
+    // up wherever state has landed.
+    if (sweepInFlight) return;
+    sweepInFlight = true;
+    try {
+      await sweepOnce();
+    } finally {
+      sweepInFlight = false;
+    }
+  }
+
   const interval = setInterval(() => {
-    void sweepOnce();
+    void sweepTick();
   }, sweepIntervalMs);
   if (typeof interval.unref === "function") interval.unref();
 
