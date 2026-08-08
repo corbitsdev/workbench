@@ -338,6 +338,23 @@
         "typescript": "catalog:",
       },
     },
+    "packages/routines": {
+      "name": "@corbits/routines",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/db": "workspace:*",
+        "@intx/hub-api": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "catalog:",
+        "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/schedules": {
       "name": "@corbits/schedules",
       "version": "0.0.1",
@@ -838,6 +855,8 @@
     "@corbits/settings-ui": ["@corbits/settings-ui@workspace:packages/settings-ui"],
 
     "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
+
+    "@corbits/routines": ["@corbits/routines@workspace:packages/routines"],
 
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.10.2", "", {}, "sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w=="],
 
