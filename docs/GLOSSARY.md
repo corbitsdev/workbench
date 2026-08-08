@@ -34,6 +34,15 @@ would call a "bench" is one nothing else is parented under as a channel —
 in practice, the one they signed into, not one that showed up as a
 conversation in their sidebar.
 
+A **Routine** is never a second name for a **Run**, or for Interchange's
+own workflow concept — the three sit at different levels. A workflow
+definition is the deployable code; a run is one execution of it; a routine
+is the named, recurring (or manual) parent a person sets up over runs of a
+definition, holding the trigger, delivery channel, and run history a bare
+run does not carry. "Workflow" on its own always means Interchange's
+runtime concept — the definition or its runs — never a stand-in for
+routine.
+
 Naming conventions for this repository's packages:
 
 - Local packages are `@workbench/*`, with a kebab-case kind suffix where

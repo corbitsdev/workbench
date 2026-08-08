@@ -72,3 +72,23 @@ Like `@corbits/chat`, this package owns its own migrations
 independent of the platform's own schema and of any other package's
 ledger — extracting this package never has to disentangle its history
 from theirs.
+
+## Scheduling
+
+This package exposes `fireScheduledRoutine` but deliberately ships no
+scheduler of its own — firing a routine on its cadence is a host
+concern. The hub in this repo runs one: an in-process poller that
+wakes every 30 seconds, reads every enabled timer-triggered routine
+directly (bypassing `RoutineStore`'s tenant scoping, since a scheduler
+needs to enumerate across tenants), and fires whichever routine's
+cron expression matches the current minute.
+
+That poller is single-process and at-least-once, not a distributed
+cron engine. It is correct for exactly one hub replica. Running two or
+more hub replicas each with their own poller will double- (or
+n-times-) fire a routine's scheduled runs, because nothing coordinates
+which replica owns a given tick — a multi-replica deployment needs
+leader election or a dedicated scheduling worker before this scales
+past one hub process. "Run now" is unaffected by this limit; it always
+launches through the same single launch path regardless of replica
+count.
