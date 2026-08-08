@@ -5,25 +5,17 @@
 // story" install contract. Bookkeeping is its own ledger table, never
 // the platform's drizzle journal, so this package's migration history
 // stays extractable on its own.
+//
+// A single migration, in its final shape, not a sequence of ALTERs
+// bolted on as the feature grew: this package predates any real
+// traffic, so there is no pre-existing data to carry forward and no
+// earlier shape to migrate away from. Hard cutover — one file, no
+// backfill, nothing to reconcile.
 import postgres from "postgres";
-
-import { computeNextFireAt, type RoutineTriggerT } from "./trigger";
-
-type PostgresSql = ReturnType<typeof postgres>;
 
 export interface RoutineMigration {
   name: string;
   sql: string;
-  /**
-   * An optional JS-driven follow-up, run immediately after `sql` inside
-   * the same migration step — for work `sql` alone can't do, like
-   * backfilling a computed column from data already in the table. Kept
-   * separate from `sql` (rather than folding everything into one big
-   * function) so every migration's schema change stays a plain,
-   * reviewable SQL string; only the ones that need computed backfill
-   * carry one.
-   */
-  backfill?: (sql: PostgresSql) => Promise<void>;
 }
 
 export const routineMigrations: readonly RoutineMigration[] = [
@@ -41,14 +33,14 @@ export const routineMigrations: readonly RoutineMigration[] = [
         "enabled" boolean NOT NULL DEFAULT true,
         "delivery_channel_id" text,
         "created_by" text NOT NULL,
+        "next_fire_at" timestamptz,
+        "last_fire_at" timestamptz,
+        "deleted_at" timestamptz,
         "created_at" timestamptz NOT NULL DEFAULT now(),
         "updated_at" timestamptz NOT NULL DEFAULT now()
       );
-    `,
-  },
-  {
-    name: "0002_routine_run",
-    sql: `
+      CREATE INDEX IF NOT EXISTS "routine_next_fire_at_idx" ON "routine" ("next_fire_at") WHERE "enabled" AND "next_fire_at" IS NOT NULL;
+
       CREATE TABLE IF NOT EXISTS "routine_run" (
         "tenant_id" text NOT NULL,
         "routine_id" text NOT NULL,
@@ -57,49 +49,6 @@ export const routineMigrations: readonly RoutineMigration[] = [
         "created_at" timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY ("tenant_id", "run_id")
       );
-    `,
-  },
-  {
-    name: "0003_routine_next_fire_at",
-    sql: `
-      ALTER TABLE "routine" ADD COLUMN IF NOT EXISTS "next_fire_at" timestamptz;
-      ALTER TABLE "routine" ADD COLUMN IF NOT EXISTS "last_fire_at" timestamptz;
-      CREATE INDEX IF NOT EXISTS "routine_next_fire_at_idx" ON "routine" ("next_fire_at") WHERE "enabled" AND "next_fire_at" IS NOT NULL;
-    `,
-    // The new column starts NULL for every pre-existing row, and
-    // `listDueRoutines`'s `nextFireAt <= now` treats NULL as "never
-    // due" — without this backfill, every routine that existed before
-    // this migration would stop firing forever, silently, the moment
-    // it deploys. Every enabled, timer-triggered routine gets a fresh
-    // `nextFireAt` computed from its own trigger, exactly the same way
-    // `createRoutine` computes one for a brand new row.
-    //
-    // No `deleted_at IS NULL` filter here: this migration runs before
-    // 0004_routine_soft_delete adds that column, so at this point in
-    // the sequence every row is, by definition, not soft-deleted — the
-    // predicate would be vacuously true if it existed, and referencing
-    // a column that doesn't exist yet aborts a from-scratch migration
-    // run outright.
-    async backfill(sql) {
-      const rows = await sql<{ id: string; trigger: RoutineTriggerT }[]>`
-        SELECT "id", "trigger" FROM "routine"
-        WHERE "enabled" = true
-          AND "trigger" IS NOT NULL
-          AND "next_fire_at" IS NULL
-      `;
-      const now = new Date();
-      for (const row of rows) {
-        const nextFireAt = computeNextFireAt(row.trigger, now);
-        await sql`
-          UPDATE "routine" SET "next_fire_at" = ${nextFireAt} WHERE "id" = ${row.id}
-        `;
-      }
-    },
-  },
-  {
-    name: "0004_routine_soft_delete",
-    sql: `
-      ALTER TABLE "routine" ADD COLUMN IF NOT EXISTS "deleted_at" timestamptz;
     `,
   },
 ];
@@ -143,9 +92,6 @@ export async function applyRoutineMigrations(
       if (alreadyApplied.has(migration.name)) continue;
       try {
         await sql.unsafe(migration.sql);
-        if (migration.backfill !== undefined) {
-          await migration.backfill(sql);
-        }
         await sql.unsafe(
           `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
           [migration.name],
