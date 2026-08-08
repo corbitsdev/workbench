@@ -659,6 +659,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               .map((participant) => participant.address)
           : mentionedParticipants(messageParts, participants);
       for (const participant of recipients) {
+        // Armed BEFORE the delivery, not lazily on a later read: reply
+        // bridges are in-memory and a host restart loses them, and a
+        // reply can arrive seconds after this send — arming here makes
+        // every delivery self-sufficient regardless of restart history.
+        deps.platform.ensureReplyBridge({
+          tenantId: tenant.id,
+          channelId,
+          agentChannelId: localPartOf(participant),
+        });
         await deps.platform.sendMail({
           tenantId: tenant.id,
           channelId: localPartOf(participant),

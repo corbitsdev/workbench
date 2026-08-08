@@ -84,7 +84,16 @@ export function useChannelStream(
         }
       };
 
-      for (const eventType of ["chat.settings", "chat.typing", "message"]) {
+      // "chat.agent" is the event name the server's channel stream
+      // actually emits for every agent-run event (mail delivered,
+      // inference progress, replies) — it is what makes a connected
+      // stream refresh the timeline at all.
+      for (const eventType of [
+        "chat.agent",
+        "chat.settings",
+        "chat.typing",
+        "message",
+      ]) {
         source.addEventListener(eventType, forward(eventType));
       }
     };
