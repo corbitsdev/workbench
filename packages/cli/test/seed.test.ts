@@ -70,7 +70,7 @@ describe("runSeed", () => {
   test("seeds the tenant catalog's inference source after the tenant is seeded", async () => {
     const { lines, log } = collector();
     const TIMESTAMP = "2026-01-01T00:00:00.000Z";
-    let runsCalls = 0;
+    const startedRuns: string[] = [];
     const handler: FakeHandler = (method, path) => {
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
@@ -124,24 +124,26 @@ describe("runSeed", () => {
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
       ) {
-        runsCalls += 1;
         return {
           status: 200,
-          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+          data: { runIds: [...startedRuns] },
         };
       }
       if (
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/mail`
-      )
+      ) {
+        const runId = `run_${startedRuns.length + 1}`;
+        startedRuns.push(runId);
         return {
           status: 202,
           data: {
             deploymentId: "dep_1",
             address: "ins_dep_1@workbench.localhost",
-            messageId: "<m1@workbench.localhost>",
+            messageId: `<m${startedRuns.length}@workbench.localhost>`,
           },
         };
+      }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
         return {
           status: 201,
@@ -245,7 +247,7 @@ describe("runSeed", () => {
   test("placeholderCredential opts into a launchable catalog without a real key", async () => {
     const { lines, log } = collector();
     const TIMESTAMP = "2026-01-01T00:00:00.000Z";
-    let runsCalls = 0;
+    const startedRuns: string[] = [];
     const handler: FakeHandler = (method, path) => {
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
@@ -299,24 +301,26 @@ describe("runSeed", () => {
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
       ) {
-        runsCalls += 1;
         return {
           status: 200,
-          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+          data: { runIds: [...startedRuns] },
         };
       }
       if (
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/mail`
-      )
+      ) {
+        const runId = `run_${startedRuns.length + 1}`;
+        startedRuns.push(runId);
         return {
           status: 202,
           data: {
             deploymentId: "dep_1",
             address: "ins_dep_1@workbench.localhost",
-            messageId: "<m1@workbench.localhost>",
+            messageId: `<m${startedRuns.length}@workbench.localhost>`,
           },
         };
+      }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
         return {
           status: 201,

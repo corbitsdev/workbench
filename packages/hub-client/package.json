@@ -15,6 +15,7 @@
   "dependencies": {
     "@intx/types": "workspace:*",
     "arktype": "catalog:",
+    "@corbits/assistant-workflow": "workspace:*",
     "@corbits/echo-workflow": "workspace:*"
   },
   "devDependencies": {

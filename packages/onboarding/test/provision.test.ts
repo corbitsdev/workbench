@@ -240,7 +240,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
 
   test("zero principals with a seed model configured: provisions under the operator tenant and seeds the default workflow", async () => {
     let principalsCalls = 0;
-    let runsCalls = 0;
+    const startedRuns: string[] = [];
     const api: ApiCall = async (method, path, body) => {
       if (method === "GET" && path === "/api/me/principals") {
         principalsCalls += 1;
@@ -352,10 +352,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/runs`
       ) {
-        runsCalls += 1;
         return {
           status: 200,
-          data: { runIds: runsCalls <= 1 ? [] : ["run_1"] },
+          data: { runIds: [...startedRuns] },
           cookies: [],
         };
       }
@@ -363,12 +362,14 @@ describe("provisionPersonalTenantIfNeeded", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/mail`
       ) {
+        const runId = `run_${startedRuns.length + 1}`;
+        startedRuns.push(runId);
         return {
           status: 202,
           data: {
             deploymentId: DEPLOYMENT_ID,
             address: "echo@x",
-            messageId: "m1",
+            messageId: `m${startedRuns.length}`,
           },
           cookies: [],
         };
@@ -399,7 +400,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
 
   test("a retry after tenant creation succeeded but seeding failed re-seeds instead of reporting a plain existing member", async () => {
     let assetCreateAttempts = 0;
-    let runsCalls = 0;
+    const startedRuns: string[] = [];
     let tenantCreated = false;
 
     const membership = () => ({
@@ -538,10 +539,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/runs`
       ) {
-        runsCalls += 1;
         return {
           status: 200,
-          data: { runIds: runsCalls <= 1 ? [] : ["run_1"] },
+          data: { runIds: [...startedRuns] },
           cookies: [],
         };
       }
@@ -549,12 +549,14 @@ describe("provisionPersonalTenantIfNeeded", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/mail`
       ) {
+        const runId = `run_${startedRuns.length + 1}`;
+        startedRuns.push(runId);
         return {
           status: 202,
           data: {
             deploymentId: DEPLOYMENT_ID,
             address: "echo@x",
-            messageId: "m1",
+            messageId: `m${startedRuns.length}`,
           },
           cookies: [],
         };
@@ -588,6 +590,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
     });
 
     expect(retry).toEqual({ kind: "existing-member", seeded: true });
-    expect(assetCreateAttempts).toBe(2);
+    // Attempt 1 fails creating the echo asset. The retry re-runs from
+    // scratch: attempt 2 creates the echo asset, attempt 3 creates the
+    // assistant asset — one create call per default workflow.
+    expect(assetCreateAttempts).toBe(3);
   });
 });

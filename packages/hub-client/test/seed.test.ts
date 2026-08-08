@@ -116,7 +116,15 @@ describe("seedTenant", () => {
       return undefined;
     };
 
-    await seedTenant(args({ api: fakeAPI(handler), pushWorkflow: push, log }));
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: echoOnly,
+      }),
+    );
 
     expect(pushes).toHaveLength(1);
     const push0 = pushes[0];
@@ -137,6 +145,84 @@ describe("seedTenant", () => {
     expect(output).toContain("created workflow asset echo");
     expect(output).toContain("deployed workflow echo as dep_1");
     expect(output).toContain("confirmed workflow echo: run run_1 started");
+    expect(output).toContain("seed complete: 1 workflow(s)");
+  });
+
+  test("fresh run pushes, deploys, and confirms the assistant workflow", async () => {
+    const { lines, log } = collector();
+    const { pushes, push } = recordingPusher();
+    let runsCalls = 0;
+    const handler: FakeHandler = (method, path, _body) => {
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return { status: 201, data: assetRow("ast_2", "assistant") };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      )
+        return { status: 201, data: deploymentRow("dep_2", "ast_2", "active") };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_2/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_2/mail`
+      )
+        return {
+          status: 202,
+          data: {
+            deploymentId: "dep_2",
+            address: `ins_dep_2@${TENANT_DOMAIN}`,
+            messageId: "<m4@workbench.localhost>",
+          },
+        };
+      return undefined;
+    };
+
+    const assistantOnly = DEFAULT_WORKFLOWS.filter(
+      (w) => w.assetName === "assistant",
+    );
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: assistantOnly,
+      }),
+    );
+
+    expect(pushes).toHaveLength(1);
+    const push0 = pushes[0];
+    if (!push0) throw new Error("expected one workflow push");
+    expect(push0.remoteUrl).toBe(
+      `http://localhost:3000/api/tenants/${TENANT_ID}/assets/workflow/assistant.git`,
+    );
+    const definition = JSON.parse(push0.workflowJson) as {
+      id: string;
+      triggers: { type: string; to: string }[];
+      stepOrder: string[];
+    };
+    expect(definition.id).toBe("wf_assistant");
+    expect(definition.triggers[0]?.to).toBe(`assistant@${TENANT_DOMAIN}`);
+    expect(definition.stepOrder).toEqual(["assistant"]);
+
+    const output = lines.join("\n");
+    expect(output).toContain("created workflow asset assistant");
+    expect(output).toContain("deployed workflow assistant as dep_2");
+    expect(output).toContain("confirmed workflow assistant: run run_1 started");
     expect(output).toContain("seed complete: 1 workflow(s)");
   });
 
@@ -195,7 +281,15 @@ describe("seedTenant", () => {
       return undefined;
     };
 
-    await seedTenant(args({ api: fakeAPI(handler), pushWorkflow: push, log }));
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: echoOnly,
+      }),
+    );
 
     const output = lines.join("\n");
     expect(output).toContain("workflow asset echo already exists (skipped)");
@@ -336,6 +430,10 @@ describe("seedTenant", () => {
   test("the default set is non-empty and starts with the echo workflow", () => {
     expect(DEFAULT_WORKFLOWS.length).toBeGreaterThan(0);
     expect(DEFAULT_WORKFLOWS[0]?.assetName).toBe("echo");
+  });
+
+  test("the default set also includes the assistant workflow", () => {
+    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toContain("assistant");
   });
 });
 

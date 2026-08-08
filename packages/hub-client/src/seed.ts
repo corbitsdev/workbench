@@ -18,6 +18,10 @@ import {
 } from "@intx/types";
 import { type } from "arktype";
 import {
+  buildAssistantWorkflow,
+  serializeAssistantWorkflow,
+} from "@corbits/assistant-workflow";
+import {
   buildEchoWorkflow,
   serializeEchoWorkflow,
 } from "@corbits/echo-workflow";
@@ -27,6 +31,7 @@ import { catalogModel, catalogProvider } from "./catalog-seed-data";
 
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
@@ -72,8 +77,9 @@ export type DefaultWorkflow = {
 };
 
 /**
- * The workflow set a bench starts with. Today that is the echo
- * workflow; growing the set is adding an entry here, nothing more.
+ * The workflow set a bench starts with: the echo walking-skeleton and
+ * the general-purpose assistant. Growing the set is adding an entry
+ * here, nothing more.
  */
 export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
   {
@@ -86,6 +92,19 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
             { provider: model.provider, model: model.model },
           ],
           turnTimeoutMs: ECHO_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "assistant",
+    buildJson: (tenantDomain, model) =>
+      serializeAssistantWorkflow(
+        buildAssistantWorkflow({
+          triggerAddress: `assistant@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: ASSISTANT_TURN_TIMEOUT_MS,
         }),
       ),
   },

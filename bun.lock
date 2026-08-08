@@ -185,6 +185,7 @@
       "name": "@workbench/hub-client",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/assistant-workflow": "workspace:*",
         "@corbits/echo-workflow": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
@@ -483,6 +484,18 @@
         "arktype": "catalog:",
       },
     },
+    "workflows/assistant": {
+      "name": "@corbits/assistant-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/echo": {
       "name": "@corbits/echo-workflow",
       "version": "0.0.1",
@@ -575,6 +588,8 @@
     "@better-fetch/fetch": ["@better-fetch/fetch@1.3.1", "", {}, "sha512-ABkD1WhyfPZprKRQI3bhATjeiFuNWC9PXhfGWqL+sg/gKrM977oFrYkdb4msM3hgUGonr7KlOsOFT5TU2rht9g=="],
 
     "@corbits/agent-lifecycle": ["@corbits/agent-lifecycle@workspace:packages/agent-lifecycle"],
+
+    "@corbits/assistant-workflow": ["@corbits/assistant-workflow@workspace:workflows/assistant"],
 
     "@corbits/chat": ["@corbits/chat@workspace:packages/chat"],
 
