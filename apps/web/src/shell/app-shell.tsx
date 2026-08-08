@@ -40,14 +40,14 @@ export function AppShell({
 
   return (
     <div className="shell-frame" ref={frameRef}>
-      <Rail path={path} onNavigate={navigate} />
+      <Rail
+        path={path}
+        onNavigate={navigate}
+        user={user}
+        onSignOut={onSignOut}
+      />
       {contextualPanelVisible(layoutMode) && (
-        <ContextualPanel
-          path={path}
-          onNavigate={navigate}
-          user={user}
-          onSignOut={onSignOut}
-        />
+        <ContextualPanel path={path} onNavigate={navigate} />
       )}
       <div className="shell-main">
         {canvasAllowed && (
