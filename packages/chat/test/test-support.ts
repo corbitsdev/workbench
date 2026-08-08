@@ -9,6 +9,7 @@ import type { MiddlewareHandler } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import type { ChatPlatform, CreateChatRoutesDeps } from "../src/routes";
 import { createInMemoryChatStore } from "../src/store";
+import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
 import type { MailContent } from "../src/codec";
 
 export const TENANT = {
@@ -153,6 +154,7 @@ export function buildDeps(
   return {
     store: createInMemoryChatStore(),
     platform: fakePlatform(),
+    tenancy: createInMemoryChannelTenancyStore(),
     requireGrant: () => async (_c, next) => {
       await next();
     },

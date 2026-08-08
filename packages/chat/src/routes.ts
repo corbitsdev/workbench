@@ -58,6 +58,7 @@ import {
   resolveAtCommand,
 } from "@corbits/commands";
 import type { CommandRegistry, CommandResult } from "@corbits/commands";
+import type { ChannelTenancyStore } from "./channel-tenancy";
 
 export type {
   ChannelEvents,
@@ -76,6 +77,15 @@ export type {
 export type CreateChatRoutesDeps = {
   store: ChatStore;
   platform: ChatPlatform;
+  /**
+   * Mints and tracks the native child tenant every channel is anchored
+   * as (see `./channel-tenancy.ts`) — required, never optional: a
+   * channel created without a tenancy would be a silent legacy path
+   * reopened, which "no fallbacks" forbids. Every channel created
+   * through this route carries a tenancy link from creation onward;
+   * only channels that predate this rollout lack one.
+   */
+  tenancy: ChannelTenancyStore;
   requireGrant: RequireGrant;
   /** Per-occurrence timeout for the channel host's step. */
   turnTimeoutMs: number;
@@ -218,6 +228,34 @@ async function dispatchChannelCommand(
   return undefined;
 }
 
+const MoveChannelBody = type({
+  newParentTenantId: "string",
+});
+
+/** Annotates a channel view with its native child-tenancy — the
+ * `tenancy` field every channel created after this rollout carries,
+ * never `null` unless a caller reaches a route that skips the
+ * annotation (there are none; `GET /channels` handles the one place a
+ * link can be legitimately missing itself, via its own `legacy`
+ * branch). */
+function withTenancy(
+  view: ReturnType<typeof channelView>,
+  link: { tenantId: string; parentTenantId: string; slug: string },
+): ReturnType<typeof channelView> & {
+  tenancy: { tenantId: string; parentTenantId: string; slug: string };
+  legacy: false;
+} {
+  return {
+    ...view,
+    tenancy: {
+      tenantId: link.tenantId,
+      parentTenantId: link.parentTenantId,
+      slug: link.slug,
+    },
+    legacy: false,
+  };
+}
+
 export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const registry = createChannelSubscriberRegistry();
@@ -259,6 +297,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }),
       );
 
+      // A channel is a child tenant of the bench it is created in from
+      // the moment it exists — minted before the channel host launches,
+      // so a launch failure never leaves an orphaned tenancy dangling
+      // ahead of the channel it names. The creator becomes that child
+      // tenant's native owner exactly as the native tenant-creation
+      // route seeds its own creator (see `channel-tenancy.ts`).
+      const channelTenant = await deps.tenancy.createChannelTenant({
+        parentTenantId: tenant.id,
+        channelId,
+        name: body.name ?? channelId,
+        creatorUserId: principal.refId,
+      });
+
       await deps.platform.launchChannel({
         tenantId: tenant.id,
         creatorPrincipalId: principal.id,
@@ -293,7 +344,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       });
 
       if (!isChatWithDefinition(body)) {
-        return c.json(channelView(row), 201);
+        return c.json(withTenancy(channelView(row), channelTenant), 201);
       }
 
       // A chat's agent is chosen at creation, not invited later: the
@@ -325,7 +376,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ).settings
           : joined.settings;
 
-      return c.json(channelView({ channelId, settings: finalSettings }), 201);
+      return c.json(
+        withTenancy(
+          channelView({ channelId, settings: finalSettings }),
+          channelTenant,
+        ),
+        201,
+      );
     },
   );
 
@@ -336,7 +393,27 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const kind = c.req.query("kind");
       const rows = await deps.store.listChannelSettings(tenant.id, kind);
-      return c.json({ items: rows.map(channelView) });
+      // Every channel_settings row here is scoped to this bench
+      // already — the child-tenancy link is annotated on top, never
+      // used to widen or narrow this query. A row with no link is a
+      // LEGACY channel: it predates this rollout (created before
+      // channel tenancy existed) and carries no native tenant of its
+      // own. Legacy rows are surfaced here, never silently dropped —
+      // "no fallbacks" means the gap stays visible until every legacy
+      // channel is backfilled a tenancy, at which point this branch
+      // and the `legacy` field below should both be deleted.
+      const links = await deps.tenancy.listChildChannelTenancies(tenant.id);
+      const linkByChannelId = new Map(
+        links.map((link) => [link.channelId, link]),
+      );
+      return c.json({
+        items: rows.map((row) => {
+          const link = linkByChannelId.get(row.channelId);
+          return link !== undefined
+            ? withTenancy(channelView(row), link)
+            : { ...channelView(row), tenancy: null, legacy: true };
+        }),
+      });
     },
   );
 
@@ -495,6 +572,64 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       return c.json(
         { address: joined.address, definitionId: joined.definitionId },
         201,
+      );
+    },
+  );
+
+  app.post(
+    "/channels/:id/move",
+    deps.requireGrant(idResource("workflow-run", "id"), "manage"),
+    async (c) => {
+      const body = MoveChannelBody(await c.req.json().catch(() => undefined));
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope("bad_request", `invalid move body: ${body.summary}`),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+
+      // The move is only ever initiated from the bench that currently
+      // owns the channel — `getChannelSettings` scopes by `tenant.id`,
+      // so a caller cannot move a channel it does not already see.
+      const existing = await deps.store.getChannelSettings(
+        tenant.id,
+        channelId,
+      );
+      if (existing === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      const link = await deps.tenancy.getChannelTenancy(channelId);
+      if (link === undefined) {
+        return c.json(
+          ErrorEnvelope(
+            "conflict",
+            "this channel predates the child-tenancy rollout and carries " +
+              "no native tenant of its own; it cannot be moved until it " +
+              "is backfilled a tenancy",
+          ),
+          409,
+        );
+      }
+
+      const moved = await deps.tenancy.moveChannelTenancy({
+        channelId,
+        newParentTenantId: body.newParentTenantId,
+      });
+
+      return c.json(
+        {
+          channelId,
+          tenancy: {
+            tenantId: moved.tenantId,
+            parentTenantId: moved.parentTenantId,
+            slug: moved.slug,
+          },
+        },
+        200,
       );
     },
   );

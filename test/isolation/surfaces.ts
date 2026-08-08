@@ -89,4 +89,14 @@ export const tenantSurfaces: TenantSurface[] = [
     contentType: "text/plain",
     memberStatus: 200,
   },
+  {
+    // Every channel is now minted as a child tenant of the bench that
+    // creates it (see packages/chat/src/channel-tenancy.ts); this
+    // covers the listing seam that owns "which channels belong to this
+    // bench" in the absence of a native child-tenant listing route.
+    name: "chat channels list",
+    method: "GET",
+    path: (t) => `/api/tenants/${t}/chat/channels`,
+    memberStatus: 200,
+  },
 ];

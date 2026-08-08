@@ -15,6 +15,7 @@ import { createApp, createRequireGrant, type AppEnv } from "@intx/hub-api";
 import {
   createChatOrchestrator,
   createChatRoutes,
+  createDrizzleChannelTenancyStore,
   createDrizzleChatStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
@@ -234,6 +235,10 @@ export async function createHub(config: HubConfig) {
   // separate machine) from this hub, so only the hub's own public
   // origin resolves for it.
   app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
+  const chatTenancy = createDrizzleChannelTenancyStore(db, {
+    grantStore: chatGrantStore,
+    conditionRegistry: chatConditionRegistry,
+  });
   const chatPlatform = createHubChatPlatform({
     db,
     sessionService,
@@ -296,6 +301,7 @@ export async function createHub(config: HubConfig) {
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
     store: chatStore,
     platform: chatPlatform,
+    tenancy: chatTenancy,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,

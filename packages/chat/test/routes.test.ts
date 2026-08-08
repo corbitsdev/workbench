@@ -5,13 +5,18 @@
 // `channel-service.test.ts`, and the SSE registry in
 // `channel-events.test.ts`.
 import { describe, expect, test } from "bun:test";
+import { Hono } from "hono";
+import type { TenantEnv } from "@intx/hub-api";
 import type { Part } from "../src/parts";
 import { createChatRoutes } from "../src/routes";
+import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
+import { createInMemoryChatStore } from "../src/store";
 import {
   buildDeps,
   createChannel,
   fakePlatform,
   mountAs,
+  principal,
   TENANT,
 } from "./test-support";
 
@@ -326,5 +331,147 @@ describe("typing", () => {
     expect(settingsRow?.settings).not.toHaveProperty("chat/typing");
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     expect(platform.sentMail).toHaveLength(0);
+  });
+});
+
+describe("channel tenancy", () => {
+  test("creating a channel mints a child tenant parented under the bench", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { body } = await createChannel(app, {
+      kind: "channel",
+      name: "General",
+    });
+
+    const view = body as unknown as {
+      tenancy: { tenantId: string; parentTenantId: string; slug: string };
+      legacy: boolean;
+    };
+    expect(view.legacy).toBe(false);
+    expect(view.tenancy.parentTenantId).toBe(TENANT.id);
+    expect(view.tenancy.tenantId).toMatch(/^tnt_/);
+
+    const link = await deps.tenancy.getChannelTenancy(body.id);
+    expect(link?.tenantId).toBe(view.tenancy.tenantId);
+    expect(link?.parentTenantId).toBe(TENANT.id);
+  });
+
+  test("GET /channels annotates every created channel with its tenancy and marks a linkless row legacy", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: created } = await createChannel(app, {
+      kind: "channel",
+      name: "Tenanted",
+    });
+
+    // Simulates a channel that predates the tenancy rollout: a
+    // channel_settings row with no channel_tenancy link.
+    await deps.store.createChannelSettings({
+      tenantId: TENANT.id,
+      channelId: "ins_legacy",
+      settings: { "chat/kind": "channel", "chat/name": "Legacy" },
+      updatedBy: "prn_alice",
+    });
+
+    const response = await app.request("/channels");
+    const body = (await response.json()) as {
+      items: {
+        id: string;
+        legacy: boolean;
+        tenancy: { tenantId: string } | null;
+      }[];
+    };
+
+    const tenantedRow = body.items.find((item) => item.id === created.id);
+    expect(tenantedRow?.legacy).toBe(false);
+    expect(tenantedRow?.tenancy).not.toBeNull();
+
+    const legacyRow = body.items.find((item) => item.id === "ins_legacy");
+    expect(legacyRow?.legacy).toBe(true);
+    expect(legacyRow?.tenancy).toBeNull();
+  });
+
+  test("POST /channels/:id/move re-parents the channel's tenancy", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Movable",
+    });
+
+    const response = await app.request(`/channels/${channel.id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ newParentTenantId: "tnt_new_bench" }),
+    });
+
+    expect(response.status).toBe(200);
+    const moved = (await response.json()) as {
+      tenancy: { parentTenantId: string };
+    };
+    expect(moved.tenancy.parentTenantId).toBe("tnt_new_bench");
+
+    const link = await deps.tenancy.getChannelTenancy(channel.id);
+    expect(link?.parentTenantId).toBe("tnt_new_bench");
+  });
+
+  test("POST /channels/:id/move on a legacy channel is a loud 409, never a silent no-op", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    await deps.store.createChannelSettings({
+      tenantId: TENANT.id,
+      channelId: "ins_legacy",
+      settings: { "chat/kind": "channel" },
+      updatedBy: "prn_alice",
+    });
+
+    const response = await app.request(`/channels/ins_legacy/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ newParentTenantId: "tnt_new_bench" }),
+    });
+
+    expect(response.status).toBe(409);
+  });
+
+  test("a bench never sees another bench's channel tenancies", async () => {
+    const OTHER_TENANT = { ...TENANT, id: "tnt_2", domain: "other.example" };
+    const store = createInMemoryChatStore();
+    const tenancy = createInMemoryChannelTenancyStore();
+    const deps = buildDeps({ store, tenancy });
+    const routes = createChatRoutes(deps);
+
+    const appBenchA = mountAs(routes, "prn_alice");
+    await createChannel(appBenchA, { kind: "channel", name: "Bench A Only" });
+
+    const appBenchB = new Hono<TenantEnv>();
+    appBenchB.use("*", async (c, next) => {
+      c.set("tenant", OTHER_TENANT);
+      c.set("principal", principal("prn_bob"));
+      await next();
+    });
+    appBenchB.route("/", routes);
+    const { body: benchBChannel } = await createChannel(appBenchB, {
+      kind: "channel",
+      name: "Bench B Only",
+    });
+
+    const listA = (await (await appBenchA.request("/channels")).json()) as {
+      items: { id: string; title: string }[];
+    };
+    expect(listA.items.map((item) => item.title)).toEqual(["Bench A Only"]);
+    expect(listA.items.map((item) => item.id)).not.toContain(benchBChannel.id);
+
+    const listB = (await (await appBenchB.request("/channels")).json()) as {
+      items: { id: string; title: string }[];
+    };
+    expect(listB.items.map((item) => item.title)).toEqual(["Bench B Only"]);
+
+    const tenancyA = await tenancy.listChildChannelTenancies(TENANT.id);
+    const tenancyB = await tenancy.listChildChannelTenancies(OTHER_TENANT.id);
+    expect(tenancyA).toHaveLength(1);
+    expect(tenancyB).toHaveLength(1);
+    expect(tenancyA[0]?.tenantId).not.toBe(tenancyB[0]?.tenantId);
   });
 });
