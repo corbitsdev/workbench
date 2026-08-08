@@ -70,14 +70,20 @@ export const routineMigrations: readonly RoutineMigration[] = [
     // `listDueRoutines`'s `nextFireAt <= now` treats NULL as "never
     // due" — without this backfill, every routine that existed before
     // this migration would stop firing forever, silently, the moment
-    // it deploys. Every enabled, non-deleted, timer-triggered routine
-    // gets a fresh `nextFireAt` computed from its own trigger, exactly
-    // the same way `createRoutine` computes one for a brand new row.
+    // it deploys. Every enabled, timer-triggered routine gets a fresh
+    // `nextFireAt` computed from its own trigger, exactly the same way
+    // `createRoutine` computes one for a brand new row.
+    //
+    // No `deleted_at IS NULL` filter here: this migration runs before
+    // 0004_routine_soft_delete adds that column, so at this point in
+    // the sequence every row is, by definition, not soft-deleted — the
+    // predicate would be vacuously true if it existed, and referencing
+    // a column that doesn't exist yet aborts a from-scratch migration
+    // run outright.
     async backfill(sql) {
       const rows = await sql<{ id: string; trigger: RoutineTriggerT }[]>`
         SELECT "id", "trigger" FROM "routine"
         WHERE "enabled" = true
-          AND "deleted_at" IS NULL
           AND "trigger" IS NOT NULL
           AND "next_fire_at" IS NULL
       `;
