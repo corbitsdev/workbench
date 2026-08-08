@@ -79,6 +79,13 @@ export const chatMigrations: readonly ChatMigration[] = [
       );
     `,
   },
+  {
+    name: "0006_channel_tenancy_parent_index",
+    sql: `
+      CREATE INDEX IF NOT EXISTS "channel_tenancy_parent_tenant_id_idx"
+        ON "channel_tenancy" ("parent_tenant_id");
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named

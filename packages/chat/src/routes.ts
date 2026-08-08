@@ -673,6 +673,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ErrorEnvelope("not_found", "destination tenant not found"),
             404,
           );
+        case "cycle":
+          return c.json(
+            ErrorEnvelope(
+              "conflict",
+              "the destination is this channel's own tenant, or a " +
+                "descendant of it; moving it there would make the " +
+                "channel its own ancestor",
+            ),
+            409,
+          );
         case "forbidden":
           return c.json(
             ErrorEnvelope(

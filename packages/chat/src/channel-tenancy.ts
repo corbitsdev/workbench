@@ -39,6 +39,16 @@ const MOVE_DESTINATION_ACTION = "manage";
 const SYSTEM_ROLES = ["owner", "admin", "member"] as const;
 
 /**
+ * A defensive ceiling on how many ancestors `tenantIsDescendantOf`
+ * will walk before giving up. The tenant hierarchy this rollout can
+ * observe is shallow (a bench and its channels), so a real chain this
+ * long can only mean a cycle already exists somewhere in the tree that
+ * predates this guard — surfacing that loudly (see the thrown error
+ * below) beats spinning forever on data this code did not create.
+ */
+const MAX_ANCESTOR_WALK = 1000;
+
+/**
  * Derives a URL-safe slug from a channel's name, plus a random tail
  * for uniqueness. `tenant.slug` is unique across the whole platform,
  * so a channel tenant can never collide with another channel's, or
@@ -108,14 +118,22 @@ export interface MoveChannelTenancyInput {
  * `"forbidden"` are the two ways the destination fails closed — the
  * first when `newParentTenantId` names no real tenant, the second when
  * it is real but the caller holds no manage-granted principal there.
- * `"no_tenancy"` is the pre-existing "legacy channel" case: nothing to
- * move. All three, and the successful `"moved"` case, are reported by
- * the same call so a route never has to reconcile results from two
- * separate reads of a fact that can change between them.
+ * `"cycle"` is a third, distinct failure mode: the destination is the
+ * channel's own tenant, or a descendant of it, so completing the move
+ * would make the channel its own ancestor. This is a structural
+ * rejection, not an authorization one — a caller can hold every grant
+ * in the world and it is still refused, so it is reported separately
+ * rather than folded into `"forbidden"`, which would misstate why the
+ * move was refused. `"no_tenancy"` is the pre-existing "legacy
+ * channel" case: nothing to move. All four, and the successful
+ * `"moved"` case, are reported by the same call so a route never has
+ * to reconcile results from two separate reads of a fact that can
+ * change between them.
  */
 export type MoveChannelTenancyOutcome =
   | { readonly kind: "moved"; readonly row: ChannelTenancyRow }
   | { readonly kind: "destination_not_found" }
+  | { readonly kind: "cycle" }
   | { readonly kind: "forbidden" }
   | { readonly kind: "no_tenancy" };
 
@@ -157,8 +175,12 @@ export interface ChannelTenancyStore {
    * that writes both the chat-owned link row (what workbench's own
    * listing reads) and the native `tenant.parentId` column — there is
    * no native PATCH for a tenant's `parentId`, so this is the only way
-   * to keep the two in sync. Returns `{ kind: "no_tenancy" }` for a
-   * channel with no tenancy link (nothing to move), checked before the
+   * to keep the two in sync. Also rejects (`{ kind: "cycle" }`) a
+   * destination that is the channel's own tenant or a descendant of
+   * it, walking the destination's ancestor chain under the same locks
+   * so the check can never observe a hierarchy that has since changed
+   * out from under it. Returns `{ kind: "no_tenancy" }` for a channel
+   * with no tenancy link (nothing to move), checked before the
    * destination is even considered.
    */
   moveChannelTenancy(
@@ -386,6 +408,39 @@ export function createDrizzleChannelTenancyStore<
           return { kind: "destination_not_found" as const };
         }
 
+        // Reject a move that would make the channel its own ancestor:
+        // the destination is the channel's own tenant (a self-parent),
+        // or the destination descends from it (a longer cycle). Walked
+        // under the same row locks as everything else here, so a
+        // concurrent re-parenting of an ancestor tenant cannot slip a
+        // cycle past this check between the read and the write.
+        let cursor: { id: string; parentId: string | null } = {
+          id: destinationTenant.id,
+          parentId: destinationTenant.parentId,
+        };
+        const visited = new Set<string>();
+        for (let depth = 0; ; depth += 1) {
+          if (cursor.id === linkRow.tenantId) {
+            return { kind: "cycle" as const };
+          }
+          if (cursor.parentId === null) break;
+          if (visited.has(cursor.id) || depth >= MAX_ANCESTOR_WALK) {
+            throw new Error(
+              `Tenant hierarchy cycle detected walking ancestors of ` +
+                `"${destinationTenant.id}", unrelated to this move`,
+            );
+          }
+          visited.add(cursor.id);
+          const [ancestor] = await tx
+            .select({ id: tenant.id, parentId: tenant.parentId })
+            .from(tenant)
+            .where(eq(tenant.id, cursor.parentId))
+            .for("update")
+            .limit(1);
+          if (ancestor === undefined) break;
+          cursor = ancestor;
+        }
+
         const [destinationPrincipal] = await tx
           .select()
           .from(principal)
@@ -489,21 +544,56 @@ export function createDrizzleChannelTenancyStore<
  *
  * The two extra methods below `ChannelTenancyStore` declares
  * (`registerExistingTenant`, `grantManageInTenant`) are test-support
- * only: they let a unit test stand up "a real tenant the caller has
- * no standing in" and "a real tenant the caller manages" without a
- * database, exercising `moveChannelTenancy`'s destination-check
- * outcomes (`"destination_not_found"`, `"forbidden"`, `"moved"`).
+ * only: `registerExistingTenant` takes an optional parent so a unit
+ * test can build an arbitrary tenant hierarchy without a database.
+ * Together they let a test stand up "a real tenant the caller has no
+ * standing in", "a real tenant the caller manages", and a cyclic
+ * hierarchy, exercising `moveChannelTenancy`'s destination-check
+ * outcomes (`"destination_not_found"`, `"cycle"`, `"forbidden"`,
+ * `"moved"`).
  */
 export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
-  registerExistingTenant(tenantId: string): void;
+  registerExistingTenant(tenantId: string, parentTenantId?: string): void;
   grantManageInTenant(refId: string, tenantId: string): void;
 } {
   const byChannelId = new Map<string, ChannelTenancyRow>();
   const existingTenants = new Set<string>();
   const manageGrants = new Set<string>();
+  // Mirrors the drizzle store's `tenant.parentId`: every tenant this
+  // store knows of maps to its parent, or `undefined` for a root. Kept
+  // separately from `byChannelId` because a destination tenant in a
+  // cycle test is often not itself a channel's tenancy — plain
+  // `registerExistingTenant` callers need a parent too.
+  const parentOf = new Map<string, string | undefined>();
 
   const manageGrantKey = (refId: string, tenantId: string) =>
     `${refId}::${tenantId}`;
+
+  // Mirrors the drizzle store's ancestor walk: true if `tenantId` is
+  // `ancestorCandidateId` itself, or descends from it, using the same
+  // parent links `moveChannelTenancy` updates on every move — so a
+  // cycle this store already believes into existing (via a prior
+  // `moveChannelTenancy` call) is caught exactly like the database
+  // would catch it.
+  function isSelfOrDescendantOf(
+    tenantId: string,
+    ancestorCandidateId: string,
+  ): boolean {
+    let cursor: string | undefined = ancestorCandidateId;
+    const visited = new Set<string>();
+    while (cursor !== undefined) {
+      if (cursor === tenantId) return true;
+      if (visited.has(cursor)) {
+        throw new Error(
+          `Tenant hierarchy cycle detected walking ancestors of ` +
+            `"${ancestorCandidateId}", unrelated to this move`,
+        );
+      }
+      visited.add(cursor);
+      cursor = parentOf.get(cursor);
+    }
+    return false;
+  }
 
   return {
     async createChannelTenant(input) {
@@ -521,6 +611,7 @@ export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
       };
       byChannelId.set(input.channelId, row);
       existingTenants.add(tenantId);
+      parentOf.set(tenantId, input.parentTenantId);
       // The creator is minted as this tenant's owner, exactly as the
       // drizzle store does — the owner role's `*`/`*` grant covers
       // the move-destination check too.
@@ -551,8 +642,9 @@ export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
       }
     },
 
-    registerExistingTenant(tenantId) {
+    registerExistingTenant(tenantId, parentTenantId) {
       existingTenants.add(tenantId);
+      parentOf.set(tenantId, parentTenantId);
     },
 
     grantManageInTenant(refId, tenantId) {
@@ -571,6 +663,9 @@ export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
       if (!existingTenants.has(newParentTenantId)) {
         return { kind: "destination_not_found" as const };
       }
+      if (isSelfOrDescendantOf(existing.tenantId, newParentTenantId)) {
+        return { kind: "cycle" as const };
+      }
       if (!manageGrants.has(manageGrantKey(callerRefId, newParentTenantId))) {
         return { kind: "forbidden" as const };
       }
@@ -579,6 +674,7 @@ export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
         parentTenantId: newParentTenantId,
       };
       byChannelId.set(channelId, moved);
+      parentOf.set(existing.tenantId, newParentTenantId);
       return { kind: "moved" as const, row: moved };
     },
   };
