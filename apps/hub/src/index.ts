@@ -51,6 +51,7 @@ import {
 } from "@intx/hub-sessions";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
+import { createNeedsYouRoutes } from "@corbits/approvals";
 import { createEchoRoutes } from "@workbench/echo";
 import { createGitWorkflowPusher } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
@@ -212,6 +213,20 @@ export async function createHub(config: HubConfig) {
   // platform's native tenant middleware, so every extension handler
   // runs with c.get("tenant") / c.get("principal") resolved.
   app.route(`${TENANT_PREFIX}/echo`, createEchoRoutes());
+
+  // The "needs you" list: the same `approval:*`/"resolve" grant Interchange's
+  // own approve/reject routes require, layered with the agent/bench names
+  // this tenant's approvals don't carry on their own. Approving and
+  // rejecting still go straight to Interchange's native routes below --
+  // this route only ever reads.
+  app.route(
+    `${TENANT_PREFIX}/approvals/needs-you`,
+    createNeedsYouRoutes({
+      db,
+      grantStore: createGrantStore(db),
+      conditionRegistry: { time_window: timeWindowEvaluator },
+    }),
+  );
 
   // Chat's own grant store/condition registry, built the same way
   // `createApp` builds its default when none is supplied (see

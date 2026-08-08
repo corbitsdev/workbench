@@ -1,0 +1,74 @@
+import { and, eq } from "drizzle-orm";
+import { Hono } from "hono";
+
+import { authorize } from "@intx/authz";
+import type { DB } from "@intx/db";
+import { schema, parseApprovalRow } from "@intx/db";
+import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
+import type { TenantEnv } from "@intx/hub-api";
+
+import { hydrateNeedsYou } from "./view-model";
+
+export type CreateNeedsYouRoutesDeps = {
+  db: DB["db"];
+  grantStore: GrantStore;
+  conditionRegistry: ConditionRegistry;
+};
+
+/**
+ * The one net-new domain concept this package adds: a display-ready read of
+ * "what needs this tenant's attention right now." It never creates, resolves,
+ * or claims anything -- approving and rejecting stay on Interchange's own
+ * `/api/tenants/:tenantId/approvals/:approvalId/{approve,reject}` routes,
+ * whose authorize + claimTerminal + approvalStore.resolve transaction is
+ * already exactly-once and already grant-scoped. Reimplementing that
+ * machinery here would be the parallel gate concept the design explicitly
+ * rejects; this route only adds the naming layer that machinery has no
+ * reason to own.
+ */
+export function createNeedsYouRoutes(
+  deps: CreateNeedsYouRoutesDeps,
+): Hono<TenantEnv> {
+  const app = new Hono<TenantEnv>();
+
+  app.get("/", async (c) => {
+    const tenant = c.get("tenant");
+    const principal = c.get("principal");
+
+    // Same grant and action the native list/resolve routes require --
+    // whoever can resolve a tenant's approvals is who "needs you" is for.
+    // Reusing this string keeps the two surfaces from drifting apart.
+    const authz = await authorize(
+      deps.grantStore,
+      principal.id,
+      tenant.id,
+      "approval:*",
+      "resolve",
+      deps.conditionRegistry,
+    );
+    if (authz.effect !== "allow") {
+      return c.json(
+        {
+          error: {
+            code: "forbidden",
+            message: "You do not have permission to see this bench's approvals",
+          },
+        },
+        403,
+      );
+    }
+
+    const rows = await deps.db.query.approval.findMany({
+      where: and(
+        eq(schema.approval.tenantId, tenant.id),
+        eq(schema.approval.status, "pending"),
+      ),
+      orderBy: (row, { asc }) => [asc(row.createdAt)],
+    });
+
+    const items = await hydrateNeedsYou(deps.db, rows.map(parseApprovalRow));
+    return c.json({ items });
+  });
+
+  return app;
+}

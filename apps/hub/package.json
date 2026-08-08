@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@corbits/agent-directory": "workspace:*",
+    "@corbits/approvals": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/commands": "workspace:*",
     "@corbits/folded-runs": "workspace:*",

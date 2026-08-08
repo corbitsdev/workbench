@@ -1,10 +1,14 @@
-// Approvals, fanned out per-bench: `GET /api/me/approvals` is a hub stub
-// that always returns `[]` (see the tenancy inventory's gap list), so this
-// reads the current bench's pending approvals from the real, tenant-scoped
-// `GET /api/tenants/:tenantId/approvals` instead. Approve only offers scope
-// "once" — the hub rejects "always" with a 400 because a standing grant
-// needs the tool identity the suspend path doesn't capture yet — and reject
-// collects an optional message before resolving.
+// Approvals, fanned out per-bench: the list reads
+// `GET /api/tenants/:tenantId/approvals/needs-you` (`@corbits/approvals`),
+// which resolves each pending approval's agent and bench names so nothing
+// here ever renders a raw agent address or run id. Approve/reject still
+// post straight to Interchange's own
+// `/api/tenants/:tenantId/approvals/:id/{approve,reject}` routes, keyed by
+// the same `id` the needs-you list carries — resolving stays exactly-once
+// and grant-scoped there, this page only ever composes the display. Approve
+// only offers scope "once" — the hub rejects "always" with a 400 because a
+// standing grant needs the tool identity the suspend path doesn't capture
+// yet — and reject collects an optional message before resolving.
 
 import {
   ApprovalCard,
@@ -28,18 +32,13 @@ import { useState } from "react";
 import {
   approveApproval,
   rejectApproval,
-  TenantApprovalsSchema,
+  NeedsYouSchema,
   useAPIQuery,
 } from "../api";
 import { countProp } from "../optional-props";
-import type { APIQuery, Approval } from "../api";
+import type { APIQuery, NeedsYouItem } from "../api";
 import { useBench } from "../bench-context";
 import { QueryView } from "../query-view";
-
-function approvalHeadline(approval: Approval): string {
-  const toolName = approval.toolDefinition["name"];
-  return typeof toolName === "string" ? toolName : "Run a tool";
-}
 
 export function ApprovalsPage({
   approvals,
@@ -49,14 +48,14 @@ export function ApprovalsPage({
   rejectingId = null,
   actionError = null,
 }: {
-  readonly approvals: APIQuery<Approval[]>;
-  readonly onApprove: (approval: Approval) => void;
-  readonly onReject: (approval: Approval, message?: string) => void;
+  readonly approvals: APIQuery<NeedsYouItem[]>;
+  readonly onApprove: (approval: NeedsYouItem) => void;
+  readonly onReject: (approval: NeedsYouItem, message?: string) => void;
   readonly approvingId?: string | null;
   readonly rejectingId?: string | null;
   readonly actionError?: string | null;
 }) {
-  const [rejectTarget, setRejectTarget] = useState<Approval | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<NeedsYouItem | null>(null);
 
   return (
     <>
@@ -84,9 +83,9 @@ export function ApprovalsPage({
                 {rows.map((approval) => {
                   const request: ApprovalRequest = {
                     id: approval.id,
-                    headline: approvalHeadline(approval),
-                    requestedBy: approval.agentAddress,
-                    details: Object.entries(approval.toolArguments).map(
+                    headline: approval.headline,
+                    requestedBy: `${approval.agentName} in ${approval.benchName}`,
+                    details: Object.entries(approval.arguments).map(
                       ([label, value]) => ({
                         label,
                         value:
@@ -141,7 +140,7 @@ function RejectDialog({
   onClose,
   onConfirm,
 }: {
-  readonly approval: Approval | null;
+  readonly approval: NeedsYouItem | null;
   readonly onClose: () => void;
   readonly onConfirm: (message?: string) => void;
 }) {
@@ -203,22 +202,22 @@ export function ApprovalsRoute() {
   const approvals = useAPIQuery(
     selectedTenantId === null
       ? ""
-      : `/api/tenants/${selectedTenantId}/approvals`,
-    TenantApprovalsSchema,
+      : `/api/tenants/${selectedTenantId}/approvals/needs-you`,
+    NeedsYouSchema,
     reloadKey,
   );
-  const rows: APIQuery<Approval[]> =
+  const rows: APIQuery<NeedsYouItem[]> =
     selectedTenantId === null
       ? { kind: "loading" }
       : approvals.kind === "ready"
-        ? { kind: "ready", data: approvals.data.data }
+        ? { kind: "ready", data: approvals.data.items }
         : approvals;
 
   function reload() {
     setReloadKey((value) => value + 1);
   }
 
-  function handleApprove(approval: Approval) {
+  function handleApprove(approval: NeedsYouItem) {
     if (selectedTenantId === null) return;
     setActionError(null);
     setApprovingId(approval.id);
@@ -228,7 +227,7 @@ export function ApprovalsRoute() {
       .finally(() => setApprovingId(null));
   }
 
-  function handleReject(approval: Approval, message?: string) {
+  function handleReject(approval: NeedsYouItem, message?: string) {
     if (selectedTenantId === null) return;
     setActionError(null);
     setRejectingId(approval.id);
