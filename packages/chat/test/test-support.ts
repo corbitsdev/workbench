@@ -38,6 +38,13 @@ export function principal(id: string) {
 export function fakePlatform(
   opts: {
     invitable?: { id: string; name: string }[];
+    launchChannel?: (input: {
+      tenantId: string;
+      creatorPrincipalId: string;
+      channelId: string;
+      triggerAddress: string;
+      definition: string;
+    }) => Promise<{ instanceId: string }>;
     launchInvite?: (input: {
       tenantId: string;
       creatorPrincipalId: string;
@@ -77,7 +84,8 @@ export function fakePlatform(
   return {
     sentMail,
     launchInviteCalls,
-    async launchChannel() {
+    async launchChannel(input) {
+      if (opts.launchChannel !== undefined) return opts.launchChannel(input);
       return { instanceId: "launched" };
     },
     async launchInvite(input) {

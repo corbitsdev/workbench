@@ -268,5 +268,93 @@ if (!databaseUrl) {
       );
       expect(settingsResponse.status).toBe(200);
     });
+
+    test("a member of A holding only a read-only principal in B still cannot move A's channel into B", async () => {
+      const createResponse = await app.request(
+        `/api/tenants/${tenantA.tenantId}/chat/channels`,
+        {
+          method: "POST",
+          headers: {
+            cookie: tenantA.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ kind: "channel", name: "Movable Read Only" }),
+        },
+      );
+      expect(createResponse.status).toBe(201);
+      const created = (await createResponse.json()) as { id: string };
+
+      // Give tenant A's owner a real, active foothold in tenant B —
+      // invited onto B's own "member" system role (read-only grants
+      // only) and activated by B's owner, entirely through native
+      // routes and the real database. This is the case a fake grant
+      // store can't exercise: the caller is no longer a stranger to
+      // the destination tenant, so the check must fall through to a
+      // real `@intx/authz` evaluation of B's live grant rows and find
+      // no manage grant among them, rather than short-circuiting on
+      // "no principal at all" as the sibling test above does.
+      const rolesResponse = await app.request(
+        `/api/tenants/${tenantB.tenantId}/roles`,
+        { headers: { cookie: tenantB.cookie } },
+      );
+      expect(rolesResponse.status).toBe(200);
+      const roles = listItems(await rolesResponse.json()) as {
+        id: string;
+        name: string;
+      }[];
+      const memberRole = roles.find((role) => role.name === "member");
+      if (!memberRole) {
+        throw new Error("expected a system member role in tenant B");
+      }
+
+      const inviteResponse = await app.request(
+        `/api/tenants/${tenantB.tenantId}/members/invite`,
+        {
+          method: "POST",
+          headers: {
+            cookie: tenantB.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            email: `owner-a-${nonce}@isolation.test`,
+            roleId: memberRole.id,
+          }),
+        },
+      );
+      expect(inviteResponse.status).toBe(201);
+      const invited = (await inviteResponse.json()) as { id: string };
+
+      const activateResponse = await app.request(
+        `/api/tenants/${tenantB.tenantId}/principals/${invited.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            cookie: tenantB.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ status: "active" }),
+        },
+      );
+      expect(activateResponse.status).toBe(200);
+
+      const moveResponse = await app.request(
+        `/api/tenants/${tenantA.tenantId}/chat/channels/${created.id}/move`,
+        {
+          method: "POST",
+          headers: {
+            cookie: tenantA.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ newParentTenantId: tenantB.tenantId }),
+        },
+      );
+      await expectRefusal(moveResponse, 403, "forbidden", tenantB.markers);
+
+      const settingsResponse = await app.request(
+        `/api/tenants/${tenantA.tenantId}/chat/channels/${created.id}/settings`,
+        { headers: { cookie: tenantA.cookie } },
+      );
+      expect(settingsResponse.status).toBe(200);
+    });
   });
 }

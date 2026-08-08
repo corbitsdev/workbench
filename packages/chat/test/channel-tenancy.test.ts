@@ -2,7 +2,11 @@
 // the same way `store.test.ts` exercises the in-memory `ChatStore`:
 // creation records the parent link, listing scopes strictly to the
 // requested parent, and a move updates the link without touching any
-// other channel's tenancy.
+// other channel's tenancy. `moveChannelTenancy` folds its destination
+// authorization into the same call as the write (see
+// `channel-tenancy.ts`), so every failure mode of that check is
+// exercised here as an outcome of `moveChannelTenancy` itself, never
+// as a separate pre-check call.
 import { expect, test } from "bun:test";
 import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
 
@@ -69,7 +73,7 @@ test("listChildChannelTenancies scopes strictly to the requested parent bench", 
   expect(benchBChannels.map((row) => row.channelId)).toEqual(["ins_b1"]);
 });
 
-test("moveChannelTenancy re-parents one channel without disturbing others", async () => {
+test("moveChannelTenancy re-parents one channel without disturbing others when the caller manages the destination", async () => {
   const tenancy = createInMemoryChannelTenancyStore();
   await tenancy.createChannelTenant({
     parentTenantId: "tnt_bench_a",
@@ -83,12 +87,18 @@ test("moveChannelTenancy re-parents one channel without disturbing others", asyn
     name: "Staying",
     creatorUserId: "usr_alice",
   });
+  tenancy.registerExistingTenant("tnt_bench_c");
+  tenancy.grantManageInTenant("usr_alice", "tnt_bench_c");
 
-  const moved = await tenancy.moveChannelTenancy({
+  const outcome = await tenancy.moveChannelTenancy({
     channelId: "ins_moving",
     newParentTenantId: "tnt_bench_c",
+    callerRefId: "usr_alice",
   });
-  expect(moved.parentTenantId).toBe("tnt_bench_c");
+  expect(outcome.kind).toBe("moved");
+  expect(outcome.kind === "moved" && outcome.row.parentTenantId).toBe(
+    "tnt_bench_c",
+  );
 
   expect(await tenancy.listChildChannelTenancies("tnt_bench_a")).toEqual([
     expect.objectContaining({ channelId: "ins_staying" }),
@@ -98,57 +108,65 @@ test("moveChannelTenancy re-parents one channel without disturbing others", asyn
   ]);
 });
 
-test("authorizeMoveDestination reports a nonexistent destination tenant", async () => {
+test("moveChannelTenancy reports a nonexistent destination tenant", async () => {
   const tenancy = createInMemoryChannelTenancyStore();
+  await tenancy.createChannelTenant({
+    parentTenantId: "tnt_bench_a",
+    channelId: "ins_movable",
+    name: "Movable",
+    creatorUserId: "usr_alice",
+  });
 
-  const result = await tenancy.authorizeMoveDestination({
+  const outcome = await tenancy.moveChannelTenancy({
+    channelId: "ins_movable",
     newParentTenantId: "tnt_does_not_exist",
     callerRefId: "usr_alice",
   });
 
-  expect(result).toEqual({ tenantExists: false, callerHasManageGrant: false });
+  expect(outcome).toEqual({ kind: "destination_not_found" });
 });
 
-test("authorizeMoveDestination reports no manage grant for a real tenant the caller has no standing in", async () => {
+test("moveChannelTenancy is forbidden for a real destination tenant the caller has no standing in", async () => {
   const tenancy = createInMemoryChannelTenancyStore();
+  await tenancy.createChannelTenant({
+    parentTenantId: "tnt_bench_a",
+    channelId: "ins_movable",
+    name: "Movable",
+    creatorUserId: "usr_alice",
+  });
   tenancy.registerExistingTenant("tnt_bench_c");
 
-  const result = await tenancy.authorizeMoveDestination({
+  const outcome = await tenancy.moveChannelTenancy({
+    channelId: "ins_movable",
     newParentTenantId: "tnt_bench_c",
     callerRefId: "usr_alice",
   });
 
-  expect(result).toEqual({ tenantExists: true, callerHasManageGrant: false });
+  expect(outcome).toEqual({ kind: "forbidden" });
 });
 
-test("authorizeMoveDestination allows a caller holding a manage grant in the destination", async () => {
+test("moveChannelTenancy treats the destination tenant a channel was minted as manageable by its own creator", async () => {
   const tenancy = createInMemoryChannelTenancyStore();
-  tenancy.registerExistingTenant("tnt_bench_c");
-  tenancy.grantManageInTenant("usr_alice", "tnt_bench_c");
-
-  const result = await tenancy.authorizeMoveDestination({
-    newParentTenantId: "tnt_bench_c",
-    callerRefId: "usr_alice",
-  });
-
-  expect(result).toEqual({ tenantExists: true, callerHasManageGrant: true });
-});
-
-test("authorizeMoveDestination treats the destination tenant a channel was minted as as manageable by its own creator", async () => {
-  const tenancy = createInMemoryChannelTenancyStore();
-  const minted = await tenancy.createChannelTenant({
+  const destination = await tenancy.createChannelTenant({
     parentTenantId: "tnt_bench_a",
     channelId: "ins_general",
     name: "General",
     creatorUserId: "usr_alice",
   });
+  await tenancy.createChannelTenant({
+    parentTenantId: "tnt_bench_a",
+    channelId: "ins_movable",
+    name: "Movable",
+    creatorUserId: "usr_alice",
+  });
 
-  const result = await tenancy.authorizeMoveDestination({
-    newParentTenantId: minted.tenantId,
+  const outcome = await tenancy.moveChannelTenancy({
+    channelId: "ins_movable",
+    newParentTenantId: destination.tenantId,
     callerRefId: "usr_alice",
   });
 
-  expect(result).toEqual({ tenantExists: true, callerHasManageGrant: true });
+  expect(outcome.kind).toBe("moved");
 });
 
 test("compensateChannelTenant removes the minted tenant and its tenancy link", async () => {
@@ -159,23 +177,30 @@ test("compensateChannelTenant removes the minted tenant and its tenancy link", a
     name: "Orphaned",
     creatorUserId: "usr_alice",
   });
+  await tenancy.createChannelTenant({
+    parentTenantId: "tnt_bench_b",
+    channelId: "ins_movable",
+    name: "Movable",
+    creatorUserId: "usr_bob",
+  });
 
   await tenancy.compensateChannelTenant(minted.tenantId);
 
   expect(await tenancy.getChannelTenancy("ins_orphaned")).toBeUndefined();
-  const result = await tenancy.authorizeMoveDestination({
+  const outcome = await tenancy.moveChannelTenancy({
+    channelId: "ins_movable",
     newParentTenantId: minted.tenantId,
     callerRefId: "usr_alice",
   });
-  expect(result.tenantExists).toBe(false);
+  expect(outcome).toEqual({ kind: "destination_not_found" });
 });
 
-test("moveChannelTenancy rejects a channel with no tenancy link", async () => {
+test("moveChannelTenancy reports no tenancy for a channel with no tenancy link, before the destination is even considered", async () => {
   const tenancy = createInMemoryChannelTenancyStore();
-  await expect(
-    tenancy.moveChannelTenancy({
-      channelId: "ins_predates_rollout",
-      newParentTenantId: "tnt_bench_c",
-    }),
-  ).rejects.toThrow(/no channel tenancy/i);
+  const outcome = await tenancy.moveChannelTenancy({
+    channelId: "ins_predates_rollout",
+    newParentTenantId: "tnt_does_not_exist",
+    callerRefId: "usr_alice",
+  });
+  expect(outcome).toEqual({ kind: "no_tenancy" });
 });

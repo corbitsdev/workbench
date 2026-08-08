@@ -357,6 +357,56 @@ describe("channel tenancy", () => {
     expect(link?.parentTenantId).toBe(TENANT.id);
   });
 
+  test("a compensation failure after a launch failure still surfaces the original launch error, never the compensation's", async () => {
+    const tenancy = createInMemoryChannelTenancyStore();
+    const uncompensatableTenancy = {
+      ...tenancy,
+      async compensateChannelTenant(): Promise<void> {
+        throw new Error("compensation storage unavailable");
+      },
+    };
+    const platform = fakePlatform({
+      launchChannel: async () => {
+        throw new Error("channel host launch failed");
+      },
+    });
+    const deps = buildDeps({ tenancy: uncompensatableTenancy, platform });
+    const routes = createChatRoutes(deps);
+    // Hono's default error handling swallows a thrown error into a
+    // generic 500 body, which is useless for telling "the original
+    // error propagated" apart from "the compensation error masked it"
+    // — both look identical over HTTP. `onError` intercepts the actual
+    // thrown value before Hono discards it, so the assertion below
+    // can inspect the real error rather than its flattened response.
+    let caught: unknown;
+    routes.onError((err) => {
+      caught = err;
+      return new Response(null, { status: 500 });
+    });
+    const app = mountAs(routes, "prn_alice");
+
+    // Both the launch and its compensation fail. The double failure
+    // must never produce a silently swallowed error: the route
+    // re-throws the ORIGINAL launch error, not the compensation
+    // failure that masked it in the bug this test guards against.
+    const response = await app.request("/channels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "channel", name: "Doomed" }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe("channel host launch failed");
+
+    // The tenant this mint created is now an orphan the compensation
+    // could not clean up — that is the accepted, loudly-logged
+    // consequence of a double failure, not something this test can
+    // observe through the in-memory store (which has no "orphaned
+    // tenants" ledger), but the channel itself must never have been
+    // recorded as ready to use.
+  });
+
   test("GET /channels annotates every created channel with its tenancy and marks a linkless row legacy", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
