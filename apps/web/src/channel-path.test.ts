@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  channelIdFromPath,
-  channelPath,
-  isChannelPath,
-} from "../src/channel-path";
+import { channelIdFromPath, channelPath, isChannelPath } from "./channel-path";
 
 describe("channelPath helpers", () => {
   test("builds canonical /c paths", () => {

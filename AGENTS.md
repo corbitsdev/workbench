@@ -54,7 +54,9 @@ behind human approval.
   audience.
 - Worktrees live in `.worktrees/<branch>`; branch = `cl-<issue#>-<slug>`.
 - Tests are meaningful red/green tests only — no coverage theater. Merged
-  line coverage floor: 80%.
+  line coverage floor: 80%. Unit tests for pure modules sit next to the
+  source they cover (`src/**/*.test.ts`); multi-module / DOM / composition
+  suites stay under a package `test/` tree (or top-level e2e).
 - Deployment is explicit via Pulumi (Railway); CI runs tests only — nothing
   auto-deploys on main.
 
