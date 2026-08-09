@@ -23,7 +23,7 @@ function mountAuthenticated(routes: Hono<AppEnv>): Hono<AppEnv> {
 }
 
 describe("POST /provision", () => {
-  test("an unreachable hub surfaces a structured error envelope, not a bare 500 body", async () => {
+  test("an unreachable hub surfaces a transient error envelope (503), not a bare 500 body", async () => {
     const lines: string[] = [];
     const routes = createOnboardingRoutes({
       // Port 0 on loopback refuses every connection immediately, so the
@@ -36,13 +36,71 @@ describe("POST /provision", () => {
 
     const response = await app.request("/provision", { method: "POST" });
 
-    expect(response.status).toBe(500);
+    // An unrecognized failure (connection refused) is transient: the hub
+    // may come back, and provisioning is idempotent so retry is safe.
+    expect(response.status).toBe(503);
     const body = (await response.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; kind: string; message: string };
     };
     expect(body.error.code).toBe("provisioning_failed");
+    expect(body.error.kind).toBe("transient");
     expect(typeof body.error.message).toBe("string");
     expect(lines.some((line) => line.includes("user_1"))).toBe(true);
+  });
+
+  test("a permanent provision failure (slug conflict, no principal) maps to 500 with kind permanent", async () => {
+    // A slug-conflict where the caller still has no principal anywhere is a
+    // dead end the client cannot retry out of — it must surface as a
+    // permanent error so the UI offers "contact support", not "try again".
+    const hub = new Hono();
+    hub.get("/api/me/principals", (c) =>
+      c.json({ data: [], nextCursor: null }),
+    );
+    hub.post("/api/tenants", (c) =>
+      c.json({ error: { code: "conflict", message: "Slug taken" } }, 409),
+    );
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    try {
+      const routes = createOnboardingRoutes({
+        hubUrl: `http://localhost:${server.port}`,
+        pushWorkflow: async () => "pushed",
+        log: () => undefined,
+      });
+      const app = mountAuthenticated(routes);
+
+      const response = await app.request("/provision", { method: "POST" });
+
+      expect(response.status).toBe(500);
+      const body = (await response.json()) as {
+        error: { code: string; kind: string; message: string };
+      };
+      expect(body.error.code).toBe("slug_conflict_no_principal");
+      expect(body.error.kind).toBe("permanent");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("rapid retries from the same user are rate-limited (429)", async () => {
+    const routes = createOnboardingRoutes({
+      hubUrl: "http://127.0.0.1:0",
+      pushWorkflow: async () => "pushed",
+      log: () => undefined,
+    });
+    const app = mountAuthenticated(routes);
+
+    const first = await app.request("/provision", { method: "POST" });
+    const second = await app.request("/provision", { method: "POST" });
+
+    // The first call runs (and fails transiently against the dead hub).
+    expect(first.status).toBe(503);
+    // The second is short-circuited before provisioning runs.
+    expect(second.status).toBe(429);
+    const body = (await second.json()) as {
+      error: { code: string; kind: string; message: string };
+    };
+    expect(body.error.code).toBe("rate_limited");
+    expect(body.error.kind).toBe("transient");
   });
 
   test("an anonymous request is rejected before provisioning runs", async () => {

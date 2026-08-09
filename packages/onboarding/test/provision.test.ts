@@ -796,10 +796,15 @@ describe("provisionPersonalTenantIfNeeded", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/mail`
       ) {
-        startedRuns.push("run_1");
+        const runId = `run_${startedRuns.length + 1}`;
+        startedRuns.push(runId);
         return {
-          status: 200,
-          data: { ok: true, runId: "run_1" },
+          status: 202,
+          data: {
+            deploymentId: DEPLOYMENT_ID,
+            address: "echo@x",
+            messageId: `m${startedRuns.length}`,
+          },
           cookies: [],
         };
       }
