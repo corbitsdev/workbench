@@ -16,6 +16,8 @@ import {
   sendMessage,
   getChannelSettings,
   patchChannelSettings,
+  getBenchChatSettings,
+  patchBenchChatSettings,
 } from "../src/api";
 
 const realFetch = globalThis.fetch;
@@ -317,6 +319,7 @@ describe("getChannelSettings", () => {
         pinned: true,
         participants: [],
         settings: { "chat/contextWindow": 5 },
+        contextWindow: { value: 5, source: "override" },
       }),
     );
     const settings = await getChannelSettings("tenant_1", "c1");
@@ -324,6 +327,7 @@ describe("getChannelSettings", () => {
       "/api/tenants/tenant_1/chat/channels/c1/settings",
     );
     expect(settings.settings["chat/contextWindow"]).toBe(5);
+    expect(settings.contextWindow).toEqual({ value: 5, source: "override" });
   });
 });
 
@@ -341,6 +345,7 @@ describe("patchChannelSettings", () => {
           "chat/pinned": false,
           "chat/contextWindow": 0,
         },
+        contextWindow: { value: 0, source: "override" },
       }),
     );
     const settings = await patchChannelSettings("tenant_1", "c1", {
@@ -358,6 +363,34 @@ describe("patchChannelSettings", () => {
       "chat/contextWindow": 0,
     });
     expect(settings.title).toBe("Renamed");
+  });
+});
+
+describe("getBenchChatSettings", () => {
+  test("fetches the bench's chat defaults", async () => {
+    const calls = stubFetch(() =>
+      json({ settings: { "chat/contextWindow": 30 }, contextWindow: 30 }),
+    );
+    const settings = await getBenchChatSettings("tenant_1");
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/bench/settings");
+    expect(settings.contextWindow).toBe(30);
+  });
+});
+
+describe("patchBenchChatSettings", () => {
+  test("PATCHes the bench's default context window", async () => {
+    const calls = stubFetch(() =>
+      json({ settings: { "chat/contextWindow": 42 }, contextWindow: 42 }),
+    );
+    const settings = await patchBenchChatSettings("tenant_1", {
+      "chat/contextWindow": 42,
+    });
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/bench/settings");
+    expect(calls[0]?.init?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      "chat/contextWindow": 42,
+    });
+    expect(settings.contextWindow).toBe(42);
   });
 });
 

@@ -45,6 +45,8 @@ export {
   runDisplayName,
   getChannelSettings,
   patchChannelSettings,
+  getBenchChatSettings,
+  patchBenchChatSettings,
 } from "./api";
 export type {
   Channel,
@@ -56,4 +58,8 @@ export type {
   InvitedAgent,
   ChannelSettings,
   ChannelSettingsPatch,
+  ResolvedContextWindow,
+  BenchChatSettings,
+  BenchChatSettingsPatch,
 } from "./api";
+export { ChannelSettingsPanel } from "./channel-settings-panel";

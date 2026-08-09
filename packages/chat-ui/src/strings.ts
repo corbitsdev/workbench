@@ -70,4 +70,36 @@ export const CHAT_STRINGS = {
   fallbackPartUnsupported: "Unsupported content",
   dayDividerToday: "Today",
   dayDividerYesterday: "Yesterday",
+  rowMenuLabel: "Channel actions",
+  rowMenuRename: "Rename",
+  rowMenuPin: "Pin",
+  rowMenuUnpin: "Unpin",
+  rowMenuSettings: "Channel settings",
+  renameCancel: "Escape to cancel",
+  channelSettingsAction: "Channel settings",
+  channelSettingsDialogTitle: "Channel settings",
+  channelSettingsDialogDescription:
+    "Name, pin, conversation memory, and who's in this channel.",
+  channelSettingsNameLabel: "Name",
+  channelSettingsPinnedLabel: "Pinned",
+  channelSettingsPinnedDescription:
+    "Pinned channels stay at the top for the whole bench.",
+  channelSettingsContextWindowLabel: "Conversation memory",
+  channelSettingsContextWindowDescription:
+    "How many prior messages a mentioned agent sees as context.",
+  channelSettingsUseBenchDefault: (benchDefault: number) =>
+    `Use bench default (${benchDefault})`,
+  channelSettingsUseOverride: "Set a custom value for this channel",
+  channelSettingsContextWindowDisabled:
+    "Disabled — mentioned agents see no history",
+  channelSettingsContextWindowCustom: (count: number) =>
+    `Last ${count} messages`,
+  channelSettingsParticipantsLabel: "Participants",
+  channelSettingsLoadError: "Couldn't load this channel's settings",
+  channelSettingsSaveError:
+    "Couldn't save this channel's settings — try again.",
+  channelSettingsClose: "Close",
+  channelSettingsSave: "Save",
+  channelSettingsSaving: "Saving…",
+  channelSettingsNoParticipants: "No participants yet.",
 } as const;

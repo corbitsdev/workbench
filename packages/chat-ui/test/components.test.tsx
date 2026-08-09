@@ -11,7 +11,11 @@ import {
   canSubmitNewChannel,
   newChannelPayload,
 } from "../src/new-channel-dialog";
-import { ChatSidebar } from "../src/sidebar";
+import {
+  contextWindowControlState,
+  contextWindowPatchValue,
+} from "../src/channel-settings-panel";
+import { ChatSidebar, renamePayload, rowMenuLabels } from "../src/sidebar";
 import { ChannelTimeline } from "../src/timeline";
 
 /** The floor: no rendered text may ever contain a raw identifier. */
@@ -35,6 +39,9 @@ describe("ChatSidebar", () => {
         activeChannelId="c1"
         onSelect={() => undefined}
         onNewChannel={() => undefined}
+        onRename={() => undefined}
+        onTogglePin={() => undefined}
+        onOpenSettings={() => undefined}
       />,
     );
     expect(markup).toContain("Channels");
@@ -51,6 +58,9 @@ describe("ChatSidebar", () => {
         activeChannelId="c1"
         onSelect={() => undefined}
         onNewChannel={() => undefined}
+        onRename={() => undefined}
+        onTogglePin={() => undefined}
+        onOpenSettings={() => undefined}
       />,
     );
     expect(markup).toContain('aria-current="true"');
@@ -64,6 +74,9 @@ describe("ChatSidebar", () => {
         activeChannelId="c2"
         onSelect={() => undefined}
         onNewChannel={() => undefined}
+        onRename={() => undefined}
+        onTogglePin={() => undefined}
+        onOpenSettings={() => undefined}
       />,
     );
     expect(markup).not.toContain("Channels");
@@ -78,6 +91,9 @@ describe("ChatSidebar", () => {
         activeChannelId={null}
         onSelect={() => undefined}
         onNewChannel={() => undefined}
+        onRename={() => undefined}
+        onTogglePin={() => undefined}
+        onOpenSettings={() => undefined}
       />,
     );
     expect(markup).toContain("No channels yet");
@@ -100,6 +116,9 @@ describe("ChatSidebar", () => {
         activeChannelId="c2"
         onSelect={() => undefined}
         onNewChannel={() => undefined}
+        onRename={() => undefined}
+        onTogglePin={() => undefined}
+        onOpenSettings={() => undefined}
       />,
     );
     expect(markup).toContain("Agent");
@@ -114,6 +133,9 @@ describe("ChatSidebar", () => {
         activeChannelId="c1"
         onSelect={() => undefined}
         onNewChannel={() => undefined}
+        onRename={() => undefined}
+        onTogglePin={() => undefined}
+        onOpenSettings={() => undefined}
       />,
     );
     expect(markup).not.toContain("Agent");
@@ -452,6 +474,9 @@ describe("no raw identifiers on screen", () => {
           activeChannelId="c1"
           onSelect={() => undefined}
           onNewChannel={() => undefined}
+          onRename={() => undefined}
+          onTogglePin={() => undefined}
+          onOpenSettings={() => undefined}
         />,
       ),
       renderToStaticMarkup(
@@ -478,5 +503,86 @@ describe("no raw identifiers on screen", () => {
     expect(markup).not.toMatch(RAW_ID_PATTERN);
     expect(markup).toContain("Untitled channel");
     expect(markup).toContain("@echo joined");
+  });
+});
+
+describe("ChatSidebar row menu", () => {
+  // Radix's `MenuContent` mounts into a portal only once the menu is open,
+  // so a closed-by-default static render (this package's only test
+  // infrastructure — see AGENTS.md coverage note) never shows the item
+  // labels themselves; the trigger button is the one thing this level of
+  // testing can assert. The item wording itself is covered directly by
+  // `rowMenuLabels` below.
+  test("renders a hidden-until-hover ellipsis trigger per row", () => {
+    const markup = renderToStaticMarkup(
+      <ChatSidebar
+        channels={[channel({ id: "c1", title: "General", pinned: true })]}
+        chats={[]}
+        activeChannelId="c1"
+        onSelect={() => undefined}
+        onNewChannel={() => undefined}
+        onRename={() => undefined}
+        onTogglePin={() => undefined}
+        onOpenSettings={() => undefined}
+      />,
+    );
+    expect(markup).toContain("chat-sidebar-row-menu-trigger");
+    expect(markup).toContain("Channel actions");
+  });
+});
+
+describe("rowMenuLabels", () => {
+  test("offers Unpin for a pinned channel", () => {
+    expect(rowMenuLabels({ pinned: true })).toEqual([
+      "Rename",
+      "Unpin",
+      "Channel settings",
+    ]);
+  });
+
+  test("offers Pin for an unpinned channel", () => {
+    expect(rowMenuLabels({ pinned: false })).toEqual([
+      "Rename",
+      "Pin",
+      "Channel settings",
+    ]);
+  });
+});
+
+describe("renamePayload", () => {
+  test("returns the trimmed name when it differs from the current title", () => {
+    expect(renamePayload("  New name  ", "Old name")).toBe("New name");
+  });
+
+  test("returns undefined for blank input", () => {
+    expect(renamePayload("   ", "Old name")).toBeUndefined();
+  });
+
+  test("returns undefined when the trimmed input matches the current title", () => {
+    expect(renamePayload("Old name", "Old name")).toBeUndefined();
+  });
+});
+
+describe("contextWindowControlState", () => {
+  test("an inheriting channel renders the bench-default mode with the resolved value", () => {
+    expect(contextWindowControlState({ value: 20, source: "inherit" })).toEqual(
+      { mode: "inherit", displayValue: 20 },
+    );
+  });
+
+  test("an overriding channel renders the override mode with its own value", () => {
+    expect(contextWindowControlState({ value: 5, source: "override" })).toEqual(
+      { mode: "override", displayValue: 5 },
+    );
+  });
+});
+
+describe("contextWindowPatchValue", () => {
+  test("switching to inherit always clears the override to null", () => {
+    expect(contextWindowPatchValue("inherit", 5)).toBeNull();
+  });
+
+  test("override mode sends the field's own value", () => {
+    expect(contextWindowPatchValue("override", 7)).toBe(7);
   });
 });
