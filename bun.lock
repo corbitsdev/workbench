@@ -23,6 +23,7 @@
       "dependencies": {
         "@corbits/agent-directory": "workspace:*",
         "@corbits/approvals": "workspace:*",
+        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
         "@corbits/chat": "workspace:*",
         "@corbits/commands": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
@@ -840,6 +841,8 @@
     "@corbits/approvals": ["@corbits/approvals@workspace:packages/approvals"],
 
     "@corbits/artifact-ui": ["@corbits/artifact-ui@workspace:packages/artifact-ui"],
+
+    "@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#81049ed", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/types": "^0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-81049ed", "sha512-oTE0iFDyQdz0ifG1epo39pwaCaYaw19YcKXwfaZqAEQ56a1g9YIozXwH9CG4NaUTwcJKUeYGuNls6oJsMPisCw=="],
 
     "@corbits/assistant-workflow": ["@corbits/assistant-workflow@workspace:workflows/assistant"],
 

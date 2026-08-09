@@ -57,6 +57,7 @@ import { createNeedsYouRoutes } from "@corbits/approvals";
 import { createEchoRoutes } from "@workbench/echo";
 import { createGitWorkflowPusher } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
+import { mountArtifacts } from "./artifacts-mount";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, type Next } from "hono";
@@ -479,6 +480,15 @@ export async function createHub(config: HubConfig) {
     onboardingDeps.seedModel = config.seedModel;
 
   app.route("/api/onboarding", createOnboardingRoutes(onboardingDeps));
+
+  // Artifacts engine: mounts `@corbits/artifacts` against the same
+  // Postgres cluster as this hub's control plane (its
+  // `artifact`/`artifact_version` tables FK into `public.tenant` /
+  // `public.principal`). Degrades to a no-op when
+  // `ARTIFACTS_DATABASE_URL` is unset. The handle is available for
+  // tenant-scoped list/search/read routes; Library still uses the
+  // asset-shim surface until those land.
+  await mountArtifacts();
 
   // Tells the signed-out screen which OAuth buttons to draw, without
   // exposing the credentials themselves — just which providers a full
