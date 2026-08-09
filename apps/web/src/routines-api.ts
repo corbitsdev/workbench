@@ -23,14 +23,16 @@ export const RoutineTrigger = type({
     kind: "'daily'",
     hour: "0 <= number.integer <= 23",
     minute: "0 <= number.integer <= 59",
+    "timezone?": "string",
   })
   .or({
     kind: "'weekly'",
     dayOfWeek: "0 <= number.integer <= 6",
     hour: "0 <= number.integer <= 23",
     minute: "0 <= number.integer <= 59",
+    "timezone?": "string",
   })
-  .or({ kind: "'cron'", expression: "string" })
+  .or({ kind: "'cron'", expression: "string", "timezone?": "string" })
   .or("null");
 export type RoutineTrigger = typeof RoutineTrigger.infer;
 
