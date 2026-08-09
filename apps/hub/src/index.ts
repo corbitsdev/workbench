@@ -57,6 +57,7 @@ import { createNeedsYouRoutes } from "@corbits/approvals";
 import { createEchoRoutes } from "@workbench/echo";
 import { createGitWorkflowPusher } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
+import { mountMemory } from "./memory-mount";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, type Next } from "hono";
@@ -462,6 +463,15 @@ export async function createHub(config: HubConfig) {
   const routineScheduler = createRoutineScheduler({
     store: routineStore,
     launcher: routineLauncher,
+  });
+
+  // Memory plane (optional): firm-memory HTTP under
+  // `/api/tenants/:tenantId/memory/*`. Degrades when
+  // KNOWLEDGE_DATABASE_URL / EMBED_* are unset — see memory-mount.ts.
+  mountMemory({
+    app,
+    grantStore: chatGrantStore,
+    conditionRegistry: chatConditionRegistry,
   });
 
   // The first-login hook mounts outside the tenant prefix, since the
