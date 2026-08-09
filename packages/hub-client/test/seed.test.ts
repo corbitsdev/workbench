@@ -444,7 +444,9 @@ describe("seedTenant", () => {
     // includes the assistant. Its display name is the productized label
     // Myra — seed stamps it onto the asset at create time, so the seeded
     // assistant surfaces as Myra rather than the generic "Assistant".
-    const assistant = DEFAULT_WORKFLOWS.find((w) => w.assetName === "assistant");
+    const assistant = DEFAULT_WORKFLOWS.find(
+      (w) => w.assetName === "assistant",
+    );
     expect(assistant).toBeDefined();
     expect(assistant?.displayName).toBe("Myra");
   });
