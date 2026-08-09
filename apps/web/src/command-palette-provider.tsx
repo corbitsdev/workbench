@@ -142,7 +142,7 @@ export function CommandPaletteProvider({
       if (id.startsWith("route:")) {
         navigate(id.slice("route:".length));
       } else if (id.startsWith("entity:channels:")) {
-        navigate(`/chat/${id.slice("entity:channels:".length)}`);
+        navigate(`/c/${id.slice("entity:channels:".length)}`);
       } else if (id.startsWith("entity:runs:")) {
         // Routines page owns the /routines prefix (including detail segments).
         navigate(`/routines/${id.slice("entity:runs:".length)}`);

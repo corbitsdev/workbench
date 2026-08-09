@@ -29,7 +29,7 @@ describe("pins", () => {
         id: "ch_1",
         kind: "channel" as const,
         label: "general",
-        href: "/chat/ch_1",
+        href: "/c/ch_1",
       },
     ];
     savePins(pins, storage);

@@ -9,7 +9,12 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
-import { APP_ROUTES, NAV_ROUTES, SETTINGS_PATH } from "../src/routes";
+import {
+  APP_ROUTES,
+  matchesRoute,
+  NAV_ROUTES,
+  SETTINGS_PATH,
+} from "../src/routes";
 import type { SessionState } from "../src/session";
 
 const noNavigate = () => undefined;
@@ -63,7 +68,7 @@ describe("route table", () => {
   test("covers every screen the app can route to", () => {
     expect(APP_ROUTES.map((route) => route.path)).toEqual([
       "/",
-      "/chat",
+      "/c",
       "/routines",
       "/library",
       "/agents",
@@ -82,6 +87,12 @@ describe("route table", () => {
       "Skills",
       "Insights",
     ]);
+  });
+
+  test("legacy /chat paths still match the channels route", () => {
+    expect(matchesRoute("/c", "/chat")).toBe(true);
+    expect(matchesRoute("/c", "/chat/ch_1")).toBe(true);
+    expect(matchesRoute("/c", "/c/ch_1")).toBe(true);
   });
 });
 

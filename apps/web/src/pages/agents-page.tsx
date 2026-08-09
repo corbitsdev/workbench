@@ -35,6 +35,7 @@ import type { AgentDirectoryData } from "../agents-api";
 import type { APIQuery } from "../api";
 import { useAgentDirectory } from "../agents-api";
 import { useBench } from "../bench-context";
+import { channelPath } from "../channel-path";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 import { CreateAgentDialog } from "./create-agent-dialog";
@@ -260,7 +261,7 @@ function AgentDetailPanel({
         kind: "chat",
         definitionId: definition.id,
       });
-      const target = `/chat/${encodeURIComponent(channel.id)}`;
+      const target = channelPath(channel.id);
       onChatStarted(channel.id);
       navigate?.(target);
     } catch (cause) {
@@ -271,7 +272,7 @@ function AgentDetailPanel({
   }
 
   function handleOpenInChannel() {
-    navigate?.("/chat");
+    navigate?.(channelPath(null));
   }
 
   return (
@@ -461,7 +462,7 @@ export function AgentsPage({
    * injectable for tests that need to assert detail markup without a click. */
   readonly initialSelectedDefinitionId?: string;
   /** Client-side navigation callback; Start chat and Open in channel rely
-   * on this to route into /chat after creating/inviting. */
+   * on this to route into /c after creating/inviting. */
   readonly navigate?: (to: string) => void;
 }) {
   const [query, setQuery] = useState("");

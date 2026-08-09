@@ -1,21 +1,19 @@
-// Adapts this app's bench selection (see ../bench-context.tsx) into
-// `@corbits/chat-ui`'s `TenantResolution`. The chat surface itself is
-// entirely `@corbits/chat-ui`'s — this file resolves which bench it talks
-// to and mirrors the active channel into the URL as /chat/:channelId so
-// conversations are linkable.
+// Channel surface for the main pane. On an expanded layout the canvas
+// column hosts the same `ChatWorkspace` and this page is a short pointer
+// so the main pane isn't empty under a deep link. On compact/narrow the
+// canvas is gone, so this page is the full conversation surface.
+//
+// Deep links use `/c/:channelId`; the legacy `/chat/:channelId` prefix is
+// still parsed so old links keep working.
 
 import { ChatWorkspace } from "@corbits/chat-ui";
 import type { TenantResolution } from "@corbits/chat-ui";
+import { EmptyState } from "@corbits/react-ui";
+import { MessageSquare } from "lucide-react";
 
 import { useBench } from "../bench-context";
-
-const CHAT_PATH_PREFIX = "/chat";
-
-function channelIdFromPath(path: string): string | null {
-  if (!path.startsWith(`${CHAT_PATH_PREFIX}/`)) return null;
-  const rest = path.slice(CHAT_PATH_PREFIX.length + 1);
-  return rest === "" ? null : decodeURIComponent(rest);
-}
+import { channelIdFromPath, channelPath } from "../channel-path";
+import { useCanvasColumnAvailable } from "../shell/canvas-availability";
 
 export function ChatPage({
   path,
@@ -24,7 +22,23 @@ export function ChatPage({
   readonly path: string;
   readonly navigate: (to: string) => void;
 }) {
+  const canvasAvailable = useCanvasColumnAvailable();
   const { memberships, selectedTenantId, selectedPrincipalId } = useBench();
+  const channelId = channelIdFromPath(path);
+
+  if (canvasAvailable) {
+    return (
+      <EmptyState
+        icon={<MessageSquare />}
+        title={channelId === null ? "Channels" : "Channel open"}
+        description={
+          channelId === null
+            ? "Pick a channel from the panel — the conversation opens in the canvas on the right."
+            : "The conversation is open in the canvas on the right. Close the canvas to free the space, or pick another channel from the panel."
+        }
+      />
+    );
+  }
 
   let tenant: TenantResolution;
   if (memberships.kind !== "ready") {
@@ -41,10 +55,8 @@ export function ChatPage({
     <ChatWorkspace
       tenant={tenant}
       {...(principalId !== undefined ? { currentUser: { principalId } } : {})}
-      channelId={channelIdFromPath(path)}
-      onChannelChange={(channelId) =>
-        navigate(`${CHAT_PATH_PREFIX}/${encodeURIComponent(channelId)}`)
-      }
+      channelId={channelId}
+      onChannelChange={(nextChannelId) => navigate(channelPath(nextChannelId))}
     />
   );
 }

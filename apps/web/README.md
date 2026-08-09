@@ -48,15 +48,15 @@ in a real `@corbits/routines` listing later touches nothing else.
 
 ## Screens
 
-| Path         | What it shows                                                                     |
-| ------------ | --------------------------------------------------------------------------------- |
-| `/`          | Home — a welcome summary of the signed-in account's benches and runs.             |
-| `/chat`      | The chat surface (`@corbits/chat-ui`): channels, direct chats, and threads.       |
-| `/workflows` | Workflow runs executing across your benches.                                      |
-| `/library`   | The artifact gallery. See "Library" below.                                        |
-| `/agents`    | Agent definitions you can invite into a channel, and each channel's participants. |
-| `/skills`    | A stub: skills have no registry in the hub yet, so this describes what's coming.  |
-| `/settings`  | Account and bench membership settings.                                            |
+| Path         | What it shows                                                                                                                                                              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`          | Home — a welcome summary of the signed-in account's benches and runs.                                                                                                      |
+| `/c`         | Channel deep-link surface. On wide layouts the conversation opens in the right canvas; on compact layouts it fills the main pane. Legacy `/chat` links still resolve here. |
+| `/workflows` | Workflow runs executing across your benches.                                                                                                                               |
+| `/library`   | The artifact gallery. See "Library" below.                                                                                                                                 |
+| `/agents`    | Agent definitions you can invite into a channel, and each channel's participants.                                                                                          |
+| `/skills`    | A stub: skills have no registry in the hub yet, so this describes what's coming.                                                                                           |
+| `/settings`  | Account and bench membership settings.                                                                                                                                     |
 
 Approvals are not a page: pending permission requests land as actionable
 cards in the contextual panel's Notifications band (and, when a channel is
