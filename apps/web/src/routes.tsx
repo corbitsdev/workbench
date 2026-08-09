@@ -4,14 +4,12 @@
 // sidebar's identity dock, not the top nav — `NAV_ROUTES` is what the nav
 // list shows. Channel deep links (`/c/:channelId`) stay routable for the
 // main-pane fallback when the canvas column is not available; the rail no
-// longer lists Chat. Approvals no longer has a page at all — the `/approvals`
-// route is gone and its actionable cards live inline in the contextual
-// panel's notifications band.
+// longer lists Chat. Approvals has no page — the notifications band owns them.
+// `/` is the Myra land hop (ensure + open channel), not a Home dashboard.
 
 import {
   Bot,
   ChartColumn,
-  Home,
   Library,
   MessageSquare,
   Settings,
@@ -39,9 +37,9 @@ export const ONBOARDING_PATH = "/onboarding";
 export const SETTINGS_PATH = "/settings";
 
 /** Paths the rail lists — product nav; channels open in the canvas.
+ * Home is not a rail destination (Myra land is `/` only as a redirect hop).
  * Approvals has no route at all (notifications band owns its surface). */
 const RAIL_NAV_PATHS = new Set([
-  "/",
   "/routines",
   "/library",
   "/agents",
@@ -74,7 +72,12 @@ export function matchesRoute(routePath: string, path: string): boolean {
 }
 
 export const APP_ROUTES: readonly AppRoute[] = [
-  { path: "/", label: "Home", icon: <Home />, render: () => <HomeRoute /> },
+  {
+    path: "/",
+    label: "Myra",
+    icon: <MessageSquare />,
+    render: () => <HomeRoute />,
+  },
   {
     path: CHANNEL_PATH_PREFIX,
     label: "Channels",
@@ -125,7 +128,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
 
 /** What the rail lists: product pages only. Settings is the identity dock;
  * Channels stay deep-linkable but off the rail (canvas owns the surface).
- * Approvals has no route. */
+ * Approvals has no route. Home is not listed — land is Myra via `/`. */
 export const NAV_ROUTES: readonly AppRoute[] = APP_ROUTES.filter((route) =>
   RAIL_NAV_PATHS.has(route.path),
 );

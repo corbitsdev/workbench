@@ -78,9 +78,8 @@ describe("route table", () => {
     ]);
   });
 
-  test("rail nav is Home, Routines, Library, Agents, Skills, Insights", () => {
+  test("rail nav is Routines, Library, Agents, Skills, Insights (no Home)", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
-      "Home",
       "Routines",
       "Library",
       "Agents",

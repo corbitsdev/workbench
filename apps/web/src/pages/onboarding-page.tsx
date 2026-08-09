@@ -65,7 +65,7 @@ const GUIDANCE_CARDS = [
 
 const ROUTINE_LABELS: Readonly<Record<string, string>> = {
   echo: "Echo routine",
-  assistant: "Assistant routine",
+  assistant: "Myra routine",
 };
 
 function routineLabel(assetName: string): string {
@@ -310,7 +310,7 @@ export function OnboardingPage() {
         >
           <GuidanceCards />
           <Button asChild>
-            <Link to="/c">Go to your starter channel</Link>
+            <Link to="/">Meet Myra</Link>
           </Button>
         </Section>
       </PageShell>
@@ -332,8 +332,8 @@ export function OnboardingPage() {
         >
           <HorizontalStepper steps={wizardSteps(state.phase)} />
           <ProgressChecklist steps={checklist} label="Default routines" />
-          <Button onClick={() => navigate("/c")}>
-            Open your starter channel
+          <Button onClick={() => navigate("/")}>
+            Meet Myra
           </Button>
         </Section>
       </PageShell>

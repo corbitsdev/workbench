@@ -14,7 +14,6 @@ import type {
   AgentInstance,
 } from "../src/agents-api";
 import { AgentsPage } from "../src/pages/agents-page";
-import { HomePage } from "../src/pages/home-page";
 import { LibraryPage } from "../src/pages/library-page";
 import { SkillsPage } from "../src/pages/skills-page";
 
@@ -22,18 +21,7 @@ function ready<T>(data: T): APIQuery<T> {
   return { kind: "ready", data };
 }
 
-const emptyPage = ready({ data: [], nextCursor: null });
 const unauthenticated = { kind: "unauthenticated" } as const;
-const profile = ready({
-  id: "user_1",
-  name: "Ada",
-  email: "ada@example.com",
-  emailVerified: true,
-  createdAt: "2026-01-01T00:00:00.000Z",
-  updatedAt: "2026-01-01T00:00:00.000Z",
-  image: null,
-});
-
 describe("empty states", () => {
   test("library teaches what will appear once the seam is real", () => {
     const markup = renderToStaticMarkup(<LibraryPage artifacts={[]} />);
@@ -52,19 +40,6 @@ describe("empty states", () => {
       <AgentsPage
         directory={unauthenticated}
         onAgentCreated={() => undefined}
-      />,
-    );
-    expect(markup).toContain("Sign in required");
-  });
-});
-
-describe("signed-out state", () => {
-  test("home reports a missing session", () => {
-    const markup = renderToStaticMarkup(
-      <HomePage
-        profile={unauthenticated}
-        principals={unauthenticated}
-        runs={unauthenticated}
       />,
     );
     expect(markup).toContain("Sign in required");
@@ -196,28 +171,4 @@ describe("live data", () => {
     expect(markup).not.toContain("Define a new agent");
   });
 
-  test("home counts what the hub reports", () => {
-    const markup = renderToStaticMarkup(
-      <HomePage
-        profile={profile}
-        principals={ready({
-          data: [
-            {
-              principalId: "prin_1",
-              tenantId: "tenant_1",
-              tenantName: "Acme",
-              tenantSlug: "acme",
-              kind: "user",
-              status: "active",
-              roles: [{ id: "role_1", name: "owner" }],
-            },
-          ],
-          nextCursor: null,
-        })}
-        runs={emptyPage}
-      />,
-    );
-    expect(markup).toContain("Welcome back, Ada");
-    expect(markup).toContain("Benches");
-  });
 });
