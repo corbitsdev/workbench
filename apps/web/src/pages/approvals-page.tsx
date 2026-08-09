@@ -28,6 +28,7 @@ import {
 import type { ApprovalRequest } from "@corbits/react-ui";
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
   approveApproval,
@@ -38,6 +39,7 @@ import {
 import { countProp } from "../optional-props";
 import type { APIQuery, NeedsYouItem } from "../api";
 import { useBench } from "../bench-context";
+import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 
 export function ApprovalsPage({
@@ -194,7 +196,7 @@ function RejectDialog({
 
 export function ApprovalsRoute() {
   const { selectedTenantId } = useBench();
-  const [reloadKey, setReloadKey] = useState(0);
+  const queryClient = useQueryClient();
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -204,7 +206,6 @@ export function ApprovalsRoute() {
       ? ""
       : `/api/tenants/${selectedTenantId}/approvals/needs-you`,
     NeedsYouSchema,
-    reloadKey,
   );
   const rows: APIQuery<NeedsYouItem[]> =
     selectedTenantId === null
@@ -214,7 +215,10 @@ export function ApprovalsRoute() {
         : approvals;
 
   function reload() {
-    setReloadKey((value) => value + 1);
+    if (selectedTenantId === null) return;
+    void queryClient.invalidateQueries({
+      queryKey: tenantKeys.needsYou(selectedTenantId),
+    });
   }
 
   function handleApprove(approval: NeedsYouItem) {

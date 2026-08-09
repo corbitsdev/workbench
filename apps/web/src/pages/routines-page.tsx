@@ -39,12 +39,14 @@ import {
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import { Clock, Plus } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { RunsSchema, useAPIQuery } from "../api";
 import type { APIQuery, WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
 import { countProp } from "../optional-props";
+import { tenantKeys } from "../query-client";
 
 import { QueryView } from "../query-view";
 import { approximateNextRun, cadenceLabel } from "../routine-trigger";
@@ -650,23 +652,31 @@ export function RoutinesRoute({
   // BenchProvider owns the active tenant. Never re-fetch principals and take
   // memberships[0] — that ignores the shell's bench switcher.
   const { selectedTenantId } = useBench();
+  const queryClient = useQueryClient();
   const allRuns = useAPIQuery("/api/me/workflows/runs", RunsSchema);
   const tenantId = selectedTenantId;
 
-  // Bumped after a mutation (create/toggle) so the affected queries
-  // re-run without a full page reload — `useTenantQuery`'s effect keys
-  // off its `key` array exactly like `useAPIQuery` keys off its path, so
-  // changing this value is what a cache invalidation would otherwise do.
-  const [refreshToken, setRefreshToken] = useState(0);
-  const refresh = () => setRefreshToken((token) => token + 1);
+  function invalidateRoutines() {
+    if (tenantId === null) return;
+    void queryClient.invalidateQueries({
+      queryKey: tenantKeys.routines(tenantId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: tenantKeys.routineRunHistories(tenantId),
+    });
+  }
 
   const routines = useTenantQuery(
-    ["routines", tenantId, refreshToken],
+    tenantId === null
+      ? (["tenant", "none", "routines"] as const)
+      : tenantKeys.routines(tenantId),
     tenantId !== null,
     () => listRoutines(tenantId ?? ""),
   );
   const definitionsQuery = useTenantQuery(
-    ["routine-definitions", tenantId],
+    tenantId === null
+      ? (["tenant", "none", "definitions"] as const)
+      : tenantKeys.definitions(tenantId),
     tenantId !== null,
     () => listWorkflowDefinitions(tenantId ?? ""),
   );
@@ -678,7 +688,9 @@ export function RoutinesRoute({
   const runHistoriesQuery = useTenantQuery<
     ReadonlyMap<string, readonly RoutineRun[]>
   >(
-    ["routine-run-histories", tenantId, routineIds.join(","), refreshToken],
+    tenantId === null
+      ? (["tenant", "none", "routine-run-histories"] as const)
+      : [...tenantKeys.routineRunHistories(tenantId), routineIds.join(",")],
     tenantId !== null && routineIds.length > 0,
     async () => {
       const entries = await Promise.all(
@@ -705,20 +717,25 @@ export function RoutinesRoute({
 
   const openRoutineId = routineIdFromPath(path);
 
-  const detailRoutine = useTenantQuery(
-    ["routine-detail", tenantId, openRoutineId],
-    tenantId !== null && openRoutineId !== null,
-    async () => {
-      const found =
-        routines.kind === "ready"
-          ? routines.data.find((r) => r.id === openRoutineId)
-          : undefined;
-      if (found !== undefined) return found;
-      throw new Error("Routine not found");
-    },
-  );
+  // Client-side selector over the already-loaded list — not a server fetch.
+  // A separate useQuery would race the list load and stick on "not found".
+  const detailRoutine: APIQuery<Routine> = useMemo(() => {
+    if (openRoutineId === null || tenantId === null) {
+      return { kind: "loading" };
+    }
+    if (routines.kind === "loading") return { kind: "loading" };
+    if (routines.kind !== "ready") return routines;
+    const found = routines.data.find((r) => r.id === openRoutineId);
+    if (found === undefined) {
+      return { kind: "error", message: "Routine not found" };
+    }
+    return { kind: "ready", data: found };
+  }, [openRoutineId, tenantId, routines]);
+
   const detailRuns = useTenantQuery(
-    ["routine-detail-runs", tenantId, openRoutineId],
+    tenantId === null || openRoutineId === null
+      ? (["tenant", "none", "routines", "none", "runs"] as const)
+      : tenantKeys.routineRuns(tenantId, openRoutineId),
     tenantId !== null && openRoutineId !== null,
     () => listRoutineRuns(tenantId ?? "", openRoutineId ?? ""),
   );
@@ -750,15 +767,23 @@ export function RoutinesRoute({
         if (tenantId === null)
           throw new Error("No bench to create this in yet");
         await createRoutine(tenantId, input);
-        refresh();
+        invalidateRoutines();
       }}
       onToggleEnabled={(routine, enabled) => {
         if (tenantId === null) return;
-        void updateRoutine(tenantId, routine.id, { enabled }).then(refresh);
+        void updateRoutine(tenantId, routine.id, { enabled }).then(
+          invalidateRoutines,
+        );
       }}
       onRunNow={async (routine) => {
         if (tenantId === null) throw new Error("No bench to run this in yet");
         await runRoutineNow(tenantId, routine.id);
+        void queryClient.invalidateQueries({
+          queryKey: tenantKeys.routineRuns(tenantId, routine.id),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: tenantKeys.routineRunHistories(tenantId),
+        });
       }}
     />
   );

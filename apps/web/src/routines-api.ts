@@ -11,8 +11,10 @@
 
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { APIQuery } from "./api";
+import { toAPIQuery } from "./api";
+import { UnauthenticatedError } from "./query-client";
 
 export const RoutineTrigger = type({
   kind: "'interval'",
@@ -209,47 +211,30 @@ export function listWorkflowDefinitions(
 }
 
 /**
- * The `useAPIQuery` state machine, for a fetch that needs a tenant id
- * (and thus cannot be a static path) — the extra seam
- * `@corbits/routines`' tenant-scoped routes need that `/api/me/...`
- * queries do not. `enabled` mirrors chat-page.tsx's own gate on a
- * resolved tenant: skip fetching until one exists.
+ * Tenant-scoped query via TanStack Query. Keys must be stable arrays that
+ * already include the tenant id under the `["tenant", tenantId, ...]`
+ * convention so a bench switch can `removeQueries` the whole prefix.
+ * When `enabled` is false the previous result is not kept on screen — TQ
+ * drops the active fetch and the adapter reports loading until re-enabled.
  */
 export function useTenantQuery<T>(
   key: readonly unknown[],
   enabled: boolean,
   fetcher: () => Promise<T>,
 ): APIQuery<T> {
-  const [state, setState] = useState<APIQuery<T>>({ kind: "loading" });
-
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    setState({ kind: "loading" });
-    void (async () => {
+  const result = useQuery({
+    queryKey: key,
+    enabled,
+    queryFn: async () => {
       try {
-        const data = await fetcher();
-        if (!cancelled) setState({ kind: "ready", data });
+        return await fetcher();
       } catch (cause) {
-        if (cancelled) return;
         if (cause instanceof RoutinesApiError && cause.status === 401) {
-          setState({ kind: "unauthenticated" });
-          return;
+          throw new UnauthenticatedError();
         }
-        setState({
-          kind: "error",
-          message: cause instanceof Error ? cause.message : String(cause),
-        });
+        throw cause;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // `fetcher` is intentionally excluded: callers pass a fresh closure
-    // every render, and `key` is the caller's own declared cache
-    // identity for what that closure fetches — the same contract
-    // `useAPIQuery` documents for its `schema` argument.
-  }, [enabled, ...key]);
-
-  return state;
+    },
+  });
+  return toAPIQuery(result);
 }

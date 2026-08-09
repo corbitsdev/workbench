@@ -23,6 +23,7 @@ import type { BadgeTone, ViewMode } from "@corbits/react-ui";
 import { Bot, Copy, Plus, Workflow } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import type { AgentDefinition, AgentInstance } from "../agents-api";
 import type { AgentDirectoryData } from "../agents-api";
@@ -30,6 +31,7 @@ import type { APIQuery } from "../api";
 import { useAgentDirectory } from "../agents-api";
 import { useBench } from "../bench-context";
 import { countProp } from "../optional-props";
+import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 import { CreateAgentDialog } from "./create-agent-dialog";
 import {
@@ -467,8 +469,8 @@ export function AgentsRoute() {
   // BenchProvider is the only source of the active tenant — never re-fetch
   // /api/me/principals and take memberships[0], which ignores the switcher.
   const { memberships, selectedTenantId } = useBench();
-  const [reloadKey, setReloadKey] = useState(0);
-  const directory = useAgentDirectory(selectedTenantId ?? undefined, reloadKey);
+  const queryClient = useQueryClient();
+  const directory = useAgentDirectory(selectedTenantId ?? undefined);
 
   const resolvedDirectory: APIQuery<AgentDirectoryData> =
     memberships.kind !== "ready"
@@ -488,7 +490,12 @@ export function AgentsRoute() {
   return (
     <AgentsPage
       directory={resolvedDirectory}
-      onAgentCreated={() => setReloadKey((key) => key + 1)}
+      onAgentCreated={() => {
+        if (selectedTenantId === null) return;
+        void queryClient.invalidateQueries({
+          queryKey: tenantKeys.agentDirectory(selectedTenantId),
+        });
+      }}
     />
   );
 }

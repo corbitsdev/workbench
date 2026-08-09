@@ -1,5 +1,12 @@
+// The whole interface as a pure function of the current path and session
+// state. The entry point owns the browser history and the one session probe;
+// screens that talk to the hub only mount once the session is confirmed, so
+// a signed-out browser fires no authenticated request anywhere.
+
 import { BootScreen, Button, CorbitsMark, EmptyState } from "@corbits/react-ui";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
+import { useMemo } from "react";
 
 import { AuthScreen } from "./auth-screen";
 import { BenchProvider } from "./bench-context";
@@ -8,6 +15,7 @@ import { NavigationProvider, type Navigate } from "./navigation";
 import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
+import { createAppQueryClient } from "./query-client";
 import { APP_ROUTES, matchesRoute, ONBOARDING_PATH } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
@@ -32,24 +40,29 @@ function Shell({
   readonly user: SessionUser;
   readonly onSignOut: () => void;
 }) {
+  // One client per signed-in shell mount — above BenchProvider so principals
+  // and every tenant-scoped page share the same cache.
+  const queryClient = useMemo(() => createAppQueryClient(), []);
   const route = APP_ROUTES.find((candidate) =>
     matchesRoute(candidate.path, path),
   );
   return (
-    <NavigationProvider navigate={navigate}>
-      <BenchProvider>
-        <CommandPaletteProvider navigate={navigate} />
-        <AppShell path={path} user={user} onSignOut={onSignOut}>
-          {path === ONBOARDING_PATH ? (
-            <OnboardingPage />
-          ) : route === undefined ? (
-            <NotFoundPage path={path} />
-          ) : (
-            route.render(path, navigate)
-          )}
-        </AppShell>
-      </BenchProvider>
-    </NavigationProvider>
+    <QueryClientProvider client={queryClient}>
+      <NavigationProvider navigate={navigate}>
+        <BenchProvider>
+          <CommandPaletteProvider navigate={navigate} />
+          <AppShell path={path} user={user} onSignOut={onSignOut}>
+            {path === ONBOARDING_PATH ? (
+              <OnboardingPage />
+            ) : route === undefined ? (
+              <NotFoundPage path={path} />
+            ) : (
+              route.render(path, navigate)
+            )}
+          </AppShell>
+        </BenchProvider>
+      </NavigationProvider>
+    </QueryClientProvider>
   );
 }
 
