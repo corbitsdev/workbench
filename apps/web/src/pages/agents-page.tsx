@@ -440,6 +440,9 @@ export function AgentsPage({
           onOpenChange={setCreateOpen}
           tenantId={directory.data.tenantId}
           models={directory.data.models}
+          {...(directory.data.modelsError !== undefined
+            ? { modelsError: directory.data.modelsError }
+            : {})}
           onCreated={onAgentCreated}
         />
       )}

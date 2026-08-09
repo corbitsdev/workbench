@@ -119,12 +119,15 @@ export function CreateAgentDialog({
   onOpenChange,
   tenantId,
   models,
+  modelsError,
   onCreated,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly tenantId: string;
   readonly models: readonly CatalogModel[];
+  /** Inline note when the catalog failed; the rest of the form still works. */
+  readonly modelsError?: string;
   readonly onCreated: (definition: AgentDefinition) => void;
 }) {
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
@@ -223,6 +226,11 @@ export function CreateAgentDialog({
                 <li key={issue}>{issue}</li>
               ))}
             </ul>
+          )}
+          {modelsError !== undefined && (
+            <p className="mb-3 text-sm text-muted-foreground" role="status">
+              Model catalog unavailable — the agent will use the bench default.
+            </p>
           )}
           <IntakeForm
             fields={fields}

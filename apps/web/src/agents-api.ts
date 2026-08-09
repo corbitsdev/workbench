@@ -126,14 +126,16 @@ export function listAgentInstances(
   ).then((page) => page.data);
 }
 
-/** The tenant's visible, enabled catalog models, for the create-agent
- * form's model picker. Never invented client-side — only what the
- * catalog actually resolves against at launch time. */
+/** The tenant's visible, enabled catalog models for the create-agent form's
+ * model picker. Uses `/catalog/models` (paginated `ModelResponse`), not the
+ * bare-array discovery route at `/models` (`ModelInfo[]`) — those are
+ * different wire shapes. Disabled rows are filtered out here because the
+ * catalog may retain them. */
 export function listCatalogModels(
   tenantId: string,
 ): Promise<readonly CatalogModel[]> {
   return getJSON(
-    `/api/tenants/${tenantId}/models?limit=${PAGE_LIMIT}`,
+    `/api/tenants/${tenantId}/catalog/models?limit=${PAGE_LIMIT}`,
     ModelsPage,
   ).then((page) => page.data.filter((model) => !model.disabled));
 }
@@ -162,13 +164,51 @@ export type AgentDirectoryData = {
   readonly definitions: readonly AgentDefinition[];
   readonly instances: readonly AgentInstance[];
   readonly models: readonly CatalogModel[];
+  /** Set when the model catalog failed independently; definitions and
+   * instances still load so the page stays usable. */
+  readonly modelsError?: string;
 };
 
+type ModelsOutcome =
+  | { readonly ok: true; readonly models: readonly CatalogModel[] }
+  | { readonly ok: false; readonly message: string };
+
 /**
- * Loads a bench's full agent directory in one shot, re-fetching whenever
- * `tenantId` changes or `reloadKey` is bumped — the same "no push, refetch
- * on demand" convention `useAPIQuery` uses, so a freshly created
- * definition shows up the moment the create dialog closes.
+ * Loads a bench's agent directory. Definitions and instances are required;
+ * the model catalog is best-effort so a picker failure never blanks the page.
+ */
+export async function loadAgentDirectory(
+  tenantId: string,
+): Promise<AgentDirectoryData> {
+  const [definitions, instances, modelsOutcome] = await Promise.all([
+    listAgentDefinitions(tenantId),
+    listAgentInstances(tenantId),
+    listCatalogModels(tenantId).then(
+      (models): ModelsOutcome => ({ ok: true, models }),
+      (cause: unknown): ModelsOutcome => ({
+        ok: false,
+        message: cause instanceof Error ? cause.message : String(cause),
+      }),
+    ),
+  ]);
+
+  if (modelsOutcome.ok) {
+    return { tenantId, definitions, instances, models: modelsOutcome.models };
+  }
+  return {
+    tenantId,
+    definitions,
+    instances,
+    models: [],
+    modelsError: modelsOutcome.message,
+  };
+}
+
+/**
+ * Loads a bench's full agent directory, re-fetching whenever `tenantId`
+ * changes or `reloadKey` is bumped — the same "no push, refetch on demand"
+ * convention `useAPIQuery` uses, so a freshly created definition shows up
+ * the moment the create dialog closes.
  */
 export function useAgentDirectory(
   tenantId: string | undefined,
@@ -182,17 +222,10 @@ export function useAgentDirectory(
     if (tenantId === undefined) return;
     let cancelled = false;
     setState({ kind: "loading" });
-    Promise.all([
-      listAgentDefinitions(tenantId),
-      listAgentInstances(tenantId),
-      listCatalogModels(tenantId),
-    ])
-      .then(([definitions, instances, models]) => {
+    loadAgentDirectory(tenantId)
+      .then((data) => {
         if (cancelled) return;
-        setState({
-          kind: "ready",
-          data: { tenantId, definitions, instances, models },
-        });
+        setState({ kind: "ready", data });
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
