@@ -6,9 +6,13 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ArtifactSummary } from "@corbits/artifact-ui";
-import type { Channel } from "@corbits/chat-ui";
 
 import type { APIQuery, Approval, WorkflowRun } from "../src/api";
+import type {
+  AgentDefinition,
+  AgentDirectoryData,
+  AgentInstance,
+} from "../src/agents-api";
 import { AgentsPage } from "../src/pages/agents-page";
 import { ApprovalsPage } from "../src/pages/approvals-page";
 import { HomePage } from "../src/pages/home-page";
@@ -53,7 +57,10 @@ describe("empty states", () => {
 
   test("agents reports a missing session instead of empty panels", () => {
     const markup = renderToStaticMarkup(
-      <AgentsPage tenant={unauthenticated} />,
+      <AgentsPage
+        directory={unauthenticated}
+        onAgentCreated={() => undefined}
+      />,
     );
     expect(markup).toContain("Sign in required");
   });
@@ -162,30 +169,86 @@ describe("live data", () => {
     expect(markup).toContain("Signups export");
   });
 
-  const channel: Channel = {
-    id: "chan_1",
-    title: "general",
-    kind: "channel",
-    pinned: false,
-    participants: [{ address: "echo@acme.localhost", handle: "echo" }],
+  const definition: AgentDefinition = {
+    id: "wfd_1",
+    tenantId: "tenant_1",
+    name: "Researcher",
+    description: "Answers research questions",
+    currentVersion: "1",
+    status: "deployed",
+    createdAt: "2026-08-05T11:00:00.000Z",
+    updatedAt: "2026-08-05T11:00:00.000Z",
+  };
+  const instance: AgentInstance = {
+    id: "ins_1",
+    definitionId: "wfd_1",
+    definitionName: "Researcher",
+    tenantId: "tenant_1",
+    address: "ins_1@acme.localhost",
+    status: "running",
+    createdAt: "2026-08-05T11:00:00.000Z",
+    updatedAt: "2026-08-05T11:00:00.000Z",
+  };
+  const directoryData: AgentDirectoryData = {
+    tenantId: "tenant_1",
+    definitions: [definition],
+    instances: [instance],
+    models: [],
   };
 
-  test("agents lists channels and their participants by handle, not raw address", () => {
+  test("agents lists definitions by name and description, never a raw id", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
-        tenant={ready({ tenantId: "tenant_1", channels: [channel] })}
+        directory={ready(directoryData)}
+        onAgentCreated={() => undefined}
       />,
     );
-    expect(markup).toContain("general");
-    expect(markup).toContain("@echo");
-    expect(markup).not.toContain("echo@acme.localhost");
+    expect(markup).toContain("Researcher");
+    expect(markup).toContain("Answers research questions");
+    expect(markup).not.toContain("wfd_1");
   });
 
-  test("agents says there's no channel to invite into", () => {
+  test("agents never renders an instance's mailbox address as visible text", () => {
     const markup = renderToStaticMarkup(
-      <AgentsPage tenant={ready({ tenantId: "tenant_1", channels: [] })} />,
+      <AgentsPage
+        directory={ready(directoryData)}
+        onAgentCreated={() => undefined}
+        initialTab="instances"
+      />,
     );
-    expect(markup).toContain("No channel to invite an agent into");
+    expect(markup).toContain("Researcher");
+    expect(markup).not.toContain("ins_1@acme.localhost");
+  });
+
+  test("agents flags an instance whose definition is not in the listing", () => {
+    const orphan: AgentInstance = {
+      ...instance,
+      id: "ins_2",
+      definitionId: "wfd_missing",
+    };
+    const markup = renderToStaticMarkup(
+      <AgentsPage
+        directory={ready({ ...directoryData, instances: [instance, orphan] })}
+        onAgentCreated={() => undefined}
+        initialTab="instances"
+      />,
+    );
+    expect(markup).toContain("Unlinked definition");
+  });
+
+  test("agents says there are no agents yet", () => {
+    const markup = renderToStaticMarkup(
+      <AgentsPage
+        directory={ready({
+          tenantId: "tenant_1",
+          definitions: [],
+          instances: [],
+          models: [],
+        })}
+        onAgentCreated={() => undefined}
+      />,
+    );
+    expect(markup).toContain("No agents yet");
   });
 
   test("home counts what the hub reports", () => {

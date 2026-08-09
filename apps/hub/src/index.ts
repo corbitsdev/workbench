@@ -22,6 +22,7 @@ import {
   startWorkflowCommand,
 } from "@corbits/chat";
 import { createCryptoProviderCache } from "@corbits/folded-runs";
+import { createAgentDefinitionRoutes } from "@corbits/agent-directory";
 import {
   createDrizzleWebhookTriggerStore,
   createWebhookIngressRoutes,
@@ -314,6 +315,23 @@ export async function createHub(config: HubConfig) {
     commands: commandRegistry,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
+  // Agent definitions a person authors by hand from the Agents page's
+  // create form, materialized the same way the platform's own starter
+  // agents are (see `@corbits/agent-directory`'s doc comment). Shares
+  // `chatGrantStore`/`chatConditionRegistry` with every other extension
+  // mounted here — there is nothing chat-specific about that pair, it
+  // is just this composition root's one db-backed grant store.
+  app.route(
+    `${TENANT_PREFIX}/agent-definitions`,
+    createAgentDefinitionRoutes({
+      db,
+      assetService,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
   app.route(
     `${TENANT_PREFIX}/chat`,
     createCommandRoutes({

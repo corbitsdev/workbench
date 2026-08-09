@@ -12,6 +12,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/agent-directory": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/commands": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
