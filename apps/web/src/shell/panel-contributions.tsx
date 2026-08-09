@@ -282,10 +282,7 @@ export function ensurePanelContributions(): void {
       ],
     }),
     pageSpecific: (ctx) => (
-      <ChannelsBand
-        path={ctx.path}
-        onOpenInCanvas={ctx.onOpenInCanvas}
-      />
+      <ChannelsBand path={ctx.path} onOpenInCanvas={ctx.onOpenInCanvas} />
     ),
   });
 
