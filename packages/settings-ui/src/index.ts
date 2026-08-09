@@ -20,6 +20,11 @@ export {
   GrantsTable,
   CreateGrantDialog,
 } from "./grants-section";
+export {
+  CredentialsSection,
+  CredentialsTable,
+  CreateCredentialDialog,
+} from "./credentials-section";
 
 export { principalLabel } from "./identity";
 export type { PrincipalLabel } from "./identity";
@@ -54,6 +59,19 @@ export type {
   GrantFilters,
   CreateGrantInput,
 } from "./tenancy-api";
+
+export {
+  CredentialsApiError,
+  listCredentials,
+  listProviders,
+  createCredential,
+  deleteCredential,
+} from "./credentials-api";
+export type {
+  Credential,
+  Provider,
+  CreateCredentialInput,
+} from "./credentials-api";
 
 export {
   contextWindowLabel,
