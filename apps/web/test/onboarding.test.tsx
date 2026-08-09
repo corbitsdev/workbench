@@ -47,7 +47,7 @@ describe("triggerFirstLoginProvisioning", () => {
         500,
       )) as unknown as typeof fetch;
 
-    const result = await triggerFirstLoginProvisioning();
+    const result = await triggerFirstLoginProvisioning("Ada's bench");
     expect(result).toEqual({
       kind: "error",
       message: "Could not provision a workbench for this account.",
@@ -59,7 +59,7 @@ describe("triggerFirstLoginProvisioning", () => {
       throw new Error("connection refused");
     }) as unknown as typeof fetch;
 
-    const result = await triggerFirstLoginProvisioning();
+    const result = await triggerFirstLoginProvisioning("Ada's bench");
     expect(result.kind).toBe("error");
     if (result.kind !== "error") throw new Error("unreachable");
     expect(result.message).toContain("connection refused");
@@ -69,8 +69,67 @@ describe("triggerFirstLoginProvisioning", () => {
     globalThis.fetch = (async () =>
       json({ kind: "existing-member" })) as unknown as typeof fetch;
 
-    const result = await triggerFirstLoginProvisioning();
+    const result = await triggerFirstLoginProvisioning("Ada's bench");
     expect(result).toEqual({ kind: "existing-member" });
+  });
+
+  test("sends the workbench name in the provision request body", async () => {
+    let requestBody: unknown = undefined;
+    let requestInit: RequestInit | undefined;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestInit = init;
+      requestBody =
+        init.body === undefined ? undefined : JSON.parse(init.body as string);
+      return json({ kind: "existing-member" });
+    }) as unknown as typeof fetch;
+
+    await triggerFirstLoginProvisioning("Research bench");
+    expect(requestBody).toEqual({ name: "Research bench" });
+    expect(requestInit?.method).toBe("POST");
+  });
+
+  test("omits a body when no name is given (the shell routing probe)", async () => {
+    let sentBody: unknown = "__sentinel__";
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      sentBody = init.body;
+      return json({ kind: "existing-member" });
+    }) as unknown as typeof fetch;
+
+    await triggerFirstLoginProvisioning();
+    expect(sentBody).toBeUndefined();
+  });
+
+  test("a provisioned bench with a server seed stays a 'provisioned' outcome — the credential step is not skipped", async () => {
+    // Regression guard: a server-side seed (operator-configured key) must
+    // not collapse the outcome into `existing-member` or otherwise hide
+    // that the bench was just provisioned. The wizard relies on this
+    // distinction to render the credential step as pre-satisfied (with a
+    // skip option) rather than branching past it entirely.
+    let requestBody: unknown = undefined;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestBody =
+        init.body === undefined ? undefined : JSON.parse(init.body as string);
+      return json({
+        kind: "provisioned",
+        tenantId: "ten_1",
+        tenantSlug: "ada-user1",
+        seeded: true,
+        seedSkipReason: "operator_seed_key",
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await triggerFirstLoginProvisioning("Ada's bench");
+    expect(requestBody).toEqual({ name: "Ada's bench" });
+    expect(result).toEqual({
+      kind: "provisioned",
+      tenantId: "ten_1",
+      tenantSlug: "ada-user1",
+      seeded: true,
+      seedSkipReason: "operator_seed_key",
+    });
+    // The credential step stays in the flow precisely because seeded is
+    // reported faithfully, not folded away.
+    if (result.kind === "provisioned") expect(result.seeded).toBe(true);
   });
 });
 
