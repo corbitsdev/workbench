@@ -1,35 +1,54 @@
-// Column 1: the global button rail. A thin wrapper around
-// `@corbits/react-ui`'s `SidebarRail` — the rail's anatomy (56px, icon-only
-// buttons with a hover/focus tooltip carrying the accessible label) is the
-// library's, not ours; this file only turns the route table into the
-// `SidebarRailItem[]` shape the rail expects.
+// Column 1: the global rail. Answers "where am I in the product, and which
+// bench am I in" — the page icons never change with navigation or with the
+// selected bench, and neither does this column's width.
+//
+// The caption-under-icon rail landed in `@corbits/react-ui`'s `SidebarRail`
+// as its `showLabels` option, so the rail is now the library component with
+// labels on — the hand-rolled item markup it temporarily mirrored is gone.
+// The footer still composes the bench switcher and identity docks the rail
+// needs below the page icons.
 
 import { SidebarRail } from "@corbits/react-ui";
 
 import { NAV_ROUTES, matchesRoute, type AppRoute } from "../routes";
-
-function railItemId(route: AppRoute): string {
-  return route.path;
-}
+import type { SessionUser } from "../session";
+import { BenchDock, RailIdentity } from "./docks";
 
 export function Rail({
   path,
   onNavigate,
+  user,
+  onSignOut,
 }: {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
+  readonly user: SessionUser;
+  readonly onSignOut: () => void;
 }) {
-  const active = NAV_ROUTES.find((route) => matchesRoute(route.path, path));
+  // `SidebarRail` flags the item whose id equals `activeId`; the nav routes
+  // own prefix matching (e.g. /chat/:channelId lights the Chat item), so the
+  // active id is resolved here rather than left to an exact path compare.
+  const activeRoute = NAV_ROUTES.find((route) =>
+    matchesRoute(route.path, path),
+  );
+
   return (
     <SidebarRail
       label="Workbench"
-      items={NAV_ROUTES.map((route) => ({
-        id: railItemId(route),
+      showLabels
+      activeId={activeRoute?.path ?? ""}
+      items={NAV_ROUTES.map((route: AppRoute) => ({
+        id: route.path,
         label: route.label,
         icon: route.icon,
       }))}
-      activeId={active === undefined ? "" : railItemId(active)}
       onSelect={onNavigate}
+      footer={
+        <>
+          <BenchDock />
+          <RailIdentity path={path} user={user} onSignOut={onSignOut} />
+        </>
+      }
     />
   );
 }
