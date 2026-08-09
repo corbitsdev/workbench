@@ -47,10 +47,12 @@ principal without that grant gets a `403`, not an empty list dressed up as
 
 ## Where it shows up
 
-The second column's "Approvals" row now carries a live count of what's
-waiting on the current bench, read from this same endpoint. The Approvals
-page itself renders each request as "`<agent name>` in `<bench name>`"
-instead of a raw agent address, and still approves or rejects through
+The second column's "Approvals" row carries a live count of what's waiting
+on the current bench, read from this same endpoint and rendered through
+`SidebarItemRow`'s `meta` slot as a `Badge` — not a `count` prop, which this
+version of `@corbits/react-ui` doesn't have. The Approvals page itself
+renders each request as "`<agent name>` in `<bench name>`" instead of a raw
+agent address, and still approves or rejects through
 Interchange's native routes directly — this package only ever supplies the
 names.
 
