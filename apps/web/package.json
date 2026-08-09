@@ -17,11 +17,8 @@
     "@corbits/bench-ui": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
-<<<<<<< HEAD
     "@corbits/command-palette": "workspace:*",
-=======
     "@corbits/routines": "workspace:*",
->>>>>>> ec85256 (Share one cron parser between the hub and the Routines page)
     "@corbits/settings-ui": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#4b8952c820b44dbf83b423b97a9ad0f4513df1e0",
     "@intx/types": "workspace:*",
