@@ -3,20 +3,18 @@
 // `migrations.test.ts`. Runs against its own scratch database, never
 // the developer's or the walking-skeleton suite's.
 //
-// `store.test.ts` proves `compensateFailedFire`'s compare-and-restore
-// against the in-memory store, which is atomic only because JS is
-// single-threaded — it says nothing about whether Postgres's own
-// timestamp comparison, round-tripped through drizzle, actually
-// behaves the same way. This exercises the real `createDrizzleRoutineStore`
-// path: an ordinary restore, and the edit-wins case where a concurrent
-// trigger change must survive a stale compensation untouched.
+// `store.test.ts` proves `markFailedFire`'s conditional write against
+// the in-memory store. This exercises the real
+// `createDrizzleRoutineStore` path: backoff after failure, and the
+// edit-wins case where a concurrent trigger change must survive a
+// stale mark untouched.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyRoutineMigrations } from "../src/migrations";
-import { createDrizzleRoutineStore } from "../src/store";
+import { backoffMsForFailure, createDrizzleRoutineStore } from "../src/store";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -36,7 +34,7 @@ function assertDate(value: Date | null): Date {
 }
 
 describeIfDb(
-  "createDrizzleRoutineStore: claimRoutineFire / compensateFailedFire",
+  "createDrizzleRoutineStore: claimRoutineFire / markFailedFire",
   () => {
     const scratchUrl = scratchUrlFor(
       databaseUrl ?? "postgres://localhost:5432/unused",
@@ -78,7 +76,7 @@ describeIfDb(
       }
     });
 
-    test("compensateFailedFire restores nextFireAt when nothing has changed since the claim", async () => {
+    test("markFailedFire backs off nextFireAt when nothing has changed since the claim", async () => {
       const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
       try {
         const store = createDrizzleRoutineStore(drizzle(sql));
@@ -95,16 +93,29 @@ describeIfDb(
         const claimed = await store.claimRoutineFire(routine.id, fireAt);
         const claimedNextFireAt = assertDate(claimed?.nextFireAt ?? null);
 
-        await store.compensateFailedFire(routine.id, fireAt, claimedNextFireAt);
+        const result = await store.markFailedFire({
+          routineId: routine.id,
+          tenantId: TENANT_ID,
+          claimedNextFireAt,
+          failedAt: fireAt,
+          reason: "launch exploded",
+        });
+        expect(result?.deadLettered).toBe(false);
+        expect(result?.nextFireAt?.toISOString()).toBe(
+          new Date(fireAt.getTime() + backoffMsForFailure(1)).toISOString(),
+        );
 
-        const restored = await store.getRoutine(TENANT_ID, routine.id);
-        expect(restored?.nextFireAt?.toISOString()).toBe(fireAt.toISOString());
+        const after = await store.getRoutine(TENANT_ID, routine.id);
+        expect(after?.consecutiveFailures).toBe(1);
+        const runs = await store.listRunsForRoutine(TENANT_ID, routine.id);
+        expect(runs).toHaveLength(1);
+        expect(runs[0]?.triggeredBy).toBe("schedule-failed");
       } finally {
         await sql.end();
       }
     });
 
-    test("compensateFailedFire is a no-op when a trigger edit already moved nextFireAt", async () => {
+    test("markFailedFire is a no-op when a trigger edit already moved nextFireAt", async () => {
       const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
       try {
         const store = createDrizzleRoutineStore(drizzle(sql));
@@ -121,8 +132,6 @@ describeIfDb(
         const claimed = await store.claimRoutineFire(routine.id, fireAt);
         const claimedNextFireAt = assertDate(claimed?.nextFireAt ?? null);
 
-        // A trigger edit lands during the failure window, after the
-        // claim but before the launch's failure is handled.
         const edited = await store.updateRoutine(TENANT_ID, routine.id, {
           trigger: { kind: "interval", unit: "minutes", every: 30 },
         });
@@ -131,12 +140,17 @@ describeIfDb(
           claimedNextFireAt.getTime(),
         );
 
-        // The conditional UPDATE's WHERE no longer matches (nextFireAt
-        // moved), so this must not clobber the edit's newer value.
-        await store.compensateFailedFire(routine.id, fireAt, claimedNextFireAt);
+        const result = await store.markFailedFire({
+          routineId: routine.id,
+          tenantId: TENANT_ID,
+          claimedNextFireAt,
+          failedAt: fireAt,
+          reason: "stale",
+        });
+        expect(result).toBeUndefined();
 
-        const afterCompensation = await store.getRoutine(TENANT_ID, routine.id);
-        expect(afterCompensation?.nextFireAt?.toISOString()).toBe(
+        const afterMark = await store.getRoutine(TENANT_ID, routine.id);
+        expect(afterMark?.nextFireAt?.toISOString()).toBe(
           editedNextFireAt.toISOString(),
         );
       } finally {

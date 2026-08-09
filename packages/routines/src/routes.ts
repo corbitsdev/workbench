@@ -5,7 +5,8 @@
 // "Run now" and a scheduled fire are the same launcher call
 // (`deps.launcher.launchRoutineRun`) with a different `triggeredBy`;
 // this module never grows a second launch path for the unscheduled
-// case.
+// case. Launch + correlation write is one shared helper so a silent
+// orphan (launch succeeded, correlation lost) is impossible.
 import { Hono } from "hono";
 import { type } from "arktype";
 
@@ -54,6 +55,14 @@ export type CreateRoutineRoutesDeps = {
   launcher: RoutineLauncher;
   requireGrant: RequireGrant;
   runSummaryResolver?: RunSummaryResolver;
+  /**
+   * When provided, `POST /routines` rejects with 404 if the definition
+   * is not in the request tenant. Tests may omit (always-allow).
+   */
+  definitionInTenant?: (
+    tenantId: string,
+    definitionId: string,
+  ) => Promise<boolean>;
 };
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -96,6 +105,8 @@ function routineView(row: RoutineRow) {
     input: row.input,
     enabled: row.enabled,
     deliveryChannelId: row.deliveryChannelId,
+    consecutiveFailures: row.consecutiveFailures,
+    deadLetteredAt: row.deadLetteredAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -109,9 +120,52 @@ async function runView(
   return {
     runId: row.runId,
     triggeredBy: row.triggeredBy,
+    error: row.error,
     createdAt: row.createdAt.toISOString(),
     ...(summary !== undefined ? { run: summary } : {}),
   };
+}
+
+/**
+ * Launch then correlate. If the correlation write fails after a
+ * successful launch, rethrow loudly with the run id in the message —
+ * never silently orphan a platform run. Clears fire-failure counters
+ * only after both steps succeed.
+ */
+async function launchAndCorrelate(
+  deps: { store: RoutineStore; launcher: RoutineLauncher },
+  input: {
+    tenantId: string;
+    principalId: string;
+    definitionId: string;
+    input: Record<string, unknown>;
+    routineId: string;
+    triggeredBy: string;
+  },
+): Promise<LaunchedRoutineRun> {
+  const launched = await deps.launcher.launchRoutineRun({
+    tenantId: input.tenantId,
+    principalId: input.principalId,
+    definitionId: input.definitionId,
+    input: input.input,
+  });
+  try {
+    await deps.store.recordRoutineRun({
+      tenantId: input.tenantId,
+      routineId: input.routineId,
+      runId: launched.runId,
+      triggeredBy: input.triggeredBy,
+    });
+  } catch (err) {
+    throw new Error(
+      `routine launch succeeded (run ${launched.runId}) but correlation write failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+      { cause: err },
+    );
+  }
+  await deps.store.clearFireFailures(input.routineId);
+  return launched;
 }
 
 export function createRoutineRoutes(
@@ -133,6 +187,19 @@ export function createRoutineRoutes(
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
+
+      if (deps.definitionInTenant !== undefined) {
+        const owned = await deps.definitionInTenant(
+          tenant.id,
+          body.definitionId,
+        );
+        if (!owned) {
+          return c.json(
+            ErrorEnvelope("not_found", "definition not found"),
+            404,
+          );
+        }
+      }
 
       const row = await deps.store.createRoutine({
         tenantId: tenant.id,
@@ -273,19 +340,17 @@ export function createRoutineRoutes(
       // "Run now" is an unscheduled fire of the exact launcher a
       // scheduled trigger would call — the only difference is
       // `triggeredBy`, never a second launch code path.
-      const launched = await deps.launcher.launchRoutineRun({
-        tenantId: tenant.id,
-        principalId: principal.id,
-        definitionId: existing.definitionId,
-        input: body.input ?? existing.input,
-      });
-
-      await deps.store.recordRoutineRun({
-        tenantId: tenant.id,
-        routineId,
-        runId: launched.runId,
-        triggeredBy: "manual",
-      });
+      const launched = await launchAndCorrelate(
+        { store: deps.store, launcher: deps.launcher },
+        {
+          tenantId: tenant.id,
+          principalId: principal.id,
+          definitionId: existing.definitionId,
+          input: body.input ?? existing.input,
+          routineId,
+          triggeredBy: "manual",
+        },
+      );
 
       return c.json({ runId: launched.runId }, 201);
     },
@@ -311,17 +376,12 @@ export async function fireScheduledRoutine(
       `routine ${params.routine.id} is disabled; a scheduler must not fire it`,
     );
   }
-  const launched = await deps.launcher.launchRoutineRun({
+  return launchAndCorrelate(deps, {
     tenantId: params.tenantId,
     principalId: params.routine.createdBy,
     definitionId: params.routine.definitionId,
     input: params.routine.input,
-  });
-  await deps.store.recordRoutineRun({
-    tenantId: params.tenantId,
     routineId: params.routine.id,
-    runId: launched.runId,
     triggeredBy: "schedule",
   });
-  return launched;
 }

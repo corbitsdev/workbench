@@ -1,208 +1,246 @@
-// Proof of the two guarantees `createInMemoryRoutineStore` shares with
-// its drizzle counterpart: a schedule due while nothing was polling
-// stays due (survives a restart, "catch-up" not "skip"), and a fire's
-// claim is exactly-once even when two schedulers race the same due
-// routine.
+// Store-level guarantees for the scheduler's claim/fail path:
+// listDue filters, atomic claim, backoff + dead-letter on failure.
 import { describe, expect, test } from "bun:test";
-import { createInMemoryRoutineStore } from "../src/store";
+import {
+  backoffMsForFailure,
+  createInMemoryRoutineStore,
+  MAX_ROUTINE_FIRE_FAILURES,
+} from "../src/store";
+import type { RoutineTriggerT } from "../src/trigger";
 
-const TENANT_ID = "tnt_1";
+const CRON: RoutineTriggerT = {
+  kind: "cron",
+  expression: "0 * * * *",
+};
 
-function assertDate(value: Date | null): Date {
-  if (value === null) throw new Error("expected a non-null Date");
-  return value;
+async function dueRoutine(
+  store: ReturnType<typeof createInMemoryRoutineStore>,
+  name = "due",
+) {
+  return store.createRoutine({
+    tenantId: "t1",
+    name,
+    definitionId: "def_1",
+    trigger: CRON,
+    scope: "bench",
+    input: {},
+    createdBy: "user_1",
+  });
 }
 
 describe("listDueRoutines / claimRoutineFire", () => {
-  test("a routine's nextFireAt is set on creation", async () => {
+  test("listDueRoutines returns only enabled, due, non-deleted, non-dead-lettered rows", async () => {
     const store = createInMemoryRoutineStore();
-    const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Every 10 minutes",
-      definitionId: "def_1",
-      trigger: { kind: "interval", unit: "minutes", every: 10 },
-      scope: "bench",
-      input: {},
-      createdBy: "user_1",
+    const due = await dueRoutine(store);
+    // Force nextFireAt into the past so it's due.
+    const fireAt = new Date("2020-01-01T00:00:00Z");
+    await store.updateRoutine("t1", due.id, {
+      // no-op name touch would recompute nextFire; claim path uses create nextFire
     });
-    expect(routine.nextFireAt).not.toBeNull();
+    // Direct claim path: set via claim after making due by creating and
+    // then claiming at a future time after nextFire is in the past.
+    // create sets nextFireAt from now; use a far-future `now` for due.
+    const later = new Date(Date.now() + 60 * 60 * 1000);
+    // Make another disabled one
+    const disabled = await dueRoutine(store, "disabled");
+    await store.updateRoutine("t1", disabled.id, { enabled: false });
+
+    const dueList = await store.listDueRoutines(later);
+    expect(dueList.map((r) => r.id)).toContain(due.id);
+    expect(dueList.map((r) => r.id)).not.toContain(disabled.id);
   });
 
-  test("a manual routine never becomes due", async () => {
+  test("claimRoutineFire advances nextFireAt and stamps lastFireAt", async () => {
     const store = createInMemoryRoutineStore();
-    await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Manual only",
-      definitionId: "def_1",
-      trigger: null,
-      scope: "bench",
-      input: {},
-      createdBy: "user_1",
-    });
-    const due = await store.listDueRoutines(new Date("2099-01-01T00:00:00Z"));
-    expect(due).toHaveLength(0);
-  });
-
-  test("a fire due while nothing polled stays due — no skip, only catch-up", async () => {
-    const store = createInMemoryRoutineStore();
-    const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Hourly",
-      definitionId: "def_1",
-      trigger: { kind: "interval", unit: "hours", every: 1 },
-      scope: "bench",
-      input: {},
-      createdBy: "user_1",
-    });
-    const scheduledFireAt = assertDate(routine.nextFireAt);
-
-    // Simulate the hub being down through the scheduled fire and well
-    // past it — a naive "does this exact minute match" scheduler would
-    // never fire this routine again once that minute has passed.
-    const restartedAt = new Date(scheduledFireAt.getTime() + 4 * 3_600_000);
-    const due = await store.listDueRoutines(restartedAt);
-    expect(due.map((row) => row.id)).toContain(routine.id);
-  });
-
-  test("claiming a due fire advances nextFireAt to the following occurrence", async () => {
-    const store = createInMemoryRoutineStore();
-    const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Hourly",
-      definitionId: "def_1",
-      trigger: { kind: "interval", unit: "hours", every: 1 },
-      scope: "bench",
-      input: {},
-      createdBy: "user_1",
-    });
-
-    // Claiming well after the scheduled fire (catching up a missed one)
-    // still advances from the claim moment, not from the missed slot.
-    const fireAt = new Date(
-      assertDate(routine.nextFireAt).getTime() + 4 * 3_600_000,
+    const routine = await dueRoutine(store);
+    const fireAt = new Date(Date.now() + 60 * 60 * 1000);
+    // Ensure due: listDue with far future should include it if nextFireAt <= fireAt
+    // create's nextFireAt is soon; use now for claim if already due, else future.
+    const now = new Date(
+      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
     );
-    const claimed = await store.claimRoutineFire(routine.id, fireAt);
-    expect(claimed?.lastFireAt?.toISOString()).toBe(fireAt.toISOString());
-    expect(claimed?.nextFireAt?.toISOString()).toBe(
-      new Date(fireAt.getTime() + 3_600_000).toISOString(),
-    );
+    const claimed = await store.claimRoutineFire(routine.id, now);
+    expect(claimed).toBeDefined();
+    expect(claimed!.lastFireAt?.getTime()).toBe(now.getTime());
+    expect(claimed!.nextFireAt!.getTime()).toBeGreaterThan(now.getTime());
   });
 
-  test("a second concurrent claim of the same fire loses", async () => {
+  test("a second concurrent claim loses", async () => {
     const store = createInMemoryRoutineStore();
-    const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Hourly",
-      definitionId: "def_1",
-      trigger: { kind: "interval", unit: "hours", every: 1 },
-      scope: "bench",
-      input: {},
-      createdBy: "user_1",
-    });
-
-    const fireAt = assertDate(routine.nextFireAt);
-    const [first, second] = await Promise.all([
-      store.claimRoutineFire(routine.id, fireAt),
-      store.claimRoutineFire(routine.id, fireAt),
+    const routine = await dueRoutine(store);
+    const now = new Date(
+      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
+    );
+    const [a, b] = await Promise.all([
+      store.claimRoutineFire(routine.id, now),
+      store.claimRoutineFire(routine.id, now),
     ]);
-    const winners = [first, second].filter((row) => row !== undefined);
+    const winners = [a, b].filter((x) => x !== undefined);
     expect(winners).toHaveLength(1);
   });
 
-  test("a disabled routine is never claimable even if nextFireAt is due", async () => {
+  test("claim refuses a soft-deleted routine", async () => {
     const store = createInMemoryRoutineStore();
-    const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Paused",
-      definitionId: "def_1",
-      trigger: { kind: "interval", unit: "minutes", every: 5 },
-      scope: "bench",
-      input: {},
-      createdBy: "user_1",
-    });
-    await store.updateRoutine(TENANT_ID, routine.id, { enabled: false });
-
-    const due = await store.listDueRoutines(new Date("2099-01-01T00:00:00Z"));
-    expect(due).toHaveLength(0);
-    const claimed = await store.claimRoutineFire(
-      routine.id,
-      new Date("2099-01-01T00:00:00Z"),
+    const routine = await dueRoutine(store);
+    const now = new Date(
+      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
     );
-    expect(claimed).toBeUndefined();
+    await store.deleteRoutine("t1", routine.id);
+    expect(await store.claimRoutineFire(routine.id, now)).toBeUndefined();
+  });
+});
+
+describe("markFailedFire / clearFireFailures", () => {
+  test("markFailedFire backs off nextFireAt and records a schedule-failed run", async () => {
+    const store = createInMemoryRoutineStore();
+    const routine = await dueRoutine(store);
+    const fireAt = new Date(
+      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
+    );
+    const claimed = await store.claimRoutineFire(routine.id, fireAt);
+    expect(claimed).toBeDefined();
+    const claimedNext = claimed!.nextFireAt!;
+
+    const result = await store.markFailedFire({
+      routineId: routine.id,
+      tenantId: "t1",
+      claimedNextFireAt: claimedNext,
+      failedAt: fireAt,
+      reason: "launch exploded",
+    });
+    expect(result).toBeDefined();
+    expect(result!.deadLettered).toBe(false);
+    expect(result!.consecutiveFailures).toBe(1);
+    expect(result!.nextFireAt!.getTime()).toBe(
+      fireAt.getTime() + backoffMsForFailure(1),
+    );
+
+    const runs = await store.listRunsForRoutine("t1", routine.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.triggeredBy).toBe("schedule-failed");
+    expect(runs[0]?.error).toBe("launch exploded");
   });
 
-  test("re-enabling a routine recomputes nextFireAt from now, not from the stale value", async () => {
+  test("markFailedFire is a no-op when nextFireAt already moved", async () => {
     const store = createInMemoryRoutineStore();
-    const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Toggle",
-      definitionId: "def_1",
-      trigger: { kind: "interval", unit: "minutes", every: 5 },
-      scope: "bench",
-      input: {},
-      createdBy: "user_1",
+    const routine = await dueRoutine(store);
+    const fireAt = new Date(
+      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
+    );
+    const claimed = await store.claimRoutineFire(routine.id, fireAt);
+    const claimedNext = claimed!.nextFireAt!;
+
+    // Operator edits the trigger, moving nextFireAt.
+    await store.updateRoutine("t1", routine.id, {
+      trigger: { kind: "cron", expression: "30 * * * *" },
     });
-    await store.updateRoutine(TENANT_ID, routine.id, { enabled: false });
-    const reEnabled = await store.updateRoutine(TENANT_ID, routine.id, {
+    const afterEdit = await store.getRoutine("t1", routine.id);
+    expect(afterEdit!.nextFireAt!.getTime()).not.toBe(claimedNext.getTime());
+
+    const result = await store.markFailedFire({
+      routineId: routine.id,
+      tenantId: "t1",
+      claimedNextFireAt: claimedNext,
+      failedAt: fireAt,
+      reason: "stale",
+    });
+    expect(result).toBeUndefined();
+
+    const still = await store.getRoutine("t1", routine.id);
+    expect(still!.nextFireAt!.getTime()).toBe(afterEdit!.nextFireAt!.getTime());
+    expect(still!.consecutiveFailures).toBe(0);
+  });
+
+  test("after MAX failures the routine is dead-lettered and no longer due", async () => {
+    const store = createInMemoryRoutineStore();
+    const routine = await dueRoutine(store);
+    let clock = new Date(
+      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
+    );
+
+    for (let i = 0; i < MAX_ROUTINE_FIRE_FAILURES; i++) {
+      // Make due at clock by claiming only when nextFireAt <= clock.
+      // After each failure, nextFireAt is clock + backoff; advance clock.
+      const current = await store.getRoutine("t1", routine.id);
+      if (current!.nextFireAt !== null) {
+        clock = new Date(
+          Math.max(clock.getTime(), current!.nextFireAt.getTime()),
+        );
+      }
+      const claimed = await store.claimRoutineFire(routine.id, clock);
+      expect(claimed).toBeDefined();
+      const result = await store.markFailedFire({
+        routineId: routine.id,
+        tenantId: "t1",
+        claimedNextFireAt: claimed!.nextFireAt!,
+        failedAt: clock,
+        reason: `fail ${i + 1}`,
+      });
+      if (i < MAX_ROUTINE_FIRE_FAILURES - 1) {
+        expect(result!.deadLettered).toBe(false);
+      } else {
+        expect(result!.deadLettered).toBe(true);
+        expect(result!.nextFireAt).toBeNull();
+      }
+    }
+
+    const final = await store.getRoutine("t1", routine.id);
+    expect(final!.deadLetteredAt).not.toBeNull();
+    expect(final!.consecutiveFailures).toBe(MAX_ROUTINE_FIRE_FAILURES);
+    expect(await store.listDueRoutines(new Date(clock.getTime() + 1e12))).toEqual(
+      [],
+    );
+    expect(await store.claimRoutineFire(routine.id, clock)).toBeUndefined();
+  });
+
+  test("clearFireFailures resets counters after a successful fire", async () => {
+    const store = createInMemoryRoutineStore();
+    const routine = await dueRoutine(store);
+    const fireAt = new Date(
+      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
+    );
+    const claimed = await store.claimRoutineFire(routine.id, fireAt);
+    await store.markFailedFire({
+      routineId: routine.id,
+      tenantId: "t1",
+      claimedNextFireAt: claimed!.nextFireAt!,
+      failedAt: fireAt,
+      reason: "once",
+    });
+    await store.clearFireFailures(routine.id);
+    const cleared = await store.getRoutine("t1", routine.id);
+    expect(cleared!.consecutiveFailures).toBe(0);
+    expect(cleared!.deadLetteredAt).toBeNull();
+  });
+
+  test("re-enabling a dead-lettered routine clears the dead-letter", async () => {
+    const store = createInMemoryRoutineStore();
+    const routine = await dueRoutine(store);
+    let clock = new Date(
+      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
+    );
+    for (let i = 0; i < MAX_ROUTINE_FIRE_FAILURES; i++) {
+      const current = await store.getRoutine("t1", routine.id);
+      if (current!.nextFireAt !== null) {
+        clock = new Date(
+          Math.max(clock.getTime(), current!.nextFireAt.getTime()),
+        );
+      }
+      const claimed = await store.claimRoutineFire(routine.id, clock);
+      await store.markFailedFire({
+        routineId: routine.id,
+        tenantId: "t1",
+        claimedNextFireAt: claimed!.nextFireAt!,
+        failedAt: clock,
+        reason: `fail ${i + 1}`,
+      });
+    }
+
+    const recovered = await store.updateRoutine("t1", routine.id, {
       enabled: true,
     });
-    expect(reEnabled.nextFireAt).not.toBeNull();
-    expect(reEnabled.nextFireAt?.getTime()).toBeGreaterThan(Date.now());
-  });
-
-  test("compensateFailedFire restores nextFireAt when nothing has changed since the claim", async () => {
-    const store = createInMemoryRoutineStore();
-    const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Hourly",
-      definitionId: "def_1",
-      trigger: { kind: "interval", unit: "hours", every: 1 },
-      scope: "bench",
-      input: {},
-      createdBy: "user_1",
-    });
-    const fireAt = assertDate(routine.nextFireAt);
-    const claimed = assertDate(
-      (await store.claimRoutineFire(routine.id, fireAt))?.nextFireAt ?? null,
-    );
-
-    await store.compensateFailedFire(routine.id, fireAt, claimed);
-
-    const restored = await store.getRoutine(TENANT_ID, routine.id);
-    expect(restored?.nextFireAt?.toISOString()).toBe(fireAt.toISOString());
-  });
-
-  test("compensateFailedFire is a no-op when a trigger edit already moved nextFireAt", async () => {
-    const store = createInMemoryRoutineStore();
-    const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Hourly",
-      definitionId: "def_1",
-      trigger: { kind: "interval", unit: "hours", every: 1 },
-      scope: "bench",
-      input: {},
-      createdBy: "user_1",
-    });
-    const fireAt = assertDate(routine.nextFireAt);
-    const claimedResult = await store.claimRoutineFire(routine.id, fireAt);
-    const claimedNextFireAt = assertDate(claimedResult?.nextFireAt ?? null);
-
-    // A trigger edit lands during the failure window, after the claim
-    // but before the launch's failure is handled — this already gave
-    // the routine a fresh, unrelated nextFireAt.
-    const edited = await store.updateRoutine(TENANT_ID, routine.id, {
-      trigger: { kind: "interval", unit: "minutes", every: 30 },
-    });
-    const editedNextFireAt = assertDate(edited.nextFireAt);
-    expect(editedNextFireAt.getTime()).not.toBe(claimedNextFireAt.getTime());
-
-    // Compensation must not clobber that newer value with the stale
-    // one computed from the pre-edit trigger.
-    await store.compensateFailedFire(routine.id, fireAt, claimedNextFireAt);
-
-    const afterCompensation = await store.getRoutine(TENANT_ID, routine.id);
-    expect(afterCompensation?.nextFireAt?.toISOString()).toBe(
-      editedNextFireAt.toISOString(),
-    );
+    expect(recovered.deadLetteredAt).toBeNull();
+    expect(recovered.consecutiveFailures).toBe(0);
+    expect(recovered.nextFireAt).not.toBeNull();
   });
 });

@@ -5,25 +5,26 @@
 // `@corbits/agent-lifecycle`'s own `setInterval` sweep (the only other
 // periodic loop in this repo) rather than pulling in a new dependency.
 //
-// Two guarantees, precisely stated:
+// Three guarantees, precisely stated:
 //
 // - Exactly-once against a *concurrent claim*: `RoutineStore.claimRoutineFire`
-//   is a conditional update (`nextFireAt <= now` in its WHERE clause,
-//   advanced to the trigger's next occurrence in its SET) — a second
-//   hub replica racing the same fire loses, because the winner already
-//   moved `nextFireAt` into the future before either replica launches
-//   anything.
-// - At-least-once against a *launch failure*: a claim that wins but
-//   whose `fireScheduledRoutine` call then throws is compensated —
-//   `nextFireAt` is restored to the moment it was claimed for, so the
-//   next poll sees the fire as due again instead of silently skipping
-//   it until the trigger's following occurrence.
-//
-// And missed fires survive a restart: `nextFireAt` is persisted, so
-// "due" means `nextFireAt <= now`, not "does the current wall-clock
-// minute match" — a fire that was due while the hub was down is still
-// due (and gets caught up) the next time this loop polls, exactly like
-// `@corbits/schedules` before it.
+//   is a conditional update (enabled, not deleted, not dead-lettered,
+//   `nextFireAt <= now` in its WHERE clause, advanced to the trigger's
+//   next occurrence in its SET) — a second hub replica racing the same
+//   fire loses, because the winner already moved `nextFireAt` into the
+//   future before either replica launches anything.
+// - At-least-once against a *launch failure*, with exponential backoff:
+//   a claim that wins but whose `fireScheduledRoutine` call then throws
+//   is marked failed via `markFailedFire` — consecutiveFailures ticks
+//   up, `nextFireAt` is set to `failedAt + backoff`, and a
+//   `schedule-failed` run is recorded. After
+//   `MAX_ROUTINE_FIRE_FAILURES` consecutive failures the routine is
+//   dead-lettered (`deadLetteredAt` set, `nextFireAt` null) and the
+//   scheduler stops claiming it until an operator re-enables/edits it.
+// - Missed fires survive a restart: `nextFireAt` is persisted, so
+//   "due" means `nextFireAt <= now`, not "does the current wall-clock
+//   minute match" — a fire that was due while the hub was down is still
+//   due (and gets caught up) the next time this loop polls.
 import type { RoutineLauncher, RoutineStore } from "@corbits/routines";
 import { fireScheduledRoutine } from "@corbits/routines";
 import { getLogger } from "@intx/log";
@@ -61,29 +62,30 @@ export async function tickRoutineScheduler(
         { tenantId: claimed.tenantId, routine: claimed },
       );
     } catch (err) {
-      log.error`scheduled fire of routine ${claimed.id} failed: ${
-        err instanceof Error ? err.message : String(err)
-      }`;
+      const reason = err instanceof Error ? err.message : String(err);
+      log.error`scheduled fire of routine ${claimed.id} failed: ${reason}`;
       // The claim already advanced `nextFireAt` past `at`; since the
-      // launch never happened, restore it to `at` so the next poll
-      // retries this fire instead of silently dropping it until the
-      // trigger's following occurrence. `claimed.nextFireAt` is the
-      // value the claim itself just wrote (never null — a claim only
-      // succeeds for a triggered routine), passed through so the
-      // restore is conditional and can't clobber a newer trigger edit.
+      // launch never happened, mark the failure with backoff (or
+      // dead-letter). `claimed.nextFireAt` is the value the claim
+      // itself just wrote (never null — a claim only succeeds for a
+      // triggered routine), passed through so the mark is conditional
+      // and can't clobber a newer trigger edit.
       try {
         if (claimed.nextFireAt !== null) {
-          await deps.store.compensateFailedFire(
-            claimed.id,
-            at,
-            claimed.nextFireAt,
-          );
+          const result = await deps.store.markFailedFire({
+            routineId: claimed.id,
+            tenantId: claimed.tenantId,
+            claimedNextFireAt: claimed.nextFireAt,
+            failedAt: at,
+            reason,
+          });
+          if (result?.deadLettered) {
+            log.error`routine ${claimed.id} dead-lettered after ${result.consecutiveFailures} consecutive launch failures`;
+          }
         }
-      } catch (compensateErr) {
-        log.error`compensating routine ${claimed.id}'s failed fire also failed: ${
-          compensateErr instanceof Error
-            ? compensateErr.message
-            : String(compensateErr)
+      } catch (markErr) {
+        log.error`marking routine ${claimed.id}'s failed fire also failed: ${
+          markErr instanceof Error ? markErr.message : String(markErr)
         }`;
       }
     }

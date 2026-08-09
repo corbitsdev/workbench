@@ -56,6 +56,14 @@ function publicView(row: WebhookTriggerRow) {
 export type CreateWebhookTriggerRoutesDeps = {
   store: WebhookTriggerStore;
   requireGrant: RequireGrant;
+  /**
+   * When provided, `POST /` rejects with 404 if the workflow definition
+   * is not in the request tenant. Tests may omit (always-allow).
+   */
+  workflowDefinitionInTenant?: (
+    tenantId: string,
+    definitionId: string,
+  ) => Promise<boolean>;
 };
 
 export function createWebhookTriggerRoutes(
@@ -74,6 +82,20 @@ export function createWebhookTriggerRoutes(
 
     const tenant = c.get("tenant");
     const principal = c.get("principal");
+
+    if (deps.workflowDefinitionInTenant !== undefined) {
+      const owned = await deps.workflowDefinitionInTenant(
+        tenant.id,
+        body.workflowDefinitionId,
+      );
+      if (!owned) {
+        return c.json(
+          ErrorEnvelope("not_found", "definition not found"),
+          404,
+        );
+      }
+    }
+
     const secret = generateWebhookSecret();
 
     const row = await deps.store.create({
