@@ -51,6 +51,7 @@ test("allowlisted product schema files pass at their max count", () => {
       relPath: "packages/chat/src/schema.ts",
       contents: [
         `export const a = pgTable("channel_settings", {});`,
+        `export const bench = pgTable("chat_bench_settings", {});`,
         `export const b = pgTable("channel_read_state", {});`,
         `export const c = pgTable("channel_launch", {});`,
         `export const d = pgTable("channel_tenancy", {});`,

@@ -264,8 +264,20 @@ export function channelStreamUrl(tenantId: string, channelId: string): string {
   return `/api/tenants/${tenantId}/chat/channels/${channelId}/stream`;
 }
 
+// `chat/contextWindow`'s two-way "inherit vs override" resolution — see
+// `resolveContextWindow` in `packages/chat/src/channel-settings.ts`, whose
+// server-side output this wire shape mirrors. `source` is what the settings
+// panel's "Use bench default (N)" vs override control reads to decide which
+// state it renders.
+export const ResolvedContextWindow = type({
+  value: "number",
+  source: "'inherit' | 'override'",
+});
+export type ResolvedContextWindow = typeof ResolvedContextWindow.infer;
+
 const ChannelSettingsResponse = ChannelWire.and({
   settings: type("Record<string, unknown>"),
+  contextWindow: ResolvedContextWindow,
 }).pipe((wire) => ({
   ...wire,
   participants: parseParticipants(wire.participants),
@@ -291,12 +303,13 @@ export function getChannelSettings(
  * A `chat/*`-namespaced settings patch: name, pinned, and context-window
  * edits all go through this one function, matching the single `PATCH
  * /channels/:id/settings` route in `packages/chat/src/routes.ts` that
- * accepts any subset of them in one body.
+ * accepts any subset of them in one body. `chat/contextWindow: null` clears
+ * a channel's override back to inheriting the bench default.
  */
 export type ChannelSettingsPatch = {
   readonly "chat/name"?: string;
   readonly "chat/pinned"?: boolean;
-  readonly "chat/contextWindow"?: number;
+  readonly "chat/contextWindow"?: number | null;
 };
 
 export function patchChannelSettings(
@@ -307,6 +320,39 @@ export function patchChannelSettings(
   return request(
     `/api/tenants/${tenantId}/chat/channels/${channelId}/settings`,
     ChannelSettingsResponse,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+}
+
+// `GET`/`PATCH /bench/settings` (see `packages/chat/src/routes.ts`): the
+// bench-wide chat defaults every channel inherits unless it sets its own
+// override. Currently just the default context window.
+const BenchChatSettingsResponse = type({
+  settings: "Record<string, unknown>",
+  contextWindow: "number",
+});
+export type BenchChatSettings = typeof BenchChatSettingsResponse.infer;
+
+export function getBenchChatSettings(
+  tenantId: string,
+): Promise<BenchChatSettings> {
+  return request(
+    `/api/tenants/${tenantId}/chat/bench/settings`,
+    BenchChatSettingsResponse,
+  );
+}
+
+export type BenchChatSettingsPatch = {
+  readonly "chat/contextWindow": number;
+};
+
+export function patchBenchChatSettings(
+  tenantId: string,
+  patch: BenchChatSettingsPatch,
+): Promise<BenchChatSettings> {
+  return request(
+    `/api/tenants/${tenantId}/chat/bench/settings`,
+    BenchChatSettingsResponse,
     { method: "PATCH", body: JSON.stringify(patch) },
   );
 }

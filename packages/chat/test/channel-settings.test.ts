@@ -6,6 +6,10 @@ import { describe, expect, test } from "bun:test";
 import { createChatRoutes } from "../src/routes";
 import { decodeParts } from "../src/codec";
 import {
+  benchContextWindowOf,
+  resolveContextWindow,
+} from "../src/channel-settings";
+import {
   buildDeps,
   createChannel,
   mountAs,
@@ -174,6 +178,73 @@ describe("chat/contextWindow", () => {
   });
 });
 
+describe("resolveContextWindow", () => {
+  test("an absent chat/contextWindow inherits the bench default", () => {
+    expect(resolveContextWindow({}, 30)).toEqual({
+      value: 30,
+      source: "inherit",
+    });
+  });
+
+  test("a null chat/contextWindow inherits the bench default", () => {
+    expect(resolveContextWindow({ "chat/contextWindow": null }, 30)).toEqual({
+      value: 30,
+      source: "inherit",
+    });
+  });
+
+  test("an explicit number overrides the bench default", () => {
+    expect(resolveContextWindow({ "chat/contextWindow": 5 }, 30)).toEqual({
+      value: 5,
+      source: "override",
+    });
+  });
+
+  test("an invalid override (negative or non-numeric) inherits rather than corrupting the effective value", () => {
+    expect(resolveContextWindow({ "chat/contextWindow": -3 }, 30)).toEqual({
+      value: 30,
+      source: "inherit",
+    });
+    expect(resolveContextWindow({ "chat/contextWindow": "lots" }, 30)).toEqual({
+      value: 30,
+      source: "inherit",
+    });
+  });
+
+  test("an oversized override clamps to the maximum, independent of the bench default", () => {
+    expect(resolveContextWindow({ "chat/contextWindow": 10_000 }, 30)).toEqual({
+      value: 200,
+      source: "override",
+    });
+  });
+
+  test("an oversized bench default clamps too, when inherited", () => {
+    expect(resolveContextWindow({}, 10_000)).toEqual({
+      value: 200,
+      source: "inherit",
+    });
+  });
+
+  test("throws loudly on an invalid bench default rather than silently coercing it", () => {
+    expect(() => resolveContextWindow({}, -1)).toThrow();
+    expect(() => resolveContextWindow({}, 1.5)).toThrow();
+  });
+});
+
+describe("benchContextWindowOf", () => {
+  test("defaults to 20 when the bench has set nothing", () => {
+    expect(benchContextWindowOf({})).toBe(20);
+  });
+
+  test("reads a bench's own set default", () => {
+    expect(benchContextWindowOf({ "chat/contextWindow": 50 })).toBe(50);
+  });
+
+  test("falls back to the default on an invalid value", () => {
+    expect(benchContextWindowOf({ "chat/contextWindow": -5 })).toBe(20);
+  });
+});
+
 describe("PATCH /channels/:id/settings", () => {
   test("validates chat/* strictly, passes foreign namespaces opaquely, and sends control mail", async () => {
     const deps = buildDeps();
@@ -226,6 +297,120 @@ describe("PATCH /channels/:id/settings", () => {
       body: JSON.stringify({ "chat/pinned": "not-a-boolean" }),
     });
 
+    expect(response.status).toBe(400);
+  });
+
+  test("a GET/PATCH response reports the effective contextWindow as inherited by default", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(`/channels/${channel.id}/settings`);
+    const body = (await response.json()) as {
+      contextWindow: { value: number; source: string };
+    };
+    expect(body.contextWindow).toEqual({ value: 20, source: "inherit" });
+  });
+
+  test("PATCHing an explicit chat/contextWindow reports it as overridden", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 7 }),
+    });
+    const body = (await response.json()) as {
+      contextWindow: { value: number; source: string };
+    };
+    expect(body.contextWindow).toEqual({ value: 7, source: "override" });
+  });
+
+  test("PATCHing chat/contextWindow to null clears an override back to inherit, distinct from omitting the key", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 7 }),
+    });
+
+    const omittedResponse = await app.request(
+      `/channels/${channel.id}/settings`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ "chat/pinned": true }),
+      },
+    );
+    const omittedBody = (await omittedResponse.json()) as {
+      contextWindow: { value: number; source: string };
+    };
+    expect(omittedBody.contextWindow).toEqual({ value: 7, source: "override" });
+
+    const clearedResponse = await app.request(
+      `/channels/${channel.id}/settings`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ "chat/contextWindow": null }),
+      },
+    );
+    const clearedBody = (await clearedResponse.json()) as {
+      contextWindow: { value: number; source: string };
+      settings: Record<string, unknown>;
+    };
+    expect(clearedBody.contextWindow).toEqual({ value: 20, source: "inherit" });
+    expect(clearedBody.settings["chat/contextWindow"]).toBeNull();
+  });
+});
+
+describe("GET/PATCH /bench/settings", () => {
+  test("defaults to the code-level default when the bench has set nothing", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/bench/settings");
+    const body = (await response.json()) as { contextWindow: number };
+    expect(body.contextWindow).toBe(20);
+  });
+
+  test("PATCH sets the bench default, which every inheriting channel then reflects", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const patchResponse = await app.request("/bench/settings", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": 40 }),
+    });
+    expect(patchResponse.status).toBe(200);
+    const patchBody = (await patchResponse.json()) as { contextWindow: number };
+    expect(patchBody.contextWindow).toBe(40);
+
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+    const channelResponse = await app.request(
+      `/channels/${channel.id}/settings`,
+    );
+    const channelBody = (await channelResponse.json()) as {
+      contextWindow: { value: number; source: string };
+    };
+    expect(channelBody.contextWindow).toEqual({ value: 40, source: "inherit" });
+  });
+
+  test("rejects a null bench default — there is nothing beneath it to inherit from", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/bench/settings", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/contextWindow": null }),
+    });
     expect(response.status).toBe(400);
   });
 });

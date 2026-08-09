@@ -21,7 +21,13 @@ import {
   TopBarActions,
   TopBarTitle,
 } from "@corbits/react-ui";
-import { CircleAlert, Lock, MessageSquare, UserPlus } from "lucide-react";
+import {
+  CircleAlert,
+  Lock,
+  MessageSquare,
+  Settings,
+  UserPlus,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -31,12 +37,14 @@ import {
   inviteAgent,
   listChannels,
   listMessages,
+  patchChannelSettings,
   putReadState,
   sendMessage,
   channelStreamUrl,
   isKnownChannelKind,
 } from "./api";
 import type { Channel, CreateChannelInput, MessageItem } from "./api";
+import { ChannelSettingsPanel } from "./channel-settings-panel";
 import { Composer } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
@@ -177,6 +185,9 @@ function ChatWorkspaceInner({
     null,
   );
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [settingsChannelId, setSettingsChannelId] = useState<string | null>(
+    null,
+  );
 
   const unauthorizedRef = useRef(false);
   // `background: true` is a refresh from SSE/polling: the previous ready
@@ -278,6 +289,18 @@ function ChatWorkspaceInner({
     await loadMessages(activeChannelId);
   }
 
+  async function handleRename(channelId: string, name: string) {
+    await patchChannelSettings(tenantId, channelId, { "chat/name": name });
+    setChannelsRefresh((value) => value + 1);
+  }
+
+  async function handleTogglePin(channel: Channel) {
+    await patchChannelSettings(tenantId, channel.id, {
+      "chat/pinned": !channel.pinned,
+    });
+    setChannelsRefresh((value) => value + 1);
+  }
+
   async function handleSend(text: string): Promise<boolean> {
     if (activeChannelId === null) return false;
     try {
@@ -318,15 +341,25 @@ function ChatWorkspaceInner({
           Chat
         </TopBarTitle>
         {activeChatAgent !== undefined ? <AgentBadge /> : null}
-        {activeChannelId !== null && canInviteAgent(activeChannel?.kind) ? (
+        {activeChannelId !== null ? (
           <TopBarActions>
+            {canInviteAgent(activeChannel?.kind) ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setInviteDialogOpen(true)}
+              >
+                <UserPlus />
+                {CHAT_STRINGS.inviteAgentAction}
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setInviteDialogOpen(true)}
+              onClick={() => setSettingsChannelId(activeChannelId)}
             >
-              <UserPlus />
-              {CHAT_STRINGS.inviteAgentAction}
+              <Settings />
+              {CHAT_STRINGS.channelSettingsAction}
             </Button>
           </TopBarActions>
         ) : null}
@@ -354,6 +387,12 @@ function ChatWorkspaceInner({
             onNewChannel={() => {
               setCreateChannelError(null);
               setDialogOpen(true);
+            }}
+            onRename={(channelId, name) => void handleRename(channelId, name)}
+            onTogglePin={(channel) => void handleTogglePin(channel)}
+            onOpenSettings={(channel) => {
+              setActiveChannelId(channel.id);
+              setSettingsChannelId(channel.id);
             }}
           />
         )}
@@ -417,6 +456,21 @@ function ChatWorkspaceInner({
           tenantId={tenantId}
           channelId={activeChannelId}
           onInvite={handleInvite}
+        />
+      ) : null}
+      {settingsChannelId !== null ? (
+        <ChannelSettingsPanel
+          open={settingsChannelId !== null}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setSettingsChannelId(null);
+          }}
+          tenantId={tenantId}
+          channelId={settingsChannelId}
+          onInviteParticipant={() => {
+            setSettingsChannelId(null);
+            setInviteDialogOpen(true);
+          }}
+          onSaved={() => setChannelsRefresh((value) => value + 1)}
         />
       ) : null}
     </>

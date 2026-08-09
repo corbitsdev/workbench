@@ -33,6 +33,23 @@ export const channelSettings = pgTable(
 );
 
 /**
+ * Bench-wide chat defaults — one row per tenant, the same
+ * record-as-truth jsonb shape as `channelSettings` (a `"chat/..."`
+ * namespaced blob rather than a column per setting). A channel with no
+ * override for a given key inherits its value from here; see
+ * `resolveContextWindow` in `./channel-settings.ts` for how the two are
+ * folded into one effective value.
+ */
+export const chatBenchSettings = pgTable("chat_bench_settings", {
+  tenantId: text("tenant_id").primaryKey(),
+  settings: jsonb("settings").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
  * Per-principal read cursor for a channel — humans and agents alike,
  * since both are principals on the platform. `channelId` is the
  * workflow-run/instance id that identifies the channel.

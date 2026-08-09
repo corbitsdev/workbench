@@ -2,7 +2,7 @@ export { SettingsShell, resolveActiveSection } from "./shell";
 export type { SettingsContext, SettingsSection } from "./shell";
 
 export { BenchSection, BenchSectionView } from "./bench-section";
-export { ChatSection, ChannelEditorView } from "./chat-section";
+export { ChatSection, ChatSectionView } from "./chat-section";
 export { AccountSection, AccountSectionView } from "./account-section";
 export {
   PeopleSection,

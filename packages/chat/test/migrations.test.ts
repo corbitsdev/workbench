@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import postgres from "postgres";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
-import { applyChatMigrations } from "../src/migrations";
+import { applyChatMigrations, chatMigrations } from "../src/migrations";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -56,36 +56,34 @@ describeIfDb("applyChatMigrations", () => {
     }
   });
 
-  test("applies both tables and is idempotent on a second run", async () => {
+  const migrationNames = [
+    "0001_channel_settings",
+    "0002_channel_read_state",
+    "0003_channel_launch",
+    "0004_channel_launch_noop_inference",
+    "0005_channel_tenancy",
+    "0006_channel_tenancy_parent_index",
+    "0007_chat_bench_settings",
+    "0008_channel_context_window_explicit_inherit",
+  ];
+
+  test("applies every table and is idempotent on a second run", async () => {
     const first = await applyChatMigrations(scratchUrl);
-    expect(first.applied).toEqual([
-      "0001_channel_settings",
-      "0002_channel_read_state",
-      "0003_channel_launch",
-      "0004_channel_launch_noop_inference",
-      "0005_channel_tenancy",
-      "0006_channel_tenancy_parent_index",
-    ]);
+    expect(first.applied).toEqual(migrationNames);
 
     const second = await applyChatMigrations(scratchUrl);
     expect(second.applied).toEqual([]);
-    expect(second.alreadyApplied.sort()).toEqual([
-      "0001_channel_settings",
-      "0002_channel_read_state",
-      "0003_channel_launch",
-      "0004_channel_launch_noop_inference",
-      "0005_channel_tenancy",
-      "0006_channel_tenancy_parent_index",
-    ]);
+    expect(second.alreadyApplied.sort()).toEqual([...migrationNames].sort());
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
     try {
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'public' AND table_name IN ` +
-          `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy')`,
+          `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy', 'chat_bench_settings')`,
       );
       expect(tables.map((row) => String(row["table_name"])).sort()).toEqual([
+        "chat_bench_settings",
         "channel_launch",
         "channel_read_state",
         "channel_settings",
@@ -101,6 +99,49 @@ describeIfDb("applyChatMigrations", () => {
       expect(indexes.map((row) => String(row["indexname"]))).toContain(
         "channel_tenancy_parent_tenant_id_idx",
       );
+    } finally {
+      await sql.end();
+    }
+  });
+
+  test("0008 makes a pre-existing row's absent contextWindow an explicit inherit, leaving a set value untouched", async () => {
+    const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
+    try {
+      await sql.unsafe(`DELETE FROM "channel_settings"`);
+      await sql.unsafe(
+        `INSERT INTO "channel_settings" (tenant_id, channel_id, settings, updated_by) VALUES
+          ('tnt_1', 'chn_absent', '{"chat/kind": "channel"}'::jsonb, 'prn_1'),
+          ('tnt_1', 'chn_override', '{"chat/kind": "channel", "chat/contextWindow": 5}'::jsonb, 'prn_1')`,
+      );
+
+      // Re-runs 0008's own SQL directly (rather than `applyChatMigrations`,
+      // whose ledger already marked 0008 applied by the earlier test) to
+      // exercise its behavior against rows inserted after that first run.
+      const migration = chatMigrations.find(
+        (candidate) =>
+          candidate.name === "0008_channel_context_window_explicit_inherit",
+      );
+      if (migration === undefined) {
+        throw new Error("0008 migration missing from chatMigrations");
+      }
+      await sql.unsafe(migration.sql);
+
+      const rows = await sql.unsafe(
+        `SELECT channel_id, settings FROM "channel_settings" ORDER BY channel_id`,
+      );
+      const byId = new Map(
+        rows.map((row) => [String(row["channel_id"]), row["settings"]]),
+      );
+      expect(
+        (byId.get("chn_absent") as Record<string, unknown>)[
+          "chat/contextWindow"
+        ],
+      ).toBeNull();
+      expect(
+        (byId.get("chn_override") as Record<string, unknown>)[
+          "chat/contextWindow"
+        ],
+      ).toBe(5);
     } finally {
       await sql.end();
     }
