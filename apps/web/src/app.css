@@ -110,84 +110,10 @@
    `prefers-reduced-motion` in its theme.css), and these transitions inherit
    that like any other. */
 
-/* Column 1: the global rail. Fixed width at every breakpoint — it is
-   already as narrow as the shell gets, so it never joins the columns that
-   withdraw as the viewport shrinks. */
-.shell-rail {
-  display: flex;
-  height: 100%;
-  width: 4.5rem;
-  flex-shrink: 0;
-  flex-direction: column;
-  align-items: center;
-  border-right: 1px solid var(--border);
-  background: var(--card);
-  padding: 0.5rem 0;
-}
-
-.shell-rail-nav {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.shell-rail-item {
-  display: flex;
-  width: 3.75rem;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  border: none;
-  border-radius: 10px;
-  padding: 0.5rem 0.25rem;
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition:
-    color 150ms,
-    background-color 150ms;
-}
-
-.shell-rail-item:hover {
-  background: var(--muted);
-  color: var(--foreground);
-}
-
-.shell-rail-item[aria-current="page"] {
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  color: var(--primary-emphasis);
-}
-
-.shell-rail-item-icon svg {
-  height: 1.25rem;
-  width: 1.25rem;
-}
-
-.shell-rail-item-label {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 0.625rem;
-  font-weight: 500;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.shell-rail-footer {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: auto;
-  padding-top: 0.5rem;
-}
-
+/* Column 1's footer docks: the bench switcher and identity row. The rail
+   itself is `@corbits/react-ui`'s `SidebarRail` (showLabels), styled in its
+   own stylesheet; only the footer parts composed into its `footer` slot
+   carry local CSS here. */
 .shell-bench-dock {
   width: 100%;
   padding: 0 0.375rem;

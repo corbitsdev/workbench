@@ -32,9 +32,14 @@ function renderRail(path: string): string {
 describe("Rail", () => {
   test("shows every page's label as visible text, not tooltip-only", () => {
     const markup = renderRail("/");
+    // `SidebarRail` (`showLabels`) renders each caption in a
+    // `sidebar-rail-item-label` slot; tooltip-only mode has no such span, so
+    // its presence is what makes the label visible rather than hover-gated.
     for (const route of NAV_ROUTES) {
-      expect(markup).toContain(
-        `<span class="shell-rail-item-label">${route.label}</span>`,
+      expect(markup).toMatch(
+        new RegExp(
+          `data-slot="sidebar-rail-item-label"[^>]*>${route.label}</span>`,
+        ),
       );
     }
   });
@@ -52,7 +57,9 @@ describe("Rail", () => {
   test("carries the settings link and the bench switcher in its footer", () => {
     const markup = renderRail("/");
     expect(markup).toContain(`href="${SETTINGS_PATH}"`);
-    expect(markup).toContain("shell-rail-footer");
+    // The footer is `SidebarRail`'s `footer` slot; the identity dock it holds
+    // is what carries the settings link, so its class marks the footer present.
+    expect(markup).toContain("shell-rail-identity");
   });
 
   test("never shows the account id", () => {

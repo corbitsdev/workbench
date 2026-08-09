@@ -37,14 +37,15 @@ function pageHeading(markup: string): string | undefined {
 /** The rail marks exactly one page active at a time (an icon+label button,
  * not a link — see `shell/rail.tsx`); this resolves its visible caption so a
  * test can confirm it is the *right* page, not merely that some page is
- * active. */
+ * active. The caption lives in `SidebarRail`'s `sidebar-rail-item-label`
+ * slot (its `showLabels` mode), keyed off the active item's `data-slot`. */
 function activeRailLabel(markup: string): string | undefined {
   const active =
     /data-slot="sidebar-rail-item"[^>]*aria-current="page"[^>]*>[\s\S]*?<\/button>/.exec(
       markup,
     );
   if (active === null) return undefined;
-  const label = /<span class="shell-rail-item-label">([^<]*)<\/span>/.exec(
+  const label = /data-slot="sidebar-rail-item-label"[^>]*>([^<]*)<\/span>/.exec(
     active[0],
   );
   return label?.[1];

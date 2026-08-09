@@ -2,21 +2,17 @@
 // bench am I in" — the page icons never change with navigation or with the
 // selected bench, and neither does this column's width.
 //
-// `@corbits/react-ui`'s `SidebarRail` is icon-only by design (see its own
-// doc comment), so a caption-under-icon rail isn't available from the
-// published version pinned in `package.json` yet — the item markup here
-// intentionally mirrors that component's anatomy (`data-slot` values
-// included, since `focus-rescue.ts` reaches for `sidebar-rail-item` by that
-// contract) so a future bump to a version that grows a `showLabels` option
-// is a drop-in swap, not a rewrite.
+// The caption-under-icon rail landed in `@corbits/react-ui`'s `SidebarRail`
+// as its `showLabels` option, so the rail is now the library component with
+// labels on — the hand-rolled item markup it temporarily mirrored is gone.
+// The footer still composes the bench switcher and identity docks the rail
+// needs below the page icons.
+
+import { SidebarRail } from "@corbits/react-ui";
 
 import { NAV_ROUTES, matchesRoute, type AppRoute } from "../routes";
 import type { SessionUser } from "../session";
 import { BenchDock, RailIdentity } from "./docks";
-
-function railItemId(route: AppRoute): string {
-  return route.path;
-}
 
 export function Rail({
   path,
@@ -29,31 +25,30 @@ export function Rail({
   readonly user: SessionUser;
   readonly onSignOut: () => void;
 }) {
+  // `SidebarRail` flags the item whose id equals `activeId`; the nav routes
+  // own prefix matching (e.g. /chat/:channelId lights the Chat item), so the
+  // active id is resolved here rather than left to an exact path compare.
+  const activeRoute = NAV_ROUTES.find((route) =>
+    matchesRoute(route.path, path),
+  );
+
   return (
-    <nav data-slot="sidebar-rail" aria-label="Workbench" className="shell-rail">
-      <ul className="shell-rail-nav">
-        {NAV_ROUTES.map((route) => {
-          const active = matchesRoute(route.path, path);
-          return (
-            <li key={route.path}>
-              <button
-                type="button"
-                data-slot="sidebar-rail-item"
-                aria-current={active ? "page" : undefined}
-                className="shell-rail-item"
-                onClick={() => onNavigate(railItemId(route))}
-              >
-                <span className="shell-rail-item-icon">{route.icon}</span>
-                <span className="shell-rail-item-label">{route.label}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="shell-rail-footer">
-        <BenchDock />
-        <RailIdentity path={path} user={user} onSignOut={onSignOut} />
-      </div>
-    </nav>
+    <SidebarRail
+      label="Workbench"
+      showLabels
+      activeId={activeRoute?.path ?? ""}
+      items={NAV_ROUTES.map((route: AppRoute) => ({
+        id: route.path,
+        label: route.label,
+        icon: route.icon,
+      }))}
+      onSelect={onNavigate}
+      footer={
+        <>
+          <BenchDock />
+          <RailIdentity path={path} user={user} onSignOut={onSignOut} />
+        </>
+      }
+    />
   );
 }
