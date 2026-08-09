@@ -24,6 +24,7 @@ export {
   launchFoldedRun,
   parseSourcesOverride,
   SourcesOverride,
+  InferenceResolutionError,
   type LaunchFoldedRunParams,
   type LaunchedFoldedRun,
 } from "./launch";

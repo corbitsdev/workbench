@@ -25,6 +25,26 @@ import type { FoldedBody } from "@intx/workflow-deploy";
 import type { FoldedRunsDeps } from "./types";
 
 /**
+ * Thrown by `deployAtHead` when the tenant catalog yields no launchable
+ * inference source for the run's definition. The bare resolution reason
+ * (`resolutionMessage`) is kept alongside the expanded human-readable
+ * `message` so a caller at the HTTP boundary can map it to a response
+ * body without parsing the log-string.
+ */
+export class InferenceResolutionError extends Error {
+  readonly resolutionMessage: string;
+  constructor(launchLabel: string, resolutionMessage: string) {
+    super(
+      `cannot resolve an inference source for ${launchLabel} ` +
+        `(${resolutionMessage}); seed a tenant catalog source (provider, ` +
+        `credential, catalog model/provider/offering) before launching`,
+    );
+    this.name = "InferenceResolutionError";
+    this.resolutionMessage = resolutionMessage;
+  }
+}
+
+/**
  * A caller-supplied inference-source chain, used verbatim in place of
  * catalog resolution (see `deployAtHead`). Exists for launches whose
  * anchor never runs a real inference turn — a channel host's noop
@@ -98,11 +118,7 @@ export async function deployAtHead(
           invokerPreferences: {},
         });
   if (!resolution.ok) {
-    throw new Error(
-      `cannot resolve an inference source for ${params.launchLabel} ` +
-        `(${resolution.message}); seed a tenant catalog source (provider, ` +
-        `credential, catalog model/provider/offering) before launching`,
-    );
+    throw new InferenceResolutionError(params.launchLabel, resolution.message);
   }
 
   // `create` replaces any collector already registered for this
