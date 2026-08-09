@@ -10,6 +10,7 @@ import { useNavigate } from "../navigation";
 import type { SessionUser } from "../session";
 import { canvasColumnAllowed, contextualPanelVisible } from "./breakpoints";
 import { useShellFocusRescue } from "./focus-rescue";
+import { useScrollReset } from "./use-scroll-reset";
 import {
   initialCanvasColumnState,
   resolveCanvasVisibility,
@@ -37,7 +38,10 @@ export function AppShell({
   const canvasAllowed = canvasColumnAllowed(layoutMode);
   const canvasOpen = resolveCanvasVisibility(canvasState, canvasAllowed);
   const frameRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   useShellFocusRescue(layoutMode, frameRef);
+  // Route changes must not inherit the previous page's scroll position.
+  useScrollReset(mainRef, path);
 
   return (
     <div className="shell-frame" ref={frameRef}>
@@ -56,7 +60,7 @@ export function AppShell({
           canvasAllowed={canvasAllowed}
         />
       )}
-      <div className="shell-main">
+      <div className="shell-main" ref={mainRef}>
         <div className="shell-main-content">{children}</div>
       </div>
       {canvasAllowed && <CanvasColumn open={canvasOpen} />}

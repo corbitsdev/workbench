@@ -18,7 +18,7 @@ import {
 } from "@corbits/react-ui";
 import type { BadgeTone, ViewMode } from "@corbits/react-ui";
 import { Bot, Copy, Workflow } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -59,6 +59,16 @@ const INSTANCE_CAP = 4;
  * visible text anywhere on this surface. */
 function CopyAddressButton({ address }: { readonly address: string }) {
   const [copied, setCopied] = useState(false);
+  // The "Copied" confirmation clears itself after a timeout. Track that
+  // timer so unmounting the button (switching tabs, leaving the page) can
+  // cancel it — otherwise the callback fires setState on an unmounted
+  // component, the classic leak.
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current !== null) clearTimeout(resetTimer.current);
+    };
+  }, []);
   return (
     <Button
       type="button"
@@ -69,7 +79,11 @@ function CopyAddressButton({ address }: { readonly address: string }) {
       onClick={() => {
         void navigator.clipboard.writeText(address).then(() => {
           setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
+          if (resetTimer.current !== null) clearTimeout(resetTimer.current);
+          resetTimer.current = setTimeout(() => {
+            resetTimer.current = null;
+            setCopied(false);
+          }, 1500);
         });
       }}
     >
