@@ -89,11 +89,19 @@ describe("isValidCronExpression (matcher and validator share one parser)", () =>
       "0 0 32 * *",
       "0 0 * 13 *",
       "60 * * * *",
-      "* * * * 7",
+      "* * * * 8",
       "10-5 * * * *",
     ]) {
       expect(isValidCronExpression(expression)).toBe(false);
     }
+  });
+
+  test("accepts 7 as Sunday on day-of-week", () => {
+    expect(isValidCronExpression("* * * * 7")).toBe(true);
+    // 2026-01-04 is a Sunday.
+    expect(
+      cronMatchesMinute("0 0 * * 7", new Date("2026-01-04T00:00:00Z")),
+    ).toBe(true);
   });
 
   test("accepts the range-then-step idiom the matcher already understands", () => {

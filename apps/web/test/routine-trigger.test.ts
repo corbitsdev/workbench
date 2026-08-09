@@ -18,10 +18,21 @@ describe("cadenceLabel", () => {
     );
   });
 
-  test("daily trigger renders a UTC time", () => {
+  test("daily trigger renders a UTC time by default", () => {
     expect(cadenceLabel({ kind: "daily", hour: 9, minute: 5 })).toBe(
       "Daily at 09:05 UTC",
     );
+  });
+
+  test("daily trigger names a non-UTC timezone", () => {
+    expect(
+      cadenceLabel({
+        kind: "daily",
+        hour: 9,
+        minute: 0,
+        timezone: "America/Los_Angeles",
+      }),
+    ).toBe("Daily at 09:00 America/Los_Angeles");
   });
 
   test("weekly trigger names the weekday", () => {
@@ -35,14 +46,29 @@ describe("cadenceLabel", () => {
       "Cron: */5 * * * *",
     );
   });
+
+  test("cron trigger appends a non-UTC timezone", () => {
+    expect(
+      cadenceLabel({
+        kind: "cron",
+        expression: "0 9 * * *",
+        timezone: "Europe/London",
+      }),
+    ).toBe("Cron: 0 9 * * * (Europe/London)");
+  });
 });
 
 describe("approximateNextRun", () => {
-  test("manual and cron triggers have no closed-form estimate", () => {
+  test("manual triggers have no estimate", () => {
     expect(approximateNextRun(null, new Date())).toBeNull();
-    expect(
-      approximateNextRun({ kind: "cron", expression: "* * * * *" }, new Date()),
-    ).toBeNull();
+  });
+
+  test("raw cron is estimated through the same package the hub uses", () => {
+    const next = approximateNextRun(
+      { kind: "cron", expression: "0 9 * * *" },
+      new Date("2026-01-01T08:00:00Z"),
+    );
+    expect(next?.toISOString()).toBe("2026-01-01T09:00:00.000Z");
   });
 
   test("interval adds its step to now when now sits on a boundary", () => {
@@ -55,9 +81,6 @@ describe("approximateNextRun", () => {
   });
 
   test("interval is wall-clock aligned, not an offset from the viewing moment", () => {
-    // The routine fires on `*/10 * * * *` — minutes 0, 10, 20, ... Viewed
-    // at :07, the real next fire is :10 (three minutes away), never
-    // "ten minutes from now."
     const now = new Date("2026-01-01T00:07:00Z");
     const next = approximateNextRun(
       { kind: "interval", unit: "minutes", every: 10 },
@@ -67,8 +90,6 @@ describe("approximateNextRun", () => {
   });
 
   test("hourly interval is wall-clock aligned to the hour", () => {
-    // `0 */2 * * *` fires at hour 0, 2, 4, ... Viewed at 01:00, the next
-    // fire is 02:00, not 03:00 ("2 hours from now").
     const now = new Date("2026-01-01T01:00:00Z");
     const next = approximateNextRun(
       { kind: "interval", unit: "hours", every: 2 },
@@ -89,14 +110,26 @@ describe("approximateNextRun", () => {
     expect(next?.toISOString()).toBe("2026-01-01T09:00:00.000Z");
   });
 
+  test("daily with timezone uses local wall-clock (UTC storage)", () => {
+    const now = new Date("2026-01-15T12:00:00Z");
+    const next = approximateNextRun(
+      {
+        kind: "daily",
+        hour: 9,
+        minute: 0,
+        timezone: "America/Los_Angeles",
+      },
+      now,
+    );
+    expect(next?.toISOString()).toBe("2026-01-15T17:00:00.000Z");
+  });
+
   test("weekly finds the next matching weekday", () => {
-    // 2026-01-01 is a Thursday (day 4).
     const now = new Date("2026-01-01T00:00:00Z");
     const next = approximateNextRun(
       { kind: "weekly", dayOfWeek: 1, hour: 9, minute: 0 },
       now,
     );
-    // Next Monday is 2026-01-05.
     expect(next?.toISOString()).toBe("2026-01-05T09:00:00.000Z");
   });
 });

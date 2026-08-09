@@ -6,6 +6,7 @@ import {
   computeNextFireAt,
   cronExpressionForTrigger,
   isValidCronExpression,
+  timezoneForTrigger,
 } from "../src/trigger";
 
 describe("isValidCronExpression", () => {
@@ -27,7 +28,11 @@ describe("isValidCronExpression", () => {
     expect(isValidCronExpression("0 0 32 * *")).toBe(false);
     expect(isValidCronExpression("0 0 * 13 *")).toBe(false);
     expect(isValidCronExpression("60 * * * *")).toBe(false);
-    expect(isValidCronExpression("* * * * 7")).toBe(false);
+    expect(isValidCronExpression("* * * * 8")).toBe(false);
+  });
+
+  test("accepts 7 as Sunday on day-of-week", () => {
+    expect(isValidCronExpression("* * * * 7")).toBe(true);
   });
 
   test("rejects a reversed range, which would otherwise never match", () => {
@@ -67,6 +72,26 @@ describe("RoutineTrigger", () => {
     expect(result instanceof type.errors).toBe(false);
   });
 
+  test("accepts a daily preset with an IANA timezone", () => {
+    const result = RoutineTrigger({
+      kind: "daily",
+      hour: 9,
+      minute: 0,
+      timezone: "America/Los_Angeles",
+    });
+    expect(result instanceof type.errors).toBe(false);
+  });
+
+  test("rejects a daily preset with a garbage timezone", () => {
+    const result = RoutineTrigger({
+      kind: "daily",
+      hour: 9,
+      minute: 0,
+      timezone: "Not/A_Zone",
+    });
+    expect(result instanceof type.errors).toBe(true);
+  });
+
   test("rejects an out-of-range hour", () => {
     const result = RoutineTrigger({ kind: "daily", hour: 24, minute: 0 });
     expect(result instanceof type.errors).toBe(true);
@@ -102,6 +127,17 @@ describe("RoutineTrigger", () => {
     expect(result instanceof type.errors).toBe(true);
     if (result instanceof type.errors) {
       expect(result.summary).toContain("valid 5-field cron expression");
+    }
+  });
+
+  test("rejects an impossible cron expression at save time", () => {
+    const result = RoutineTrigger({
+      kind: "cron",
+      expression: "0 0 31 2 *",
+    });
+    expect(result instanceof type.errors).toBe(true);
+    if (result instanceof type.errors) {
+      expect(result.summary).toContain("never fires");
     }
   });
 
@@ -170,5 +206,30 @@ describe("computeNextFireAt", () => {
       after,
     );
     expect(next?.toISOString()).toBe("2026-01-01T00:01:00.000Z");
+  });
+
+  test("daily with timezone fires at local wall-clock (UTC storage)", () => {
+    // 09:00 America/Los_Angeles in January = 17:00 UTC.
+    const after = new Date("2026-01-15T12:00:00Z");
+    const next = computeNextFireAt(
+      {
+        kind: "daily",
+        hour: 9,
+        minute: 0,
+        timezone: "America/Los_Angeles",
+      },
+      after,
+    );
+    expect(next?.toISOString()).toBe("2026-01-15T17:00:00.000Z");
+  });
+
+  test("timezoneForTrigger defaults to UTC", () => {
+    expect(timezoneForTrigger({ kind: "daily", hour: 9, minute: 0 })).toBe(
+      "UTC",
+    );
+    expect(
+      timezoneForTrigger({ kind: "interval", unit: "hours", every: 1 }),
+    ).toBe("UTC");
+    expect(timezoneForTrigger(null)).toBe("UTC");
   });
 });
