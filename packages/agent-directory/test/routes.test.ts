@@ -53,14 +53,86 @@ function fakeAssetService(overrides: Partial<AssetService> = {}): AssetService {
   };
 }
 
-// Never reached on either path these tests exercise: the 400 fails
-// before any dependency call, and the 409 fails inside `createAsset`
-// before `db` is ever touched.
-const UNUSED_DB = {} as DB["db"];
+// The duplicate-asset recovery path queries `db` directly (looking up the
+// existing asset and its definition) before deciding whether to reuse an
+// empty shell or surface a real 409. When the shell is reused the route
+// continues through populateAsset → ensureWorkflowDefinitionForAsset →
+// read-back, so the fake also provides just enough of drizzle's chainable
+// query-builder API (`.select().from().where().limit()`,
+// `.insert().values().onConflictDoNothing().returning()`) for that
+// projection — the projection logic itself is `@intx/hub-sessions`/
+// `@intx/db` machinery already covered upstream; the fake only needs to
+// return plausible rows, not re-prove the SQL.
 
-function buildApp(assetService: AssetService): Hono<TenantEnv> {
+type FakeDbOptions = {
+  existingAsset?: { id: string };
+  hasDefinition?: boolean;
+};
+
+function fakeDb(opts: FakeDbOptions = {}): DB["db"] {
+  let wfDefFindFirstCalls = 0;
+
+  const selectResult = [
+    {
+      tenantId: TENANT.id,
+      creatorPrincipalId: null,
+      name: "research-buddy",
+      displayName: "Research Buddy",
+    },
+  ];
+
+  return {
+    query: {
+      asset: {
+        findFirst: async () => opts.existingAsset ?? undefined,
+      },
+      workflowDefinition: {
+        findFirst: async () => {
+          wfDefFindFirstCalls += 1;
+          if (wfDefFindFirstCalls === 1) {
+            return opts.hasDefinition ? { id: "def_existing" } : undefined;
+          }
+          // Read-back after ensureWorkflowDefinitionForAsset.
+          return {
+            id: "def_new",
+            tenantId: TENANT.id,
+            name: "Research Buddy",
+            description: null,
+            currentVersion: "1",
+            status: "deployed",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+      },
+    },
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve(selectResult),
+        }),
+      }),
+    }),
+    insert: () => ({
+      values: () => {
+        const chain: Record<string, unknown> = {
+          onConflictDoNothing: () => chain,
+          returning: () => Promise.resolve([{ id: "def_new" }]),
+          then: (onFulfilled: unknown) =>
+            Promise.resolve([]).then(onFulfilled as never),
+        };
+        return chain;
+      },
+    }),
+  } as unknown as DB["db"];
+}
+
+function buildApp(
+  assetService: AssetService,
+  db: DB["db"] = fakeDb(),
+): Hono<TenantEnv> {
   const routes = createAgentDefinitionRoutes({
-    db: UNUSED_DB,
+    db,
     assetService,
     requireGrant: () => async (_c, next) => {
       await next();

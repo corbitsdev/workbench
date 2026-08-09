@@ -33,6 +33,26 @@ export type ProvisionResult =
       readonly seedSkipReason?: string;
     };
 
+/**
+ * A typed provisioning failure. `kind` lets the routes layer distinguish
+ * a retryable (transient) failure — sidecar down, race, network — from a
+ * permanent one — slug conflict with no principal, tenant created but
+ * membership missing — so the client can decide whether to retry without
+ * parsing a free-text message.
+ */
+export type ProvisionErrorKind = "transient" | "permanent";
+
+export class ProvisionError extends Error {
+  readonly code: string;
+  readonly errorKind: ProvisionErrorKind;
+  constructor(code: string, message: string, errorKind: ProvisionErrorKind) {
+    super(message);
+    this.name = "ProvisionError";
+    this.code = code;
+    this.errorKind = errorKind;
+  }
+}
+
 export type ProvisionArgs = {
   api: ApiCall;
   cookies: string[];
@@ -98,7 +118,7 @@ async function isFullySeeded(
 ): Promise<boolean> {
   const assetsResponse = await api(
     "GET",
-    `/api/tenants/${tenantId}/assets?kind=workflow`,
+    `/api/tenants/${tenantId}/assets?kind=workflow&inherited=false`,
     undefined,
     cookies,
   );
@@ -148,10 +168,32 @@ export async function provisionPersonalTenantIfNeeded(
     // tenant and then failed before seeding it; re-seed rather than
     // silently treating "created but never seeded" as done.
     const own = before.find((p) => p.tenantSlug === expectedSlug);
-    if (!own || !args.seedModel) return { kind: "existing-member" };
-    if (await isFullySeeded(args.api, args.cookies, own.tenantId)) {
+    // Not our personal bench: some other tenant added this user, which
+    // is none of this hook's business. Membership is decided here without
+    // depending on a seed credential — recovery of a half-provisioned
+    // bench must not hang forever just because no seed model is configured.
+    if (!own) return { kind: "existing-member" };
+
+    const fullySeeded = await isFullySeeded(
+      args.api,
+      args.cookies,
+      own.tenantId,
+    );
+    if (fullySeeded) return { kind: "existing-member" };
+
+    // Own bench exists but is not fully seeded. With a seed model we can
+    // re-seed to recover. Without one there is nothing this hook can do
+    // to complete seeding, so we exit as an existing-member rather than
+    // throwing — membership is real even if seeding is incomplete. The
+    // routes layer surfaces this as a typed `bench_unseeded` condition so
+    // the caller can act on it (e.g. prompt credential setup).
+    if (!args.seedModel) {
+      args.log(
+        `personal bench ${own.tenantId} exists but is not fully seeded, and no seed model is configured; returning as existing-member without re-seeding`,
+      );
       return { kind: "existing-member" };
     }
+
     const tenantResponse = await args.api(
       "GET",
       `/api/tenants/${own.tenantId}`,
@@ -201,13 +243,17 @@ export async function provisionPersonalTenantIfNeeded(
     // surfacing the native route's slug conflict as a failure.
     const afterRace = await fetchPrincipals(args.api, args.cookies);
     if (afterRace.length > 0) return { kind: "existing-member" };
-    throw new Error(
+    throw new ProvisionError(
+      "slug_conflict_no_principal",
       `first-login provisioning hit a slug conflict creating a personal bench, but the caller still has no principal anywhere: ${JSON.stringify(created.data)}`,
+      "permanent",
     );
   }
   if (created.status !== 201) {
-    throw new Error(
+    throw new ProvisionError(
+      "tenant_create_failed",
       `first-login provisioning could not create a personal bench (status ${created.status}): ${JSON.stringify(created.data)}`,
+      created.status >= 500 ? "transient" : "permanent",
     );
   }
   const tenant = parseAs(TenantResponse, created.data, "tenant response");
@@ -215,8 +261,10 @@ export async function provisionPersonalTenantIfNeeded(
   const after = await fetchPrincipals(args.api, args.cookies);
   const membership = after.find((p) => p.tenantId === tenant.id);
   if (!membership) {
-    throw new Error(
+    throw new ProvisionError(
+      "tenant_created_no_membership",
       `personal bench ${tenant.id} was created but the caller has no principal in it`,
+      "transient",
     );
   }
 

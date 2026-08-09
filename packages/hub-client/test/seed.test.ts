@@ -239,7 +239,8 @@ describe("seedTenant", () => {
         return { status: 409, data: { error: "name taken" } };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       )
         return {
           status: 200,

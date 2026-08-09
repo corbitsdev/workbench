@@ -473,7 +473,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
@@ -594,5 +595,241 @@ describe("provisionPersonalTenantIfNeeded", () => {
     // scratch: one create call per default workflow — echo, assistant,
     // channel-digest — on top of the one failed attempt.
     expect(assetCreateAttempts).toBe(4);
+  });
+
+  test("half-provisioned personal bench without a seed model returns existing-member (not stuck)", async () => {
+    // Without ANTHROPIC_API_KEY the server has no seed model. Membership of a
+    // personal bench must still resolve — recovery of "I have a bench" must
+    // not depend on a seed credential that may never exist. Seeding itself is
+    // skipped (nothing to seed with); the user is not stranded in a loop.
+    let assetListCalls = 0;
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                principalId: PRINCIPAL_ID,
+                tenantId: TENANT_ID,
+                tenantName: "alice's workbench",
+                tenantSlug: TENANT_SLUG,
+                kind: "user",
+                status: "active",
+                roles: [{ id: "rol_owner", name: "owner" }],
+              },
+            ],
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        assetListCalls += 1;
+        // Tenant-local assets empty — not fully seeded.
+        return { status: 200, data: [], cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      ) {
+        return { status: 200, data: [], cookies: [] };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await provisionPersonalTenantIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      // No seedModel — hub without ANTHROPIC_API_KEY.
+      pushWorkflow: noopPush,
+      log: collector().log,
+    });
+
+    expect(result).toEqual({ kind: "existing-member" });
+    // Completeness was checked (tenant-local assets listed) even without a
+    // seed model — membership recovery does not short-circuit before that.
+    expect(assetListCalls).toBe(1);
+  });
+
+  test("isFullySeeded lists tenant-local assets only (inherited=false)", async () => {
+    // OPERATOR_TENANT_ID trees can surface the parent's workflow assets when
+    // listing with inherited=true. Those must not satisfy the seed check —
+    // only tenant-local assets count. Assert the query uses inherited=false
+    // and that empty local assets trigger a re-seed when a seed model exists.
+    let listedInherited = false;
+    let listedLocal = false;
+    let assetCreateCount = 0;
+    const startedRuns: string[] = [];
+
+    const api: ApiCall = async (method, path, body) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                principalId: PRINCIPAL_ID,
+                tenantId: TENANT_ID,
+                tenantName: "alice's workbench",
+                tenantSlug: TENANT_SLUG,
+                kind: "user",
+                status: "active",
+                roles: [{ id: "rol_owner", name: "owner" }],
+              },
+            ],
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return {
+          status: 200,
+          data: {
+            id: TENANT_ID,
+            name: "alice's workbench",
+            slug: TENANT_SLUG,
+            domain: `${TENANT_SLUG}.localhost`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        listedLocal = true;
+        return { status: 200, data: [], cookies: [] };
+      }
+      if (method === "GET" && path.includes("inherited=true")) {
+        listedInherited = true;
+        throw new Error("must not list inherited assets for seed completeness");
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
+        assetCreateCount += 1;
+        const name =
+          typeof body === "object" &&
+          body !== null &&
+          "name" in body &&
+          typeof (body as { name: unknown }).name === "string"
+            ? (body as { name: string }).name
+            : `wf_${assetCreateCount}`;
+        return {
+          status: 201,
+          data: {
+            id: `ast_${assetCreateCount}`,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name,
+            displayName: null,
+            creatorPrincipalId: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/git-tokens`
+      ) {
+        return {
+          status: 201,
+          data: { id: "tok_1", secret: "s3cret" },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      ) {
+        return { status: 200, data: [], cookies: [] };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      ) {
+        return {
+          status: 201,
+          data: {
+            id: DEPLOYMENT_ID,
+            tenantId: TENANT_ID,
+            definitionAssetId: `ast_${assetCreateCount}`,
+            status: "active",
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/runs`
+      ) {
+        return {
+          status: 200,
+          data: { runIds: [...startedRuns] },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/mail`
+      ) {
+        const runId = `run_${startedRuns.length + 1}`;
+        startedRuns.push(runId);
+        return {
+          status: 202,
+          data: {
+            deploymentId: DEPLOYMENT_ID,
+            address: "echo@x",
+            messageId: `m${startedRuns.length}`,
+          },
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await provisionPersonalTenantIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      seedModel: MODEL,
+      pushWorkflow: noopPush,
+      log: collector().log,
+    });
+
+    expect(listedLocal).toBe(true);
+    expect(listedInherited).toBe(false);
+    // Empty tenant-local assets must re-seed, not claim "already seeded"
+    // from an ancestor's inherited catalog.
+    expect(result).toEqual({ kind: "existing-member", seeded: true });
+    expect(assetCreateCount).toBeGreaterThan(0);
   });
 });

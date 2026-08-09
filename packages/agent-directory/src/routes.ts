@@ -19,7 +19,7 @@ import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 import type { DB } from "@intx/db";
-import { workflowDefinition } from "@intx/db/schema";
+import { asset, workflowDefinition } from "@intx/db/schema";
 import type { TenantEnv, RequireGrant } from "@intx/hub-api";
 import {
   AssetServiceError,
@@ -77,33 +77,66 @@ export function createAgentDefinitionRoutes({
     });
     const workflowJson = serializeAgentDefinitionWorkflow(definition);
 
-    let asset;
+    let assetId: string;
     try {
-      asset = await assetService.createAsset({
+      const created = await assetService.createAsset({
         tenantId: tenant.id,
         kind: "workflow",
         name: body.handle,
         displayName: body.name,
         creatorPrincipalId: principal.id,
       });
+      assetId = created.id;
     } catch (cause) {
       if (
         cause instanceof AssetServiceError &&
         cause.reason === "duplicate_asset"
       ) {
-        return c.json(
-          errorEnvelope(
-            "conflict",
-            `An agent with the handle "${body.handle}" already exists`,
+        // A previous attempt may have created the asset row but failed
+        // before populateAsset wrote workflow.json — an empty shell that
+        // blocks retries with a misleading 409. Recover: look up the
+        // existing asset and reuse it only if it has no definition yet.
+        const existing = await db.query.asset.findFirst({
+          where: and(
+            eq(asset.tenantId, tenant.id),
+            eq(asset.kind, "workflow"),
+            eq(asset.name, body.handle),
           ),
-          409,
-        );
+        });
+        if (existing) {
+          const hasDef = await db.query.workflowDefinition.findFirst({
+            where: and(
+              eq(workflowDefinition.assetId, existing.id),
+              eq(workflowDefinition.tenantId, tenant.id),
+            ),
+          });
+          if (!hasDef) {
+            assetId = existing.id;
+          } else {
+            return c.json(
+              errorEnvelope(
+                "conflict",
+                `An agent with the handle "${body.handle}" already exists`,
+              ),
+              409,
+            );
+          }
+        } else {
+          return c.json(
+            errorEnvelope(
+              "conflict",
+              `An agent with the handle "${body.handle}" already exists`,
+            ),
+            409,
+          );
+        }
+      } else {
+        throw cause;
       }
-      throw cause;
     }
 
     await assetService.populateAsset({
-      assetId: asset.id,
+      assetId,
       ref: DEFAULT_ASSET_REF,
       principal: { kind: "hub" },
       tree: {
@@ -114,7 +147,7 @@ export function createAgentDefinitionRoutes({
 
     const { definitionId } = await ensureWorkflowDefinitionForAsset(
       db,
-      asset.id,
+      assetId,
     );
 
     const row = await db.query.workflowDefinition.findFirst({
