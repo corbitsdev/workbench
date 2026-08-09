@@ -64,8 +64,8 @@
   padding: 0.25rem 0;
   background: var(--background);
   box-shadow:
-    0 4px 6px rgb(0 0 0 / 0.07),
-    0 10px 15px rgb(0 0 0 / 0.1);
+    0 4px 6px color-mix(in srgb, var(--foreground) 8%, transparent),
+    0 10px 15px color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
 .bench-switcher-option,

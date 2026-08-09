@@ -3,10 +3,9 @@
    `@corbits/react-ui`'s prebuilt stylesheet and the theme's tokens. */
 
 .chat-workspace {
-  /* Summit Blue accent for the agent badge — the one literal allowed by the
-     brand review, defined once here as a token rather than sprinkled at the
-     usage site. Swap this for a consumed theme token if/when one ships. */
-  --chat-agent-accent: #607c9a;
+  /* Agent badge uses the theme chart-1 series so light/dark and preset
+     overlays stay consistent without a package-local hex. */
+  --chat-agent-accent: var(--chart-1);
 
   display: flex;
   flex: 1;
