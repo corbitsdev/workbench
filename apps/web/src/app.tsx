@@ -3,6 +3,7 @@ import { CircleAlert } from "lucide-react";
 
 import { AuthScreen } from "./auth-screen";
 import { BenchProvider } from "./bench-context";
+import { CommandPaletteProvider } from "./command-palette-provider";
 import { NavigationProvider, type Navigate } from "./navigation";
 import { NotFoundPage } from "./pages/not-found-page";
 import { OnboardingPage } from "./pages/onboarding-page";
@@ -37,6 +38,7 @@ function Shell({
   return (
     <NavigationProvider navigate={navigate}>
       <BenchProvider>
+        <CommandPaletteProvider navigate={navigate} />
         <AppShell path={path} user={user} onSignOut={onSignOut}>
           {path === ONBOARDING_PATH ? (
             <OnboardingPage />
