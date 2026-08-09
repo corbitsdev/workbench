@@ -29,6 +29,10 @@ const SubmitCredential = type({
   apiKey: "string > 0",
 });
 
+const ProvisionBody = type({
+  "name?": "string > 0",
+});
+
 export type CreateOnboardingRoutesDeps = {
   hubUrl: string;
   operatorTenantId?: string;
@@ -90,6 +94,17 @@ export function createOnboardingRoutes(
 
     const cookies = cookiesFromHeader(c.req.header("cookie"));
     try {
+      // Optional body: the naming wizard sends `{ name }`; the shell's
+      // membership probe may POST with no body and only wants the read path.
+      const rawBody: unknown = await c.req.json().catch(() => null);
+      const body =
+        rawBody === null
+          ? undefined
+          : (() => {
+              const parsed = ProvisionBody(rawBody);
+              return parsed instanceof type.errors ? undefined : parsed;
+            })();
+
       const provisionArgs: Parameters<
         typeof provisionPersonalTenantIfNeeded
       >[0] = {
@@ -105,6 +120,7 @@ export function createOnboardingRoutes(
         provisionArgs.operatorTenantId = deps.operatorTenantId;
       if (deps.seedModel !== undefined)
         provisionArgs.seedModel = deps.seedModel;
+      if (body?.name !== undefined) provisionArgs.displayName = body.name;
 
       const result = await provisionPersonalTenantIfNeeded(provisionArgs);
 
