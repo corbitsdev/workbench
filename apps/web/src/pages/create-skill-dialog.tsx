@@ -99,8 +99,7 @@ export function CreateSkillDialog({
   function handleFormChange(next: Record<string, unknown>) {
     setValues({
       name: typeof next.name === "string" ? next.name : values.name,
-      description:
-        typeof next.description === "string" ? next.description : "",
+      description: typeof next.description === "string" ? next.description : "",
       body: typeof next.body === "string" ? next.body : values.body,
     });
   }

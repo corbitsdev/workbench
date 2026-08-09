@@ -36,14 +36,18 @@ describe("CreateSkillDialog", () => {
   });
 
   test("a name without a body still cannot be submitted", () => {
-    expect(validationIssues({ name: "Summarize", description: "", body: "" })).toEqual([
-      "Skill body is required.",
-    ]);
+    expect(
+      validationIssues({ name: "Summarize", description: "", body: "" }),
+    ).toEqual(["Skill body is required."]);
   });
 
   test("a complete draft has no validation issues", () => {
     expect(
-      validationIssues({ name: "Summarize", description: "x", body: "do the thing" }),
+      validationIssues({
+        name: "Summarize",
+        description: "x",
+        body: "do the thing",
+      }),
     ).toEqual([]);
   });
 });
