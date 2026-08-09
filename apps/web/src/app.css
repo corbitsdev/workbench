@@ -223,7 +223,7 @@
    carry local CSS here. */
 .shell-bench-dock {
   width: 100%;
-  padding: 0 0.375rem;
+  padding: 0.25rem 0.5rem 0.5rem;
 }
 
 .shell-rail-identity {
