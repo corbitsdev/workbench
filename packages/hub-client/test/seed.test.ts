@@ -222,7 +222,7 @@ describe("seedTenant", () => {
     expect(definition.stepOrder).toEqual(["assistant"]);
 
     const output = lines.join("\n");
-    expect(output).toContain("created workflow asset assistant");
+    expect(output).toContain("created workflow asset assistant (Myra)");
     expect(output).toContain("deployed workflow assistant as dep_2");
     expect(output).toContain("confirmed workflow assistant: run run_1 started");
     expect(output).toContain("seed complete: 1 workflow(s)");
@@ -437,6 +437,16 @@ describe("seedTenant", () => {
 
   test("the default set also includes the assistant workflow", () => {
     expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toContain("assistant");
+  });
+
+  test("the seeded assistant is productized under the Myra display name", () => {
+    // Every personal bench provisioning deploys DEFAULT_WORKFLOWS, which
+    // includes the assistant. Its display name is the productized label
+    // Myra — seed stamps it onto the asset at create time, so the seeded
+    // assistant surfaces as Myra rather than the generic "Assistant".
+    const assistant = DEFAULT_WORKFLOWS.find((w) => w.assetName === "assistant");
+    expect(assistant).toBeDefined();
+    expect(assistant?.displayName).toBe("Myra");
   });
 
   test("NOOP_MODEL_SOURCE resolves to the hub's own noop-inference endpoint", () => {
