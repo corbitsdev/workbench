@@ -26,9 +26,9 @@ import type { ReactNode } from "react";
 
 import type { AgentDefinition, AgentInstance } from "../agents-api";
 import type { AgentDirectoryData } from "../agents-api";
-import { PrincipalsSchema, useAPIQuery } from "../api";
 import type { APIQuery } from "../api";
 import { useAgentDirectory } from "../agents-api";
+import { useBench } from "../bench-context";
 import { countProp } from "../optional-props";
 import { QueryView } from "../query-view";
 import { CreateAgentDialog } from "./create-agent-dialog";
@@ -275,6 +275,8 @@ export function AgentsPage({
   const [createOpen, setCreateOpen] = useState(false);
 
   const isReady = directory.kind === "ready";
+  const canCreate =
+    directory.kind === "ready" && directory.data.tenantId !== "";
 
   return (
     <>
@@ -299,7 +301,7 @@ export function AgentsPage({
           <Button
             type="button"
             onClick={() => setCreateOpen(true)}
-            disabled={!isReady}
+            disabled={!canCreate}
           >
             <Plus /> Create agent
           </Button>
@@ -434,7 +436,7 @@ export function AgentsPage({
           }}
         </QueryView>
       </PageShellBody>
-      {isReady && (
+      {canCreate && (
         <CreateAgentDialog
           open={createOpen}
           onOpenChange={setCreateOpen}
@@ -459,16 +461,16 @@ function PageShellBody({ children }: { readonly children: ReactNode }) {
 }
 
 export function AgentsRoute() {
-  const principals = useAPIQuery("/api/me/principals", PrincipalsSchema);
+  // BenchProvider is the only source of the active tenant — never re-fetch
+  // /api/me/principals and take memberships[0], which ignores the switcher.
+  const { memberships, selectedTenantId } = useBench();
   const [reloadKey, setReloadKey] = useState(0);
-  const membership =
-    principals.kind === "ready" ? principals.data.data[0] : undefined;
-  const directory = useAgentDirectory(membership?.tenantId, reloadKey);
+  const directory = useAgentDirectory(selectedTenantId ?? undefined, reloadKey);
 
   const resolvedDirectory: APIQuery<AgentDirectoryData> =
-    principals.kind !== "ready"
-      ? principals
-      : membership === undefined
+    memberships.kind !== "ready"
+      ? memberships
+      : selectedTenantId === null
         ? {
             kind: "ready",
             data: {

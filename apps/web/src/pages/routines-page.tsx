@@ -1,8 +1,8 @@
 // The Routines screen: named automations over workflow runs. Follows
 // runs-page.tsx / library-page.tsx's shape (pure `*Page` components fed
-// `APIQuery` props, a `*Route` container that resolves data) plus
-// chat-page.tsx's tenant-resolution convention — the account's first
-// bench membership, since this app has no bench switcher yet.
+// `APIQuery` props, a `*Route` container that resolves data). The active
+// bench comes from `useBench()` — the shell's one source of truth — never
+// a page-local `/api/me/principals` fetch that ignores the switcher.
 //
 // The create flow's trigger picker is workbench-specific composition
 // (`RoutineTrigger`'s exact shape, including the raw-cron escape hatch)
@@ -41,9 +41,11 @@ import type { BadgeTone } from "@corbits/react-ui";
 import { Clock, Plus } from "lucide-react";
 import { useState } from "react";
 
-import { PrincipalsSchema, RunsSchema, useAPIQuery } from "../api";
+import { RunsSchema, useAPIQuery } from "../api";
 import type { APIQuery, WorkflowRun } from "../api";
+import { useBench } from "../bench-context";
 import { countProp } from "../optional-props";
+
 import { QueryView } from "../query-view";
 import { approximateNextRun, cadenceLabel } from "../routine-trigger";
 import {
@@ -645,12 +647,11 @@ export function RoutinesRoute({
   readonly path: string;
   readonly navigate: (to: string) => void;
 }) {
-  const principals = useAPIQuery("/api/me/principals", PrincipalsSchema);
+  // BenchProvider owns the active tenant. Never re-fetch principals and take
+  // memberships[0] — that ignores the shell's bench switcher.
+  const { selectedTenantId } = useBench();
   const allRuns = useAPIQuery("/api/me/workflows/runs", RunsSchema);
-  const tenantId =
-    principals.kind === "ready"
-      ? (principals.data.data[0]?.tenantId ?? null)
-      : null;
+  const tenantId = selectedTenantId;
 
   // Bumped after a mutation (create/toggle) so the affected queries
   // re-run without a full page reload — `useTenantQuery`'s effect keys
