@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ArtifactSummary } from "@corbits/artifact-ui";
 
-import type { APIQuery, Approval, NeedsYouItem, WorkflowRun } from "../src/api";
+import type { APIQuery, NeedsYouItem } from "../src/api";
 import type {
   AgentDefinition,
   AgentDirectoryData,
