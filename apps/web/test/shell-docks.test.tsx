@@ -2,6 +2,7 @@
 // (never an id, never a network-fetched avatar) with the email as a
 // tooltip, and the initials derivation holds up against thin accounts.
 
+import { ThemeProvider } from "@corbits/react-ui";
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -13,13 +14,19 @@ const noop = () => undefined;
 
 function renderDock(path: string): string {
   return renderToStaticMarkup(
-    <NavigationProvider navigate={noNavigate}>
-      <RailIdentity
-        path={path}
-        user={{ id: "user_1", name: "Ada Lovelace", email: "ada@example.com" }}
-        onSignOut={noop}
-      />
-    </NavigationProvider>,
+    <ThemeProvider>
+      <NavigationProvider navigate={noNavigate}>
+        <RailIdentity
+          path={path}
+          user={{
+            id: "user_1",
+            name: "Ada Lovelace",
+            email: "ada@example.com",
+          }}
+          onSignOut={noop}
+        />
+      </NavigationProvider>
+    </ThemeProvider>,
   );
 }
 
@@ -39,12 +46,13 @@ describe("initialsOf", () => {
 });
 
 describe("RailIdentity", () => {
-  test("shows the avatar initials, the email, and the settings link", () => {
+  test("shows the avatar initials, the email, settings, and theme toggle", () => {
     const markup = renderDock("/");
     expect(markup).toContain("AL");
     expect(markup).toContain("ada@example.com");
     expect(markup).toContain('href="/settings"');
     expect(markup).toContain("Sign out");
+    expect(markup).toContain("System theme");
     expect(markup).not.toContain("user_1");
   });
 

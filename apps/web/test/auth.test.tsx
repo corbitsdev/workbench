@@ -3,6 +3,7 @@
 // make, and the signed-out tree contains the auth screen instead of any
 // screen that talks to the hub.
 
+import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -52,14 +53,16 @@ const noop = () => undefined;
 
 function renderApp(session: SessionState): string {
   return renderToStaticMarkup(
-    <App
-      path="/"
-      navigate={noop}
-      session={session}
-      onSignedIn={noop}
-      onSignOut={noop}
-      onRetry={noop}
-    />,
+    <ThemeProvider>
+      <App
+        path="/"
+        navigate={noop}
+        session={session}
+        onSignedIn={noop}
+        onSignOut={noop}
+        onRetry={noop}
+      />
+    </ThemeProvider>,
   );
 }
 

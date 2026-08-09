@@ -4,6 +4,7 @@
 // rail-listed pages mark themselves in the rail. Page identity lives in the
 // panel page band (h2.panel-page-title), not a per-page TopBar.
 
+import { ThemeProvider } from "@corbits/react-ui";
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -21,14 +22,16 @@ const signedIn: SessionState = {
 
 function renderApp(path: string, session: SessionState = signedIn): string {
   return renderToStaticMarkup(
-    <App
-      path={path}
-      navigate={noNavigate}
-      session={session}
-      onSignedIn={noop}
-      onSignOut={noop}
-      onRetry={noop}
-    />,
+    <ThemeProvider>
+      <App
+        path={path}
+        navigate={noNavigate}
+        session={session}
+        onSignedIn={noop}
+        onSignOut={noop}
+        onRetry={noop}
+      />
+    </ThemeProvider>,
   );
 }
 

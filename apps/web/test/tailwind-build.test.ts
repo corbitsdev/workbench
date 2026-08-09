@@ -31,12 +31,12 @@ describe("Tailwind production CSS", () => {
   test("emits artifact kind palette classes", () => {
     const css = builtCss();
     for (const color of [
-      "bg-blue-500",
-      "bg-emerald-500",
-      "bg-amber-500",
-      "bg-violet-500",
-      "bg-rose-500",
-      "bg-cyan-500",
+      "bg-\\[var\\(--chart-1\\)\\]",
+      "bg-\\[var\\(--chart-2\\)\\]",
+      "bg-\\[var\\(--chart-3\\)\\]",
+      "bg-\\[var\\(--chart-4\\)\\]",
+      "bg-\\[var\\(--chart-5\\)\\]",
+      "bg-muted",
     ]) {
       expect(css).toContain(color);
     }
