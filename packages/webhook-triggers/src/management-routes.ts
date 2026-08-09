@@ -89,10 +89,7 @@ export function createWebhookTriggerRoutes(
         body.workflowDefinitionId,
       );
       if (!owned) {
-        return c.json(
-          ErrorEnvelope("not_found", "definition not found"),
-          404,
-        );
+        return c.json(ErrorEnvelope("not_found", "definition not found"), 404);
       }
     }
 

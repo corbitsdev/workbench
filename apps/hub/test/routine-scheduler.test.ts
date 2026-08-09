@@ -10,9 +10,7 @@ import { tickRoutineScheduler } from "../src/routine-scheduler";
 
 const CRON = { kind: "cron" as const, expression: "0 * * * *" };
 
-function launcher(
-  impl: RoutineLauncher["launchRoutineRun"],
-): RoutineLauncher {
+function launcher(impl: RoutineLauncher["launchRoutineRun"]): RoutineLauncher {
   return { launchRoutineRun: impl };
 }
 
@@ -29,7 +27,7 @@ describe("tickRoutineScheduler", () => {
       createdBy: "user_1",
     });
     const at = new Date(
-      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
     );
     const launches: string[] = [];
     await tickRoutineScheduler(
@@ -61,7 +59,7 @@ describe("tickRoutineScheduler", () => {
       createdBy: "user_1",
     });
     const at = new Date(
-      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
     );
     await tickRoutineScheduler(
       {
@@ -74,10 +72,11 @@ describe("tickRoutineScheduler", () => {
     );
 
     const after = await store.getRoutine("t1", routine.id);
-    expect(after!.consecutiveFailures).toBe(1);
-    expect(after!.nextFireAt!.getTime()).toBe(
-      at.getTime() + backoffMsForFailure(1),
-    );
+    if (!after) throw new Error("expected routine after failure");
+    expect(after.consecutiveFailures).toBe(1);
+    const afterNext = after.nextFireAt;
+    if (!afterNext) throw new Error("expected nextFireAt after failure");
+    expect(afterNext.getTime()).toBe(at.getTime() + backoffMsForFailure(1));
     // Not immediately due again at the same instant.
     expect(await store.listDueRoutines(at)).toEqual([]);
 
@@ -99,7 +98,7 @@ describe("tickRoutineScheduler", () => {
       createdBy: "user_1",
     });
     const at = new Date(
-      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
     );
     await tickRoutineScheduler(
       {
@@ -111,7 +110,9 @@ describe("tickRoutineScheduler", () => {
       at,
     );
     const afterFail = await store.getRoutine("t1", routine.id);
-    const retryAt = afterFail!.nextFireAt!;
+    if (!afterFail) throw new Error("expected routine after failure");
+    const retryAt = afterFail.nextFireAt;
+    if (!retryAt) throw new Error("expected nextFireAt after failure");
     let launches = 0;
     await tickRoutineScheduler(
       {
@@ -125,7 +126,8 @@ describe("tickRoutineScheduler", () => {
     );
     expect(launches).toBe(1);
     const recovered = await store.getRoutine("t1", routine.id);
-    expect(recovered!.consecutiveFailures).toBe(0);
+    if (!recovered) throw new Error("expected recovered routine");
+    expect(recovered.consecutiveFailures).toBe(0);
   });
 
   test("after MAX failures the routine is dead-lettered and never claimed again", async () => {
@@ -140,13 +142,14 @@ describe("tickRoutineScheduler", () => {
       createdBy: "user_1",
     });
     let clock = new Date(
-      Math.max(Date.now(), (routine.nextFireAt?.getTime() ?? 0)),
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
     );
     for (let i = 0; i < MAX_ROUTINE_FIRE_FAILURES; i++) {
       const current = await store.getRoutine("t1", routine.id);
-      if (current!.nextFireAt !== null) {
+      if (!current) throw new Error("expected routine in loop");
+      if (current.nextFireAt !== null) {
         clock = new Date(
-          Math.max(clock.getTime(), current!.nextFireAt.getTime()),
+          Math.max(clock.getTime(), current.nextFireAt.getTime()),
         );
       }
       await tickRoutineScheduler(
@@ -160,8 +163,9 @@ describe("tickRoutineScheduler", () => {
       );
     }
     const final = await store.getRoutine("t1", routine.id);
-    expect(final!.deadLetteredAt).not.toBeNull();
-    expect(final!.consecutiveFailures).toBe(MAX_ROUTINE_FIRE_FAILURES);
+    if (!final) throw new Error("expected routine after dead-letter");
+    expect(final.deadLetteredAt).not.toBeNull();
+    expect(final.consecutiveFailures).toBe(MAX_ROUTINE_FIRE_FAILURES);
     expect(
       await store.listDueRoutines(new Date(clock.getTime() + 1e12)),
     ).toEqual([]);
