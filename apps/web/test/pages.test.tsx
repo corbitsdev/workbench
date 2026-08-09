@@ -41,10 +41,11 @@ describe("empty states", () => {
     expect(markup).toContain("This workbench has no assets yet");
   });
 
-  test("skills describes itself instead of faking content", () => {
+  test("skills renders the shell with an honest empty state and Create action", () => {
     const markup = renderToStaticMarkup(<SkillsPage />);
-    expect(markup).toContain("Skills aren");
-    expect(markup).toContain("built yet");
+    expect(markup).toContain("No skills yet");
+    expect(markup).toContain("Create skill");
+    expect(markup).toContain("Search skills");
   });
 
   test("agents reports a missing session instead of empty panels", () => {
