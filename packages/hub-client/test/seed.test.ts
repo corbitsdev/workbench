@@ -787,7 +787,6 @@ describe("seedCatalog", () => {
       cookies: [],
       tenantId: TENANT_ID,
       log,
-
     });
 
     expect(providerPosts).toBe(0);

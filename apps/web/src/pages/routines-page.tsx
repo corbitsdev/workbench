@@ -401,9 +401,7 @@ function CreateRoutineDialog({
                   aria-labelledby="routine-run-mode-label"
                   disabled={busy}
                 >
-                  {runMode === "once"
-                    ? "Run once, right now"
-                    : "On a schedule"}
+                  {runMode === "once" ? "Run once, right now" : "On a schedule"}
                 </Button>
               </MenuTrigger>
               <MenuContent>
