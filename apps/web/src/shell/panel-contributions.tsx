@@ -284,7 +284,11 @@ export function ensurePanelContributions(): void {
       ],
     }),
     pageSpecific: (ctx) => (
-      <ChannelsBand path={ctx.path} onNavigate={ctx.onNavigate} onOpenInCanvas={ctx.onOpenInCanvas} />
+      <ChannelsBand
+        path={ctx.path}
+        onNavigate={ctx.onNavigate}
+        onOpenInCanvas={ctx.onOpenInCanvas}
+      />
     ),
   });
 
