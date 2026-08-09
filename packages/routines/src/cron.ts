@@ -17,11 +17,7 @@
 // - Matching can be evaluated in an IANA timezone; `nextFireAt` is still
 //   stored as a UTC instant.
 export type CronField =
-  | "minute"
-  | "hour"
-  | "dayOfMonth"
-  | "month"
-  | "dayOfWeek";
+  "minute" | "hour" | "dayOfMonth" | "month" | "dayOfWeek";
 
 /** Field order in a 5-field cron expression, paired with its valid range. */
 export const CRON_FIELD_RANGES: Readonly<
@@ -88,8 +84,8 @@ function clauseInRange(
 
 /**
  * Does `clause` match `value` for a field whose minimum is `min`?
- * Star-with-step (`*​/N`) steps from `min`, not from zero — so on a
- * 1-based day-of-month, `*​/2` yields 1,3,5… rather than 2,4,6….
+ * Star-with-step (asterisk-slash-N) steps from `min`, not from zero — so on a
+ * 1-based day-of-month, that pattern yields 1,3,5… rather than 2,4,6….
  */
 function clauseMatches(
   clause: CronClause,
@@ -97,9 +93,7 @@ function clauseMatches(
   min: number,
 ): boolean {
   if (clause.base === "*") {
-    return clause.step === undefined
-      ? true
-      : (value - min) % clause.step === 0;
+    return clause.step === undefined ? true : (value - min) % clause.step === 0;
   }
   if (clause.rangeEnd === undefined && clause.step === undefined) {
     return value === clause.base;
