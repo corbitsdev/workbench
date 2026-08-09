@@ -26,7 +26,7 @@ const log = getLogger(["hub", "memory-mount"]);
 export type MountMemoryOptions = {
   /** Hub Hono app (routes register under tenant memory paths). */
   // Accept AppEnv without coupling this module to hub AppEnv.
-  app: Hono<any>;
+  app: Hono;
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
   /**

@@ -11,21 +11,28 @@ const KEYS = [
   "EMBED_API_KEY",
 ] as const;
 
-const saved: Partial<Record<(typeof KEYS)[number], string | undefined>> = {};
+type EnvKey = (typeof KEYS)[number];
+
+const saved: Partial<Record<EnvKey, string | undefined>> = {};
+
+function clearEnvKey(key: EnvKey): void {
+  // Prefer assignment over `delete process.env[key]` — eslint forbids dynamic delete.
+  process.env[key] = undefined;
+}
 
 afterEach(() => {
   for (const key of KEYS) {
     const value = saved[key];
-    if (value === undefined) delete process.env[key];
+    if (value === undefined) clearEnvKey(key);
     else process.env[key] = value;
-    delete saved[key];
+    saved[key] = undefined;
   }
 });
 
 function stashEnv(): void {
   for (const key of KEYS) {
     saved[key] = process.env[key];
-    delete process.env[key];
+    clearEnvKey(key);
   }
 }
 
