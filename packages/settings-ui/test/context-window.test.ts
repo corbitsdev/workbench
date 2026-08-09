@@ -1,6 +1,7 @@
-// Pure helper coverage for the "conversation memory" control: friendly
-// labels for every raw value shape, and parsing whatever someone types back
-// into the clamped integer (or "not ready") the settings panel needs.
+// Pure helper coverage for the bench-wide "default conversation memory"
+// control: friendly labels for every raw value, and parsing whatever
+// someone types back into the clamped integer (or "not ready") the
+// bench-settings panel needs.
 
 import { describe, expect, test } from "bun:test";
 
@@ -10,10 +11,6 @@ import {
 } from "../src/context-window";
 
 describe("contextWindowLabel", () => {
-  test("undefined reads as the server's default of 20", () => {
-    expect(contextWindowLabel(undefined)).toBe("Default (last 20 messages)");
-  });
-
   test("0 reads as disabled, not as a bare zero", () => {
     expect(contextWindowLabel(0)).toBe(
       "Disabled — mentioned agents see no history",
@@ -27,9 +24,9 @@ describe("contextWindowLabel", () => {
 });
 
 describe("parseContextWindowInput", () => {
-  test("blank input means 'default', i.e. undefined", () => {
-    expect(parseContextWindowInput("")).toBeUndefined();
-    expect(parseContextWindowInput("   ")).toBeUndefined();
+  test("blank input is not ready to submit", () => {
+    expect(parseContextWindowInput("")).toBeNull();
+    expect(parseContextWindowInput("   ")).toBeNull();
   });
 
   test("parses a plain integer", () => {

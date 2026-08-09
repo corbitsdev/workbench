@@ -11,7 +11,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { AccountSectionView } from "../src/account-section";
 import { BenchSectionView } from "../src/bench-section";
-import { ChannelEditorView, ChannelPicker } from "../src/chat-section";
+import { ChatSectionView } from "../src/chat-section";
 import { contextWindowLabel } from "../src/context-window";
 import { GrantsTable } from "../src/grants-section";
 import { PeopleTable } from "../src/people-section";
@@ -44,39 +44,15 @@ describe("raw-id sweep", () => {
     expect(UUID_PATTERN.test(visibleText(markup))).toBe(false);
   });
 
-  test("ChannelPicker never renders a channel's raw id as visible text", () => {
+  test("ChatSectionView (bench-wide chat defaults) never renders a channel id, since it holds none", () => {
     const markup = renderToStaticMarkup(
-      <ChannelPicker
-        channels={[
-          {
-            id: CHANNEL_ID,
-            title: "General",
-            kind: "channel",
-            pinned: true,
-            participants: [],
-          },
-        ]}
-        selectedId={CHANNEL_ID}
-        onSelect={() => undefined}
-      />,
-    );
-    expect(visibleText(markup)).not.toContain(CHANNEL_ID);
-    expect(UUID_PATTERN.test(visibleText(markup))).toBe(false);
-  });
-
-  test("ChannelEditorView renders only the channel's name, never a uuid", () => {
-    const markup = renderToStaticMarkup(
-      <ChannelEditorView
-        name="General"
-        pinned
+      <ChatSectionView
         contextWindowInput="20"
         contextWindowLabel={contextWindowLabel(20)}
         dirty={false}
         saving={false}
         error={null}
         savedAt={null}
-        onNameChange={() => undefined}
-        onPinnedChange={() => undefined}
         onContextWindowChange={() => undefined}
         onSave={() => undefined}
         onReset={() => undefined}
