@@ -98,10 +98,7 @@ export function ActivityBand() {
   }
 
   return (
-    <section
-      className="panel-band panel-band-activity"
-      aria-label="Activity"
-    >
+    <section className="panel-band panel-band-activity" aria-label="Activity">
       <h3 className="panel-band-heading">
         Activity
         {pendingCount > 0 ? (
@@ -122,9 +119,7 @@ export function ActivityBand() {
                   ([label, value]) => ({
                     label,
                     value:
-                      typeof value === "string"
-                        ? value
-                        : JSON.stringify(value),
+                      typeof value === "string" ? value : JSON.stringify(value),
                   }),
                 ),
               };
