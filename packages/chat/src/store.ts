@@ -90,6 +90,14 @@ export interface ChatStore {
     tenantId: string,
     channelId: string,
   ): Promise<ChannelSettingsRow | undefined>;
+  /**
+   * Removes a channel's settings row. Used only to compensate a channel
+   * whose creation a downstream step (the agent launch) failed to
+   * complete — the channel host, tenant, and settings were all written
+   * before the launch failed, so rolling the channel back means deleting
+   * each of them in turn (see `routes.ts`'s create handler).
+   */
+  deleteChannelSettings(tenantId: string, channelId: string): Promise<void>;
   listChannelSettings(
     tenantId: string,
     kind?: string,
@@ -154,6 +162,17 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
         )
         .limit(1);
       return selected as ChannelSettingsRow | undefined;
+    },
+
+    async deleteChannelSettings(tenantId, channelId) {
+      await db
+        .delete(channelSettings)
+        .where(
+          and(
+            eq(channelSettings.tenantId, tenantId),
+            eq(channelSettings.channelId, channelId),
+          ),
+        );
     },
 
     async listChannelSettings(tenantId, kind) {
@@ -310,6 +329,10 @@ export function createInMemoryChatStore(): ChatStore {
 
     async getChannelSettings(tenantId, channelId) {
       return settingsByKey.get(settingsKey(tenantId, channelId));
+    },
+
+    async deleteChannelSettings(tenantId, channelId) {
+      settingsByKey.delete(settingsKey(tenantId, channelId));
     },
 
     async listChannelSettings(tenantId, kind) {
