@@ -33,10 +33,12 @@
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.11.2",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "catalog:",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.1",
     "@vitejs/plugin-react": "^5.0.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "catalog:",
     "vite": "^7.1.0"
   }

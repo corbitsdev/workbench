@@ -5,10 +5,11 @@
 // `vite dev` proxies /api to a locally running hub so the interface can be
 // developed against real data without a build step.
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     proxy: {
       "/api": process.env.BASE_URL ?? "http://localhost:3000",

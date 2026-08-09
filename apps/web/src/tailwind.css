@@ -1,0 +1,26 @@
+/* The app-authored Tailwind layer. react-ui ships a prebuilt stylesheet
+   (imported in main.tsx before this file) that carries its own theme,
+   preflight, and the utility classes react-ui's components use — but only
+   those. Classes authored in the app and in workspace UI packages (grid
+   auto-fill layouts, artifact kind colors, responsive padding) were dead
+   because nothing generated their CSS. This entry adds a Tailwind v4 build
+   that scans those sources and emits the missing utilities.
+
+   The full `@import "tailwindcss"` is intentional: react-ui's prebuilt
+   theme and preflight land first (same values, built with the same Tailwind
+   v4), so the duplicate declarations are harmless idempotent overrides.
+   The semantic tokens react-ui defines (--primary, --background, …) live in
+   plain :root blocks, not in Tailwind's @theme namespace, so they never
+   collide with the palette variables (--color-blue-500, …) this build
+   introduces for the first time. */
+
+@import "tailwindcss";
+
+/* Workspace UI packages are source-only (no build step): their .tsx files
+   carry className utilities and artifact-ui's kind-color.ts returns palette
+   class strings. Tailwind v4's auto-detection stays inside apps/web, so each
+   package's src tree is added explicitly. */
+@source "../../../packages/artifact-ui/src";
+@source "../../../packages/bench-ui/src";
+@source "../../../packages/chat-ui/src";
+@source "../../../packages/settings-ui/src";
