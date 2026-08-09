@@ -8,13 +8,19 @@
 // own `/api/tenants/:tenantId/workflows/definitions` listing (native to
 // `@intx/hub-api`, not part of routines), the same catalog a routine's
 // `definitionId` points into.
+//
+// The create-flow picker only surfaces automatable workflows (see
+// `purpose-definitions.ts` + `@corbits/workflow-catalog`). Labels prefer
+// the catalog display name over raw asset names.
 
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
+import { workflowDisplayName } from "@corbits/workflow-catalog";
 import type { APIQuery } from "./api";
 import { toAPIQuery } from "./api";
 import { UnauthenticatedError } from "./query-client";
+import { purposeDefinitions } from "./purpose-definitions";
 
 export const RoutineTrigger = type({
   kind: "'interval'",
@@ -68,12 +74,18 @@ export const WorkflowDefinitionSummary = type({
   id: "string",
   name: "string",
   status: "string",
+  "description?": "string | null",
 });
 export type WorkflowDefinitionSummary = typeof WorkflowDefinitionSummary.infer;
 
-const DefinitionsResponse = type({
+const DefinitionsPage = type({
   data: WorkflowDefinitionSummary.array(),
+  "nextCursor?": "string | null",
 });
+
+/** One page is enough for a seeded bench; walk cursors so a large catalog
+ * never silently truncates automatable options. */
+const PAGE_LIMIT = 100;
 
 export type CreateRoutineInput = {
   readonly name: string;
@@ -201,13 +213,31 @@ export function listRoutineRuns(
   ).then((page) => page.items);
 }
 
-export function listWorkflowDefinitions(
+/**
+ * All automatable workflow definitions for the Routines create picker.
+ * Walks pagination, filters via the catalog allowlist, and attaches a
+ * friendly label for Menu items (never a raw id).
+ */
+export async function listWorkflowDefinitions(
   tenantId: string,
 ): Promise<readonly WorkflowDefinitionSummary[]> {
-  return request(
-    `/api/tenants/${tenantId}/workflows/definitions`,
-    DefinitionsResponse,
-  ).then((page) => page.data);
+  const collected: WorkflowDefinitionSummary[] = [];
+  let cursor: string | null = null;
+  for (;;) {
+    const query = new URLSearchParams({ limit: String(PAGE_LIMIT) });
+    if (cursor !== null) query.set("cursor", cursor);
+    const page = await request(
+      `/api/tenants/${tenantId}/workflows/definitions?${query}`,
+      DefinitionsPage,
+    );
+    collected.push(...page.data);
+    if (page.nextCursor === undefined || page.nextCursor === null) break;
+    cursor = page.nextCursor;
+  }
+  return purposeDefinitions(collected).map((definition) => ({
+    ...definition,
+    name: workflowDisplayName(definition.name, definition.description),
+  }));
 }
 
 /**

@@ -456,23 +456,25 @@ describe("seedTenant", () => {
     }
   });
 
-  test("the default set consumed by real tenant provisioning is exactly echo and assistant", () => {
+  test("the default set consumed by real tenant provisioning is echo, assistant, and channel-digest", () => {
     // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
-    // DEFAULT_WORKFLOWS for every real signup. The catalog-test
-    // workflows exist only to exercise the platform continuously and
-    // must never reach a real user through this array — they are
-    // seeded only via the explicit CATALOG_TEST_WORKFLOWS opt-in.
+    // DEFAULT_WORKFLOWS for every real signup. channel-digest is the
+    // seed automation the Routines picker can honestly offer. The
+    // remaining catalog-test workflows exist only to exercise the
+    // platform continuously and must never reach a real user through
+    // this array — they are seeded only via the explicit
+    // CATALOG_TEST_WORKFLOWS opt-in.
     expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual([
       "echo",
       "assistant",
+      "channel-digest",
     ]);
   });
 
-  test("every non-conversational default declares a modelSource override", () => {
-    // echo and assistant deploy against the tenant's real model and
-    // must not declare one; a future addition to DEFAULT_WORKFLOWS
-    // that silently picks up real inference is exactly the class of
-    // regression this guards against.
+  test("catalog-test workflows declare a modelSource override; defaults do not", () => {
+    // Defaults (echo, assistant, channel-digest) deploy against the
+    // tenant's real model. Catalog-test entries stay free via
+    // NOOP_MODEL_SOURCE.
     for (const workflow of DEFAULT_WORKFLOWS) {
       expect(workflow.modelSource).toBeUndefined();
     }
@@ -579,22 +581,38 @@ describe("seedTenant", () => {
     expect(output).toContain("confirmed workflow heartbeat: run run_1 started");
   });
 
-  test("the catalog-test set includes the channel-digest workflow", () => {
-    expect(CATALOG_TEST_WORKFLOWS.map((w) => w.assetName)).toContain(
+  test("the default set includes the channel-digest automation", () => {
+    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toContain(
       "channel-digest",
     );
   });
 
-  test("channel-digest pins its deploy source at noop-inference, never the tenant's real model", () => {
-    const channelDigest = CATALOG_TEST_WORKFLOWS.find(
+  test("channel-digest is automatable with a friendly display name and no noop pin", () => {
+    const channelDigest = DEFAULT_WORKFLOWS.find(
       (w) => w.assetName === "channel-digest",
     );
     if (!channelDigest) throw new Error("expected the channel-digest workflow");
-    const resolved = channelDigest.modelSource?.("http://localhost:3000");
-    expect(resolved).toEqual(NOOP_MODEL_SOURCE("http://localhost:3000"));
+    expect(channelDigest.displayName).toBe("Channel digest");
+    expect(channelDigest.automatable).toBe(true);
+    expect(channelDigest.modelSource).toBeUndefined();
   });
 
-  test("fresh run pushes, deploys, and confirms the channel-digest workflow against the noop source", async () => {
+  test("echo and assistant are not automatable", () => {
+    for (const name of ["echo", "assistant"] as const) {
+      const workflow = DEFAULT_WORKFLOWS.find((w) => w.assetName === name);
+      if (!workflow) throw new Error(`expected ${name}`);
+      expect(workflow.automatable).toBe(false);
+      expect(workflow.displayName.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("the catalog-test set is heartbeat only (channel-digest moved to defaults)", () => {
+    expect(CATALOG_TEST_WORKFLOWS.map((w) => w.assetName)).toEqual([
+      "heartbeat",
+    ]);
+  });
+
+  test("fresh run pushes, deploys, and confirms the channel-digest workflow against the tenant model", async () => {
     const { lines, log } = collector();
     const { pushes, push } = recordingPusher();
     let runsCalls = 0;
@@ -641,7 +659,7 @@ describe("seedTenant", () => {
       return undefined;
     };
 
-    const channelDigestOnly = CATALOG_TEST_WORKFLOWS.filter(
+    const digestOnly = DEFAULT_WORKFLOWS.filter(
       (w) => w.assetName === "channel-digest",
     );
     await seedTenant(
@@ -649,7 +667,7 @@ describe("seedTenant", () => {
         api: fakeAPI(handler),
         pushWorkflow: push,
         log,
-        workflows: channelDigestOnly,
+        workflows: digestOnly,
       }),
     );
 
@@ -665,12 +683,9 @@ describe("seedTenant", () => {
     expect(definition.triggers[0]?.to).toBe(`channel-digest@${TENANT_DOMAIN}`);
     expect(definition.stepOrder).toEqual(["channel-digest"]);
 
-    // The deploy's own source, not the tenant's real MODEL, is what
-    // proves the noop pin took effect: it must name the noop provider
-    // fixture, not the ordinary anthropic/claude-sonnet-4-5 model this
-    // test file's `args()` helper hands every other workflow.
+    // Defaults deploy against the tenant's real model (not noop).
     const deployedBody = deployedSources as { sources: { model: string }[] };
-    expect(deployedBody.sources[0]?.model).toBe("noop");
+    expect(deployedBody.sources[0]?.model).not.toBe("noop");
 
     const output = lines.join("\n");
     expect(output).toContain("deployed workflow channel-digest as dep_4");
@@ -772,6 +787,7 @@ describe("seedCatalog", () => {
       cookies: [],
       tenantId: TENANT_ID,
       log,
+
     });
 
     expect(providerPosts).toBe(0);
