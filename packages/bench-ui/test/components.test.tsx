@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { BenchMember, BenchMembership } from "../src/api";
-import { BenchSwitcherList, BenchSwitcherTrigger } from "../src/bench-switcher";
+import { BenchSwitcher, BenchSwitcherList, BenchSwitcherTrigger } from "../src/bench-switcher";
 import { canInviteMember } from "../src/invite-member-dialog";
 import { canCreateBench, deriveBenchSlug } from "../src/membership";
 import { MemberList } from "../src/member-list";
@@ -107,6 +107,23 @@ describe("BenchSwitcherList", () => {
       />,
     );
     expect(markup).toContain("New bench");
+  });
+});
+
+describe("BenchSwitcher", () => {
+  test("active trigger name goes through membershipDisplay, never a raw id", () => {
+    const markup = renderToStaticMarkup(
+      <BenchSwitcher
+        memberships={[
+          membership({ tenantId: "tnt_1", tenantName: "Acme Labs" }),
+        ]}
+        activeTenantId="tnt_1"
+        onSelect={noop}
+        onBenchCreated={noop}
+      />,
+    );
+    expect(markup).toContain("Acme Labs");
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 });
 

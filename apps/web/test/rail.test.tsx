@@ -33,7 +33,7 @@ function renderRail(path: string): string {
 }
 
 describe("Rail", () => {
-  test("shows every page's label as visible text, not tooltip-only", () => {
+  test("shows every rail page's label as visible text, not tooltip-only", () => {
     const markup = renderRail("/");
     // `SidebarRail` (`showLabels`) renders each caption in a
     // `sidebar-rail-item-label` slot; tooltip-only mode has no such span, so
@@ -47,13 +47,23 @@ describe("Rail", () => {
     }
   });
 
+  test("does not list Chat or Approvals on the rail", () => {
+    const markup = renderRail("/");
+    expect(markup).not.toMatch(
+      /data-slot="sidebar-rail-item-label"[^>]*>Chat<\/span>/,
+    );
+    expect(markup).not.toMatch(
+      /data-slot="sidebar-rail-item-label"[^>]*>Approvals<\/span>/,
+    );
+  });
+
   test("marks the active page and no other", () => {
-    const markup = renderRail("/chat");
+    const markup = renderRail("/routines");
     const currentCount = (markup.match(/aria-current="page"/g) ?? []).length;
-    // One for the active page item, one for the (inactive) settings link.
+    // One for the active page item (settings is only current on /settings).
     expect(currentCount).toBe(1);
     expect(markup).toMatch(
-      /data-slot="sidebar-rail-item" aria-current="page"[^>]*>[\s\S]*?Chat/,
+      /data-slot="sidebar-rail-item" aria-current="page"[^>]*>[\s\S]*?Routines/,
     );
   });
 
