@@ -17,7 +17,7 @@ import {
   useTenancyAccess,
 } from "@corbits/settings-ui";
 import type { SettingsContext, SettingsSection } from "@corbits/settings-ui";
-import { PageShell, TopBar, TopBarTitle } from "@corbits/react-ui";
+import { PageShell } from "@corbits/react-ui";
 
 import { useBench } from "../bench-context";
 
@@ -74,21 +74,14 @@ export function SettingsRoute() {
   }
 
   return (
-    <>
-      <TopBar>
-        <TopBarTitle subtitle="Your bench, its chats and channels, and your account">
-          Settings
-        </TopBarTitle>
-      </TopBar>
-      <PageShell width="full" className="page-fill">
-        <SettingsShell
-          sections={sections}
-          context={{
-            tenantId: selectedTenantId,
-            principalId: selectedPrincipalId,
-          }}
-        />
-      </PageShell>
-    </>
+    <PageShell width="full" className="page-fill">
+      <SettingsShell
+        sections={sections}
+        context={{
+          tenantId: selectedTenantId,
+          principalId: selectedPrincipalId,
+        }}
+      />
+    </PageShell>
   );
 }

@@ -1,7 +1,8 @@
 // The four-column app shell: the global rail, the contextual panel, the
 // main pane a route renders into, and the optional canvas. Every route in
 // `../routes.tsx` mounts inside this same frame — there is no per-route
-// shell variant.
+// shell variant. The canvas toggle lives in the panel page band, never as
+// an absolute overlay over page actions.
 
 import { useRef, useState, type ReactNode } from "react";
 
@@ -14,7 +15,7 @@ import {
   resolveCanvasVisibility,
   toggleCanvasColumn,
 } from "./canvas-column-state";
-import { CanvasColumn, CanvasToggle } from "./canvas-column";
+import { CanvasColumn } from "./canvas-column";
 import { ContextualPanel } from "./contextual-panel";
 import { Rail } from "./rail";
 import { useShellLayoutMode } from "./use-shell-layout";
@@ -47,17 +48,15 @@ export function AppShell({
         onSignOut={onSignOut}
       />
       {contextualPanelVisible(layoutMode) && (
-        <ContextualPanel path={path} onNavigate={navigate} />
+        <ContextualPanel
+          path={path}
+          onNavigate={navigate}
+          canvasOpen={canvasState.open}
+          onToggleCanvas={() => setCanvasState(toggleCanvasColumn)}
+          canvasAllowed={canvasAllowed}
+        />
       )}
       <div className="shell-main">
-        {canvasAllowed && (
-          <div className="shell-main-toolbar">
-            <CanvasToggle
-              open={canvasState.open}
-              onToggle={() => setCanvasState(toggleCanvasColumn)}
-            />
-          </div>
-        )}
         <div className="shell-main-content">{children}</div>
       </div>
       {canvasAllowed && <CanvasColumn open={canvasOpen} />}

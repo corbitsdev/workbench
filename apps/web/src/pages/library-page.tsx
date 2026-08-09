@@ -13,9 +13,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TopBar,
-  TopBarActions,
-  TopBarTitle,
   ViewToggle,
   artifactKindLabel,
   formatRelativeTime,
@@ -29,8 +26,6 @@ import {
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { ArrowDownUp, FileStack } from "lucide-react";
 import { useMemo, useState } from "react";
-
-import { countProp } from "../optional-props";
 
 const SORT_LABEL: Record<ArtifactSort, string> = {
   newest: "Newest first",
@@ -125,36 +120,28 @@ export function LibraryPage({
 
   return (
     <>
-      <TopBar>
-        <TopBarTitle
-          {...countProp(visible.length)}
-          subtitle="Documents, exports, and other artifacts your workflows produce"
-        >
-          Library
-        </TopBarTitle>
-        <TopBarActions>
-          <LibrarySearchInput
-            label="Search artifacts"
-            value={query}
-            onChange={setQuery}
-          />
-          <Menu>
-            <MenuTrigger asChild>
-              <Button type="button" variant="outline" size="sm">
-                <ArrowDownUp /> {SORT_LABEL[sort]}
-              </Button>
-            </MenuTrigger>
-            <MenuContent align="end">
-              {(Object.keys(SORT_LABEL) as ArtifactSort[]).map((option) => (
-                <MenuItem key={option} onSelect={() => setSort(option)}>
-                  {SORT_LABEL[option]}
-                </MenuItem>
-              ))}
-            </MenuContent>
-          </Menu>
-          <ViewToggle mode={viewMode} onChange={setViewMode} />
-        </TopBarActions>
-      </TopBar>
+      <div className="page-toolbar">
+        <LibrarySearchInput
+          label="Search artifacts"
+          value={query}
+          onChange={setQuery}
+        />
+        <Menu>
+          <MenuTrigger asChild>
+            <Button type="button" variant="outline" size="sm">
+              <ArrowDownUp /> {SORT_LABEL[sort]}
+            </Button>
+          </MenuTrigger>
+          <MenuContent align="end">
+            {(Object.keys(SORT_LABEL) as ArtifactSort[]).map((option) => (
+              <MenuItem key={option} onSelect={() => setSort(option)}>
+                {SORT_LABEL[option]}
+              </MenuItem>
+            ))}
+          </MenuContent>
+        </Menu>
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
+      </div>
       <PageShell width="full" className="page-fill">
         {artifacts.length === 0 ? (
           <RichEmptyState

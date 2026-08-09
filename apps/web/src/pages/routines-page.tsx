@@ -34,18 +34,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TopBar,
-  TopBarTitle,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import { Clock, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { RunsSchema, useAPIQuery } from "../api";
 import type { APIQuery, WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
-import { countProp } from "../optional-props";
 import { tenantKeys } from "../query-client";
 
 import { QueryView } from "../query-view";
@@ -221,11 +218,17 @@ function TriggerPicker({
 function CreateRoutineDialog({
   definitions,
   onCreate,
+  open: openProp,
+  onOpenChange,
 }: {
   readonly definitions: readonly WorkflowDefinitionSummary[];
   readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = openProp ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [name, setName] = useState("");
   const [definitionId, setDefinitionId] = useState(definitions[0]?.id ?? "");
   const [runMode, setRunMode] = useState<"once" | "schedule">("once");
@@ -251,11 +254,13 @@ function CreateRoutineDialog({
         if (!next) reset();
       }}
     >
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <Plus /> New routine
-        </Button>
-      </DialogTrigger>
+      {openProp === undefined ? (
+        <DialogTrigger asChild>
+          <Button size="sm">
+            <Plus /> New routine
+          </Button>
+        </DialogTrigger>
+      ) : null}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New routine</DialogTitle>
@@ -389,19 +394,23 @@ export function RoutinesListPage({
   readonly onToggleEnabled: (routine: Routine, enabled: boolean) => void;
   readonly onRunNow: (routine: Routine) => Promise<void>;
 }) {
+  const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    const onCreateEvent = () => setCreateOpen(true);
+    window.addEventListener("workbench:routines:create", onCreateEvent);
+    return () =>
+      window.removeEventListener("workbench:routines:create", onCreateEvent);
+  }, []);
+
   return (
     <>
-      <TopBar>
-        <TopBarTitle
-          {...countProp(
-            routines.kind === "ready" ? routines.data.length : undefined,
-          )}
-          subtitle="Named automations that run a workflow on a schedule or on demand"
-        >
-          Routines
-        </TopBarTitle>
-        <CreateRoutineDialog definitions={definitions} onCreate={onCreate} />
-      </TopBar>
+      <CreateRoutineDialog
+        definitions={definitions}
+        onCreate={onCreate}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+      />
       <PageShell className="page-fill">
         <QueryView query={routines} label="your routines">
           {(items) =>
@@ -477,11 +486,11 @@ export function RoutinesListPage({
           }
         </QueryView>
 
-        <TopBar>
-          <TopBarTitle subtitle="Runs currently executing that a routine started">
-            Live runs
-          </TopBarTitle>
-        </TopBar>
+        <section aria-label="Live runs" className="panel-stack">
+          <h3 className="panel-band-heading">Live runs</h3>
+          <p className="panel-muted">
+            Runs currently executing that a routine started.
+          </p>
         <QueryView query={liveRuns} label="live routine runs">
           {(runs) =>
             runs.length === 0 ? (
@@ -520,6 +529,7 @@ export function RoutinesListPage({
             )
           }
         </QueryView>
+        </section>
       </PageShell>
     </>
   );
@@ -538,18 +548,14 @@ export function RoutineDetailPage({
 }) {
   return (
     <>
-      <TopBar>
-        <TopBarTitle
-          subtitle={
-            routine.kind === "ready" ? cadenceLabel(routine.data.trigger) : ""
-          }
-        >
-          {routine.kind === "ready" ? routine.data.name : "Routine"}
-        </TopBarTitle>
+      <div className="page-toolbar">
         <Button variant="ghost" size="sm" onClick={onBack}>
           Back to routines
         </Button>
-      </TopBar>
+        <h2 className="panel-page-title">
+          {routine.kind === "ready" ? routine.data.name : "Routine"}
+        </h2>
+      </div>
       <PageShell width="prose" className="page-fill">
         <QueryView query={routine} label="this routine">
           {(data) => (
@@ -570,11 +576,9 @@ export function RoutineDetailPage({
           )}
         </QueryView>
 
-        <TopBar>
-          <TopBarTitle subtitle="Every time this routine fired">
-            Run history
-          </TopBarTitle>
-        </TopBar>
+        <section aria-label="Run history" className="panel-stack">
+          <h3 className="panel-band-heading">Run history</h3>
+          <p className="panel-muted">Every time this routine fired.</p>
         <QueryView query={runs} label="this routine's run history">
           {(items) =>
             items.length === 0 ? (
@@ -620,6 +624,7 @@ export function RoutineDetailPage({
             )
           }
         </QueryView>
+        </section>
       </PageShell>
     </>
   );

@@ -1,9 +1,4 @@
-import {
-  PageShell,
-  RichEmptyState,
-  TopBar,
-  TopBarTitle,
-} from "@corbits/react-ui";
+import { PageShell, RichEmptyState } from "@corbits/react-ui";
 import { Sparkles } from "lucide-react";
 
 /**
@@ -13,20 +8,13 @@ import { Sparkles } from "lucide-react";
  */
 export function SkillsPage() {
   return (
-    <>
-      <TopBar>
-        <TopBarTitle subtitle="Packaged capabilities an agent definition can pick up">
-          Skills
-        </TopBarTitle>
-      </TopBar>
-      <PageShell width="full" className="page-fill">
-        <RichEmptyState
-          icon={<Sparkles />}
-          title="Skills aren't built yet"
-          description="A skill will be a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent definition can declare and a bench can install. There's no skill registry in the hub yet, so this page has nothing real to list."
-        />
-      </PageShell>
-    </>
+    <PageShell width="full" className="page-fill">
+      <RichEmptyState
+        icon={<Sparkles />}
+        title="Skills aren't built yet"
+        description="A skill will be a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent definition can declare and a bench can install. There's no skill registry in the hub yet, so this page has nothing real to list."
+      />
+    </PageShell>
   );
 }
 

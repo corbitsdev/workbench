@@ -93,6 +93,7 @@
         "@corbits/react-ui": "github:corbitsdev/react-ui#4b8952c820b44dbf83b423b97a9ad0f4513df1e0",
         "@corbits/routines": "workspace:*",
         "@corbits/settings-ui": "workspace:*",
+        "@corbits/shell-ui": "workspace:*",
         "@intx/types": "workspace:*",
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-slot": "^1.2.3",
@@ -397,6 +398,19 @@
         "@types/bun": "catalog:",
         "@types/react": "^19.2.2",
         "@types/react-dom": "^19.2.1",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/shell-ui": {
+      "name": "@corbits/shell-ui",
+      "version": "0.0.1",
+      "dependencies": {
+        "arktype": "catalog:",
+        "react": "^19.2.0",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/react": "^19.2.2",
         "typescript": "catalog:",
       },
     },
@@ -858,6 +872,8 @@
     "@corbits/routines": ["@corbits/routines@workspace:packages/routines"],
 
     "@corbits/settings-ui": ["@corbits/settings-ui@workspace:packages/settings-ui"],
+
+    "@corbits/shell-ui": ["@corbits/shell-ui@workspace:packages/shell-ui"],
 
     "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
 

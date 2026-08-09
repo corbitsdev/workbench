@@ -1,181 +1,134 @@
-// Column 2: the bench-scoped live activity rail. Answers "what is
-// happening in this bench right now" — channels, chats, and running
-// routines for the currently selected bench, plus a slot for notifications
-// once the hub has something to send. Nothing here is a page list: it
-// refetches on bench changes, never on route changes, so items can persist
-// or travel across page navigation exactly as live activity should.
+// Column 2: route-aware contextual panel with three bands.
+//
+// 1. Page band — title, settings entry, quick actions, canvas toggle.
+// 2. Global pins — user-curated, same on every page.
+// 3. Page-specific — contribution content for the current route.
+//
+// Live activity lives here (left), never in the right canvas. Clicking a
+// list item navigates to the full surface for that entity.
 
+import { Button, EmptyState, SidebarItemRow } from "@corbits/react-ui";
 import {
-  EmptyState,
-  Skeleton,
-  SidebarItemRow,
-  SidebarPanel,
-  SidebarPanelBody,
-  SidebarPanelHeader,
-  SidebarPanelSection,
-  useSidebarPanel,
-} from "@corbits/react-ui";
-import type { Channel } from "@corbits/chat-ui";
-import { Bell, Hash, MessageSquare, Workflow } from "lucide-react";
+  loadPins,
+  resolvePanelContribution,
+  type Pin,
+} from "@corbits/shell-ui";
+import { Pin as PinIcon, Settings } from "lucide-react";
+import { useState } from "react";
 
-import { useBench } from "../bench-context";
-import { useBenchActivity } from "./bench-activity";
-import type { RoutineActivityItem } from "./routine-activity";
+import { CanvasToggle } from "./canvas-column";
+import { ensurePanelContributions } from "./panel-contributions";
 
-const CHANNELS_SECTION_ID = "channels";
-const CHATS_SECTION_ID = "chats";
-const ROUTINES_SECTION_ID = "routines";
-const NOTIFICATIONS_SECTION_ID = "notifications";
-const CHAT_PATH_PREFIX = "/chat";
-
-function activeChatChannelId(path: string): string | null {
-  if (!path.startsWith(`${CHAT_PATH_PREFIX}/`)) return null;
-  const rest = path.slice(CHAT_PATH_PREFIX.length + 1);
-  return rest === "" ? null : decodeURIComponent(rest);
-}
-
-function ChannelRow({
-  channel,
-  active,
-  onNavigate,
-}: {
-  readonly channel: Channel;
-  readonly active: boolean;
-  readonly onNavigate: (to: string) => void;
-}) {
-  return (
-    <SidebarItemRow
-      name={channel.title || "Untitled channel"}
-      selected={active}
-      onSelect={() =>
-        onNavigate(`${CHAT_PATH_PREFIX}/${encodeURIComponent(channel.id)}`)
-      }
-    />
-  );
-}
-
-function RoutineRow({ routine }: { readonly routine: RoutineActivityItem }) {
-  return <SidebarItemRow name={routine.name} meta={routine.status} />;
-}
+ensurePanelContributions();
 
 export function ContextualPanel({
   path,
   onNavigate,
+  canvasOpen,
+  onToggleCanvas,
+  canvasAllowed,
 }: {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
+  readonly canvasOpen: boolean;
+  readonly onToggleCanvas: () => void;
+  readonly canvasAllowed: boolean;
 }) {
-  const { selectedTenantId } = useBench();
-  const activity = useBenchActivity(selectedTenantId);
-  const activeChannelId = activeChatChannelId(path);
-  const {
-    isSectionCollapsed,
-    toggleSection,
-    panelKey,
-    panelTransitionClassName,
-  } = useSidebarPanel({ activePageId: selectedTenantId ?? "" });
+  const contribution = resolvePanelContribution(path);
+  const pageBand = contribution?.pageBand({ path, onNavigate }) ?? {
+    title: "Workbench",
+    subtitle: "Navigate from the rail",
+  };
+  const pageSpecific =
+    contribution?.pageSpecific?.({ path, onNavigate }) ?? null;
+
+  const [pins] = useState<readonly Pin[]>(() => loadPins());
 
   return (
-    <SidebarPanel
+    <aside
+      className="shell-contextual-panel"
       data-testid="shell-contextual-panel"
-      style={{ width: "var(--shell-contextual-width)" }}
+      aria-label="Contextual panel"
     >
-      <SidebarPanelHeader title="Activity" />
-      <SidebarPanelBody key={panelKey} className={panelTransitionClassName}>
-        {activity.kind === "loading" && (
-          <Skeleton className="shell-activity-skeleton" />
-        )}
-        {activity.kind === "empty" && (
-          <EmptyState
-            icon={<Hash />}
-            title="No bench selected"
-            description="Choose a bench from the rail to see its channels, chats, and running routines."
-          />
-        )}
-        {activity.kind === "error" && (
-          <EmptyState
-            icon={<Hash />}
-            title="Couldn't load bench activity"
-            description={activity.message}
-          />
-        )}
-        {activity.kind === "ready" && (
-          <>
-            <SidebarPanelSection
-              label="Channels"
-              collapsed={isSectionCollapsed(CHANNELS_SECTION_ID)}
-              onToggleCollapse={() => toggleSection(CHANNELS_SECTION_ID)}
-            >
-              {activity.channels.length === 0 ? (
-                <EmptyState
-                  icon={<Hash />}
-                  title="No channels yet"
-                  description="Channels created in this bench appear here."
-                />
-              ) : (
-                activity.channels.map((channel) => (
-                  <ChannelRow
-                    key={channel.id}
-                    channel={channel}
-                    active={channel.id === activeChannelId}
-                    onNavigate={onNavigate}
-                  />
-                ))
-              )}
-            </SidebarPanelSection>
-            <SidebarPanelSection
-              label="Chats"
-              collapsed={isSectionCollapsed(CHATS_SECTION_ID)}
-              onToggleCollapse={() => toggleSection(CHATS_SECTION_ID)}
-            >
-              {activity.chats.length === 0 ? (
-                <EmptyState
-                  icon={<MessageSquare />}
-                  title="No chats yet"
-                  description="Direct chats with an agent in this bench appear here."
-                />
-              ) : (
-                activity.chats.map((channel) => (
-                  <ChannelRow
-                    key={channel.id}
-                    channel={channel}
-                    active={channel.id === activeChannelId}
-                    onNavigate={onNavigate}
-                  />
-                ))
-              )}
-            </SidebarPanelSection>
-            <SidebarPanelSection
-              label="Running"
-              collapsed={isSectionCollapsed(ROUTINES_SECTION_ID)}
-              onToggleCollapse={() => toggleSection(ROUTINES_SECTION_ID)}
-            >
-              {activity.routines.length === 0 ? (
-                <EmptyState
-                  icon={<Workflow />}
-                  title="Nothing running"
-                  description="A routine running in this bench shows up here while it executes."
-                />
-              ) : (
-                activity.routines.map((routine) => (
-                  <RoutineRow key={routine.id} routine={routine} />
-                ))
-              )}
-            </SidebarPanelSection>
-            <SidebarPanelSection
-              label="Notifications"
-              collapsed={isSectionCollapsed(NOTIFICATIONS_SECTION_ID)}
-              onToggleCollapse={() => toggleSection(NOTIFICATIONS_SECTION_ID)}
-            >
-              <EmptyState
-                icon={<Bell />}
-                title="No notifications yet"
-                description="This bench has no notification source wired up yet — mentions and mail-backed alerts will land here once it does."
+      <section className="panel-band panel-band-page" aria-label="Page">
+        <div className="panel-page-header">
+          <div className="panel-page-identity">
+            <h2 className="panel-page-title">{pageBand.title}</h2>
+            {pageBand.subtitle !== undefined ? (
+              <p className="panel-page-subtitle">{pageBand.subtitle}</p>
+            ) : null}
+          </div>
+          <div className="panel-page-tools">
+            {pageBand.settingsPath !== undefined ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="Page settings"
+                title="Page settings"
+                onClick={() => onNavigate(pageBand.settingsPath!)}
+              >
+                <Settings />
+              </Button>
+            ) : null}
+            {canvasAllowed ? (
+              <CanvasToggle open={canvasOpen} onToggle={onToggleCanvas} />
+            ) : null}
+          </div>
+        </div>
+        {pageBand.actions !== undefined && pageBand.actions.length > 0 ? (
+          <div className="panel-page-actions">
+            {pageBand.actions.map((action) => (
+              <Button
+                key={action.id}
+                variant="outline"
+                size="sm"
+                onClick={action.onSelect}
+              >
+                {action.label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+        {pageBand.stats !== undefined ? (
+          <div className="panel-page-stats">{pageBand.stats}</div>
+        ) : null}
+      </section>
+
+      <section className="panel-band panel-band-pins" aria-label="Pinned">
+        <h3 className="panel-band-heading">Pinned</h3>
+        {pins.length === 0 ? (
+          <p className="panel-muted">
+            Pin channels, agents, or routines to keep them here on every page.
+          </p>
+        ) : (
+          <div className="panel-stack">
+            {pins.map((pin) => (
+              <SidebarItemRow
+                key={`${pin.kind}:${pin.id}`}
+                name={pin.label}
+                meta={pin.kind}
+                onSelect={() => onNavigate(pin.href)}
               />
-            </SidebarPanelSection>
-          </>
+            ))}
+          </div>
         )}
-      </SidebarPanelBody>
-    </SidebarPanel>
+      </section>
+
+      <section
+        className="panel-band panel-band-page-specific"
+        aria-label={`${pageBand.title} details`}
+      >
+        <h3 className="panel-band-heading">{pageBand.title}</h3>
+        {pageSpecific ?? (
+          <EmptyState
+            title="Nothing here yet"
+            description="Page-specific activity will show in this band."
+          />
+        )}
+      </section>
+    </aside>
   );
 }
+
+// PinIcon kept for future pin-toggle affordances in rows.
+void PinIcon;

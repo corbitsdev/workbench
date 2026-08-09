@@ -49,18 +49,125 @@
   flex-direction: column;
 }
 
-.shell-main-toolbar {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.75rem;
-  z-index: 10;
-}
-
 .shell-main-content {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
+}
+
+/* Column 2: three-band contextual panel. */
+.shell-contextual-panel {
+  display: flex;
+  width: var(--shell-contextual-width);
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  background: var(--card);
+}
+
+.panel-band {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  min-height: 0;
+}
+
+.panel-band-page-specific {
+  flex: 1;
+  overflow-y: auto;
+  border-bottom: none;
+}
+
+.panel-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.panel-page-identity {
+  min-width: 0;
+}
+
+.panel-page-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+
+.panel-page-subtitle {
+  margin: 0.125rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+}
+
+.panel-page-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.panel-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.panel-band-heading {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.panel-band-subheading {
+  margin: 0;
+  padding: 0.25rem 0.5rem 0.125rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.panel-muted {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.panel-stack-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+/* Page-local toolbars replace TopBar action clusters (search, view toggle)
+   that still need component state on the page. Identity lives in the panel. */
+.page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem 0;
 }
 
 /* Column 4: collapses to zero width rather than being merely hidden, so the

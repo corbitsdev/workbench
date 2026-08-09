@@ -1,9 +1,8 @@
-// Orchestrates the whole chat surface: resolves which bench (tenant) this
+// Chat workspace: the host resolves which bench the signed-in
 // account chats in, loads its channels and deployed agents, and wires the
-// sidebar, timeline, and composer together for whichever channel is
-// selected. The chat API has no tenant switcher of its own yet — like the
-// onboarding flow's personal bench, this uses the account's first bench
-// membership.
+// timeline and composer together for whichever channel is
+// selected. Channel list lives in the shell contextual panel — this
+// surface is the active conversation only.
 //
 // Resolving *which* bench that is is host-specific (it rides on
 // whatever session/query plumbing the embedding app already has — in
@@ -17,13 +16,9 @@ import {
   Button,
   EmptyState,
   Skeleton,
-  TopBar,
-  TopBarActions,
-  TopBarTitle,
 } from "@corbits/react-ui";
 import {
   CircleAlert,
-  Lock,
   MessageSquare,
   Settings,
   UserPlus,
@@ -37,7 +32,6 @@ import {
   inviteAgent,
   listChannels,
   listMessages,
-  patchChannelSettings,
   putReadState,
   sendMessage,
   channelStreamUrl,
@@ -49,7 +43,6 @@ import { Composer } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
-import { ChatSidebar } from "./sidebar";
 import { CHAT_STRINGS } from "./strings";
 import { AgentBadge, ChannelTimeline } from "./timeline";
 import type { CurrentUser } from "./timeline";
@@ -67,16 +60,6 @@ export type TenantResolution =
   | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "empty" }
   | { readonly kind: "ready"; readonly tenantId: string };
-
-/**
- * This workspace compiles under `exactOptionalPropertyTypes`, and the
- * component library's optional props are declared without
- * `| undefined` — so an absent prop has to be omitted, not passed as
- * `undefined`.
- */
-function subtitleProp(subtitle: string | undefined): { subtitle?: string } {
-  return subtitle === undefined ? {} : { subtitle };
-}
 
 type ChannelsState =
   | { readonly kind: "loading" }
@@ -190,6 +173,7 @@ function ChatWorkspaceInner({
   );
 
   const unauthorizedRef = useRef(false);
+
   // `background: true` is a refresh from SSE/polling: the previous ready
   // items stay on screen (and the composer stays mounted) until fresh data
   // lands, and a failed background refresh is swallowed rather than
@@ -248,6 +232,17 @@ function ChatWorkspaceInner({
     if (activeChannelId !== null) void loadMessages(activeChannelId);
   }, [activeChannelId, loadMessages]);
 
+  // Host shell opens the new-channel dialog from the contextual panel action.
+  useEffect(() => {
+    const onNewChannel = () => {
+      setCreateChannelError(null);
+      setDialogOpen(true);
+    };
+    window.addEventListener("workbench:chat:new-channel", onNewChannel);
+    return () =>
+      window.removeEventListener("workbench:chat:new-channel", onNewChannel);
+  }, []);
+
   const refreshUnlessUnauthorized = () => {
     if (unauthorizedRef.current) return;
     if (activeChannelId !== null) {
@@ -289,18 +284,6 @@ function ChatWorkspaceInner({
     await loadMessages(activeChannelId);
   }
 
-  async function handleRename(channelId: string, name: string) {
-    await patchChannelSettings(tenantId, channelId, { "chat/name": name });
-    setChannelsRefresh((value) => value + 1);
-  }
-
-  async function handleTogglePin(channel: Channel) {
-    await patchChannelSettings(tenantId, channel.id, {
-      "chat/pinned": !channel.pinned,
-    });
-    setChannelsRefresh((value) => value + 1);
-  }
-
   async function handleSend(text: string): Promise<boolean> {
     if (activeChannelId === null) return false;
     try {
@@ -330,113 +313,93 @@ function ChatWorkspaceInner({
 
   return (
     <>
-      <TopBar>
-        <TopBarTitle
-          {...subtitleProp(
-            activeChannel !== undefined
-              ? activeChannel.title || CHAT_STRINGS.unnamedChannel
-              : undefined,
-          )}
-        >
-          Chat
-        </TopBarTitle>
-        {activeChatAgent !== undefined ? <AgentBadge /> : null}
-        {activeChannelId !== null ? (
-          <TopBarActions>
-            {canInviteAgent(activeChannel?.kind) ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setInviteDialogOpen(true)}
-              >
-                <UserPlus />
-                {CHAT_STRINGS.inviteAgentAction}
-              </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSettingsChannelId(activeChannelId)}
-            >
-              <Settings />
-              {CHAT_STRINGS.channelSettingsAction}
-            </Button>
-          </TopBarActions>
-        ) : null}
-      </TopBar>
       <div className="chat-workspace">
-        {channelsState.kind === "loading" ? (
-          <Skeleton className="query-skeleton" />
-        ) : channelsState.kind === "error" ? (
-          <EmptyState
-            icon={<CircleAlert />}
-            title={`Couldn't load ${CHAT_STRINGS.couldNotLoadChannels}`}
-            description={channelsState.message}
-            action={
-              <Button variant="outline" onClick={() => void reloadChannels()}>
-                Try again
-              </Button>
-            }
-          />
-        ) : (
-          <ChatSidebar
-            channels={channelsState.channels}
-            chats={channelsState.chats}
-            activeChannelId={activeChannelId}
-            onSelect={(channel) => setActiveChannelId(channel.id)}
-            onNewChannel={() => {
-              setCreateChannelError(null);
-              setDialogOpen(true);
-            }}
-            onRename={(channelId, name) => void handleRename(channelId, name)}
-            onTogglePin={(channel) => void handleTogglePin(channel)}
-            onOpenSettings={(channel) => {
-              setActiveChannelId(channel.id);
-              setSettingsChannelId(channel.id);
-            }}
-          />
-        )}
         <div className="chat-main">
-          {activeChannelId === null ? (
+          {channelsState.kind === "loading" ? (
+            <Skeleton className="query-skeleton" />
+          ) : channelsState.kind === "error" ? (
+            <EmptyState
+              icon={<CircleAlert />}
+              title={`Couldn't load ${CHAT_STRINGS.couldNotLoadChannels}`}
+              description={channelsState.message}
+              action={
+                <Button variant="outline" onClick={() => void reloadChannels()}>
+                  Try again
+                </Button>
+              }
+            />
+          ) : activeChannelId === null ? (
             <EmptyState
               icon={<MessageSquare />}
               title={CHAT_STRINGS.noChatSelectedTitle}
               description={CHAT_STRINGS.noChatSelectedDescription}
             />
-          ) : messagesState.kind === "loading" ? (
-            <Skeleton className="query-skeleton" />
-          ) : messagesState.kind === "error" ? (
-            <EmptyState
-              icon={<CircleAlert />}
-              title={`Couldn't load ${CHAT_STRINGS.couldNotLoadMessages}`}
-              description={messagesState.message}
-              action={
-                <Button
-                  variant="outline"
-                  onClick={() => void loadMessages(activeChannelId)}
-                >
-                  Try again
-                </Button>
-              }
-            />
           ) : (
             <>
-              {streamState !== "live" ? (
-                <div className="chat-stream-indicator" role="status">
-                  {CHAT_STRINGS.reconnectingMessage}
+              <div className="chat-channel-header">
+                <div className="chat-channel-identity">
+                  <h2 className="chat-channel-title">
+                    {activeChannel?.title || CHAT_STRINGS.unnamedChannel}
+                  </h2>
+                  {activeChatAgent !== undefined ? <AgentBadge /> : null}
                 </div>
-              ) : null}
-              <ChannelTimeline
-                items={messagesState.items}
-                participants={activeChannel?.participants ?? []}
-                {...(currentUser !== undefined ? { currentUser } : {})}
-              />
-              <Composer
-                agents={mentionCandidatesFromParticipants(
-                  activeChannel?.participants ?? [],
-                )}
-                onSend={handleSend}
-              />
+                <div className="chat-channel-actions">
+                  {canInviteAgent(activeChannel?.kind) ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setInviteDialogOpen(true)}
+                    >
+                      <UserPlus />
+                      {CHAT_STRINGS.inviteAgentAction}
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSettingsChannelId(activeChannelId)}
+                  >
+                    <Settings />
+                    {CHAT_STRINGS.channelSettingsAction}
+                  </Button>
+                </div>
+              </div>
+              {messagesState.kind === "loading" ? (
+                <Skeleton className="query-skeleton" />
+              ) : messagesState.kind === "error" ? (
+                <EmptyState
+                  icon={<CircleAlert />}
+                  title={`Couldn't load ${CHAT_STRINGS.couldNotLoadMessages}`}
+                  description={messagesState.message}
+                  action={
+                    <Button
+                      variant="outline"
+                      onClick={() => void loadMessages(activeChannelId)}
+                    >
+                      Try again
+                    </Button>
+                  }
+                />
+              ) : (
+                <>
+                  {streamState !== "live" ? (
+                    <div className="chat-stream-indicator" role="status">
+                      {CHAT_STRINGS.reconnectingMessage}
+                    </div>
+                  ) : null}
+                  <ChannelTimeline
+                    items={messagesState.items}
+                    participants={activeChannel?.participants ?? []}
+                    {...(currentUser !== undefined ? { currentUser } : {})}
+                  />
+                  <Composer
+                    agents={mentionCandidatesFromParticipants(
+                      activeChannel?.participants ?? [],
+                    )}
+                    onSend={handleSend}
+                  />
+                </>
+              )}
             </>
           )}
         </div>
@@ -478,14 +441,7 @@ function ChatWorkspaceInner({
 }
 
 function ChatWorkspaceFrame({ children }: { readonly children: ReactNode }) {
-  return (
-    <>
-      <TopBar>
-        <TopBarTitle>Chat</TopBarTitle>
-      </TopBar>
-      {children}
-    </>
-  );
+  return <div className="chat-workspace-frame">{children}</div>;
 }
 
 export function ChatWorkspace({
@@ -522,24 +478,18 @@ export function ChatWorkspace({
         <ChatWorkspaceFrame>
           <EmptyState
             icon={<MessageSquare />}
-            title={CHAT_STRINGS.noChannelsTitle}
-            description="This account is not a member of any bench yet, so there is nowhere to chat."
+            title="No bench yet"
+            description="Create or join a bench before chatting."
           />
-        </ChatWorkspaceFrame>
-      );
-    case "loading":
-      return (
-        <ChatWorkspaceFrame>
-          <Skeleton className="query-skeleton" />
         </ChatWorkspaceFrame>
       );
     case "unauthenticated":
       return (
         <ChatWorkspaceFrame>
           <EmptyState
-            icon={<Lock />}
-            title="Sign in required"
-            description="Your session has ended. Reload the page to sign in again."
+            icon={<MessageSquare />}
+            title="Sign in to chat"
+            description="Your conversations live on a bench — sign in to open them."
           />
         </ChatWorkspaceFrame>
       );
@@ -548,9 +498,15 @@ export function ChatWorkspace({
         <ChatWorkspaceFrame>
           <EmptyState
             icon={<CircleAlert />}
-            title="Couldn't load your benches"
+            title="Couldn't open chat"
             description={tenant.message}
           />
+        </ChatWorkspaceFrame>
+      );
+    case "loading":
+      return (
+        <ChatWorkspaceFrame>
+          <Skeleton className="query-skeleton" />
         </ChatWorkspaceFrame>
       );
   }
