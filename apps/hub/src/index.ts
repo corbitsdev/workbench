@@ -498,7 +498,24 @@ export async function createHub(config: HubConfig) {
   // `ARTIFACTS_DATABASE_URL` is unset. The handle is available for
   // tenant-scoped list/search/read routes; Library still uses the
   // asset-shim surface until those land.
-  await mountArtifacts();
+  //
+  // The mount runs migrations against the configured DB; if the URL is
+  // present but points at an unreachable/invalid cluster the migration
+  // would otherwise throw and take the whole hub down at boot. We catch
+  // that here so the hub comes up in a degraded (no-artifacts) mode and
+  // surfaces the failure as a warning rather than a crash.
+  let artifactsHandle: Awaited<ReturnType<typeof mountArtifacts>>;
+  try {
+    artifactsHandle = await mountArtifacts();
+  } catch (error) {
+    log.warn(
+      `Artifacts mount failed — continuing without artifacts persistence: ${error}`,
+    );
+    artifactsHandle = undefined;
+  }
+  log.info(
+    `Artifacts handle ${artifactsHandle !== undefined ? "available" : "unavailable (degraded mode)"}`,
+  );
 
   // Tells the signed-out screen which OAuth buttons to draw, without
   // exposing the credentials themselves — just which providers a full
