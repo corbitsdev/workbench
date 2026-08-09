@@ -6,7 +6,11 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { BenchMember, BenchMembership } from "../src/api";
-import { BenchSwitcher, BenchSwitcherList, BenchSwitcherTrigger } from "../src/bench-switcher";
+import {
+  BenchSwitcher,
+  BenchSwitcherList,
+  BenchSwitcherTrigger,
+} from "../src/bench-switcher";
 import { canInviteMember } from "../src/invite-member-dialog";
 import { canCreateBench, deriveBenchSlug } from "../src/membership";
 import { MemberList } from "../src/member-list";
