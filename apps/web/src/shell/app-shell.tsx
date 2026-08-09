@@ -67,6 +67,14 @@ export function AppShell({
     }
   };
 
+  // Open a channel into the canvas without leaving the current page. Unlike
+  // handleChannelChange, this never touches the URL — a channel row click in
+  // col2 should pop the conversation open in col4 and keep the user on /library
+  // (or wherever they are). Deep-link navigation is reserved for the URL.
+  const handleOpenInCanvas = (channelId: string) => {
+    setCanvasState(openChannelInCanvas(channelId));
+  };
+
   return (
     <CanvasAvailabilityProvider allowed={canvasAllowed}>
       <div className="shell-frame" ref={frameRef}>
@@ -83,6 +91,7 @@ export function AppShell({
             canvasOpen={canvasState.open}
             onToggleCanvas={() => setCanvasState(toggleCanvasColumn)}
             canvasAllowed={canvasAllowed}
+            onOpenInCanvas={handleOpenInCanvas}
           />
         )}
         <div className="shell-main" ref={mainRef}>

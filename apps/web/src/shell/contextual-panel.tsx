@@ -25,20 +25,22 @@ export function ContextualPanel({
   canvasOpen,
   onToggleCanvas,
   canvasAllowed,
+  onOpenInCanvas,
 }: {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
   readonly canvasOpen: boolean;
   readonly onToggleCanvas: () => void;
   readonly canvasAllowed: boolean;
+  readonly onOpenInCanvas: (channelId: string) => void;
 }) {
   const contribution = resolvePanelContribution(path);
-  const pageBand = contribution?.pageBand({ path, onNavigate }) ?? {
+  const renderCtx = { path, onNavigate, onOpenInCanvas };
+  const pageBand = contribution?.pageBand(renderCtx) ?? {
     title: "Workbench",
     subtitle: "Navigate from the rail",
   };
-  const pageSpecific =
-    contribution?.pageSpecific?.({ path, onNavigate }) ?? null;
+  const pageSpecific = contribution?.pageSpecific?.(renderCtx) ?? null;
 
   const [pins] = useState<readonly Pin[]>(() => loadPins());
 

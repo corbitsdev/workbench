@@ -20,9 +20,11 @@ function pathMatches(prefix: string, path: string): boolean {
 function ChannelsBand({
   path,
   onNavigate,
+  onOpenInCanvas,
 }: {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
+  readonly onOpenInCanvas: (channelId: string) => void;
 }) {
   const { selectedTenantId } = useBench();
   const activity = useBenchActivity(selectedTenantId);
@@ -282,7 +284,7 @@ export function ensurePanelContributions(): void {
       ],
     }),
     pageSpecific: (ctx) => (
-      <ChannelsBand path={ctx.path} onNavigate={ctx.onNavigate} />
+      <ChannelsBand path={ctx.path} onNavigate={ctx.onNavigate} onOpenInCanvas={ctx.onOpenInCanvas} />
     ),
   });
 
