@@ -44,7 +44,7 @@ until those endpoints land.
 
 **Live, query-driven server search is blocked on a react-ui publish.** The
 component currently pinned in `package.json`
-(`github:corbitsdev/react-ui#d6837c6e59c5a52db4fa3402584344a17b561a68`)
+(`github:corbitsdev/react-ui#ea97f138844b0c0fc06577fc034d8401601e6702`)
 predates the data-driven `CommandPalette` — it owns its own query state
 internally and filters a fixed `actions` list, with no way to hand a
 keystroke back out to the caller. Today's wiring fetches channels and runs
@@ -53,7 +53,7 @@ the full list.
 
 The rebuilt, data-driven `CommandPalette` — with `groups`, `onQueryChange`,
 `loading`, `error`, and `hasMore`/`onLoadMore` as first-class props — lives
-on react-ui's `command-palette` branch, commit `10bf9bf353781d56266150d51776544ec5e4af05`.
+on react-ui's `command-palette` branch, commit `ea97f138844b0c0fc06577fc034d8401601e6702`.
 Once that is published and workbench's `@corbits/react-ui` dependency moves
 to the published version, `command-palette-provider.tsx` switches to
 debouncing the typed query into `@corbits/command-palette`'s `searchEntities`

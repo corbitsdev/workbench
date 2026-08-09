@@ -14,7 +14,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/react-ui": "github:corbitsdev/react-ui#bebe1ed596637a912e69dbdb857c3e043861e192",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#ea97f138844b0c0fc06577fc034d8401601e6702",
     "@intx/types": "workspace:*",
     "arktype": "catalog:",
     "lucide-react": "^1.27.0",
