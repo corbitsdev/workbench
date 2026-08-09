@@ -5,6 +5,7 @@ import { EmptyState, SidebarItemRow, Skeleton } from "@corbits/react-ui";
 import { Hash, MessageSquare, Workflow, Bell } from "lucide-react";
 
 import { useBench } from "../bench-context";
+import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
 import { useBenchActivity } from "./bench-activity";
 import {
   registerPanelContribution,
@@ -12,16 +13,8 @@ import {
 } from "./panel-contribution";
 import type { RoutineActivityItem } from "./routine-activity";
 
-const CHAT_PATH_PREFIX = "/chat";
-
 function pathMatches(prefix: string, path: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`);
-}
-
-function activeChatChannelId(path: string): string | null {
-  if (!path.startsWith(`${CHAT_PATH_PREFIX}/`)) return null;
-  const rest = path.slice(CHAT_PATH_PREFIX.length + 1);
-  return rest === "" ? null : decodeURIComponent(rest);
 }
 
 function ChannelsBand({
@@ -33,7 +26,7 @@ function ChannelsBand({
 }) {
   const { selectedTenantId } = useBench();
   const activity = useBenchActivity(selectedTenantId);
-  const activeId = activeChatChannelId(path);
+  const activeId = channelIdFromPath(path);
 
   if (activity.kind === "loading") {
     return <Skeleton className="shell-activity-skeleton" />;
@@ -64,7 +57,7 @@ function ChannelsBand({
       <EmptyState
         icon={<MessageSquare />}
         title="No channels yet"
-        description="Create a channel from Chat to start a conversation."
+        description="Create a channel to start a conversation."
       />
     );
   }
@@ -81,7 +74,7 @@ function ChannelsBand({
               selected={channel.id === activeId}
               onSelect={() =>
                 onNavigate(
-                  `${CHAT_PATH_PREFIX}/${encodeURIComponent(channel.id)}`,
+                  `${channelPath(channel.id)}`,
                 )
               }
             />
@@ -98,7 +91,7 @@ function ChannelsBand({
               selected={channel.id === activeId}
               onSelect={() =>
                 onNavigate(
-                  `${CHAT_PATH_PREFIX}/${encodeURIComponent(channel.id)}`,
+                  `${channelPath(channel.id)}`,
                 )
               }
             />
@@ -171,7 +164,7 @@ function LiveActivityBand({
   // Home and other surfaces share the live pulse: channels + running routines.
   const { selectedTenantId } = useBench();
   const activity = useBenchActivity(selectedTenantId);
-  const activeId = activeChatChannelId(path);
+  const activeId = channelIdFromPath(path);
 
   if (activity.kind === "loading") {
     return <Skeleton className="shell-activity-skeleton" />;
@@ -235,7 +228,7 @@ function LiveActivityBand({
               selected={channel.id === activeId}
               onSelect={() =>
                 onNavigate(
-                  `${CHAT_PATH_PREFIX}/${encodeURIComponent(channel.id)}`,
+                  `${channelPath(channel.id)}`,
                 )
               }
             />
@@ -252,7 +245,7 @@ function LiveActivityBand({
               selected={channel.id === activeId}
               onSelect={() =>
                 onNavigate(
-                  `${CHAT_PATH_PREFIX}/${encodeURIComponent(channel.id)}`,
+                  `${channelPath(channel.id)}`,
                 )
               }
             />
@@ -288,18 +281,18 @@ export function ensurePanelContributions(): void {
   });
 
   registerPanelContribution({
-    id: "chat",
-    match: (path) => pathMatches("/chat", path),
+    id: "channels",
+    match: (path) => isChannelPath(path),
     pageBand: (ctx) => ({
-      title: "Chat",
-      subtitle: "Channels and conversations",
+      title: "Channels",
+      subtitle: "Open a conversation in the canvas",
       actions: [
         {
           id: "new-channel",
           label: "New channel",
           onSelect: () => {
             window.dispatchEvent(new CustomEvent("workbench:chat:new-channel"));
-            if (!pathMatches("/chat", ctx.path)) ctx.onNavigate("/chat");
+            if (!isChannelPath(ctx.path)) ctx.onNavigate(channelPath(null));
           },
         },
       ],

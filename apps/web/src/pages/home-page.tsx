@@ -20,8 +20,8 @@ import { SignedOutNotice } from "../query-view";
 
 const SHORTCUTS = [
   {
-    to: "/chat",
-    title: "Chat",
+    to: "/c",
+    title: "Channels",
     description: "Talk to an agent in a streaming conversation.",
   },
   {

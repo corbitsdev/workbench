@@ -310,7 +310,7 @@ export function OnboardingPage() {
         >
           <GuidanceCards />
           <Button asChild>
-            <Link to="/chat">Go to your starter channel</Link>
+            <Link to="/c">Go to your starter channel</Link>
           </Button>
         </Section>
       </PageShell>
@@ -332,7 +332,7 @@ export function OnboardingPage() {
         >
           <HorizontalStepper steps={wizardSteps(state.phase)} />
           <ProgressChecklist steps={checklist} label="Default routines" />
-          <Button onClick={() => navigate("/chat")}>
+          <Button onClick={() => navigate("/c")}>
             Open your starter channel
           </Button>
         </Section>
