@@ -124,4 +124,11 @@ describe("routes render", () => {
     expect(markup).toContain("Page not found");
     expect(markup).not.toContain('aria-current="page"');
   });
+
+  test("a /c/:channelId deep link opens the canvas on first paint", () => {
+    // Canvas state is seeded from the path (not effect-only), so static
+    // markup sees the open column without running useEffect.
+    const markup = renderApp("/c/ch_deep");
+    expect(markup).toMatch(/class="shell-canvas-column"[^>]*data-open="true"/);
+  });
 });

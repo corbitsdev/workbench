@@ -14,6 +14,7 @@ import { canvasColumnAllowed, contextualPanelVisible } from "./breakpoints";
 import { useShellFocusRescue } from "./focus-rescue";
 import { useScrollReset } from "./use-scroll-reset";
 import {
+  applyChannelPathToCanvas,
   initialCanvasColumnState,
   openChannelInCanvas,
   resolveCanvasVisibility,
@@ -38,7 +39,11 @@ export function AppShell({
 }) {
   const navigate = useNavigate();
   const layoutMode = useShellLayoutMode();
-  const [canvasState, setCanvasState] = useState(initialCanvasColumnState);
+  // Deep links seed canvas state on first paint (SSR and client) so a `/c/:id`
+  // URL is not effect-only. Later path changes re-apply through the effect.
+  const [canvasState, setCanvasState] = useState(() =>
+    applyChannelPathToCanvas(initialCanvasColumnState(), path),
+  );
   const canvasAllowed = canvasColumnAllowed(layoutMode);
   const canvasOpen = resolveCanvasVisibility(canvasState, canvasAllowed);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -52,13 +57,11 @@ export function AppShell({
   // here — the toggle only flips open/closed so reopening lands on the
   // same conversation.
   useEffect(() => {
-    const channelId = channelIdFromPath(path);
-    if (channelId === null) return;
-    setCanvasState((state) => openChannelInCanvas(state, channelId));
+    setCanvasState((state) => applyChannelPathToCanvas(state, path));
   }, [path]);
 
   const handleChannelChange = (channelId: string) => {
-    setCanvasState((state) => openChannelInCanvas(state, channelId));
+    setCanvasState(openChannelInCanvas(channelId));
     if (!isChannelPath(path) || channelIdFromPath(path) !== channelId) {
       navigate(channelPath(channelId));
     }

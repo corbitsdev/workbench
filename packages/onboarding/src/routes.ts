@@ -75,14 +75,41 @@ export function createOnboardingRoutes(
     // Optional body: the naming wizard sends `{ name }`; the shell's
     // membership probe may POST with no body and only wants the read path.
     // Parse before rate-limiting so the read probe never burns a create slot.
-    const rawBody: unknown = await c.req.json().catch(() => null);
-    const body =
-      rawBody === null
-        ? undefined
-        : (() => {
-            const parsed = ProvisionBody(rawBody);
-            return parsed instanceof type.errors ? undefined : parsed;
-          })();
+    // Empty body → probe. Present body that is not valid JSON or fails the
+    // schema → 400 (never silently treated as a probe).
+    const bodyText = await c.req.text();
+    let body: { name?: string } | undefined;
+    if (bodyText.trim() === "") {
+      body = undefined;
+    } else {
+      let rawBody: unknown;
+      try {
+        rawBody = JSON.parse(bodyText) as unknown;
+      } catch {
+        return c.json(
+          {
+            error: {
+              code: "bad_request",
+              message: "Request body must be valid JSON",
+            },
+          },
+          400,
+        );
+      }
+      const parsed = ProvisionBody(rawBody);
+      if (parsed instanceof type.errors) {
+        return c.json(
+          {
+            error: {
+              code: "bad_request",
+              message: "Invalid provision body",
+            },
+          },
+          400,
+        );
+      }
+      body = parsed;
+    }
     const isCreateAttempt = body?.name !== undefined;
 
     // Rate-limit only named creates. The two-step first-login flow is
