@@ -15,7 +15,8 @@ import {
 } from "@workbench/hub-client";
 import { Hono } from "hono";
 import { type } from "arktype";
-import { provisionPersonalTenantIfNeeded } from "./provision";
+import { provisionPersonalTenantIfNeeded, ProvisionError } from "./provision";
+
 import { completeCredentialSetup } from "./complete-credential";
 
 const PROVIDER_IDS = supportedCredentialProviders().map((p) => p.id) as [
@@ -50,6 +51,14 @@ export function createOnboardingRoutes(
   const app = new Hono<AppEnv>();
   const api = createHubAPI(deps.hubUrl);
 
+  // A simple in-process per-user provision rate limiter. Provisioning is
+  // idempotent and safe to retry, but a client stuck in a tight retry loop
+  // (or a runaway script) can pile concurrent tenant creates onto the hub.
+  // One in-flight or recent provision per user is enough; the window is
+  // short because successful provisioning resolves immediately.
+  const PROVISION_RATE_LIMIT_MS = 10_000;
+  const lastProvisionByUser = new Map<string, number>();
+
   app.post("/provision", async (c) => {
     const user = c.get("user");
     if (!user) {
@@ -58,6 +67,25 @@ export function createOnboardingRoutes(
         401,
       );
     }
+
+    const now = Date.now();
+    const lastAttempt = lastProvisionByUser.get(user.id);
+    if (
+      lastAttempt !== undefined &&
+      now - lastAttempt < PROVISION_RATE_LIMIT_MS
+    ) {
+      return c.json(
+        {
+          error: {
+            code: "rate_limited",
+            kind: "transient" as const,
+            message: "Too many provisioning attempts. Please wait a moment and try again.",
+          },
+        },
+        429,
+      );
+    }
+    lastProvisionByUser.set(user.id, now);
 
     const cookies = cookiesFromHeader(c.req.header("cookie"));
     try {
@@ -85,15 +113,32 @@ export function createOnboardingRoutes(
       deps.log(
         `first-login provisioning failed for user ${user.id}: ${message}`,
       );
+      if (cause instanceof ProvisionError) {
+        const status = cause.errorKind === "transient" ? 503 : 500;
+        return c.json(
+          {
+            error: {
+              code: cause.code,
+              kind: cause.errorKind,
+              message: cause.message,
+            },
+          },
+          status,
+        );
+      }
+      // An unrecognized error is treated as transient — the hub may have
+      // been momentarily unavailable, and retrying is safe because
+      // provisioning is idempotent.
       return c.json(
         {
           error: {
             code: "provisioning_failed",
+            kind: "transient" as const,
             message:
               "Could not provision a workbench for this account. Try again in a moment.",
           },
         },
-        500,
+        503,
       );
     }
   });

@@ -348,7 +348,7 @@ async function ensureWorkflowAsset(
 
   const listed = await api(
     "GET",
-    `/api/tenants/${args.tenantId}/assets?kind=workflow`,
+    `/api/tenants/${args.tenantId}/assets?kind=workflow&inherited=false`,
     undefined,
     cookies,
   );
