@@ -19,3 +19,8 @@ export function subtitleProp(subtitle: string | undefined): {
 export function metaProp(meta: ReactNode | undefined): { meta?: ReactNode } {
   return meta === undefined ? {} : { meta };
 }
+
+export function badgeProp(badge: ReactNode | undefined): { badge?: ReactNode } {
+  return badge === undefined ? {} : { badge };
+}
+
