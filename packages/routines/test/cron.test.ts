@@ -51,12 +51,12 @@ describe("isValidCronExpression", () => {
 
 describe("step fields offset from field minimum", () => {
   // `*/2` on day-of-month (min=1) → 1,3,5… not 2,4,6…
-  const cases: Array<{
+  const cases: {
     name: string;
     expression: string;
     at: string;
     matches: boolean;
-  }> = [
+  }[] = [
     {
       name: "DOM */2 matches day 1",
       expression: "0 0 */2 * *",
@@ -225,9 +225,9 @@ describe("timezone matching and DST", () => {
       day: 15,
       month: 1,
     });
-    expect(
-      cronMatchesMinute("0 9 * * *", at, "America/Los_Angeles"),
-    ).toBe(true);
+    expect(cronMatchesMinute("0 9 * * *", at, "America/Los_Angeles")).toBe(
+      true,
+    );
     expect(cronMatchesMinute("0 9 * * *", at, "UTC")).toBe(false);
   });
 
