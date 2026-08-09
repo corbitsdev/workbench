@@ -4,11 +4,13 @@
 // bench (the chat page, the benches page, the header switcher) reads this
 // context instead of re-deriving "membership[0]" on its own.
 
+import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { PrincipalsSchema, useAPIQuery } from "./api";
 import type { APIQuery, Principal, PrincipalsPage } from "./api";
+import { meKeys, tenantKeys } from "./query-client";
 
 const STORAGE_KEY = "workbench.selectedTenantId";
 
@@ -55,12 +57,8 @@ function resolveSelection(
 }
 
 export function BenchProvider({ children }: { readonly children: ReactNode }) {
-  const [reloadKey, setReloadKey] = useState(0);
-  const memberships = useAPIQuery(
-    "/api/me/principals",
-    PrincipalsSchema,
-    reloadKey,
-  );
+  const queryClient = useQueryClient();
+  const memberships = useAPIQuery("/api/me/principals", PrincipalsSchema);
   const [stored, setStored] = useState<string | null>(() =>
     readStoredTenantId(),
   );
@@ -83,16 +81,22 @@ export function BenchProvider({ children }: { readonly children: ReactNode }) {
       selectedTenantId: resolved?.tenantId ?? null,
       selectedPrincipalId: resolved?.principalId ?? null,
       selectTenant: (tenantId: string) => {
+        const previous = stored;
+        if (previous !== null && previous !== tenantId) {
+          // Drop the left-behind bench's cache entirely — do not invalidate
+          // (which would refetch for a bench the user is no longer on).
+          queryClient.removeQueries({ queryKey: tenantKeys.all(previous) });
+        }
         writeStoredTenantId(tenantId);
         setStored(tenantId);
       },
       onBenchCreated: (tenantId: string) => {
         writeStoredTenantId(tenantId);
         setStored(tenantId);
-        setReloadKey((value) => value + 1);
+        void queryClient.invalidateQueries({ queryKey: meKeys.principals });
       },
     }),
-    [memberships, resolved],
+    [memberships, resolved, stored, queryClient],
   );
 
   return (

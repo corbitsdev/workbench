@@ -10,9 +10,11 @@ import {
   WorkflowRunSummary,
   paginatedSchema,
 } from "@intx/types";
+import { useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
-import { useEffect, useState } from "react";
+
+import { UnauthenticatedError, pathToQueryKey } from "./query-client";
 
 export const ProfileSchema = UserProfile;
 export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
@@ -74,62 +76,74 @@ export type APIQuery<T> =
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
 /**
+ * Map a TanStack Query result onto the APIQuery discriminant pages already
+ * render through QueryView. `isLoading` (pending + fetching) is the loading
+ * state — bare `isPending` would flash skeletons when cached data exists.
+ */
+export function toAPIQuery<T>(result: {
+  readonly isLoading: boolean;
+  readonly isError: boolean;
+  readonly error: unknown;
+  readonly data: T | undefined;
+  readonly isPending: boolean;
+  readonly fetchStatus: "fetching" | "paused" | "idle";
+}): APIQuery<T> {
+  if (result.isLoading) return { kind: "loading" };
+  if (result.isError) {
+    if (result.error instanceof UnauthenticatedError) {
+      return { kind: "unauthenticated" };
+    }
+    return {
+      kind: "error",
+      message:
+        result.error instanceof Error
+          ? result.error.message
+          : String(result.error),
+    };
+  }
+  if (result.data !== undefined) return { kind: "ready", data: result.data };
+  // Disabled queries (empty path, unresolved tenant) have no data and are not
+  // fetching — still report loading so callers that gate on "ready" stay quiet.
+  return { kind: "loading" };
+}
+
+/**
  * Fetches one hub endpoint and reports exactly what happened: loading, no
  * session (401), a failure, or validated data. Pass a module-level schema so
- * the effect does not re-run on every render.
+ * identity stays stable; the schema never enters the query key.
+ *
+ * Empty paths are disabled and never fetch — the boundary owns the gate so
+ * call sites that still pass `""` when a tenant is unresolved cannot hit
+ * the network with a broken URL.
  */
 export function useAPIQuery<T>(
   path: string,
   schema: Validator<T>,
-  /** Bump this to force a re-fetch of an otherwise-unchanged path, e.g.
-   * after a mutation the hub doesn't push updates for. */
-  reloadKey: number = 0,
 ): APIQuery<T> {
-  const [state, setState] = useState<APIQuery<T>>({ kind: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    const settle = (next: APIQuery<T>) => {
-      if (!cancelled) setState(next);
-    };
-    void (async () => {
-      try {
-        const response = await fetch(path, {
-          headers: { accept: "application/json" },
-        });
-        if (response.status === 401) {
-          settle({ kind: "unauthenticated" });
-          return;
-        }
-        if (!response.ok) {
-          settle({
-            kind: "error",
-            message: `The hub answered ${response.status} for ${path}.`,
-          });
-          return;
-        }
-        const parsed = schema(await response.json());
-        if (parsed instanceof type.errors) {
-          settle({
-            kind: "error",
-            message: `Unexpected response shape from ${path}: ${parsed.summary}`,
-          });
-          return;
-        }
-        settle({ kind: "ready", data: parsed });
-      } catch (cause) {
-        settle({
-          kind: "error",
-          message: cause instanceof Error ? cause.message : String(cause),
-        });
+  const enabled = path !== "";
+  const result = useQuery({
+    queryKey: pathToQueryKey(path),
+    enabled,
+    queryFn: async () => {
+      const response = await fetch(path, {
+        headers: { accept: "application/json" },
+      });
+      if (response.status === 401) {
+        throw new UnauthenticatedError();
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [path, schema, reloadKey]);
-
-  return state;
+      if (!response.ok) {
+        throw new Error(`The hub answered ${response.status} for ${path}.`);
+      }
+      const parsed = schema(await response.json());
+      if (parsed instanceof type.errors) {
+        throw new Error(
+          `Unexpected response shape from ${path}: ${parsed.summary}`,
+        );
+      }
+      return parsed;
+    },
+  });
+  return toAPIQuery(result);
 }
 
 export class APIMutationError extends Error {

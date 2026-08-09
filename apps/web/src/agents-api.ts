@@ -15,9 +15,11 @@ import {
 } from "@intx/types";
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import type { APIQuery } from "./api";
+import { toAPIQuery } from "./api";
+import { UnauthenticatedError, tenantKeys } from "./query-client";
 
 export type AgentDefinition = typeof WorkflowDefinitionResponse.infer;
 export type AgentInstance = typeof WorkflowRunResponse.infer;
@@ -205,43 +207,33 @@ export async function loadAgentDirectory(
 }
 
 /**
- * Loads a bench's full agent directory, re-fetching whenever `tenantId`
- * changes or `reloadKey` is bumped — the same "no push, refetch on demand"
- * convention `useAPIQuery` uses, so a freshly created definition shows up
- * the moment the create dialog closes.
+ * Loads a bench's full agent directory. One query owns definitions +
+ * instances + models (models are best-effort inside `loadAgentDirectory`) so
+ * the page keeps a single loading/error envelope. Pass no reloadKey —
+ * invalidate `tenantKeys.agentDirectory(tenantId)` after create.
  */
 export function useAgentDirectory(
   tenantId: string | undefined,
-  reloadKey: number,
 ): APIQuery<AgentDirectoryData> {
-  const [state, setState] = useState<APIQuery<AgentDirectoryData>>({
-    kind: "loading",
-  });
-
-  useEffect(() => {
-    if (tenantId === undefined) return;
-    let cancelled = false;
-    setState({ kind: "loading" });
-    loadAgentDirectory(tenantId)
-      .then((data) => {
-        if (cancelled) return;
-        setState({ kind: "ready", data });
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
+  const result = useQuery({
+    queryKey:
+      tenantId === undefined
+        ? (["tenant", "none", "agents", "directory"] as const)
+        : tenantKeys.agentDirectory(tenantId),
+    enabled: tenantId !== undefined,
+    queryFn: async () => {
+      if (tenantId === undefined) {
+        throw new Error("tenantId required when agent directory is enabled");
+      }
+      try {
+        return await loadAgentDirectory(tenantId);
+      } catch (cause) {
         if (cause instanceof AgentDirectoryError && cause.status === 401) {
-          setState({ kind: "unauthenticated" });
-          return;
+          throw new UnauthenticatedError();
         }
-        setState({
-          kind: "error",
-          message: cause instanceof Error ? cause.message : String(cause),
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, reloadKey]);
-
-  return state;
+        throw cause;
+      }
+    },
+  });
+  return toAPIQuery(result);
 }
