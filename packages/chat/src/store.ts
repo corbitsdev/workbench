@@ -13,7 +13,12 @@
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
-import { channelReadState, channelSettings, chatBenchSettings } from "./schema";
+import {
+  channelLaunch,
+  channelReadState,
+  channelSettings,
+  chatBenchSettings,
+} from "./schema";
 
 /**
  * The drizzle handle `createDrizzleChatStore` operates against. Generic over
@@ -102,6 +107,13 @@ export interface ChatStore {
     principalId: string,
   ): Promise<ReadStateRow | undefined>;
   putReadState(input: PutReadStateInput): Promise<ReadStateRow>;
+  /**
+   * True when `instanceId` is a workflow instance this tenant launched
+   * (channel host or invited agent). Agent mailboxes are addressed by
+   * instance id, not by a `channel_settings` row, so tenancy gates on
+   * message routes must consult this as well as `getChannelSettings`.
+   */
+  hasLaunchedInstance(tenantId: string, instanceId: string): Promise<boolean>;
 }
 
 /**
@@ -246,6 +258,20 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
       }
       return row as ReadStateRow;
     },
+
+    async hasLaunchedInstance(tenantId, instanceId) {
+      const [row] = await db
+        .select({ instanceId: channelLaunch.instanceId })
+        .from(channelLaunch)
+        .where(
+          and(
+            eq(channelLaunch.tenantId, tenantId),
+            eq(channelLaunch.instanceId, instanceId),
+          ),
+        )
+        .limit(1);
+      return row !== undefined;
+    },
   };
 }
 
@@ -259,6 +285,7 @@ export function createInMemoryChatStore(): ChatStore {
   const settingsByKey = new Map<string, ChannelSettingsRow>();
   const readStateByKey = new Map<string, ReadStateRow>();
   const benchSettingsByTenant = new Map<string, ChatBenchSettingsRow>();
+  const launchedByKey = new Set<string>();
 
   const settingsKey = (tenantId: string, channelId: string) =>
     `${tenantId}:${channelId}`;
@@ -337,6 +364,10 @@ export function createInMemoryChatStore(): ChatStore {
         row,
       );
       return row;
+    },
+
+    async hasLaunchedInstance(tenantId, instanceId) {
+      return launchedByKey.has(`${tenantId}:${instanceId}`);
     },
   };
 }

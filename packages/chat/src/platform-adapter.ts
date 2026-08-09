@@ -476,7 +476,16 @@ export function createHubChatPlatform(
       });
     },
 
-    async fetchBlob(_channelId, blobId): Promise<string | Uint8Array> {
+    async fetchBlob(channelId, blobId): Promise<string | Uint8Array> {
+      // Blobs are only readable when the mail row lives on this channel's
+      // session. Looking up by mail id alone let any authenticated caller
+      // read another tenant's attachment by guessing a blob id.
+      const run = await findFoldedRunById(deps.db, channelId);
+      if (run === undefined) {
+        throw new Error(`No channel run for "${channelId}"`);
+      }
+      const sessionId = await resolveFoldedRunSessionId(deps.db, run);
+
       const match = /^blob_(.+?)_(\d[\d.]*)$/.exec(blobId);
       if (match === null) {
         throw new Error(`Invalid blob id "${blobId}"`);
@@ -486,7 +495,10 @@ export function createHubChatPlatform(
         throw new Error(`Invalid blob id "${blobId}"`);
       }
       const mailRow = await deps.db.query.sessionMail.findFirst({
-        where: eq(sessionMail.id, mailId),
+        where: and(
+          eq(sessionMail.id, mailId),
+          eq(sessionMail.sessionId, sessionId),
+        ),
       });
       if (mailRow === undefined) {
         throw new Error(`No mail "${mailId}" for blob "${blobId}"`);

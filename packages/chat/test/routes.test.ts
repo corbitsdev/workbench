@@ -171,7 +171,7 @@ describe("messages", () => {
   test("POST encodes Part[] via the codec and sends as the calling principal", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "chat" });
+    const { body: channel } = await createChannel(app, { kind: "channel" });
 
     const parts: Part[] = [{ kind: "text", text: "hello" }];
     const response = await app.request(`/channels/${channel.id}/messages`, {
@@ -190,7 +190,7 @@ describe("messages", () => {
   test("POST rejects a malformed message body with the 400 envelope", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "chat" });
+    const { body: channel } = await createChannel(app, { kind: "channel" });
 
     const response = await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
@@ -206,7 +206,7 @@ describe("messages", () => {
   test("GET decodes run mail back to Part[]", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "chat" });
+    const { body: channel } = await createChannel(app, { kind: "channel" });
 
     await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
@@ -252,7 +252,9 @@ describe("read-state", () => {
     const app = createChatRoutes(deps);
     const appAlice = mountAs(app, "prn_alice");
     const appBob = mountAs(app, "prn_bob");
-    const { body: channel } = await createChannel(appAlice, { kind: "chat" });
+    const { body: channel } = await createChannel(appAlice, {
+      kind: "channel",
+    });
 
     await appAlice.request(`/channels/${channel.id}/read-state`, {
       method: "PUT",
@@ -317,7 +319,7 @@ describe("typing", () => {
   test("is never persisted", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: channel } = await createChannel(app, { kind: "chat" });
+    const { body: channel } = await createChannel(app, { kind: "channel" });
 
     const response = await app.request(`/channels/${channel.id}/typing`, {
       method: "POST",
@@ -639,5 +641,119 @@ describe("channel tenancy", () => {
     expect(tenancyA).toHaveLength(1);
     expect(tenancyB).toHaveLength(1);
     expect(tenancyA[0]?.tenantId).not.toBe(tenancyB[0]?.tenantId);
+  });
+});
+
+describe("cross-tenant channel isolation", () => {
+  function mountTenant(
+    routes: ReturnType<typeof createChatRoutes>,
+    tenant: typeof TENANT,
+    principalId: string,
+  ) {
+    const app = new Hono<TenantEnv>();
+    app.use("*", async (c, next) => {
+      c.set("tenant", tenant);
+      c.set("principal", principal(principalId));
+      await next();
+    });
+    app.route("/", routes);
+    return app;
+  }
+
+  test("POST/GET messages reject a channel owned by another tenant", async () => {
+    const OTHER_TENANT = { ...TENANT, id: "tnt_2", domain: "other.example" };
+    const deps = buildDeps();
+    const routes = createChatRoutes(deps);
+    const appA = mountTenant(routes, TENANT, "prn_alice");
+    const appB = mountTenant(routes, OTHER_TENANT, "prn_bob");
+
+    const { body: channel } = await createChannel(appA, { kind: "channel" });
+
+    const postB = await appB.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify([{ kind: "text", text: "cross-tenant write" }]),
+    });
+    expect(postB.status).toBe(404);
+    expect(
+      (deps.platform as ReturnType<typeof fakePlatform>).sentMail,
+    ).toHaveLength(0);
+
+    const getB = await appB.request(`/channels/${channel.id}/messages`);
+    expect(getB.status).toBe(404);
+  });
+
+  test("typing and stream reject a channel owned by another tenant", async () => {
+    const OTHER_TENANT = { ...TENANT, id: "tnt_2", domain: "other.example" };
+    const deps = buildDeps();
+    const routes = createChatRoutes(deps);
+    const appA = mountTenant(routes, TENANT, "prn_alice");
+    const appB = mountTenant(routes, OTHER_TENANT, "prn_bob");
+
+    const { body: channel } = await createChannel(appA, { kind: "channel" });
+
+    const typing = await appB.request(`/channels/${channel.id}/typing`, {
+      method: "POST",
+    });
+    expect(typing.status).toBe(404);
+
+    const stream = await appB.request(`/channels/${channel.id}/stream`);
+    expect(stream.status).toBe(404);
+  });
+
+  test("read-state and invitable reject a channel owned by another tenant", async () => {
+    const OTHER_TENANT = { ...TENANT, id: "tnt_2", domain: "other.example" };
+    const deps = buildDeps();
+    const routes = createChatRoutes(deps);
+    const appA = mountTenant(routes, TENANT, "prn_alice");
+    const appB = mountTenant(routes, OTHER_TENANT, "prn_bob");
+
+    const { body: channel } = await createChannel(appA, { kind: "channel" });
+
+    const readGet = await appB.request(`/channels/${channel.id}/read-state`);
+    expect(readGet.status).toBe(404);
+
+    const readPut = await appB.request(`/channels/${channel.id}/read-state`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        lastSeenCreatedAt: "2026-01-01T00:00:00.000Z",
+        lastSeenId: "mail_x",
+      }),
+    });
+    expect(readPut.status).toBe(404);
+
+    const invitable = await appB.request(`/channels/${channel.id}/invitable`);
+    expect(invitable.status).toBe(404);
+  });
+
+  test("GET messages allows a launched agent instance in the same tenant", async () => {
+    // Agent mailboxes are instance ids with a channel_launch row, not a
+    // channel_settings row. The tenancy gate must accept those so the
+    // e2e "invite agent → list its messages" path keeps working.
+    const baseStore = createInMemoryChatStore();
+    const launchedKeys = new Set<string>();
+    const gatedStore = {
+      ...baseStore,
+      hasLaunchedInstance: async (tenantId: string, instanceId: string) =>
+        launchedKeys.has(`${tenantId}:${instanceId}`) ||
+        baseStore.hasLaunchedInstance(tenantId, instanceId),
+    };
+    const deps = buildDeps({ store: gatedStore });
+    const routes = createChatRoutes(deps);
+    const app = mountTenant(routes, TENANT, "prn_alice");
+
+    launchedKeys.add(`${TENANT.id}:ins_agent_mailbox`);
+    const res = await app.request(`/channels/ins_agent_mailbox/messages`);
+    expect(res.status).toBe(200);
+
+    // Foreign tenant still 404s even with the same instance id shape.
+    const other = mountTenant(
+      routes,
+      { ...TENANT, id: "tnt_2", domain: "other.example" },
+      "prn_bob",
+    );
+    const denied = await other.request(`/channels/ins_agent_mailbox/messages`);
+    expect(denied.status).toBe(404);
   });
 });
