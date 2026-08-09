@@ -1,6 +1,6 @@
-// Insights I1: live rollups from workflow runs + routines already on the hub.
-// No new analytics backend — honest numbers, recent runs, and a deep-link into
-// Routines for schedule management.
+// Insights I1 + I2: live rollups, day-bucket timeline, and deep-links into
+// Routines for each recent run. No new analytics backend — honest numbers
+// from data the page already loads.
 
 import {
   Badge,
@@ -23,7 +23,13 @@ import type { ReactNode } from "react";
 import { RunsSchema, useAPIQuery } from "../api";
 import type { APIQuery, RunsPage, WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
+import { runDeepLinkTarget } from "../insights-deeplinks";
 import { computeInsightsStats } from "../insights-stats";
+import {
+  bucketRunsByDay,
+  INSIGHTS_TIMELINE_DAYS,
+  type DayBucket,
+} from "../insights-timeline";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
 import { SignedOutNotice } from "../query-view";
@@ -60,6 +66,34 @@ function formatWhen(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function TimelineBars({ buckets }: { readonly buckets: readonly DayBucket[] }) {
+  const max = Math.max(1, ...buckets.map((b) => b.count));
+  return (
+    <div
+      className="insights-timeline"
+      role="img"
+      aria-label={`Purpose runs per day for the last ${buckets.length} days`}
+    >
+      {buckets.map((bucket) => {
+        const heightPct = Math.round((bucket.count / max) * 100);
+        return (
+          <div
+            key={bucket.key}
+            className="insights-timeline-bar"
+            title={`${bucket.label}: ${bucket.count}`}
+          >
+            <div
+              className="insights-timeline-fill"
+              style={{ height: `${heightPct}%` }}
+            />
+            <span className="insights-timeline-label">{bucket.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function InsightsPage({
@@ -105,6 +139,11 @@ export function InsightsPage({
   const empty =
     stats !== null && stats.totalRuns === 0 && stats.routineCount === 0;
 
+  const timelineBuckets =
+    runs.kind === "ready"
+      ? bucketRunsByDay(runs.data.data, INSIGHTS_TIMELINE_DAYS)
+      : null;
+
   return (
     <PageShell width="full" className="page-fill">
       <Section
@@ -133,6 +172,15 @@ export function InsightsPage({
           />
         </StatGrid>
       </Section>
+
+      {timelineBuckets !== null && !empty ? (
+        <Section
+          title="Last 14 days"
+          description="Purpose runs started per UTC day (channel hosts hidden from the underlying list)."
+        >
+          <TimelineBars buckets={timelineBuckets} />
+        </Section>
+      ) : null}
 
       <Section
         title="Routines"
@@ -172,7 +220,7 @@ export function InsightsPage({
       {stats !== null && stats.recentRuns.length > 0 ? (
         <Section
           title="Recent runs"
-          description="Newest purpose workflow runs first (channel hosts hidden)."
+          description="Newest purpose workflow runs first (channel hosts hidden). Click a name to open the run on Routines."
         >
           <Table>
             <TableHeader>
@@ -186,7 +234,11 @@ export function InsightsPage({
             <TableBody>
               {stats.recentRuns.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell>{row.definitionName}</TableCell>
+                  <TableCell>
+                    <Link to={runDeepLinkTarget(row)}>
+                      {row.definitionName}
+                    </Link>
+                  </TableCell>
                   <TableCell>
                     <Badge tone={statusTone(row.status)}>{row.status}</Badge>
                   </TableCell>
