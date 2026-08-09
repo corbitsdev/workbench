@@ -95,4 +95,24 @@ describe("readSeedConfig", () => {
     expect(MODEL_CREDENTIAL_VARIABLES.length).toBe(1);
     expect(MODEL_CREDENTIAL_VARIABLES[0]).toContain("ANTHROPIC_API_KEY");
   });
+
+  test("the catalog-test workflow opt-in defaults off", () => {
+    expect(readSeedConfig(VALID_SHARED).seedCatalogTestWorkflows).toBe(false);
+  });
+
+  test("WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS=1 opts into the catalog-test workflows", () => {
+    const config = readSeedConfig({
+      ...VALID_SHARED,
+      WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS: "1",
+    });
+    expect(config.seedCatalogTestWorkflows).toBe(true);
+  });
+
+  test("any other value for WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS stays opted out", () => {
+    const config = readSeedConfig({
+      ...VALID_SHARED,
+      WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS: "true",
+    });
+    expect(config.seedCatalogTestWorkflows).toBe(false);
+  });
 });

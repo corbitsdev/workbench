@@ -1,0 +1,23 @@
+{
+  "name": "@corbits/heartbeat-workflow",
+  "private": true,
+  "description": "Minimal mail-triggered workflow that completes immediately, exercising Interchange's scheduling path at zero inference cost",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/workflow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

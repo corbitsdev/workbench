@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { CliError } from "../src/errors";
 import {
+  CATALOG_TEST_WORKFLOWS,
   DEFAULT_WORKFLOWS,
+  NOOP_MODEL_SOURCE,
   seedCatalog,
   seedTenant,
   type SeedTenantArgs,
@@ -434,6 +436,247 @@ describe("seedTenant", () => {
 
   test("the default set also includes the assistant workflow", () => {
     expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toContain("assistant");
+  });
+
+  test("NOOP_MODEL_SOURCE resolves to the hub's own noop-inference endpoint", () => {
+    const resolved = NOOP_MODEL_SOURCE("http://localhost:3000");
+    expect(resolved.baseURL).toBe(
+      "http://localhost:3000/api/chat/noop-inference",
+    );
+    expect(resolved.model).toBe("noop");
+  });
+
+  test("echo and assistant carry no modelSource override, so they deploy against the tenant's real model", () => {
+    const realModelWorkflows = DEFAULT_WORKFLOWS.filter(
+      (w) => w.assetName === "echo" || w.assetName === "assistant",
+    );
+    expect(realModelWorkflows).toHaveLength(2);
+    for (const workflow of realModelWorkflows) {
+      expect(workflow.modelSource).toBeUndefined();
+    }
+  });
+
+  test("the default set consumed by real tenant provisioning is exactly echo and assistant", () => {
+    // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
+    // DEFAULT_WORKFLOWS for every real signup. The catalog-test
+    // workflows exist only to exercise the platform continuously and
+    // must never reach a real user through this array — they are
+    // seeded only via the explicit CATALOG_TEST_WORKFLOWS opt-in.
+    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual([
+      "echo",
+      "assistant",
+    ]);
+  });
+
+  test("every non-conversational default declares a modelSource override", () => {
+    // echo and assistant deploy against the tenant's real model and
+    // must not declare one; a future addition to DEFAULT_WORKFLOWS
+    // that silently picks up real inference is exactly the class of
+    // regression this guards against.
+    for (const workflow of DEFAULT_WORKFLOWS) {
+      expect(workflow.modelSource).toBeUndefined();
+    }
+    for (const workflow of CATALOG_TEST_WORKFLOWS) {
+      expect(workflow.modelSource).toBeDefined();
+    }
+  });
+
+  test("the catalog-test set includes the heartbeat workflow", () => {
+    expect(CATALOG_TEST_WORKFLOWS.map((w) => w.assetName)).toContain(
+      "heartbeat",
+    );
+  });
+
+  test("heartbeat pins its deploy source at noop-inference, never the tenant's real model", () => {
+    const heartbeat = CATALOG_TEST_WORKFLOWS.find(
+      (w) => w.assetName === "heartbeat",
+    );
+    if (!heartbeat) throw new Error("expected the heartbeat workflow");
+    const resolved = heartbeat.modelSource?.("http://localhost:3000");
+    expect(resolved).toEqual(NOOP_MODEL_SOURCE("http://localhost:3000"));
+  });
+
+  test("fresh run pushes, deploys, and confirms the heartbeat workflow against the noop source", async () => {
+    const { lines, log } = collector();
+    const { pushes, push } = recordingPusher();
+    let runsCalls = 0;
+    let deployedSources: unknown;
+    const handler: FakeHandler = (method, path, body) => {
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return { status: 201, data: assetRow("ast_3", "heartbeat") };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      ) {
+        deployedSources = body;
+        return { status: 201, data: deploymentRow("dep_3", "ast_3", "active") };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_3/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_3/mail`
+      )
+        return {
+          status: 202,
+          data: {
+            deploymentId: "dep_3",
+            address: `ins_dep_3@${TENANT_DOMAIN}`,
+            messageId: "<m5@workbench.localhost>",
+          },
+        };
+      return undefined;
+    };
+
+    const heartbeatOnly = CATALOG_TEST_WORKFLOWS.filter(
+      (w) => w.assetName === "heartbeat",
+    );
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: heartbeatOnly,
+      }),
+    );
+
+    expect(pushes).toHaveLength(1);
+    const push0 = pushes[0];
+    if (!push0) throw new Error("expected one workflow push");
+    const definition = JSON.parse(push0.workflowJson) as {
+      id: string;
+      triggers: { type: string; to: string }[];
+      stepOrder: string[];
+    };
+    expect(definition.id).toBe("wf_heartbeat");
+    expect(definition.triggers[0]?.to).toBe(`heartbeat@${TENANT_DOMAIN}`);
+    expect(definition.stepOrder).toEqual(["heartbeat"]);
+
+    // The deploy's own source, not the tenant's real MODEL, is what
+    // proves the noop pin took effect: it must name the noop provider
+    // fixture, not the ordinary anthropic/claude-sonnet-4-5 model this
+    // test file's `args()` helper hands every other workflow.
+    const deployedBody = deployedSources as { sources: { model: string }[] };
+    expect(deployedBody.sources[0]?.model).toBe("noop");
+
+    const output = lines.join("\n");
+    expect(output).toContain("deployed workflow heartbeat as dep_3");
+    expect(output).toContain("confirmed workflow heartbeat: run run_1 started");
+  });
+
+  test("the catalog-test set includes the channel-digest workflow", () => {
+    expect(CATALOG_TEST_WORKFLOWS.map((w) => w.assetName)).toContain(
+      "channel-digest",
+    );
+  });
+
+  test("channel-digest pins its deploy source at noop-inference, never the tenant's real model", () => {
+    const channelDigest = CATALOG_TEST_WORKFLOWS.find(
+      (w) => w.assetName === "channel-digest",
+    );
+    if (!channelDigest) throw new Error("expected the channel-digest workflow");
+    const resolved = channelDigest.modelSource?.("http://localhost:3000");
+    expect(resolved).toEqual(NOOP_MODEL_SOURCE("http://localhost:3000"));
+  });
+
+  test("fresh run pushes, deploys, and confirms the channel-digest workflow against the noop source", async () => {
+    const { lines, log } = collector();
+    const { pushes, push } = recordingPusher();
+    let runsCalls = 0;
+    let deployedSources: unknown;
+    const handler: FakeHandler = (method, path, body) => {
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return { status: 201, data: assetRow("ast_4", "channel-digest") };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+      ) {
+        deployedSources = body;
+        return { status: 201, data: deploymentRow("dep_4", "ast_4", "active") };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_4/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_4/mail`
+      )
+        return {
+          status: 202,
+          data: {
+            deploymentId: "dep_4",
+            address: `ins_dep_4@${TENANT_DOMAIN}`,
+            messageId: "<m6@workbench.localhost>",
+          },
+        };
+      return undefined;
+    };
+
+    const channelDigestOnly = CATALOG_TEST_WORKFLOWS.filter(
+      (w) => w.assetName === "channel-digest",
+    );
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: channelDigestOnly,
+      }),
+    );
+
+    expect(pushes).toHaveLength(1);
+    const push0 = pushes[0];
+    if (!push0) throw new Error("expected one workflow push");
+    const definition = JSON.parse(push0.workflowJson) as {
+      id: string;
+      triggers: { type: string; to: string }[];
+      stepOrder: string[];
+    };
+    expect(definition.id).toBe("wf_channel_digest");
+    expect(definition.triggers[0]?.to).toBe(`channel-digest@${TENANT_DOMAIN}`);
+    expect(definition.stepOrder).toEqual(["channel-digest"]);
+
+    // The deploy's own source, not the tenant's real MODEL, is what
+    // proves the noop pin took effect: it must name the noop provider
+    // fixture, not the ordinary anthropic/claude-sonnet-4-5 model this
+    // test file's `args()` helper hands every other workflow.
+    const deployedBody = deployedSources as { sources: { model: string }[] };
+    expect(deployedBody.sources[0]?.model).toBe("noop");
+
+    const output = lines.join("\n");
+    expect(output).toContain("deployed workflow channel-digest as dep_4");
+    expect(output).toContain(
+      "confirmed workflow channel-digest: run run_1 started",
+    );
   });
 });
 

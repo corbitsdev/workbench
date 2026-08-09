@@ -22,9 +22,17 @@ import {
   serializeAssistantWorkflow,
 } from "@corbits/assistant-workflow";
 import {
+  buildChannelDigestWorkflow,
+  serializeChannelDigestWorkflow,
+} from "@corbits/channel-digest-workflow";
+import {
   buildEchoWorkflow,
   serializeEchoWorkflow,
 } from "@corbits/echo-workflow";
+import {
+  buildHeartbeatWorkflow,
+  serializeHeartbeatWorkflow,
+} from "@corbits/heartbeat-workflow";
 import { CliError } from "./errors";
 import { parseAs, type ApiCall } from "./hub";
 import { catalogModel, catalogProvider } from "./catalog-seed-data";
@@ -32,6 +40,12 @@ import { catalogModel, catalogProvider } from "./catalog-seed-data";
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+// Short: these two run on a tight, continuous schedule to exercise
+// scheduling itself, so a wedged noop-inference call should surface
+// fast rather than tie up a run slot for the full two minutes the
+// conversational workflows above allow.
+const HEARTBEAT_TURN_TIMEOUT_MS = 30 * 1000;
+const CHANNEL_DIGEST_TURN_TIMEOUT_MS = 30 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
@@ -39,6 +53,34 @@ const RUN_POLL_INTERVAL_MS = 1000;
 // routing key `defaultSource` must name; with exactly one source there
 // is exactly one honest value for it.
 const SEED_SOURCE_ID = "default";
+
+// The provider/model pair `noop-inference` (packages/chat/src/noop-inference.ts)
+// answers for any request, regardless of what is actually sent — the
+// route ignores its body and `x-api-key` entirely. Naming a distinct
+// pair here (rather than reusing the tenant's real model id) keeps a
+// noop-pinned deployment visually distinct from a real one in the hub's
+// UI and logs.
+const NOOP_PROVIDER = "anthropic";
+const NOOP_MODEL = "noop";
+
+/**
+ * A `ModelSource` pointed at the hub's own `noop-inference` endpoint
+ * instead of a real provider — the same substitution
+ * `packages/chat/src/platform-adapter.ts`'s `noopSourcesOverride` makes
+ * for channel-host launches, reused here so a workflow deployed with
+ * this source resolves every turn instantly against a constant,
+ * locally served reply and never reaches a real model. `hubUrl` is the
+ * same base URL `seedTenant` already receives, so no new configuration
+ * is required to use it.
+ */
+export function NOOP_MODEL_SOURCE(hubUrl: string): ModelSource {
+  return {
+    provider: NOOP_PROVIDER,
+    model: NOOP_MODEL,
+    baseURL: `${hubUrl}/api/chat/noop-inference`,
+    apiKey: "noop",
+  };
+}
 
 const GitTokenMintResponse = type({ id: "string", secret: "string" });
 const WorkflowDeploymentResponse = type({
@@ -74,12 +116,25 @@ export type DefaultWorkflow = {
   /** Asset name; lowercase-kebab so the smart-HTTP repo path is clean. */
   assetName: string;
   buildJson: (tenantDomain: string, model: ModelSource) => string;
+  /**
+   * Overrides the deploy's inference source for this workflow only,
+   * given the hub's own base URL. Present on the catalog-test workflows
+   * `heartbeat` and `channel-digest`, which must stay free to run
+   * continuously: it names `NOOP_MODEL_SOURCE` instead of the tenant's
+   * real catalog model. Absent on every conversational workflow, which
+   * deploys against the tenant's real model as before.
+   */
+  modelSource?: (hubUrl: string) => ModelSource;
 };
 
 /**
- * The workflow set a bench starts with: the echo walking-skeleton and
- * the general-purpose assistant. Growing the set is adding an entry
- * here, nothing more.
+ * The workflow set every real tenant starts with: the echo
+ * walking-skeleton and the general-purpose assistant. This is what
+ * `provisionPersonalTenantIfNeeded` (`@workbench/onboarding`) deploys
+ * on first login for every real user — growing it is adding an entry
+ * here, nothing more, but an entry here reaches every signup, so it is
+ * never the place for a workflow that exists only to exercise the
+ * platform itself. See `CATALOG_TEST_WORKFLOWS` for those.
  */
 export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
   {
@@ -107,6 +162,48 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
           turnTimeoutMs: ASSISTANT_TURN_TIMEOUT_MS,
         }),
       ),
+  },
+];
+
+/**
+ * Zero-cost workflows that exist to exercise the platform continuously
+ * — `heartbeat` proves the scheduling and mail-trigger paths,
+ * `channel-digest` proves the channel-mail-posting path — never to
+ * give a real user something to use. Both are pinned at
+ * `NOOP_MODEL_SOURCE` so running them on a tight schedule costs
+ * nothing. Deliberately absent from `DEFAULT_WORKFLOWS`: a real signup
+ * goes through `provisionPersonalTenantIfNeeded`, which never seeds
+ * this set. Only an explicit, dev/CI-specific caller (`workbench
+ * seed` with `WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS` set) opts in.
+ */
+export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
+  {
+    assetName: "heartbeat",
+    buildJson: (tenantDomain, model) =>
+      serializeHeartbeatWorkflow(
+        buildHeartbeatWorkflow({
+          triggerAddress: `heartbeat@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: HEARTBEAT_TURN_TIMEOUT_MS,
+        }),
+      ),
+    modelSource: NOOP_MODEL_SOURCE,
+  },
+  {
+    assetName: "channel-digest",
+    buildJson: (tenantDomain, model) =>
+      serializeChannelDigestWorkflow(
+        buildChannelDigestWorkflow({
+          triggerAddress: `channel-digest@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: CHANNEL_DIGEST_TURN_TIMEOUT_MS,
+        }),
+      ),
+    modelSource: NOOP_MODEL_SOURCE,
   },
 ];
 
@@ -468,6 +565,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
 
   let confirmed = 0;
   for (const workflow of workflows) {
+    const workflowModel = workflow.modelSource?.(hubUrl) ?? model;
     const assetId = await ensureWorkflowAsset(
       api,
       cookies,
@@ -479,7 +577,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     const outcome = await args.pushWorkflow({
       remoteUrl: `${hubUrl}/api/tenants/${tenant.tenantId}/assets/workflow/${workflow.assetName}.git`,
       tokenSecret,
-      workflowJson: workflow.buildJson(tenant.domain, model),
+      workflowJson: workflow.buildJson(tenant.domain, workflowModel),
     });
     log(
       outcome === "pushed"
@@ -494,7 +592,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
         tenantId: tenant.tenantId,
         assetId,
         assetName: workflow.assetName,
-        model,
+        model: workflowModel,
       },
       log,
     );

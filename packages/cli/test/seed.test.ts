@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { CliError } from "@workbench/hub-client";
 import type { SeedConfig } from "../src/config";
-import { runSeed, type SeedDeps } from "../src/seed";
+import { resolveSeedWorkflows, runSeed, type SeedDeps } from "../src/seed";
 import {
   collector,
   fakeAPI,
@@ -25,6 +25,7 @@ const CONFIG: SeedConfig = {
     apiKey: "placeholder-not-a-real-key",
   },
   anthropicApiKeyConfigured: false,
+  seedCatalogTestWorkflows: false,
 };
 
 function deps(overrides: Partial<SeedDeps> & Pick<SeedDeps, "api">): SeedDeps {
@@ -36,6 +37,22 @@ function deps(overrides: Partial<SeedDeps> & Pick<SeedDeps, "api">): SeedDeps {
     ...overrides,
   };
 }
+
+describe("resolveSeedWorkflows", () => {
+  test("without the opt-in, only the real default workflow set is deployed", () => {
+    const names = resolveSeedWorkflows({
+      seedCatalogTestWorkflows: false,
+    }).map((w) => w.assetName);
+    expect(names).toEqual(["echo", "assistant"]);
+  });
+
+  test("with the opt-in, the catalog-test workflows are appended", () => {
+    const names = resolveSeedWorkflows({
+      seedCatalogTestWorkflows: true,
+    }).map((w) => w.assetName);
+    expect(names).toEqual(["echo", "assistant", "heartbeat", "channel-digest"]);
+  });
+});
 
 describe("runSeed", () => {
   test("authenticates, resolves the bench by slug, and starts seeding it", async () => {
