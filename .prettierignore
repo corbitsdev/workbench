@@ -11,3 +11,5 @@ dispatch/
 specs/
 plans/
 tmp/
+.mb-scratch/
+.corbits/

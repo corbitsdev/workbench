@@ -10,15 +10,13 @@
 // comment or variable name that happens to say "tenant" is never a
 // violation, only a real call is.
 //
-// One documented exception: the signed structure doc grants
-// @corbits/chat exactly two product tables — `channel_settings` and
-// `channel_read_state` — because they are product-domain state (chat
-// settings, per-principal read cursors) that the platform deliberately
-// does not own, unlike tenancy, principals, and grants, which stay
-// native. The allowlist below names the single file this applies to
-// and enforces the count strictly: any OTHER `pgTable(` occurrence
-// anywhere in the scanned tree still fails, and the allowlisted file
-// itself fails if it ever grows past two.
+// Documented product-domain exceptions live in ALLOWLIST below. Each
+// entry is an explicit ruling: the named file may declare up to
+// `maxOccurrences` product tables because they hold package-owned
+// state the platform deliberately does not own (chat settings, cron
+// schedules, webhook bindings, etc.). Tenancy, principals, and grants
+// still stay native. Any other `pgTable(` occurrence fails, and an
+// allowlisted file fails if it grows past its max.
 import { Glob } from "bun";
 import path from "node:path";
 import {
@@ -31,8 +29,31 @@ import {
 const SCAN_DIRS = ["apps", "packages", "workflows"];
 const PGTABLE_CALL_PATTERN = /\bpgTable\s*\(/g;
 
-const ALLOWLIST: readonly { relPath: string; maxOccurrences: number }[] = [
-  { relPath: "packages/chat/src/schema.ts", maxOccurrences: 2 },
+const ALLOWLIST: readonly {
+  relPath: string;
+  maxOccurrences: number;
+  tables: readonly string[];
+}[] = [
+  {
+    relPath: "packages/chat/src/schema.ts",
+    maxOccurrences: 4,
+    tables: [
+      "channel_settings",
+      "channel_read_state",
+      "channel_launch",
+      "channel_tenancy",
+    ],
+  },
+  {
+    relPath: "packages/schedules/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["schedules"],
+  },
+  {
+    relPath: "packages/webhook-triggers/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["webhook_trigger"],
+  },
 ];
 
 export async function scanFiles(
@@ -72,23 +93,24 @@ export function auditProductTenancy(
         `${relPath}: calls pgTable(...). All persistent state is native ` +
           `Interchange schema under vendor/intx/db — a drizzle table ` +
           `declared in apps/, packages/, or workflows/ is a product-owned ` +
-          `duplicate of platform schema, never a design choice.`,
+          `duplicate of platform schema, never a design choice. Product ` +
+          `domain tables need an explicit ALLOWLIST ruling in ` +
+          `scripts/checks/no-product-tenancy.ts.`,
       );
       continue;
     }
     if (occurrences > allowed.maxOccurrences) {
       report.violations.push(
         `${relPath}: declares ${occurrences} pgTable(...) call(s), more than ` +
-          `the ${allowed.maxOccurrences} the signed structure doc grants ` +
-          `@corbits/chat (channel_settings, channel_read_state). Any new ` +
-          `product table needs its own explicit ruling, not a quiet addition ` +
-          `to this file.`,
+          `the ${allowed.maxOccurrences} allowed for this file ` +
+          `(${allowed.tables.join(", ")}). Any new product table needs its ` +
+          `own explicit ALLOWLIST ruling, not a quiet addition to this file.`,
       );
       continue;
     }
     report.notes.push(
-      `${relPath}: ${occurrences} pgTable(...) call(s) allowed by the ` +
-        `documented @corbits/chat exception`,
+      `${relPath}: ${occurrences} pgTable(...) call(s) allowed ` +
+        `(${allowed.tables.join(", ")})`,
     );
   }
   return report;

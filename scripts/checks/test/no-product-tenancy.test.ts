@@ -44,3 +44,44 @@ test("reports every violation across multiple files, not just the first", () => 
   ]);
   expect(report.violations).toHaveLength(2);
 });
+
+test("allowlisted product schema files pass at their max count", () => {
+  const report = auditProductTenancy([
+    {
+      relPath: "packages/chat/src/schema.ts",
+      contents: [
+        `export const a = pgTable("channel_settings", {});`,
+        `export const b = pgTable("channel_read_state", {});`,
+        `export const c = pgTable("channel_launch", {});`,
+        `export const d = pgTable("channel_tenancy", {});`,
+      ].join("\n"),
+    },
+    {
+      relPath: "packages/schedules/src/schema.ts",
+      contents: `export const schedules = pgTable("schedules", {});`,
+    },
+    {
+      relPath: "packages/webhook-triggers/src/schema.ts",
+      contents: `export const webhookTrigger = pgTable("webhook_trigger", {});`,
+    },
+  ]);
+  expect(report.violations).toEqual([]);
+  expect(
+    report.notes.some((n) => n.includes("packages/chat/src/schema.ts")),
+  ).toBe(true);
+});
+
+test("allowlisted files fail when they grow past their max", () => {
+  const report = auditProductTenancy([
+    {
+      relPath: "packages/schedules/src/schema.ts",
+      contents: [
+        `export const schedules = pgTable("schedules", {});`,
+        `export const extra = pgTable("schedules_extra", {});`,
+      ].join("\n"),
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("packages/schedules/src/schema.ts");
+  expect(report.violations[0]).toContain("2 pgTable");
+});

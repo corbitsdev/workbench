@@ -24,3 +24,7 @@ tmp/
 
 # Local runtime state (hub and sidecar data dirs)
 .data/
+
+# Local agent scratch (not product source; breaks prettier --check .)
+.mb-scratch/
+.corbits/

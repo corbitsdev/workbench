@@ -1,8 +1,8 @@
-// The two product tables the signed structure doc grants @corbits/chat:
-// per-channel settings and per-principal read cursors. Everything else
-// tenancy-shaped — membership, principals, grants — stays native
-// platform schema under vendor/intx/db; these tables hold no tenancy
-// semantics of their own, only chat's own state, keyed by tenant.
+// Product tables @corbits/chat owns (see scripts/checks/no-product-tenancy
+// ALLOWLIST): channel_settings, channel_read_state, channel_launch, and
+// channel_tenancy. Tenancy-shaped platform state — membership, principals,
+// grants — stays native under vendor/intx/db; these tables hold only chat's
+// own state, keyed by tenant.
 import {
   boolean,
   jsonb,
