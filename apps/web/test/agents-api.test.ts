@@ -3,10 +3,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import {
-  listCatalogModels,
-  loadAgentDirectory,
-} from "../src/agents-api";
+import { listCatalogModels, loadAgentDirectory } from "../src/agents-api";
 
 const realFetch = globalThis.fetch;
 
@@ -19,8 +16,6 @@ type RecordedCall = { readonly path: string };
 function stubFetch(respond: (path: string) => Response): RecordedCall[] {
   const calls: RecordedCall[] = [];
   globalThis.fetch = ((input: RequestInfo | URL) => {
-    const path =
-      typeof input === "string" ? input : new URL(String(input)).pathname;
     const full =
       typeof input === "string"
         ? input
