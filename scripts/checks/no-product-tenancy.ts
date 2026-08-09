@@ -54,6 +54,11 @@ const ALLOWLIST: readonly {
     maxOccurrences: 1,
     tables: ["webhook_trigger"],
   },
+  {
+    relPath: "packages/notify/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["notify_dispatch"],
+  },
 ];
 
 export async function scanFiles(
