@@ -41,10 +41,9 @@ function Root() {
 
   // The first-login hook: once per session that reaches signed-in, ask
   // the hub whether this is a session with zero principals anywhere.
-  // Idempotent on the hub side, so re-running it on a page reload for
-  // an existing member costs one read and nothing else. A failure here
-  // blocks the shell entirely — a signed-in user with no bench and a
-  // failed provisioning attempt has nothing useful to do in the app.
+  // Without a display name the hub does not mint a bench — it returns
+  // needs-onboarding so we route into the naming wizard. Existing members
+  // cost one read. A failure blocks the shell entirely.
   const [provisioningError, setProvisioningError] = useState<string | null>(
     null,
   );
@@ -56,8 +55,11 @@ function Root() {
     setProvisioningError(null);
     void triggerFirstLoginProvisioning().then((result) => {
       if (cancelled) return;
-      if (result.kind === "provisioned") navigate(ONBOARDING_PATH);
-      else if (result.kind === "error") setProvisioningError(result.message);
+      if (result.kind === "needs-onboarding" || result.kind === "provisioned") {
+        navigate(ONBOARDING_PATH);
+      } else if (result.kind === "error") {
+        setProvisioningError(result.message);
+      }
     });
     return () => {
       cancelled = true;

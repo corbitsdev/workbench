@@ -1,15 +1,14 @@
 // The browser side of the first-login hook: one call against the
 // hub's native onboarding route, made once per session. A session with
-// zero principals anywhere gets a personal bench provisioned server-side
-// (see @workbench/onboarding); this just learns whether that happened
-// so the interface can route into the onboarding placeholder — and
-// distinguishes a real failure from "nothing to do", so a broken
-// provisioning call never leaves the user silently benchless.
+// zero principals and no display name is reported as needs-onboarding so
+// the UI can route into the naming wizard; only an explicit name creates
+// the personal bench. Distinguishes real failures from "nothing to do",
+// so a broken provisioning call never leaves the user silently benchless.
 
 import { type } from "arktype";
 
 const ProvisionResult = type({
-  kind: "'existing-member' | 'provisioned'",
+  kind: "'existing-member' | 'provisioned' | 'needs-onboarding'",
   "tenantId?": "string",
   "tenantSlug?": "string",
   "seeded?": "boolean",
@@ -22,6 +21,7 @@ const ErrorEnvelope = type({
 
 export type ProvisionOutcome =
   | { readonly kind: "existing-member" }
+  | { readonly kind: "needs-onboarding" }
   | {
       readonly kind: "provisioned";
       readonly tenantId: string;
@@ -31,10 +31,18 @@ export type ProvisionOutcome =
     }
   | { readonly kind: "error"; readonly message: string };
 
-export async function triggerFirstLoginProvisioning(): Promise<ProvisionOutcome> {
+export async function triggerFirstLoginProvisioning(
+  displayName?: string,
+): Promise<ProvisionOutcome> {
   try {
     const response = await fetch("/api/onboarding/provision", {
       method: "POST",
+      ...(displayName !== undefined
+        ? {
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: displayName }),
+          }
+        : {}),
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
@@ -55,6 +63,7 @@ export async function triggerFirstLoginProvisioning(): Promise<ProvisionOutcome>
       };
     }
     if (parsed.kind === "existing-member") return { kind: "existing-member" };
+    if (parsed.kind === "needs-onboarding") return { kind: "needs-onboarding" };
     if (
       parsed.tenantId === undefined ||
       parsed.tenantSlug === undefined ||

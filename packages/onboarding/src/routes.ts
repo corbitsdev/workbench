@@ -29,6 +29,10 @@ const SubmitCredential = type({
   apiKey: "string > 0",
 });
 
+const ProvisionBody = type({
+  "name?": "string > 0",
+});
+
 export type CreateOnboardingRoutesDeps = {
   hubUrl: string;
   operatorTenantId?: string;
@@ -68,25 +72,43 @@ export function createOnboardingRoutes(
       );
     }
 
-    const now = Date.now();
-    const lastAttempt = lastProvisionByUser.get(user.id);
-    if (
-      lastAttempt !== undefined &&
-      now - lastAttempt < PROVISION_RATE_LIMIT_MS
-    ) {
-      return c.json(
-        {
-          error: {
-            code: "rate_limited",
-            kind: "transient" as const,
-            message:
-              "Too many provisioning attempts. Please wait a moment and try again.",
+    // Optional body: the naming wizard sends `{ name }`; the shell's
+    // membership probe may POST with no body and only wants the read path.
+    // Parse before rate-limiting so the read probe never burns a create slot.
+    const rawBody: unknown = await c.req.json().catch(() => null);
+    const body =
+      rawBody === null
+        ? undefined
+        : (() => {
+            const parsed = ProvisionBody(rawBody);
+            return parsed instanceof type.errors ? undefined : parsed;
+          })();
+    const isCreateAttempt = body?.name !== undefined;
+
+    // Rate-limit only named creates. The two-step first-login flow is
+    // probe (no name) → naming submit (with name); gating both would 429
+    // anyone who types a name within the window of their membership probe.
+    if (isCreateAttempt) {
+      const now = Date.now();
+      const lastAttempt = lastProvisionByUser.get(user.id);
+      if (
+        lastAttempt !== undefined &&
+        now - lastAttempt < PROVISION_RATE_LIMIT_MS
+      ) {
+        return c.json(
+          {
+            error: {
+              code: "rate_limited",
+              kind: "transient" as const,
+              message:
+                "Too many provisioning attempts. Please wait a moment and try again.",
+            },
           },
-        },
-        429,
-      );
+          429,
+        );
+      }
+      lastProvisionByUser.set(user.id, now);
     }
-    lastProvisionByUser.set(user.id, now);
 
     const cookies = cookiesFromHeader(c.req.header("cookie"));
     try {
@@ -105,6 +127,7 @@ export function createOnboardingRoutes(
         provisionArgs.operatorTenantId = deps.operatorTenantId;
       if (deps.seedModel !== undefined)
         provisionArgs.seedModel = deps.seedModel;
+      if (body?.name !== undefined) provisionArgs.displayName = body.name;
 
       const result = await provisionPersonalTenantIfNeeded(provisionArgs);
 

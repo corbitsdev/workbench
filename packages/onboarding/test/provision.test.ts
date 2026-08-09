@@ -131,6 +131,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      displayName: "Alice's Lab",
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -164,6 +165,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         hubUrl: "http://localhost:3000",
         userId: "user_1",
         userEmail: "alice@example.com",
+        displayName: "Alice's Lab",
         pushWorkflow: noopPush,
         log: collector().log,
       }),
@@ -203,13 +205,18 @@ describe("provisionPersonalTenantIfNeeded", () => {
         };
       }
       if (method === "POST" && path === "/api/tenants") {
-        const parsed = body as { parentId?: string; slug: string };
+        const parsed = body as {
+          parentId?: string;
+          slug: string;
+          name: string;
+        };
         expect(parsed.parentId).toBeUndefined();
+        expect(parsed.name).toBe("Alice's Lab");
         return {
           status: 201,
           data: {
             id: TENANT_ID,
-            name: "alice's workbench",
+            name: parsed.name,
             slug: parsed.slug,
             domain: `${parsed.slug}.localhost`,
             createdAt: "2026-01-01T00:00:00.000Z",
@@ -227,6 +234,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      displayName: "Alice's Lab",
       pushWorkflow: noopPush,
       log,
     });
@@ -236,6 +244,39 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(result.seeded).toBe(false);
     expect(result.seedSkipReason).toContain("ANTHROPIC_API_KEY");
     expect(lines.some((line) => line.includes("ANTHROPIC_API_KEY"))).toBe(true);
+  });
+
+  test("zero principals without a display name: returns needs-onboarding and creates nothing", async () => {
+    const lines: string[] = [];
+    const log = (line: string) => lines.push(line);
+    let tenantsPosted = 0;
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === "/api/tenants") {
+        tenantsPosted += 1;
+        throw new Error("must not create without a display name");
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await provisionPersonalTenantIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      pushWorkflow: noopPush,
+      log,
+    });
+
+    expect(result).toEqual({ kind: "needs-onboarding" });
+    expect(tenantsPosted).toBe(0);
   });
 
   test("zero principals with a seed model configured: provisions under the operator tenant and seeds the default workflow", async () => {
@@ -271,13 +312,18 @@ describe("provisionPersonalTenantIfNeeded", () => {
         };
       }
       if (method === "POST" && path === "/api/tenants") {
-        const parsed = body as { parentId?: string; slug: string };
+        const parsed = body as {
+          parentId?: string;
+          slug: string;
+          name: string;
+        };
         expect(parsed.parentId).toBe("ten_operator");
+        expect(parsed.name).toBe("Alice's Lab");
         return {
           status: 201,
           data: {
             id: TENANT_ID,
-            name: "alice's workbench",
+            name: parsed.name,
             slug: parsed.slug,
             domain: `${parsed.slug}.localhost`,
             parentId: "ten_operator",
@@ -384,6 +430,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      displayName: "Alice's Lab",
       operatorTenantId: "ten_operator",
       seedModel: MODEL,
       pushWorkflow: noopPush,
@@ -571,6 +618,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       hubUrl: "http://localhost:3000",
       userId: "user_1",
       userEmail: "alice@example.com",
+      displayName: "Alice's Lab",
       seedModel: MODEL,
       pushWorkflow: noopPush,
       log: collector().log,

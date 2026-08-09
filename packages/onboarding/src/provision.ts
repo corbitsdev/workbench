@@ -25,6 +25,7 @@ import {
 
 export type ProvisionResult =
   | { readonly kind: "existing-member"; readonly seeded?: true }
+  | { readonly kind: "needs-onboarding" }
   | {
       readonly kind: "provisioned";
       readonly tenantId: string;
@@ -59,6 +60,9 @@ export type ProvisionArgs = {
   hubUrl: string;
   userId: string;
   userEmail: string;
+  /** Display name for the personal bench. Required to mint: when omitted
+   * (shell membership probe), returns `needs-onboarding` and creates nothing. */
+  displayName?: string;
   operatorTenantId?: string;
   seedModel?: ModelSource;
   pushWorkflow: WorkflowPusher;
@@ -222,8 +226,15 @@ export async function provisionPersonalTenantIfNeeded(
     return { kind: "existing-member", seeded: true };
   }
 
+  // No membership yet. Creation requires an explicit display name from the
+  // onboarding naming step — a shell membership probe (no name) must not
+  // silently mint a personal bench.
+  if (args.displayName === undefined || args.displayName.trim().length === 0) {
+    return { kind: "needs-onboarding" };
+  }
+
   const tenantCreateBody: { name: string; slug: string; parentId?: string } = {
-    name: `${args.userEmail.split("@")[0] ?? args.userEmail}'s workbench`,
+    name: args.displayName.trim(),
     slug: expectedSlug,
   };
   if (args.operatorTenantId !== undefined)
