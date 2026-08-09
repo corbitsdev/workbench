@@ -146,9 +146,10 @@ describe("the gate", () => {
     const markup = renderApp({ kind: "signed-in", user });
     expect(markup).toContain("Sign out");
     expect(markup).toContain("ada@example.com");
-    expect(markup).toMatch(
-      /data-slot="sidebar-rail-item"[^>]*aria-current="page"/,
-    );
+    // Default land is the Myra channel canvas — no rail destination is current
+    // (channel paths are not rail items). Assert the rail and shell still mount.
+    expect(markup).toContain('data-slot="sidebar-rail"');
+    expect(markup).toContain('data-slot="sidebar-rail-item"');
   });
 
   test("loading and error are their own screens, not a broken shell", () => {
