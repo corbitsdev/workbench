@@ -10,6 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { BenchProvider } from "../src/bench-context";
 import { ContextualPanel } from "../src/shell/contextual-panel";
+import { TestQueryProvider } from "./test-query-provider";
 
 const noop = () => undefined;
 const realFetch = globalThis.fetch;
@@ -20,9 +21,11 @@ afterEach(() => {
 
 function renderPanel(path: string): string {
   return renderToStaticMarkup(
-    <BenchProvider>
-      <ContextualPanel path={path} onNavigate={noop} />
-    </BenchProvider>,
+    <TestQueryProvider>
+      <BenchProvider>
+        <ContextualPanel path={path} onNavigate={noop} />
+      </BenchProvider>
+    </TestQueryProvider>,
   );
 }
 
@@ -46,11 +49,19 @@ describe("ContextualPanel", () => {
     const root = createRoot(container);
     await act(async () => {
       root.render(
-        <BenchProvider>
-          <ContextualPanel path="/" onNavigate={noop} />
-        </BenchProvider>,
+        <TestQueryProvider>
+          <BenchProvider>
+            <ContextualPanel path="/" onNavigate={noop} />
+          </BenchProvider>
+        </TestQueryProvider>,
       );
     });
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (container.innerHTML.includes("No bench selected")) break;
+    }
     expect(container.innerHTML).toContain("No bench selected");
     root.unmount();
     container.remove();
@@ -94,15 +105,19 @@ describe("ContextualPanel", () => {
     const root = createRoot(container);
     await act(async () => {
       root.render(
-        <BenchProvider>
-          <ContextualPanel path="/" onNavigate={noop} />
-        </BenchProvider>,
+        <TestQueryProvider>
+          <BenchProvider>
+            <ContextualPanel path="/" onNavigate={noop} />
+          </BenchProvider>
+        </TestQueryProvider>,
       );
     });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (container.innerHTML.includes("No notifications yet")) break;
+    }
     expect(container.innerHTML).toContain("No notifications yet");
     expect(container.innerHTML).toContain(
       "mentions and mail-backed alerts will land here",

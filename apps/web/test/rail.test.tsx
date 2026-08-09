@@ -9,6 +9,7 @@ import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { NAV_ROUTES, SETTINGS_PATH } from "../src/routes";
 import { Rail } from "../src/shell/rail";
+import { TestQueryProvider } from "./test-query-provider";
 
 const noop = () => undefined;
 const user = { id: "user_1", name: "Ada Lovelace", email: "ada@example.com" };
@@ -21,11 +22,13 @@ globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
 
 function renderRail(path: string): string {
   return renderToStaticMarkup(
-    <NavigationProvider navigate={noop}>
-      <BenchProvider>
-        <Rail path={path} onNavigate={noop} user={user} onSignOut={noop} />
-      </BenchProvider>
-    </NavigationProvider>,
+    <TestQueryProvider>
+      <NavigationProvider navigate={noop}>
+        <BenchProvider>
+          <Rail path={path} onNavigate={noop} user={user} onSignOut={noop} />
+        </BenchProvider>
+      </NavigationProvider>
+    </TestQueryProvider>,
   );
 }
 

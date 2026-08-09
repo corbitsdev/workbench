@@ -12,6 +12,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { Rail } from "../src/shell/rail";
+import { TestQueryProvider } from "./test-query-provider";
 
 const noop = () => undefined;
 const user = { id: "user_1", name: "Ada Lovelace", email: "ada@example.com" };
@@ -80,25 +81,27 @@ async function renderRail(): Promise<HTMLDivElement> {
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <NavigationProvider navigate={noop}>
-        <BenchProvider>
-          <Rail
-            path="/approvals"
-            onNavigate={noop}
-            user={user}
-            onSignOut={noop}
-          />
-        </BenchProvider>
-      </NavigationProvider>,
+      <TestQueryProvider>
+        <NavigationProvider navigate={noop}>
+          <BenchProvider>
+            <Rail
+              path="/approvals"
+              onNavigate={noop}
+              user={user}
+              onSignOut={noop}
+            />
+          </BenchProvider>
+        </NavigationProvider>
+      </TestQueryProvider>,
     );
-    // Two effect-driven fetches run one after the other (membership resolves
-    // a tenant id, which is what makes the needs-you effect fire at all), so
-    // this waits on a macrotask between each of several microtask turns
-    // rather than guessing a fixed microtask count.
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
   });
+  // Principals then needs-you are sequential TQ queries. Drain each settle
+  // under act so React commits the badge before assertions.
+  for (let i = 0; i < 20; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
   if (container === null) throw new Error("container not mounted");
   return container;
 }
