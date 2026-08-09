@@ -6,7 +6,7 @@ import {
   openChannelInCanvas,
   resolveCanvasVisibility,
   toggleCanvasColumn,
-} from "../src/shell/canvas-column-state";
+} from "./canvas-column-state";
 
 describe("canvas column state", () => {
   test("starts closed with no channel", () => {

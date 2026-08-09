@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "build": "vite build",
     "watch": "vite build --watch",
-    "test": "bun test ./test"
+    "test": "bun test ./src ./test"
   },
   "dependencies": {
     "@corbits/artifact-ui": "workspace:*",

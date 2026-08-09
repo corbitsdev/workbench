@@ -62,6 +62,13 @@ Approvals are not a page: pending permission requests land as actionable
 cards in the contextual panel's Notifications band (and, when a channel is
 open, inline in that channel). The `/approvals` route is gone.
 
+## Tests
+
+- **Unit tests** for pure modules (path helpers, reducers, parsers) sit next
+  to the source file under `src/` as `*.test.ts`.
+- **Integration / composition / shell probes** stay under `test/`.
+- `bun test` (via the package script) runs both `./src` and `./test`.
+
 ## Library
 
 `/library` (`src/pages/library-page.tsx`) is the artifact gallery: search,
