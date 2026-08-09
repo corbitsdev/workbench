@@ -19,11 +19,7 @@
 import type { Hono } from "hono";
 import type { ConditionRegistry, GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
-import {
-  createMemory,
-  loadMemoryConfig,
-  type Memory,
-} from "@corbits/memory";
+import { createMemory, loadMemoryConfig, type Memory } from "@corbits/memory";
 
 const log = getLogger(["hub", "memory-mount"]);
 
