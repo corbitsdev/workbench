@@ -5,6 +5,7 @@
 
 import {
   ApprovalResponse,
+  AssetWithOriginResponse,
   PrincipalSummary,
   UserProfile,
   WorkflowRunSummary,
@@ -20,6 +21,13 @@ export const ProfileSchema = UserProfile;
 export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
 export const RunsSchema = paginatedSchema(WorkflowRunSummary);
 export const TenantApprovalsSchema = paginatedSchema(ApprovalResponse);
+
+// `GET /api/tenants/:tenantId/assets` returns a bare array of
+// `AssetWithOriginResponse` rows (not the paginated envelope), so the schema
+// validates the array directly. These tenant assets — workflows, skills,
+// package registries, agent state — are the real, listable store the Library
+// page renders as artifacts.
+export const AssetsSchema = AssetWithOriginResponse.array();
 
 // `@corbits/approvals`'s "needs you" read: the same pending approvals as
 // `TenantApprovalsSchema`, but with the agent and bench names already
@@ -40,6 +48,7 @@ export type Profile = typeof UserProfile.infer;
 export type Principal = typeof PrincipalSummary.infer;
 export type WorkflowRun = typeof WorkflowRunSummary.infer;
 export type Approval = typeof ApprovalResponse.infer;
+export type AssetRow = typeof AssetWithOriginResponse.infer;
 export type NeedsYou = typeof NeedsYouSchema.infer;
 export type NeedsYouItem = NeedsYou["items"][number];
 

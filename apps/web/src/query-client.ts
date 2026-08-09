@@ -48,6 +48,7 @@ export const tenantKeys = {
     ["tenant", tenantId, "definitions"] as const,
   agentDirectory: (tenantId: string) =>
     ["tenant", tenantId, "agents", "directory"] as const,
+  assets: (tenantId: string) => ["tenant", tenantId, "assets"] as const,
 };
 
 /**
@@ -60,5 +61,7 @@ export function pathToQueryKey(path: string): readonly unknown[] {
   if (path === "/api/me/workflows/runs") return meKeys.runs;
   const needsYou = /^\/api\/tenants\/([^/]+)\/approvals\/needs-you$/.exec(path);
   if (needsYou?.[1] !== undefined) return tenantKeys.needsYou(needsYou[1]);
+  const assets = /^\/api\/tenants\/([^/]+)\/assets$/.exec(path);
+  if (assets?.[1] !== undefined) return tenantKeys.assets(assets[1]);
   return ["path", path];
 }

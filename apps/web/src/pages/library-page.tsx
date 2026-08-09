@@ -27,6 +27,11 @@ import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { ArrowDownUp, FileStack } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { AssetsSchema, useAPIQuery } from "../api";
+import { useBench } from "../bench-context";
+import { mapAssetsToArtifacts } from "../shell/library-artifacts";
+import { QueryView } from "../query-view";
+
 const SORT_LABEL: Record<ArtifactSort, string> = {
   newest: "Newest first",
   oldest: "Oldest first",
@@ -96,10 +101,9 @@ function ArtifactRows({
 
 /**
  * The artifact gallery. Real data all the way down — search, sort, view
- * mode — but the hub does not yet expose a cross-tenant artifact store (see
- * `LibraryRoute` below), so `artifacts` is honestly empty until that
- * endpoint exists. Nothing here is placeholder content: an empty `artifacts`
- * array renders the teaching empty state, never fabricated rows.
+ * mode. The route resolves the current bench's assets into the
+ * `ArtifactSummary` rows this page renders (see `LibraryRoute`); an empty
+ * list is a truthful empty bench, never fabricated rows.
  */
 export function LibraryPage({
   artifacts,
@@ -147,7 +151,7 @@ export function LibraryPage({
           <RichEmptyState
             icon={<FileStack />}
             title="No artifacts yet"
-            description="The hub doesn't expose an artifact store across benches yet. Once a workflow run can publish an output — a document, an export, a deck — it appears here: searchable, sortable, and grouped by kind."
+            description="This workbench has no assets yet — workflows, skills, package registries, and agent state show up here as soon as they exist."
           />
         ) : visible.length === 0 ? (
           <RichEmptyState
@@ -172,11 +176,30 @@ export function LibraryPage({
 }
 
 export function LibraryRoute() {
-  // Seam, not a stub: `ArtifactSummary` (packages/artifact-ui) is the shape
-  // a future cross-tenant `/api/.../artifacts` endpoint will fill. Until the
-  // hub exposes one, this stays a real, empty list rather than a fetch
-  // against a route that doesn't exist — the presentation above is fully
-  // wired against it and needs no changes once the endpoint lands.
-  const artifacts: readonly ArtifactSummary[] = [];
-  return <LibraryPage artifacts={artifacts} />;
+  const { selectedTenantId } = useBench();
+  // Tenant-local assets are the honest Library source today: the hub has no
+  // separate artifact store, but every bench already owns workflows, skills,
+  // package registries, and agent state at GET /api/tenants/:id/assets.
+  const assets = useAPIQuery(
+    selectedTenantId === null ? "" : `/api/tenants/${selectedTenantId}/assets`,
+    AssetsSchema,
+  );
+
+  if (selectedTenantId === null) {
+    return (
+      <PageShell width="full" className="page-fill">
+        <RichEmptyState
+          icon={<FileStack />}
+          title="Select a workbench"
+          description="Pick a workbench from the switcher to browse the assets it owns."
+        />
+      </PageShell>
+    );
+  }
+
+  return (
+    <QueryView query={assets} label="library artifacts">
+      {(rows) => <LibraryPage artifacts={mapAssetsToArtifacts(rows)} />}
+    </QueryView>
+  );
 }

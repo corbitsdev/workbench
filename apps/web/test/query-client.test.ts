@@ -24,6 +24,12 @@ describe("pathToQueryKey", () => {
     );
   });
 
+  test("maps tenant assets onto a tenant-scoped key", () => {
+    expect(pathToQueryKey("/api/tenants/tnt_1/assets")).toEqual(
+      tenantKeys.assets("tnt_1"),
+    );
+  });
+
   test("falls back to a path key for unknown routes", () => {
     expect(pathToQueryKey("/api/mystery")).toEqual(["path", "/api/mystery"]);
   });
