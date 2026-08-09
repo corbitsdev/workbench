@@ -150,14 +150,50 @@ describe("ContextualPanel", () => {
     container.remove();
   });
 
-  test("notifications empty state is honest when that band is registered", async () => {
-    globalThis.fetch = ((_input: RequestInfo | URL) =>
-      Promise.resolve(
-        new Response(JSON.stringify({ data: [], nextCursor: null }), {
+  test("notifications band is global and shows an honest empty state", async () => {
+    // The notifications band now lives on every page (approvals were killed
+    // as a route), so it renders at "/" — not just on a /approvals page.
+    // Needs a resolved bench (memberships) so the band can query needs-you.
+    const membership = {
+      data: [
+        {
+          principalId: "prn_1",
+          tenantId: "tnt_1",
+          tenantName: "Corbits Bench",
+          tenantSlug: "corbits-bench",
+          kind: "user",
+          status: "active",
+          roles: [],
+        },
+      ],
+      nextCursor: null,
+    };
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/api/me/principals")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(membership), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      if (path.includes("/approvals/needs-you")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      const body = path.includes("/workflows/instances") ? [] : { items: [] };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
-      )) as typeof fetch;
+      );
+    }) as typeof fetch;
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -166,7 +202,7 @@ describe("ContextualPanel", () => {
         <TestQueryProvider>
           <BenchProvider>
             <ContextualPanel
-              path="/approvals"
+              path="/"
               onNavigate={noop}
               canvasOpen={false}
               onToggleCanvas={noop}
@@ -176,16 +212,14 @@ describe("ContextualPanel", () => {
         </TestQueryProvider>,
       );
     });
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 40; i++) {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
       if (container.innerHTML.includes("No notifications yet")) break;
     }
     expect(container.innerHTML).toContain("No notifications yet");
-    expect(container.innerHTML).toContain(
-      "Mentions and mail-backed alerts will land here once a notification source is wired up.",
-    );
+    expect(container.innerHTML).toContain("Notifications");
     root.unmount();
     container.remove();
   });

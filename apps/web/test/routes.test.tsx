@@ -69,7 +69,6 @@ describe("route table", () => {
       "/agents",
       "/skills",
       "/insights",
-      "/approvals",
       "/settings",
     ]);
   });
@@ -98,7 +97,7 @@ describe("routes render", () => {
       } else if (NAV_PATHS.has(route.path)) {
         expect(activeRailLabel(markup)).toBe(route.label);
       } else {
-        // Chat and Approvals stay deep-linkable but leave the rail.
+        // Chat stays deep-linkable but leaves the rail. Approvals has no route.
         expect(activeRailLabel(markup)).toBeUndefined();
         expect(markup).not.toMatch(
           new RegExp(

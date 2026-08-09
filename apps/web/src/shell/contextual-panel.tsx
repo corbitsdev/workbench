@@ -12,6 +12,7 @@ import { Pin as PinIcon, Settings } from "lucide-react";
 import { useState } from "react";
 
 import { CanvasToggle } from "./canvas-column";
+import { NotificationsBand } from "./notifications-band";
 import { resolvePanelContribution } from "./panel-contribution";
 import { ensurePanelContributions } from "./panel-contributions";
 import { loadPins, type Pin } from "./pins";
@@ -113,6 +114,8 @@ export function ContextualPanel({
           </div>
         )}
       </section>
+
+      <NotificationsBand />
 
       <section
         className="panel-band panel-band-page-specific"
