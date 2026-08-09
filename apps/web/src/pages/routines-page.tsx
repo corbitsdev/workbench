@@ -34,18 +34,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TopBar,
-  TopBarTitle,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import { Clock, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { RunsSchema, useAPIQuery } from "../api";
 import type { APIQuery, WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
-import { countProp } from "../optional-props";
 import { tenantKeys } from "../query-client";
 
 import { QueryView } from "../query-view";
@@ -221,11 +218,17 @@ function TriggerPicker({
 function CreateRoutineDialog({
   definitions,
   onCreate,
+  open: openProp,
+  onOpenChange,
 }: {
   readonly definitions: readonly WorkflowDefinitionSummary[];
   readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = openProp ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [name, setName] = useState("");
   const [definitionId, setDefinitionId] = useState(definitions[0]?.id ?? "");
   const [runMode, setRunMode] = useState<"once" | "schedule">("once");
@@ -251,11 +254,13 @@ function CreateRoutineDialog({
         if (!next) reset();
       }}
     >
-      <DialogTrigger asChild>
-        <Button size="sm">
-          <Plus /> New routine
-        </Button>
-      </DialogTrigger>
+      {openProp === undefined ? (
+        <DialogTrigger asChild>
+          <Button size="sm">
+            <Plus /> New routine
+          </Button>
+        </DialogTrigger>
+      ) : null}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New routine</DialogTitle>
@@ -389,19 +394,23 @@ export function RoutinesListPage({
   readonly onToggleEnabled: (routine: Routine, enabled: boolean) => void;
   readonly onRunNow: (routine: Routine) => Promise<void>;
 }) {
+  const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    const onCreateEvent = () => setCreateOpen(true);
+    window.addEventListener("workbench:routines:create", onCreateEvent);
+    return () =>
+      window.removeEventListener("workbench:routines:create", onCreateEvent);
+  }, []);
+
   return (
     <>
-      <TopBar>
-        <TopBarTitle
-          {...countProp(
-            routines.kind === "ready" ? routines.data.length : undefined,
-          )}
-          subtitle="Named automations that run a workflow on a schedule or on demand"
-        >
-          Routines
-        </TopBarTitle>
-        <CreateRoutineDialog definitions={definitions} onCreate={onCreate} />
-      </TopBar>
+      <CreateRoutineDialog
+        definitions={definitions}
+        onCreate={onCreate}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+      />
       <PageShell className="page-fill">
         <QueryView query={routines} label="your routines">
           {(items) =>
@@ -477,49 +486,52 @@ export function RoutinesListPage({
           }
         </QueryView>
 
-        <TopBar>
-          <TopBarTitle subtitle="Runs currently executing that a routine started">
-            Live runs
-          </TopBarTitle>
-        </TopBar>
-        <QueryView query={liveRuns} label="live routine runs">
-          {(runs) =>
-            runs.length === 0 ? (
-              <EmptyState
-                icon={<Clock />}
-                title="No routine runs in flight"
-                description="When a routine fires, its run appears here while it executes."
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Definition</TableHead>
-                    <TableHead>Bench</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Started</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {runs.map((run) => (
-                    <TableRow key={run.id}>
-                      <TableCell>{run.definitionName}</TableCell>
-                      <TableCell>{run.tenantName}</TableCell>
-                      <TableCell>
-                        <Badge tone={RUN_STATUS_TONE[run.status] ?? "neutral"}>
-                          {run.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {formatRelativeTime(run.createdAt, now)}
-                      </TableCell>
+        <section aria-label="Live runs" className="panel-stack">
+          <h3 className="panel-band-heading">Live runs</h3>
+          <p className="panel-muted">
+            Runs currently executing that a routine started.
+          </p>
+          <QueryView query={liveRuns} label="live routine runs">
+            {(runs) =>
+              runs.length === 0 ? (
+                <EmptyState
+                  icon={<Clock />}
+                  title="No routine runs in flight"
+                  description="When a routine fires, its run appears here while it executes."
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Definition</TableHead>
+                      <TableHead>Bench</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Started</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )
-          }
-        </QueryView>
+                  </TableHeader>
+                  <TableBody>
+                    {runs.map((run) => (
+                      <TableRow key={run.id}>
+                        <TableCell>{run.definitionName}</TableCell>
+                        <TableCell>{run.tenantName}</TableCell>
+                        <TableCell>
+                          <Badge
+                            tone={RUN_STATUS_TONE[run.status] ?? "neutral"}
+                          >
+                            {run.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {formatRelativeTime(run.createdAt, now)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )
+            }
+          </QueryView>
+        </section>
       </PageShell>
     </>
   );
@@ -538,18 +550,14 @@ export function RoutineDetailPage({
 }) {
   return (
     <>
-      <TopBar>
-        <TopBarTitle
-          subtitle={
-            routine.kind === "ready" ? cadenceLabel(routine.data.trigger) : ""
-          }
-        >
-          {routine.kind === "ready" ? routine.data.name : "Routine"}
-        </TopBarTitle>
+      <div className="page-toolbar">
         <Button variant="ghost" size="sm" onClick={onBack}>
           Back to routines
         </Button>
-      </TopBar>
+        <h2 className="panel-page-title">
+          {routine.kind === "ready" ? routine.data.name : "Routine"}
+        </h2>
+      </div>
       <PageShell width="prose" className="page-fill">
         <QueryView query={routine} label="this routine">
           {(data) => (
@@ -570,56 +578,57 @@ export function RoutineDetailPage({
           )}
         </QueryView>
 
-        <TopBar>
-          <TopBarTitle subtitle="Every time this routine fired">
-            Run history
-          </TopBarTitle>
-        </TopBar>
-        <QueryView query={runs} label="this routine's run history">
-          {(items) =>
-            items.length === 0 ? (
-              <EmptyState
-                icon={<Clock />}
-                title="No runs yet"
-                description="This routine has not fired yet — manually or on a schedule."
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Triggered by</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>When</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((run) => {
-                    const status = run.run?.status;
-                    return (
-                      <TableRow key={run.runId}>
-                        <TableCell>
-                          <Badge tone="neutral">{run.triggeredBy}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          {typeof status === "string" ? (
-                            <Badge tone={RUN_STATUS_TONE[status] ?? "neutral"}>
-                              {status}
-                            </Badge>
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {formatRelativeTime(run.createdAt, now)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )
-          }
-        </QueryView>
+        <section aria-label="Run history" className="panel-stack">
+          <h3 className="panel-band-heading">Run history</h3>
+          <p className="panel-muted">Every time this routine fired.</p>
+          <QueryView query={runs} label="this routine's run history">
+            {(items) =>
+              items.length === 0 ? (
+                <EmptyState
+                  icon={<Clock />}
+                  title="No runs yet"
+                  description="This routine has not fired yet — manually or on a schedule."
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Triggered by</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>When</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((run) => {
+                      const status = run.run?.status;
+                      return (
+                        <TableRow key={run.runId}>
+                          <TableCell>
+                            <Badge tone="neutral">{run.triggeredBy}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {typeof status === "string" ? (
+                              <Badge
+                                tone={RUN_STATUS_TONE[status] ?? "neutral"}
+                              >
+                                {status}
+                              </Badge>
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {formatRelativeTime(run.createdAt, now)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )
+            }
+          </QueryView>
+        </section>
       </PageShell>
     </>
   );

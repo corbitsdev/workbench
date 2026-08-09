@@ -1,7 +1,5 @@
-// Column 2 is bench-scoped live activity now, not a page list: it never
-// mentions the page routes, and its notifications section is an honest
-// empty state — there is no notification feature in the hub yet, so this
-// must never render a fabricated sample entry.
+// Column 2 is the route-aware three-band contextual panel: page band,
+// global pins, and page-specific content. It never renders a page-nav list.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -23,7 +21,13 @@ function renderPanel(path: string): string {
   return renderToStaticMarkup(
     <TestQueryProvider>
       <BenchProvider>
-        <ContextualPanel path={path} onNavigate={noop} />
+        <ContextualPanel
+          path={path}
+          onNavigate={noop}
+          canvasOpen={false}
+          onToggleCanvas={noop}
+          canvasAllowed={false}
+        />
       </BenchProvider>
     </TestQueryProvider>,
   );
@@ -41,6 +45,14 @@ describe("ContextualPanel", () => {
     expect(markup).not.toContain(">Pages<");
   });
 
+  test("renders the three panel bands", () => {
+    const markup = renderPanel("/");
+    expect(markup).toContain("panel-band-page");
+    expect(markup).toContain("panel-band-pins");
+    expect(markup).toContain("panel-band-page-specific");
+    expect(markup).toContain("Pinned");
+  });
+
   test("shows an honest empty state once no bench resolves", async () => {
     globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(emptyMemberships.clone())) as typeof fetch;
@@ -51,7 +63,13 @@ describe("ContextualPanel", () => {
       root.render(
         <TestQueryProvider>
           <BenchProvider>
-            <ContextualPanel path="/" onNavigate={noop} />
+            <ContextualPanel
+              path="/"
+              onNavigate={noop}
+              canvasOpen={false}
+              onToggleCanvas={noop}
+              canvasAllowed={false}
+            />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -67,7 +85,7 @@ describe("ContextualPanel", () => {
     container.remove();
   });
 
-  test("the notifications section is an honest empty state, never a fabricated entry", async () => {
+  test("home live-activity empty state is honest, never a fabricated entry", async () => {
     const membership = {
       data: [
         {
@@ -107,7 +125,53 @@ describe("ContextualPanel", () => {
       root.render(
         <TestQueryProvider>
           <BenchProvider>
-            <ContextualPanel path="/" onNavigate={noop} />
+            <ContextualPanel
+              path="/"
+              onNavigate={noop}
+              canvasOpen={false}
+              onToggleCanvas={noop}
+              canvasAllowed={false}
+            />
+          </BenchProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (container.innerHTML.includes("Quiet right now")) break;
+    }
+    expect(container.innerHTML).toContain("Quiet right now");
+    expect(container.innerHTML).toContain(
+      "Channels and running routines for this bench will appear here.",
+    );
+    root.unmount();
+    container.remove();
+  });
+
+  test("notifications empty state is honest when that band is registered", async () => {
+    globalThis.fetch = ((_input: RequestInfo | URL) =>
+      Promise.resolve(
+        new Response(JSON.stringify({ data: [], nextCursor: null }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )) as typeof fetch;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <BenchProvider>
+            <ContextualPanel
+              path="/approvals"
+              onNavigate={noop}
+              canvasOpen={false}
+              onToggleCanvas={noop}
+              canvasAllowed={false}
+            />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -120,7 +184,7 @@ describe("ContextualPanel", () => {
     }
     expect(container.innerHTML).toContain("No notifications yet");
     expect(container.innerHTML).toContain(
-      "mentions and mail-backed alerts will land here",
+      "Mentions and mail-backed alerts will land here once a notification source is wired up.",
     );
     root.unmount();
     container.remove();

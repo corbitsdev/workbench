@@ -8,8 +8,6 @@ import {
   Skeleton,
   StatGrid,
   StatTile,
-  TopBar,
-  TopBarTitle,
 } from "@corbits/react-ui";
 import type { ReactNode } from "react";
 
@@ -18,7 +16,6 @@ import { PrincipalsSchema, ProfileSchema, RunsSchema } from "../api";
 import type { APIQuery, PrincipalsPage, Profile, RunsPage } from "../api";
 import { Link } from "../navigation";
 import { purposeRuns } from "../purpose-runs";
-import { subtitleProp } from "../optional-props";
 import { SignedOutNotice } from "../query-view";
 
 const SHORTCUTS = [
@@ -69,60 +66,43 @@ export function HomePage({
   const greeting =
     profile.kind === "ready" ? `Welcome back, ${profile.data.name}` : "Welcome";
   return (
-    <>
-      <TopBar>
-        <TopBarTitle
-          {...subtitleProp(
-            profile.kind === "ready" ? profile.data.email : undefined,
-          )}
-        >
-          Home
-        </TopBarTitle>
-      </TopBar>
-      <PageShell width="full" className="page-fill">
-        {profile.kind === "unauthenticated" ? (
-          <SignedOutNotice />
-        ) : (
-          <>
-            <Section
-              title={greeting}
-              description="A live snapshot of your benches and what is running in them."
-            >
-              <StatGrid>
-                <StatTile label="Benches" value={tileValue(principals)} />
-                <StatTile
-                  label="Active workflows"
-                  value={workflowTileValue(runs)}
-                />
-              </StatGrid>
-            </Section>
-            <Section
-              title="Jump in"
-              description="The main surfaces of this workbench."
-            >
-              <div className="card-grid">
-                {SHORTCUTS.map((shortcut) => (
-                  <Link
-                    key={shortcut.to}
-                    to={shortcut.to}
-                    className="card-link"
-                  >
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>{shortcut.title}</CardTitle>
-                        <CardDescription>
-                          {shortcut.description}
-                        </CardDescription>
-                      </CardHeader>
-                    </Card>
-                  </Link>
-                ))}
-              </div>
-            </Section>
-          </>
-        )}
-      </PageShell>
-    </>
+    <PageShell width="full" className="page-fill">
+      {profile.kind === "unauthenticated" ? (
+        <SignedOutNotice />
+      ) : (
+        <>
+          <Section
+            title={greeting}
+            description="A live snapshot of your benches and what is running in them."
+          >
+            <StatGrid>
+              <StatTile label="Benches" value={tileValue(principals)} />
+              <StatTile
+                label="Active workflows"
+                value={workflowTileValue(runs)}
+              />
+            </StatGrid>
+          </Section>
+          <Section
+            title="Jump in"
+            description="The main surfaces of this workbench."
+          >
+            <div className="card-grid">
+              {SHORTCUTS.map((shortcut) => (
+                <Link key={shortcut.to} to={shortcut.to} className="card-link">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{shortcut.title}</CardTitle>
+                      <CardDescription>{shortcut.description}</CardDescription>
+                    </CardHeader>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </Section>
+        </>
+      )}
+    </PageShell>
   );
 }
 

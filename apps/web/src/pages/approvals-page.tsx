@@ -22,8 +22,6 @@ import {
   DialogTitle,
   EmptyState,
   PageShell,
-  TopBar,
-  TopBarTitle,
 } from "@corbits/react-ui";
 import type { ApprovalRequest } from "@corbits/react-ui";
 import { ShieldCheck } from "lucide-react";
@@ -36,7 +34,6 @@ import {
   NeedsYouSchema,
   useAPIQuery,
 } from "../api";
-import { countProp } from "../optional-props";
 import type { APIQuery, NeedsYouItem } from "../api";
 import { useBench } from "../bench-context";
 import { tenantKeys } from "../query-client";
@@ -61,16 +58,6 @@ export function ApprovalsPage({
 
   return (
     <>
-      <TopBar>
-        <TopBarTitle
-          {...countProp(
-            approvals.kind === "ready" ? approvals.data.length : undefined,
-          )}
-          subtitle="Requests waiting on a human decision, on the current bench"
-        >
-          Approvals
-        </TopBarTitle>
-      </TopBar>
       <PageShell width="full" className="page-fill">
         <QueryView query={approvals} label="approvals">
           {(rows) =>

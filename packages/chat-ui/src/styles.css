@@ -1,8 +1,6 @@
-/* Chat surface — a two-pane layout nested inside the host's own content
-   area: a narrow page-local sidebar (channels/chats) beside the active
-   channel's timeline and composer. Layout glue only, same as the host
-   app's own stylesheet: visual styling comes from `@corbits/react-ui`'s
-   prebuilt stylesheet and the theme's tokens. */
+/* Chat surface — active conversation only. Channel list lives in the host
+   shell's contextual panel. Layout glue only: visual styling comes from
+   `@corbits/react-ui`'s prebuilt stylesheet and the theme's tokens. */
 
 .chat-workspace {
   /* Summit Blue accent for the agent badge — the one literal allowed by the
@@ -16,103 +14,45 @@
   overflow: hidden;
 }
 
-.chat-sidebar {
+.chat-workspace-frame {
   display: flex;
-  width: 16rem;
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 0.75rem;
-  overflow-y: auto;
-  border-right: 1px solid var(--border);
-  padding: 1rem 0.75rem;
-}
-
-.chat-sidebar-header {
-  display: flex;
-}
-
-.chat-sidebar-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-}
-
-.chat-sidebar-section-label {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-
-.chat-sidebar-item {
-  display: block;
-  width: 100%;
-  border: none;
-  border-radius: calc(var(--radius) - 2px);
-  background: none;
-  padding: 0.5rem 0.5rem;
-  text-align: left;
-  font: inherit;
-  color: var(--foreground);
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-
-.chat-sidebar-item:hover {
-  background: var(--accent);
-}
-
-.chat-sidebar-item:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-.chat-sidebar-item[data-active="true"] {
-  background: var(--accent);
-  font-weight: 600;
-}
-
-.chat-sidebar-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.chat-sidebar-row .chat-sidebar-item {
   flex: 1;
-  min-width: 0;
-}
-
-.chat-sidebar-item-rename {
-  width: 100%;
-  border: 1px solid var(--ring);
-  border-radius: calc(var(--radius) - 2px);
-  background: var(--background);
-  padding: 0.5rem 0.5rem;
-  font: inherit;
-  color: var(--foreground);
-}
-
-.chat-sidebar-row-menu-trigger {
-  display: flex;
+  min-height: 0;
   align-items: center;
   justify-content: center;
-  border: none;
-  background: none;
-  border-radius: calc(var(--radius) - 2px);
-  padding: 0.25rem;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 100ms ease;
 }
 
-.chat-sidebar-row:hover .chat-sidebar-row-menu-trigger,
-.chat-sidebar-row-menu-trigger:focus-visible,
-.chat-sidebar-row-menu-trigger[data-state="open"] {
-  opacity: 1;
+.chat-channel-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+}
+
+.chat-channel-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chat-channel-title {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.chat-channel-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.375rem;
 }
 
 .chat-settings-panel {
@@ -184,240 +124,24 @@
   justify-content: center;
 }
 
-.chat-bubble-row {
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-start;
-  gap: 0.5rem;
-}
-
-.chat-bubble-row[data-own="true"] {
-  justify-content: flex-end;
-}
-
-.chat-day-divider {
-  display: flex;
-  justify-content: center;
-  padding: 0.25rem 0;
+.chat-stream-indicator {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0.375rem 1rem;
   font-size: 0.75rem;
   color: var(--muted-foreground);
-}
-
-.chat-sender-avatar {
-  display: flex;
-  height: 1.75rem;
-  width: 1.75rem;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: var(--muted);
-  color: var(--muted-foreground);
-  font-size: 0.6875rem;
-  font-weight: 600;
 }
 
 .chat-agent-badge {
-  border-radius: 999px;
-  border: 1px solid var(--chat-agent-accent);
-  color: var(--chat-agent-accent);
-  padding: 0 0.375rem;
-  margin-left: 0.375rem;
-  font-size: 0.625rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-/* Own messages get the Bedrock Charcoal foreground-on-dark surface, never
-   the brand's Breakthrough Orange — the brand reserves that color for
-   primary CTAs, not a recurring message surface. Everyone else's messages
-   render on the theme's muted/card surface with dark text. */
-.chat-bubble {
-  display: flex;
-  max-width: 32rem;
-  flex-direction: column;
+  display: inline-flex;
+  align-items: center;
   gap: 0.25rem;
-  border-radius: calc(var(--radius) + 2px);
-  background: var(--muted);
-  padding: 0.625rem 0.875rem;
-  color: var(--foreground);
-}
-
-.chat-bubble[data-own="true"] {
-  background: var(--foreground);
-  color: var(--background);
-}
-
-.chat-bubble-sender {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chat-agent-accent) 18%, transparent);
+  padding: 0.125rem 0.5rem;
   font-size: 0.6875rem;
   font-weight: 600;
-  opacity: 0.85;
-}
-
-.chat-bubble-text {
-  margin: 0;
-  overflow-wrap: break-word;
-  white-space: pre-wrap;
-}
-
-.chat-bubble-time {
-  align-self: flex-end;
-  font-family: "Space Mono", monospace;
-  font-size: 0.8125rem;
-  opacity: 0.75;
-}
-
-.chat-event-line {
-  display: flex;
-  justify-content: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-
-.chat-event-time {
-  font-family: "Space Mono", monospace;
-  font-size: 0.8125rem;
-  opacity: 0.75;
-}
-
-.chat-fallback-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) - 2px);
-  padding: 0.5rem 0.75rem;
-  font-size: 0.75rem;
-}
-
-.chat-fallback-label {
-  font-weight: 600;
-  color: var(--muted-foreground);
-}
-
-.chat-fallback-body {
-  margin: 0;
-  overflow-x: auto;
-  white-space: pre-wrap;
-}
-
-.chat-composer {
-  position: relative;
-  border-top: 1px solid var(--border);
-  padding: 0.75rem 1rem;
-}
-
-.chat-composer-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-}
-
-.chat-composer-input {
-  flex: 1;
-  resize: none;
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) - 2px);
-  background: var(--background);
-  padding: 0.5rem 0.75rem;
-  font: inherit;
-  color: var(--foreground);
-  max-height: 10rem;
-}
-
-.chat-mention-popover {
-  position: absolute;
-  bottom: 100%;
-  left: 1rem;
-  z-index: 10;
-  display: flex;
-  max-height: 12rem;
-  width: 16rem;
-  flex-direction: column;
-  overflow-y: auto;
-  border-radius: calc(var(--radius) - 2px);
-  margin-bottom: 0.5rem;
-  background: var(--popover, var(--background));
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 0.06),
-    0 4px 8px rgb(0 0 0 / 0.08),
-    0 12px 24px rgb(0 0 0 / 0.12);
-}
-
-.chat-mention-option {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  border: none;
-  background: none;
-  padding: 0.5rem 0.75rem;
-  text-align: left;
-  font: inherit;
-  color: var(--foreground);
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-
-.chat-mention-option:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-.chat-mention-label {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-
-.chat-mention-option[data-highlighted="true"],
-.chat-mention-option:hover {
-  background: var(--accent);
-}
-
-.chat-mention-empty {
-  padding: 0.5rem 0.75rem;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-
-.chat-new-channel-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.chat-form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  border: none;
-  padding: 0;
-  margin: 0;
-}
-
-.chat-radio-option {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 400;
-}
-
-.chat-composer-error {
-  padding: 0.25rem 0.75rem 0;
-  font-size: 0.75rem;
-  color: var(--destructive);
-}
-
-.chat-dialog-error {
-  font-size: 0.8125rem;
-  color: var(--destructive);
-  margin: 0;
-}
-
-.chat-stream-indicator {
-  padding: 0.25rem 0.75rem;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--chat-agent-accent);
 }

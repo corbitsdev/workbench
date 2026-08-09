@@ -13,15 +13,12 @@ import {
   TableHeader,
   TableRow,
   Tabs,
-  TopBar,
-  TopBarActions,
-  TopBarTitle,
   ViewToggle,
   formatRelativeTime,
 } from "@corbits/react-ui";
 import type { BadgeTone, ViewMode } from "@corbits/react-ui";
-import { Bot, Copy, Plus, Workflow } from "lucide-react";
-import { useState } from "react";
+import { Bot, Copy, Workflow } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -30,7 +27,6 @@ import type { AgentDirectoryData } from "../agents-api";
 import type { APIQuery } from "../api";
 import { useAgentDirectory } from "../agents-api";
 import { useBench } from "../bench-context";
-import { countProp } from "../optional-props";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 import { CreateAgentDialog } from "./create-agent-dialog";
@@ -275,40 +271,28 @@ export function AgentsPage({
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [tab, setTab] = useState<AgentsTab>(initialTab);
   const [createOpen, setCreateOpen] = useState(false);
-
-  const isReady = directory.kind === "ready";
   const canCreate =
     directory.kind === "ready" && directory.data.tenantId !== "";
 
+  useEffect(() => {
+    const onCreate = () => {
+      if (canCreate) setCreateOpen(true);
+    };
+    window.addEventListener("workbench:agents:create", onCreate);
+    return () =>
+      window.removeEventListener("workbench:agents:create", onCreate);
+  }, [canCreate]);
+
   return (
     <>
-      <TopBar>
-        <TopBarTitle
-          {...countProp(
-            isReady
-              ? purposeAgentDefinitions(directory.data.definitions).length
-              : undefined,
-          )}
-          subtitle="Agent definitions this bench can launch, and the instances running from them"
-        >
-          Agents
-        </TopBarTitle>
-        <TopBarActions>
-          <LibrarySearchInput
-            label="Search agents"
-            value={query}
-            onChange={setQuery}
-          />
-          <ViewToggle mode={viewMode} onChange={setViewMode} />
-          <Button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            disabled={!canCreate}
-          >
-            <Plus /> Create agent
-          </Button>
-        </TopBarActions>
-      </TopBar>
+      <div className="page-toolbar">
+        <LibrarySearchInput
+          label="Search agents"
+          value={query}
+          onChange={setQuery}
+        />
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
+      </div>
       <PageShellBody>
         <QueryView query={directory} label="your agents">
           {(data) => {

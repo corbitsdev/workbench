@@ -1,6 +1,8 @@
 // Rendering here uses react-dom/server, so effects never run and every
 // screen shows its pre-fetch state — which is exactly what these tests
-// assert: each route mounts, names itself, and marks itself in the rail.
+// assert: each route mounts, names itself in the contextual panel, and
+// marks itself in the rail. Page identity lives in the panel page band
+// (h2.panel-page-title), not a per-page TopBar.
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -30,8 +32,9 @@ function renderApp(path: string, session: SessionState = signedIn): string {
   );
 }
 
-function pageHeading(markup: string): string | undefined {
-  return /<h1[^>]*>(.*?)<\/h1>/.exec(markup)?.[1];
+/** Page name from the contextual panel's page band (TopBars are gone). */
+function panelPageTitle(markup: string): string | undefined {
+  return /class="panel-page-title"[^>]*>(.*?)<\/h2>/.exec(markup)?.[1];
 }
 
 /** The rail marks exactly one page active at a time (an icon+label button,
@@ -70,7 +73,7 @@ describe("routes render", () => {
   for (const route of APP_ROUTES) {
     test(`${route.path} renders the ${route.label} screen`, () => {
       const markup = renderApp(route.path);
-      expect(pageHeading(markup)).toBe(route.label);
+      expect(panelPageTitle(markup)).toBe(route.label);
       if (route.path === SETTINGS_PATH) {
         // Settings has no page-nav entry in the rail — it is reached from
         // the rail's own identity dock instead.
