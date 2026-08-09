@@ -110,6 +110,26 @@ describe("createRoutineRoutes", () => {
     expect(typeof body["id"]).toBe("string");
   });
 
+  test("rejects a definition that is not in the tenant", async () => {
+    const deps = buildDeps();
+    deps.definitionInTenant = async () => false;
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { response, body } = await createRoutine(app, VALID_BODY);
+    expect(response.status).toBe(404);
+    expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+      "not_found",
+    );
+  });
+
+  test("accepts a definition that is in the tenant when a checker is wired", async () => {
+    const deps = buildDeps();
+    deps.definitionInTenant = async (tenantId, definitionId) =>
+      tenantId === TENANT.id && definitionId === VALID_BODY.definitionId;
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { response } = await createRoutine(app, VALID_BODY);
+    expect(response.status).toBe(201);
+  });
+
   test("rejects an invalid trigger with a 400", async () => {
     const deps = buildDeps();
     const app = mountAs(createRoutineRoutes(deps), "user_1");

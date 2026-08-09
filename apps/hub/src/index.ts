@@ -8,6 +8,8 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { createDB, createGrantStore } from "@intx/db";
+import { workflowDefinition } from "@intx/db/schema";
+import { and, eq } from "drizzle-orm";
 import { generateKeyPair } from "@intx/crypto";
 import { timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
@@ -379,6 +381,16 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+      workflowDefinitionInTenant: async (tenantId, definitionId) => {
+        const row = await db.query.workflowDefinition.findFirst({
+          where: and(
+            eq(workflowDefinition.id, definitionId),
+            eq(workflowDefinition.tenantId, tenantId),
+          ),
+          columns: { id: true },
+        });
+        return row !== undefined;
+      },
     }),
   );
   app.route(
@@ -426,6 +438,16 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       runSummaryResolver: createHubRunSummaryResolver(db),
+      definitionInTenant: async (tenantId, definitionId) => {
+        const row = await db.query.workflowDefinition.findFirst({
+          where: and(
+            eq(workflowDefinition.id, definitionId),
+            eq(workflowDefinition.tenantId, tenantId),
+          ),
+          columns: { id: true },
+        });
+        return row !== undefined;
+      },
     }),
   );
   // Recurring auto-fire: a minimal in-process poller (routine-scheduler.ts)

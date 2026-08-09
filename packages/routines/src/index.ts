@@ -19,7 +19,14 @@ export type {
   ApplyRoutineMigrationsReport,
 } from "./migrations";
 
-export { createDrizzleRoutineStore, createInMemoryRoutineStore } from "./store";
+export {
+  createDrizzleRoutineStore,
+  createInMemoryRoutineStore,
+  MAX_ROUTINE_FIRE_FAILURES,
+  ROUTINE_FIRE_BACKOFF_BASE_MS,
+  ROUTINE_FIRE_BACKOFF_MAX_MS,
+  backoffMsForFailure,
+} from "./store";
 export type {
   RoutineDb,
   RoutineScope,
@@ -28,6 +35,7 @@ export type {
   CreateRoutineInput,
   UpdateRoutineInput,
   RoutineStore,
+  MarkFailedFireResult,
 } from "./store";
 
 export { createRoutineRoutes, fireScheduledRoutine } from "./routes";

@@ -5,12 +5,6 @@
 // story" install contract. Bookkeeping is its own ledger table, never
 // the platform's drizzle journal, so this package's migration history
 // stays extractable on its own.
-//
-// A single migration, in its final shape, not a sequence of ALTERs
-// bolted on as the feature grew: this package predates any real
-// traffic, so there is no pre-existing data to carry forward and no
-// earlier shape to migrate away from. Hard cutover — one file, no
-// backfill, nothing to reconcile.
 import postgres from "postgres";
 
 export interface RoutineMigration {
@@ -49,6 +43,17 @@ export const routineMigrations: readonly RoutineMigration[] = [
         "created_at" timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY ("tenant_id", "run_id")
       );
+    `,
+  },
+  {
+    name: "0002_failure_tracking",
+    sql: `
+      ALTER TABLE "routine"
+        ADD COLUMN IF NOT EXISTS "consecutive_failures" integer NOT NULL DEFAULT 0;
+      ALTER TABLE "routine"
+        ADD COLUMN IF NOT EXISTS "dead_lettered_at" timestamptz;
+      ALTER TABLE "routine_run"
+        ADD COLUMN IF NOT EXISTS "error" text;
     `,
   },
 ];

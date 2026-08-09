@@ -6,6 +6,7 @@
 // own state, keyed by tenant.
 import {
   boolean,
+  integer,
   jsonb,
   pgTable,
   primaryKey,
@@ -48,6 +49,13 @@ export const routine = pgTable("routine", {
   // it stops the routine appearing in lists or firing, and nothing
   // else.
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Consecutive launch failures since the last success. The scheduler
+  // backs off exponentially off this counter, then dead-letters once
+  // it reaches `MAX_ROUTINE_FIRE_FAILURES` (see store.ts).
+  consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+  // When set, the scheduler never claims this routine again until an
+  // operator re-enables/edits it (which clears the dead-letter).
+  deadLetteredAt: timestamp("dead_lettered_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -63,6 +71,11 @@ export const routine = pgTable("routine", {
  * own `workflow_run` — this package never migrates a table it doesn't
  * own — and it holds nothing else: run status, timing, and mail all
  * stay read off the platform's own run surfaces, joined by `runId`.
+ *
+ * Failed launches that never produced a platform run still get a row
+ * (`triggeredBy: "schedule-failed"`, synthetic `runId`, `error` set) so
+ * the history surface can show the failure without inventing a second
+ * bookkeeping path.
  */
 export const routineRun = pgTable(
   "routine_run",
@@ -71,6 +84,7 @@ export const routineRun = pgTable(
     routineId: text("routine_id").notNull(),
     runId: text("run_id").notNull(),
     triggeredBy: text("triggered_by").notNull(),
+    error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -16,6 +16,25 @@ export type RoutineDb<
 
 export type RoutineScope = "personal" | "bench";
 
+/** After this many consecutive launch failures, the routine is dead-lettered. */
+export const MAX_ROUTINE_FIRE_FAILURES = 5;
+/** First retry delay after a failed launch (1 minute). */
+export const ROUTINE_FIRE_BACKOFF_BASE_MS = 60_000;
+/** Cap on exponential backoff between retries (1 hour). */
+export const ROUTINE_FIRE_BACKOFF_MAX_MS = 60 * 60 * 1000;
+
+/**
+ * Delay until the next retry after `consecutiveFailures` failures have
+ * already been recorded for this routine (1-based: first failure → 1).
+ */
+export function backoffMsForFailure(consecutiveFailures: number): number {
+  const exp = Math.max(0, consecutiveFailures - 1);
+  return Math.min(
+    ROUTINE_FIRE_BACKOFF_BASE_MS * 2 ** exp,
+    ROUTINE_FIRE_BACKOFF_MAX_MS,
+  );
+}
+
 export interface RoutineRow {
   readonly id: string;
   readonly tenantId: string;
@@ -30,6 +49,8 @@ export interface RoutineRow {
   readonly nextFireAt: Date | null;
   readonly lastFireAt: Date | null;
   readonly deletedAt: Date | null;
+  readonly consecutiveFailures: number;
+  readonly deadLetteredAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -58,7 +79,14 @@ export interface RoutineRunRow {
   readonly routineId: string;
   readonly runId: string;
   readonly triggeredBy: string;
+  readonly error: string | null;
   readonly createdAt: Date;
+}
+
+export interface MarkFailedFireResult {
+  readonly deadLettered: boolean;
+  readonly nextFireAt: Date | null;
+  readonly consecutiveFailures: number;
 }
 
 export interface RoutineStore {
@@ -92,59 +120,94 @@ export interface RoutineStore {
    * Records that `runId` was launched under `routineId` — called
    * inside the same launch call every routine fire goes through
    * (scheduled or "run now" alike), never a second bookkeeping path.
+   * Failed launches that never produced a platform run still get a row
+   * (`triggeredBy: "schedule-failed"`, synthetic `runId`, `error` set).
    */
   recordRoutineRun(input: {
     tenantId: string;
     routineId: string;
     runId: string;
     triggeredBy: string;
+    error?: string | null;
   }): Promise<RoutineRunRow>;
   listRunsForRoutine(
     tenantId: string,
     routineId: string,
   ): Promise<RoutineRunRow[]>;
   /**
-   * Every enabled, timer-triggered routine whose `nextFireAt` is at or
-   * before `now` — across every tenant, the one cross-tenant read a
-   * scheduler needs and no per-request route ever does. "At or before,"
-   * not "equal to": a fire that was due while nothing was polling is
-   * still due, not skipped.
+   * Every enabled, timer-triggered, non-dead-lettered routine whose
+   * `nextFireAt` is at or before `now` — across every tenant, the one
+   * cross-tenant read a scheduler needs and no per-request route ever
+   * does. "At or before," not "equal to": a fire that was due while
+   * nothing was polling is still due, not skipped.
    */
   listDueRoutines(now: Date): Promise<RoutineRow[]>;
   /**
    * Atomically claims `routineId`'s current due fire: advances
    * `nextFireAt` to the trigger's following occurrence and stamps
-   * `lastFireAt`, but only if `nextFireAt` is still `<= now` at the
-   * moment of the write. A second caller racing the same fire loses —
-   * the first claim already moved `nextFireAt` into the future, so the
-   * second claim's conditional write matches no row and returns
-   * `undefined`. This is the seam that makes a scheduled fire
-   * exactly-once under concurrent pollers: the claim happens before
-   * anything launches, never after.
+   * `lastFireAt`, but only if the row is still claimable at the moment
+   * of the write (enabled, not deleted, not dead-lettered, due). A
+   * second caller racing the same fire loses — the first claim already
+   * moved `nextFireAt` into the future, so the second claim's
+   * conditional write matches no row and returns `undefined`.
    */
   claimRoutineFire(
     routineId: string,
     now: Date,
   ): Promise<RoutineRow | undefined>;
   /**
-   * Undoes a claim whose launch failed: restores `nextFireAt` to
-   * `revertNextFireAt` (the moment the claim was made for) so the next
-   * scheduler poll sees the fire as due again instead of silently
-   * skipping it until the trigger's following occurrence. Called only
-   * after `claimRoutineFire` returned a row and the subsequent launch
-   * threw — a claim that was never granted needs no compensation.
+   * After a claimed fire's launch fails: increments
+   * `consecutiveFailures`, records a `schedule-failed` run with the
+   * reason, and either schedules a backoff retry or dead-letters the
+   * routine once `MAX_ROUTINE_FIRE_FAILURES` is reached.
    *
    * Conditional on `nextFireAt` still being `claimedNextFireAt` — the
    * value the claim itself wrote. If a trigger edit landed during the
-   * failure window, `updateRoutine` already recomputed `nextFireAt`
-   * off the new trigger, and that newer value must win: this restore
-   * is a no-op rather than clobbering it with the stale one.
+   * failure window, that newer value wins and this is a no-op
+   * (`undefined`).
    */
-  compensateFailedFire(
-    routineId: string,
-    revertNextFireAt: Date,
-    claimedNextFireAt: Date,
-  ): Promise<void>;
+  markFailedFire(input: {
+    routineId: string;
+    tenantId: string;
+    claimedNextFireAt: Date;
+    failedAt: Date;
+    reason: string;
+  }): Promise<MarkFailedFireResult | undefined>;
+  /** Clear failure counters after a successful fire. */
+  clearFireFailures(routineId: string): Promise<void>;
+}
+
+function mapRoutineRow(row: typeof routine.$inferSelect): RoutineRow {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    name: row.name,
+    definitionId: row.definitionId,
+    trigger: row.trigger as RoutineTriggerT,
+    scope: row.scope as RoutineScope,
+    input: row.input as Record<string, unknown>,
+    enabled: row.enabled,
+    deliveryChannelId: row.deliveryChannelId,
+    createdBy: row.createdBy,
+    nextFireAt: row.nextFireAt,
+    lastFireAt: row.lastFireAt,
+    deletedAt: row.deletedAt,
+    consecutiveFailures: row.consecutiveFailures ?? 0,
+    deadLetteredAt: row.deadLetteredAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function mapRunRow(row: typeof routineRun.$inferSelect): RoutineRunRow {
+  return {
+    tenantId: row.tenantId,
+    routineId: row.routineId,
+    runId: row.runId,
+    triggeredBy: row.triggeredBy,
+    error: row.error ?? null,
+    createdAt: row.createdAt,
+  };
 }
 
 export function createDrizzleRoutineStore<
@@ -169,6 +232,8 @@ export function createDrizzleRoutineStore<
           nextFireAt: computeNextFireAt(input.trigger, now),
           lastFireAt: null,
           deletedAt: null,
+          consecutiveFailures: 0,
+          deadLetteredAt: null,
           createdAt: now,
           updatedAt: now,
         })
@@ -176,7 +241,7 @@ export function createDrizzleRoutineStore<
       if (row === undefined) {
         throw new Error("createRoutine: insert returned no row");
       }
-      return row as RoutineRow;
+      return mapRoutineRow(row);
     },
 
     async getRoutine(tenantId, routineId) {
@@ -191,7 +256,7 @@ export function createDrizzleRoutineStore<
           ),
         )
         .limit(1);
-      return row as RoutineRow | undefined;
+      return row === undefined ? undefined : mapRoutineRow(row);
     },
 
     async getRoutineIncludingDeleted(tenantId, routineId) {
@@ -200,7 +265,7 @@ export function createDrizzleRoutineStore<
         .from(routine)
         .where(and(eq(routine.tenantId, tenantId), eq(routine.id, routineId)))
         .limit(1);
-      return row as RoutineRow | undefined;
+      return row === undefined ? undefined : mapRoutineRow(row);
     },
 
     async listRoutines(tenantId) {
@@ -208,7 +273,7 @@ export function createDrizzleRoutineStore<
         .select()
         .from(routine)
         .where(and(eq(routine.tenantId, tenantId), isNull(routine.deletedAt)));
-      return rows as RoutineRow[];
+      return rows.map(mapRoutineRow);
     },
 
     async updateRoutine(tenantId, routineId, patch) {
@@ -229,14 +294,14 @@ export function createDrizzleRoutineStore<
       const now = new Date();
       const recomputeNextFire =
         patch.trigger !== undefined || patch.enabled !== undefined;
+      const clearFailures =
+        patch.enabled === true || patch.trigger !== undefined;
       const mergedTrigger =
         patch.trigger !== undefined
           ? patch.trigger
-          : (existing as RoutineRow).trigger;
+          : (existing.trigger as RoutineTriggerT);
       const mergedEnabled =
-        patch.enabled !== undefined
-          ? patch.enabled
-          : (existing as RoutineRow).enabled;
+        patch.enabled !== undefined ? patch.enabled : existing.enabled;
       const [row] = await db
         .update(routine)
         .set({
@@ -248,6 +313,9 @@ export function createDrizzleRoutineStore<
                   : null,
               }
             : {}),
+          ...(clearFailures
+            ? { consecutiveFailures: 0, deadLetteredAt: null }
+            : {}),
           updatedAt: now,
         })
         .where(and(eq(routine.tenantId, tenantId), eq(routine.id, routineId)))
@@ -255,7 +323,7 @@ export function createDrizzleRoutineStore<
       if (row === undefined) {
         throw new Error(`updateRoutine: no routine row for id ${routineId}`);
       }
-      return row as RoutineRow;
+      return mapRoutineRow(row);
     },
 
     async deleteRoutine(tenantId, routineId) {
@@ -281,20 +349,18 @@ export function createDrizzleRoutineStore<
           and(
             eq(routine.enabled, true),
             isNull(routine.deletedAt),
+            isNull(routine.deadLetteredAt),
             lte(routine.nextFireAt, now),
           ),
         );
-      return rows as RoutineRow[];
+      return rows.map(mapRoutineRow);
     },
 
     async claimRoutineFire(routineId, now) {
       // A transaction with `FOR UPDATE` locks the row for the read
       // that decides `nextFireAt`'s new value, so a concurrent `PATCH`
       // of this routine's trigger can't sneak in between "read the
-      // trigger" and "write the value computed from it" — it blocks
-      // until this transaction commits, then (having already recomputed
-      // its own `nextFireAt` off the new trigger in `updateRoutine`)
-      // is never clobbered by a value computed from the stale one.
+      // trigger" and "write the value computed from it".
       return await db.transaction(async (tx) => {
         const [current] = await tx
           .select()
@@ -302,7 +368,15 @@ export function createDrizzleRoutineStore<
           .where(eq(routine.id, routineId))
           .for("update")
           .limit(1);
-        if (current === undefined || current.trigger === null) {
+        if (
+          current === undefined ||
+          current.trigger === null ||
+          current.deletedAt !== null ||
+          current.deadLetteredAt !== null ||
+          !current.enabled ||
+          current.nextFireAt === null ||
+          current.nextFireAt.getTime() > now.getTime()
+        ) {
           return undefined;
         }
         const nextFireAt = computeNextFireAt(
@@ -316,32 +390,96 @@ export function createDrizzleRoutineStore<
             and(
               eq(routine.id, routineId),
               eq(routine.enabled, true),
+              isNull(routine.deletedAt),
+              isNull(routine.deadLetteredAt),
               lte(routine.nextFireAt, now),
             ),
           )
           .returning();
-        return claimed as RoutineRow | undefined;
+        return claimed === undefined ? undefined : mapRoutineRow(claimed);
       });
     },
 
-    async compensateFailedFire(routineId, revertNextFireAt, claimedNextFireAt) {
+    async markFailedFire(input) {
+      return await db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(routine)
+          .where(eq(routine.id, input.routineId))
+          .for("update")
+          .limit(1);
+        if (current === undefined) return undefined;
+        if (
+          current.nextFireAt?.getTime() !== input.claimedNextFireAt.getTime()
+        ) {
+          return undefined;
+        }
+
+        const consecutiveFailures = (current.consecutiveFailures ?? 0) + 1;
+        const deadLettered = consecutiveFailures >= MAX_ROUTINE_FIRE_FAILURES;
+        const nextFireAt = deadLettered
+          ? null
+          : new Date(
+              input.failedAt.getTime() +
+                backoffMsForFailure(consecutiveFailures),
+            );
+
+        const [updated] = await tx
+          .update(routine)
+          .set({
+            consecutiveFailures,
+            nextFireAt,
+            deadLetteredAt: deadLettered ? input.failedAt : null,
+            updatedAt: input.failedAt,
+          })
+          .where(
+            and(
+              eq(routine.id, input.routineId),
+              eq(routine.nextFireAt, input.claimedNextFireAt),
+            ),
+          )
+          .returning();
+        if (updated === undefined) return undefined;
+
+        await tx.insert(routineRun).values({
+          tenantId: input.tenantId,
+          routineId: input.routineId,
+          runId: generateId("instance"),
+          triggeredBy: "schedule-failed",
+          error: input.reason,
+          createdAt: input.failedAt,
+        });
+
+        return {
+          deadLettered,
+          nextFireAt,
+          consecutiveFailures,
+        };
+      });
+    },
+
+    async clearFireFailures(routineId) {
       await db
         .update(routine)
-        .set({ nextFireAt: revertNextFireAt })
-        .where(
-          and(
-            eq(routine.id, routineId),
-            eq(routine.nextFireAt, claimedNextFireAt),
-          ),
-        );
+        .set({ consecutiveFailures: 0, deadLetteredAt: null })
+        .where(eq(routine.id, routineId));
     },
 
     async recordRoutineRun(input) {
-      const [row] = await db.insert(routineRun).values(input).returning();
+      const [row] = await db
+        .insert(routineRun)
+        .values({
+          tenantId: input.tenantId,
+          routineId: input.routineId,
+          runId: input.runId,
+          triggeredBy: input.triggeredBy,
+          error: input.error ?? null,
+        })
+        .returning();
       if (row === undefined) {
         throw new Error("recordRoutineRun: insert returned no row");
       }
-      return row as RoutineRunRow;
+      return mapRunRow(row);
     },
 
     async listRunsForRoutine(tenantId, routineId) {
@@ -355,7 +493,7 @@ export function createDrizzleRoutineStore<
           ),
         )
         .orderBy(desc(routineRun.createdAt));
-      return rows as RoutineRunRow[];
+      return rows.map(mapRunRow);
     },
   };
 }
@@ -386,6 +524,8 @@ export function createInMemoryRoutineStore(): RoutineStore {
         nextFireAt: computeNextFireAt(input.trigger, now),
         lastFireAt: null,
         deletedAt: null,
+        consecutiveFailures: 0,
+        deadLetteredAt: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -422,6 +562,8 @@ export function createInMemoryRoutineStore(): RoutineStore {
       const now = new Date();
       const recomputeNextFire =
         patch.trigger !== undefined || patch.enabled !== undefined;
+      const clearFailures =
+        patch.enabled === true || patch.trigger !== undefined;
       const mergedTrigger =
         patch.trigger !== undefined ? patch.trigger : existing.trigger;
       const mergedEnabled =
@@ -435,6 +577,9 @@ export function createInMemoryRoutineStore(): RoutineStore {
                 ? computeNextFireAt(mergedTrigger, now)
                 : null,
             }
+          : {}),
+        ...(clearFailures
+          ? { consecutiveFailures: 0, deadLetteredAt: null }
           : {}),
         updatedAt: now,
       };
@@ -464,6 +609,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
         (row) =>
           row.enabled &&
           row.deletedAt === null &&
+          row.deadLetteredAt === null &&
           row.nextFireAt !== null &&
           row.nextFireAt.getTime() <= now.getTime(),
       );
@@ -474,6 +620,8 @@ export function createInMemoryRoutineStore(): RoutineStore {
       if (
         current === undefined ||
         current.trigger === null ||
+        current.deletedAt !== null ||
+        current.deadLetteredAt !== null ||
         !current.enabled ||
         current.nextFireAt === null ||
         current.nextFireAt.getTime() > now.getTime()
@@ -489,20 +637,60 @@ export function createInMemoryRoutineStore(): RoutineStore {
       return claimed;
     },
 
-    async compensateFailedFire(routineId, revertNextFireAt, claimedNextFireAt) {
+    async markFailedFire(input) {
+      const current = routinesById.get(input.routineId);
+      if (current === undefined) return undefined;
+      if (current.nextFireAt?.getTime() !== input.claimedNextFireAt.getTime()) {
+        return undefined;
+      }
+
+      const consecutiveFailures = current.consecutiveFailures + 1;
+      const deadLettered = consecutiveFailures >= MAX_ROUTINE_FIRE_FAILURES;
+      const nextFireAt = deadLettered
+        ? null
+        : new Date(
+            input.failedAt.getTime() + backoffMsForFailure(consecutiveFailures),
+          );
+
+      routinesById.set(input.routineId, {
+        ...current,
+        consecutiveFailures,
+        nextFireAt,
+        deadLetteredAt: deadLettered ? input.failedAt : null,
+        updatedAt: input.failedAt,
+      });
+
+      runs.push({
+        tenantId: input.tenantId,
+        routineId: input.routineId,
+        runId: generateId("instance"),
+        triggeredBy: "schedule-failed",
+        error: input.reason,
+        createdAt: input.failedAt,
+      });
+
+      return { deadLettered, nextFireAt, consecutiveFailures };
+    },
+
+    async clearFireFailures(routineId) {
       const current = routinesById.get(routineId);
       if (current === undefined) return;
-      if (current.nextFireAt?.getTime() !== claimedNextFireAt.getTime()) {
-        return;
-      }
       routinesById.set(routineId, {
         ...current,
-        nextFireAt: revertNextFireAt,
+        consecutiveFailures: 0,
+        deadLetteredAt: null,
       });
     },
 
     async recordRoutineRun(input) {
-      const row: RoutineRunRow = { ...input, createdAt: new Date() };
+      const row: RoutineRunRow = {
+        tenantId: input.tenantId,
+        routineId: input.routineId,
+        runId: input.runId,
+        triggeredBy: input.triggeredBy,
+        error: input.error ?? null,
+        createdAt: new Date(),
+      };
       runs.push(row);
       return row;
     },

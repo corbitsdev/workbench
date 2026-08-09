@@ -1,117 +1,173 @@
-// The scheduler loop's two failure modes, proven against a single
-// deterministic poll (`tickRoutineScheduler`) rather than the real
-// `setInterval` wrapper: a launch that throws must not strand the
-// routine past its next natural cadence, and a successful launch must
-// still record the correlation exactly once.
+// Scheduler poller: claim → fire, backoff on failure, dead-letter at max.
 import { describe, expect, test } from "bun:test";
 import {
+  backoffMsForFailure,
   createInMemoryRoutineStore,
+  MAX_ROUTINE_FIRE_FAILURES,
   type RoutineLauncher,
 } from "@corbits/routines";
 import { tickRoutineScheduler } from "../src/routine-scheduler";
 
-const TENANT_ID = "tnt_1";
+const CRON = { kind: "cron" as const, expression: "0 * * * *" };
 
-function throwingLauncher(): RoutineLauncher {
-  return {
-    async launchRoutineRun() {
-      throw new Error("launcher unavailable");
-    },
-  };
-}
-
-function succeedingLauncher(): RoutineLauncher & { calls: number } {
-  let calls = 0;
-  return {
-    get calls() {
-      return calls;
-    },
-    async launchRoutineRun() {
-      calls += 1;
-      return { runId: `run_${calls}` };
-    },
-  };
+function launcher(impl: RoutineLauncher["launchRoutineRun"]): RoutineLauncher {
+  return { launchRoutineRun: impl };
 }
 
 describe("tickRoutineScheduler", () => {
-  test("a due routine fires and its run is recorded", async () => {
+  test("claims a due routine and launches it once", async () => {
     const store = createInMemoryRoutineStore();
-    const launcher = succeedingLauncher();
     const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Hourly",
+      tenantId: "t1",
+      name: "hourly",
       definitionId: "def_1",
-      trigger: { kind: "interval", unit: "hours", every: 1 },
+      trigger: CRON,
       scope: "bench",
-      input: {},
+      input: { x: 1 },
       createdBy: "user_1",
     });
-    const fireAt = routine.nextFireAt;
-    if (fireAt === null) throw new Error("expected a scheduled fire time");
-
-    await tickRoutineScheduler({ store, launcher }, fireAt);
-
-    expect(launcher.calls).toBe(1);
-    const runs = await store.listRunsForRoutine(TENANT_ID, routine.id);
+    const at = new Date(
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
+    );
+    const launches: string[] = [];
+    await tickRoutineScheduler(
+      {
+        store,
+        launcher: launcher(async (input) => {
+          launches.push(input.definitionId);
+          return { runId: "run_1" };
+        }),
+      },
+      at,
+    );
+    expect(launches).toEqual(["def_1"]);
+    const runs = await store.listRunsForRoutine("t1", routine.id);
     expect(runs).toHaveLength(1);
     expect(runs[0]?.triggeredBy).toBe("schedule");
+    expect(runs[0]?.runId).toBe("run_1");
   });
 
-  test("a launch failure restores nextFireAt instead of stranding the routine", async () => {
+  test("a launch failure backs off and records schedule-failed", async () => {
     const store = createInMemoryRoutineStore();
-    const launcher = throwingLauncher();
     const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Hourly",
+      tenantId: "t1",
+      name: "flaky",
       definitionId: "def_1",
-      trigger: { kind: "interval", unit: "hours", every: 1 },
+      trigger: CRON,
       scope: "bench",
       input: {},
       createdBy: "user_1",
     });
-    const fireAt = routine.nextFireAt;
-    if (fireAt === null) throw new Error("expected a scheduled fire time");
-
-    await tickRoutineScheduler({ store, launcher }, fireAt);
-
-    // No run was recorded — the launch never succeeded.
-    const runs = await store.listRunsForRoutine(TENANT_ID, routine.id);
-    expect(runs).toHaveLength(0);
-
-    // And the routine is due again at the exact moment it failed, not
-    // stranded until its next natural hourly cadence.
-    const dueAgain = await store.listDueRoutines(fireAt);
-    expect(dueAgain.map((row) => row.id)).toContain(routine.id);
-  });
-
-  test("a retried fire after a failure can still succeed", async () => {
-    const store = createInMemoryRoutineStore();
-    let attempts = 0;
-    const flakyLauncher: RoutineLauncher = {
-      async launchRoutineRun() {
-        attempts += 1;
-        if (attempts === 1) throw new Error("transient failure");
-        return { runId: "run_retry" };
+    const at = new Date(
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
+    );
+    await tickRoutineScheduler(
+      {
+        store,
+        launcher: launcher(async () => {
+          throw new Error("launch exploded");
+        }),
       },
-    };
+      at,
+    );
+
+    const after = await store.getRoutine("t1", routine.id);
+    if (!after) throw new Error("expected routine after failure");
+    expect(after.consecutiveFailures).toBe(1);
+    const afterNext = after.nextFireAt;
+    if (!afterNext) throw new Error("expected nextFireAt after failure");
+    expect(afterNext.getTime()).toBe(at.getTime() + backoffMsForFailure(1));
+    // Not immediately due again at the same instant.
+    expect(await store.listDueRoutines(at)).toEqual([]);
+
+    const runs = await store.listRunsForRoutine("t1", routine.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.triggeredBy).toBe("schedule-failed");
+    expect(runs[0]?.error).toContain("launch exploded");
+  });
+
+  test("after backoff elapses the routine is claimed again", async () => {
+    const store = createInMemoryRoutineStore();
     const routine = await store.createRoutine({
-      tenantId: TENANT_ID,
-      name: "Hourly",
+      tenantId: "t1",
+      name: "retry",
       definitionId: "def_1",
-      trigger: { kind: "interval", unit: "hours", every: 1 },
+      trigger: CRON,
       scope: "bench",
       input: {},
       createdBy: "user_1",
     });
-    const fireAt = routine.nextFireAt;
-    if (fireAt === null) throw new Error("expected a scheduled fire time");
+    const at = new Date(
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
+    );
+    await tickRoutineScheduler(
+      {
+        store,
+        launcher: launcher(async () => {
+          throw new Error("first");
+        }),
+      },
+      at,
+    );
+    const afterFail = await store.getRoutine("t1", routine.id);
+    if (!afterFail) throw new Error("expected routine after failure");
+    const retryAt = afterFail.nextFireAt;
+    if (!retryAt) throw new Error("expected nextFireAt after failure");
+    let launches = 0;
+    await tickRoutineScheduler(
+      {
+        store,
+        launcher: launcher(async () => {
+          launches += 1;
+          return { runId: "run_ok" };
+        }),
+      },
+      retryAt,
+    );
+    expect(launches).toBe(1);
+    const recovered = await store.getRoutine("t1", routine.id);
+    if (!recovered) throw new Error("expected recovered routine");
+    expect(recovered.consecutiveFailures).toBe(0);
+  });
 
-    await tickRoutineScheduler({ store, launcher: flakyLauncher }, fireAt);
-    await tickRoutineScheduler({ store, launcher: flakyLauncher }, fireAt);
-
-    expect(attempts).toBe(2);
-    const runs = await store.listRunsForRoutine(TENANT_ID, routine.id);
-    expect(runs).toHaveLength(1);
-    expect(runs[0]?.runId).toBe("run_retry");
+  test("after MAX failures the routine is dead-lettered and never claimed again", async () => {
+    const store = createInMemoryRoutineStore();
+    const routine = await store.createRoutine({
+      tenantId: "t1",
+      name: "dead",
+      definitionId: "def_1",
+      trigger: CRON,
+      scope: "bench",
+      input: {},
+      createdBy: "user_1",
+    });
+    let clock = new Date(
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
+    );
+    for (let i = 0; i < MAX_ROUTINE_FIRE_FAILURES; i++) {
+      const current = await store.getRoutine("t1", routine.id);
+      if (!current) throw new Error("expected routine in loop");
+      if (current.nextFireAt !== null) {
+        clock = new Date(
+          Math.max(clock.getTime(), current.nextFireAt.getTime()),
+        );
+      }
+      await tickRoutineScheduler(
+        {
+          store,
+          launcher: launcher(async () => {
+            throw new Error(`fail ${i + 1}`);
+          }),
+        },
+        clock,
+      );
+    }
+    const final = await store.getRoutine("t1", routine.id);
+    if (!final) throw new Error("expected routine after dead-letter");
+    expect(final.deadLetteredAt).not.toBeNull();
+    expect(final.consecutiveFailures).toBe(MAX_ROUTINE_FIRE_FAILURES);
+    expect(
+      await store.listDueRoutines(new Date(clock.getTime() + 1e12)),
+    ).toEqual([]);
   });
 });
