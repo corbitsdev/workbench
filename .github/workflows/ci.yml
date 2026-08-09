@@ -34,6 +34,7 @@ jobs:
       - run: bun run check:killdates
       - run: bun run check:packages
       - run: bun run check:no-product-tenancy
+      - run: bun run check:web-utilities
 
   walking-skeleton:
     runs-on: ubuntu-latest

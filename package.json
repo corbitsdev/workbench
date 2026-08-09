@@ -24,7 +24,8 @@
     "check:deletion": "bun run scripts/checks/deletion.ts",
     "check:killdates": "bun run scripts/checks/killdates.ts",
     "check:packages": "bun run scripts/checks/packages.ts",
-    "check:no-product-tenancy": "bun run scripts/checks/no-product-tenancy.ts"
+    "check:no-product-tenancy": "bun run scripts/checks/no-product-tenancy.ts",
+    "check:web-utilities": "bun run scripts/checks/web-tailwind-utilities.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

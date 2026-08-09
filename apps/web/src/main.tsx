@@ -1,5 +1,6 @@
 import "@corbits/react-ui/styles.css";
 import "./app.css";
+import "./tailwind.css";
 
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
