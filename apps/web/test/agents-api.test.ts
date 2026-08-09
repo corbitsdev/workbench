@@ -62,7 +62,7 @@ const definitionFixture = {
   name: "Researcher",
   description: "Answers research questions",
   currentVersion: "1",
-  status: "deployed",
+  status: "deployed" as const,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -73,7 +73,7 @@ const instanceFixture = {
   definitionName: "Researcher",
   tenantId: "tnt_1",
   address: "ins_1@acme.localhost",
-  status: "running",
+  status: "running" as const,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
