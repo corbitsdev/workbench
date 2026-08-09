@@ -43,14 +43,14 @@ describe("resolveSeedWorkflows", () => {
     const names = resolveSeedWorkflows({
       seedCatalogTestWorkflows: false,
     }).map((w) => w.assetName);
-    expect(names).toEqual(["echo", "assistant"]);
+    expect(names).toEqual(["echo", "assistant", "channel-digest"]);
   });
 
   test("with the opt-in, the catalog-test workflows are appended", () => {
     const names = resolveSeedWorkflows({
       seedCatalogTestWorkflows: true,
     }).map((w) => w.assetName);
-    expect(names).toEqual(["echo", "assistant", "heartbeat", "channel-digest"]);
+    expect(names).toEqual(["echo", "assistant", "channel-digest", "heartbeat"]);
   });
 });
 

@@ -152,7 +152,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant"],
+      workflows: ["echo", "assistant", "channel-digest"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls).toHaveLength(1);
@@ -196,7 +196,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant"],
+      workflows: ["echo", "assistant", "channel-digest"],
     });
     expect(seedCatalogCalls).toHaveLength(0);
     expect(seedTenantCalls).toHaveLength(1);

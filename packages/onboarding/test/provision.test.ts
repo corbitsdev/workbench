@@ -591,8 +591,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
 
     expect(retry).toEqual({ kind: "existing-member", seeded: true });
     // Attempt 1 fails creating the echo asset. The retry re-runs from
-    // scratch: attempt 2 creates the echo asset, attempt 3 creates the
-    // assistant asset — one create call per default workflow.
-    expect(assetCreateAttempts).toBe(3);
+    // scratch: one create call per default workflow — echo, assistant,
+    // channel-digest — on top of the one failed attempt.
+    expect(assetCreateAttempts).toBe(4);
   });
 });
