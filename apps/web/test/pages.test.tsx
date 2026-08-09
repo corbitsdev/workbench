@@ -170,5 +170,4 @@ describe("live data", () => {
     // Dialog must not mount without a real tenant — no create form markup.
     expect(markup).not.toContain("Define a new agent");
   });
-
 });

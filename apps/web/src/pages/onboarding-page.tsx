@@ -332,9 +332,7 @@ export function OnboardingPage() {
         >
           <HorizontalStepper steps={wizardSteps(state.phase)} />
           <ProgressChecklist steps={checklist} label="Default routines" />
-          <Button onClick={() => navigate("/")}>
-            Meet Myra
-          </Button>
+          <Button onClick={() => navigate("/")}>Meet Myra</Button>
         </Section>
       </PageShell>
     );

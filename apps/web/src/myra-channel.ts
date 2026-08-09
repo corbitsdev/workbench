@@ -2,11 +2,7 @@
 // titled Myra (case-insensitive) or create one. Pure helpers stay free of
 // React so they unit-test without a DOM.
 
-import {
-  createChannel,
-  listChannels,
-  type Channel,
-} from "@corbits/chat-ui";
+import { createChannel, listChannels, type Channel } from "@corbits/chat-ui";
 
 export const MYRA_CHANNEL_TITLE = "Myra";
 
