@@ -18,6 +18,16 @@ import type { CommandListing, CommandRegistry } from "./registry";
 export type CreateCommandRoutesDeps = {
   registry: CommandRegistry;
   requireGrant: RequireGrant;
+  /**
+   * Resolves whether `channelId` is a channel this tenant can see. The
+   * execute body carries a free-form channel id — without this check a
+   * principal with a tenant-wide grant could run commands against
+   * another tenant's channel.
+   */
+  channelBelongsToTenant: (
+    tenantId: string,
+    channelId: string,
+  ) => Promise<boolean>;
 };
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -68,6 +78,14 @@ export function createCommandRoutes(
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
+      const belongs = await deps.channelBelongsToTenant(
+        tenant.id,
+        body.channelId,
+      );
+      if (!belongs) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
       const result = await dispatchSlashCommand(
         deps.registry,
         `/${body.name} ${body.args ?? ""}`.trimEnd(),

@@ -182,6 +182,19 @@ const PutReadStateBody = type({
 });
 
 /**
+ * Every `/channels/:id/*` handler must resolve the channel inside the
+ * request tenant before acting. A missing row is a 404 — never a silent
+ * pass that lets a wildcard grant operate on another tenant's channel.
+ */
+async function channelInTenant(
+  store: ChatStore,
+  tenantId: string,
+  channelId: string,
+) {
+  return store.getChannelSettings(tenantId, channelId);
+}
+
+/**
  * Decides whether an incoming channel message opens the command path
  * at all, and if so, dispatches it. `undefined` — the caller's cue to
  * post the message normally — for: no registry injected; text that is
@@ -467,6 +480,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const channelId = c.req.param("id");
       const cursor = c.req.query("cursor");
 
+      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
       const listed = await deps.platform.listMail({
         tenantId: tenant.id,
         channelId,
@@ -514,6 +531,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const channelId = c.req.param("id");
       const messageParts = parsed as PartType[];
 
+      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
       // Slash messages, and `@name` messages whose name resolves to a
       // command rather than an already-invited agent participant, are
       // intercepted here and never posted as mail themselves — only
@@ -560,6 +581,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
       const items = await deps.platform.listInvitableDefinitions(tenant.id);
       return c.json({ items });
     },
@@ -567,7 +592,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
   app.post(
     "/channels/:id/invite",
-    deps.requireGrant("workflow-run:*", "create"),
+    deps.requireGrant(idResource("workflow-run", "id"), "create"),
     async (c) => {
       const body = InviteAgentBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
@@ -897,6 +922,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
       const channelId = c.req.param("id");
+      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
       const row = await deps.store.getReadState(
         tenant.id,
         channelId,
@@ -931,6 +959,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const principal = c.get("principal");
       const channelId = c.req.param("id");
 
+      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
       const row = await deps.store.putReadState({
         tenantId: tenant.id,
         channelId,
@@ -949,9 +981,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   app.post(
     "/channels/:id/typing",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
-    (c) => {
+    async (c) => {
+      const tenant = c.get("tenant");
       const principal = c.get("principal");
       const channelId = c.req.param("id");
+      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
       publish(channelId, {
         type: "chat.typing",
         data: { principalId: principal.id },
@@ -964,7 +1000,11 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     "/channels/:id/stream",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
+      const tenant = c.get("tenant");
       const channelId = c.req.param("id");
+      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
 
       return streamSSE(c, async (stream) => {
         const unbridge = bridgeChannelStream({
