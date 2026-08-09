@@ -25,9 +25,9 @@ describe("bucketRunsByDay", () => {
     const buckets = bucketRunsByDay([], 3, NOW);
     expect(buckets).toHaveLength(3);
     // Oldest first: Jan 13, Jan 14, Jan 15 (UTC days, since NOW is UTC).
-    expect(buckets[0].key).toBe("2026-01-13");
-    expect(buckets[1].key).toBe("2026-01-14");
-    expect(buckets[2].key).toBe("2026-01-15");
+    expect(buckets[0]!.key).toBe("2026-01-13");
+    expect(buckets[1]!.key).toBe("2026-01-14");
+    expect(buckets[2]!.key).toBe("2026-01-15");
     expect(buckets.every((b) => b.count === 0)).toBe(true);
   });
 
