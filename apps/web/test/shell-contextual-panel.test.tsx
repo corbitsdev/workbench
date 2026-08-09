@@ -1,9 +1,9 @@
 // The "needs you" count only means anything if it actually reaches the
-// screen: `SidebarItemRow`'s real prop for a trailing badge is `meta`, not
-// `count` (a spread masked that mismatch from the type checker once before —
-// see the commit that fixes it). This test renders the real component tree
-// against a live DOM and a mocked hub, so a wrong prop name shows up as a
-// missing badge in the rendered text, not just a type that happens to check.
+// screen. After the page list moved onto the rail, the Approvals badge is
+// `SidebarRailItem.badge` — not a `SidebarItemRow` `meta` slot on the
+// contextual panel. This test renders the real rail tree against a live DOM
+// and a mocked hub, so a wrong prop name shows up as a missing count in the
+// rendered text, not just a type that happens to check.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -11,7 +11,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
-import { ContextualPanel } from "../src/shell/contextual-panel";
+import { Rail } from "../src/shell/rail";
 
 const noop = () => undefined;
 const user = { id: "user_1", name: "Ada Lovelace", email: "ada@example.com" };
@@ -35,9 +35,9 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-/** Stubs the two hub reads `ContextualPanel` triggers: bench membership
- * (so `BenchProvider` resolves a selected tenant) and this tenant's
- * needs-you list (so the Approvals row has something to badge). */
+/** Stubs the two hub reads the rail triggers: bench membership (so
+ * `BenchProvider` resolves a selected tenant) and this tenant's needs-you
+ * list (so the Approvals item has something to badge). */
 function stubFetch(needsYouItemCount: number): void {
   originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -74,7 +74,7 @@ function stubFetch(needsYouItemCount: number): void {
   }) as typeof fetch;
 }
 
-async function renderPanel(): Promise<HTMLDivElement> {
+async function renderRail(): Promise<HTMLDivElement> {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -82,7 +82,7 @@ async function renderPanel(): Promise<HTMLDivElement> {
     root?.render(
       <NavigationProvider navigate={noop}>
         <BenchProvider>
-          <ContextualPanel
+          <Rail
             path="/approvals"
             onNavigate={noop}
             user={user}
@@ -103,20 +103,20 @@ async function renderPanel(): Promise<HTMLDivElement> {
   return container;
 }
 
-describe("ContextualPanel's Approvals row", () => {
-  test("badges the row with the real pending count once needs-you resolves", async () => {
+describe("Rail's Approvals item", () => {
+  test("badges the item with the real pending count once needs-you resolves", async () => {
     stubFetch(3);
-    const el = await renderPanel();
+    const el = await renderRail();
     expect(el.textContent).toContain("Approvals");
     expect(el.textContent).toContain("3");
   });
 
   test("carries no badge when nothing is pending", async () => {
     stubFetch(0);
-    const el = await renderPanel();
+    const el = await renderRail();
     expect(el.textContent).toContain("Approvals");
-    // Every other row's label is a bare word with no digits; the absence of
-    // any digit anywhere in the panel is the honest way to assert "no badge"
+    // Every other item's label is a bare word with no digits; the absence of
+    // any digit anywhere in the rail is the honest way to assert "no badge"
     // without hard-coding the badge's own markup shape.
     expect(el.textContent).not.toMatch(/[0-9]/);
   });
