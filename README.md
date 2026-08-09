@@ -69,6 +69,16 @@ their configuration from `.env` (see `.env.example`) and are safe to re-run.
 is actually launchable; without it, everything above still runs, but
 inference errors until you set it and re-run `bun run seed`.
 
+Leaving `ANTHROPIC_API_KEY` unset doesn't just apply to the administrator
+account: anyone who signs up gets a personal bench with no default routines
+deployed, and first-run tells them exactly that. Onboarding walks them
+through picking a provider — Anthropic, OpenAI, or Google — and pasting
+their own key, proves it with a real call before storing anything, then
+deploys and confirms the default routines on the spot — no separate
+`bun run seed` step, no docs to read. The tenant's browsable model catalog
+is only planted for Anthropic today; the other providers still get a
+credential and working routines, just not a catalog entry yet.
+
 ### OAuth sign-in
 
 Email/password sign-in always works. To let people sign in with an

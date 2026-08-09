@@ -8,7 +8,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
-import { triggerFirstLoginProvisioning } from "../src/onboarding";
+import {
+  submitCredential,
+  testCredential,
+  triggerFirstLoginProvisioning,
+} from "../src/onboarding";
 import type { SessionState } from "../src/session";
 
 const realFetch = globalThis.fetch;
@@ -67,6 +71,79 @@ describe("triggerFirstLoginProvisioning", () => {
 
     const result = await triggerFirstLoginProvisioning();
     expect(result).toEqual({ kind: "existing-member" });
+  });
+});
+
+describe("testCredential", () => {
+  test("a rejected key is reported with the hub's own reason", async () => {
+    let requestBody: unknown = null;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestBody = JSON.parse((init as RequestInit).body as string);
+      return json(
+        { error: { code: "invalid_credential", message: "invalid api key" } },
+        422,
+      );
+    }) as unknown as typeof fetch;
+
+    const result = await testCredential("openai", "sk-bad");
+    expect(result).toEqual({ ok: false, message: "invalid api key" });
+    expect(requestBody).toEqual({ provider: "openai", apiKey: "sk-bad" });
+  });
+
+  test("an accepted key reports ok", async () => {
+    globalThis.fetch = (async () =>
+      json({ ok: true })) as unknown as typeof fetch;
+
+    const result = await testCredential("anthropic", "sk-ant-good");
+    expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("submitCredential", () => {
+  test("a rejected key comes back as a rejected outcome with the hub's own reason", async () => {
+    globalThis.fetch = (async () =>
+      json(
+        { error: { code: "invalid_credential", message: "invalid x-api-key" } },
+        422,
+      )) as unknown as typeof fetch;
+
+    const result = await submitCredential("anthropic", "sk-ant-bad");
+    expect(result).toEqual({ kind: "rejected", message: "invalid x-api-key" });
+  });
+
+  test("a seeded bench reports which routines were confirmed", async () => {
+    let requestBody: unknown = null;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestBody = JSON.parse((init as RequestInit).body as string);
+      return json({
+        kind: "seeded",
+        tenantId: "ten_1",
+        tenantSlug: "ada-user1",
+        workflows: ["echo", "assistant"],
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await submitCredential("google-genai", "AIza-good");
+    expect(result).toEqual({
+      kind: "seeded",
+      tenantSlug: "ada-user1",
+      workflows: ["echo", "assistant"],
+    });
+    expect(requestBody).toEqual({
+      provider: "google-genai",
+      apiKey: "AIza-good",
+    });
+  });
+
+  test("a network failure is reported, never mistaken for a bad key", async () => {
+    globalThis.fetch = (async () => {
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+
+    const result = await submitCredential("anthropic", "sk-ant-good");
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") throw new Error("unreachable");
+    expect(result.message).toContain("connection refused");
   });
 });
 
