@@ -114,9 +114,14 @@ export function BenchSwitcher({
   const [createSubmitting, setCreateSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const active = memberships.find(
-    (membership) => membership.tenantId === activeTenantId,
-  );
+  const active =
+    activeTenantId === null
+      ? undefined
+      : memberships.find(
+          (membership) => membership.tenantId === activeTenantId,
+        );
+  const activeName =
+    active !== undefined ? membershipDisplay(active).name : null;
 
   function handleCreate(name: string) {
     setCreateSubmitting(true);
@@ -136,7 +141,7 @@ export function BenchSwitcher({
   return (
     <div className="bench-switcher">
       <BenchSwitcherTrigger
-        activeName={active !== undefined ? active.tenantName : null}
+        activeName={activeName}
         open={open}
         onToggle={() => setOpen((value) => !value)}
       />

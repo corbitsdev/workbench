@@ -1,9 +1,6 @@
-// The "needs you" count only means anything if it actually reaches the
-// screen. After the page list moved onto the rail, the Approvals badge is
-// `SidebarRailItem.badge` — not a `SidebarItemRow` `meta` slot on the
-// contextual panel. This test renders the real rail tree against a live DOM
-// and a mocked hub, so a wrong prop name shows up as a missing count in the
-// rendered text, not just a type that happens to check.
+// After Chat and Approvals leave the rail, the dock that still needs a live
+// DOM check is the bench switcher: it must show the server-resolved bench
+// name (via membershipDisplay) once memberships resolve — never a tenant id.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -36,10 +33,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-/** Stubs the two hub reads the rail triggers: bench membership (so
- * `BenchProvider` resolves a selected tenant) and this tenant's needs-you
- * list (so the Approvals item has something to badge). */
-function stubFetch(needsYouItemCount: number): void {
+function stubMemberships(): void {
   originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
@@ -59,18 +53,6 @@ function stubFetch(needsYouItemCount: number): void {
         nextCursor: null,
       });
     }
-    if (url === "/api/tenants/tnt_1/approvals/needs-you") {
-      const items = Array.from({ length: needsYouItemCount }, (_, i) => ({
-        id: `apr_${i}`,
-        agentName: "Outreach Composer",
-        benchName: "Growth Team Bench",
-        headline: "send_email",
-        arguments: {},
-        status: "pending",
-        createdAt: "2026-01-01T00:00:00.000Z",
-      }));
-      return jsonResponse({ items });
-    }
     throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;
 }
@@ -84,19 +66,12 @@ async function renderRail(): Promise<HTMLDivElement> {
       <TestQueryProvider>
         <NavigationProvider navigate={noop}>
           <BenchProvider>
-            <Rail
-              path="/approvals"
-              onNavigate={noop}
-              user={user}
-              onSignOut={noop}
-            />
+            <Rail path="/" onNavigate={noop} user={user} onSignOut={noop} />
           </BenchProvider>
         </NavigationProvider>
       </TestQueryProvider>,
     );
   });
-  // Principals then needs-you are sequential TQ queries. Drain each settle
-  // under act so React commits the badge before assertions.
   for (let i = 0; i < 20; i++) {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -106,21 +81,28 @@ async function renderRail(): Promise<HTMLDivElement> {
   return container;
 }
 
-describe("Rail's Approvals item", () => {
-  test("badges the item with the real pending count once needs-you resolves", async () => {
-    stubFetch(3);
+describe("Rail bench switcher", () => {
+  test("shows the membership display name once benches resolve", async () => {
+    stubMemberships();
     const el = await renderRail();
-    expect(el.textContent).toContain("Approvals");
-    expect(el.textContent).toContain("3");
+    expect(el.textContent).toContain("Growth Team Bench");
+    expect(el.textContent).not.toContain("tnt_1");
   });
 
-  test("carries no badge when nothing is pending", async () => {
-    stubFetch(0);
+  test("lists the trimmed product nav, not Chat or Approvals", async () => {
+    stubMemberships();
     const el = await renderRail();
-    expect(el.textContent).toContain("Approvals");
-    // Every other item's label is a bare word with no digits; the absence of
-    // any digit anywhere in the rail is the honest way to assert "no badge"
-    // without hard-coding the badge's own markup shape.
-    expect(el.textContent).not.toMatch(/[0-9]/);
+    for (const label of [
+      "Home",
+      "Routines",
+      "Library",
+      "Agents",
+      "Skills",
+      "Insights",
+    ]) {
+      expect(el.textContent).toContain(label);
+    }
+    expect(el.textContent).not.toContain("Chat");
+    expect(el.textContent).not.toContain("Approvals");
   });
 });

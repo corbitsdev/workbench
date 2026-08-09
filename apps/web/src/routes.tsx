@@ -2,17 +2,19 @@
 // icon) and the route switch (render), so navigation and pages cannot drift
 // apart. Settings renders like any other route but is reached from the
 // sidebar's identity dock, not the top nav — `NAV_ROUTES` is what the nav
-// list shows.
+// list shows. Chat and Approvals stay routable for deep links but leave the
+// rail (channel surface and notifications tickets own their next homes).
 
 import {
   Bot,
-  Clock,
+  ChartColumn,
   Home,
   Library,
   MessageSquare,
   Settings,
   ShieldCheck,
-  Sparkles,
+  Wand2,
+  Workflow,
 } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
@@ -20,6 +22,7 @@ import { AgentsRoute } from "./pages/agents-page";
 import { ApprovalsRoute } from "./pages/approvals-page";
 import { ChatPage } from "./pages/chat-page";
 import { HomeRoute } from "./pages/home-page";
+import { InsightsRoute } from "./pages/insights-page";
 import { LibraryRoute } from "./pages/library-page";
 import { RoutinesRoute } from "./pages/routines-page";
 import { SettingsRoute } from "./pages/settings-page";
@@ -32,6 +35,16 @@ export const ONBOARDING_PATH = "/onboarding";
 
 /** Settings lives in the sidebar's identity dock, not the top nav. */
 export const SETTINGS_PATH = "/settings";
+
+/** Paths the rail lists — product nav after Chat/Approvals leave the rail. */
+const RAIL_NAV_PATHS = new Set([
+  "/",
+  "/routines",
+  "/library",
+  "/agents",
+  "/skills",
+  "/insights",
+]);
 
 export type AppRoute = {
   readonly path: string;
@@ -71,7 +84,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/routines",
     label: "Routines",
-    icon: <Clock />,
+    icon: <Workflow />,
     render: (path: string, navigate: (to: string) => void) => (
       <RoutinesRoute path={path} navigate={navigate} />
     ),
@@ -91,8 +104,14 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/skills",
     label: "Skills",
-    icon: <Sparkles />,
+    icon: <Wand2 />,
     render: () => <SkillsRoute />,
+  },
+  {
+    path: "/insights",
+    label: "Insights",
+    icon: <ChartColumn />,
+    render: () => <InsightsRoute />,
   },
   {
     path: "/approvals",
@@ -108,8 +127,8 @@ export const APP_ROUTES: readonly AppRoute[] = [
   },
 ];
 
-/** What the sidebar's top nav lists: every route except Settings, which
- * the identity dock owns. */
-export const NAV_ROUTES: readonly AppRoute[] = APP_ROUTES.filter(
-  (route) => route.path !== SETTINGS_PATH,
+/** What the rail lists: product pages only. Settings is the identity dock;
+ * Chat and Approvals stay deep-linkable but off the rail. */
+export const NAV_ROUTES: readonly AppRoute[] = APP_ROUTES.filter((route) =>
+  RAIL_NAV_PATHS.has(route.path),
 );
