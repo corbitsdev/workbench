@@ -26,6 +26,7 @@ import type { KeyboardEvent } from "react";
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
 import { useBenchActivity } from "./bench-activity";
+import { resolveChannelTitle } from "./channel-context";
 import {
   registerPanelContribution,
   type PanelRenderContext,
@@ -226,6 +227,21 @@ function ChannelDetails({ channel }: { readonly channel: Channel }) {
       </dl>
     </div>
   );
+}
+
+/** Live page-band title for an open channel — falls back while loading. */
+function ChannelPageTitle({
+  channelId,
+  fallback,
+}: {
+  readonly channelId: string | null;
+  readonly fallback: string;
+}) {
+  const { selectedTenantId } = useBench();
+  const activity = useBenchActivity(selectedTenantId);
+  const title = resolveChannelTitle(activity, channelId);
+  if (title !== null) return title;
+  return fallback;
 }
 
 function ChannelsBand({
@@ -491,20 +507,28 @@ export function ensurePanelContributions(): void {
   registerPanelContribution({
     id: "channels",
     match: (path) => isChannelPath(path),
-    pageBand: (ctx) => ({
-      title: "Channels",
-      subtitle: "Open a conversation in the canvas",
-      actions: [
-        {
-          id: "new-channel",
-          label: "New channel",
-          onSelect: () => {
-            window.dispatchEvent(new CustomEvent("workbench:chat:new-channel"));
-            if (!isChannelPath(ctx.path)) ctx.onNavigate(channelPath(null));
+    pageBand: (ctx) => {
+      const channelId = channelIdFromPath(ctx.path);
+      return {
+        title: <ChannelPageTitle channelId={channelId} fallback="Channels" />,
+        subtitle:
+          channelId === null
+            ? "Open a conversation in the canvas"
+            : "Channel open in the canvas",
+        actions: [
+          {
+            id: "new-channel",
+            label: "New channel",
+            onSelect: () => {
+              window.dispatchEvent(
+                new CustomEvent("workbench:chat:new-channel"),
+              );
+              if (!isChannelPath(ctx.path)) ctx.onNavigate(channelPath(null));
+            },
           },
-        },
-      ],
-    }),
+        ],
+      };
+    },
     pageSpecific: (ctx) => (
       <ChannelsBand path={ctx.path} onOpenInCanvas={ctx.onOpenInCanvas} />
     ),
