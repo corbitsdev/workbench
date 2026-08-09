@@ -17,7 +17,14 @@ import {
   formatRelativeTime,
 } from "@corbits/react-ui";
 import type { BadgeTone, ViewMode } from "@corbits/react-ui";
-import { ArrowLeft, Bot, Copy, MessageSquare, Users, Workflow } from "lucide-react";
+import {
+  ArrowLeft,
+  Bot,
+  Copy,
+  MessageSquare,
+  Users,
+  Workflow,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -268,7 +275,10 @@ function AgentDetailPanel({
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 pb-5 sm:px-7" data-testid="agent-detail-panel">
+    <div
+      className="flex flex-col gap-4 px-4 pb-5 sm:px-7"
+      data-testid="agent-detail-panel"
+    >
       <div className="flex items-center gap-2">
         <Button
           type="button"
@@ -533,7 +543,8 @@ export function AgentsPage({
             // back button that clears the selection.
             const selectedDefinition =
               selectedDefinitionId !== null
-                ? definitions.find((d) => d.id === selectedDefinitionId) ?? null
+                ? (definitions.find((d) => d.id === selectedDefinitionId) ??
+                  null)
                 : null;
             if (selectedDefinition !== null) {
               return (
