@@ -204,7 +204,87 @@ function requireApps(): void {
 // defaults to the web app's build output, which is not checked in. Build
 // it on every dev start so the hub never serves a stale bundle from an
 // earlier session; the web watcher keeps it fresh from there.
+//
+// Before that build, make sure the git-installed `@corbits/react-ui` has
+// a `dist/` tree. The package publishes only built artifacts; git install
+// is supposed to run its `prepare` hook to produce them, but local
+// installs sometimes land the source tree without `dist/` (interrupted
+// install, skipped lifecycle scripts, cache edge cases). Vite then fails
+// with a Rollup "cannot resolve styles.css" that does not name the real
+// problem. Rebuild once via the package's own prepare script when the
+// stylesheet is missing; do nothing when it is already there.
+async function ensureReactUiDist(): Promise<void> {
+  const reactUiRoot = join(
+    repoRoot,
+    "apps",
+    "web",
+    "node_modules",
+    "@corbits",
+    "react-ui",
+  );
+  const stylesCss = join(reactUiRoot, "dist", "styles.css");
+  if (existsSync(stylesCss)) return;
+
+  if (!existsSync(reactUiRoot)) {
+    fail(
+      [
+        "apps/web cannot resolve @corbits/react-ui. Install workspace",
+        "dependencies and re-run:",
+        "",
+        "  bun install",
+        "  bun run dev",
+      ].join("\n"),
+    );
+  }
+
+  const prepareScript = join(reactUiRoot, "scripts", "prepare.mjs");
+  if (!existsSync(prepareScript)) {
+    fail(
+      [
+        "@corbits/react-ui is installed but has no dist/styles.css and no",
+        "scripts/prepare.mjs to build one. Reinstall the dependency or pin a",
+        "react-ui commit that ships a git-install prepare hook, then re-run:",
+        "",
+        "  bun install",
+        "  bun run dev",
+      ].join("\n"),
+    );
+  }
+
+  console.log(
+    "[dev] @corbits/react-ui has no dist/ (git install without prepare) — building it",
+  );
+  const prepare = Bun.spawn(["node", prepareScript], {
+    cwd: reactUiRoot,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const prepareCode = await prepare.exited;
+  if (prepareCode !== 0) {
+    fail(
+      [
+        `@corbits/react-ui prepare exited with code ${prepareCode}, so the`,
+        "web build has no styles.css to import. Fix the prepare failure",
+        "above (or reinstall the package) and re-run:",
+        "",
+        "  bun install",
+        "  bun run dev",
+      ].join("\n"),
+    );
+  }
+  if (!existsSync(stylesCss)) {
+    fail(
+      [
+        "@corbits/react-ui prepare finished but still left no dist/styles.css.",
+        "The web app imports that path as @corbits/react-ui/styles.css. Rebuild",
+        "the package by hand from its install tree, then re-run bun run dev.",
+      ].join("\n"),
+    );
+  }
+}
+
 async function requireWebBuild(config: HubConfig): Promise<void> {
+  await ensureReactUiDist();
   const staticDir = resolve(join(repoRoot, "apps", "hub"), config.hubStaticDir);
   console.log(`[dev] building the web app into ${staticDir}`);
   const build = Bun.spawn(["bun", "run", "build"], {
