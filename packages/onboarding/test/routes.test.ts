@@ -183,6 +183,72 @@ describe("POST /provision", () => {
     }
   });
 
+  test("malformed JSON on /provision is 400, not a silent membership probe", async () => {
+    const creates: unknown[] = [];
+    const hub = new Hono();
+    hub.get("/api/me/principals", (c) =>
+      c.json({ data: [], nextCursor: null }),
+    );
+    hub.post("/api/tenants", async (c) => {
+      creates.push(await c.req.json());
+      return c.json({ id: "tnt_x" }, 201);
+    });
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    try {
+      const routes = createOnboardingRoutes({
+        hubUrl: `http://localhost:${server.port}`,
+        pushWorkflow: async () => "pushed",
+        log: () => undefined,
+      });
+      const app = mountAuthenticated(routes);
+
+      const response = await app.request("/provision", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{not-json",
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as {
+        error: { code: string; message: string };
+      };
+      expect(body.error.code).toBe("bad_request");
+      expect(creates).toEqual([]);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("schema-invalid provision body is 400, not a silent membership probe", async () => {
+    const hub = new Hono();
+    hub.get("/api/me/principals", (c) =>
+      c.json({ data: [], nextCursor: null }),
+    );
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    try {
+      const routes = createOnboardingRoutes({
+        hubUrl: `http://localhost:${server.port}`,
+        pushWorkflow: async () => "pushed",
+        log: () => undefined,
+      });
+      const app = mountAuthenticated(routes);
+
+      const response = await app.request("/provision", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: 12 }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as {
+        error: { code: string; message: string };
+      };
+      expect(body.error.code).toBe("bad_request");
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("an anonymous request is rejected before provisioning runs", async () => {
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
