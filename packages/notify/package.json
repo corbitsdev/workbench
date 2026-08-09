@@ -1,0 +1,28 @@
+{
+  "name": "@corbits/notify",
+  "private": true,
+  "description": "Turns things that need a human — a parked approval, a failed run, a mention — into mail in the recipient's mailbox, and fans that mail out to registered sinks",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/authz": "workspace:*",
+    "@intx/hub-common": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

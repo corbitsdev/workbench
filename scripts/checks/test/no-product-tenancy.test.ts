@@ -64,6 +64,10 @@ test("allowlisted product schema files pass at their max count", () => {
       relPath: "packages/webhook-triggers/src/schema.ts",
       contents: `export const webhookTrigger = pgTable("webhook_trigger", {});`,
     },
+    {
+      relPath: "packages/notify/src/schema.ts",
+      contents: `export const notifyDispatch = pgTable("notify_dispatch", {});`,
+    },
   ]);
   expect(report.violations).toEqual([]);
   expect(
