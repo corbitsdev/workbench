@@ -19,7 +19,8 @@
     "@corbits/assistant-workflow": "workspace:*",
     "@corbits/channel-digest-workflow": "workspace:*",
     "@corbits/echo-workflow": "workspace:*",
-    "@corbits/heartbeat-workflow": "workspace:*"
+    "@corbits/heartbeat-workflow": "workspace:*",
+    "@corbits/workflow-catalog": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

@@ -4,6 +4,11 @@
 // deployment answers. Validation is part of seeding — a deployment that
 // cannot be confirmed is a seed failure, and a run with nothing to seed
 // is a failure too. Safe to re-run; every skipped step says so.
+//
+// Workflow package metadata (automatable, displayName) lives in each
+// workflows/*/package.json under `corbits.workflow` and is mirrored in
+// `@corbits/workflow-catalog`. Seed stamps displayName onto the asset so
+// the routines picker can show a friendly label without reading package.json.
 
 import {
   AssetResponse,
@@ -33,6 +38,7 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "@corbits/heartbeat-workflow";
+import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
 import { CliError } from "./errors";
 import { parseAs, type ApiCall } from "./hub";
 import { catalogModel, catalogProvider } from "./catalog-seed-data";
@@ -115,30 +121,59 @@ export type WorkflowPusher = (args: {
 export type DefaultWorkflow = {
   /** Asset name; lowercase-kebab so the smart-HTTP repo path is clean. */
   assetName: string;
+  /** Friendly label stamped on the asset at create time. */
+  displayName: string;
+  /**
+   * True when this workflow is a legitimate Routines-picker candidate
+   * (schedulable automation). Conversational agents stay false.
+   */
+  automatable: boolean;
   buildJson: (tenantDomain: string, model: ModelSource) => string;
   /**
    * Overrides the deploy's inference source for this workflow only,
-   * given the hub's own base URL. Present on the catalog-test workflows
-   * `heartbeat` and `channel-digest`, which must stay free to run
-   * continuously: it names `NOOP_MODEL_SOURCE` instead of the tenant's
-   * real catalog model. Absent on every conversational workflow, which
-   * deploys against the tenant's real model as before.
+   * given the hub's own base URL. Present on the catalog-test workflow
+   * `heartbeat`, which must stay free to run continuously: it names
+   * `NOOP_MODEL_SOURCE` instead of the tenant's real catalog model.
+   * Absent on every conversational workflow and on the seeded
+   * channel-digest automation, which deploy against the tenant's real
+   * model.
    */
   modelSource?: (hubUrl: string) => ModelSource;
 };
 
+function catalogDisplayName(assetName: string): string {
+  return (
+    WORKFLOW_CATALOG.find((entry) => entry.assetName === assetName)
+      ?.displayName ?? assetName
+  );
+}
+
+function catalogAutomatable(assetName: string): boolean {
+  return (
+    WORKFLOW_CATALOG.find((entry) => entry.assetName === assetName)
+      ?.automatable ?? false
+  );
+}
+
 /**
  * The workflow set every real tenant starts with: the echo
- * walking-skeleton and the general-purpose assistant. This is what
+ * walking-skeleton, the general-purpose assistant, and the channel-digest
+ * automation the Routines picker can honestly offer. This is what
  * `provisionPersonalTenantIfNeeded` (`@workbench/onboarding`) deploys
  * on first login for every real user — growing it is adding an entry
  * here, nothing more, but an entry here reaches every signup, so it is
  * never the place for a workflow that exists only to exercise the
  * platform itself. See `CATALOG_TEST_WORKFLOWS` for those.
+ *
+ * channel-digest is the seed automation: schedulable, not a chat host,
+ * friendly display name. It uses the tenant's real model so a scheduled
+ * run can produce a real digest line.
  */
 export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
   {
     assetName: "echo",
+    displayName: catalogDisplayName("echo"),
+    automatable: catalogAutomatable("echo"),
     buildJson: (tenantDomain, model) =>
       serializeEchoWorkflow(
         buildEchoWorkflow({
@@ -152,6 +187,8 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
   },
   {
     assetName: "assistant",
+    displayName: catalogDisplayName("assistant"),
+    automatable: catalogAutomatable("assistant"),
     buildJson: (tenantDomain, model) =>
       serializeAssistantWorkflow(
         buildAssistantWorkflow({
@@ -163,36 +200,10 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
         }),
       ),
   },
-];
-
-/**
- * Zero-cost workflows that exist to exercise the platform continuously
- * — `heartbeat` proves the scheduling and mail-trigger paths,
- * `channel-digest` proves the channel-mail-posting path — never to
- * give a real user something to use. Both are pinned at
- * `NOOP_MODEL_SOURCE` so running them on a tight schedule costs
- * nothing. Deliberately absent from `DEFAULT_WORKFLOWS`: a real signup
- * goes through `provisionPersonalTenantIfNeeded`, which never seeds
- * this set. Only an explicit, dev/CI-specific caller (`workbench
- * seed` with `WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS` set) opts in.
- */
-export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
-  {
-    assetName: "heartbeat",
-    buildJson: (tenantDomain, model) =>
-      serializeHeartbeatWorkflow(
-        buildHeartbeatWorkflow({
-          triggerAddress: `heartbeat@${tenantDomain}`,
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
-          turnTimeoutMs: HEARTBEAT_TURN_TIMEOUT_MS,
-        }),
-      ),
-    modelSource: NOOP_MODEL_SOURCE,
-  },
   {
     assetName: "channel-digest",
+    displayName: catalogDisplayName("channel-digest"),
+    automatable: catalogAutomatable("channel-digest"),
     buildJson: (tenantDomain, model) =>
       serializeChannelDigestWorkflow(
         buildChannelDigestWorkflow({
@@ -201,6 +212,38 @@ export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
             { provider: model.provider, model: model.model },
           ],
           turnTimeoutMs: CHANNEL_DIGEST_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+];
+
+/**
+ * Zero-cost workflows that exist to exercise the platform continuously
+ * — `heartbeat` proves the scheduling and mail-trigger paths — never to
+ * give a real user something to use. Pinned at `NOOP_MODEL_SOURCE` so
+ * running them on a tight schedule costs nothing. Deliberately absent
+ * from `DEFAULT_WORKFLOWS`: a real signup goes through
+ * `provisionPersonalTenantIfNeeded`, which never seeds this set. Only an
+ * explicit, dev/CI-specific caller (`workbench seed` with
+ * `WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS` set) opts in.
+ *
+ * channel-digest used to live here as a platform exercise; it is now the
+ * seed automation in `DEFAULT_WORKFLOWS` so every personal bench has an
+ * honest Routines-picker option.
+ */
+export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
+  {
+    assetName: "heartbeat",
+    displayName: catalogDisplayName("heartbeat"),
+    automatable: catalogAutomatable("heartbeat"),
+    buildJson: (tenantDomain, model) =>
+      serializeHeartbeatWorkflow(
+        buildHeartbeatWorkflow({
+          triggerAddress: `heartbeat@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: HEARTBEAT_TURN_TIMEOUT_MS,
         }),
       ),
     modelSource: NOOP_MODEL_SOURCE,
@@ -278,18 +321,22 @@ async function plantGrant(
 async function ensureWorkflowAsset(
   api: ApiCall,
   cookies: string[],
-  args: { tenantId: string; assetName: string },
+  args: { tenantId: string; assetName: string; displayName: string },
   log: (line: string) => void,
 ): Promise<string> {
   const created = await api(
     "POST",
     `/api/tenants/${args.tenantId}/assets`,
-    { kind: "workflow", name: args.assetName },
+    {
+      kind: "workflow",
+      name: args.assetName,
+      displayName: args.displayName,
+    },
     cookies,
   );
   if (created.status === 201) {
     const asset = parseAs(AssetResponse, created.data, "asset response");
-    log(`created workflow asset ${args.assetName}`);
+    log(`created workflow asset ${args.assetName} (${args.displayName})`);
     return asset.id;
   }
   if (created.status !== 409) {
@@ -569,7 +616,11 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     const assetId = await ensureWorkflowAsset(
       api,
       cookies,
-      { tenantId: tenant.tenantId, assetName: workflow.assetName },
+      {
+        tenantId: tenant.tenantId,
+        assetName: workflow.assetName,
+        displayName: workflow.displayName,
+      },
       log,
     );
 

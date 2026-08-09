@@ -1,0 +1,19 @@
+{
+  "name": "@corbits/workflow-catalog",
+  "private": true,
+  "description": "Deploy-layer workflow metadata (automatable, display names) mirrored from each workflows/*/package.json corbits.workflow field — the routines picker and seed share this pure catalog so the browser never reads package.json at runtime",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

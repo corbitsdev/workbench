@@ -25,6 +25,10 @@ import {
   EmptyState,
   formatRelativeTime,
   Input,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
   PageShell,
   RunNowButton,
   Switch,
@@ -123,20 +127,45 @@ function TriggerPicker({
 
   return (
     <div className="flex-col-gap">
-      <label htmlFor="routine-cadence" className="form-label">
+      <span id="routine-cadence-label" className="form-label">
         Cadence
-      </label>
-      <select
-        id="routine-cadence"
-        value={kind}
-        onChange={(event) => setKind(event.target.value as TriggerKind)}
-      >
-        <option value="manual">Manual (run only when triggered)</option>
-        <option value="interval">Every N minutes/hours</option>
-        <option value="daily">Daily</option>
-        <option value="weekly">Weekly</option>
-        <option value="cron">Raw cron expression</option>
-      </select>
+      </span>
+      <Menu>
+        <MenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            id="routine-cadence"
+            aria-labelledby="routine-cadence-label"
+          >
+            {
+              {
+                manual: "Manual (run only when triggered)",
+                interval: "Every N minutes/hours",
+                daily: "Daily",
+                weekly: "Weekly",
+                cron: "Raw cron expression",
+              }[kind]
+            }
+          </Button>
+        </MenuTrigger>
+        <MenuContent>
+          {(
+            [
+              ["manual", "Manual (run only when triggered)"],
+              ["interval", "Every N minutes/hours"],
+              ["daily", "Daily"],
+              ["weekly", "Weekly"],
+              ["cron", "Raw cron expression"],
+            ] as const
+          ).map(([value, label]) => (
+            <MenuItem key={value} onSelect={() => setKind(value)}>
+              {label}
+            </MenuItem>
+          ))}
+        </MenuContent>
+      </Menu>
 
       {value !== null && value.kind === "interval" ? (
         <div className="form-row">
@@ -152,38 +181,52 @@ function TriggerPicker({
               })
             }
           />
-          <select
-            value={value.unit}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                unit: event.target.value as "minutes" | "hours",
-              })
-            }
-          >
-            <option value="minutes">minutes</option>
-            <option value="hours">hours</option>
-          </select>
+          <Menu>
+            <MenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm">
+                {value.unit}
+              </Button>
+            </MenuTrigger>
+            <MenuContent>
+              <MenuItem
+                onSelect={() => onChange({ ...value, unit: "minutes" })}
+              >
+                minutes
+              </MenuItem>
+              <MenuItem onSelect={() => onChange({ ...value, unit: "hours" })}>
+                hours
+              </MenuItem>
+            </MenuContent>
+          </Menu>
         </div>
       ) : null}
 
       {value !== null && (value.kind === "daily" || value.kind === "weekly") ? (
         <div className="form-row">
           {value.kind === "weekly" ? (
-            <select
-              value={value.dayOfWeek}
-              onChange={(event) =>
-                onChange({ ...value, dayOfWeek: Number(event.target.value) })
-              }
-            >
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
-                (label, index) => (
-                  <option key={label} value={index}>
-                    {label}
-                  </option>
-                ),
-              )}
-            </select>
+            <Menu>
+              <MenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm">
+                  {
+                    ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
+                      value.dayOfWeek
+                    ]
+                  }
+                </Button>
+              </MenuTrigger>
+              <MenuContent>
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+                  (label, index) => (
+                    <MenuItem
+                      key={label}
+                      onSelect={() => onChange({ ...value, dayOfWeek: index })}
+                    >
+                      {label}
+                    </MenuItem>
+                  ),
+                )}
+              </MenuContent>
+            </Menu>
           ) : null}
           <span>At</span>
           <Input
@@ -308,42 +351,68 @@ function CreateRoutineDialog({
           </div>
 
           <div className="flex-col-gap">
-            <label htmlFor="routine-definition" className="form-label">
+            <span id="routine-definition-label" className="form-label">
               Workflow
-            </label>
-            <select
-              id="routine-definition"
-              value={definitionId}
-              disabled={busy || definitions.length === 0}
-              onChange={(event) => setDefinitionId(event.target.value)}
-            >
-              {definitions.length === 0 ? (
-                <option value="">No workflows available</option>
-              ) : (
-                definitions.map((definition) => (
-                  <option key={definition.id} value={definition.id}>
-                    {definition.name}
-                  </option>
-                ))
-              )}
-            </select>
+            </span>
+            {definitions.length === 0 ? (
+              <p className="form-hint" role="status">
+                No automatable workflows on this bench yet.
+              </p>
+            ) : (
+              <Menu>
+                <MenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    id="routine-definition"
+                    aria-labelledby="routine-definition-label"
+                    disabled={busy}
+                  >
+                    {definitions.find((d) => d.id === definitionId)?.name ??
+                      "Choose a workflow"}
+                  </Button>
+                </MenuTrigger>
+                <MenuContent>
+                  {definitions.map((definition) => (
+                    <MenuItem
+                      key={definition.id}
+                      onSelect={() => setDefinitionId(definition.id)}
+                    >
+                      {definition.name}
+                    </MenuItem>
+                  ))}
+                </MenuContent>
+              </Menu>
+            )}
           </div>
 
           <div className="flex-col-gap">
-            <label htmlFor="routine-run-mode" className="form-label">
+            <span id="routine-run-mode-label" className="form-label">
               When
-            </label>
-            <select
-              id="routine-run-mode"
-              value={runMode}
-              disabled={busy}
-              onChange={(event) =>
-                setRunMode(event.target.value as "once" | "schedule")
-              }
-            >
-              <option value="once">Run once, right now</option>
-              <option value="schedule">On a schedule</option>
-            </select>
+            </span>
+            <Menu>
+              <MenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  id="routine-run-mode"
+                  aria-labelledby="routine-run-mode-label"
+                  disabled={busy}
+                >
+                  {runMode === "once" ? "Run once, right now" : "On a schedule"}
+                </Button>
+              </MenuTrigger>
+              <MenuContent>
+                <MenuItem onSelect={() => setRunMode("once")}>
+                  Run once, right now
+                </MenuItem>
+                <MenuItem onSelect={() => setRunMode("schedule")}>
+                  On a schedule
+                </MenuItem>
+              </MenuContent>
+            </Menu>
           </div>
 
           {runMode === "schedule" ? (

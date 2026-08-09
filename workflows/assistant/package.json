@@ -5,6 +5,13 @@
   "version": "0.0.1",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
+  "corbits": {
+    "workflow": {
+      "assetName": "assistant",
+      "displayName": "Assistant",
+      "automatable": false
+    }
+  },
   "exports": {
     ".": "./src/index.ts"
   },
