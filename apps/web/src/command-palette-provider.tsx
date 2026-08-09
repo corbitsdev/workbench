@@ -8,6 +8,7 @@ import {
 } from "@corbits/command-palette";
 import { useCallback, useMemo, useState } from "react";
 
+import { listAgentDefinitions } from "./agents-api";
 import { NAV_ROUTES } from "./routes";
 import { RunsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
@@ -21,13 +22,12 @@ const STATIC_COMMANDS = buildStaticCommands(
  * Wires the data-driven react-ui command palette into the app shell.
  *
  * Static commands come from the routes the shell already renders; entity
- * results come from the same `listChannels`/workflow-runs calls the Chat and
- * Workflows pages already use — this file adds no new fetch of its own. The
- * typed query is debounced and paginated by `useEntitySearch`; this provider
- * only groups the results it returns and maps a selection back to a
- * navigation. Ranking, matching, and the "no raw identifier on screen"
- * floor all live in `@corbits/command-palette` and `@corbits/react-ui` —
- * see docs/command-palette.md.
+ * results come from the same listChannels / workflow-runs / agent-definitions
+ * calls the product pages already use — this file adds no new fetch of its
+ * own beyond those. Sources are free-form labels the package carries through
+ * so this provider can group results and map a selection to a real route.
+ * Ranking, matching, and the "no raw identifier on screen" floor all live in
+ * `@corbits/command-palette` and `@corbits/react-ui`.
  */
 export function CommandPaletteProvider({
   navigate,
@@ -45,6 +45,9 @@ export function CommandPaletteProvider({
     return result.map((channel) => ({ id: channel.id, name: channel.title }));
   }, [selectedTenantId]);
 
+  // Workflow runs are what the Routines page lists today. The group is labeled
+  // "Runs" (truthful source) and navigates to `/routines/:id` — never the dead
+  // `/workflows` path the previous palette hard-coded.
   const listRunsForSearch = useCallback(async () => {
     if (runsQuery.kind !== "ready") return [];
     return runsQuery.data.data.map((run) => ({
@@ -53,11 +56,28 @@ export function CommandPaletteProvider({
     }));
   }, [runsQuery]);
 
+  const listAgentsForSearch = useCallback(async () => {
+    if (selectedTenantId === null) return [];
+    const definitions = await listAgentDefinitions(selectedTenantId);
+    return definitions.map((definition) => ({
+      id: definition.id,
+      name: definition.name,
+    }));
+  }, [selectedTenantId]);
+
+  const sources = useMemo(
+    () => [
+      { category: "channels", fetch: listChannelsForSearch },
+      { category: "runs", fetch: listRunsForSearch },
+      { category: "agents", fetch: listAgentsForSearch },
+    ],
+    [listChannelsForSearch, listRunsForSearch, listAgentsForSearch],
+  );
+
   const { results, loading, error, hasMore, loadMore } = useEntitySearch({
     query,
     enabled: open,
-    listChannels: listChannelsForSearch,
-    listRuns: listRunsForSearch,
+    sources,
   });
 
   useCommandShortcut(() => setOpen((current) => !current));
@@ -70,7 +90,8 @@ export function CommandPaletteProvider({
       matchesQuery(command.title, query),
     );
     const channels = results.filter((result) => result.category === "channels");
-    const routines = results.filter((result) => result.category === "routines");
+    const runs = results.filter((result) => result.category === "runs");
+    const agents = results.filter((result) => result.category === "agents");
 
     const groups: CommandPaletteGroup[] = [];
     if (pages.length > 0) {
@@ -93,13 +114,23 @@ export function CommandPaletteProvider({
         })),
       });
     }
-    if (routines.length > 0) {
+    if (runs.length > 0) {
       groups.push({
-        id: "routines",
-        heading: "Routines",
-        items: routines.map((run) => ({
-          id: `entity:routines:${run.id}`,
+        id: "runs",
+        heading: "Runs",
+        items: runs.map((run) => ({
+          id: `entity:runs:${run.id}`,
           title: run.title,
+        })),
+      });
+    }
+    if (agents.length > 0) {
+      groups.push({
+        id: "agents",
+        heading: "Agents",
+        items: agents.map((agent) => ({
+          id: `entity:agents:${agent.id}`,
+          title: agent.title,
         })),
       });
     }
@@ -112,8 +143,11 @@ export function CommandPaletteProvider({
         navigate(id.slice("route:".length));
       } else if (id.startsWith("entity:channels:")) {
         navigate(`/chat/${id.slice("entity:channels:".length)}`);
-      } else if (id.startsWith("entity:routines:")) {
-        navigate("/workflows");
+      } else if (id.startsWith("entity:runs:")) {
+        // Routines page owns the /routines prefix (including detail segments).
+        navigate(`/routines/${id.slice("entity:runs:".length)}`);
+      } else if (id.startsWith("entity:agents:")) {
+        navigate("/agents");
       }
       setOpen(false);
     },

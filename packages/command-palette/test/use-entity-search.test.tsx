@@ -11,9 +11,19 @@ const CHANNELS = [
   { id: "chan-1", name: "Launch Planning" },
   { id: "chan-2", name: "Support Triage" },
 ];
-const RUNS = [
-  { id: "run-1", name: "Nightly Digest" },
-  { id: "run-2", name: "Launch Retro" },
+const ROUTINES = [
+  { id: "rt-1", name: "Nightly Digest" },
+  { id: "rt-2", name: "Launch Retro" },
+];
+const AGENTS = [
+  { id: "agent-1", name: "Launch Agent" },
+  { id: "agent-2", name: "Research Helper" },
+];
+
+const SOURCES = [
+  { category: "channels", fetch: () => Promise.resolve(CHANNELS) },
+  { category: "routines", fetch: () => Promise.resolve(ROUTINES) },
+  { category: "agents", fetch: () => Promise.resolve(AGENTS) },
 ];
 
 function mount(initialQuery: string) {
@@ -31,8 +41,7 @@ function mount(initialQuery: string) {
       enabled: true,
       pageSize: 1,
       debounceMs: 5,
-      listChannels: () => Promise.resolve(CHANNELS),
-      listRuns: () => Promise.resolve(RUNS),
+      sources: SOURCES,
     });
     return null;
   }
@@ -72,7 +81,10 @@ describe("useEntitySearch", () => {
     expect(titles).toEqual(["Launch Planning"]);
     expect(
       titles.every(
-        (title) => !title.startsWith("chan-") && !title.startsWith("run-"),
+        (title) =>
+          !title.startsWith("chan-") &&
+          !title.startsWith("rt-") &&
+          !title.startsWith("agent-"),
       ),
     ).toBe(true);
     expect(harness.get().hasMore).toBe(true);
@@ -90,7 +102,7 @@ describe("useEntitySearch", () => {
     await harness.settle();
     const titles = harness.get().results.map((result) => result.title);
     expect(titles).toEqual(["Launch Planning", "Launch Retro"]);
-    expect(harness.get().hasMore).toBe(false);
+    expect(harness.get().hasMore).toBe(true);
     harness.unmount();
   });
 
@@ -113,7 +125,7 @@ describe("useEntitySearch", () => {
     harness.unmount();
   });
 
-  test("a fetch failure is reported as an error rather than an empty result", async () => {
+  test("a fetch failure in any source is reported as an error rather than a partial result", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -125,8 +137,13 @@ describe("useEntitySearch", () => {
         enabled: true,
         pageSize: 10,
         debounceMs: 5,
-        listChannels: () => Promise.reject(new Error("boom")),
-        listRuns: () => Promise.resolve(RUNS),
+        sources: [
+          { category: "channels", fetch: () => Promise.resolve(CHANNELS) },
+          {
+            category: "routines",
+            fetch: () => Promise.reject(new Error("boom")),
+          },
+        ],
       });
       return null;
     }
@@ -138,5 +155,23 @@ describe("useEntitySearch", () => {
     expect(latest?.error).toBe(true);
     expect(latest?.loading).toBe(false);
     root.unmount();
+  });
+
+  test("searches across all sources and preserves source order in results", async () => {
+    const harness = mount("");
+    await harness.settle();
+    await harness.setQuery("launch");
+    await harness.settle();
+    // Load all three "launch" matches across channels/routines/agents
+    act(() => harness.get().loadMore());
+    await harness.settle();
+    act(() => harness.get().loadMore());
+    await harness.settle();
+    const results = harness.get().results;
+    const titles = results.map((r) => r.title);
+    expect(titles).toEqual(["Launch Planning", "Launch Retro", "Launch Agent"]);
+    const categories = results.map((r) => r.category);
+    expect(categories).toEqual(["channels", "routines", "agents"]);
+    harness.unmount();
   });
 });
