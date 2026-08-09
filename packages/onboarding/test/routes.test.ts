@@ -117,16 +117,24 @@ describe("POST /provision", () => {
     }
   });
 
-  test("rapid retries from the same user are rate-limited (429)", async () => {
+  test("rapid named create retries from the same user are rate-limited (429)", async () => {
+    // Rate limit applies only to named creates (the membership probe must not
+    // burn a slot — otherwise the naming wizard always 429s within 10s of
+    // first login).
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => "pushed",
       log: () => undefined,
     });
     const app = mountAuthenticated(routes);
+    const named = {
+      method: "POST" as const,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Alice's Lab" }),
+    };
 
-    const first = await app.request("/provision", { method: "POST" });
-    const second = await app.request("/provision", { method: "POST" });
+    const first = await app.request("/provision", named);
+    const second = await app.request("/provision", named);
 
     // The first call runs (and fails transiently against the dead hub).
     expect(first.status).toBe(503);
@@ -137,6 +145,42 @@ describe("POST /provision", () => {
     };
     expect(body.error.code).toBe("rate_limited");
     expect(body.error.kind).toBe("transient");
+  });
+
+  test("a membership probe does not rate-limit the following named create", async () => {
+    // Two-step first-login: shell probe (no name) then naming submit (with name).
+    // The probe must not consume the create rate-limit slot.
+    const hub = new Hono();
+    hub.get("/api/me/principals", (c) =>
+      c.json({ data: [], nextCursor: null }),
+    );
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    try {
+      const routes = createOnboardingRoutes({
+        hubUrl: `http://localhost:${server.port}`,
+        pushWorkflow: async () => "pushed",
+        log: () => undefined,
+      });
+      const app = mountAuthenticated(routes);
+
+      const probe = await app.request("/provision", { method: "POST" });
+      expect(probe.status).toBe(200);
+      expect(((await probe.json()) as { kind: string }).kind).toBe(
+        "needs-onboarding",
+      );
+
+      // Named create reaches the hub (503/500 from incomplete mock is fine);
+      // the only failure mode this test forbids is 429 from the probe.
+      const create = await app.request("/provision", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Alice's Lab" }),
+      });
+      expect(create.status).not.toBe(429);
+      expect([500, 503]).toContain(create.status);
+    } finally {
+      server.stop(true);
+    }
   });
 
   test("an anonymous request is rejected before provisioning runs", async () => {
