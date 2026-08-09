@@ -43,7 +43,8 @@ export type ArtifactsMountHandle = {
 export async function mountArtifacts(
   options: MountArtifactsOptions = {},
 ): Promise<ArtifactsMountHandle | undefined> {
-  const databaseUrl = options.databaseUrl ?? process.env["ARTIFACTS_DATABASE_URL"];
+  const databaseUrl =
+    options.databaseUrl ?? process.env["ARTIFACTS_DATABASE_URL"];
   if (!databaseUrl) {
     log.info(
       "ARTIFACTS_DATABASE_URL not set — artifacts will not be persisted",
@@ -53,6 +54,8 @@ export async function mountArtifacts(
 
   const { db } = createArtifactDb(databaseUrl);
   await runArtifactMigrations(db);
-  log.info("Artifacts engine mounted — artifacts persist as versioned rows by kind");
+  log.info(
+    "Artifacts engine mounted — artifacts persist as versioned rows by kind",
+  );
   return { db };
 }
