@@ -7,7 +7,7 @@ describe("createPanelRegistry", () => {
     const registry = createPanelRegistry([
       {
         id: "chat",
-        match: (path) => path === "/chat" || path.startsWith("/chat/"),
+        match: (path) => path === "/c" || path.startsWith("/c/"),
         pageBand: () => ({ title: "Chat" }),
       },
       {
@@ -17,7 +17,7 @@ describe("createPanelRegistry", () => {
       },
     ]);
 
-    expect(registry.resolve("/chat/abc")?.id).toBe("chat");
+    expect(registry.resolve("/c/abc")?.id).toBe("chat");
     expect(registry.resolve("/")?.id).toBe("home");
     expect(registry.resolve("/unknown")).toBeNull();
   });
@@ -56,7 +56,7 @@ describe("createPanelRegistry", () => {
         id: "c1",
         kind: "channel" as const,
         label: "ops",
-        href: "/chat/c1",
+        href: "/c/c1",
       },
     ];
     expect(registry.resolve("/routines")?.id).toBe("routines");
