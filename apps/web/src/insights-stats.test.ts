@@ -38,9 +38,21 @@ describe("computeInsightsStats", () => {
   test("counts purposeful runs by status and drops channel hosts", () => {
     const stats = computeInsightsStats(
       [
-        run({ id: "1", status: "running", createdAt: "2026-01-03T00:00:00.000Z" }),
-        run({ id: "2", status: "error", createdAt: "2026-01-02T00:00:00.000Z" }),
-        run({ id: "3", status: "stopped", createdAt: "2026-01-01T00:00:00.000Z" }),
+        run({
+          id: "1",
+          status: "running",
+          createdAt: "2026-01-03T00:00:00.000Z",
+        }),
+        run({
+          id: "2",
+          status: "error",
+          createdAt: "2026-01-02T00:00:00.000Z",
+        }),
+        run({
+          id: "3",
+          status: "stopped",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
         run({
           id: "host",
           status: "running",
@@ -48,7 +60,10 @@ describe("computeInsightsStats", () => {
           createdAt: "2026-01-04T00:00:00.000Z",
         }),
       ],
-      [routine({ id: "r1", enabled: true }), routine({ id: "r2", enabled: false })],
+      [
+        routine({ id: "r1", enabled: true }),
+        routine({ id: "r2", enabled: false }),
+      ],
     );
 
     expect(stats.totalRuns).toBe(3);

@@ -25,9 +25,7 @@ export const INSIGHTS_RECENT_LIMIT = 12;
 export function purposeRunsForInsights(
   runs: readonly WorkflowRun[],
 ): readonly WorkflowRun[] {
-  return runs.filter(
-    (run) => !isChannelHostDefinitionName(run.definitionName),
-  );
+  return runs.filter((run) => !isChannelHostDefinitionName(run.definitionName));
 }
 
 export function computeInsightsStats(

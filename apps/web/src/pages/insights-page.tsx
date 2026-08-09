@@ -27,11 +27,7 @@ import { computeInsightsStats } from "../insights-stats";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
 import { SignedOutNotice } from "../query-view";
-import {
-  listRoutines,
-  useTenantQuery,
-  type Routine,
-} from "../routines-api";
+import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
 
 function tileValue(value: number | null, loading: boolean): ReactNode {
   if (loading) return <Skeleton className="stat-skeleton" />;
@@ -107,9 +103,7 @@ export function InsightsPage({
       : null;
 
   const empty =
-    stats !== null &&
-    stats.totalRuns === 0 &&
-    stats.routineCount === 0;
+    stats !== null && stats.totalRuns === 0 && stats.routineCount === 0;
 
   return (
     <PageShell width="full" className="page-fill">
@@ -133,9 +127,7 @@ export function InsightsPage({
           <StatTile
             label="Routines enabled"
             value={tileValue(
-              stats === null
-                ? null
-                : stats.enabledRoutines,
+              stats === null ? null : stats.enabledRoutines,
               loading,
             )}
           />
@@ -196,9 +188,7 @@ export function InsightsPage({
                 <TableRow key={row.id}>
                   <TableCell>{row.definitionName}</TableCell>
                   <TableCell>
-                    <Badge tone={statusTone(row.status)}>
-                      {row.status}
-                    </Badge>
+                    <Badge tone={statusTone(row.status)}>{row.status}</Badge>
                   </TableCell>
                   <TableCell>{row.tenantName}</TableCell>
                   <TableCell>{formatWhen(row.createdAt)}</TableCell>
@@ -225,9 +215,7 @@ export function InsightsRoute() {
 
   // No bench selected: still show run rollups (me-scoped); routines empty.
   const routinesForPage: APIQuery<readonly Routine[]> =
-    selectedTenantId === null
-      ? { kind: "ready", data: [] }
-      : routines;
+    selectedTenantId === null ? { kind: "ready", data: [] } : routines;
 
   return <InsightsPage runs={runs} routines={routinesForPage} />;
 }
