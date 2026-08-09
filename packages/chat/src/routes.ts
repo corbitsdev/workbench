@@ -183,15 +183,21 @@ const PutReadStateBody = type({
 
 /**
  * Every `/channels/:id/*` handler must resolve the channel inside the
- * request tenant before acting. A missing row is a 404 — never a silent
- * pass that lets a wildcard grant operate on another tenant's channel.
+ * request tenant before acting. A channel is in-tenant when it has a
+ * `channel_settings` row **or** a `channel_launch` row (agent host /
+ * invite instance ids are mailboxes with no settings). A miss is a 404
+ * — never a silent pass that lets a wildcard grant operate on another
+ * tenant's channel.
  */
 async function channelInTenant(
   store: ChatStore,
   tenantId: string,
   channelId: string,
-) {
-  return store.getChannelSettings(tenantId, channelId);
+): Promise<boolean> {
+  if ((await store.getChannelSettings(tenantId, channelId)) !== undefined) {
+    return true;
+  }
+  return store.hasLaunchedInstance(tenantId, channelId);
 }
 
 /**
@@ -480,7 +486,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const channelId = c.req.param("id");
       const cursor = c.req.query("cursor");
 
-      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
@@ -531,7 +537,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const channelId = c.req.param("id");
       const messageParts = parsed as PartType[];
 
-      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
@@ -582,7 +588,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     async (c) => {
       const tenant = c.get("tenant");
       const channelId = c.req.param("id");
-      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
       const items = await deps.platform.listInvitableDefinitions(tenant.id);
@@ -922,7 +928,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
       const channelId = c.req.param("id");
-      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
       const row = await deps.store.getReadState(
@@ -959,7 +965,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const principal = c.get("principal");
       const channelId = c.req.param("id");
 
-      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
@@ -985,7 +991,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
       const channelId = c.req.param("id");
-      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
       publish(channelId, {
@@ -1002,7 +1008,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     async (c) => {
       const tenant = c.get("tenant");
       const channelId = c.req.param("id");
-      if ((await channelInTenant(deps.store, tenant.id, channelId)) === undefined) {
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 

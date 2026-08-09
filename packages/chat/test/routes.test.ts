@@ -252,7 +252,9 @@ describe("read-state", () => {
     const app = createChatRoutes(deps);
     const appAlice = mountAs(app, "prn_alice");
     const appBob = mountAs(app, "prn_bob");
-    const { body: channel } = await createChannel(appAlice, { kind: "channel" });
+    const { body: channel } = await createChannel(appAlice, {
+      kind: "channel",
+    });
 
     await appAlice.request(`/channels/${channel.id}/read-state`, {
       method: "PUT",
@@ -673,9 +675,9 @@ describe("cross-tenant channel isolation", () => {
       body: JSON.stringify([{ kind: "text", text: "cross-tenant write" }]),
     });
     expect(postB.status).toBe(404);
-    expect((deps.platform as ReturnType<typeof fakePlatform>).sentMail).toHaveLength(
-      0,
-    );
+    expect(
+      (deps.platform as ReturnType<typeof fakePlatform>).sentMail,
+    ).toHaveLength(0);
 
     const getB = await appB.request(`/channels/${channel.id}/messages`);
     expect(getB.status).toBe(404);
@@ -723,5 +725,35 @@ describe("cross-tenant channel isolation", () => {
 
     const invitable = await appB.request(`/channels/${channel.id}/invitable`);
     expect(invitable.status).toBe(404);
+  });
+
+  test("GET messages allows a launched agent instance in the same tenant", async () => {
+    // Agent mailboxes are instance ids with a channel_launch row, not a
+    // channel_settings row. The tenancy gate must accept those so the
+    // e2e "invite agent → list its messages" path keeps working.
+    const baseStore = createInMemoryChatStore();
+    const launchedKeys = new Set<string>();
+    const gatedStore = {
+      ...baseStore,
+      hasLaunchedInstance: async (tenantId: string, instanceId: string) =>
+        launchedKeys.has(`${tenantId}:${instanceId}`) ||
+        baseStore.hasLaunchedInstance(tenantId, instanceId),
+    };
+    const deps = buildDeps({ store: gatedStore });
+    const routes = createChatRoutes(deps);
+    const app = mountTenant(routes, TENANT, "prn_alice");
+
+    launchedKeys.add(`${TENANT.id}:ins_agent_mailbox`);
+    const res = await app.request(`/channels/ins_agent_mailbox/messages`);
+    expect(res.status).toBe(200);
+
+    // Foreign tenant still 404s even with the same instance id shape.
+    const other = mountTenant(
+      routes,
+      { ...TENANT, id: "tnt_2", domain: "other.example" },
+      "prn_bob",
+    );
+    const denied = await other.request(`/channels/ins_agent_mailbox/messages`);
+    expect(denied.status).toBe(404);
   });
 });

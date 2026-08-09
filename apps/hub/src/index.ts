@@ -352,7 +352,9 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       channelBelongsToTenant: async (tenantId, channelId) =>
-        (await chatStore.getChannelSettings(tenantId, channelId)) !== undefined,
+        (await chatStore.getChannelSettings(tenantId, channelId)) !==
+          undefined ||
+        (await chatStore.hasLaunchedInstance(tenantId, channelId)),
     }),
   );
 
