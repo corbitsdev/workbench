@@ -212,6 +212,23 @@ describe("live data", () => {
     expect(markup).toContain("No agents yet");
   });
 
+  test("agents disables Create when no bench is selected", () => {
+    const markup = renderToStaticMarkup(
+      <AgentsPage
+        directory={ready({
+          tenantId: "",
+          definitions: [],
+          instances: [],
+          models: [],
+        })}
+        onAgentCreated={() => undefined}
+      />,
+    );
+    expect(markup).toMatch(/disabled[^>]*>[\s\S]*Create agent|Create agent[\s\S]*disabled/);
+    // Dialog must not mount without a real tenant — no create form markup.
+    expect(markup).not.toContain("Define a new agent");
+  });
+
   test("home counts what the hub reports", () => {
     const markup = renderToStaticMarkup(
       <HomePage
