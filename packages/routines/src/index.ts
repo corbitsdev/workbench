@@ -3,13 +3,16 @@ export const ROUTINES_PACKAGE_NAME = "@corbits/routines";
 export {
   RoutineTrigger,
   isValidCronExpression,
+  isValidTimeZone,
+  cronExpressionCanFire,
   cronExpressionForTrigger,
   computeNextFireAt,
+  timezoneForTrigger,
   cronMatchesMinute,
   minuteKey,
 } from "./trigger";
 export type { RoutineTriggerT } from "./trigger";
-export { nextCronFireAfter } from "./cron";
+export { nextCronFireAfter, MAX_LOOKAHEAD_MINUTES, zonedParts } from "./cron";
 
 export { routine, routineRun } from "./schema";
 
