@@ -72,11 +72,7 @@ function ChannelsBand({
               key={channel.id}
               name={channel.title || "Untitled channel"}
               selected={channel.id === activeId}
-              onSelect={() =>
-                onNavigate(
-                  `${channelPath(channel.id)}`,
-                )
-              }
+              onSelect={() => onNavigate(`${channelPath(channel.id)}`)}
             />
           ))}
         </div>
@@ -89,11 +85,7 @@ function ChannelsBand({
               key={channel.id}
               name={channel.title || "Untitled chat"}
               selected={channel.id === activeId}
-              onSelect={() =>
-                onNavigate(
-                  `${channelPath(channel.id)}`,
-                )
-              }
+              onSelect={() => onNavigate(`${channelPath(channel.id)}`)}
             />
           ))}
         </div>
@@ -226,11 +218,7 @@ function LiveActivityBand({
               key={channel.id}
               name={channel.title || "Untitled channel"}
               selected={channel.id === activeId}
-              onSelect={() =>
-                onNavigate(
-                  `${channelPath(channel.id)}`,
-                )
-              }
+              onSelect={() => onNavigate(`${channelPath(channel.id)}`)}
             />
           ))}
         </div>
@@ -243,11 +231,7 @@ function LiveActivityBand({
               key={channel.id}
               name={channel.title || "Untitled chat"}
               selected={channel.id === activeId}
-              onSelect={() =>
-                onNavigate(
-                  `${channelPath(channel.id)}`,
-                )
-              }
+              onSelect={() => onNavigate(`${channelPath(channel.id)}`)}
             />
           ))}
         </div>

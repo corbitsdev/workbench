@@ -29,7 +29,7 @@ export function toggleCanvasColumn(
 
 /** Open the canvas onto a specific channel (a channel-row click). */
 export function openChannelInCanvas(
-  state: CanvasColumnState,
+  _state: CanvasColumnState,
   channelId: string,
 ): CanvasColumnState {
   return { open: true, channelId };
@@ -37,7 +37,7 @@ export function openChannelInCanvas(
 
 /** Close the canvas and drop the loaded channel. */
 export function closeCanvasColumn(
-  state: CanvasColumnState,
+  _state: CanvasColumnState,
 ): CanvasColumnState {
   return { open: false, channelId: null };
 }

@@ -56,9 +56,7 @@ export function ChatPage({
       tenant={tenant}
       {...(principalId !== undefined ? { currentUser: { principalId } } : {})}
       channelId={channelId}
-      onChannelChange={(nextChannelId) =>
-        navigate(channelPath(nextChannelId))
-      }
+      onChannelChange={(nextChannelId) => navigate(channelPath(nextChannelId))}
     />
   );
 }
