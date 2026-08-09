@@ -28,9 +28,9 @@ const SHORTCUTS = [
     description: "Talk to an agent in a streaming conversation.",
   },
   {
-    to: "/workflows",
-    title: "Workflows",
-    description: "Watch the workflows executing right now.",
+    to: "/routines",
+    title: "Routines",
+    description: "Schedule a workflow, or launch one on demand.",
   },
   {
     to: "/library",

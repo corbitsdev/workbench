@@ -56,7 +56,7 @@ describe("route table", () => {
     expect(APP_ROUTES.map((route) => route.path)).toEqual([
       "/",
       "/chat",
-      "/workflows",
+      "/routines",
       "/library",
       "/agents",
       "/skills",

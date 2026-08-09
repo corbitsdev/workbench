@@ -1,30 +1,25 @@
 {
-  "name": "@corbits/schedules",
+  "name": "@corbits/routines",
   "private": true,
-  "description": "Scheduled workflow automations: cron/interval-triggered launches of deployed workflow definitions",
+  "description": "The Routine domain model: named automations over workflow runs, their triggers, and run correlation",
   "version": "0.0.1",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./migrations": "./src/migrations.ts"
+    "./cron": "./src/cron.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/folded-runs": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",
-    "@intx/hub-sessions": "workspace:*",
-    "@intx/log": "workspace:*",
-    "@intx/types": "workspace:*",
     "arktype": "catalog:",
-    "croner": "catalog:",
     "drizzle-orm": "catalog:",
-    "hono": "^4.11.9",
+    "hono": "catalog:",
     "postgres": "catalog:"
   },
   "devDependencies": {

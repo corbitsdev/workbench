@@ -30,16 +30,14 @@ import {
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
 import {
-  createDrizzleScheduleStore,
-  createHubScheduleLauncher,
-  createScheduleRoutes,
-  createScheduler,
-} from "@corbits/schedules";
-import {
   createCommandRegistry,
   createCommandRoutes,
   createWorkflowCommandPlugin,
 } from "@corbits/commands";
+import {
+  createDrizzleRoutineStore,
+  createRoutineRoutes,
+} from "@corbits/routines";
 import {
   createAgentRepoStore,
   createAssetService,
@@ -61,6 +59,9 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, type Next } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { readHubConfig, type HubConfig } from "./config";
+import { createHubRoutineLauncher } from "./routine-launcher";
+import { createHubRunSummaryResolver } from "./routine-run-summary";
+import { createRoutineScheduler } from "./routine-scheduler";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -73,11 +74,6 @@ const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
 // mid-turn instance regardless of this value, so it only has to be
 // long enough that an agent between turns is never mistaken for idle.
 const CHAT_IDLE_SLEEP_MS = 60_000;
-// How often the schedules package checks for due schedules. Cron
-// expressions are minute-granular at best, so a tick faster than a
-// minute buys nothing; this stays well under that so a schedule fires
-// close to its minute rather than up to a full period late.
-const SCHEDULE_TICK_INTERVAL_MS = 15_000;
 // The same anthropic/claude-sonnet-5 pairing the workbench seed plants
 // in the tenant catalog, so a channel host can always resolve an
 // inference source against it.
@@ -385,44 +381,47 @@ export async function createHub(config: HubConfig) {
         ),
     }),
   );
-  // Scheduled workflow automations: its own grant store/condition
-  // registry (same construction as chat's, above — each extension owns
-  // one rather than sharing a single instance across unrelated
-  // resource kinds), its own store over `@corbits/schedules`' one
-  // product table, and a launcher built from `@corbits/folded-runs`
-  // via the same hub session services chat's platform adapter uses.
-  // The scheduler itself is started/stopped alongside the rest of the
-  // hub's process lifetime.
-  const scheduleGrantStore = createGrantStore(db);
-  const scheduleConditionRegistry: ConditionRegistry = {
-    time_window: timeWindowEvaluator,
-  };
-  const scheduleStore = createDrizzleScheduleStore(db);
-  const scheduleLauncher = createHubScheduleLauncher({
+  // Routines: its own grant store (routines authorize against the
+  // `workflow-run:*` resource family, the same one native run routes
+  // use — see `@corbits/routines`' routes.ts), the launcher adapter
+  // that turns a routine's `launchRoutineRun` call into a real folded
+  // run via `@corbits/folded-runs` (routine-launcher.ts), and a run
+  // summary resolver so `GET /routines/:id/runs` reports each fire's
+  // real status instead of a bare run id.
+  const routineGrantStore = createGrantStore(db);
+  const routineStore = createDrizzleRoutineStore(db);
+  const routineLauncher = createHubRoutineLauncher({
     db,
     sessionService,
     assetService,
     sidecarRouter,
     eventCollectors,
   });
-  const scheduler = createScheduler({
-    store: scheduleStore,
-    launcher: scheduleLauncher,
-    log: getLogger(["schedules"]),
-    tickIntervalMs: SCHEDULE_TICK_INTERVAL_MS,
-  });
-  scheduler.start();
   app.route(
-    `${TENANT_PREFIX}/schedules`,
-    createScheduleRoutes({
-      store: scheduleStore,
-      launcher: scheduleLauncher,
+    `${TENANT_PREFIX}/routines`,
+    createRoutineRoutes({
+      store: routineStore,
+      launcher: routineLauncher,
       requireGrant: createRequireGrant({
-        grantStore: scheduleGrantStore,
-        conditionRegistry: scheduleConditionRegistry,
+        grantStore: routineGrantStore,
+        conditionRegistry: chatConditionRegistry,
       }),
+      runSummaryResolver: createHubRunSummaryResolver(db),
     }),
   );
+  // Recurring auto-fire: a minimal in-process poller (routine-scheduler.ts)
+  // over `@corbits/routines`' own `fireScheduledRoutine` — this hub has no
+  // general job-runner today, so this loop is scoped to exactly one job
+  // (fire due routines) rather than standing up a bespoke cron daemon as a
+  // hidden dependency. Every hub replica can safely run this poller: each
+  // fire is claimed with a conditional update on the routine's persisted
+  // `nextFireAt` before anything launches, so two replicas racing the same
+  // fire never both win, and a fire that falls due while every replica is
+  // down is caught up (not lost) the next time any of them polls.
+  const routineScheduler = createRoutineScheduler({
+    store: routineStore,
+    launcher: routineLauncher,
+  });
 
   // The first-login hook mounts outside the tenant prefix, since the
   // session it serves belongs to no tenant yet. The route is
@@ -454,8 +453,8 @@ export async function createHub(config: HubConfig) {
     app,
     db,
     close: async () => {
-      scheduler.stop();
       chatOrchestrator.dispose();
+      routineScheduler.stop();
       await close();
     },
   };

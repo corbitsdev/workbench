@@ -11,6 +11,7 @@ code and API paths keep the platform's own names.
 | **User**         | principal                                          | An identity that can act in a bench — human or agent                                                                                                                                                                                                |
 | **Definition**   | workflow definition                                | A deployable unit of agent behavior, authored as code                                                                                                                                                                                               |
 | **Run**          | workflow run                                       | A definition executing in a bench; interactive runs carry conversations                                                                                                                                                                             |
+| **Routine**      | —                                                  | The named parent entity over runs of one definition — a trigger (or none), a delivery channel, and its run history; see [`@corbits/routines`](../packages/routines/README.md)                                                                       |
 | **Approval**     | approval                                           | A human decision gating an external side effect                                                                                                                                                                                                     |
 | **Grant**        | grant                                              | Permission for a principal to act on a resource                                                                                                                                                                                                     |
 | **Hub**          | hub                                                | The API and coordination service a bench lives on                                                                                                                                                                                                   |
@@ -32,6 +33,15 @@ the bench it lives in. Every channel is a tenant, but a tenant a person
 would call a "bench" is one nothing else is parented under as a channel —
 in practice, the one they signed into, not one that showed up as a
 conversation in their sidebar.
+
+A **Routine** is never a second name for a **Run**, or for Interchange's
+own workflow concept — the three sit at different levels. A workflow
+definition is the deployable code; a run is one execution of it; a routine
+is the named, recurring (or manual) parent a person sets up over runs of a
+definition, holding the trigger, delivery channel, and run history a bare
+run does not carry. "Workflow" on its own always means Interchange's
+runtime concept — the definition or its runs — never a stand-in for
+routine.
 
 Naming conventions for this repository's packages:
 
