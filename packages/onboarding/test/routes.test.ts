@@ -52,6 +52,8 @@ describe("POST /provision", () => {
     // A slug-conflict where the caller still has no principal anywhere is a
     // dead end the client cannot retry out of — it must surface as a
     // permanent error so the UI offers "contact support", not "try again".
+    // Body must include a name so provision enters the create path; without
+    // a name the route returns needs-onboarding and never hits the hub.
     const hub = new Hono();
     hub.get("/api/me/principals", (c) =>
       c.json({ data: [], nextCursor: null }),
@@ -68,7 +70,11 @@ describe("POST /provision", () => {
       });
       const app = mountAuthenticated(routes);
 
-      const response = await app.request("/provision", { method: "POST" });
+      const response = await app.request("/provision", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Alice's Lab" }),
+      });
 
       expect(response.status).toBe(500);
       const body = (await response.json()) as {
@@ -76,6 +82,36 @@ describe("POST /provision", () => {
       };
       expect(body.error.code).toBe("slug_conflict_no_principal");
       expect(body.error.kind).toBe("permanent");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a nameless membership probe returns needs-onboarding without creating", async () => {
+    const creates: unknown[] = [];
+    const hub = new Hono();
+    hub.get("/api/me/principals", (c) =>
+      c.json({ data: [], nextCursor: null }),
+    );
+    hub.post("/api/tenants", async (c) => {
+      creates.push(await c.req.json());
+      return c.json({ id: "tnt_x" }, 201);
+    });
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    try {
+      const routes = createOnboardingRoutes({
+        hubUrl: `http://localhost:${server.port}`,
+        pushWorkflow: async () => "pushed",
+        log: () => undefined,
+      });
+      const app = mountAuthenticated(routes);
+
+      const response = await app.request("/provision", { method: "POST" });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { kind: string };
+      expect(body.kind).toBe("needs-onboarding");
+      expect(creates).toEqual([]);
     } finally {
       server.stop(true);
     }

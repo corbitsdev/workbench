@@ -60,9 +60,8 @@ export type ProvisionArgs = {
   hubUrl: string;
   userId: string;
   userEmail: string;
-  /** Display name for the personal bench. When omitted, falls back to
-   * `"<email-local>'s workbench"` so callers that only probe membership
-   * (no naming step yet) still get a sensible default if they create. */
+  /** Display name for the personal bench. Required to mint: when omitted
+   * (shell membership probe), returns `needs-onboarding` and creates nothing. */
   displayName?: string;
   operatorTenantId?: string;
   seedModel?: ModelSource;
