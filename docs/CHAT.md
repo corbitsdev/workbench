@@ -90,6 +90,36 @@ whenever a channel's messages are read — bridges are in-memory, so a host
 restart loses them, and a read is the natural moment to notice and recreate
 one.
 
+## Bench defaults and per-channel overrides
+
+A channel setting can be a bench-wide default every channel inherits, or an
+explicit per-channel override — the same "Use bench default" vs. "Override"
+shape Discord's server-default settings use. Today this applies to exactly
+one setting, `chat/contextWindow` (how many prior messages a mentioned
+agent sees as context):
+
+- **Bench-wide default** — `GET`/`PATCH /bench/settings` reads and writes
+  the tenant's own `chat_bench_settings` row. A bench default is never
+  itself an override of anything, so it is always a plain number, never
+  `null`.
+- **Per-channel override** — a channel's own `chat/contextWindow` in its
+  settings is nullable: `null` (or the key's absence) means "inherit the
+  bench default," any other integer is an explicit override for that
+  channel alone.
+- **Resolution** — `resolveContextWindow(channelSettings, benchDefault)` in
+  `packages/chat/src/channel-settings.ts` folds the two into the one
+  effective value a message send actually uses, returning both the value
+  and which source it came from (`"inherit"` or `"override"`). `GET`/`PATCH
+/channels/:id/settings` include this resolved `{ value, source }` shape
+  on every response, so a caller never has to re-derive it from the bench
+  default and the raw channel settings separately.
+
+In the UI this resolved shape drives a two-state control — "Use bench
+default (N)" vs. an explicit numeric field — on the channel's own settings
+panel (opened from its header, or from its sidebar row's ellipsis menu).
+The bench-wide settings page only ever edits the default itself; it carries
+no per-channel editor, since a channel's override belongs to the channel.
+
 ## The HTTP surface
 
 `@corbits/chat` mounts one router, under a tenant-scoped prefix, with the
@@ -104,12 +134,14 @@ following routes:
 | `GET /channels/:id/invitable`  | Lists the tenant's deployed definitions that can be invited into a channel         |
 | `POST /channels/:id/invite`    | Launches a definition into the channel and adds it as a participant                |
 | `POST /channels/:id/move`      | Re-parents a channel's own tenant to a different bench                             |
-| `GET /channels/:id/settings`   | Reads a channel's settings                                                         |
+| `GET /channels/:id/settings`   | Reads a channel's settings, including its resolved context window                  |
 | `PATCH /channels/:id/settings` | Updates settings, recording each change as a timeline event                        |
 | `GET /channels/:id/read-state` | Reads the calling principal's last-seen cursor for the channel                     |
 | `PUT /channels/:id/read-state` | Advances the calling principal's last-seen cursor                                  |
 | `POST /channels/:id/typing`    | Publishes an ephemeral typing indicator to the channel's live stream               |
 | `GET /channels/:id/stream`     | Server-Sent Events stream of live channel activity                                 |
+| `GET /bench/settings`          | Reads the tenant's bench-wide chat defaults                                        |
+| `PATCH /bench/settings`        | Updates the tenant's bench-wide chat defaults                                      |
 
 Every route runs behind the hub's tenant-scoped middleware, so the calling
 tenant and principal are always resolved before a handler runs; principals
@@ -158,7 +190,12 @@ way — the port, not this hub, is the integration contract.
 composer, mention picker, new-channel and invite-agent dialogs, and the live
 event stream — as a single `ChatWorkspace` component. A host supplies which
 bench to talk to and the current user, and mirrors the active channel into
-its own routing:
+its own routing. Each sidebar row also carries a hover-revealed ellipsis
+menu (Rename, Pin/Unpin, Channel settings), and the channel header opens
+the fuller `ChannelSettingsPanel` — name, pinned, the inherit/override
+context-window control, and participants with invite, reusing the same
+invite flow already in `invite-agent-dialog.tsx` rather than duplicating
+it.
 
 ```tsx
 import { ChatWorkspace } from "@corbits/chat-ui";
