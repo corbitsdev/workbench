@@ -154,10 +154,11 @@ describe("ContextualPanel", () => {
     container.remove();
   });
 
-  test("notifications band is global and shows an honest empty state", async () => {
-    // The notifications band now lives on every page (approvals were killed
-    // as a route), so it renders at "/" — not just on a /approvals page.
-    // Needs a resolved bench (memberships) so the band can query needs-you.
+  test("activity band hides entirely once it resolves empty", async () => {
+    // The activity band lives on every page (approvals were killed as a
+    // route), so it renders at "/". Once the needs-you query resolves empty
+    // the whole band — heading included — is omitted per product: no hollow
+    // empty-state chrome. Needs a resolved bench so the band can query.
     const membership = {
       data: [
         {
@@ -217,14 +218,14 @@ describe("ContextualPanel", () => {
         </TestQueryProvider>,
       );
     });
+    // Let the needs-you query resolve, then settle.
     for (let i = 0; i < 40; i++) {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (container.innerHTML.includes("No notifications yet")) break;
     }
-    expect(container.innerHTML).toContain("No notifications yet");
-    expect(container.innerHTML).toContain("Notifications");
+    expect(container.innerHTML).not.toContain("panel-band-activity");
+    expect(container.innerHTML).not.toContain(">Activity<");
     root.unmount();
     container.remove();
   });
