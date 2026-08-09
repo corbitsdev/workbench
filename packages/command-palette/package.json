@@ -1,7 +1,7 @@
 {
   "name": "@corbits/command-palette",
   "private": true,
-  "description": "The global command-palette registry: static navigation commands and entity search, kept UI-free so any surface can render them",
+  "description": "The global command-palette registry: static navigation commands and debounced, paginated entity search, so any surface can render them",
   "version": "0.0.1",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
@@ -12,9 +12,15 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
-  "dependencies": {},
+  "dependencies": {
+    "react": "^19.2.0"
+  },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.2",
     "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "react-dom": "^19.2.0",
     "typescript": "catalog:"
   }
 }

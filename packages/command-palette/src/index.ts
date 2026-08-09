@@ -1,9 +1,11 @@
-// `@corbits/command-palette`: what the global command palette can show,
-// kept UI-free. `buildStaticCommands` turns the app shell's own route table
-// into commands; `searchEntities` matches already-fetched channels and
-// workflow runs against a query. Rendering — the overlay, the keyboard
-// contract, the grouped/loading/empty/load-more states — is a react-ui
-// concern, never built here.
+// `@corbits/command-palette`: what the global command palette can show.
+// `buildStaticCommands` turns the app shell's own route table into commands.
+// `searchEntities` is the pure match/paginate core over already-fetched
+// channels and workflow runs; `useEntitySearch` is the one piece of React
+// this package owns — debouncing a typed query and fetching those lists,
+// because that timing and caching is inseparable from the pagination it
+// resets. Rendering — the overlay, the keyboard contract, the
+// grouped/loading/empty/load-more states — stays a react-ui concern.
 export { buildStaticCommands, matchesQuery } from "./static-commands";
 export type { StaticCommand, StaticRoute } from "./static-commands";
 
@@ -14,3 +16,9 @@ export type {
   SearchableEntity,
   SearchEntitiesInput,
 } from "./entity-search";
+
+export { useEntitySearch } from "./use-entity-search";
+export type {
+  UseEntitySearchOptions,
+  UseEntitySearchResult,
+} from "./use-entity-search";
