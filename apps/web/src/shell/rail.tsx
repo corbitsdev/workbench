@@ -19,11 +19,13 @@ export function Rail({
   onNavigate,
   user,
   onSignOut,
+  showLabels = true,
 }: {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
   readonly user: SessionUser;
   readonly onSignOut: () => void;
+  readonly showLabels?: boolean;
 }) {
   // `SidebarRail` flags the item whose id equals `activeId`; the nav routes
   // own prefix matching (e.g. /routines/:id lights Routines), so the active
@@ -35,7 +37,7 @@ export function Rail({
   return (
     <SidebarRail
       label="Workbench"
-      showLabels
+      showLabels={showLabels}
       activeId={activeRoute?.path ?? ""}
       items={NAV_ROUTES.map((route: AppRoute) => ({
         id: route.path,

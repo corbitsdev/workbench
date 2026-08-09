@@ -6,11 +6,17 @@
 // actions. Deep links (`/c/:channelId`) open the canvas onto that channel.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { PanelLeft } from "lucide-react";
 
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
 import { useNavigate } from "../navigation";
 import type { SessionUser } from "../session";
-import { canvasColumnAllowed, contextualPanelVisible } from "./breakpoints";
+import {
+  canvasColumnAllowed,
+  contextualPanelIsDrawer,
+  contextualPanelVisible,
+  railShowLabels,
+} from "./breakpoints";
 import { useShellFocusRescue } from "./focus-rescue";
 import { useScrollReset } from "./use-scroll-reset";
 import {
@@ -46,6 +52,9 @@ export function AppShell({
   );
   const canvasAllowed = canvasColumnAllowed(layoutMode);
   const canvasOpen = resolveCanvasVisibility(canvasState, canvasAllowed);
+  const showContextualColumn = contextualPanelVisible(layoutMode);
+  const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
+  const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
   const frameRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   useShellFocusRescue(layoutMode, frameRef);
@@ -69,14 +78,15 @@ export function AppShell({
 
   return (
     <CanvasAvailabilityProvider allowed={canvasAllowed}>
-      <div className="shell-frame" ref={frameRef}>
+      <div className="shell-frame" ref={frameRef} data-layout={layoutMode}>
         <Rail
           path={path}
           onNavigate={navigate}
           user={user}
           onSignOut={onSignOut}
+          showLabels={railShowLabels(layoutMode)}
         />
-        {contextualPanelVisible(layoutMode) && (
+        {showContextualColumn && (
           <ContextualPanel
             path={path}
             onNavigate={navigate}
@@ -86,6 +96,17 @@ export function AppShell({
           />
         )}
         <div className="shell-main" ref={mainRef}>
+          {contextualAsDrawer && (
+            <button
+              type="button"
+              className="shell-drawer-trigger"
+              aria-label="Open panel"
+              aria-expanded={narrowPanelOpen}
+              onClick={() => setNarrowPanelOpen(true)}
+            >
+              <PanelLeft />
+            </button>
+          )}
           <div className="shell-main-content">{children}</div>
         </div>
         {canvasAllowed && (
@@ -94,6 +115,28 @@ export function AppShell({
             channelId={canvasState.channelId}
             onChannelChange={handleChannelChange}
           />
+        )}
+        {contextualAsDrawer && (
+          <>
+            <div
+              className="shell-drawer-backdrop"
+              data-open={narrowPanelOpen}
+              onClick={() => setNarrowPanelOpen(false)}
+            />
+            <div
+              className="shell-drawer"
+              data-open={narrowPanelOpen}
+              inert={!narrowPanelOpen}
+            >
+              <ContextualPanel
+                path={path}
+                onNavigate={navigate}
+                canvasOpen={canvasState.open}
+                onToggleCanvas={() => setCanvasState(toggleCanvasColumn)}
+                canvasAllowed={canvasAllowed}
+              />
+            </div>
+          </>
         )}
       </div>
     </CanvasAvailabilityProvider>
