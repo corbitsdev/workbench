@@ -19,10 +19,41 @@ export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
 export const RunsSchema = paginatedSchema(WorkflowRunSummary);
 export const TenantApprovalsSchema = paginatedSchema(ApprovalResponse);
 
+// `@corbits/approvals`'s "needs you" read: the same pending approvals as
+// `TenantApprovalsSchema`, but with the agent and bench names already
+// resolved server-side, so nothing here ever needs a raw id to render.
+export const NeedsYouSchema = type({
+  items: type({
+    id: "string",
+    agentName: "string",
+    benchName: "string",
+    headline: "string",
+    arguments: "object",
+    status: '"pending"',
+    createdAt: "string.date.iso",
+  }).array(),
+});
+
 export type Profile = typeof UserProfile.infer;
 export type Principal = typeof PrincipalSummary.infer;
 export type WorkflowRun = typeof WorkflowRunSummary.infer;
 export type Approval = typeof ApprovalResponse.infer;
+export type NeedsYou = typeof NeedsYouSchema.infer;
+export type NeedsYouItem = NeedsYou["items"][number];
+
+/**
+ * How many things need this bench's attention right now — the count the
+ * second column's "Approvals" row badges. `null` while unknown (no bench
+ * selected yet, or the read hasn't resolved), so a caller never mistakes
+ * "still loading" for "zero pending."
+ */
+export function useNeedsYouCount(tenantId: string | null): number | null {
+  const query = useAPIQuery(
+    tenantId === null ? "" : `/api/tenants/${tenantId}/approvals/needs-you`,
+    NeedsYouSchema,
+  );
+  return query.kind === "ready" ? query.data.items.length : null;
+}
 
 /**
  * The envelope paginatedSchema validates, stated structurally: the generic

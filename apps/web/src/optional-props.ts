@@ -4,6 +4,8 @@
 // helpers build the omitting form once instead of forking every JSX call
 // site into two branches.
 
+import type { ReactNode } from "react";
+
 export function countProp(count: number | undefined): { count?: number } {
   return count === undefined ? {} : { count };
 }
@@ -12,4 +14,12 @@ export function subtitleProp(subtitle: string | undefined): {
   subtitle?: string;
 } {
   return subtitle === undefined ? {} : { subtitle };
+}
+
+export function metaProp(meta: ReactNode | undefined): { meta?: ReactNode } {
+  return meta === undefined ? {} : { meta };
+}
+
+export function badgeProp(badge: ReactNode | undefined): { badge?: ReactNode } {
+  return badge === undefined ? {} : { badge };
 }
