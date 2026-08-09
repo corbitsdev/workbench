@@ -465,10 +465,7 @@ export function AgentsRoute() {
   // /api/me/principals and take memberships[0], which ignores the switcher.
   const { memberships, selectedTenantId } = useBench();
   const [reloadKey, setReloadKey] = useState(0);
-  const directory = useAgentDirectory(
-    selectedTenantId ?? undefined,
-    reloadKey,
-  );
+  const directory = useAgentDirectory(selectedTenantId ?? undefined, reloadKey);
 
   const resolvedDirectory: APIQuery<AgentDirectoryData> =
     memberships.kind !== "ready"

@@ -224,7 +224,9 @@ describe("live data", () => {
         onAgentCreated={() => undefined}
       />,
     );
-    expect(markup).toMatch(/disabled[^>]*>[\s\S]*Create agent|Create agent[\s\S]*disabled/);
+    expect(markup).toMatch(
+      /disabled[^>]*>[\s\S]*Create agent|Create agent[\s\S]*disabled/,
+    );
     // Dialog must not mount without a real tenant — no create form markup.
     expect(markup).not.toContain("Define a new agent");
   });
