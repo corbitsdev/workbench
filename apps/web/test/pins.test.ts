@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { loadPins, savePins, togglePin } from "../src/pins";
+import { loadPins, savePins, togglePin } from "../src/shell/pins";
 
 function memoryStorage(seed: Record<string, string> = {}) {
   const map = new Map(Object.entries(seed));
@@ -17,9 +17,9 @@ function memoryStorage(seed: Record<string, string> = {}) {
 describe("pins", () => {
   test("loadPins returns empty for missing or corrupt storage", () => {
     expect(loadPins(memoryStorage())).toEqual([]);
-    expect(loadPins(memoryStorage({ "workbench.shell.pins": "not-json" }))).toEqual(
-      [],
-    );
+    expect(
+      loadPins(memoryStorage({ "workbench.shell.pins": "not-json" })),
+    ).toEqual([]);
   });
 
   test("savePins and loadPins round-trip valid pins", () => {

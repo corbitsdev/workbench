@@ -20,7 +20,6 @@
     "@corbits/command-palette": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
-    "@corbits/shell-ui": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#4b8952c820b44dbf83b423b97a9ad0f4513df1e0",
     "@intx/types": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",

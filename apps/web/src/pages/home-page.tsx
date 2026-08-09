@@ -67,48 +67,42 @@ export function HomePage({
     profile.kind === "ready" ? `Welcome back, ${profile.data.name}` : "Welcome";
   return (
     <PageShell width="full" className="page-fill">
-        {profile.kind === "unauthenticated" ? (
-          <SignedOutNotice />
-        ) : (
-          <>
-            <Section
-              title={greeting}
-              description="A live snapshot of your benches and what is running in them."
-            >
-              <StatGrid>
-                <StatTile label="Benches" value={tileValue(principals)} />
-                <StatTile
-                  label="Active workflows"
-                  value={workflowTileValue(runs)}
-                />
-              </StatGrid>
-            </Section>
-            <Section
-              title="Jump in"
-              description="The main surfaces of this workbench."
-            >
-              <div className="card-grid">
-                {SHORTCUTS.map((shortcut) => (
-                  <Link
-                    key={shortcut.to}
-                    to={shortcut.to}
-                    className="card-link"
-                  >
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>{shortcut.title}</CardTitle>
-                        <CardDescription>
-                          {shortcut.description}
-                        </CardDescription>
-                      </CardHeader>
-                    </Card>
-                  </Link>
-                ))}
-              </div>
-            </Section>
-          </>
-        )}
-      </PageShell>
+      {profile.kind === "unauthenticated" ? (
+        <SignedOutNotice />
+      ) : (
+        <>
+          <Section
+            title={greeting}
+            description="A live snapshot of your benches and what is running in them."
+          >
+            <StatGrid>
+              <StatTile label="Benches" value={tileValue(principals)} />
+              <StatTile
+                label="Active workflows"
+                value={workflowTileValue(runs)}
+              />
+            </StatGrid>
+          </Section>
+          <Section
+            title="Jump in"
+            description="The main surfaces of this workbench."
+          >
+            <div className="card-grid">
+              {SHORTCUTS.map((shortcut) => (
+                <Link key={shortcut.to} to={shortcut.to} className="card-link">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{shortcut.title}</CardTitle>
+                      <CardDescription>{shortcut.description}</CardDescription>
+                    </CardHeader>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </Section>
+        </>
+      )}
+    </PageShell>
   );
 }
 

@@ -1,19 +1,15 @@
 // Registers each page's contextual-panel contribution. Imported once from
 // the shell so matchers are on the registry before first render.
 
-import {
-  EmptyState,
-  SidebarItemRow,
-  Skeleton,
-} from "@corbits/react-ui";
-import {
-  registerPanelContribution,
-  type PanelRenderContext,
-} from "@corbits/shell-ui";
+import { EmptyState, SidebarItemRow, Skeleton } from "@corbits/react-ui";
 import { Bell, Hash, MessageSquare, Workflow } from "lucide-react";
 
 import { useBench } from "../bench-context";
 import { useBenchActivity } from "./bench-activity";
+import {
+  registerPanelContribution,
+  type PanelRenderContext,
+} from "./panel-contribution";
 import type { RoutineActivityItem } from "./routine-activity";
 
 const CHAT_PATH_PREFIX = "/chat";
@@ -277,11 +273,7 @@ function NotificationsBand() {
   );
 }
 
-function defaultBand(
-  title: string,
-  subtitle: string,
-  settingsPath?: string,
-) {
+function defaultBand(title: string, subtitle: string, settingsPath?: string) {
   return (_ctx: PanelRenderContext) => ({
     title,
     subtitle,
@@ -361,7 +353,8 @@ export function ensurePanelContributions(): void {
           label: "Create routine",
           onSelect: () => {
             window.dispatchEvent(new CustomEvent("workbench:routines:create"));
-            if (!pathMatches("/routines", ctx.path)) ctx.onNavigate("/routines");
+            if (!pathMatches("/routines", ctx.path))
+              ctx.onNavigate("/routines");
           },
         },
       ],
@@ -372,20 +365,14 @@ export function ensurePanelContributions(): void {
   registerPanelContribution({
     id: "approvals",
     match: (path) => pathMatches("/approvals", path),
-    pageBand: defaultBand(
-      "Approvals",
-      "Pending decisions waiting on you",
-    ),
+    pageBand: defaultBand("Approvals", "Pending decisions waiting on you"),
     pageSpecific: () => <NotificationsBand />,
   });
 
   registerPanelContribution({
     id: "library",
     match: (path) => pathMatches("/library", path),
-    pageBand: defaultBand(
-      "Library",
-      "Artifacts this bench has produced",
-    ),
+    pageBand: defaultBand("Library", "Artifacts this bench has produced"),
   });
 
   registerPanelContribution({
@@ -400,27 +387,18 @@ export function ensurePanelContributions(): void {
   registerPanelContribution({
     id: "insights",
     match: (path) => pathMatches("/insights", path),
-    pageBand: defaultBand(
-      "Insights",
-      "Usage and audit trail for this bench",
-    ),
+    pageBand: defaultBand("Insights", "Usage and audit trail for this bench"),
   });
 
   registerPanelContribution({
     id: "settings",
     match: (path) => pathMatches("/settings", path),
-    pageBand: defaultBand(
-      "Settings",
-      "Bench, members, and preferences",
-    ),
+    pageBand: defaultBand("Settings", "Bench, members, and preferences"),
   });
 
   registerPanelContribution({
     id: "benches",
     match: (path) => pathMatches("/benches", path),
-    pageBand: defaultBand(
-      "Benches",
-      "Every workbench you can access",
-    ),
+    pageBand: defaultBand("Benches", "Every workbench you can access"),
   });
 }

@@ -8,16 +8,13 @@
 // list item navigates to the full surface for that entity.
 
 import { Button, EmptyState, SidebarItemRow } from "@corbits/react-ui";
-import {
-  loadPins,
-  resolvePanelContribution,
-  type Pin,
-} from "@corbits/shell-ui";
 import { Pin as PinIcon, Settings } from "lucide-react";
 import { useState } from "react";
 
 import { CanvasToggle } from "./canvas-column";
+import { resolvePanelContribution } from "./panel-contribution";
 import { ensurePanelContributions } from "./panel-contributions";
+import { loadPins, type Pin } from "./pins";
 
 ensurePanelContributions();
 
@@ -65,7 +62,10 @@ export function ContextualPanel({
                 size="sm"
                 aria-label="Page settings"
                 title="Page settings"
-                onClick={() => onNavigate(pageBand.settingsPath!)}
+                onClick={() => {
+                  const settingsPath = pageBand.settingsPath;
+                  if (settingsPath !== undefined) onNavigate(settingsPath);
+                }}
               >
                 <Settings />
               </Button>

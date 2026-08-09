@@ -12,17 +12,8 @@
 // narrow-port shape `@corbits/chat`'s `routes.ts` uses for `ChatPlatform`.
 
 import { isAgentAddress } from "@corbits/chat/mentions";
-import {
-  Button,
-  EmptyState,
-  Skeleton,
-} from "@corbits/react-ui";
-import {
-  CircleAlert,
-  MessageSquare,
-  Settings,
-  UserPlus,
-} from "lucide-react";
+import { Button, EmptyState, Skeleton } from "@corbits/react-ui";
+import { CircleAlert, MessageSquare, Settings, UserPlus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 

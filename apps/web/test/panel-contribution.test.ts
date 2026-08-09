@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createPanelRegistry } from "../src/panel-contribution";
+import { createPanelRegistry } from "../src/shell/panel-contribution";
 
 describe("createPanelRegistry", () => {
   test("resolves the first matching contribution for a path", () => {
@@ -35,9 +35,11 @@ describe("createPanelRegistry", () => {
       pageBand: () => ({ title: "Agents v2" }),
     });
     expect(registry.list()).toHaveLength(1);
-    expect(registry.resolve("/agents")?.pageBand({ path: "/agents", onNavigate: () => undefined }).title).toBe(
-      "Agents v2",
-    );
+    expect(
+      registry
+        .resolve("/agents")
+        ?.pageBand({ path: "/agents", onNavigate: () => undefined }).title,
+    ).toBe("Agents v2");
   });
 
   test("pins are independent of route resolution", () => {
@@ -49,7 +51,14 @@ describe("createPanelRegistry", () => {
         pageBand: () => ({ title: "Routines" }),
       },
     ]);
-    const pins = [{ id: "c1", kind: "channel" as const, label: "ops", href: "/chat/c1" }];
+    const pins = [
+      {
+        id: "c1",
+        kind: "channel" as const,
+        label: "ops",
+        href: "/chat/c1",
+      },
+    ];
     expect(registry.resolve("/routines")?.id).toBe("routines");
     expect(registry.resolve("/agents")).toBeNull();
     expect(pins).toHaveLength(1);

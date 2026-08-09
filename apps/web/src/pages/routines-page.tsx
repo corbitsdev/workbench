@@ -491,44 +491,46 @@ export function RoutinesListPage({
           <p className="panel-muted">
             Runs currently executing that a routine started.
           </p>
-        <QueryView query={liveRuns} label="live routine runs">
-          {(runs) =>
-            runs.length === 0 ? (
-              <EmptyState
-                icon={<Clock />}
-                title="No routine runs in flight"
-                description="When a routine fires, its run appears here while it executes."
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Definition</TableHead>
-                    <TableHead>Bench</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Started</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {runs.map((run) => (
-                    <TableRow key={run.id}>
-                      <TableCell>{run.definitionName}</TableCell>
-                      <TableCell>{run.tenantName}</TableCell>
-                      <TableCell>
-                        <Badge tone={RUN_STATUS_TONE[run.status] ?? "neutral"}>
-                          {run.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {formatRelativeTime(run.createdAt, now)}
-                      </TableCell>
+          <QueryView query={liveRuns} label="live routine runs">
+            {(runs) =>
+              runs.length === 0 ? (
+                <EmptyState
+                  icon={<Clock />}
+                  title="No routine runs in flight"
+                  description="When a routine fires, its run appears here while it executes."
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Definition</TableHead>
+                      <TableHead>Bench</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Started</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )
-          }
-        </QueryView>
+                  </TableHeader>
+                  <TableBody>
+                    {runs.map((run) => (
+                      <TableRow key={run.id}>
+                        <TableCell>{run.definitionName}</TableCell>
+                        <TableCell>{run.tenantName}</TableCell>
+                        <TableCell>
+                          <Badge
+                            tone={RUN_STATUS_TONE[run.status] ?? "neutral"}
+                          >
+                            {run.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {formatRelativeTime(run.createdAt, now)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )
+            }
+          </QueryView>
         </section>
       </PageShell>
     </>
@@ -579,51 +581,53 @@ export function RoutineDetailPage({
         <section aria-label="Run history" className="panel-stack">
           <h3 className="panel-band-heading">Run history</h3>
           <p className="panel-muted">Every time this routine fired.</p>
-        <QueryView query={runs} label="this routine's run history">
-          {(items) =>
-            items.length === 0 ? (
-              <EmptyState
-                icon={<Clock />}
-                title="No runs yet"
-                description="This routine has not fired yet — manually or on a schedule."
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Triggered by</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>When</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((run) => {
-                    const status = run.run?.status;
-                    return (
-                      <TableRow key={run.runId}>
-                        <TableCell>
-                          <Badge tone="neutral">{run.triggeredBy}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          {typeof status === "string" ? (
-                            <Badge tone={RUN_STATUS_TONE[status] ?? "neutral"}>
-                              {status}
-                            </Badge>
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {formatRelativeTime(run.createdAt, now)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )
-          }
-        </QueryView>
+          <QueryView query={runs} label="this routine's run history">
+            {(items) =>
+              items.length === 0 ? (
+                <EmptyState
+                  icon={<Clock />}
+                  title="No runs yet"
+                  description="This routine has not fired yet — manually or on a schedule."
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Triggered by</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>When</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((run) => {
+                      const status = run.run?.status;
+                      return (
+                        <TableRow key={run.runId}>
+                          <TableCell>
+                            <Badge tone="neutral">{run.triggeredBy}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {typeof status === "string" ? (
+                              <Badge
+                                tone={RUN_STATUS_TONE[status] ?? "neutral"}
+                              >
+                                {status}
+                              </Badge>
+                            ) : (
+                              "—"
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {formatRelativeTime(run.createdAt, now)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )
+            }
+          </QueryView>
         </section>
       </PageShell>
     </>

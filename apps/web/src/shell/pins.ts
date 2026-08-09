@@ -47,10 +47,7 @@ export function savePins(
   storage.setItem(STORAGE_KEY, JSON.stringify(pins));
 }
 
-export function togglePin(
-  pins: readonly Pin[],
-  pin: Pin,
-): readonly Pin[] {
+export function togglePin(pins: readonly Pin[], pin: Pin): readonly Pin[] {
   const exists = pins.some((p) => p.id === pin.id && p.kind === pin.kind);
   if (exists) {
     return pins.filter((p) => !(p.id === pin.id && p.kind === pin.kind));

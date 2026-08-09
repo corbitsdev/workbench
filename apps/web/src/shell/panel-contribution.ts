@@ -1,6 +1,7 @@
 // Route-aware contributions for the shell contextual panel. Page modules
 // register bands here; the shell resolves the first match for the current
-// path and never hardcodes per-page content.
+// path and never hardcodes per-page content. Workbench-specific — lives next
+// to the panel, not in a separate package. UI primitives stay in react-ui.
 
 import type { ReactNode } from "react";
 
