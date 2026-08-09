@@ -51,7 +51,7 @@ in a real `@corbits/routines` listing later touches nothing else.
 | Path         | What it shows                                                                     |
 | ------------ | --------------------------------------------------------------------------------- |
 | `/`          | Home — a welcome summary of the signed-in account's benches and runs.             |
-| `/chat`      | The chat surface (`@corbits/chat-ui`): channels, direct chats, and threads.       |
+| `/c`         | Channel deep-link surface. On wide layouts the conversation opens in the right canvas; on compact layouts it fills the main pane. Legacy `/chat` links still resolve here. |
 | `/workflows` | Workflow runs executing across your benches.                                      |
 | `/library`   | The artifact gallery. See "Library" below.                                        |
 | `/agents`    | Agent definitions you can invite into a channel, and each channel's participants. |
