@@ -45,11 +45,7 @@ export type ProvisionErrorKind = "transient" | "permanent";
 export class ProvisionError extends Error {
   readonly code: string;
   readonly errorKind: ProvisionErrorKind;
-  constructor(
-    code: string,
-    message: string,
-    errorKind: ProvisionErrorKind,
-  ) {
+  constructor(code: string, message: string, errorKind: ProvisionErrorKind) {
     super(message);
     this.name = "ProvisionError";
     this.code = code;

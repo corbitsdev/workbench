@@ -473,7 +473,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
@@ -625,7 +626,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         assetListCalls += 1;
         // Tenant-local assets empty — not fully seeded.
@@ -717,7 +719,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         listedLocal = true;
         return { status: 200, data: [], cookies: [] };
