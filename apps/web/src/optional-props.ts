@@ -23,4 +23,3 @@ export function metaProp(meta: ReactNode | undefined): { meta?: ReactNode } {
 export function badgeProp(badge: ReactNode | undefined): { badge?: ReactNode } {
   return badge === undefined ? {} : { badge };
 }
-

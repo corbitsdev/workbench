@@ -56,9 +56,7 @@ export function Rail({
         id: route.path,
         label: route.label,
         icon: route.icon,
-        ...badgeProp(
-          route.path === APPROVALS_PATH ? needsYouBadge : undefined,
-        ),
+        ...badgeProp(route.path === APPROVALS_PATH ? needsYouBadge : undefined),
       }))}
       onSelect={onNavigate}
       footer={
