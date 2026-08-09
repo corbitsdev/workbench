@@ -13,8 +13,8 @@
  * the dock mount.
  *
  * This module lands the mount + factory only. Tenant-scoped HTTP
- * list/search/read routes are intentionally not registered here yet —
- * Library still reads the asset-shim surface until those routes ship.
+ * list/get routes live in `artifact-routes.ts` and are registered from
+ * the hub composition root when the mount succeeds.
  */
 import { getLogger } from "@intx/log";
 import {

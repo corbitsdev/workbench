@@ -59,6 +59,7 @@ import { createGitWorkflowPusher } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
 import { mountMemory } from "./memory-mount";
 import { mountArtifacts } from "./artifacts-mount";
+import { createArtifactDbStore, createArtifactRoutes } from "./artifact-routes";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, type Next } from "hono";
@@ -495,9 +496,8 @@ export async function createHub(config: HubConfig) {
   // Postgres cluster as this hub's control plane (its
   // `artifact`/`artifact_version` tables FK into `public.tenant` /
   // `public.principal`). Degrades to a no-op when
-  // `ARTIFACTS_DATABASE_URL` is unset. The handle is available for
-  // tenant-scoped list/search/read routes; Library still uses the
-  // asset-shim surface until those land.
+  // `ARTIFACTS_DATABASE_URL` is unset. When mounted, tenant-scoped
+  // list + get routes serve Library L2 under `/artifacts`.
   //
   // The mount runs migrations against the configured DB; if the URL is
   // present but points at an unreachable/invalid cluster the migration
@@ -513,9 +513,20 @@ export async function createHub(config: HubConfig) {
     );
     artifactsHandle = undefined;
   }
-  log.info(
-    `Artifacts handle ${artifactsHandle !== undefined ? "available" : "unavailable (degraded mode)"}`,
-  );
+  if (artifactsHandle !== undefined) {
+    app.route(
+      `${TENANT_PREFIX}/artifacts`,
+      createArtifactRoutes({
+        store: createArtifactDbStore(artifactsHandle.db),
+        requireGrant: createRequireGrant({
+          grantStore: chatGrantStore,
+          conditionRegistry: chatConditionRegistry,
+        }),
+      }),
+    );
+  } else {
+    log.info("Artifacts handle unavailable (degraded mode)");
+  }
 
   // Tells the signed-out screen which OAuth buttons to draw, without
   // exposing the credentials themselves — just which providers a full
