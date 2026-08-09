@@ -17,10 +17,18 @@ import {
   formatRelativeTime,
 } from "@corbits/react-ui";
 import type { BadgeTone, ViewMode } from "@corbits/react-ui";
-import { Bot, Copy, Workflow } from "lucide-react";
+import {
+  ArrowLeft,
+  Bot,
+  Copy,
+  MessageSquare,
+  Users,
+  Workflow,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { createChannel } from "@corbits/chat-ui";
 
 import type { AgentDefinition, AgentInstance } from "../agents-api";
 import type { AgentDirectoryData } from "../agents-api";
@@ -121,14 +129,28 @@ function InstanceBadges({
 function DefinitionCard({
   definition,
   instances,
+  onSelect,
 }: {
   readonly definition: AgentDefinition;
   readonly instances: readonly (AgentInstance & {
     readonly orphaned: boolean;
   })[];
+  readonly onSelect: (definitionId: string) => void;
 }) {
   return (
-    <Card className="flex flex-col gap-2 p-4">
+    <Card
+      className="flex cursor-pointer flex-col gap-2 p-4"
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${definition.name} details`}
+      onClick={() => onSelect(definition.id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(definition.id);
+        }
+      }}
+    >
       <div className="flex items-start justify-between gap-2">
         <span className="truncate font-semibold">{definition.name}</span>
         <Badge tone={DEFINITION_STATUS_TONE[definition.status]}>
@@ -146,12 +168,14 @@ function DefinitionCard({
 function DefinitionRows({
   definitions,
   instancesByDefinition,
+  onSelect,
 }: {
   readonly definitions: readonly AgentDefinition[];
   readonly instancesByDefinition: ReadonlyMap<
     string,
     readonly (AgentInstance & { readonly orphaned: boolean })[]
   >;
+  readonly onSelect: (definitionId: string) => void;
 }) {
   return (
     <Table aria-label="Agent definitions">
@@ -165,7 +189,20 @@ function DefinitionRows({
       </TableHeader>
       <TableBody>
         {definitions.map((definition) => (
-          <TableRow key={definition.id}>
+          <TableRow
+            key={definition.id}
+            className="cursor-pointer"
+            role="button"
+            tabIndex={0}
+            aria-label={`Open ${definition.name} details`}
+            onClick={() => onSelect(definition.id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(definition.id);
+              }
+            }}
+          >
             <TableCell className="font-medium">{definition.name}</TableCell>
             <TableCell className="max-w-xs truncate text-muted-foreground">
               {definition.description ?? "—"}
@@ -184,6 +221,144 @@ function DefinitionRows({
         ))}
       </TableBody>
     </Table>
+  );
+}
+
+/** The agent detail panel: shown when a definition row/card is selected.
+ * Renders the full description, lifecycle status, version, the definition's
+ * deployed instances, and the two launch actions — Start chat and Open in
+ * channel. The instances list reuses the same rows/cards as the main tab so
+ * the detail view never invents a third rendering of an instance. */
+function AgentDetailPanel({
+  definition,
+  instances,
+  tenantId,
+  now,
+  onBack,
+  onChatStarted,
+  navigate,
+}: {
+  readonly definition: AgentDefinition;
+  readonly instances: readonly (AgentInstance & {
+    readonly orphaned: boolean;
+  })[];
+  readonly tenantId: string;
+  readonly now: number;
+  readonly onBack: () => void;
+  readonly onChatStarted: (channelId: string) => void;
+  readonly navigate: ((to: string) => void) | undefined;
+}) {
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleStartChat() {
+    if (tenantId === "") return;
+    setStarting(true);
+    setError(null);
+    try {
+      const channel = await createChannel(tenantId, {
+        kind: "chat",
+        definitionId: definition.id,
+      });
+      const target = `/chat/${encodeURIComponent(channel.id)}`;
+      onChatStarted(channel.id);
+      navigate?.(target);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  function handleOpenInChannel() {
+    navigate?.("/chat");
+  }
+
+  return (
+    <div
+      className="flex flex-col gap-4 px-4 pb-5 sm:px-7"
+      data-testid="agent-detail-panel"
+    >
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+          aria-label="Back to agent list"
+        >
+          <ArrowLeft /> Back
+        </Button>
+      </div>
+
+      <Card className="flex flex-col gap-3 p-5">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="text-xl font-semibold">{definition.name}</h2>
+          <Badge tone={DEFINITION_STATUS_TONE[definition.status]}>
+            {definition.status}
+          </Badge>
+        </div>
+        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+          <span>
+            <span className="font-medium text-foreground">Version:</span>{" "}
+            {definition.currentVersion}
+          </span>
+          {definition.description !== null &&
+            definition.description !== undefined && (
+              <p className="leading-relaxed">{definition.description}</p>
+            )}
+          {(definition.description === null ||
+            definition.description === undefined) && (
+            <span className="italic">No description</span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={starting || tenantId === ""}
+            onClick={() => void handleStartChat()}
+            aria-label="Start chat with this agent"
+          >
+            <MessageSquare /> {starting ? "Starting…" : "Start chat"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={tenantId === ""}
+            onClick={handleOpenInChannel}
+            aria-label="Open in a channel"
+          >
+            <Users /> Open in channel
+          </Button>
+        </div>
+        {error !== null && (
+          <p className="text-sm text-danger-foreground" role="alert">
+            {error}
+          </p>
+        )}
+      </Card>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium text-muted-foreground">
+          Instances ({instances.length})
+        </h3>
+        {instances.length === 0 ? (
+          <span className="text-sm text-muted-foreground">
+            No instances deployed. Use Start chat to launch one.
+          </span>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-3">
+            {instances.map((instance) => (
+              <InstanceCard key={instance.id} instance={instance} now={now} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -272,6 +447,8 @@ export function AgentsPage({
   onAgentCreated,
   now = Date.now(),
   initialTab = "definitions",
+  initialSelectedDefinitionId,
+  navigate,
 }: {
   readonly directory: APIQuery<AgentDirectoryData>;
   readonly onAgentCreated: (definition: AgentDefinition) => void;
@@ -280,11 +457,20 @@ export function AgentsPage({
   /** Which tab is active on first render; injectable for tests that need
    * to inspect the instances panel without a click. */
   readonly initialTab?: AgentsTab;
+  /** Which definition is expanded in the detail panel on first render;
+   * injectable for tests that need to assert detail markup without a click. */
+  readonly initialSelectedDefinitionId?: string;
+  /** Client-side navigation callback; Start chat and Open in channel rely
+   * on this to route into /chat after creating/inviting. */
+  readonly navigate?: (to: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [tab, setTab] = useState<AgentsTab>(initialTab);
   const [createOpen, setCreateOpen] = useState(false);
+  const [selectedDefinitionId, setSelectedDefinitionId] = useState<
+    string | null
+  >(initialSelectedDefinitionId ?? null);
   const canCreate =
     directory.kind === "ready" && directory.data.tenantId !== "";
 
@@ -340,7 +526,7 @@ export function AgentsPage({
                 <RichEmptyState
                   icon={<Bot />}
                   title="No agents yet"
-                  description="Create your first agent — a name, a system prompt, and optionally a model — and it appears here immediately, ready to invite into a channel."
+                  description="Create your first agent — a name, a system prompt, and optionally a model — and it appears here immediately, ready to start a chat or invite into a channel."
                   actions={[
                     {
                       label: "Create agent",
@@ -348,6 +534,32 @@ export function AgentsPage({
                       variant: "primary",
                     },
                   ]}
+                />
+              );
+            }
+
+            // Detail panel: when a definition is selected, render the full
+            // detail view instead of the tabbed list. The panel owns its own
+            // back button that clears the selection.
+            const selectedDefinition =
+              selectedDefinitionId !== null
+                ? (definitions.find((d) => d.id === selectedDefinitionId) ??
+                  null)
+                : null;
+            if (selectedDefinition !== null) {
+              return (
+                <AgentDetailPanel
+                  definition={selectedDefinition}
+                  instances={
+                    instancesByDefinition.get(selectedDefinition.id) ?? []
+                  }
+                  tenantId={data.tenantId}
+                  now={now}
+                  onBack={() => setSelectedDefinitionId(null)}
+                  onChatStarted={() => {
+                    /* parent may invalidate chat queries; no-op by default */
+                  }}
+                  navigate={navigate}
                 />
               );
             }
@@ -386,6 +598,7 @@ export function AgentsPage({
                         <DefinitionRows
                           definitions={visibleDefinitions}
                           instancesByDefinition={instancesByDefinition}
+                          onSelect={setSelectedDefinitionId}
                         />
                       </div>
                     ) : (
@@ -397,6 +610,7 @@ export function AgentsPage({
                             instances={
                               instancesByDefinition.get(definition.id) ?? []
                             }
+                            onSelect={setSelectedDefinitionId}
                           />
                         ))}
                       </div>
@@ -493,6 +707,9 @@ export function AgentsRoute() {
         void queryClient.invalidateQueries({
           queryKey: tenantKeys.agentDirectory(selectedTenantId),
         });
+      }}
+      navigate={(to) => {
+        window.location.assign(to);
       }}
     />
   );
