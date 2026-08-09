@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "build": "vite build",
     "watch": "vite build --watch",
-    "test": "bun test"
+    "test": "bun test ./test"
   },
   "dependencies": {
     "@corbits/artifact-ui": "workspace:*",
@@ -20,7 +20,7 @@
     "@corbits/command-palette": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
-    "@corbits/react-ui": "github:corbitsdev/react-ui#4b8952c820b44dbf83b423b97a9ad0f4513df1e0",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#bd5057b0f740947ad117fc2c9cbe82bf992423d2",
     "@intx/types": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",

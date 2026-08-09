@@ -2,6 +2,7 @@ import "@corbits/react-ui/styles.css";
 import "./app.css";
 import "./tailwind.css";
 
+import { ThemeProvider } from "@corbits/react-ui";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -71,17 +72,26 @@ function Root() {
     void signOut();
   }, []);
 
+  // Per-user storage when signed in so theme preference follows the account;
+  // signed-out / loading share the anonymous host key.
+  const themeStorageKey =
+    session.kind === "signed-in"
+      ? `corbits-theme:${session.user.id}`
+      : "corbits-theme";
+
   return (
-    <App
-      path={path}
-      navigate={navigate}
-      session={session}
-      onSignedIn={handleSignedIn}
-      onSignOut={handleSignOut}
-      onRetry={probe}
-      provisioningError={provisioningError}
-      onRetryProvisioning={handleRetryProvisioning}
-    />
+    <ThemeProvider storageKey={themeStorageKey}>
+      <App
+        path={path}
+        navigate={navigate}
+        session={session}
+        onSignedIn={handleSignedIn}
+        onSignOut={handleSignOut}
+        onRetry={probe}
+        provisioningError={provisioningError}
+        onRetryProvisioning={handleRetryProvisioning}
+      />
+    </ThemeProvider>
   );
 }
 

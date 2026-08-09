@@ -1,17 +1,16 @@
 // Kind-colored gallery tiles: each artifact kind gets a stable background
-// color so a grid of mixed kinds reads as distinct groups at a glance, the
-// way the reference gallery's fill-per-kind cards do. The mapping is a hash
-// over the kind string rather than a hand-maintained table, so a workflow
-// that emits a brand-new kind still gets a consistent color instead of
-// falling through to an "unknown" gray.
+// drawn from the Corbits chart token series so light/dark (and preset
+// overlays) stay on-brand. The mapping is a hash over the kind string
+// rather than a hand-maintained table, so a workflow that emits a brand-new
+// kind still gets a consistent color instead of falling through to muted.
 
 const PALETTE = [
-  "bg-blue-500",
-  "bg-emerald-500",
-  "bg-amber-500",
-  "bg-violet-500",
-  "bg-rose-500",
-  "bg-cyan-500",
+  "bg-[var(--chart-1)]",
+  "bg-[var(--chart-2)]",
+  "bg-[var(--chart-3)]",
+  "bg-[var(--chart-4)]",
+  "bg-[var(--chart-5)]",
+  "bg-muted",
 ] as const;
 
 function hashKind(kind: string): number {

@@ -2,7 +2,7 @@
 // small parts rather than one component so the rail's footer slot can
 // compose them independently of whatever else the shell adds there later.
 
-import { Button } from "@corbits/react-ui";
+import { Button, ThemeToggle } from "@corbits/react-ui";
 import { BenchSwitcher } from "@corbits/bench-ui";
 import { LogOut, Settings } from "lucide-react";
 
@@ -51,8 +51,8 @@ export function BenchDock() {
 }
 
 /** Rail footer: who is signed in (initials avatar, tooltip-only email —
- * never an id) plus settings and sign-out, stacked to fit the narrow rail
- * rather than the wide row the contextual panel used to have room for. */
+ * never an id) plus theme, settings and sign-out, stacked to fit the narrow
+ * rail rather than the wide row the contextual panel used to have room for. */
 export function RailIdentity({
   path,
   user,
@@ -66,6 +66,7 @@ export function RailIdentity({
   const settingsActive = matchesRoute(SETTINGS_PATH, path);
   return (
     <div className="shell-rail-identity">
+      <ThemeToggle />
       <a
         aria-current={settingsActive ? "page" : undefined}
         href={SETTINGS_PATH}

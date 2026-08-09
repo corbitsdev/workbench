@@ -74,7 +74,7 @@
 
 .settings-inline-error {
   margin: 0;
-  color: var(--destructive, #b91c1c);
+  color: var(--destructive);
   font-size: 0.8125rem;
 }
 
