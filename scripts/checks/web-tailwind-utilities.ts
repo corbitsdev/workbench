@@ -67,7 +67,10 @@ function findBuiltCss(distAssets: string): string | null {
   }
 }
 
-async function ensureWebBuild(root: string, report: CheckReport): Promise<void> {
+async function ensureWebBuild(
+  root: string,
+  report: CheckReport,
+): Promise<void> {
   const webDir = path.join(root, "apps/web");
   const distAssets = path.join(webDir, "dist/assets");
   const cssPath = findBuiltCss(distAssets);
@@ -87,16 +90,21 @@ async function ensureWebBuild(root: string, report: CheckReport): Promise<void> 
         })();
 
   if (cssPath !== null && cssMtime >= sourceNewest) {
-    report.notes.push(`reusing existing build at ${path.relative(root, cssPath)}`);
+    report.notes.push(
+      `reusing existing build at ${path.relative(root, cssPath)}`,
+    );
     return;
   }
 
   report.notes.push("building @workbench/web for CSS inspection");
-  const proc = Bun.spawn(["bun", "run", "--filter", "@workbench/web", "build"], {
-    cwd: root,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const proc = Bun.spawn(
+    ["bun", "run", "--filter", "@workbench/web", "build"],
+    {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   const exit = await proc.exited;
   if (exit !== 0) {
     const stderr = await new Response(proc.stderr).text();
@@ -114,7 +122,9 @@ async function main(): Promise<void> {
 
   const cssPath = findBuiltCss(path.join(root, "apps/web/dist/assets"));
   if (cssPath === null) {
-    report.violations.push("no CSS asset under apps/web/dist/assets after build");
+    report.violations.push(
+      "no CSS asset under apps/web/dist/assets after build",
+    );
     reportAndExit("check:web-utilities", report);
   }
 
