@@ -7,14 +7,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ArtifactSummary } from "@corbits/artifact-ui";
 
-import type { APIQuery, NeedsYouItem } from "../src/api";
+import type { APIQuery } from "../src/api";
 import type {
   AgentDefinition,
   AgentDirectoryData,
   AgentInstance,
 } from "../src/agents-api";
 import { AgentsPage } from "../src/pages/agents-page";
-import { ApprovalsPage } from "../src/pages/approvals-page";
 import { HomePage } from "../src/pages/home-page";
 import { LibraryPage } from "../src/pages/library-page";
 import { SkillsPage } from "../src/pages/skills-page";
@@ -56,39 +55,6 @@ describe("empty states", () => {
       />,
     );
     expect(markup).toContain("Sign in required");
-  });
-
-  test("approvals says nothing is waiting", () => {
-    const markup = renderToStaticMarkup(
-      <ApprovalsPage
-        approvals={ready<NeedsYouItem[]>([])}
-        onApprove={() => undefined}
-        onReject={() => undefined}
-      />,
-    );
-    expect(markup).toContain("No approvals waiting");
-  });
-
-  test("approvals renders resolved agent/bench names, never a raw agent address or run id", () => {
-    const item: NeedsYouItem = {
-      id: "apr_1",
-      agentName: "Outreach Composer",
-      benchName: "Growth Team Bench",
-      headline: "send_email",
-      arguments: { to: "customer@example.com" },
-      status: "pending",
-      createdAt: "2026-01-01T00:00:00.000Z",
-    };
-    const markup = renderToStaticMarkup(
-      <ApprovalsPage
-        approvals={ready<NeedsYouItem[]>([item])}
-        onApprove={() => undefined}
-        onReject={() => undefined}
-      />,
-    );
-    expect(markup).toContain("Outreach Composer");
-    expect(markup).toContain("Growth Team Bench");
-    expect(markup).not.toContain("apr_1");
   });
 });
 

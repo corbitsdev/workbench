@@ -2,8 +2,10 @@
 // icon) and the route switch (render), so navigation and pages cannot drift
 // apart. Settings renders like any other route but is reached from the
 // sidebar's identity dock, not the top nav — `NAV_ROUTES` is what the nav
-// list shows. Chat and Approvals stay routable for deep links but leave the
-// rail (channel surface and notifications tickets own their next homes).
+// list shows. Chat stays routable for deep links but leaves the rail (the
+// channel surface owns its next home). Approvals no longer has a page at all
+// — the `/approvals` route is gone and its actionable cards live inline in
+// the contextual panel's notifications band.
 
 import {
   Bot,
@@ -12,14 +14,12 @@ import {
   Library,
   MessageSquare,
   Settings,
-  ShieldCheck,
   Wand2,
   Workflow,
 } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
 import { AgentsRoute } from "./pages/agents-page";
-import { ApprovalsRoute } from "./pages/approvals-page";
 import { ChatPage } from "./pages/chat-page";
 import { HomeRoute } from "./pages/home-page";
 import { InsightsRoute } from "./pages/insights-page";
@@ -36,7 +36,8 @@ export const ONBOARDING_PATH = "/onboarding";
 /** Settings lives in the sidebar's identity dock, not the top nav. */
 export const SETTINGS_PATH = "/settings";
 
-/** Paths the rail lists — product nav after Chat/Approvals leave the rail. */
+/** Paths the rail lists — product nav after Chat and Approvals leave the rail.
+ * Approvals now has no route at all (notifications band owns its surface). */
 const RAIL_NAV_PATHS = new Set([
   "/",
   "/routines",
@@ -114,12 +115,6 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: () => <InsightsRoute />,
   },
   {
-    path: "/approvals",
-    label: "Approvals",
-    icon: <ShieldCheck />,
-    render: () => <ApprovalsRoute />,
-  },
-  {
     path: SETTINGS_PATH,
     label: "Settings",
     icon: <Settings />,
@@ -128,7 +123,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
 ];
 
 /** What the rail lists: product pages only. Settings is the identity dock;
- * Chat and Approvals stay deep-linkable but off the rail. */
+ * Chat stays deep-linkable but off the rail. Approvals has no route. */
 export const NAV_ROUTES: readonly AppRoute[] = APP_ROUTES.filter((route) =>
   RAIL_NAV_PATHS.has(route.path),
 );

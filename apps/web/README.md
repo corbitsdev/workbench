@@ -56,8 +56,11 @@ in a real `@corbits/routines` listing later touches nothing else.
 | `/library`   | The artifact gallery. See "Library" below.                                        |
 | `/agents`    | Agent definitions you can invite into a channel, and each channel's participants. |
 | `/skills`    | A stub: skills have no registry in the hub yet, so this describes what's coming.  |
-| `/approvals` | Approvals waiting on the signed-in account.                                       |
 | `/settings`  | Account and bench membership settings.                                            |
+
+Approvals are not a page: pending permission requests land as actionable
+cards in the contextual panel's Notifications band (and, when a channel is
+open, inline in that channel). The `/approvals` route is gone.
 
 ## Library
 

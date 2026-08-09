@@ -2,7 +2,7 @@
 // the shell so matchers are on the registry before first render.
 
 import { EmptyState, SidebarItemRow, Skeleton } from "@corbits/react-ui";
-import { Bell, Hash, MessageSquare, Workflow } from "lucide-react";
+import { Hash, MessageSquare, Workflow, Bell } from "lucide-react";
 
 import { useBench } from "../bench-context";
 import { useBenchActivity } from "./bench-activity";
@@ -263,16 +263,6 @@ function LiveActivityBand({
   );
 }
 
-function NotificationsBand() {
-  return (
-    <EmptyState
-      icon={<Bell />}
-      title="No notifications yet"
-      description="Mentions and mail-backed alerts will land here once a notification source is wired up."
-    />
-  );
-}
-
 function defaultBand(title: string, subtitle: string, settingsPath?: string) {
   return (_ctx: PanelRenderContext) => ({
     title,
@@ -360,13 +350,6 @@ export function ensurePanelContributions(): void {
       ],
     }),
     pageSpecific: (ctx) => <RoutinesFeedBand onNavigate={ctx.onNavigate} />,
-  });
-
-  registerPanelContribution({
-    id: "approvals",
-    match: (path) => pathMatches("/approvals", path),
-    pageBand: defaultBand("Approvals", "Pending decisions waiting on you"),
-    pageSpecific: () => <NotificationsBand />,
   });
 
   registerPanelContribution({
