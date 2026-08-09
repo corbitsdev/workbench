@@ -1,7 +1,6 @@
-// The row a Library page renders. The hub exposes no artifact store yet
-// (see `apps/web/src/pages/library-page.tsx`), so this schema is the seam a
-// future `/api/.../artifacts` response gets validated against — not a mirror
-// of any endpoint that exists today.
+// The row a Library page renders. Today the web app maps tenant assets
+// (`GET /api/tenants/:id/assets`) into this shape; a dedicated
+// `/api/.../artifacts` endpoint would validate against the same schema.
 
 import { type } from "arktype";
 

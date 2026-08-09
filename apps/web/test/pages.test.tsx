@@ -39,8 +39,7 @@ describe("empty states", () => {
   test("library teaches what will appear once the seam is real", () => {
     const markup = renderToStaticMarkup(<LibraryPage artifacts={[]} />);
     expect(markup).toContain("No artifacts yet");
-    expect(markup).toContain("hub doesn");
-    expect(markup).toContain("expose an artifact store");
+    expect(markup).toContain("This workbench has no assets yet");
   });
 
   test("skills describes itself instead of faking content", () => {
