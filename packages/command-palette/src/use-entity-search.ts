@@ -6,14 +6,20 @@ import type { EntitySearchResult, SearchableEntity } from "./entity-search";
 const DEFAULT_PAGE_SIZE = 20;
 const DEFAULT_DEBOUNCE_MS = 200;
 
+/** A named fetcher the hook calls once per search. The `category` label
+ * flows through to every result so the consumer can group and route them. */
+export type EntitySourceFetcher = {
+  readonly category: string;
+  readonly fetch: () => Promise<readonly SearchableEntity[]>;
+};
+
 export type UseEntitySearchOptions = {
   readonly query: string;
   /** Skip fetching entirely while the palette is closed. */
   readonly enabled: boolean;
   readonly pageSize?: number;
   readonly debounceMs?: number;
-  readonly listChannels: () => Promise<readonly SearchableEntity[]>;
-  readonly listRuns: () => Promise<readonly SearchableEntity[]>;
+  readonly sources: readonly EntitySourceFetcher[];
 };
 
 export type UseEntitySearchResult = {
@@ -25,13 +31,13 @@ export type UseEntitySearchResult = {
 };
 
 /**
- * Debounces a typed query, fetches channels and workflow runs once per
- * search (cached across pages of the same search), and matches/paginates
- * them via `searchEntities`. Debouncing lives here rather than in the app
- * shell because it is inseparable from the pagination it resets: a
- * keystroke that arrives mid-debounce must restart the timer *and* the
- * offset together, or a stale page from the previous query would leak into
- * the new one.
+ * Debounces a typed query, fetches every source once per search (cached
+ * across pages of the same search), and matches/paginates them via
+ * `searchEntities`. Debouncing lives here rather than in the app shell
+ * because it is inseparable from the pagination it resets: a keystroke
+ * that arrives mid-debounce must restart the timer *and* the offset
+ * together, or a stale page from the previous query would leak into the
+ * new one.
  *
  * `loading` is derived, not just set in an effect: the moment a keystroke
  * makes `query` outrun the debounce-committed `debouncedQuery`, the hook is
@@ -39,32 +45,30 @@ export type UseEntitySearchResult = {
  * no waiting for a passive effect to flush. It stays true through the fetch
  * (`fetching`) and only drops once that query's results are ready.
  *
- * Artifacts and agent definitions are not searched here — see
- * docs/command-palette.md for why those two entity types have nothing to
- * query yet.
+ * All sources are fetched in parallel via `Promise.all`; a failure in any
+ * one surfaces as `error: true` rather than a partial result set.
  */
 export function useEntitySearch({
   query,
   enabled,
   pageSize = DEFAULT_PAGE_SIZE,
   debounceMs = DEFAULT_DEBOUNCE_MS,
-  listChannels,
-  listRuns,
+  sources,
 }: UseEntitySearchOptions): UseEntitySearchResult {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [offset, setOffset] = useState(0);
-  const [entities, setEntities] = useState<{
-    readonly channels: readonly SearchableEntity[];
-    readonly runs: readonly SearchableEntity[];
-  } | null>(null);
+  const [fetched, setFetched] = useState<ReadonlyMap<
+    string,
+    readonly SearchableEntity[]
+  > | null>(null);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState(false);
   const fetchToken = useRef(0);
-  // Hold the latest fetchers without making the fetch effect depend on their
-  // identity — callers (and tests) are free to hand in fresh arrow functions
-  // each render without restarting the search or looping.
-  const fetchers = useRef({ listChannels, listRuns });
-  fetchers.current = { listChannels, listRuns };
+  // Hold the latest fetchers without making the fetch effect depend on
+  // their identity — callers (and tests) are free to hand in fresh arrow
+  // functions each render without restarting the search or looping.
+  const fetchersRef = useRef(sources);
+  fetchersRef.current = sources;
 
   // True the instant a keystroke outruns the debounce and stays true until
   // that query's fetch resolves — derived here so the spinner shows on the
@@ -84,7 +88,7 @@ export function useEntitySearch({
 
   useEffect(() => {
     if (debouncedQuery.trim().length === 0) {
-      setEntities(null);
+      setFetched(null);
       setFetching(false);
       setError(false);
       return;
@@ -92,13 +96,17 @@ export function useEntitySearch({
     const token = ++fetchToken.current;
     setFetching(true);
     setError(false);
-    void Promise.all([
-      fetchers.current.listChannels(),
-      fetchers.current.listRuns(),
-    ])
-      .then(([channels, runs]) => {
+    const current = fetchersRef.current;
+    void Promise.all(current.map((source) => source.fetch()))
+      .then((results) => {
         if (token !== fetchToken.current) return;
-        setEntities({ channels, runs });
+        const map = new Map<string, readonly SearchableEntity[]>();
+        for (let i = 0; i < current.length; i++) {
+          const source = current[i];
+          if (!source) continue;
+          map.set(source.category, results[i] ?? []);
+        }
+        setFetched(map);
         setFetching(false);
       })
       .catch(() => {
@@ -110,7 +118,7 @@ export function useEntitySearch({
 
   const loading = pending || fetching;
 
-  if (entities === null || debouncedQuery.trim().length === 0) {
+  if (fetched === null || debouncedQuery.trim().length === 0) {
     return {
       results: [],
       loading,
@@ -120,10 +128,14 @@ export function useEntitySearch({
     };
   }
 
+  const resolvedSources = fetchersRef.current.map((source) => ({
+    category: source.category,
+    entities: fetched.get(source.category) ?? [],
+  }));
+
   const page = searchEntities({
     query: debouncedQuery,
-    channels: entities.channels,
-    runs: entities.runs,
+    sources: resolvedSources,
     pageSize: offset + pageSize,
     offset: 0,
   });
