@@ -58,8 +58,11 @@ test("allowlisted product schema files pass at their max count", () => {
       ].join("\n"),
     },
     {
-      relPath: "packages/schedules/src/schema.ts",
-      contents: `export const schedules = pgTable("schedules", {});`,
+      relPath: "packages/routines/src/schema.ts",
+      contents: [
+        `export const routine = pgTable("routine", {});`,
+        `export const routineRun = pgTable("routine_run", {});`,
+      ].join("\n"),
     },
     {
       relPath: "packages/webhook-triggers/src/schema.ts",
@@ -79,14 +82,15 @@ test("allowlisted product schema files pass at their max count", () => {
 test("allowlisted files fail when they grow past their max", () => {
   const report = auditProductTenancy([
     {
-      relPath: "packages/schedules/src/schema.ts",
+      relPath: "packages/routines/src/schema.ts",
       contents: [
-        `export const schedules = pgTable("schedules", {});`,
-        `export const extra = pgTable("schedules_extra", {});`,
+        `export const routine = pgTable("routine", {});`,
+        `export const routineRun = pgTable("routine_run", {});`,
+        `export const extra = pgTable("routine_extra", {});`,
       ].join("\n"),
     },
   ]);
   expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain("packages/schedules/src/schema.ts");
-  expect(report.violations[0]).toContain("2 pgTable");
+  expect(report.violations[0]).toContain("packages/routines/src/schema.ts");
+  expect(report.violations[0]).toContain("3 pgTable");
 });
