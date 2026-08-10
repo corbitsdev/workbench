@@ -36,9 +36,11 @@ describe("createPanelRegistry", () => {
     });
     expect(registry.list()).toHaveLength(1);
     expect(
-      registry
-        .resolve("/agents")
-        ?.pageBand({ path: "/agents", onNavigate: () => undefined }).title,
+      registry.resolve("/agents")?.pageBand({
+        path: "/agents",
+        onNavigate: () => undefined,
+        onOpenInCanvas: () => undefined,
+      }).title,
     ).toBe("Agents v2");
   });
 

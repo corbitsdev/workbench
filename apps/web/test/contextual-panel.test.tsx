@@ -24,6 +24,7 @@ function renderPanel(path: string): string {
         <ContextualPanel
           path={path}
           onNavigate={noop}
+          onOpenInCanvas={noop}
           canvasOpen={false}
           onToggleCanvas={noop}
           canvasAllowed={false}
@@ -66,6 +67,7 @@ describe("ContextualPanel", () => {
             <ContextualPanel
               path="/"
               onNavigate={noop}
+              onOpenInCanvas={noop}
               canvasOpen={false}
               onToggleCanvas={noop}
               canvasAllowed={false}
@@ -128,6 +130,7 @@ describe("ContextualPanel", () => {
             <ContextualPanel
               path="/"
               onNavigate={noop}
+              onOpenInCanvas={noop}
               canvasOpen={false}
               onToggleCanvas={noop}
               canvasAllowed={false}
@@ -204,6 +207,7 @@ describe("ContextualPanel", () => {
             <ContextualPanel
               path="/"
               onNavigate={noop}
+              onOpenInCanvas={noop}
               canvasOpen={false}
               onToggleCanvas={noop}
               canvasAllowed={false}
