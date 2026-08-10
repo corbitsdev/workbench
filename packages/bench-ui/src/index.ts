@@ -5,6 +5,7 @@ export {
   createBenchErrorMessage,
 } from "./bench-switcher";
 export { CreateBenchDialog } from "./create-bench-dialog";
+export type { BenchCreateType } from "./create-bench-dialog";
 export { InviteMemberDialog, canInviteMember } from "./invite-member-dialog";
 export { MemberList } from "./member-list";
 export { MembersPanel, inviteMemberErrorMessage } from "./members-panel";

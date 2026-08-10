@@ -38,6 +38,15 @@ export {
   CreateCredentialDialog,
 } from "./credentials-section";
 
+export {
+  grantPreviewSentence,
+  expiryIsoFromPreset,
+  expiryLabelFromPreset,
+} from "./grant-preview";
+export type { GrantPreviewInput } from "./grant-preview";
+export { KindCards } from "./kind-cards";
+export type { KindCardOption } from "./kind-cards";
+
 export { principalLabel } from "./identity";
 export type { PrincipalLabel } from "./identity";
 

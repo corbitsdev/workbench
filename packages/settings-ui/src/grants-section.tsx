@@ -33,6 +33,12 @@ import { CircleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { principalLabel } from "./identity";
+import {
+  expiryIsoFromPreset,
+  expiryLabelFromPreset,
+  grantPreviewSentence,
+} from "./grant-preview";
+import { KindCards } from "./kind-cards";
 import { errorMessage, type LoadState } from "./load-state";
 import { GRANT_ACTIONS, GRANT_RESOURCES } from "./resource-vocabulary";
 import { SETTINGS_STRINGS } from "./strings";
@@ -349,9 +355,12 @@ export function CreateGrantDialog({
   const [targetId, setTargetId] = useState("");
   const [resource, setResource] = useState<string>(GRANT_RESOURCES[0]);
   const [action, setAction] = useState<string>(GRANT_ACTIONS[0]);
-  const [effect, setEffect] = useState<GrantEffect>("allow");
+  // Default to Require approval (ask) — the safer first choice for new grants.
+  const [effect, setEffect] = useState<GrantEffect>("ask");
   const [origin, setOrigin] = useState<GrantOrigin>("role");
-  const [expiresAt, setExpiresAt] = useState("");
+  const [expiryPreset, setExpiryPreset] = useState<
+    "never" | "24h" | "7d" | "30d"
+  >("never");
 
   const targetOptions = useMemo(
     () =>
@@ -364,6 +373,16 @@ export function CreateGrantDialog({
     [targetType, roles, principals],
   );
 
+  const targetLabel =
+    targetOptions.find((option) => option.id === targetId)?.label ?? null;
+  const preview = grantPreviewSentence({
+    targetLabel,
+    resource,
+    action,
+    effect,
+    expiresLabel: expiryLabelFromPreset(expiryPreset),
+  });
+
   const canSubmit = targetId.length > 0;
 
   function reset() {
@@ -371,9 +390,9 @@ export function CreateGrantDialog({
     setTargetId("");
     setResource(GRANT_RESOURCES[0]);
     setAction(GRANT_ACTIONS[0]);
-    setEffect("allow");
+    setEffect("ask");
     setOrigin("role");
-    setExpiresAt("");
+    setExpiryPreset("never");
   }
 
   return (
@@ -405,10 +424,7 @@ export function CreateGrantDialog({
                   action,
                   effect,
                   origin,
-                  expiresAt:
-                    expiresAt.length === 0
-                      ? null
-                      : new Date(expiresAt).toISOString(),
+                  expiresAt: expiryIsoFromPreset(expiryPreset),
                 });
               }
             }}
@@ -475,22 +491,32 @@ export function CreateGrantDialog({
                 ))}
               </select>
             </label>
-            <label className="settings-form-field">
+            <div className="settings-form-field">
               <span>{SETTINGS_STRINGS.grantsEffectLabel}</span>
-              <select
-                className="settings-select"
+              <KindCards
+                label={SETTINGS_STRINGS.grantsEffectLabel}
+                columns={3}
                 value={effect}
-                onChange={(event) =>
-                  setEffect(event.target.value as GrantEffect)
-                }
-              >
-                {grantEffects.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onChange={(id) => setEffect(id as GrantEffect)}
+                options={[
+                  {
+                    id: "ask",
+                    title: "Require approval",
+                    description: "Ask a human before the action runs.",
+                  },
+                  {
+                    id: "allow",
+                    title: "Allow",
+                    description: "Permit without further checks.",
+                  },
+                  {
+                    id: "deny",
+                    title: "Deny",
+                    description: "Block the action outright.",
+                  },
+                ]}
+              />
+            </div>
             <label className="settings-form-field">
               <span>{SETTINGS_STRINGS.grantsOriginLabel}</span>
               <select
@@ -507,14 +533,26 @@ export function CreateGrantDialog({
                 ))}
               </select>
             </label>
-            <label className="settings-form-field">
+            <div className="settings-form-field">
               <span>{SETTINGS_STRINGS.grantsExpiresLabel}</span>
-              <Input
-                type="date"
-                value={expiresAt}
-                onChange={(event) => setExpiresAt(event.target.value)}
+              <KindCards
+                label={SETTINGS_STRINGS.grantsExpiresLabel}
+                columns={2}
+                value={expiryPreset}
+                onChange={(id) =>
+                  setExpiryPreset(id as "never" | "24h" | "7d" | "30d")
+                }
+                options={[
+                  { id: "never", title: "Never", description: "No expiry." },
+                  { id: "24h", title: "24 hours" },
+                  { id: "7d", title: "7 days" },
+                  { id: "30d", title: "30 days" },
+                ]}
               />
-            </label>
+            </div>
+            <p className="settings-grant-preview" data-testid="grant-preview">
+              {preview}
+            </p>
             {error !== null && (
               <p className="settings-inline-error" role="alert">
                 {error}

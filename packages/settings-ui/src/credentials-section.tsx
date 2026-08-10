@@ -38,6 +38,7 @@ import {
   type Provider,
 } from "./credentials-api";
 import { errorMessage, type LoadState } from "./load-state";
+import { KindCards } from "./kind-cards";
 import { SETTINGS_STRINGS } from "./strings";
 
 const STATUS_TONE: Record<
@@ -242,7 +243,6 @@ export function CredentialsTable({
     </Table>
   );
 }
-
 export function CreateCredentialDialog({
   open,
   onOpenChange,
@@ -269,6 +269,7 @@ export function CreateCredentialDialog({
   const [type, setType] = useState<CredentialType>("api_key");
   const [secret, setSecret] = useState("");
   const [description, setDescription] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -277,6 +278,7 @@ export function CreateCredentialDialog({
     setType("api_key");
     setSecret("");
     setDescription("");
+    setShowSecret(false);
   }, [open, providers]);
 
   const canSubmit =
@@ -297,27 +299,27 @@ export function CreateCredentialDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="settings-form-stack">
-          <label className="settings-field">
+          <div className="settings-form-field">
             <span>{SETTINGS_STRINGS.credentialsProviderLabel}</span>
-            <select
-              value={providerId}
-              onChange={(event) => setProviderId(event.target.value)}
-              disabled={providers.length === 0}
-            >
-              {providers.length === 0 ? (
-                <option value="">
-                  {SETTINGS_STRINGS.credentialsNoProviders}
-                </option>
-              ) : (
-                providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))
-              )}
-            </select>
-          </label>
-          <label className="settings-field">
+            {providers.length === 0 ? (
+              <p className="settings-field-hint">
+                {SETTINGS_STRINGS.credentialsNoProviders}
+              </p>
+            ) : (
+              <KindCards
+                label={SETTINGS_STRINGS.credentialsProviderLabel}
+                columns={2}
+                value={providerId}
+                onChange={setProviderId}
+                options={providers.map((provider) => ({
+                  id: provider.id,
+                  title: provider.name,
+                  description: provider.id,
+                }))}
+              />
+            )}
+          </div>
+          <label className="settings-form-field">
             <span>{SETTINGS_STRINGS.credentialsNameLabel}</span>
             <Input
               value={name}
@@ -325,9 +327,10 @@ export function CreateCredentialDialog({
               placeholder={SETTINGS_STRINGS.credentialsNamePlaceholder}
             />
           </label>
-          <label className="settings-field">
+          <label className="settings-form-field">
             <span>{SETTINGS_STRINGS.credentialsTypeLabel}</span>
             <select
+              className="settings-select"
               value={type}
               onChange={(event) =>
                 setType(event.target.value as CredentialType)
@@ -340,22 +343,39 @@ export function CreateCredentialDialog({
               ))}
             </select>
           </label>
-          <label className="settings-field">
+          <div className="settings-form-field">
             <span>{SETTINGS_STRINGS.credentialsSecretLabel}</span>
-            <Input
-              type="password"
-              value={secret}
-              onChange={(event) => setSecret(event.target.value)}
-              autoComplete="off"
-            />
-          </label>
-          <label className="settings-field">
+            <div className="settings-secret-row">
+              <Input
+                type={showSecret ? "text" : "password"}
+                value={secret}
+                onChange={(event) => setSecret(event.target.value)}
+                autoComplete="off"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSecret((value) => !value)}
+              >
+                {showSecret ? "Hide" : "Show"}
+              </Button>
+            </div>
+            <p className="settings-field-hint">
+              Sealed on save — this secret is never shown again after create.
+            </p>
+          </div>
+          <label className="settings-form-field">
             <span>{SETTINGS_STRINGS.credentialsDescriptionLabel}</span>
             <Input
               value={description}
               onChange={(event) => setDescription(event.target.value)}
             />
           </label>
+          <p className="settings-field-hint">
+            Who can use it defaults to this workbench&apos;s agents and tools
+            that hold a grant for the provider.
+          </p>
           {error !== null && (
             <p className="settings-inline-error" role="alert">
               {error}

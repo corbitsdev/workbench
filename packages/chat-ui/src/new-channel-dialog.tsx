@@ -94,6 +94,7 @@ export function NewChannelDialog({
   readonly initialKind?: ChannelKind;
 }) {
   const [name, setName] = useState("");
+  const [purpose, setPurpose] = useState("");
   const [kind, setKind] = useState<ChannelKind>(initialKind);
   const [definitionId, setDefinitionId] = useState<string | null>(null);
   const [agentState, setAgentState] = useState<AgentListState>({
@@ -102,6 +103,7 @@ export function NewChannelDialog({
 
   function reset() {
     setName("");
+    setPurpose("");
     setKind(initialKind);
     setDefinitionId(null);
   }
@@ -164,27 +166,41 @@ export function NewChannelDialog({
               handleSubmit();
             }}
           >
-            <fieldset className="chat-form-field">
-              <legend>{CHAT_STRINGS.newChannelKindLabel}</legend>
-              <label className="chat-radio-option">
-                <input
-                  type="radio"
-                  name="kind"
-                  checked={kind === "channel"}
-                  onChange={() => setKind("channel")}
-                />
-                {CHAT_STRINGS.newChannelKindChannel}
-              </label>
-              <label className="chat-radio-option">
-                <input
-                  type="radio"
-                  name="kind"
-                  checked={kind === "chat"}
-                  onChange={() => setKind("chat")}
-                />
-                {CHAT_STRINGS.newChannelKindChat}
-              </label>
-            </fieldset>
+            <div className="chat-form-field">
+              <span>{CHAT_STRINGS.newChannelKindLabel}</span>
+              <div
+                role="group"
+                aria-label={CHAT_STRINGS.newChannelKindLabel}
+                className="chat-kind-grid"
+              >
+                <button
+                  type="button"
+                  className="chat-kind-card"
+                  aria-pressed={kind === "channel"}
+                  onClick={() => setKind("channel")}
+                >
+                  <span className="chat-kind-card-title">
+                    {CHAT_STRINGS.newChannelKindChannel}
+                  </span>
+                  <span className="chat-kind-card-desc">
+                    {CHAT_STRINGS.newChannelKindChannelDesc}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="chat-kind-card"
+                  aria-pressed={kind === "chat"}
+                  onClick={() => setKind("chat")}
+                >
+                  <span className="chat-kind-card-title">
+                    {CHAT_STRINGS.newChannelKindChat}
+                  </span>
+                  <span className="chat-kind-card-desc">
+                    {CHAT_STRINGS.newChannelKindChatDesc}
+                  </span>
+                </button>
+              </div>
+            </div>
             {kind === "chat" ? (
               <fieldset
                 className="chat-form-field"
@@ -239,6 +255,16 @@ export function NewChannelDialog({
                     : CHAT_STRINGS.newChannelNamePlaceholder
                 }
                 autoFocus={kind === "channel"}
+              />
+            </label>
+            <label className="chat-form-field">
+              <span>{CHAT_STRINGS.newChannelPurposeLabel}</span>
+              <textarea
+                className="chat-textarea"
+                value={purpose}
+                onChange={(event) => setPurpose(event.target.value)}
+                placeholder={CHAT_STRINGS.newChannelPurposePlaceholder}
+                rows={2}
               />
             </label>
             {error !== null && (
