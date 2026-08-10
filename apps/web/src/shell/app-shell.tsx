@@ -143,6 +143,7 @@ export function AppShell({
                 canvasOpen={canvasState.open}
                 onToggleCanvas={() => setCanvasState(toggleCanvasColumn)}
                 canvasAllowed={canvasAllowed}
+                onOpenInCanvas={handleOpenInCanvas}
               />
             </div>
           </>
