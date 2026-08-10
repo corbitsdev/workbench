@@ -46,12 +46,13 @@ describe("ContextualPanel", () => {
     expect(markup).not.toContain(">Pages<");
   });
 
-  test("renders the three panel bands", () => {
+  test("renders the page and page-specific bands, hides empty pins", () => {
     const markup = renderPanel("/");
     expect(markup).toContain("panel-band-page");
-    expect(markup).toContain("panel-band-pins");
     expect(markup).toContain("panel-band-page-specific");
-    expect(markup).toContain("Pinned");
+    // Pins default to empty (no localStorage entries) so the band hides.
+    expect(markup).not.toContain("panel-band-pins");
+    expect(markup).not.toContain("Pinned");
   });
 
   test("shows an honest empty state once no bench resolves", async () => {

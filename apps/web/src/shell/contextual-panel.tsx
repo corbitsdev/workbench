@@ -1,14 +1,14 @@
 // Column 2: route-aware contextual panel with three bands.
 //
 // 1. Page band — title, settings entry, quick actions, canvas toggle.
-// 2. Global pins — user-curated, same on every page.
-// 3. Page-specific — contribution content for the current route.
+// 2. Global pins — user-curated, same on every page (hidden when empty).
+// 3. Page-specific — contribution content for the current route (omitted when null).
 //
 // Live activity lives here (left), never in the right canvas. Clicking a
 // list item navigates to the full surface for that entity.
 
-import { Button, EmptyState, SidebarItemRow } from "@corbits/react-ui";
-import { Pin as PinIcon, Settings } from "lucide-react";
+import { Button, SidebarItemRow } from "@corbits/react-ui";
+import { Settings } from "lucide-react";
 import { useState } from "react";
 
 import { CanvasToggle } from "./canvas-column";
@@ -97,13 +97,9 @@ export function ContextualPanel({
         ) : null}
       </section>
 
-      <section className="panel-band panel-band-pins" aria-label="Pinned">
-        <h3 className="panel-band-heading">Pinned</h3>
-        {pins.length === 0 ? (
-          <p className="panel-muted">
-            Pin channels, agents, or routines to keep them here on every page.
-          </p>
-        ) : (
+      {pins.length > 0 ? (
+        <section className="panel-band panel-band-pins" aria-label="Pinned">
+          <h3 className="panel-band-heading">Pinned</h3>
           <div className="panel-stack">
             {pins.map((pin) => (
               <SidebarItemRow
@@ -114,26 +110,20 @@ export function ContextualPanel({
               />
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      ) : null}
 
       <NotificationsBand />
 
-      <section
-        className="panel-band panel-band-page-specific"
-        aria-label={`${pageBand.title} details`}
-      >
-        <h3 className="panel-band-heading">{pageBand.title}</h3>
-        {pageSpecific ?? (
-          <EmptyState
-            title="Nothing here yet"
-            description="Page-specific activity will show in this band."
-          />
-        )}
-      </section>
+      {pageSpecific !== null ? (
+        <section
+          className="panel-band panel-band-page-specific"
+          aria-label={`${pageBand.title} details`}
+        >
+          <h3 className="panel-band-heading">{pageBand.title}</h3>
+          {pageSpecific}
+        </section>
+      ) : null}
     </aside>
   );
 }
-
-// PinIcon kept for future pin-toggle affordances in rows.
-void PinIcon;
