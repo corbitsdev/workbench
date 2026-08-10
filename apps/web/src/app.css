@@ -595,3 +595,36 @@
 /* Chat surface styling ships with @corbits/chat-ui (see
    packages/chat-ui/src/styles.css) — imported in main.tsx alongside
    this file, mirroring how @corbits/react-ui/styles.css is consumed. */
+
+/* Insights I2 day-bucket strip */
+.insights-timeline {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  min-height: 6rem;
+  padding: 0.5rem 0;
+}
+.insights-timeline-bar {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  height: 5.5rem;
+}
+.insights-timeline-fill {
+  width: 70%;
+  min-height: 2px;
+  background: var(--color-accent, #5b8def);
+  border-radius: 2px 2px 0 0;
+}
+.insights-timeline-label {
+  margin-top: 0.25rem;
+  font-size: 0.65rem;
+  color: var(--color-muted, #888);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
