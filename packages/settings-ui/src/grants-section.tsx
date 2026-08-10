@@ -17,7 +17,6 @@ import {
   DialogTitle,
   EmptyState,
   FilterBar,
-  Input,
   SettingsPanel,
   Skeleton,
   Table,

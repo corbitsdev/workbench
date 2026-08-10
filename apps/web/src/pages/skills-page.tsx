@@ -272,7 +272,8 @@ export function SkillsPage({
       return;
     }
     if (selectedId === null || !skills.some((s) => s.id === selectedId)) {
-      setSelectedId(skills[0]!.id);
+      const first = skills[0];
+      if (first !== undefined) setSelectedId(first.id);
     }
   }, [skills, selectedId]);
 

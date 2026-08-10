@@ -21,7 +21,6 @@ import {
 import type { ViewMode } from "@corbits/react-ui";
 import {
   ArtifactCard,
-  artifactKindColor,
   filterArtifacts,
   sortArtifacts,
 } from "@corbits/artifact-ui";
