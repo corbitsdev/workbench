@@ -1,5 +1,10 @@
 // Client surface for packages/insights routes. Nulls mean "absent" —
 // never coerce them to zero. Arktype schemas parse every trust boundary.
+// Package contract (source of truth):
+//   GET /usage → OverallUsageSummary
+//   GET /activity → { days: DayActivity[] }
+//   GET /tools → { tools: ToolCallSummary[] }
+//   GET /runs/:runId/trace → RunTrace | { runId, spans: null, absent }
 
 import { type } from "arktype";
 
@@ -12,40 +17,51 @@ export const TokenTotalsSchema = type({
   total: "number",
 });
 
+export const ModelUsageSchema = type({
+  model: "string",
+  turns: "number",
+  tokens: TokenTotalsSchema,
+  costUsd: "number | null",
+});
+
+/** GET /usage body — OverallUsageSummary from packages/insights. */
 export const OverallUsageSchema = type({
-  totalCostUsd: "number | null",
-  totalTokens: TokenTotalsSchema,
-  turnCount: "number",
-  modelsWithMissingRates: "string[]",
+  turns: "number",
+  tokens: TokenTotalsSchema,
+  costUsd: "number | null",
+  byModel: ModelUsageSchema.array(),
 });
 
 export const DayActivitySchema = type({
   day: "string",
   turns: "number",
   tokens: "number",
-  costUsd: "number | null",
 });
 
-export const ModelUsageSchema = type({
-  model: "string",
-  turnCount: "number",
-  tokens: TokenTotalsSchema,
-  costUsd: "number | null",
-  ratesKnown: "boolean",
+/** GET /activity envelope. */
+export const ActivityResponseSchema = type({
+  days: DayActivitySchema.array(),
 });
 
 export const ToolCallSchema = type({
   tool: "string",
   calls: "number",
-  successRate: "number | null",
+  errors: "number",
+  errorRate: "number | null",
+});
+
+/** GET /tools envelope. */
+export const ToolsResponseSchema = type({
+  tools: ToolCallSchema.array(),
 });
 
 export const RunTraceSpanSchema = type({
   id: "string",
   label: "string",
   kind: "string",
-  startMs: "number",
-  endMs: "number",
+  start: "number",
+  end: "number",
+  durationMs: "number | null",
   tokens: type({
     input: "number",
     cacheRead: "number",
@@ -54,44 +70,53 @@ export const RunTraceSpanSchema = type({
     thinking: "number",
   }).or(type("null")),
   phase: "'ok' | 'awaiting' | 'failed'",
-  "error?": "string",
+  error: "string | null",
 });
 
-export const RunTraceSchema = type({
+/** Present run trace (reader mounted and run found). */
+export const RunTracePresentSchema = type({
   runId: "string",
-  startedAt: "string",
-  endedAt: "string | null",
-  status: "string",
-  totalCostUsd: "number | null",
-  totalTokens: TokenTotalsSchema.or(type("null")),
   spans: RunTraceSpanSchema.array(),
 });
 
+/** Explicit absent when no run-trace reader is mounted. */
+export const RunTraceAbsentSchema = type({
+  runId: "string",
+  spans: "null",
+  absent: "string",
+});
+
+export const RunTraceSchema = RunTracePresentSchema.or(RunTraceAbsentSchema);
+
 export type OverallUsage = typeof OverallUsageSchema.infer;
 export type DayActivity = typeof DayActivitySchema.infer;
+export type ActivityResponse = typeof ActivityResponseSchema.infer;
 export type ModelUsage = typeof ModelUsageSchema.infer;
 export type ToolCall = typeof ToolCallSchema.infer;
+export type ToolsResponse = typeof ToolsResponseSchema.infer;
 export type RunTrace = typeof RunTraceSchema.infer;
 export type RunTraceSpan = typeof RunTraceSpanSchema.infer;
 
-export function insightsSummaryPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/insights/summary`;
+export function insightsUsagePath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/insights/usage`;
 }
 
 export function insightsActivityPath(tenantId: string, days = 14): string {
-  return `/api/tenants/${tenantId}/insights/activity?days=${days}`;
+  const to = new Date();
+  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+  const params = new URLSearchParams({
+    from: from.toISOString(),
+    to: to.toISOString(),
+  });
+  return `/api/tenants/${tenantId}/insights/activity?${params.toString()}`;
 }
 
-export function insightsByModelPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/insights/by-model`;
-}
-
-export function insightsByToolPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/insights/by-tool`;
+export function insightsToolsPath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/insights/tools`;
 }
 
 export function insightsRunTracePath(tenantId: string, runId: string): string {
-  return `/api/tenants/${tenantId}/insights/runs/${encodeURIComponent(runId)}`;
+  return `/api/tenants/${tenantId}/insights/runs/${encodeURIComponent(runId)}/trace`;
 }
 
 /** Format USD cost; null stays an em-dash, never `$0.00`. */
@@ -107,7 +132,7 @@ export function formatCount(value: number | null | undefined): string {
   return value.toLocaleString();
 }
 
-/** Success rate 0–1 as percent; null → em-dash. */
+/** Rate 0–1 as percent; null → em-dash. */
 export function formatRate(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
   return `${Math.round(value * 100)}%`;
@@ -136,4 +161,11 @@ export function tokensLabel(
     tokens.output +
     tokens.thinking;
   return `${total.toLocaleString()} tok`;
+}
+
+/** Models with tokens but no known rate (costUsd null). */
+export function modelsWithMissingRates(usage: OverallUsage): readonly string[] {
+  return usage.byModel
+    .filter((m) => m.costUsd === null && m.tokens.total > 0)
+    .map((m) => m.model);
 }

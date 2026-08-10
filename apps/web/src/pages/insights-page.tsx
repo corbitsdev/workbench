@@ -36,16 +36,15 @@ import {
   formatRate,
   formatUsd,
   insightsActivityPath,
-  insightsByModelPath,
-  insightsByToolPath,
   insightsRunTracePath,
-  insightsSummaryPath,
+  insightsToolsPath,
+  insightsUsagePath,
+  modelsWithMissingRates,
   tokensLabel,
-  DayActivitySchema,
-  ModelUsageSchema,
+  ActivityResponseSchema,
   OverallUsageSchema,
   RunTraceSchema,
-  ToolCallSchema,
+  ToolsResponseSchema,
   type DayActivity,
   type ModelUsage,
   type OverallUsage,
@@ -108,21 +107,20 @@ function tileValue(value: string | number | null, loading: boolean): string {
 }
 
 function activityBarsData(days: readonly DayActivity[]) {
-  return days.map((d) => {
-    const secondary = d.costUsd === null ? undefined : formatUsd(d.costUsd);
-    return secondary === undefined
-      ? { label: d.day.slice(5), value: d.turns }
-      : {
-          label: d.day.slice(5),
-          value: d.turns,
-          secondaryLabel: secondary,
-        };
-  });
+  // Package DayActivity has no costUsd — secondary is token count when present.
+  return days.map((d) => ({
+    label: d.day.slice(5),
+    value: d.turns,
+    secondaryLabel: formatCount(d.tokens),
+  }));
 }
 
 function modelBarsData(models: readonly ModelUsage[]) {
   return models.map((m) => {
-    const secondary = m.ratesKnown ? formatUsd(m.costUsd) : "rates unknown";
+    const secondary =
+      m.costUsd === null && m.tokens.total > 0
+        ? "rates unknown"
+        : formatUsd(m.costUsd);
     return {
       label: m.model,
       value: m.tokens.total,
@@ -134,7 +132,7 @@ function modelBarsData(models: readonly ModelUsage[]) {
 function toolBarsData(tools: readonly ToolCall[]) {
   return tools.map((t) => {
     const secondary =
-      t.successRate === null ? undefined : `${formatRate(t.successRate)} ok`;
+      t.errorRate === null ? undefined : `${formatRate(t.errorRate)} err`;
     return secondary === undefined
       ? { label: t.tool, value: t.calls }
       : { label: t.tool, value: t.calls, secondaryLabel: secondary };
@@ -142,7 +140,7 @@ function toolBarsData(tools: readonly ToolCall[]) {
 }
 
 function tokenParts(summary: OverallUsage) {
-  const t = summary.totalTokens;
+  const t = summary.tokens;
   return [
     { label: "Input", value: t.input },
     { label: "Output", value: t.output },
@@ -153,31 +151,33 @@ function tokenParts(summary: OverallUsage) {
 }
 
 function toTraceSpans(trace: RunTrace): TraceSpan[] {
-  const origin = Math.min(...trace.spans.map((s) => s.startMs), 0);
-  const end = Math.max(...trace.spans.map((s) => s.endMs), origin + 1);
+  if (trace.spans === null || trace.spans.length === 0) return [];
+  const origin = Math.min(...trace.spans.map((s) => s.start), 0);
+  const end = Math.max(...trace.spans.map((s) => s.end), origin + 1);
   const span = Math.max(1, end - origin);
   return trace.spans.map((s) => {
+    const durationMs = s.durationMs ?? Math.max(0, s.end - s.start);
     const base = {
       id: s.id,
       label: s.label,
       kind: s.kind,
-      start: (s.startMs - origin) / span,
-      end: (s.endMs - origin) / span,
-      durationLabel: durationLabel(s.endMs - s.startMs),
+      start: (s.start - origin) / span,
+      end: (s.end - origin) / span,
+      durationLabel: durationLabel(durationMs),
       phase: s.phase,
     };
     const tok = tokensLabel(s.tokens);
-    if (s.error !== undefined && tok !== undefined) {
+    if (s.error !== null && tok !== undefined) {
       return { ...base, tokensLabel: tok, error: s.error };
     }
-    if (s.error !== undefined) return { ...base, error: s.error };
+    if (s.error !== null) return { ...base, error: s.error };
     if (tok !== undefined) return { ...base, tokensLabel: tok };
     return base;
   });
 }
 
 function cacheHitRate(summary: OverallUsage): number | null {
-  const t = summary.totalTokens;
+  const t = summary.tokens;
   const denom = t.input + t.cacheRead;
   if (denom === 0) return null;
   return t.cacheRead / denom;
@@ -208,7 +208,7 @@ function InsightsLanding({
   const purposeRuns = purposeRunsForInsights(runs);
   const empty =
     !loading &&
-    (summary === null || summary.turnCount === 0) &&
+    (summary === null || summary.turns === 0) &&
     stats.totalRuns === 0;
 
   if (empty) {
@@ -237,21 +237,21 @@ function InsightsLanding({
           <StatTile
             label="Total cost"
             value={tileValue(
-              summary === null ? null : formatUsd(summary.totalCostUsd),
+              summary === null ? null : formatUsd(summary.costUsd),
               loading,
             )}
           />
           <StatTile
             label="Total tokens"
             value={tileValue(
-              summary === null ? null : formatCount(summary.totalTokens.total),
+              summary === null ? null : formatCount(summary.tokens.total),
               loading,
             )}
           />
           <StatTile
             label="Turns"
             value={tileValue(
-              summary === null ? null : formatCount(summary.turnCount),
+              summary === null ? null : formatCount(summary.turns),
               loading,
             )}
           />
@@ -260,9 +260,9 @@ function InsightsLanding({
             value={tileValue(formatCount(stats.totalRuns), loading)}
           />
         </StatGrid>
-        {summary !== null && summary.modelsWithMissingRates.length > 0 ? (
+        {summary !== null && modelsWithMissingRates(summary).length > 0 ? (
           <p className="mt-2 text-xs text-muted-foreground">
-            Rates unknown for: {summary.modelsWithMissingRates.join(", ")}.
+            Rates unknown for: {modelsWithMissingRates(summary).join(", ")}.
             Those turns do not contribute a fabricated cost.
           </p>
         ) : null}
@@ -476,37 +476,13 @@ function InsightsRunDetail({
         }
       >
         <StatGrid>
-          <StatTile
-            label="Status"
-            value={dash(
-              run?.status ??
-                (trace.kind === "ready" ? trace.data.status : null),
-            )}
-          />
+          <StatTile label="Status" value={dash(run?.status ?? null)} />
           <StatTile
             label="Started"
-            value={dash(
-              run !== null
-                ? formatWhen(run.createdAt)
-                : trace.kind === "ready"
-                  ? formatWhen(trace.data.startedAt)
-                  : null,
-            )}
+            value={dash(run !== null ? formatWhen(run.createdAt) : null)}
           />
-          <StatTile
-            label="Cost"
-            value={
-              trace.kind === "ready" ? formatUsd(trace.data.totalCostUsd) : "—"
-            }
-          />
-          <StatTile
-            label="Tokens"
-            value={
-              trace.kind === "ready" && trace.data.totalTokens !== null
-                ? formatCount(trace.data.totalTokens.total)
-                : "—"
-            }
-          />
+          <StatTile label="Cost" value="—" />
+          <StatTile label="Tokens" value="—" />
         </StatGrid>
       </Section>
 
@@ -523,6 +499,14 @@ function InsightsRunDetail({
         />
       ) : null}
       {trace.kind === "unauthenticated" ? <SignedOutNotice /> : null}
+      {trace.kind === "ready" &&
+      "absent" in trace.data &&
+      trace.data.spans === null ? (
+        <RichEmptyState
+          title="Trace reader not mounted"
+          description="Run-trace detail is not wired on this hub yet. Spans stay absent — not shown as zeros."
+        />
+      ) : null}
       {trace.kind === "ready" && spans.length > 0 ? (
         <Section title="Trace" description="Span timeline for this run.">
           <TraceWaterfall
@@ -532,7 +516,9 @@ function InsightsRunDetail({
           />
         </Section>
       ) : null}
-      {trace.kind === "ready" && spans.length === 0 ? (
+      {trace.kind === "ready" &&
+      spans.length === 0 &&
+      !("absent" in trace.data) ? (
         <RichEmptyState
           title="Empty trace"
           description="The run exists but has no recorded spans yet."
@@ -563,7 +549,6 @@ export function InsightsPage({
   path,
   summary,
   activity,
-  byModel,
   byTool,
   runs,
   routines,
@@ -571,7 +556,6 @@ export function InsightsPage({
   readonly path: string;
   readonly summary: APIQuery<OverallUsage>;
   readonly activity: APIQuery<readonly DayActivity[]>;
-  readonly byModel: APIQuery<readonly ModelUsage[]>;
   readonly byTool: APIQuery<readonly ToolCall[]>;
   readonly runs: APIQuery<{ data: readonly WorkflowRun[] }>;
   readonly routines: APIQuery<readonly Routine[]>;
@@ -596,7 +580,6 @@ export function InsightsPage({
   const loading =
     summary.kind === "loading" ||
     activity.kind === "loading" ||
-    byModel.kind === "loading" ||
     runs.kind === "loading" ||
     routines.kind === "loading";
 
@@ -605,18 +588,17 @@ export function InsightsPage({
       ? summary.message
       : activity.kind === "error"
         ? activity.message
-        : byModel.kind === "error"
-          ? byModel.message
-          : runs.kind === "error"
-            ? runs.message
-            : routines.kind === "error"
-              ? routines.message
-              : null;
+        : runs.kind === "error"
+          ? runs.message
+          : routines.kind === "error"
+            ? routines.message
+            : null;
 
   // Soft-fail usage endpoints (e.g. pre-mount / empty sink) — still show runs.
+  // byModel comes from usage.byModel (no separate /by-model route).
   const summaryData = summary.kind === "ready" ? summary.data : null;
   const activityData = activity.kind === "ready" ? activity.data : null;
-  const byModelData = byModel.kind === "ready" ? byModel.data : null;
+  const byModelData = summaryData?.byModel ?? null;
   const byToolData = byTool.kind === "ready" ? byTool.data : null;
   const runsData = runs.kind === "ready" ? runs.data.data : [];
   const routinesData = routines.kind === "ready" ? routines.data : [];
@@ -708,20 +690,16 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     (typeof window !== "undefined" ? window.location.pathname : "/insights");
 
   const summary = useAPIQuery(
-    selectedTenantId === null ? "" : insightsSummaryPath(selectedTenantId),
+    selectedTenantId === null ? "" : insightsUsagePath(selectedTenantId),
     OverallUsageSchema,
   );
-  const activity = useAPIQuery(
+  const activityRaw = useAPIQuery(
     selectedTenantId === null ? "" : insightsActivityPath(selectedTenantId, 14),
-    DayActivitySchema.array(),
+    ActivityResponseSchema,
   );
-  const byModel = useAPIQuery(
-    selectedTenantId === null ? "" : insightsByModelPath(selectedTenantId),
-    ModelUsageSchema.array(),
-  );
-  const byTool = useAPIQuery(
-    selectedTenantId === null ? "" : insightsByToolPath(selectedTenantId),
-    ToolCallSchema.array(),
+  const toolsRaw = useAPIQuery(
+    selectedTenantId === null ? "" : insightsToolsPath(selectedTenantId),
+    ToolsResponseSchema,
   );
   const runs = useAPIQuery("/api/me/workflows/runs", RunsSchema);
   const routines = useTenantQuery(
@@ -735,6 +713,16 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
   const routinesForPage: APIQuery<readonly Routine[]> =
     selectedTenantId === null ? { kind: "ready", data: [] } : routines;
 
+  // Unwrap package envelopes ({ days }, { tools }) for the page surface.
+  const activity: APIQuery<readonly DayActivity[]> =
+    activityRaw.kind === "ready"
+      ? { kind: "ready", data: activityRaw.data.days }
+      : activityRaw;
+  const byTool: APIQuery<readonly ToolCall[]> =
+    toolsRaw.kind === "ready"
+      ? { kind: "ready", data: toolsRaw.data.tools }
+      : toolsRaw;
+
   // No tenant: usage endpoints stay empty-ready so the page can still show
   // me-scoped purpose runs without inventing bench usage.
   const emptySummary: APIQuery<OverallUsage> =
@@ -742,8 +730,8 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       ? {
           kind: "ready",
           data: {
-            totalCostUsd: null,
-            totalTokens: {
+            costUsd: null,
+            tokens: {
               input: 0,
               cacheRead: 0,
               cacheWrite: 0,
@@ -751,8 +739,8 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
               thinking: 0,
               total: 0,
             },
-            turnCount: 0,
-            modelsWithMissingRates: [],
+            turns: 0,
+            byModel: [],
           },
         }
       : summary;
@@ -766,7 +754,6 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       path={currentPath}
       summary={emptySummary}
       activity={emptyList(activity)}
-      byModel={emptyList(byModel)}
       byTool={emptyList(byTool)}
       runs={runs}
       routines={routinesForPage}

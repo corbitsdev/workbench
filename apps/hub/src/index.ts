@@ -42,7 +42,9 @@ import {
   applyInsightsMigrations,
   createInsightsRoutes,
   createPostgresUsageStore,
+  createUsageSink,
 } from "@corbits/insights";
+import { generateId } from "@intx/hub-common";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
@@ -96,6 +98,7 @@ import { type Context, Hono, type Next } from "hono";
 
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { readHubConfig, type HubConfig } from "./config";
+import { createLocalRoutineDrafting } from "./local-routine-drafting";
 import { createHubRoutineLauncher } from "./routine-launcher";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
 import { createRoutineScheduler } from "./routine-scheduler";
@@ -438,6 +441,11 @@ export async function createHub(config: HubConfig) {
   // numbers survive restarts. Absent rates / pre-sink history stay null.
   await applyInsightsMigrations(config.databaseUrl);
   const insightsUsage = createPostgresUsageStore(config.databaseUrl);
+  // Residual: no clean event-collector subscription without intx changes.
+  void createUsageSink({
+    store: insightsUsage.store,
+    generateId: () => generateId("inferenceTurn"),
+  });
   app.route(
     `${TENANT_PREFIX}/insights`,
     createInsightsRoutes({
@@ -578,6 +586,8 @@ export async function createHub(config: HubConfig) {
     createRoutineRoutes({
       store: routineStore,
       drafts: routineDraftStore,
+      // Local prompt→steps drafting until Myra owns the port.
+      drafting: createLocalRoutineDrafting(),
       launcher: routineLauncher,
       requireGrant: createRequireGrant({
         grantStore: routineGrantStore,
