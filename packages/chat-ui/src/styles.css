@@ -481,28 +481,6 @@
 }
 
 .chat-kind-card[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--primary) 45
-
-.chat-kind-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.chat-kind-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--card, var(--background));
-  padding: 0.65rem 0.75rem;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-
-.chat-kind-card[aria-pressed="true"] {
   border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }
