@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import type { RequireGrant } from "@intx/hub-api";
 import { Hono } from "hono";
 
 import {
@@ -22,13 +23,26 @@ const TENANT = { id: "tenant_a" };
 const OTHER = { id: "tenant_b" };
 const PRINCIPAL = { id: "prin_1" };
 
-function allowAllRequireGrant() {
-  return () => async (_c: unknown, next: () => Promise<void>) => {
-    await next();
-  };
-}
+const allowAll: RequireGrant = () => async (_c, next) => {
+  await next();
+};
 
-function sampleListItem(id: string, tenantId: string) {
+type Row = {
+  id: string;
+  kind: string;
+  title: string;
+  source: { origin: string };
+  version: number;
+  ownerPrincipalId: string;
+  ownerName: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  content: string;
+  _tenantId: string;
+};
+
+function sampleRow(id: string, tenantId: string, content = ""): Row {
   return {
     id,
     kind: "file",
@@ -40,22 +54,27 @@ function sampleListItem(id: string, tenantId: string) {
     archivedAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
-    // tenantId is store-side only; list response omits it
+    content,
     _tenantId: tenantId,
   };
 }
 
-function memoryStore(): ArtifactRoutesStore & {
-  rows: Array<ReturnType<typeof sampleListItem> & { content: string }>;
-} {
-  const rows: Array<ReturnType<typeof sampleListItem> & { content: string }> =
-    [];
+function stripTenant(row: Row) {
+  const { _tenantId: _t, ...rest } = row;
+  return rest;
+}
+
+function memoryStore(): ArtifactRoutesStore & { rows: Row[] } {
+  const rows: Row[] = [];
   return {
     rows,
     async list(tenantId, opts) {
       let data = rows
         .filter((r) => r._tenantId === tenantId)
-        .map(({ content: _c, _tenantId: _t, ...rest }) => rest);
+        .map((r) => {
+          const { content: _c, ...item } = stripTenant(r);
+          return item;
+        });
       if (opts.query !== null) {
         const q = opts.query.toLowerCase();
         data = data.filter((r) => r.title.toLowerCase().includes(q));
@@ -70,26 +89,21 @@ function memoryStore(): ArtifactRoutesStore & {
         (r) => r.id === artifactId && r._tenantId === tenantId,
       );
       if (row === undefined) return null;
-      const { _tenantId: _t, ...rest } = row;
-      return rest;
+      return stripTenant(row);
     },
     async upload(
       tenantId: string,
       principalId: string,
       files: readonly ArtifactUploadInput[],
     ) {
-      const created = files.map((file, index) => {
-        const item = {
-          ...sampleListItem(`up_${rows.length + index}`, tenantId),
-          title: file.filename,
-          ownerPrincipalId: principalId,
-          content: new TextDecoder().decode(file.bytes),
-        };
+      return files.map((file, index) => {
+        const item = sampleRow(`up_${rows.length + index}`, tenantId);
+        item.title = file.filename;
+        item.ownerPrincipalId = principalId;
+        item.content = new TextDecoder().decode(file.bytes);
         rows.push(item);
-        const { _tenantId: _t, ...rest } = item;
-        return rest;
+        return stripTenant(item);
       });
-      return created;
     },
   };
 }
@@ -103,12 +117,7 @@ function mount(store: ArtifactRoutesStore) {
   });
   app.route(
     "/artifacts",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    createArtifactRoutes({
-      store,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      requireGrant: allowAllRequireGrant() as any,
-    }) as any,
+    createArtifactRoutes({ store, requireGrant: allowAll }),
   );
   return app;
 }
@@ -129,14 +138,8 @@ describe("artifact routes", () => {
   });
 
   test("GET / returns only the calling tenant's rows", async () => {
-    store.rows.push({
-      ...sampleListItem("a1", TENANT.id),
-      content: "mine",
-    });
-    store.rows.push({
-      ...sampleListItem("b1", OTHER.id),
-      content: "theirs",
-    });
+    store.rows.push(sampleRow("a1", TENANT.id, "mine"));
+    store.rows.push(sampleRow("b1", OTHER.id, "theirs"));
     const res = await app.request("/artifacts");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { id: string }[] };
@@ -145,14 +148,12 @@ describe("artifact routes", () => {
 
   test("GET /?q= filters by title", async () => {
     store.rows.push({
-      ...sampleListItem("a1", TENANT.id),
+      ...sampleRow("a1", TENANT.id, "x"),
       title: "Quarterly report.pdf",
-      content: "x",
     });
     store.rows.push({
-      ...sampleListItem("a2", TENANT.id),
+      ...sampleRow("a2", TENANT.id, "y"),
       title: "notes.txt",
-      content: "y",
     });
     const res = await app.request("/artifacts?q=report");
     expect(res.status).toBe(200);
@@ -161,19 +162,13 @@ describe("artifact routes", () => {
   });
 
   test("GET /:id returns 404 for a foreign tenant row", async () => {
-    store.rows.push({
-      ...sampleListItem("b1", OTHER.id),
-      content: "secret",
-    });
+    store.rows.push(sampleRow("b1", OTHER.id, "secret"));
     const res = await app.request("/artifacts/b1");
     expect(res.status).toBe(404);
   });
 
   test("GET /:id returns the row for the calling tenant", async () => {
-    store.rows.push({
-      ...sampleListItem("a1", TENANT.id),
-      content: "hello",
-    });
+    store.rows.push(sampleRow("a1", TENANT.id, "hello"));
     const res = await app.request("/artifacts/a1");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { id: string; content: string };
@@ -220,11 +215,7 @@ describe("unavailable artifact routes", () => {
       c.set("principal", PRINCIPAL);
       await next();
     });
-    app.route(
-      "/artifacts",
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      createUnavailableArtifactRoutes(allowAllRequireGrant() as any) as any,
-    );
+    app.route("/artifacts", createUnavailableArtifactRoutes(allowAll));
 
     for (const path of ["/artifacts", "/artifacts/upload", "/artifacts/x"]) {
       const method = path.endsWith("/upload") ? "POST" : "GET";
