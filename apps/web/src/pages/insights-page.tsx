@@ -24,7 +24,10 @@ import { RunsSchema, useAPIQuery } from "../api";
 import type { APIQuery, RunsPage, WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
 import { runDeepLinkTarget } from "../insights-deeplinks";
-import { computeInsightsStats } from "../insights-stats";
+import {
+  computeInsightsStats,
+  purposeRunsForInsights,
+} from "../insights-stats";
 import {
   bucketRunsByDay,
   INSIGHTS_TIMELINE_DAYS,
@@ -141,7 +144,10 @@ export function InsightsPage({
 
   const timelineBuckets =
     runs.kind === "ready"
-      ? bucketRunsByDay(runs.data.data, INSIGHTS_TIMELINE_DAYS)
+      ? bucketRunsByDay(
+          purposeRunsForInsights(runs.data.data),
+          INSIGHTS_TIMELINE_DAYS,
+        )
       : null;
 
   return (
