@@ -68,3 +68,15 @@ export type {
   BenchChatSettingsPatch,
 } from "./api";
 export { ChannelSettingsPanel } from "./channel-settings-panel";
+export {
+  channelSettingsTabs,
+  channelSettingsTabLabel,
+  contextWindowControlState,
+  contextWindowPatchValue,
+} from "./channel-settings-panel";
+export type {
+  ChannelSettingsTabId,
+  ContextWindowMode,
+} from "./channel-settings-panel";
+export { profileSubjectFromParticipant } from "./profile-subject";
+export type { ProfileSubject } from "./profile-subject";

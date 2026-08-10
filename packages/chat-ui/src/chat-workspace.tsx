@@ -50,6 +50,7 @@ import { NewChannelDialog } from "./new-channel-dialog";
 import { CHAT_STRINGS } from "./strings";
 import { AgentBadge, ChannelTimeline } from "./timeline";
 import type { CurrentUser, ThreadAffordanceMeta } from "./timeline";
+import type { ProfileSubject } from "./profile-subject";
 import { useChannelStream } from "./use-channel-stream";
 
 /**
@@ -144,11 +145,13 @@ function ChatWorkspaceInner({
   channelId: controlledChannelId,
   onChannelChange,
   currentUser,
+  onOpenProfile,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
   readonly onChannelChange?: (channelId: string) => void;
   readonly currentUser?: CurrentUser;
+  readonly onOpenProfile?: (subject: ProfileSubject) => void;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -614,6 +617,7 @@ function ChatWorkspaceInner({
                     {...(currentUser !== undefined ? { currentUser } : {})}
                     threadMetaByMessageId={threadMetaByMessageId}
                     onOpenThread={openThreadForMessage}
+                    {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
                   />
                   <Composer
                     agents={mentionCandidatesFromParticipants(
@@ -672,6 +676,7 @@ export function ChatWorkspace({
   channelId = null,
   onChannelChange,
   currentUser,
+  onOpenProfile,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -685,6 +690,8 @@ export function ChatWorkspace({
    * never resolves a session itself.
    */
   readonly currentUser?: CurrentUser;
+  /** Open a member/agent ProfileCard in the host canvas (shell mock § Profile). */
+  readonly onOpenProfile?: (subject: ProfileSubject) => void;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -694,6 +701,7 @@ export function ChatWorkspace({
           channelId={channelId}
           {...(onChannelChange !== undefined ? { onChannelChange } : {})}
           {...(currentUser !== undefined ? { currentUser } : {})}
+          {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
         />
       );
     case "empty":

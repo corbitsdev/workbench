@@ -77,8 +77,16 @@ describe("canvas column state", () => {
   });
 
   test("visibility requires both the toggle and the viewport to agree", () => {
-    const open = { open: true, channelId: "ch_1" as string | null };
-    const closed = { open: false, channelId: null as string | null };
+    const open = {
+      open: true,
+      channelId: "ch_1" as string | null,
+      profile: null,
+    };
+    const closed = {
+      open: false,
+      channelId: null as string | null,
+      profile: null,
+    };
     expect(resolveCanvasVisibility(open, true)).toBe(true);
     expect(resolveCanvasVisibility(open, false)).toBe(false);
     expect(resolveCanvasVisibility(closed, true)).toBe(false);

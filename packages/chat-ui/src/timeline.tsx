@@ -19,6 +19,8 @@ import type {
   ParticipantRecord,
   Part,
 } from "./api";
+import type { ProfileSubject } from "./profile-subject";
+import { profileSubjectFromParticipant } from "./profile-subject";
 import { CHAT_STRINGS } from "./strings";
 
 export type CurrentUser = {
@@ -159,27 +161,61 @@ function TextBubble({
   sender,
   participants,
   currentUser,
+  onOpenProfile,
 }: {
   text: string;
   createdAt: string;
   sender: MessageSender | undefined;
   participants: readonly ParticipantRecord[];
   currentUser: CurrentUser | undefined;
+  onOpenProfile?: (subject: ProfileSubject) => void;
 }) {
   const display = senderDisplay(sender, participants, currentUser);
   const isOwn =
     currentUser !== undefined &&
     sender !== undefined &&
     localPartOf(sender.address) === currentUser.principalId;
+  const matched =
+    sender === undefined
+      ? undefined
+      : participants.find(
+          (participant) => participant.address === sender.address,
+        );
+  const profileSubject =
+    matched !== undefined ? profileSubjectFromParticipant(matched) : null;
+
+  function handleOpenProfile() {
+    if (profileSubject !== null && onOpenProfile !== undefined) {
+      onOpenProfile(profileSubject);
+    }
+  }
+
   return (
     <div className="chat-bubble-row" data-own={isOwn}>
-      {display !== undefined && <SenderAvatar initials={display.initials} />}
+      {display !== undefined && (
+        <button
+          type="button"
+          className="chat-sender-avatar-button"
+          aria-label={`${CHAT_STRINGS.profileOpenAction}: ${display.label}`}
+          disabled={profileSubject === null || onOpenProfile === undefined}
+          onClick={handleOpenProfile}
+        >
+          <SenderAvatar initials={display.initials} />
+        </button>
+      )}
       <div className="chat-bubble" data-own={isOwn}>
         {display !== undefined && (
-          <span className="chat-bubble-sender">
-            {display.label}
-            {display.isAgent && <AgentBadge />}
-          </span>
+          <button
+            type="button"
+            className="chat-bubble-sender-button"
+            disabled={profileSubject === null || onOpenProfile === undefined}
+            onClick={handleOpenProfile}
+          >
+            <span className="chat-bubble-sender">
+              {display.label}
+              {display.isAgent && <AgentBadge />}
+            </span>
+          </button>
         )}
         <p className="chat-bubble-text">{text}</p>
         <span className="chat-bubble-time">{formatTimestamp(createdAt)}</span>
@@ -273,6 +309,7 @@ function MessageParts({
   showDayDivider,
   threadMeta,
   onOpenThread,
+  onOpenProfile,
 }: {
   readonly item: MessageItem;
   readonly participants: readonly ParticipantRecord[];
@@ -280,6 +317,7 @@ function MessageParts({
   readonly showDayDivider: boolean;
   readonly threadMeta?: ThreadAffordanceMeta | undefined;
   readonly onOpenThread?: (messageId: string) => void;
+  readonly onOpenProfile?: (subject: ProfileSubject) => void;
 }) {
   return (
     <>
@@ -295,6 +333,7 @@ function MessageParts({
               sender={item.sender}
               participants={participants}
               currentUser={currentUser}
+              {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
             />
           );
         }
@@ -403,6 +442,7 @@ export function ChannelTimeline({
   currentUser,
   threadMetaByMessageId,
   onOpenThread,
+  onOpenProfile,
 }: {
   readonly items: readonly MessageItem[];
   readonly participants?: readonly ParticipantRecord[];
@@ -410,6 +450,7 @@ export function ChannelTimeline({
   /** Reply-thread summary keyed by parent message id. */
   readonly threadMetaByMessageId?: ReadonlyMap<string, ThreadAffordanceMeta>;
   readonly onOpenThread?: (messageId: string) => void;
+  readonly onOpenProfile?: (subject: ProfileSubject) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Starts true so a channel's first render always lands pinned to the
@@ -466,6 +507,7 @@ export function ChannelTimeline({
             showDayDivider={showDayDivider}
             threadMeta={threadMetaByMessageId?.get(item.id)}
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
+            {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
           />
         );
       })}

@@ -12,9 +12,11 @@ import {
   newChannelPayload,
 } from "../src/new-channel-dialog";
 import {
+  channelSettingsTabs,
   contextWindowControlState,
   contextWindowPatchValue,
 } from "../src/channel-settings-panel";
+import { profileSubjectFromParticipant } from "../src/profile-subject";
 import { renamePayload, rowMenuLabels } from "../src/sidebar";
 
 import { ChannelTimeline } from "../src/timeline";
@@ -421,5 +423,55 @@ describe("contextWindowPatchValue", () => {
 
   test("override mode sends the field's own value", () => {
     expect(contextWindowPatchValue("override", 7)).toBe(7);
+  });
+});
+
+describe("channelSettingsTabs", () => {
+  test("channels expose the full settings surface", () => {
+    expect(channelSettingsTabs("channel")).toEqual([
+      "general",
+      "members",
+      "agents",
+      "access",
+      "notifications",
+      "danger",
+    ]);
+  });
+
+  test("1:1 chats trim Members and Danger", () => {
+    expect(channelSettingsTabs("chat")).toEqual([
+      "general",
+      "agents",
+      "access",
+      "notifications",
+    ]);
+  });
+});
+
+describe("profileSubjectFromParticipant", () => {
+  test("agent addresses become agent subjects with @ handle display", () => {
+    expect(
+      profileSubjectFromParticipant({
+        address: "prn_agent@agents.example",
+        handle: "scout",
+      }),
+    ).toEqual({
+      kind: "agent",
+      address: "prn_agent@agents.example",
+      handle: "scout",
+      displayName: "@scout",
+      initials: "SC",
+    });
+  });
+
+  test("member addresses become member subjects", () => {
+    // Human participants are bare principal ids (no @); agent addresses carry a domain.
+    const subject = profileSubjectFromParticipant({
+      address: "prn_ada",
+      handle: "Ada Lovelace",
+    });
+    expect(subject.kind).toBe("member");
+    expect(subject.displayName).toBe("Ada Lovelace");
+    expect(subject.initials).toBe("AL");
   });
 });

@@ -21,8 +21,10 @@ import { useShellFocusRescue } from "./focus-rescue";
 import { useScrollReset } from "./use-scroll-reset";
 import {
   applyChannelPathToCanvas,
+  clearProfileInCanvas,
   initialCanvasColumnState,
   openChannelInCanvas,
+  openProfileInCanvas,
   resolveCanvasVisibility,
   toggleCanvasColumn,
 } from "./canvas-column-state";
@@ -31,6 +33,7 @@ import { CanvasColumn } from "./canvas-column";
 import { ContextualPanel } from "./contextual-panel";
 import { Rail } from "./rail";
 import { useShellLayoutMode } from "./use-shell-layout";
+import type { ProfileSubject } from "@corbits/chat-ui";
 
 export function AppShell({
   path,
@@ -84,6 +87,14 @@ export function AppShell({
     setCanvasState(openChannelInCanvas(channelId));
   };
 
+  const handleOpenProfile = (subject: ProfileSubject) => {
+    setCanvasState((state) => openProfileInCanvas(state, subject));
+  };
+
+  const handleCloseProfile = () => {
+    setCanvasState((state) => clearProfileInCanvas(state));
+  };
+
   return (
     <CanvasAvailabilityProvider allowed={canvasAllowed}>
       <div className="shell-frame" ref={frameRef} data-layout={layoutMode}>
@@ -122,7 +133,11 @@ export function AppShell({
           <CanvasColumn
             open={canvasOpen}
             channelId={canvasState.channelId}
+            profile={canvasState.profile}
             onChannelChange={handleChannelChange}
+            onOpenProfile={handleOpenProfile}
+            onCloseProfile={handleCloseProfile}
+            onNavigate={navigate}
           />
         )}
         {contextualAsDrawer && (

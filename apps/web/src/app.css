@@ -246,6 +246,27 @@ html {
   transform: translateX(0);
 }
 
+.shell-profile-pane {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  overflow: auto;
+  justify-content: flex-start;
+}
+
+.shell-profile-pane-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.shell-profile-pane-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
 /* Reduced motion needs no rule here: the component library collapses every
    animation and transition to a single frame at the foundation (see
    `prefers-reduced-motion` in its theme.css), and these transitions inherit

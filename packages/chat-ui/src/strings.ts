@@ -83,8 +83,19 @@ export const CHAT_STRINGS = {
   channelSettingsAction: "Channel settings",
   channelSettingsDialogTitle: "Channel settings",
   channelSettingsDialogDescription:
-    "Name, pin, conversation memory, and who's in this channel.",
+    "Name, people, agents, access, and how this channel behaves.",
+  channelSettingsTabsLabel: "Channel settings sections",
+  channelSettingsTabGeneral: "General",
+  channelSettingsTabMembers: "Members",
+  channelSettingsTabAgents: "Agents",
+  channelSettingsTabAccess: "Access",
+  channelSettingsTabNotifications: "Notifications",
+  channelSettingsTabDanger: "Danger",
   channelSettingsNameLabel: "Name",
+  channelSettingsPurposeLabel: "Purpose",
+  channelSettingsPurposePlaceholder: "What is this channel for?",
+  channelSettingsPurposeHint:
+    "Draft only for now — purpose is not stored on the channel yet.",
   channelSettingsPinnedLabel: "Pinned",
   channelSettingsPinnedDescription:
     "Pinned channels stay at the top for the whole bench.",
@@ -98,7 +109,28 @@ export const CHAT_STRINGS = {
     "Disabled — mentioned agents see no history",
   channelSettingsContextWindowCustom: (count: number) =>
     `Last ${count} messages`,
+  channelSettingsDeliveryTitle: "Delivery thread",
+  channelSettingsDeliveryBody:
+    "Routine and agent delivery always lands in a dedicated delivery thread — never the main timeline — so broadcast stays readable.",
   channelSettingsParticipantsLabel: "Participants",
+  channelSettingsPeopleLabel: "People",
+  channelSettingsAgentsLabel: "Agents",
+  channelSettingsNoPeople: "No people in this channel yet.",
+  channelSettingsNoAgents: "No agents invited yet.",
+  channelSettingsAutonomyTitle: "Autonomy",
+  channelSettingsAutonomyBody:
+    "Per-channel autonomy overrides are not stored yet. Agents inherit the workbench default until that control lands.",
+  channelSettingsAccessBody:
+    "Channel access follows workbench grants and membership. Manage role and principal grants under Workspace → Grants.",
+  channelSettingsNotificationsLabel: "Notifications",
+  channelSettingsNotifyAll: "All messages",
+  channelSettingsNotifyMentions: "Mentions only",
+  channelSettingsNotifyMute: "Mute",
+  channelSettingsNotificationsHint:
+    "Preference is local draft UI until per-channel notification storage ships.",
+  channelSettingsArchiveTitle: "Archive channel",
+  channelSettingsArchiveBody:
+    "Archiving is not available yet. Closing this channel would hide it from the sidebar without deleting history once the action lands.",
   channelSettingsLoadError: "Couldn't load this channel's settings",
   channelSettingsSaveError:
     "Couldn't save this channel's settings — try again.",
@@ -106,4 +138,11 @@ export const CHAT_STRINGS = {
   channelSettingsSave: "Save",
   channelSettingsSaving: "Saving…",
   channelSettingsNoParticipants: "No participants yet.",
+  profileOpenAction: "Open profile",
+  profileMessageAction: "Message",
+  profileViewSettingsAction: "View settings",
+  profileSharedChannels: "Shared channels",
+  profilePinnedSkills: "Pinned skills",
+  profileAgentStatus: "Agent",
+  profileMemberStatus: "Member",
 } as const;

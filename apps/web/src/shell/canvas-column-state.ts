@@ -1,12 +1,14 @@
 // The canvas column's state as pure transitions, separate from
 // `breakpoints.ts`'s allow/disallow rule — a user's toggle, a channel the
-// user opened into the canvas, and the viewport's veto are three independent
-// inputs, and `resolveCanvasVisibility` is the one place they combine.
+// user opened into the canvas, a profile subject, and the viewport's veto
+// are independent inputs; `resolveCanvasVisibility` is the one place they
+// combine.
 //
 // The canvas hosts the channel chat surface (the retired `/chat` page's
-// `ChatWorkspace`), so its state carries the active channel alongside
-// open/closed. A deep link (`/c/:channelId`) feeds the same `channelId` from
-// the URL; path→state lives here so the shell and tests share one contract.
+// `ChatWorkspace`) and optionally a ProfileCard overlay. Deep links
+// (`/c/:channelId`) feed the same `channelId` from the URL.
+
+import type { ProfileSubject } from "@corbits/chat-ui";
 
 import { channelIdFromPath } from "../channel-path";
 
@@ -14,10 +16,12 @@ export type CanvasColumnState = {
   readonly open: boolean;
   /** The channel rendered in the canvas, or null when no channel is loaded. */
   readonly channelId: string | null;
+  /** When set, the canvas shows a ProfileCard for this subject over the chat. */
+  readonly profile: ProfileSubject | null;
 };
 
 export function initialCanvasColumnState(): CanvasColumnState {
-  return { open: false, channelId: null };
+  return { open: false, channelId: null, profile: null };
 }
 
 /** Flip the canvas open/closed without touching the loaded channel — closing
@@ -30,7 +34,21 @@ export function toggleCanvasColumn(
 
 /** Open the canvas onto a specific channel (channel-row click or deep link). */
 export function openChannelInCanvas(channelId: string): CanvasColumnState {
-  return { open: true, channelId };
+  return { open: true, channelId, profile: null };
+}
+
+/** Open (or replace) a profile card in the canvas without dropping the channel. */
+export function openProfileInCanvas(
+  state: CanvasColumnState,
+  profile: ProfileSubject,
+): CanvasColumnState {
+  return { ...state, open: true, profile };
+}
+
+export function clearProfileInCanvas(
+  state: CanvasColumnState,
+): CanvasColumnState {
+  return { ...state, profile: null };
 }
 
 /**
