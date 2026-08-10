@@ -202,6 +202,6 @@ export async function sendText(
   return app.request(`/channels/${channelId}/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify([{ kind: "text", text }]),
+    body: JSON.stringify({ parts: [{ kind: "text", text }] }),
   });
 }

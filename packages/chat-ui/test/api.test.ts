@@ -171,7 +171,7 @@ describe("createChannel", () => {
 });
 
 describe("sendMessage", () => {
-  test("posts a single-element Part array containing the TextPart", async () => {
+  test("posts { parts } with the TextPart payload", async () => {
     const calls = stubFetch(() =>
       json({ id: "m1", createdAt: "2026-01-01T00:00:00.000Z" }, 201),
     );
@@ -180,9 +180,32 @@ describe("sendMessage", () => {
       "/api/tenants/tenant_1/chat/channels/chan_1/messages",
     );
     expect(calls[0]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual([
-      { kind: "text", text: "hello" },
-    ]);
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      parts: [{ kind: "text", text: "hello" }],
+    });
+  });
+
+  test("includes threadId when posting into a thread", async () => {
+    const calls = stubFetch(() =>
+      json(
+        {
+          id: "m1",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          threadId: "thr_1",
+        },
+        201,
+      ),
+    );
+    await sendMessage(
+      "tenant_1",
+      "chan_1",
+      [{ kind: "text", text: "reply" }],
+      { threadId: "thr_1" },
+    );
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      parts: [{ kind: "text", text: "reply" }],
+      threadId: "thr_1",
+    });
   });
 });
 

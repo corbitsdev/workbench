@@ -80,7 +80,11 @@ const MessagesResponse = type({
 });
 export type MessagesResponse = typeof MessagesResponse.infer;
 
-const SentMessage = type({ id: "string", createdAt: "string" });
+const SentMessage = type({
+  id: "string",
+  createdAt: "string",
+  "threadId?": "string",
+});
 
 const ReadState = type({
   "lastSeenCreatedAt?": "string | null",
@@ -210,15 +214,75 @@ export function listMessages(
   );
 }
 
+export type SendMessageOptions = {
+  readonly threadId?: string;
+  readonly inReplyToMessageId?: string;
+};
+
 export function sendMessage(
   tenantId: string,
   channelId: string,
   parts: readonly Part[],
-): Promise<{ readonly id: string; readonly createdAt: string }> {
+  options?: SendMessageOptions,
+): Promise<{
+  readonly id: string;
+  readonly createdAt: string;
+  readonly threadId?: string;
+}> {
+  const body: Record<string, unknown> = { parts };
+  if (options?.threadId !== undefined) body["threadId"] = options.threadId;
+  if (options?.inReplyToMessageId !== undefined) {
+    body["inReplyToMessageId"] = options.inReplyToMessageId;
+  }
   return request(
     `/api/tenants/${tenantId}/chat/channels/${channelId}/messages`,
     SentMessage,
-    { method: "POST", body: JSON.stringify(parts) },
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export const ChannelThread = type({
+  id: "string",
+  kind: "'root' | 'reply' | 'delivery'",
+  parentMessageId: "string | null",
+  runRef: "string | null",
+  title: "string | null",
+  createdAt: "string",
+});
+export type ChannelThread = typeof ChannelThread.infer;
+
+const ThreadsResponse = type({
+  rootThreadId: "string",
+  items: ChannelThread.array(),
+});
+
+export function listThreads(
+  tenantId: string,
+  channelId: string,
+): Promise<{
+  readonly rootThreadId: string;
+  readonly items: readonly ChannelThread[];
+}> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/threads`,
+    ThreadsResponse,
+  );
+}
+
+const ThreadMessagesResponse = type({
+  thread: ChannelThread,
+  items: MessageItem.array(),
+});
+export type ThreadMessagesResponse = typeof ThreadMessagesResponse.infer;
+
+export function listThreadMessages(
+  tenantId: string,
+  channelId: string,
+  threadId: string,
+): Promise<ThreadMessagesResponse> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/threads/${threadId}/messages`,
+    ThreadMessagesResponse,
   );
 }
 

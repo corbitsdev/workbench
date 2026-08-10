@@ -548,7 +548,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
       if (deps.threads === undefined) {
-        return c.json({ items: [] as const });
+        return c.json({ rootThreadId: "", items: [] as const });
       }
       const root = await deps.threads.ensureRootThread(tenant.id, channelId);
       const items = await deps.threads.listThreads(tenant.id, channelId);
@@ -704,7 +704,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
     async (c) => {
       const raw = await c.req.json().catch(() => undefined);
-      const parsed = Part.array()(raw);
+      // Clean cutover: body is always { parts, threadId?, inReplyToMessageId? }.
+      // Messages land on the root feed unless a thread or parent reply is set.
+      const PostMessageBody = type({
+        parts: Part.array(),
+        "threadId?": "string",
+        "inReplyToMessageId?": "string",
+      });
+      const parsed = PostMessageBody(raw);
       if (parsed instanceof type.errors) {
         return c.json(
           ErrorEnvelope(
@@ -718,7 +725,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
       const channelId = c.req.param("id");
-      const messageParts = parsed as PartType[];
+      const messageParts = parsed.parts as PartType[];
 
       if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
@@ -763,12 +770,38 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       if (deps.threads !== undefined) {
         const root = await deps.threads.ensureRootThread(tenant.id, channelId);
+        let targetThreadId = root.id;
+        if (parsed.threadId !== undefined) {
+          const existing = await deps.threads.getThread(
+            tenant.id,
+            parsed.threadId,
+          );
+          if (existing === undefined || existing.channelId !== channelId) {
+            return c.json(ErrorEnvelope("not_found", "thread not found"), 404);
+          }
+          targetThreadId = existing.id;
+        } else if (parsed.inReplyToMessageId !== undefined) {
+          const reply = await deps.threads.openReplyThread({
+            tenantId: tenant.id,
+            channelId,
+            parentMessageId: parsed.inReplyToMessageId,
+          });
+          targetThreadId = reply.id;
+        }
         await deps.threads.assignMessage({
           tenantId: tenant.id,
           channelId,
-          threadId: root.id,
+          threadId: targetThreadId,
           messageId: sent.id,
         });
+        return c.json(
+          {
+            id: sent.id,
+            createdAt: sent.createdAt,
+            threadId: targetThreadId,
+          },
+          201,
+        );
       }
 
       return c.json({ id: sent.id, createdAt: sent.createdAt }, 201);

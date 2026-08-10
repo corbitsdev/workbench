@@ -13,8 +13,14 @@
 
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { Button, EmptyState, Skeleton } from "@corbits/react-ui";
-import { CircleAlert, MessageSquare, Settings, UserPlus } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ChevronDown,
+  CircleAlert,
+  MessageSquare,
+  SlidersHorizontal,
+  UserPlus,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -23,12 +29,19 @@ import {
   inviteAgent,
   listChannels,
   listMessages,
+  listThreadMessages,
+  listThreads,
   putReadState,
   sendMessage,
   channelStreamUrl,
   isKnownChannelKind,
 } from "./api";
-import type { Channel, CreateChannelInput, MessageItem } from "./api";
+import type {
+  Channel,
+  ChannelThread,
+  CreateChannelInput,
+  MessageItem,
+} from "./api";
 import { ChannelSettingsPanel } from "./channel-settings-panel";
 import { Composer } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
@@ -36,7 +49,7 @@ import { mentionCandidatesFromParticipants } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
 import { CHAT_STRINGS } from "./strings";
 import { AgentBadge, ChannelTimeline } from "./timeline";
-import type { CurrentUser } from "./timeline";
+import type { CurrentUser, ThreadAffordanceMeta } from "./timeline";
 import { useChannelStream } from "./use-channel-stream";
 
 /**
@@ -162,8 +175,72 @@ function ChatWorkspaceInner({
   const [settingsChannelId, setSettingsChannelId] = useState<string | null>(
     null,
   );
+  // null = channel root feed. A concrete id opens that thread in the same
+  // geometry (timeline + composer). pendingParentMessageId is set when the
+  // user opens a reply on a message that has no thread yet.
+  const [openThreadId, setOpenThreadId] = useState<string | null>(null);
+  const [pendingParentMessageId, setPendingParentMessageId] = useState<
+    string | null
+  >(null);
+  const [threads, setThreads] = useState<readonly ChannelThread[]>([]);
+  const [threadMetaByMessageId, setThreadMetaByMessageId] = useState<
+    ReadonlyMap<string, ThreadAffordanceMeta>
+  >(new Map());
 
   const unauthorizedRef = useRef(false);
+
+  const loadThreads = useCallback(
+    async (channelId: string) => {
+      try {
+        const page = await listThreads(tenantId, channelId);
+        setThreads(page.items);
+        // Build affordance meta for parent messages that already have a
+        // reply thread. Reply counts load lazily when the thread is opened;
+        // until then we surface "Thread" via replyCount 0+.
+        const replyThreads = page.items.filter(
+          (t) => t.kind === "reply" && t.parentMessageId !== null,
+        );
+        const meta = new Map<string, ThreadAffordanceMeta>();
+        await Promise.all(
+          replyThreads.map(async (thread) => {
+            if (thread.parentMessageId === null) return;
+            try {
+              const detail = await listThreadMessages(
+                tenantId,
+                channelId,
+                thread.id,
+              );
+              const items = detail.items;
+              const addresses = [
+                ...new Set(
+                  items
+                    .map((item) => item.sender?.address)
+                    .filter((a): a is string => typeof a === "string"),
+                ),
+              ];
+              const last = items.at(-1);
+              meta.set(thread.parentMessageId, {
+                replyCount: items.length,
+                lastActivityAt: last?.createdAt ?? thread.createdAt,
+                participantAddresses: addresses,
+              });
+            } catch {
+              meta.set(thread.parentMessageId, {
+                replyCount: 0,
+                lastActivityAt: thread.createdAt,
+                participantAddresses: [],
+              });
+            }
+          }),
+        );
+        setThreadMetaByMessageId(meta);
+      } catch {
+        setThreads([]);
+        setThreadMetaByMessageId(new Map());
+      }
+    },
+    [tenantId],
+  );
 
   // `background: true` is a refresh from SSE/polling: the previous ready
   // items stay on screen (and the composer stays mounted) until fresh data
@@ -176,24 +253,43 @@ function ChatWorkspaceInner({
       const background = options?.background ?? false;
       if (!background) setMessagesState({ kind: "loading" });
       try {
-        const page = await listMessages(tenantId, channelId);
-        // The server lists newest-first; the timeline renders top-to-bottom
-        // oldest-first with the viewport pinned to the end, so order once
-        // here — .at(-1) below is then genuinely the newest message.
-        const items = [...page.items].sort((a, b) =>
-          a.createdAt === b.createdAt
-            ? a.id.localeCompare(b.id)
-            : a.createdAt.localeCompare(b.createdAt),
-        );
+        let items: MessageItem[];
+        if (openThreadId !== null) {
+          const page = await listThreadMessages(
+            tenantId,
+            channelId,
+            openThreadId,
+          );
+          items = [...page.items].sort((a, b) =>
+            a.createdAt === b.createdAt
+              ? a.id.localeCompare(b.id)
+              : a.createdAt.localeCompare(b.createdAt),
+          );
+        } else if (pendingParentMessageId !== null) {
+          // Brand-new reply thread — nothing to load yet.
+          items = [];
+        } else {
+          const page = await listMessages(tenantId, channelId);
+          // The server lists newest-first; the timeline renders top-to-bottom
+          // oldest-first with the viewport pinned to the end, so order once
+          // here — .at(-1) below is then genuinely the newest message.
+          items = [...page.items].sort((a, b) =>
+            a.createdAt === b.createdAt
+              ? a.id.localeCompare(b.id)
+              : a.createdAt.localeCompare(b.createdAt),
+          );
+        }
         setMessagesState((current) =>
           nextMessagesState(current, { kind: "success", items }, background),
         );
-        const last = items.at(-1);
-        if (last !== undefined) {
-          await putReadState(tenantId, channelId, {
-            lastSeenCreatedAt: last.createdAt,
-            lastSeenId: last.id,
-          }).catch(() => undefined);
+        if (openThreadId === null && pendingParentMessageId === null) {
+          const last = items.at(-1);
+          if (last !== undefined) {
+            await putReadState(tenantId, channelId, {
+              lastSeenCreatedAt: last.createdAt,
+              lastSeenId: last.id,
+            }).catch(() => undefined);
+          }
         }
       } catch (cause) {
         // A 401 is terminal for this session: keep polling and the app
@@ -208,7 +304,7 @@ function ChatWorkspaceInner({
         );
       }
     },
-    [tenantId],
+    [tenantId, openThreadId, pendingParentMessageId],
   );
 
   useEffect(() => {
@@ -220,8 +316,18 @@ function ChatWorkspaceInner({
 
   useEffect(() => {
     unauthorizedRef.current = false;
-    if (activeChannelId !== null) void loadMessages(activeChannelId);
-  }, [activeChannelId, loadMessages]);
+    setOpenThreadId(null);
+    setPendingParentMessageId(null);
+    if (activeChannelId !== null) {
+      void loadThreads(activeChannelId);
+      void loadMessages(activeChannelId);
+    }
+  }, [activeChannelId]); // eslint-disable-line react-hooks/exhaustive-deps -- channel switch resets thread view
+
+  useEffect(() => {
+    if (activeChannelId === null) return;
+    void loadMessages(activeChannelId);
+  }, [openThreadId, pendingParentMessageId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Host shell opens the new-channel dialog from the contextual panel action.
   useEffect(() => {
@@ -238,6 +344,7 @@ function ChatWorkspaceInner({
     if (unauthorizedRef.current) return;
     if (activeChannelId !== null) {
       void loadMessages(activeChannelId, { background: true });
+      void loadThreads(activeChannelId);
     }
   };
   const streamState = useChannelStream(
@@ -278,12 +385,53 @@ function ChatWorkspaceInner({
   async function handleSend(text: string): Promise<boolean> {
     if (activeChannelId === null) return false;
     try {
-      await sendMessage(tenantId, activeChannelId, [{ kind: "text", text }]);
+      if (openThreadId !== null) {
+        await sendMessage(
+          tenantId,
+          activeChannelId,
+          [{ kind: "text", text }],
+          { threadId: openThreadId },
+        );
+      } else if (pendingParentMessageId !== null) {
+        const sent = await sendMessage(
+          tenantId,
+          activeChannelId,
+          [{ kind: "text", text }],
+          { inReplyToMessageId: pendingParentMessageId },
+        );
+        if (sent.threadId !== undefined) {
+          setOpenThreadId(sent.threadId);
+          setPendingParentMessageId(null);
+        }
+      } else {
+        await sendMessage(tenantId, activeChannelId, [
+          { kind: "text", text },
+        ]);
+      }
+      await loadThreads(activeChannelId);
       await loadMessages(activeChannelId, { background: true });
       return true;
     } catch {
       return false;
     }
+  }
+
+  function openThreadForMessage(messageId: string) {
+    const existing = threads.find(
+      (t) => t.kind === "reply" && t.parentMessageId === messageId,
+    );
+    if (existing !== undefined) {
+      setPendingParentMessageId(null);
+      setOpenThreadId(existing.id);
+      return;
+    }
+    setOpenThreadId(null);
+    setPendingParentMessageId(messageId);
+  }
+
+  function closeThread() {
+    setOpenThreadId(null);
+    setPendingParentMessageId(null);
   }
 
   const activeChannel =
@@ -301,6 +449,22 @@ function ChatWorkspaceInner({
         isAgentAddress(participant.address),
       )
     : undefined;
+
+  const replyThreads = useMemo(
+    () => threads.filter((t) => t.kind === "reply"),
+    [threads],
+  );
+  const openThread =
+    openThreadId === null
+      ? undefined
+      : threads.find((t) => t.id === openThreadId);
+  const inThreadView =
+    openThreadId !== null || pendingParentMessageId !== null;
+  const threadTitle =
+    openThread?.title ??
+    (pendingParentMessageId !== null ? "New thread" : "Thread");
+  // Member stack: up to three participant handles for the top bar.
+  const memberStack = (activeChannel?.participants ?? []).slice(0, 3);
 
   return (
     <>
@@ -328,13 +492,79 @@ function ChatWorkspaceInner({
           ) : (
             <>
               <div className="chat-channel-header">
-                <div className="chat-channel-identity">
-                  <h2 className="chat-channel-title">
-                    {activeChannel?.title || CHAT_STRINGS.unnamedChannel}
-                  </h2>
-                  {activeChatAgent !== undefined ? <AgentBadge /> : null}
-                </div>
+                {inThreadView ? (
+                  <nav className="chat-thread-breadcrumb" aria-label="Thread">
+                    <button
+                      type="button"
+                      className="chat-thread-breadcrumb-link"
+                      onClick={closeThread}
+                    >
+                      {activeChannel?.title || CHAT_STRINGS.unnamedChannel}
+                    </button>
+                    <span
+                      className="chat-thread-breadcrumb-sep"
+                      aria-hidden="true"
+                    >
+                      /
+                    </span>
+                    <span className="chat-thread-breadcrumb-current">
+                      {threadTitle}
+                    </span>
+                  </nav>
+                ) : (
+                  <div className="chat-channel-identity">
+                    <h2 className="chat-channel-title">
+                      {activeChannel?.title || CHAT_STRINGS.unnamedChannel}
+                    </h2>
+                    {activeChatAgent !== undefined ? <AgentBadge /> : null}
+                  </div>
+                )}
                 <div className="chat-channel-actions">
+                  <details className="chat-threads-menu">
+                    <summary className="chat-threads-menu-trigger">
+                      {replyThreads.length}{" "}
+                      {replyThreads.length === 1 ? "thread" : "threads"}
+                      <ChevronDown className="size-3.5 opacity-70" />
+                    </summary>
+                    <div className="chat-threads-menu-panel" role="menu">
+                      {replyThreads.length === 0 ? (
+                        <div className="chat-threads-menu-empty">
+                          No threads yet
+                        </div>
+                      ) : (
+                        replyThreads.map((thread) => (
+                          <button
+                            key={thread.id}
+                            type="button"
+                            role="menuitem"
+                            className="chat-threads-menu-item"
+                            onClick={() => {
+                              setPendingParentMessageId(null);
+                              setOpenThreadId(thread.id);
+                            }}
+                          >
+                            {thread.title ??
+                              (thread.parentMessageId !== null
+                                ? `Reply · ${thread.parentMessageId.slice(0, 8)}`
+                                : "Thread")}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </details>
+                  {memberStack.length > 0 ? (
+                    <div className="chat-member-stack" aria-label="Members">
+                      {memberStack.map((participant) => (
+                        <span
+                          key={participant.address}
+                          className="chat-sender-avatar"
+                          title={participant.handle}
+                        >
+                          {participant.handle.slice(0, 1).toUpperCase()}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   {canInviteAgent(activeChannel?.kind) ? (
                     <Button
                       variant="outline"
@@ -348,10 +578,10 @@ function ChatWorkspaceInner({
                   <Button
                     variant="outline"
                     size="sm"
+                    aria-label={CHAT_STRINGS.channelSettingsAction}
                     onClick={() => setSettingsChannelId(activeChannelId)}
                   >
-                    <Settings />
-                    {CHAT_STRINGS.channelSettingsAction}
+                    <SlidersHorizontal />
                   </Button>
                 </div>
               </div>
@@ -382,6 +612,8 @@ function ChatWorkspaceInner({
                     items={messagesState.items}
                     participants={activeChannel?.participants ?? []}
                     {...(currentUser !== undefined ? { currentUser } : {})}
+                    threadMetaByMessageId={threadMetaByMessageId}
+                    onOpenThread={openThreadForMessage}
                   />
                   <Composer
                     agents={mentionCandidatesFromParticipants(

@@ -28,7 +28,7 @@ describe("message fan-out", () => {
     const response = await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(parts),
+      body: JSON.stringify({ parts }),
     });
 
     expect(response.status).toBe(201);
@@ -56,7 +56,7 @@ describe("message fan-out", () => {
     const response = await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(parts),
+      body: JSON.stringify({ parts }),
     });
 
     expect(response.status).toBe(201);
@@ -80,7 +80,7 @@ describe("message fan-out", () => {
     const response = await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(parts),
+      body: JSON.stringify({ parts }),
     });
 
     expect(response.status).toBe(201);
@@ -99,17 +99,17 @@ describe("message fan-out", () => {
     await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify([{ kind: "text", text: "first message" }]),
+      body: JSON.stringify({ parts: [{ kind: "text", text: "first message" }] }),
     });
     await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify([{ kind: "text", text: "second message" }]),
+      body: JSON.stringify({ parts: [{ kind: "text", text: "second message" }] }),
     });
     const response = await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify([{ kind: "text", text: "hi @ins_echo1" }]),
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hi @ins_echo1" }] }),
     });
     expect(response.status).toBe(201);
 
@@ -146,7 +146,7 @@ describe("message fan-out", () => {
     const response = await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify([{ kind: "text", text: "hi @ins_echo1" }]),
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hi @ins_echo1" }] }),
     });
     expect(response.status).toBe(201);
 
@@ -171,12 +171,12 @@ describe("message fan-out", () => {
     await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify([{ kind: "text", text: "earlier turn" }]),
+      body: JSON.stringify({ parts: [{ kind: "text", text: "earlier turn" }] }),
     });
     const response = await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify([{ kind: "text", text: "hello, no mention here" }]),
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hello, no mention here" }] }),
     });
     expect(response.status).toBe(201);
 
@@ -203,7 +203,7 @@ describe("message fan-out", () => {
     const response = await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify([{ kind: "text", text: "hi @ins_echo1" }]),
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hi @ins_echo1" }] }),
     });
 
     expect(response.status).toBe(201);

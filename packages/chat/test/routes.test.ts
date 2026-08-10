@@ -279,7 +279,7 @@ describe("messages", () => {
     const response = await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(parts),
+      body: JSON.stringify({ parts }),
     });
 
     expect(response.status).toBe(201);
@@ -297,7 +297,7 @@ describe("messages", () => {
     const response = await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify([{ kind: "not-a-real-part" }]),
+      body: JSON.stringify({ parts: [{ kind: "not-a-real-part" }] }),
     });
 
     expect(response.status).toBe(400);
@@ -313,7 +313,7 @@ describe("messages", () => {
     await app.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify([{ kind: "text", text: "hi there" }]),
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hi there" }] }),
     });
 
     const response = await app.request(`/channels/${channel.id}/messages`);
@@ -774,7 +774,7 @@ describe("cross-tenant channel isolation", () => {
     const postB = await appB.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify([{ kind: "text", text: "cross-tenant write" }]),
+      body: JSON.stringify({ parts: [{ kind: "text", text: "cross-tenant write" }] }),
     });
     expect(postB.status).toBe(404);
     expect(

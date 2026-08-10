@@ -271,11 +271,15 @@ function MessageParts({
   participants,
   currentUser,
   showDayDivider,
+  threadMeta,
+  onOpenThread,
 }: {
   readonly item: MessageItem;
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
   readonly showDayDivider: boolean;
+  readonly threadMeta?: ThreadAffordanceMeta | undefined;
+  readonly onOpenThread?: (messageId: string) => void;
 }) {
   return (
     <>
@@ -306,7 +310,90 @@ function MessageParts({
         }
         return <FallbackPart key={key} part={part} />;
       })}
+      {onOpenThread !== undefined ? (
+        <ThreadAffordance
+          messageId={item.id}
+          meta={threadMeta}
+          participants={participants}
+          onOpen={() => onOpenThread(item.id)}
+        />
+      ) : null}
     </>
+  );
+}
+
+export type ThreadAffordanceMeta = {
+  readonly replyCount: number;
+  readonly lastActivityAt: string | null;
+  readonly participantAddresses: readonly string[];
+};
+
+function formatRelativeActivity(iso: string | null): string {
+  if (iso === null) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const deltaMs = Date.now() - date.getTime();
+  const minutes = Math.round(deltaMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+function ThreadAffordance({
+  messageId,
+  meta,
+  participants,
+  onOpen,
+}: {
+  readonly messageId: string;
+  readonly meta: ThreadAffordanceMeta | undefined;
+  readonly participants: readonly ParticipantRecord[];
+  readonly onOpen: () => void;
+}) {
+  const replyCount = meta?.replyCount ?? 0;
+  const addresses = meta?.participantAddresses ?? [];
+  const initials = addresses.slice(0, 3).map((address) => {
+    const handle =
+      participants.find((p) => p.address === address)?.handle ??
+      address.slice(0, 1);
+    return initialsOf(handle);
+  });
+  const activity = formatRelativeActivity(meta?.lastActivityAt ?? null);
+  const label =
+    replyCount === 0
+      ? "Reply in thread"
+      : replyCount === 1
+        ? "1 reply"
+        : `${replyCount} replies`;
+
+  return (
+    <div className="chat-thread-affordance" data-message-id={messageId}>
+      {initials.length > 0 ? (
+        <span className="chat-thread-avatar-stack" aria-hidden="true">
+          {initials.map((value, index) => (
+            <span key={`${value}-${index}`} className="chat-sender-avatar">
+              {value}
+            </span>
+          ))}
+        </span>
+      ) : null}
+      <span className="chat-thread-affordance-meta">
+        <span className="chat-thread-reply-count">{label}</span>
+        {activity !== "" ? (
+          <span className="chat-thread-last-activity">{activity}</span>
+        ) : null}
+      </span>
+      <button
+        type="button"
+        className="chat-thread-open"
+        onClick={onOpen}
+      >
+        Open
+      </button>
+    </div>
   );
 }
 
@@ -314,10 +401,15 @@ export function ChannelTimeline({
   items,
   participants = [],
   currentUser,
+  threadMetaByMessageId,
+  onOpenThread,
 }: {
   readonly items: readonly MessageItem[];
   readonly participants?: readonly ParticipantRecord[];
   readonly currentUser?: CurrentUser;
+  /** Reply-thread summary keyed by parent message id. */
+  readonly threadMetaByMessageId?: ReadonlyMap<string, ThreadAffordanceMeta>;
+  readonly onOpenThread?: (messageId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Starts true so a channel's first render always lands pinned to the
@@ -372,6 +464,8 @@ export function ChannelTimeline({
             participants={participants}
             currentUser={currentUser}
             showDayDivider={showDayDivider}
+            threadMeta={threadMetaByMessageId?.get(item.id)}
+            {...(onOpenThread !== undefined ? { onOpenThread } : {})}
           />
         );
       })}
