@@ -17,11 +17,20 @@ import { CreateSkillDialog } from "./create-skill-dialog";
  * against a list that is, for now, always empty. The create dialog
  * collects a draft but never POSTs; once a seam is real it will feed a
  * list instead of an empty state.
+ *
+ * The toolbar (search + view toggle) is gated behind a non-empty skills
+ * list: with nothing to search or toggle, those controls would be inert
+ * chrome, so the empty state's "Create skill" action is the sole
+ * affordance until a registry exists.
  */
 export function SkillsPage() {
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [createOpen, setCreateOpen] = useState(false);
+
+  // No skill registry yet — the list is always empty. Kept as a local so
+  // the toolbar gate reads honestly and is ready to wire to real data.
+  const skills: unknown[] = [];
 
   // Mirror the agents page: a `workbench:skills:create` window event
   // opens the create dialog from anywhere (e.g. the command palette).
@@ -34,14 +43,16 @@ export function SkillsPage() {
 
   return (
     <>
-      <div className="page-toolbar">
-        <LibrarySearchInput
-          label="Search skills"
-          value={query}
-          onChange={setQuery}
-        />
-        <ViewToggle mode={viewMode} onChange={setViewMode} />
-      </div>
+      {skills.length > 0 && (
+        <div className="page-toolbar">
+          <LibrarySearchInput
+            label="Search skills"
+            value={query}
+            onChange={setQuery}
+          />
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
+        </div>
+      )}
       <PageShell width="full" className="page-fill">
         <RichEmptyState
           icon={<Sparkles />}

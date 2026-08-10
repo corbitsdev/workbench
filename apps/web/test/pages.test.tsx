@@ -45,7 +45,7 @@ describe("empty states", () => {
     const markup = renderToStaticMarkup(<SkillsPage />);
     expect(markup).toContain("No skills yet");
     expect(markup).toContain("Create skill");
-    expect(markup).toContain("Search skills");
+    expect(markup).not.toContain("Search skills");
   });
 
   test("agents reports a missing session instead of empty panels", () => {
