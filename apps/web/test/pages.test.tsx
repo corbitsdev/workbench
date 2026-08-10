@@ -26,7 +26,9 @@ describe("empty states", () => {
   test("library teaches what will appear once the seam is real", () => {
     const markup = renderToStaticMarkup(<LibraryPage artifacts={[]} />);
     expect(markup).toContain("No artifacts yet");
-    expect(markup).toContain("This workbench has no assets yet");
+    expect(markup).toContain(
+      "Upload a file or wait for agents and workflows to produce artifacts",
+    );
   });
 
   test("skills renders the shell with an honest empty state and Create action", () => {

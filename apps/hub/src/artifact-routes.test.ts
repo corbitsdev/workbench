@@ -1,131 +1,228 @@
-import { describe, expect, test } from "bun:test";
-import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import { beforeEach, describe, expect, test } from "bun:test";
+import type { RequireGrant } from "@intx/hub-api";
 import { Hono } from "hono";
 
 import {
   createArtifactRoutes,
+  createUnavailableArtifactRoutes,
   type ArtifactRoutesStore,
-  type ArtifactListPage,
+  type ArtifactUploadInput,
 } from "./artifact-routes";
-import type { SerializedArtifact } from "@corbits/artifacts";
 
-function listItem(id: string): ArtifactListPage["data"][number] {
-  return {
-    id,
-    kind: "document",
-    title: `Title ${id}`,
-    source: { origin: "manual" },
-    version: 1,
-    ownerPrincipalId: null,
-    ownerName: null,
-    archivedAt: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-02T00:00:00.000Z",
+type Tenant = { id: string };
+type Principal = { id: string };
+
+type TestEnv = {
+  Variables: {
+    tenant: Tenant;
+    principal: Principal;
   };
-}
+};
 
-function detail(id: string): SerializedArtifact {
-  return {
-    ...listItem(id),
-    content: `body of ${id}`,
-  };
-}
+const TENANT = { id: "tenant_a" };
+const OTHER = { id: "tenant_b" };
+const PRINCIPAL = { id: "prin_1" };
 
-function memoryStore(seed: {
-  listByTenant: Record<string, ArtifactListPage["data"]>;
-  details: Record<string, { tenantId: string; row: SerializedArtifact }>;
-}): ArtifactRoutesStore {
-  return {
-    async list(tenantId, _opts) {
-      const data = seed.listByTenant[tenantId] ?? [];
-      return { data, nextCursor: null };
-    },
-    async get(tenantId, artifactId) {
-      const hit = seed.details[artifactId];
-      if (hit === undefined || hit.tenantId !== tenantId) return null;
-      return hit.row;
-    },
-  };
-}
-
-/** Pass-through grant middleware for route unit tests (authz is hub-owned). */
 const allowAll: RequireGrant = () => async (_c, next) => {
   await next();
 };
 
-function appWith(
-  store: ArtifactRoutesStore,
-  tenantId: string,
-): Hono<TenantEnv> {
-  const routes = createArtifactRoutes({ store, requireGrant: allowAll });
-  const outer = new Hono<TenantEnv>();
-  outer.use("*", async (c, next) => {
-    c.set("tenant", { id: tenantId } as TenantEnv["Variables"]["tenant"]);
-    c.set("principal", {
-      id: "principal_test",
-    } as TenantEnv["Variables"]["principal"]);
-    await next();
-  });
-  outer.route("/api/tenants/:tenantId/artifacts", routes);
-  return outer;
+type Row = {
+  id: string;
+  kind: string;
+  title: string;
+  source: { origin: string };
+  version: number;
+  ownerPrincipalId: string;
+  ownerName: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  content: string;
+  _tenantId: string;
+};
+
+function sampleRow(id: string, tenantId: string, content = ""): Row {
+  return {
+    id,
+    kind: "file",
+    title: `doc-${id}.txt`,
+    source: { origin: "library-upload" },
+    version: 1,
+    ownerPrincipalId: PRINCIPAL.id,
+    ownerName: null,
+    archivedAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    content,
+    _tenantId: tenantId,
+  };
 }
 
-describe("createArtifactRoutes", () => {
-  test("lists artifacts for the tenant (happy path)", async () => {
-    const store = memoryStore({
-      listByTenant: {
-        tenant_a: [listItem("art_1"), listItem("art_2")],
-      },
-      details: {},
+function stripTenant(row: Row) {
+  const { _tenantId: _t, ...rest } = row;
+  return rest;
+}
+
+function memoryStore(): ArtifactRoutesStore & { rows: Row[] } {
+  const rows: Row[] = [];
+  return {
+    rows,
+    async list(tenantId, opts) {
+      let data = rows
+        .filter((r) => r._tenantId === tenantId)
+        .map((r) => {
+          const { content: _c, ...item } = stripTenant(r);
+          return item;
+        });
+      if (opts.query !== null) {
+        const q = opts.query.toLowerCase();
+        data = data.filter((r) => r.title.toLowerCase().includes(q));
+      }
+      return {
+        data: data.slice(0, opts.limit),
+        nextCursor: null,
+      };
+    },
+    async get(tenantId, artifactId) {
+      const row = rows.find(
+        (r) => r.id === artifactId && r._tenantId === tenantId,
+      );
+      if (row === undefined) return null;
+      return stripTenant(row);
+    },
+    async upload(
+      tenantId: string,
+      principalId: string,
+      files: readonly ArtifactUploadInput[],
+    ) {
+      return files.map((file, index) => {
+        const item = sampleRow(`up_${rows.length + index}`, tenantId);
+        item.title = file.filename;
+        item.ownerPrincipalId = principalId;
+        item.content = new TextDecoder().decode(file.bytes);
+        rows.push(item);
+        return stripTenant(item);
+      });
+    },
+  };
+}
+
+function mount(store: ArtifactRoutesStore) {
+  const app = new Hono<TestEnv>();
+  app.use("*", async (c, next) => {
+    c.set("tenant", TENANT);
+    c.set("principal", PRINCIPAL);
+    await next();
+  });
+  app.route(
+    "/artifacts",
+    createArtifactRoutes({ store, requireGrant: allowAll }),
+  );
+  return app;
+}
+
+describe("artifact routes", () => {
+  let store: ReturnType<typeof memoryStore>;
+  let app: ReturnType<typeof mount>;
+
+  beforeEach(() => {
+    store = memoryStore();
+    app = mount(store);
+  });
+
+  test("GET / lists empty data for a tenant with no artifacts", async () => {
+    const res = await app.request("/artifacts");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ data: [], nextCursor: null });
+  });
+
+  test("GET / returns only the calling tenant's rows", async () => {
+    store.rows.push(sampleRow("a1", TENANT.id, "mine"));
+    store.rows.push(sampleRow("b1", OTHER.id, "theirs"));
+    const res = await app.request("/artifacts");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { id: string }[] };
+    expect(body.data.map((r) => r.id)).toEqual(["a1"]);
+  });
+
+  test("GET /?q= filters by title", async () => {
+    store.rows.push({
+      ...sampleRow("a1", TENANT.id, "x"),
+      title: "Quarterly report.pdf",
     });
-    const app = appWith(store, "tenant_a");
-    const res = await app.request("/api/tenants/tenant_a/artifacts");
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as ArtifactListPage;
-    expect(body.data).toHaveLength(2);
-    expect(body.data[0]?.id).toBe("art_1");
-    expect(body.nextCursor).toBeNull();
-  });
-
-  test("empty list returns data: []", async () => {
-    const store = memoryStore({ listByTenant: {}, details: {} });
-    const app = appWith(store, "tenant_empty");
-    const res = await app.request("/api/tenants/tenant_empty/artifacts");
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as ArtifactListPage;
-    expect(body.data).toEqual([]);
-  });
-
-  test("get returns the artifact body for the owning tenant", async () => {
-    const row = detail("art_9");
-    const store = memoryStore({
-      listByTenant: {},
-      details: { art_9: { tenantId: "tenant_a", row } },
+    store.rows.push({
+      ...sampleRow("a2", TENANT.id, "y"),
+      title: "notes.txt",
     });
-    const app = appWith(store, "tenant_a");
-    const res = await app.request("/api/tenants/tenant_a/artifacts/art_9");
+    const res = await app.request("/artifacts?q=report");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as SerializedArtifact;
-    expect(body.id).toBe("art_9");
-    expect(body.content).toBe("body of art_9");
+    const body = (await res.json()) as { data: { id: string }[] };
+    expect(body.data.map((r) => r.id)).toEqual(["a1"]);
   });
 
-  test("get returns 404 for a missing id", async () => {
-    const store = memoryStore({ listByTenant: {}, details: {} });
-    const app = appWith(store, "tenant_a");
-    const res = await app.request("/api/tenants/tenant_a/artifacts/missing");
+  test("GET /:id returns 404 for a foreign tenant row", async () => {
+    store.rows.push(sampleRow("b1", OTHER.id, "secret"));
+    const res = await app.request("/artifacts/b1");
     expect(res.status).toBe(404);
   });
 
-  test("get returns 404 when the artifact belongs to another tenant", async () => {
-    const row = detail("art_x");
-    const store = memoryStore({
-      listByTenant: {},
-      details: { art_x: { tenantId: "tenant_b", row } },
+  test("GET /:id returns the row for the calling tenant", async () => {
+    store.rows.push(sampleRow("a1", TENANT.id, "hello"));
+    const res = await app.request("/artifacts/a1");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; content: string };
+    expect(body.id).toBe("a1");
+    expect(body.content).toBe("hello");
+  });
+
+  test("POST /upload creates artifacts from multipart files", async () => {
+    const form = new FormData();
+    form.append(
+      "file",
+      new File(["hello library"], "hello.txt", { type: "text/plain" }),
+    );
+    const res = await app.request("/artifacts/upload", {
+      method: "POST",
+      body: form,
     });
-    // Request as tenant_a — store enforces tenant match.
-    const app = appWith(store, "tenant_a");
-    const res = await app.request("/api/tenants/tenant_a/artifacts/art_x");
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      data: { title: string; content: string }[];
+    };
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0]?.title).toBe("hello.txt");
+    expect(body.data[0]?.content).toBe("hello library");
+    expect(store.rows).toHaveLength(1);
+  });
+
+  test("POST /upload rejects an empty multipart body", async () => {
+    const form = new FormData();
+    form.append("note", "not a file");
+    const res = await app.request("/artifacts/upload", {
+      method: "POST",
+      body: form,
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("unavailable artifact routes", () => {
+  test("every surface answers 503", async () => {
+    const app = new Hono<TestEnv>();
+    app.use("*", async (c, next) => {
+      c.set("tenant", TENANT);
+      c.set("principal", PRINCIPAL);
+      await next();
+    });
+    app.route("/artifacts", createUnavailableArtifactRoutes(allowAll));
+
+    for (const path of ["/artifacts", "/artifacts/upload", "/artifacts/x"]) {
+      const method = path.endsWith("/upload") ? "POST" : "GET";
+      const res = await app.request(path, { method });
+      expect(res.status).toBe(503);
+      const body = (await res.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("unavailable");
+    }
   });
 });

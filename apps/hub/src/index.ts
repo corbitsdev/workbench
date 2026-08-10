@@ -59,7 +59,12 @@ import { createGitWorkflowPusher } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
 import { mountMemory } from "./memory-mount";
 import { mountArtifacts } from "./artifacts-mount";
-import { createArtifactDbStore, createArtifactRoutes } from "./artifact-routes";
+import {
+  createArtifactDbStore,
+  createArtifactRoutes,
+  createUnavailableArtifactRoutes,
+} from "./artifact-routes";
+
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, type Next } from "hono";
@@ -517,7 +522,10 @@ export async function createHub(config: HubConfig) {
     app.route(
       `${TENANT_PREFIX}/artifacts`,
       createArtifactRoutes({
-        store: createArtifactDbStore(artifactsHandle.db),
+        store: createArtifactDbStore(
+          artifactsHandle.db,
+          artifactsHandle.contentStore,
+        ),
         requireGrant: createRequireGrant({
           grantStore: chatGrantStore,
           conditionRegistry: chatConditionRegistry,
@@ -526,6 +534,15 @@ export async function createHub(config: HubConfig) {
     );
   } else {
     log.info("Artifacts handle unavailable (degraded mode)");
+    app.route(
+      `${TENANT_PREFIX}/artifacts`,
+      createUnavailableArtifactRoutes(
+        createRequireGrant({
+          grantStore: chatGrantStore,
+          conditionRegistry: chatConditionRegistry,
+        }),
+      ),
+    );
   }
 
   // Tells the signed-out screen which OAuth buttons to draw, without
