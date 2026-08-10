@@ -41,9 +41,9 @@ html {
   overflow: hidden;
 }
 
-/* Mock --col2-w: 18rem (fixed; not a clamp mid). */
+/* Mock --col2-w: 16.5rem (fixed; not a clamp mid). */
 :root {
-  --shell-contextual-width: 18rem;
+  --shell-contextual-width: 16.5rem;
   --shell-canvas-width: min(36rem, 42vw);
   --shell-rail-brand: #e98428;
   --shell-rail-brand-hover: #d47420;
@@ -82,15 +82,16 @@ html {
 .shell-contextual-panel [data-slot="sidebar-panel-header"] {
   min-height: 0;
   height: auto;
-  padding: 0.85rem 0.85rem 0.5rem;
+  padding: 0.7rem 0.75rem 0.4rem;
   border-bottom: none;
   gap: 0.4rem;
 }
 
 .shell-contextual-panel [data-slot="sidebar-panel-header"] h2 {
   margin: 0;
-  font-size: 0.95rem;
-  font-weight: 650;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .shell-contextual-panel [data-slot="sidebar-panel-body"] {
@@ -195,7 +196,7 @@ html {
   height: 1.8rem;
   min-height: 0;
   padding: 0;
-  border-radius: 0.45rem;
+  border-radius: 0;
   color: var(--muted-foreground, #8a8080);
   background: transparent;
 }
@@ -227,7 +228,7 @@ html {
 .panel-page-actions [data-slot="button"] {
   height: 1.7rem;
   padding: 0 0.55rem;
-  border-radius: 0.45rem;
+  border-radius: 0;
   font-size: 0.72rem;
   font-weight: 550;
 }
@@ -674,7 +675,7 @@ html {
   align-items: center;
   width: 100%;
   padding: 0.32rem 0.42rem;
-  border-radius: 0.6rem;
+  border-radius: 0;
   color: var(--muted-foreground, var(--ui-fg-muted));
   text-align: left;
   border: 0;
@@ -692,10 +693,9 @@ html {
 
 .shell-ch-row[aria-current="true"],
 .shell-ch-row[data-active="true"] {
-  background: var(--card, #fff);
-  color: var(--foreground, var(--ui-fg));
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+  background: color-mix(in srgb, var(--foreground, #2b2627) 5%, transparent);
+  color: var(--primary, #e98428);
+  box-shadow: none;
 }
 
 .shell-ch-stack {
@@ -848,22 +848,47 @@ html {
 
 /* ChannelsBand search — mock searchBox at top of col2 body. */
 .shell-channels-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   margin: 0 0 0.35rem;
+  height: 2rem;
+  padding: 0 0.5rem 0 0;
+  border-radius: 0;
+  border: 1px solid
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+  background: var(--card, var(--background, #fff));
+  color: var(--muted-foreground, #8a8080);
+}
+
+.shell-channels-search > svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+  margin-left: 0.5rem;
 }
 
 /* Mock .search: compact inputs in col2 body (channels + filters). */
 .shell-contextual-panel .shell-channels-search [data-slot="input"],
 .shell-contextual-panel [data-slot="sidebar-panel-body"] [data-slot="input"] {
-  height: 2.15rem;
-  min-height: 2.15rem;
-  padding: 0 0.65rem;
-  border-radius: 0.55rem;
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0 0.65rem 0 0;
+  border-radius: 0;
   border: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
   background: var(--card, var(--background, #fff));
   font-size: 0.84rem;
   color: var(--foreground, #2b2627);
   box-shadow: none;
+}
+
+.shell-contextual-panel .shell-channels-search [data-slot="input"] {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding-left: 0;
 }
 
 .shell-contextual-panel .shell-channels-search [data-slot="input"]::placeholder,
@@ -873,9 +898,21 @@ html {
   color: var(--muted-foreground, #8a8080);
 }
 
+.shell-channels-search:focus-within {
+  outline: none;
+  border-color: color-mix(in srgb, var(--foreground, #2b2627) 16%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--primary, #e98428) 22%, transparent);
+}
+
 .shell-contextual-panel
   .shell-channels-search
-  [data-slot="input"]:focus-visible,
+  [data-slot="input"]:focus-visible {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
 .shell-contextual-panel
   [data-slot="sidebar-panel-body"]
   [data-slot="input"]:focus-visible {
@@ -893,7 +930,7 @@ html {
 
 .shell-contextual-panel [data-slot="sidebar-item-row"] > div {
   gap: 0.35rem;
-  border-radius: 0.45rem;
+  border-radius: 0;
   padding-right: 0.2rem;
   color: var(--muted-foreground, #5c5555);
   background: transparent;
@@ -911,10 +948,9 @@ html {
 .shell-contextual-panel
   [data-slot="sidebar-item-row"]
   > div:has(button[aria-current="true"]) {
-  background: var(--card, var(--background, #fff));
-  color: var(--foreground, #2b2627);
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+  background: color-mix(in srgb, var(--foreground, #2b2627) 5%, transparent);
+  color: var(--primary, #e98428);
+  box-shadow: none;
 }
 
 /* Kill react-ui selected wash utilities if they win cascade order. */
@@ -922,16 +958,20 @@ html {
 .shell-contextual-panel
   [data-slot="sidebar-item-row"]
   > div:has(button[aria-current="true"]) {
-  background-color: var(--card, var(--background, #fff));
-  color: var(--foreground, #2b2627);
+  background-color: color-mix(
+    in srgb,
+    var(--foreground, #2b2627) 5%,
+    transparent
+  );
+  color: var(--primary, #e98428);
 }
 
 .shell-contextual-panel [data-slot="sidebar-item-row"] > div > button {
   gap: 0.45rem;
   padding: 0.35rem 0.42rem;
-  border-radius: 0.45rem;
-  font-size: 0.85rem;
-  font-weight: 580;
+  border-radius: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
   line-height: 1.3;
   color: inherit;
 }
@@ -941,8 +981,12 @@ html {
   > div
   > button
   > span:first-child {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0;
+  border: 1px solid
+    color-mix(in srgb, var(--foreground, #2b2627) 12%, transparent);
+  background: transparent;
 }
 
 .shell-contextual-panel

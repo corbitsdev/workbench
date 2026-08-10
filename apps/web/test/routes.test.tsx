@@ -135,10 +135,10 @@ describe("routes render", () => {
     expect(markup).not.toContain('aria-current="page"');
   });
 
-  test("a /c/:channelId deep link opens the canvas on first paint", () => {
-    // Canvas state is seeded from the path (not effect-only), so static
-    // markup sees the open column without running useEffect.
+  test("a /c/:channelId deep link waits for tenant resolution", () => {
+    // Static rendering has no selected tenant, so the deep link cannot expose
+    // channel state before the outer workbench scope resolves.
     const markup = renderApp("/c/ch_deep");
-    expect(markup).toMatch(/class="shell-canvas-column"[^>]*data-open="true"/);
+    expect(markup).toMatch(/class="shell-canvas-column"[^>]*data-open="false"/);
   });
 });

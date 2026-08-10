@@ -20,6 +20,8 @@ import {
   Hash,
   MessageSquare,
   MoreHorizontal,
+  Plus,
+  Search,
   Sparkles,
   Workflow,
 } from "lucide-react";
@@ -194,7 +196,7 @@ function ChannelPanelRow({
   }
 
   const displayTitle = title || CHAT_STRINGS.unnamedChannel;
-  const faces = channel.participants.slice(0, 3);
+  const faces = channel.participants.slice(0, 1);
   const { sharedLabel, live, time, unread } = signals;
   const hasUnread = typeof unread === "number" && unread > 0;
 
@@ -265,35 +267,6 @@ function ChannelPanelRow({
           </MenuContent>
         </Menu>
       </div>
-    </div>
-  );
-}
-
-/**
- * The channel details panel contribution: when a specific channel is open in
- * the canvas, print its name, kind, and pinned state above the channel list
- * so the panel doubles as a details surface without a second fetch. Falls
- * back to nothing when no channel is selected.
- */
-function ChannelDetails({ channel }: { readonly channel: Channel }) {
-  const details = channelDetails(channel);
-  return (
-    <div className="panel-stack-group">
-      <p className="panel-band-subheading">Details</p>
-      <dl className="panel-channel-details">
-        <div>
-          <dt>Name</dt>
-          <dd>{details.title}</dd>
-        </div>
-        <div>
-          <dt>Type</dt>
-          <dd>{details.kind}</dd>
-        </div>
-        <div>
-          <dt>Pinned</dt>
-          <dd>{details.pinned ? "Yes" : "No"}</dd>
-        </div>
-      </dl>
     </div>
   );
 }
@@ -386,10 +359,6 @@ function ChannelsBand({
           return name.includes(q);
         });
 
-  const selected =
-    activeId === null
-      ? undefined
-      : all.find((channel) => channel.id === activeId);
   const tenantId = selectedTenantId ?? "";
 
   const byBucket = new Map<ChannelBucketId, Channel[]>();
@@ -405,15 +374,15 @@ function ChannelsBand({
 
   return (
     <div className="panel-stack" aria-label="Channels">
-      <div className="shell-channels-search">
+      <label className="shell-channels-search">
+        <Search aria-hidden="true" />
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search channels…"
           aria-label="Search channels"
         />
-      </div>
-      {selected !== undefined ? <ChannelDetails channel={selected} /> : null}
+      </label>
       {!hasVisibleRows ? (
         <EmptyState
           icon={<MessageSquare />}
@@ -879,10 +848,11 @@ export function ensurePanelContributions(): void {
         // Header title must stay a string for SidebarPanelHeader (react-ui pin).
         // Mock col2 head is title-only — no subtitle under "Channels".
         title: "Channels",
-        actions: [
+        headerActions: [
           {
             id: "new-channel",
             label: "New channel",
+            icon: <Plus />,
             onSelect: () => {
               window.dispatchEvent(
                 new CustomEvent("workbench:chat:new-channel"),

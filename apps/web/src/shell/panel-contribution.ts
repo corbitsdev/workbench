@@ -1,13 +1,13 @@
-// Route-aware contributions for the shell contextual panel. Page modules
-// register bands here; the shell resolves the first match for the current
-// path and never hardcodes per-page content. Workbench-specific — lives next
-// to the panel, not in a separate package. UI primitives stay in react-ui.
+// Panel contribution registry: page packages provide contextual panel bands;
+// the shell resolves the first matching contribution for the current route.
+// UI primitives stay in react-ui; this module only owns shell composition.
 
 import type { ReactNode } from "react";
 
 export type PanelAction = {
   readonly id: string;
   readonly label: string;
+  readonly icon?: ReactNode;
   readonly onSelect: () => void;
 };
 
@@ -16,6 +16,7 @@ export type PageBand = {
   readonly title: string;
   readonly subtitle?: string;
   readonly settingsPath?: string;
+  readonly headerActions?: readonly PanelAction[];
   readonly actions?: readonly PanelAction[];
   readonly stats?: ReactNode;
 };
@@ -23,11 +24,7 @@ export type PageBand = {
 export type PanelRenderContext = {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
-  /**
-   * Open a channel into the canvas without leaving the current page. Channel
-   * rows in the panel call this instead of navigating so a user on /library can
-   * pop a conversation open in column 4 and stay where they are.
-   */
+  /** Open a channel in the canvas without navigating away from the page. */
   readonly onOpenInCanvas: (channelId: string) => void;
 };
 
@@ -69,7 +66,6 @@ export function createPanelRegistry(
   };
 }
 
-/** Module-level registry the web shell and page modules share. */
 export const panelRegistry = createPanelRegistry();
 
 export function registerPanelContribution(

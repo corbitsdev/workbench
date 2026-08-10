@@ -1,13 +1,5 @@
-// Column 2: route-aware contextual panel matching the shell mock.
-//
-// Composes `@corbits/react-ui` SidebarPanel* parts:
-// 1. Header — page title, settings, quick actions, canvas toggle
-// 2. Pins — user-curated (hidden when empty)
-// 3. Body — page-specific contribution (lists/filters live here in the mock)
-// 4. Activity — needs-you approvals (hidden when empty)
-// 5. Footer — workbench switcher (mock col2 chrome, not rail)
-//
-// Live activity lives here (left), never in the right canvas.
+// Column 2 is route context, not a second app nav. Page contributions provide
+// its title, compact actions, and lists while the shell owns shared chrome.
 
 import {
   Button,
@@ -21,8 +13,8 @@ import {
 import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 
-import { CanvasToggle } from "./canvas-column";
 import { ActivityBand } from "./activity-band";
+import { CanvasToggle } from "./canvas-column";
 import { BenchDock } from "./docks";
 import { resolvePanelContribution } from "./panel-contribution";
 import { ensurePanelContributions } from "./panel-contributions";
@@ -52,11 +44,22 @@ export function ContextualPanel({
     subtitle: "Navigate from the rail",
   };
   const pageSpecific = contribution?.pageSpecific?.(renderCtx) ?? null;
-
   const [pins] = useState<readonly Pin[]>(() => loadPins());
 
   const headerAction = (
     <div className="panel-page-tools">
+      {pageBand.headerActions?.map((action) => (
+        <Button
+          key={action.id}
+          variant="ghost"
+          size="sm"
+          aria-label={action.label}
+          title={action.label}
+          onClick={action.onSelect}
+        >
+          {action.icon ?? action.label}
+        </Button>
+      ))}
       {pageBand.settingsPath !== undefined ? (
         <Button
           variant="ghost"
@@ -100,6 +103,7 @@ export function ContextualPanel({
               size="sm"
               onClick={action.onSelect}
             >
+              {action.icon}
               {action.label}
             </Button>
           ))}
