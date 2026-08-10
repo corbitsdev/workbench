@@ -11,6 +11,7 @@ import {
   SidebarItemRow,
   Skeleton,
 } from "@corbits/react-ui";
+import { isAgentAddress } from "@corbits/chat/mentions";
 import { CHAT_STRINGS, patchChannelSettings } from "@corbits/chat-ui";
 import type { Channel } from "@corbits/chat-ui";
 import {
@@ -244,6 +245,38 @@ function ChannelPageTitle({
   return fallback;
 }
 
+/**
+ * Tenancy-shaped sidebar buckets (not activity-shaped). Pinned and External
+ * stay hidden until they have rows; Internal/Agents/DMs always show once any
+ * channels exist. External has no wire flag yet, so it stays empty until
+ * shared-channel metadata lands.
+ */
+type ChannelBucketId = "pinned" | "agents" | "internal" | "external" | "dms";
+
+const CHANNEL_BUCKETS: readonly {
+  readonly id: ChannelBucketId;
+  readonly label: string;
+  readonly hideWhenEmpty: boolean;
+}[] = [
+  { id: "pinned", label: "Pinned", hideWhenEmpty: true },
+  { id: "agents", label: "Agents", hideWhenEmpty: false },
+  { id: "internal", label: "Internal", hideWhenEmpty: false },
+  { id: "external", label: "External · shared", hideWhenEmpty: true },
+  { id: "dms", label: "DMs", hideWhenEmpty: false },
+];
+
+/** Pure bucket assignment for a channel row — testable without rendering. */
+export function assignChannelBucket(channel: Channel): ChannelBucketId {
+  if (channel.pinned) return "pinned";
+  if (channel.kind === "chat") {
+    const hasAgent = channel.participants.some((participant) =>
+      isAgentAddress(participant.address),
+    );
+    return hasAgent ? "agents" : "dms";
+  }
+  return "internal";
+}
+
 function ChannelsBand({
   path,
   onOpenInCanvas,
@@ -277,9 +310,8 @@ function ChannelsBand({
     );
   }
 
-  const channels = activity.channels;
-  const chats = activity.chats;
-  if (channels.length === 0 && chats.length === 0) {
+  const all = [...activity.channels, ...activity.chats];
+  if (all.length === 0) {
     return (
       <EmptyState
         icon={<MessageSquare />}
@@ -292,40 +324,40 @@ function ChannelsBand({
   const selected =
     activeId === null
       ? undefined
-      : [...channels, ...chats].find((channel) => channel.id === activeId);
+      : all.find((channel) => channel.id === activeId);
   const tenantId = selectedTenantId ?? "";
+
+  const byBucket = new Map<ChannelBucketId, Channel[]>();
+  for (const bucket of CHANNEL_BUCKETS) {
+    byBucket.set(bucket.id, []);
+  }
+  for (const channel of all) {
+    const id = assignChannelBucket(channel);
+    byBucket.get(id)?.push(channel);
+  }
 
   return (
     <div className="panel-stack">
       {selected !== undefined ? <ChannelDetails channel={selected} /> : null}
-      {channels.length > 0 ? (
-        <div className="panel-stack-group">
-          <p className="panel-band-subheading">Channels</p>
-          {channels.map((channel) => (
-            <ChannelPanelRow
-              key={channel.id}
-              channel={channel}
-              active={channel.id === activeId}
-              tenantId={tenantId}
-              onSelect={() => onOpenInCanvas(channel.id)}
-            />
-          ))}
-        </div>
-      ) : null}
-      {chats.length > 0 ? (
-        <div className="panel-stack-group">
-          <p className="panel-band-subheading">Chats</p>
-          {chats.map((channel) => (
-            <ChannelPanelRow
-              key={channel.id}
-              channel={channel}
-              active={channel.id === activeId}
-              tenantId={tenantId}
-              onSelect={() => onOpenInCanvas(channel.id)}
-            />
-          ))}
-        </div>
-      ) : null}
+      {CHANNEL_BUCKETS.map((bucket) => {
+        const rows = byBucket.get(bucket.id) ?? [];
+        if (rows.length === 0 && bucket.hideWhenEmpty) return null;
+        if (rows.length === 0) return null;
+        return (
+          <div key={bucket.id} className="panel-stack-group">
+            <p className="panel-band-subheading">{bucket.label}</p>
+            {rows.map((channel) => (
+              <ChannelPanelRow
+                key={channel.id}
+                channel={channel}
+                active={channel.id === activeId}
+                tenantId={tenantId}
+                onSelect={() => onOpenInCanvas(channel.id)}
+              />
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -531,6 +563,15 @@ export function ensurePanelContributions(): void {
     },
     pageSpecific: (ctx) => (
       <ChannelsBand path={ctx.path} onOpenInCanvas={ctx.onOpenInCanvas} />
+    ),
+  });
+
+  registerPanelContribution({
+    id: "inbox",
+    match: (path) => pathMatches("/inbox", path),
+    pageBand: defaultBand(
+      "Inbox",
+      "Approvals and notifications for this bench",
     ),
   });
 

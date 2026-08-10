@@ -4,7 +4,7 @@
 
 import { Button, ThemeToggle } from "@corbits/react-ui";
 import { BenchSwitcher } from "@corbits/bench-ui";
-import { LogOut, Settings } from "lucide-react";
+import { LogOut, SlidersHorizontal } from "lucide-react";
 
 import { useBench } from "../bench-context";
 import { handleLinkClick, useNavigate } from "../navigation";
@@ -75,7 +75,7 @@ export function RailIdentity({
         className="shell-rail-identity-settings"
         onClick={(event) => handleLinkClick(event, SETTINGS_PATH, navigate)}
       >
-        <Settings size={17} />
+        <SlidersHorizontal size={17} />
       </a>
       <span
         className="shell-rail-identity-avatar"

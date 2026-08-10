@@ -70,6 +70,14 @@ export function BenchSwitcherList({
       role="listbox"
       aria-label={BENCH_STRINGS.switcherLabel}
     >
+      <button
+        type="button"
+        className="bench-switcher-create"
+        onClick={onCreate}
+      >
+        <Plus size={14} aria-hidden />
+        {BENCH_STRINGS.createBenchAction}
+      </button>
       {memberships.map((membership) => {
         const display = membershipDisplay(membership);
         const active = display.tenantId === activeTenantId;
@@ -86,14 +94,6 @@ export function BenchSwitcherList({
           </button>
         );
       })}
-      <button
-        type="button"
-        className="bench-switcher-create"
-        onClick={onCreate}
-      >
-        <Plus size={14} aria-hidden />
-        {BENCH_STRINGS.createBenchAction}
-      </button>
     </div>
   );
 }

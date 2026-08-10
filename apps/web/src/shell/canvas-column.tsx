@@ -14,10 +14,10 @@
 
 import { Button, EmptyState } from "@corbits/react-ui";
 import { ChatWorkspace } from "@corbits/chat-ui";
-import type { TenantResolution } from "@corbits/chat-ui";
 import { LayoutPanelLeft, MessageSquare, PanelRightClose } from "lucide-react";
 
 import { useBench } from "../bench-context";
+import { tenantResolutionFromBench } from "./tenant-resolution";
 
 export function CanvasToggle({
   open,
@@ -49,18 +49,9 @@ export function CanvasColumn({
   readonly channelId: string | null;
   readonly onChannelChange: (channelId: string) => void;
 }) {
-  const { memberships, selectedTenantId, selectedPrincipalId } = useBench();
-
-  let tenant: TenantResolution;
-  if (memberships.kind !== "ready") {
-    tenant = memberships;
-  } else {
-    tenant =
-      selectedTenantId === null
-        ? { kind: "empty" }
-        : { kind: "ready", tenantId: selectedTenantId };
-  }
-  const principalId = selectedPrincipalId ?? undefined;
+  const bench = useBench();
+  const tenant = tenantResolutionFromBench(bench);
+  const principalId = bench.selectedPrincipalId ?? undefined;
 
   // `inert` rather than `aria-hidden`: a collapsed column has to be out of
   // both the accessibility tree and the tab order, and `aria-hidden` alone

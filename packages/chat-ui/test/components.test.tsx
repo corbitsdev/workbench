@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { Channel, MessageItem } from "../src/api";
+import type { MessageItem } from "../src/api";
 import { Composer } from "../src/composer";
 import {
   canSubmitNewChannel,
@@ -15,132 +15,11 @@ import {
   contextWindowControlState,
   contextWindowPatchValue,
 } from "../src/channel-settings-panel";
-import { ChatSidebar, renamePayload, rowMenuLabels } from "../src/sidebar";
-import { ChannelTimeline } from "../src/timeline";
+import { renamePayload, rowMenuLabels } from "../src/sidebar";
 
+import { ChannelTimeline } from "../src/timeline";
 /** The floor: no rendered text may ever contain a raw identifier. */
 const RAW_ID_PATTERN = /\b(prn_|ins_|tnt_)[a-z0-9]/i;
-
-const channel = (overrides: Partial<Channel>): Channel => ({
-  id: "c1",
-  title: "General",
-  kind: "channel",
-  pinned: true,
-  participants: [],
-  ...overrides,
-});
-
-describe("ChatSidebar", () => {
-  test("renders channels and chats under their own sections", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[channel({ id: "c1", title: "General" })]}
-        chats={[channel({ id: "c2", title: "DM with Ada", kind: "chat" })]}
-        activeChannelId="c1"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).toContain("Channels");
-    expect(markup).toContain("Chats");
-    expect(markup).toContain("General");
-    expect(markup).toContain("DM with Ada");
-  });
-
-  test("marks the active channel current", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[channel({ id: "c1" })]}
-        chats={[]}
-        activeChannelId="c1"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).toContain('aria-current="true"');
-  });
-
-  test("hides the Channels heading when there are channels but no pinned channels", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[]}
-        chats={[channel({ id: "c2", title: "DM with Ada", kind: "chat" })]}
-        activeChannelId="c2"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).not.toContain("Channels");
-    expect(markup).toContain("Chats");
-  });
-
-  test("shows the empty state with no channels or chats", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[]}
-        chats={[]}
-        activeChannelId={null}
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).toContain("No channels yet");
-  });
-
-  test("badges a chat row by its fixed agent, never a raw address", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[]}
-        chats={[
-          channel({
-            id: "c2",
-            title: "echo",
-            kind: "chat",
-            participants: [
-              { address: "ins_cd03d8e3@agents.example", handle: "echo" },
-            ],
-          }),
-        ]}
-        activeChannelId="c2"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).toContain("Agent");
-    expect(markup).not.toMatch(RAW_ID_PATTERN);
-  });
-
-  test("shows no agent badge on a channel row", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[channel({ id: "c1", title: "General" })]}
-        chats={[]}
-        activeChannelId="c1"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).not.toContain("Agent");
-  });
-});
 
 describe("ChannelTimeline", () => {
   const items: MessageItem[] = [
@@ -426,11 +305,7 @@ describe("canSubmitNewChannel / newChannelPayload (the new-chat create flow)", (
 });
 
 describe("no raw identifiers on screen", () => {
-  test("across the whole workspace's fixture surface — channels, an agent participant, an unknown sender, and a join event", () => {
-    const channels: Channel[] = [
-      channel({ id: "c1", title: "General" }),
-      channel({ id: "c2", title: "", kind: "chat" }),
-    ];
+  test("across the whole workspace's fixture surface — an agent participant, an unknown sender, and a join event", () => {
     const participants = [
       { address: "ins_cd03d8e3@agents.example", handle: "echo" },
       { address: "prn_teammate1@agents.example", handle: "ada" },
@@ -468,18 +343,6 @@ describe("no raw identifiers on screen", () => {
 
     const markup = [
       renderToStaticMarkup(
-        <ChatSidebar
-          channels={channels}
-          chats={[]}
-          activeChannelId="c1"
-          onSelect={() => undefined}
-          onNewChannel={() => undefined}
-          onRename={() => undefined}
-          onTogglePin={() => undefined}
-          onOpenSettings={() => undefined}
-        />,
-      ),
-      renderToStaticMarkup(
         <ChannelTimeline
           items={messageItems}
           participants={participants}
@@ -501,33 +364,7 @@ describe("no raw identifiers on screen", () => {
     ].join("\n");
 
     expect(markup).not.toMatch(RAW_ID_PATTERN);
-    expect(markup).toContain("Untitled channel");
     expect(markup).toContain("@echo joined");
-  });
-});
-
-describe("ChatSidebar row menu", () => {
-  // Radix's `MenuContent` mounts into a portal only once the menu is open,
-  // so a closed-by-default static render (this package's only test
-  // infrastructure — see AGENTS.md coverage note) never shows the item
-  // labels themselves; the trigger button is the one thing this level of
-  // testing can assert. The item wording itself is covered directly by
-  // `rowMenuLabels` below.
-  test("renders a hidden-until-hover ellipsis trigger per row", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSidebar
-        channels={[channel({ id: "c1", title: "General", pinned: true })]}
-        chats={[]}
-        activeChannelId="c1"
-        onSelect={() => undefined}
-        onNewChannel={() => undefined}
-        onRename={() => undefined}
-        onTogglePin={() => undefined}
-        onOpenSettings={() => undefined}
-      />,
-    );
-    expect(markup).toContain("chat-sidebar-row-menu-trigger");
-    expect(markup).toContain("Channel actions");
   });
 });
 

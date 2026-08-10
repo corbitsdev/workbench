@@ -1,18 +1,19 @@
 // The route table: one entry per screen, consumed by both the sidebar (label,
 // icon) and the route switch (render), so navigation and pages cannot drift
 // apart. Settings renders like any other route but is reached from the
-// sidebar's identity dock, not the top nav — `NAV_ROUTES` is what the nav
-// list shows. Channel deep links (`/c/:channelId`) stay routable for the
-// main-pane fallback when the canvas column is not available; the rail no
-// longer lists Chat. Approvals has no page — the Activity band owns them.
-// `/` is the Myra land hop (ensure + open channel), not a Home dashboard.
+// identity dock, not the top nav — `NAV_ROUTES` is what the nav list shows.
+// Channel deep links (`/c/:channelId`) stay routable for the main-pane
+// fallback when the canvas column is not available; the rail no longer lists
+// Chat. Approvals has no page — the Activity band owns them. `/` is the Myra
+// land hop (ensure + open channel), not a Home dashboard.
 
 import {
   Bot,
   ChartColumn,
+  Inbox,
   Library,
   MessageSquare,
-  Settings,
+  SlidersHorizontal,
   Wand2,
   Workflow,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { CHANNEL_PATH_PREFIX, isChannelPath } from "./channel-path";
 import { AgentsRoute } from "./pages/agents-page";
 import { ChatPage } from "./pages/chat-page";
 import { HomeRoute } from "./pages/home-page";
+import { InboxRoute } from "./pages/inbox-page";
 import { InsightsRoute } from "./pages/insights-page";
 import { LibraryRoute } from "./pages/library-page";
 import { RoutinesRoute } from "./pages/routines-page";
@@ -40,6 +42,7 @@ export const SETTINGS_PATH = "/settings";
  * Home is not a rail destination (Myra land is `/` only as a redirect hop).
  * Approvals has no route at all (Activity band owns its surface). */
 const RAIL_NAV_PATHS = new Set([
+  "/inbox",
   "/routines",
   "/library",
   "/agents",
@@ -58,15 +61,19 @@ export type AppRoute = {
 };
 
 /**
- * Matches `/c` and `/c/:channelId` (plus the legacy `/chat` prefix), and
- * `/routines` / `/routines/:id`. Other routes are exact path matches.
+ * Matches nested product paths (`/routines/:id`, `/insights/...`, `/inbox/...`)
+ * plus channel deep links. Other routes are exact path matches.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === CHANNEL_PATH_PREFIX) {
     return isChannelPath(path);
   }
-  if (routePath === "/routines") {
-    return path === "/routines" || path.startsWith("/routines/");
+  if (
+    routePath === "/routines" ||
+    routePath === "/insights" ||
+    routePath === "/inbox"
+  ) {
+    return path === routePath || path.startsWith(`${routePath}/`);
   }
   return routePath === path;
 }
@@ -85,6 +92,12 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string, navigate: (to: string) => void) => (
       <ChatPage path={path} navigate={navigate} />
     ),
+  },
+  {
+    path: "/inbox",
+    label: "Inbox",
+    icon: <Inbox />,
+    render: () => <InboxRoute />,
   },
   {
     path: "/routines",
@@ -121,7 +134,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: SETTINGS_PATH,
     label: "Settings",
-    icon: <Settings />,
+    icon: <SlidersHorizontal />,
     render: () => <SettingsRoute />,
   },
 ];

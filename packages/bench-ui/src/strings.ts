@@ -13,8 +13,9 @@ export const BENCH_STRINGS = {
   memberUnnamed: "Unnamed member",
   memberRoleNone: "none",
 
-  createBenchAction: "New bench",
-  createBenchDialogTitle: "New bench",
+  createBenchAction: "+ New workbench",
+  createBenchDialogTitle: "New workbench",
+
   createBenchDialogDescription:
     "Give it a name. The bench's address is derived from the name.",
   createBenchNameLabel: "Name",

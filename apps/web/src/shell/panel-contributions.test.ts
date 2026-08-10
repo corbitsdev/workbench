@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { Channel } from "@corbits/chat-ui";
 
 import {
+  assignChannelBucket,
   channelDetails,
   panelRenamePayload,
   panelRowMenuLabels,
@@ -57,5 +58,47 @@ describe("channel details panel contribution", () => {
 
   test("reflects a pinned channel", () => {
     expect(channelDetails({ ...baseChannel, pinned: true }).pinned).toBe(true);
+  });
+});
+
+describe("assignChannelBucket", () => {
+  test("pinned channels go to pinned regardless of kind", () => {
+    expect(assignChannelBucket({ ...baseChannel, pinned: true })).toBe(
+      "pinned",
+    );
+    expect(
+      assignChannelBucket({
+        ...baseChannel,
+        kind: "chat",
+        pinned: true,
+        participants: [{ address: "ins_a@agents.example", handle: "echo" }],
+      }),
+    ).toBe("pinned");
+  });
+
+  test("chats with an agent participant go to agents", () => {
+    expect(
+      assignChannelBucket({
+        ...baseChannel,
+        kind: "chat",
+        participants: [{ address: "ins_a@agents.example", handle: "echo" }],
+      }),
+    ).toBe("agents");
+  });
+
+  test("chats without agents go to dms", () => {
+    expect(
+      assignChannelBucket({
+        ...baseChannel,
+        kind: "chat",
+        // Human participants use bare principal ids (no @); agent addresses
+        // always carry the "@domain" shape that `isAgentAddress` keys on.
+        participants: [{ address: "prn_ada", handle: "ada" }],
+      }),
+    ).toBe("dms");
+  });
+
+  test("ordinary channels go to internal", () => {
+    expect(assignChannelBucket(baseChannel)).toBe("internal");
   });
 });

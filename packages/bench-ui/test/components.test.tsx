@@ -110,7 +110,7 @@ describe("BenchSwitcherList", () => {
         onCreate={noop}
       />,
     );
-    expect(markup).toContain("New bench");
+    expect(markup).toContain("+ New workbench");
   });
 });
 

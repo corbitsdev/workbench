@@ -105,9 +105,9 @@
 }
 
 .bench-switcher-create {
-  border-top: 1px solid var(--border);
-  margin-top: 0.25rem;
-  padding-top: 0.625rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+  padding-bottom: 0.625rem;
 }
 
 .bench-panel {

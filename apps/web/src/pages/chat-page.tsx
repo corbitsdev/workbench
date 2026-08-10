@@ -7,13 +7,13 @@
 // still parsed so old links keep working.
 
 import { ChatWorkspace } from "@corbits/chat-ui";
-import type { TenantResolution } from "@corbits/chat-ui";
 import { EmptyState } from "@corbits/react-ui";
 import { MessageSquare } from "lucide-react";
 
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath } from "../channel-path";
 import { useCanvasColumnAvailable } from "../shell/canvas-availability";
+import { tenantResolutionFromBench } from "../shell/tenant-resolution";
 
 export function ChatPage({
   path,
@@ -23,7 +23,7 @@ export function ChatPage({
   readonly navigate: (to: string) => void;
 }) {
   const canvasAvailable = useCanvasColumnAvailable();
-  const { memberships, selectedTenantId, selectedPrincipalId } = useBench();
+  const bench = useBench();
   const channelId = channelIdFromPath(path);
 
   if (canvasAvailable) {
@@ -40,16 +40,8 @@ export function ChatPage({
     );
   }
 
-  let tenant: TenantResolution;
-  if (memberships.kind !== "ready") {
-    tenant = memberships;
-  } else {
-    tenant =
-      selectedTenantId === null
-        ? { kind: "empty" }
-        : { kind: "ready", tenantId: selectedTenantId };
-  }
-  const principalId = selectedPrincipalId ?? undefined;
+  const tenant = tenantResolutionFromBench(bench);
+  const principalId = bench.selectedPrincipalId ?? undefined;
 
   return (
     <ChatWorkspace

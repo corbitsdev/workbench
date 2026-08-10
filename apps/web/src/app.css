@@ -10,6 +10,11 @@
 @import "@corbits/bench-ui/styles.css";
 @import "@corbits/settings-ui/styles.css";
 
+/* Mock chrome: 15px root so rem-based density matches the interactive mock. */
+html {
+  font-size: 15px;
+}
+
 .app-mark {
   height: 1.375rem;
   width: auto;
@@ -160,6 +165,33 @@
   display: flex;
   flex-direction: column;
   gap: 0.125rem;
+}
+
+/* Channel rows in the panel band. One-line title + ellipsis; dense to match
+   the mock chrome. Classnames kept under the historical chat-sidebar- prefix
+   so package-level row helpers stay reusable without owning layout CSS. */
+.chat-sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.chat-sidebar-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-sidebar-row-menu-trigger {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.chat-sidebar-row:hover .chat-sidebar-row-menu-trigger,
+.chat-sidebar-row:focus-within .chat-sidebar-row-menu-trigger,
+.chat-sidebar-row-menu-trigger[aria-expanded="true"] {
+  opacity: 1;
 }
 
 /* Page-local toolbars replace TopBar action clusters (search, view toggle)

@@ -9,7 +9,7 @@
 // list item navigates to the full surface for that entity.
 
 import { Button, SidebarItemRow } from "@corbits/react-ui";
-import { Settings } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 
 import { CanvasToggle } from "./canvas-column";
@@ -71,7 +71,7 @@ export function ContextualPanel({
                   if (settingsPath !== undefined) onNavigate(settingsPath);
                 }}
               >
-                <Settings />
+                <SlidersHorizontal />
               </Button>
             ) : null}
             {canvasAllowed ? (

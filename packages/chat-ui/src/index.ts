@@ -4,7 +4,8 @@ export type { TenantResolution } from "./chat-workspace";
 export { ChannelTimeline } from "./timeline";
 export type { CurrentUser } from "./timeline";
 export { Composer } from "./composer";
-export { ChatSidebar } from "./sidebar";
+export { renamePayload, rowMenuLabels } from "./sidebar";
+
 export { NewChannelDialog } from "./new-channel-dialog";
 export { InviteAgentDialog } from "./invite-agent-dialog";
 
