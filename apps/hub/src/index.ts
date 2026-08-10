@@ -500,9 +500,11 @@ export async function createHub(config: HubConfig) {
   // Artifacts engine: mounts `@corbits/artifacts` against the same
   // Postgres cluster as this hub's control plane (its
   // `artifact`/`artifact_version` tables FK into `public.tenant` /
-  // `public.principal`). Degrades to a no-op when
-  // `ARTIFACTS_DATABASE_URL` is unset. When mounted, tenant-scoped
-  // list + get routes serve Library L2 under `/artifacts`.
+  // `public.principal`). Resolves URL as ARTIFACTS_DATABASE_URL →
+  // DATABASE_URL so local `bun run dev` mounts Library without a second
+  // env var. When neither is set (or mount fails), degrades to 503
+  // routes. When mounted, tenant-scoped list + get + upload routes serve
+  // Library under `/artifacts`.
   //
   // The mount runs migrations against the configured DB; if the URL is
   // present but points at an unreachable/invalid cluster the migration
