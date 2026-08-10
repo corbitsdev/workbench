@@ -18,12 +18,16 @@ import { generateId } from "@intx/hub-common";
 import { createNeedsYouRoutes } from "../src/routes";
 import { hydrateNeedsYou } from "../src/view-model";
 
+// Parse DATABASE_URL the same way the hub does (apps/hub/src/index.ts):
+// an empty user falls through to the postgres client's OS-username default.
+// Do not default to "postgres" — that role often does not exist on laptop
+// installs that use peer auth as $USER.
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
   return {
     host: url.hostname,
     port: url.port === "" ? 5432 : Number(url.port),
-    user: decodeURIComponent(url.username || "postgres"),
+    user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
     database: url.pathname.replace(/^\//, ""),
   };
