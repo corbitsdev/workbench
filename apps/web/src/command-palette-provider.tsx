@@ -6,9 +6,10 @@ import {
   matchesQuery,
   useEntitySearch,
 } from "@corbits/command-palette";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { listAgentDefinitions } from "./agents-api";
+import { OPEN_COMMAND_PALETTE_EVENT } from "./command-palette-events";
 import { NAV_ROUTES } from "./routes";
 import { RunsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
@@ -81,6 +82,16 @@ export function CommandPaletteProvider({
   });
 
   useCommandShortcut(() => setOpen((current) => !current));
+
+  useEffect(() => {
+    function onOpenRequest() {
+      setOpen(true);
+    }
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpenRequest);
+    return () => {
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpenRequest);
+    };
+  }, []);
 
   const groups = useMemo<readonly CommandPaletteGroup[]>(() => {
     // Pages are matched here, client-side: they are a tiny fixed list, so

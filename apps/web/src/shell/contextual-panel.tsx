@@ -1,19 +1,29 @@
-// Column 2: route-aware contextual panel with four bands.
+// Column 2: route-aware contextual panel matching the shell mock.
 //
-// 1. Page band — title, settings entry, quick actions, canvas toggle.
-// 2. Global pins — user-curated, same on every page (hidden when empty).
-// 3. Global Activity — needs-you approvals (hidden when empty).
-// 4. Page-specific — contribution content for the current route (omitted when null).
+// Composes `@corbits/react-ui` SidebarPanel* parts:
+// 1. Header — page title, settings, quick actions, canvas toggle
+// 2. Pins — user-curated (hidden when empty)
+// 3. Body — page-specific contribution (lists/filters live here in the mock)
+// 4. Activity — needs-you approvals (hidden when empty)
+// 5. Footer — workbench switcher (mock col2 chrome, not rail)
 //
-// Live activity lives here (left), never in the right canvas. Clicking a
-// list item navigates to the full surface for that entity.
+// Live activity lives here (left), never in the right canvas.
 
-import { Button, SidebarItemRow } from "@corbits/react-ui";
+import {
+  Button,
+  SidebarItemRow,
+  SidebarPanel,
+  SidebarPanelBody,
+  SidebarPanelFooter,
+  SidebarPanelHeader,
+  SidebarPanelPins,
+} from "@corbits/react-ui";
 import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 
 import { CanvasToggle } from "./canvas-column";
 import { ActivityBand } from "./activity-band";
+import { BenchDock } from "./docks";
 import { resolvePanelContribution } from "./panel-contribution";
 import { ensurePanelContributions } from "./panel-contributions";
 import { loadPins, type Pin } from "./pins";
@@ -45,61 +55,64 @@ export function ContextualPanel({
 
   const [pins] = useState<readonly Pin[]>(() => loadPins());
 
+  const headerAction = (
+    <div className="panel-page-tools">
+      {pageBand.settingsPath !== undefined ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Page settings"
+          title="Page settings"
+          onClick={() => {
+            const settingsPath = pageBand.settingsPath;
+            if (settingsPath !== undefined) onNavigate(settingsPath);
+          }}
+        >
+          <SlidersHorizontal />
+        </Button>
+      ) : null}
+      {canvasAllowed ? (
+        <CanvasToggle open={canvasOpen} onToggle={onToggleCanvas} />
+      ) : null}
+    </div>
+  );
+
   return (
-    <aside
+    <SidebarPanel
       className="shell-contextual-panel"
       data-testid="shell-contextual-panel"
       aria-label="Contextual panel"
     >
-      <section className="panel-band panel-band-page" aria-label="Page">
-        <div className="panel-page-header">
-          <div className="panel-page-identity">
-            <h2 className="panel-page-title">{pageBand.title}</h2>
-            {pageBand.subtitle !== undefined ? (
-              <p className="panel-page-subtitle">{pageBand.subtitle}</p>
-            ) : null}
-          </div>
-          <div className="panel-page-tools">
-            {pageBand.settingsPath !== undefined ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label="Page settings"
-                title="Page settings"
-                onClick={() => {
-                  const settingsPath = pageBand.settingsPath;
-                  if (settingsPath !== undefined) onNavigate(settingsPath);
-                }}
-              >
-                <SlidersHorizontal />
-              </Button>
-            ) : null}
-            {canvasAllowed ? (
-              <CanvasToggle open={canvasOpen} onToggle={onToggleCanvas} />
-            ) : null}
-          </div>
+      <SidebarPanelHeader title={pageBand.title} action={headerAction} />
+
+      {pageBand.subtitle !== undefined ? (
+        <p className="panel-page-subtitle panel-band-inset">
+          {pageBand.subtitle}
+        </p>
+      ) : null}
+
+      {pageBand.actions !== undefined && pageBand.actions.length > 0 ? (
+        <div className="panel-page-actions panel-band-inset">
+          {pageBand.actions.map((action) => (
+            <Button
+              key={action.id}
+              variant="outline"
+              size="sm"
+              onClick={action.onSelect}
+            >
+              {action.label}
+            </Button>
+          ))}
         </div>
-        {pageBand.actions !== undefined && pageBand.actions.length > 0 ? (
-          <div className="panel-page-actions">
-            {pageBand.actions.map((action) => (
-              <Button
-                key={action.id}
-                variant="outline"
-                size="sm"
-                onClick={action.onSelect}
-              >
-                {action.label}
-              </Button>
-            ))}
-          </div>
-        ) : null}
-        {pageBand.stats !== undefined ? (
-          <div className="panel-page-stats">{pageBand.stats}</div>
-        ) : null}
-      </section>
+      ) : null}
+      {pageBand.stats !== undefined ? (
+        <div className="panel-page-stats panel-band-inset">
+          {pageBand.stats}
+        </div>
+      ) : null}
 
       {pins.length > 0 ? (
-        <section className="panel-band panel-band-pins" aria-label="Pinned">
+        <SidebarPanelPins aria-label="Pinned">
           <h3 className="panel-band-heading">Pinned</h3>
           <div className="panel-stack">
             {pins.map((pin) => (
@@ -111,20 +124,25 @@ export function ContextualPanel({
               />
             ))}
           </div>
-        </section>
+        </SidebarPanelPins>
       ) : null}
 
-      <ActivityBand />
+      <SidebarPanelBody>
+        {pageSpecific !== null ? (
+          <section
+            className="panel-band panel-band-page-specific"
+            aria-label="Page details"
+          >
+            <h3 className="panel-band-heading">{pageBand.title}</h3>
+            {pageSpecific}
+          </section>
+        ) : null}
+        <ActivityBand />
+      </SidebarPanelBody>
 
-      {pageSpecific !== null ? (
-        <section
-          className="panel-band panel-band-page-specific"
-          aria-label="Page details"
-        >
-          <h3 className="panel-band-heading">{pageBand.title}</h3>
-          {pageSpecific}
-        </section>
-      ) : null}
-    </aside>
+      <SidebarPanelFooter>
+        <BenchDock />
+      </SidebarPanelFooter>
+    </SidebarPanel>
   );
 }

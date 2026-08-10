@@ -12,8 +12,8 @@ export type PanelAction = {
 };
 
 export type PageBand = {
-  /** String or live component (e.g. resolved channel name). */
-  readonly title: ReactNode;
+  /** SidebarPanelHeader title — string for the react-ui pin contract. */
+  readonly title: string;
   readonly subtitle?: string;
   readonly settingsPath?: string;
   readonly actions?: readonly PanelAction[];

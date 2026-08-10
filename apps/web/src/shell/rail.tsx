@@ -1,18 +1,35 @@
-// Column 1: the global rail. Answers "where am I in the product, and which
-// bench am I in" — the page icons never change with navigation or with the
-// selected bench, and neither does this column's width.
-//
-// The caption-under-icon rail landed in `@corbits/react-ui`'s `SidebarRail`
-// as its `showLabels` option, so the rail is now the library component with
-// labels on — the hand-rolled item markup it temporarily mirrored is gone.
-// The footer still composes the bench switcher and identity docks the rail
-// needs below the page icons.
+// Column 1: brand-orange global rail matching the shell mock. Product pages
+// sit above a spacer; Search / Inbox / Settings / theme / avatar sit below.
+// Surfaces compose `@corbits/react-ui` SidebarRail + Avatar + ThemeToggle.
 
-import { SidebarRail } from "@corbits/react-ui";
+import { Avatar, SidebarRail, ThemeToggle } from "@corbits/react-ui";
+import type { ReactNode } from "react";
 
-import { NAV_ROUTES, matchesRoute, type AppRoute } from "../routes";
+import { CHANNEL_PATH_PREFIX } from "../channel-path";
+import { requestOpenCommandPalette } from "../command-palette-events";
+import {
+  matchesRoute,
+  RAIL_PRIMARY_ROUTES,
+  RAIL_SEARCH,
+  RAIL_SETTINGS,
+  RAIL_UTILITY_ROUTES,
+  SETTINGS_PATH,
+  type AppRoute,
+} from "../routes";
 import type { SessionUser } from "../session";
-import { BenchDock, RailIdentity } from "./docks";
+import { initialsOf } from "./docks";
+
+function routeItem(route: AppRoute): {
+  id: string;
+  label: string;
+  icon: ReactNode;
+} {
+  return {
+    id: route.path,
+    label: route.label,
+    icon: route.icon,
+  };
+}
 
 export function Rail({
   path,
@@ -27,29 +44,72 @@ export function Rail({
   readonly onSignOut: () => void;
   readonly showLabels?: boolean;
 }) {
-  // `SidebarRail` flags the item whose id equals `activeId`; the nav routes
-  // own prefix matching (e.g. /routines/:id lights Routines), so the active
-  // id is resolved here rather than left to an exact path compare.
-  const activeRoute = NAV_ROUTES.find((route) =>
-    matchesRoute(route.path, path),
-  );
+  const primaryActive =
+    RAIL_PRIMARY_ROUTES.find((route) => matchesRoute(route.path, path)) ??
+    RAIL_UTILITY_ROUTES.find((route) => matchesRoute(route.path, path));
+
+  const settingsActive = matchesRoute(SETTINGS_PATH, path);
+  const activeId = settingsActive ? SETTINGS_PATH : (primaryActive?.path ?? "");
+
+  const items = [
+    ...RAIL_PRIMARY_ROUTES.map(routeItem),
+    routeItem({
+      path: RAIL_SEARCH.id,
+      label: RAIL_SEARCH.label,
+      icon: RAIL_SEARCH.icon,
+      render: () => <></>,
+    }),
+    ...RAIL_UTILITY_ROUTES.map(routeItem),
+    {
+      id: RAIL_SETTINGS.id,
+      label: RAIL_SETTINGS.label,
+      icon: RAIL_SETTINGS.icon,
+    },
+  ];
+
+  function handleSelect(id: string) {
+    if (id === RAIL_SEARCH.id) {
+      requestOpenCommandPalette();
+      return;
+    }
+    // Channels rail lands Myra (ensure + open), not a bare /c prefix.
+    if (id === CHANNEL_PATH_PREFIX) {
+      onNavigate("/");
+      return;
+    }
+    onNavigate(id);
+  }
 
   return (
     <SidebarRail
       label="Workbench"
+      className="shell-brand-rail"
       showLabels={showLabels}
-      activeId={activeRoute?.path ?? ""}
-      items={NAV_ROUTES.map((route: AppRoute) => ({
-        id: route.path,
-        label: route.label,
-        icon: route.icon,
-      }))}
-      onSelect={onNavigate}
+      activeId={activeId}
+      items={items}
+      onSelect={handleSelect}
       footer={
-        <>
-          <BenchDock />
-          <RailIdentity path={path} user={user} onSignOut={onSignOut} />
-        </>
+        <div className="shell-rail-footer">
+          <ThemeToggle />
+          <button
+            type="button"
+            className="shell-rail-avatar-btn"
+            aria-label={`${user.name} · Settings`}
+            title={`${user.name} · Settings`}
+            onClick={() => onNavigate(SETTINGS_PATH)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              onSignOut();
+            }}
+          >
+            <Avatar
+              initials={initialsOf(user.name)}
+              label={user.name}
+              size="sm"
+              tone="neutral"
+            />
+          </button>
+        </div>
       }
     />
   );

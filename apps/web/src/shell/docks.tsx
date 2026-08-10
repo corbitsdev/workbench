@@ -18,7 +18,7 @@ import type { SessionUser } from "../session";
  * to the email's local part, and "··" stands in when neither yields a
  * letter (mirroring the reference chrome's placeholder).
  */
-export function initialsOf(name: string, email: string): string {
+export function initialsOf(name: string, email = ""): string {
   const source = name.trim().length > 0 ? name : (email.split("@")[0] ?? "");
   const initials = source
     .split(/[\s._-]+/)

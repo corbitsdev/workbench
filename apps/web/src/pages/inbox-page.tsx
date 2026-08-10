@@ -1,9 +1,16 @@
-// Inbox triage over the mailbox-backed product inbox routes. Col2 filters
-// with counts; list + full-context detail; approve/deny for action items
-// via native approval routes; mark-all-read / clear-done / done / snooze.
-// Zero-item master-detail stays honest — empty list, empty pane, no crash.
+// Inbox triage over the mailbox-backed product inbox routes. Col2 (shell
+// panel) owns filters with counts; the stage is a TriagePane list|detail.
+// Approve/deny for action items via native approval routes; mark-all-read /
+// clear-done / done / snooze. Zero-item master-detail stays honest.
 
-import { Badge, Button, EmptyState, Skeleton } from "@corbits/react-ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Skeleton,
+  TriageListItem,
+  TriagePane,
+} from "@corbits/react-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -29,19 +36,8 @@ import {
   type InboxItem,
   type InboxItemDetail,
 } from "../inbox-api";
-import { useNavigate } from "../navigation";
 import { QueryView, SignedOutNotice } from "../query-view";
-
-const FILTERS: readonly {
-  id: InboxFilterGroup;
-  label: string;
-  countKey: keyof InboxCounts | null;
-}[] = [
-  { id: "all", label: "All open", countKey: "open" },
-  { id: "action", label: "Needs action", countKey: "action" },
-  { id: "mention", label: "Mentions", countKey: "mention" },
-  { id: "delivery", label: "Deliveries", countKey: "delivery" },
-];
+import { inboxFilterFromPath } from "../shell/panel-contributions";
 
 function formatWhen(iso: string): string {
   const date = new Date(iso);
@@ -52,58 +48,6 @@ function formatWhen(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function filterCount(
-  counts: InboxCounts | null,
-  key: keyof InboxCounts | null,
-): number | null {
-  if (counts === null || key === null) return null;
-  return counts[key];
-}
-
-function InboxFilterNav({
-  group,
-  counts,
-  onSelect,
-}: {
-  readonly group: InboxFilterGroup;
-  readonly counts: InboxCounts | null;
-  readonly onSelect: (next: InboxFilterGroup) => void;
-}) {
-  return (
-    <nav aria-label="Inbox filters">
-      <ul className="flex flex-col gap-0.5">
-        {FILTERS.map((f) => {
-          const n = filterCount(counts, f.countKey);
-          const selected = group === f.id;
-          return (
-            <li key={f.id}>
-              <button
-                type="button"
-                className={
-                  selected
-                    ? "flex w-full items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-1.5 text-left text-sm font-medium"
-                    : "flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted/60"
-                }
-                aria-current={selected ? "true" : undefined}
-                onClick={() => onSelect(f.id)}
-              >
-                <span>{f.label}</span>
-                {n !== null && (
-                  <Badge
-                    tone={f.id === "action" && n > 0 ? "warning" : "neutral"}
-                  >
-                    {n}
-                  </Badge>
-                )}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
 }
 
 function InboxList({
@@ -125,37 +69,27 @@ function InboxList({
     );
   }
   return (
-    <ul className="flex flex-col gap-0.5" aria-label="Inbox items">
-      {items.map((item) => {
-        const selected = item.id === selectedId;
-        return (
-          <li key={item.id}>
-            <button
-              type="button"
-              className={
-                selected
-                  ? "flex w-full flex-col gap-0.5 rounded-md border border-border bg-muted px-3 py-2 text-left"
-                  : item.read
-                    ? "flex w-full flex-col gap-0.5 rounded-md border border-transparent px-3 py-2 text-left hover:bg-muted/50"
-                    : "flex w-full flex-col gap-0.5 rounded-md border border-transparent px-3 py-2 text-left font-medium hover:bg-muted/50"
-              }
-              onClick={() => onSelect(item.id)}
-            >
-              <span className="truncate text-sm">
-                {item.fromDisplay ?? item.from}
-              </span>
-              <span className="truncate text-sm text-muted-foreground">
-                {item.subject ?? item.snippet ?? "Untitled"}
-              </span>
-              <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Badge tone="neutral">{item.group}</Badge>
-                <time dateTime={item.date}>{formatWhen(item.date)}</time>
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+    <div aria-label="Inbox items">
+      {items.map((item) => (
+        <TriageListItem
+          key={item.id}
+          selected={item.id === selectedId}
+          onSelect={() => onSelect(item.id)}
+          {...(item.read ? {} : { className: "font-medium" })}
+        >
+          <span className="truncate text-sm">
+            {item.fromDisplay ?? item.from}
+          </span>
+          <span className="truncate text-sm text-muted-foreground">
+            {item.subject ?? item.snippet ?? "Untitled"}
+          </span>
+          <span className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Badge tone="neutral">{item.group}</Badge>
+            <time dateTime={item.date}>{formatWhen(item.date)}</time>
+          </span>
+        </TriageListItem>
+      ))}
+    </div>
   );
 }
 
@@ -311,11 +245,16 @@ function InboxDetail({
   );
 }
 
-export function InboxPage() {
+export function InboxPage({
+  path,
+  navigate,
+}: {
+  readonly path: string;
+  readonly navigate: (to: string) => void;
+}) {
   const { selectedTenantId } = useBench();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [group, setGroup] = useState<InboxFilterGroup>("all");
+  const group = inboxFilterFromPath(path) as InboxFilterGroup;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -333,6 +272,10 @@ export function InboxPage() {
     if (listQuery.kind !== "ready") return [] as InboxItem[];
     return listQuery.data.items;
   }, [listQuery]);
+
+  useEffect(() => {
+    setSelectedId(null);
+  }, [group]);
 
   useEffect(() => {
     if (items.length === 0) {
@@ -424,18 +367,9 @@ export function InboxPage() {
           </Button>
         </div>
       </header>
-      <div className="grid min-h-0 flex-1 grid-cols-[10rem_minmax(0,16rem)_minmax(0,1fr)]">
-        <aside className="overflow-y-auto border-r border-border p-2">
-          <InboxFilterNav
-            group={group}
-            counts={counts}
-            onSelect={(next) => {
-              setGroup(next);
-              setSelectedId(null);
-            }}
-          />
-        </aside>
-        <section className="min-h-0 overflow-y-auto border-r border-border p-2">
+      <TriagePane
+        className="min-h-0 flex-1 border-t-0"
+        list={
           <QueryView query={listQuery} label="your inbox">
             {(page) => (
               <InboxList
@@ -445,21 +379,9 @@ export function InboxPage() {
               />
             )}
           </QueryView>
-        </section>
-        <section className="min-h-0 overflow-y-auto">
-          {selectedId === null ? (
-            <div className="flex h-full items-center justify-center p-6">
-              <EmptyState
-                icon={<Inbox />}
-                title="Select an item"
-                description={
-                  items.length === 0
-                    ? "Nothing open right now."
-                    : "Choose a message to read its full context."
-                }
-              />
-            </div>
-          ) : (
+        }
+        detail={
+          selectedId === null ? null : (
             <InboxDetail
               detail={detailQuery}
               busy={busy}
@@ -492,13 +414,32 @@ export function InboxPage() {
                 navigate(`/insights/runs/${encodeURIComponent(runId)}`);
               }}
             />
-          )}
-        </section>
-      </div>
+          )
+        }
+        empty={
+          <div className="flex h-full items-center justify-center p-6">
+            <EmptyState
+              icon={<Inbox />}
+              title="Select an item"
+              description={
+                items.length === 0
+                  ? "Nothing open right now."
+                  : "Choose a message to read its full context."
+              }
+            />
+          </div>
+        }
+      />
     </div>
   );
 }
 
-export function InboxRoute() {
-  return <InboxPage />;
+export function InboxRoute({
+  path,
+  navigate,
+}: {
+  readonly path: string;
+  readonly navigate: (to: string) => void;
+}) {
+  return <InboxPage path={path} navigate={navigate} />;
 }

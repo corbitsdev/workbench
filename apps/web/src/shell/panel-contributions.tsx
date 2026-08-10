@@ -24,8 +24,10 @@ import {
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
+import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
 import { useBenchActivity } from "./bench-activity";
 import { resolveChannelTitle } from "./channel-context";
 import {
@@ -407,9 +409,72 @@ function RoutinesFeedBand({
           key={routine.id}
           name={routine.name}
           meta={routine.status}
-          onSelect={() => onNavigate("/routines")}
+          onSelect={() => onNavigate(`/routines/${routine.id}`)}
         />
       ))}
+    </div>
+  );
+}
+
+const INBOX_FILTERS: readonly {
+  id: "all" | "action" | "mention" | "delivery";
+  label: string;
+  countKey: "open" | "action" | "mention" | "delivery" | null;
+}[] = [
+  { id: "all", label: "Everything", countKey: "open" },
+  { id: "action", label: "Needs action", countKey: "action" },
+  { id: "mention", label: "Mentions", countKey: "mention" },
+  { id: "delivery", label: "Deliveries", countKey: "delivery" },
+];
+
+export function inboxFilterFromPath(
+  path: string,
+): "all" | "action" | "mention" | "delivery" {
+  const segment = path.replace(/^\/inbox\/?/, "").split("/")[0] ?? "";
+  if (segment === "action" || segment === "mention" || segment === "delivery") {
+    return segment;
+  }
+  return "all";
+}
+
+export function inboxPathForFilter(
+  group: "all" | "action" | "mention" | "delivery",
+): string {
+  return group === "all" ? "/inbox" : `/inbox/${group}`;
+}
+
+function InboxFiltersBand({
+  path,
+  onNavigate,
+}: {
+  readonly path: string;
+  readonly onNavigate: (to: string) => void;
+}) {
+  const { selectedTenantId } = useBench();
+  const countsQuery = useAPIQuery(
+    selectedTenantId === null ? "" : inboxCountsPath(selectedTenantId),
+    InboxCountsSchema,
+  );
+  const counts = countsQuery.kind === "ready" ? countsQuery.data : null;
+  const active = inboxFilterFromPath(path);
+
+  return (
+    <div className="panel-stack" aria-label="Inbox filters">
+      {INBOX_FILTERS.map((filter) => {
+        const n =
+          counts === null || filter.countKey === null
+            ? null
+            : counts[filter.countKey];
+        return (
+          <SidebarItemRow
+            key={filter.id}
+            name={filter.label}
+            meta={n === null ? undefined : String(n)}
+            selected={active === filter.id}
+            onSelect={() => onNavigate(inboxPathForFilter(filter.id))}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -542,7 +607,8 @@ export function ensurePanelContributions(): void {
     pageBand: (ctx) => {
       const channelId = channelIdFromPath(ctx.path);
       return {
-        title: <ChannelPageTitle channelId={channelId} fallback="Channels" />,
+        // Header title must stay a string for SidebarPanelHeader (react-ui pin).
+        title: "Channels",
         subtitle:
           channelId === null
             ? "Open a conversation in the canvas"
@@ -559,6 +625,12 @@ export function ensurePanelContributions(): void {
             },
           },
         ],
+        stats: (
+          <ChannelPageTitle
+            channelId={channelId}
+            fallback="No channel selected"
+          />
+        ),
       };
     },
     pageSpecific: (ctx) => (
@@ -572,6 +644,9 @@ export function ensurePanelContributions(): void {
     pageBand: defaultBand(
       "Inbox",
       "Approvals and notifications for this bench",
+    ),
+    pageSpecific: (ctx) => (
+      <InboxFiltersBand path={ctx.path} onNavigate={ctx.onNavigate} />
     ),
   });
 
@@ -622,6 +697,32 @@ export function ensurePanelContributions(): void {
     id: "library",
     match: (path) => pathMatches("/library", path),
     pageBand: defaultBand("Library", "Artifacts this bench has produced"),
+    pageSpecific: (ctx) => (
+      <div className="panel-stack" aria-label="Library kinds">
+        {(
+          [
+            ["all", "All"],
+            ["document", "Docs"],
+            ["sheet", "Sheets"],
+            ["pdf", "PDFs"],
+            ["routine", "Routines"],
+          ] as const
+        ).map(([id, label]) => (
+          <SidebarItemRow
+            key={id}
+            name={label}
+            selected={
+              id === "all"
+                ? ctx.path === "/library"
+                : ctx.path === `/library/${id}`
+            }
+            onSelect={() =>
+              ctx.onNavigate(id === "all" ? "/library" : `/library/${id}`)
+            }
+          />
+        ))}
+      </div>
+    ),
   });
 
   registerPanelContribution({
@@ -630,6 +731,13 @@ export function ensurePanelContributions(): void {
     pageBand: defaultBand(
       "Skills",
       "Packaged capabilities an agent definition can pick up",
+    ),
+    pageSpecific: () => (
+      <div className="panel-stack" aria-label="Skills filters">
+        <SidebarItemRow name="All skills" selected meta="session" />
+        <SidebarItemRow name="Shared" />
+        <SidebarItemRow name="Private" />
+      </div>
     ),
   });
 

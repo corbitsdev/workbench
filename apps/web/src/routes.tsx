@@ -1,10 +1,8 @@
 // The route table: one entry per screen, consumed by both the sidebar (label,
 // icon) and the route switch (render), so navigation and pages cannot drift
-// apart. Settings renders like any other route but is reached from the
-// identity dock, not the top nav — `NAV_ROUTES` is what the nav list shows.
-// Channel deep links (`/c/:channelId`) stay routable for the main-pane
-// fallback when the canvas column is not available; the rail no longer lists
-// Chat. Approvals has no page — the Activity band owns them. `/` is the Myra
+// apart. Settings is a rail footer destination (mock chrome). Channel deep
+// links (`/c/:channelId`) stay routable; Channels on the rail lands Myra via
+// `/`. Approvals has no page — the Activity band owns them. `/` is the Myra
 // land hop (ensure + open channel), not a Home dashboard.
 
 import {
@@ -13,6 +11,8 @@ import {
   Inbox,
   Library,
   MessageSquare,
+  Search,
+  Settings,
   SlidersHorizontal,
   Wand2,
   Workflow,
@@ -35,20 +35,24 @@ import { SkillsRoute } from "./pages/skills-page";
  * it is only ever reached by the first-login redirect. */
 export const ONBOARDING_PATH = "/onboarding";
 
-/** Settings lives in the sidebar's identity dock, not the top nav. */
+/** Settings path — rail footer + settings page. */
 export const SETTINGS_PATH = "/settings";
 
-/** Paths the rail lists — product nav; channels open in the canvas.
- * Home is not a rail destination (Myra land is `/` only as a redirect hop).
- * Approvals has no route at all (Activity band owns its surface). */
-const RAIL_NAV_PATHS = new Set([
-  "/inbox",
+/**
+ * Mock rail primary stack (top → spacer): Channels, Routines, Library,
+ * Agents, Skills, Insights. Inbox sits below the spacer with Search /
+ * Settings / theme / avatar (composed in the rail, not this set).
+ */
+const RAIL_PRIMARY_PATHS = [
+  CHANNEL_PATH_PREFIX,
   "/routines",
   "/library",
   "/agents",
   "/skills",
   "/insights",
-]);
+] as const;
+
+const RAIL_UTILITY_PATHS = ["/inbox"] as const;
 
 export type AppRoute = {
   readonly path: string;
@@ -62,11 +66,12 @@ export type AppRoute = {
 
 /**
  * Matches nested product paths (`/routines/:id`, `/insights/...`, `/inbox/...`)
- * plus channel deep links. Other routes are exact path matches.
+ * plus channel deep links. Channels also lights when Myra land (`/`) is active.
+ * Other routes are exact path matches.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === CHANNEL_PATH_PREFIX) {
-    return isChannelPath(path);
+    return isChannelPath(path) || path === "/";
   }
   if (
     routePath === "/routines" ||
@@ -97,7 +102,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: "/inbox",
     label: "Inbox",
     icon: <Inbox />,
-    render: () => <InboxRoute />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <InboxRoute path={path} navigate={navigate} />
+    ),
   },
   {
     path: "/routines",
@@ -139,9 +146,43 @@ export const APP_ROUTES: readonly AppRoute[] = [
   },
 ];
 
-/** What the rail lists: product pages only. Settings is the identity dock;
- * Channels stay deep-linkable but off the rail (canvas owns the surface).
- * Approvals has no route. Home is not listed — land is Myra via `/`. */
-export const NAV_ROUTES: readonly AppRoute[] = APP_ROUTES.filter((route) =>
-  RAIL_NAV_PATHS.has(route.path),
-);
+function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
+  const byPath = new Map(APP_ROUTES.map((route) => [route.path, route]));
+  return paths.flatMap((path) => {
+    const route = byPath.get(path);
+    return route === undefined ? [] : [route];
+  });
+}
+
+/** Primary product destinations on the orange rail (above the spacer). */
+export const RAIL_PRIMARY_ROUTES: readonly AppRoute[] =
+  routesInOrder(RAIL_PRIMARY_PATHS);
+
+/** Utility destinations on the rail below the spacer (Inbox). */
+export const RAIL_UTILITY_ROUTES: readonly AppRoute[] =
+  routesInOrder(RAIL_UTILITY_PATHS);
+
+/**
+ * Everything the rail and command palette treat as a product destination.
+ * Settings stays on the rail footer (not primary) but is included here for
+ * palette / shared nav helpers.
+ */
+export const NAV_ROUTES: readonly AppRoute[] = [
+  ...RAIL_PRIMARY_ROUTES,
+  ...RAIL_UTILITY_ROUTES,
+  ...routesInOrder([SETTINGS_PATH]),
+];
+
+/** Search control on the rail — not a route; opens the command palette. */
+export const RAIL_SEARCH = {
+  id: "search",
+  label: "Search",
+  icon: <Search />,
+} as const;
+
+/** Settings control on the rail footer. */
+export const RAIL_SETTINGS = {
+  id: SETTINGS_PATH,
+  label: "Settings",
+  icon: <Settings />,
+} as const;

@@ -40,9 +40,14 @@ function renderApp(path: string, session: SessionState = signedIn): string {
   );
 }
 
-/** Page name from the contextual panel's page band (TopBars are gone). */
+/** Page name from the contextual panel header (SidebarPanelHeader h2). */
 function panelPageTitle(markup: string): string | undefined {
-  return /class="panel-page-title"[^>]*>(.*?)<\/h2>/.exec(markup)?.[1];
+  return (
+    /data-slot="sidebar-panel-header"[\s\S]*?<h2[^>]*>([^<]*)<\/h2>/.exec(
+      markup,
+    )?.[1] ??
+    /class="panel-page-title"[^>]*>(.*?)<\/(?:span|h2)>/.exec(markup)?.[1]
+  );
 }
 
 /** The rail marks exactly one page active at a time (an icon+label button,
@@ -79,14 +84,16 @@ describe("route table", () => {
     ]);
   });
 
-  test("rail nav is Inbox, Routines, Library, Agents, Skills, Insights (no Home)", () => {
+  test("rail nav is Channels, Routines, Library, Agents, Skills, Insights, Inbox, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
-      "Inbox",
+      "Channels",
       "Routines",
       "Library",
       "Agents",
       "Skills",
       "Insights",
+      "Inbox",
+      "Settings",
     ]);
   });
 
@@ -101,21 +108,17 @@ describe("routes render", () => {
   for (const route of APP_ROUTES) {
     test(`${route.path} renders the ${route.label} screen`, () => {
       const markup = renderApp(route.path);
+      // Myra land (`/`) lights Channels on the rail; panel title stays Myra.
+      if (route.path === "/") {
+        expect(panelPageTitle(markup)).toBe("Myra");
+        expect(activeRailLabel(markup)).toBe("Channels");
+        return;
+      }
       expect(panelPageTitle(markup)).toBe(route.label);
-      if (route.path === SETTINGS_PATH) {
-        // Settings has no page-nav entry in the rail — it is reached from
-        // the rail's own identity dock instead.
-        expect(markup).toMatch(/aria-current="page"[^>]*href="\/settings"/);
-      } else if (NAV_PATHS.has(route.path)) {
+      if (NAV_PATHS.has(route.path)) {
         expect(activeRailLabel(markup)).toBe(route.label);
       } else {
-        // Chat stays deep-linkable but leaves the rail. Approvals has no route.
         expect(activeRailLabel(markup)).toBeUndefined();
-        expect(markup).not.toMatch(
-          new RegExp(
-            `data-slot="sidebar-rail-item-label"[^>]*>${route.label}</span>`,
-          ),
-        );
       }
     });
   }

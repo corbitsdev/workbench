@@ -41,9 +41,13 @@ html {
   overflow: hidden;
 }
 
-/* ~7-15% of a desktop viewport, narrowing gracefully at laptop widths. */
+/* ~17.5rem matches mock --col2-w; clamps down on laptop widths. */
 :root {
-  --shell-contextual-width: clamp(12rem, 11vw, 16rem);
+  --shell-contextual-width: clamp(14rem, 17.5rem, 20rem);
+  --shell-canvas-width: min(36rem, 42vw);
+  --shell-rail-brand: #e98428;
+  --shell-rail-brand-hover: #d47420;
+  --shell-rail-on-brand: #1a1208;
 }
 
 .shell-main {
@@ -63,16 +67,10 @@ html {
   flex-direction: column;
 }
 
-/* Column 2: three-band contextual panel. */
+/* Column 2: SidebarPanel root; width overrides the library default (w-72). */
 .shell-contextual-panel {
-  display: flex;
   width: var(--shell-contextual-width);
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 0;
-  overflow: hidden;
-  border-right: 1px solid var(--border);
-  background: var(--card);
+  min-width: var(--shell-contextual-width);
 }
 
 .panel-band {
@@ -82,6 +80,14 @@ html {
   padding: 0.75rem;
   border-bottom: 1px solid var(--border);
   min-height: 0;
+}
+
+.panel-band-inset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .panel-band-page-specific {
@@ -221,7 +227,7 @@ html {
 }
 
 .shell-canvas-column[data-open="true"] {
-  width: min(24rem, 28vw);
+  width: var(--shell-canvas-width);
 }
 
 .shell-canvas-column:not([data-open="true"]) {
@@ -231,7 +237,7 @@ html {
 .shell-canvas-inner {
   display: flex;
   height: 100%;
-  width: min(24rem, 28vw);
+  width: var(--shell-canvas-width);
   flex-direction: column;
   justify-content: center;
   opacity: 0;
@@ -348,13 +354,60 @@ html {
   border-right: none;
 }
 
-/* Column 1's footer docks: the bench switcher and identity row. The rail
-   itself is `@corbits/react-ui`'s `SidebarRail` (showLabels), styled in its
-   own stylesheet; only the footer parts composed into its `footer` slot
-   carry local CSS here. */
+/* Column 1: brand-orange rail matching the shell mock. The rail itself is
+   `@corbits/react-ui`'s `SidebarRail`; brand paint is applied here so the
+   workbench pin does not need a react-ui bump to ship chrome parity. Footer
+   docks (theme + avatar) compose below the page icons. */
+.shell-brand-rail[data-slot="sidebar-rail"] {
+  background: var(--shell-rail-brand);
+  border-right-color: var(--shell-rail-brand-hover);
+  color: var(--shell-rail-on-brand);
+}
+
+.shell-brand-rail [data-slot="sidebar-rail-item"] {
+  color: color-mix(in srgb, var(--shell-rail-on-brand) 72%, transparent);
+}
+
+.shell-brand-rail [data-slot="sidebar-rail-item"]:hover {
+  background: var(--shell-rail-brand-hover);
+  color: var(--shell-rail-on-brand);
+}
+
+.shell-brand-rail [data-slot="sidebar-rail-item"][aria-current="page"] {
+  background: color-mix(in srgb, #000 18%, var(--shell-rail-brand));
+  color: var(--shell-rail-on-brand);
+}
+
+.shell-brand-rail [data-slot="sidebar-rail-item-label"] {
+  color: inherit;
+}
+
 .shell-bench-dock {
   width: 100%;
-  padding: 0.25rem 0.5rem 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.shell-rail-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+.shell-rail-avatar-btn {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 0.25rem;
+}
+
+.shell-rail-avatar-btn:focus-visible {
+  outline: 2px solid var(--shell-rail-on-brand);
+  outline-offset: 2px;
 }
 
 .shell-rail-identity {

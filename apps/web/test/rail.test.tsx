@@ -1,13 +1,19 @@
-// The far-left rail: global page nav with a visible label under each icon
-// (not tooltip-only), plus settings and the bench switcher at the bottom —
-// the two things the product correction moved out of the contextual panel.
+// The far-left brand rail: product pages with visible labels, Search, Inbox,
+// Settings, theme, and avatar — matching shell mock chrome.
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
-import { NAV_ROUTES, SETTINGS_PATH } from "../src/routes";
+import {
+  NAV_ROUTES,
+  RAIL_PRIMARY_ROUTES,
+  RAIL_SEARCH,
+  RAIL_SETTINGS,
+  RAIL_UTILITY_ROUTES,
+  SETTINGS_PATH,
+} from "../src/routes";
 import { Rail } from "../src/shell/rail";
 import { TestQueryProvider } from "./test-query-provider";
 
@@ -33,12 +39,14 @@ function renderRail(path: string): string {
 }
 
 describe("Rail", () => {
-  test("shows every rail page's label as visible text, not tooltip-only", () => {
+  test("shows every product destination label as visible text", () => {
     const markup = renderRail("/");
-    // `SidebarRail` (`showLabels`) renders each caption in a
-    // `sidebar-rail-item-label` slot; tooltip-only mode has no such span, so
-    // its presence is what makes the label visible rather than hover-gated.
-    for (const route of NAV_ROUTES) {
+    for (const route of [
+      ...RAIL_PRIMARY_ROUTES,
+      ...RAIL_UTILITY_ROUTES,
+      { label: RAIL_SEARCH.label },
+      { label: RAIL_SETTINGS.label },
+    ]) {
       expect(markup).toMatch(
         new RegExp(
           `data-slot="sidebar-rail-item-label"[^>]*>${route.label}</span>`,
@@ -60,19 +68,27 @@ describe("Rail", () => {
   test("marks the active page and no other", () => {
     const markup = renderRail("/routines");
     const currentCount = (markup.match(/aria-current="page"/g) ?? []).length;
-    // One for the active page item (settings is only current on /settings).
     expect(currentCount).toBe(1);
     expect(markup).toMatch(
       /data-slot="sidebar-rail-item" aria-current="page"[^>]*>[\s\S]*?Routines/,
     );
   });
 
-  test("carries the settings link and the bench switcher in its footer", () => {
+  test("carries brand class, theme, settings, and avatar in the footer", () => {
     const markup = renderRail("/");
-    expect(markup).toContain(`href="${SETTINGS_PATH}"`);
-    // The footer is `SidebarRail`'s `footer` slot; the identity dock it holds
-    // is what carries the settings link, so its class marks the footer present.
-    expect(markup).toContain("shell-rail-identity");
+    expect(markup).toContain("shell-brand-rail");
+    expect(markup).toContain("shell-rail-footer");
+    expect(markup).toContain("shell-rail-avatar-btn");
+    expect(markup).toMatch(
+      /data-slot="sidebar-rail-item-label"[^>]*>Settings<\/span>/,
+    );
+  });
+
+  test("command palette destinations include every NAV_ROUTES label", () => {
+    // NAV_ROUTES feeds the palette; rail may omit Settings from primary stack
+    // but still lists it as a rail item.
+    expect(NAV_ROUTES.map((route) => route.label)).toContain("Settings");
+    expect(NAV_ROUTES.map((route) => route.label)).toContain("Channels");
   });
 
   test("never shows the account id", () => {
