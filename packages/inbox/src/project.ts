@@ -59,7 +59,16 @@ export function projectInboxItem(message: MailboxMessage): InboxItem {
   if (message.fromDisplay !== undefined) item.fromDisplay = message.fromDisplay;
   if (message.subject !== undefined) item.subject = message.subject;
   if (message.snippet !== undefined) item.snippet = message.snippet;
-  if (message.refs !== undefined) item.refs = [...message.refs];
+  if (message.refs !== undefined) {
+    item.refs = message.refs.map((ref) => {
+      const projected: { kind: string; id: string; label?: string } = {
+        kind: ref.kind,
+        id: ref.id,
+      };
+      if (ref.label !== undefined) projected.label = ref.label;
+      return projected;
+    });
+  }
   if (message.priority !== undefined) item.priority = message.priority;
   if (message.assignee !== undefined) item.assignee = message.assignee;
   return item;

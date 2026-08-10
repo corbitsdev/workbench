@@ -9,7 +9,7 @@ import {
   type MailboxDb,
   type MailboxEventBus,
 } from "@corbits/mailbox";
-import type { MailboxDelivery, NotifyInboxItem } from "@corbits/notify";
+import type { MailboxDelivery, NotifyInboxItem } from "@corbits/notify/mailbox";
 
 import { classificationFromRefs } from "./group";
 

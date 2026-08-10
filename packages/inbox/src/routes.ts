@@ -12,13 +12,12 @@ import {
   trashMailboxMessage,
   type MailboxDb,
   type MailboxEventBus,
+  type MailboxEventOp,
   type MailboxFilter,
   type MailboxListCursor,
-  publishMailboxEvent,
 } from "@corbits/mailbox";
 
 import type { TenantEnv } from "@intx/hub-api";
-import { type } from "arktype";
 import { Hono } from "hono";
 
 import { isInboxGroup, type InboxGroup } from "./group";
@@ -51,8 +50,21 @@ function publish(
   bus: MailboxEventBus,
   scope: { tenantId: string; principalId: string },
   id: string,
+  op: MailboxEventOp,
 ): void {
-  publishMailboxEvent(bus, scope, id, publishLog);
+  // `publishMailboxEvent` is package-internal and not re-exported; hosts
+  // publish through the bus surface with the same best-effort contract.
+  try {
+    bus.publish(scope, { type: "mailbox", id, op });
+  } catch (error) {
+    publishLog.error("mailbox event publish failed", {
+      id,
+      op,
+      tenantId: scope.tenantId,
+      principalId: scope.principalId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function listAllOpen(
@@ -131,7 +143,7 @@ export function createInboxRoutes(
         { status: "done" },
       );
       await markMailboxMessageRead(db, { ...scope, id: item.id });
-      publish(bus, scope, item.id);
+      publish(bus, scope, item.id, "mark_read");
       marked += 1;
     }
     return c.json({ marked });
@@ -146,7 +158,7 @@ export function createInboxRoutes(
     for (const item of itemsEligibleForClearDone(items)) {
       const ok = await trashMailboxMessage(db, { ...scope, id: item.id });
       if (ok) {
-        publish(bus, scope, item.id);
+        publish(bus, scope, item.id, "trash");
         cleared += 1;
       }
     }
@@ -236,7 +248,7 @@ export function createInboxRoutes(
       id,
     });
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id);
+    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "mark_read");
     return c.json({ ok: true });
   });
 
@@ -250,7 +262,7 @@ export function createInboxRoutes(
       id,
     });
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id);
+    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "mark_unread");
     return c.json({ ok: true });
   });
 
@@ -266,7 +278,7 @@ export function createInboxRoutes(
     const ok = await enrichMailboxMessage(db, scope, { status: "done" });
     if (!ok) return c.json({ error: "not found" }, 404);
     await markMailboxMessageRead(db, scope);
-    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id);
+    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "enrich");
     return c.json({ ok: true });
   });
 
@@ -274,17 +286,16 @@ export function createInboxRoutes(
     const tenant = c.get("tenant");
     const principal = c.get("principal");
     const id = c.req.param("id");
-    const body = (await c.req.json().catch(() => ({}))) as { until?: string };
+    const body: unknown = await c.req.json().catch(() => ({}));
     // `until` is accepted for forward-compat with a scheduled unsnooze; the
     // product store today only records the status flip.
-    const UntilSchema = type({ "until?": "string" });
-    const parsed = UntilSchema(body);
-    if (parsed instanceof type.errors) {
-      const first = parsed[0];
-      return c.json(
-        { error: first === undefined ? "invalid request" : first.message },
-        400,
-      );
+    let until: string | undefined;
+    if (typeof body === "object" && body !== null && "until" in body) {
+      const rawUntil = (body as { until: unknown }).until;
+      if (rawUntil !== undefined && typeof rawUntil !== "string") {
+        return c.json({ error: "until must be a string" }, 400);
+      }
+      if (typeof rawUntil === "string") until = rawUntil;
     }
     const ok = await enrichMailboxMessage(
       db,
@@ -292,10 +303,10 @@ export function createInboxRoutes(
       { status: "snoozed" },
     );
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id);
+    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "enrich");
     return c.json({
       ok: true,
-      ...(parsed.until !== undefined ? { until: parsed.until } : {}),
+      ...(until !== undefined ? { until } : {}),
     });
   });
 
@@ -309,7 +320,7 @@ export function createInboxRoutes(
       { status: "open" },
     );
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id);
+    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "enrich");
     return c.json({ ok: true });
   });
 

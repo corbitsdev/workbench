@@ -7,6 +7,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./mailbox": "./src/mailbox.ts",
     "./migrations": "./src/migrations.ts"
   },
   "scripts": {
