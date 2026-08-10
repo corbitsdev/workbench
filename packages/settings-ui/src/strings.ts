@@ -11,7 +11,8 @@ export const SETTINGS_STRINGS = {
   groupWorkspaceLabel: "Workspace · shared",
 
   agentSectionTitle: "Your agent",
-  agentSectionDescription: "How your default agent works for you on this bench.",
+  agentSectionDescription:
+    "How your default agent works for you on this bench.",
   agentAutonomyHeading: "Autonomy",
   agentAutonomyLabel: "Default behavior",
   agentAutonomyPrepare: "Prepare only — draft, never send",

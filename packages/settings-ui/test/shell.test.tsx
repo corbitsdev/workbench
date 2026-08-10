@@ -4,10 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  flattenSettingsSections,
-  resolveActiveSection,
-} from "../src/shell";
+import { flattenSettingsSections, resolveActiveSection } from "../src/shell";
 import type { SettingsSection, SettingsSectionGroup } from "../src/shell";
 
 function section(id: string): SettingsSection {

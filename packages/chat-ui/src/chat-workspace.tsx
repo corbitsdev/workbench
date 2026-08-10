@@ -146,9 +146,7 @@ export function resolveMessageFeedTarget(args: {
   return { kind: "channel-mail" };
 }
 
-function sortMessagesOldestFirst(
-  items: readonly MessageItem[],
-): MessageItem[] {
+function sortMessagesOldestFirst(items: readonly MessageItem[]): MessageItem[] {
   return [...items].sort((a, b) =>
     a.createdAt === b.createdAt
       ? a.id.localeCompare(b.id)
@@ -242,9 +240,7 @@ function ChatWorkspaceInner({
       try {
         const page = await listThreads(tenantId, channelId);
         setThreads(page.items);
-        setRootThreadId(
-          page.rootThreadId !== "" ? page.rootThreadId : null,
-        );
+        setRootThreadId(page.rootThreadId !== "" ? page.rootThreadId : null);
         // Build affordance meta for parent messages that already have a
         // reply thread. Reply counts load lazily when the thread is opened;
         // until then we surface "Thread" via replyCount 0+.
@@ -318,9 +314,7 @@ function ChatWorkspaceInner({
           try {
             const threadsPage = await listThreads(tenantId, channelId);
             resolvedRootThreadId =
-              threadsPage.rootThreadId !== ""
-                ? threadsPage.rootThreadId
-                : null;
+              threadsPage.rootThreadId !== "" ? threadsPage.rootThreadId : null;
             setRootThreadId(resolvedRootThreadId);
             setThreads(threadsPage.items);
           } catch {
@@ -477,12 +471,9 @@ function ChatWorkspaceInner({
     if (activeChannelId === null) return false;
     try {
       if (openThreadId !== null) {
-        await sendMessage(
-          tenantId,
-          activeChannelId,
-          [{ kind: "text", text }],
-          { threadId: openThreadId },
-        );
+        await sendMessage(tenantId, activeChannelId, [{ kind: "text", text }], {
+          threadId: openThreadId,
+        });
       } else if (pendingParentMessageId !== null) {
         const sent = await sendMessage(
           tenantId,
@@ -495,9 +486,7 @@ function ChatWorkspaceInner({
           setPendingParentMessageId(null);
         }
       } else {
-        await sendMessage(tenantId, activeChannelId, [
-          { kind: "text", text },
-        ]);
+        await sendMessage(tenantId, activeChannelId, [{ kind: "text", text }]);
       }
       await loadThreads(activeChannelId);
       await loadMessages(activeChannelId, { background: true });
@@ -549,8 +538,7 @@ function ChatWorkspaceInner({
     openThreadId === null
       ? undefined
       : threads.find((t) => t.id === openThreadId);
-  const inThreadView =
-    openThreadId !== null || pendingParentMessageId !== null;
+  const inThreadView = openThreadId !== null || pendingParentMessageId !== null;
   const threadTitle =
     openThread?.title ??
     (pendingParentMessageId !== null ? "New thread" : "Thread");

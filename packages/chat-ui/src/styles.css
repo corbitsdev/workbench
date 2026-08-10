@@ -389,7 +389,10 @@
 }
 
 .chat-threads-menu-item:hover {
-  background: var(--muted, color-mix(in srgb, var(--foreground) 6%, transparent));
+  background: var(
+    --muted,
+    color-mix(in srgb, var(--foreground) 6%, transparent)
+  );
 }
 
 .chat-member-stack {

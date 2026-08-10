@@ -31,12 +31,7 @@ import { CHAT_STRINGS } from "./strings";
 export type ContextWindowMode = "inherit" | "override";
 
 export type ChannelSettingsTabId =
-  | "general"
-  | "members"
-  | "agents"
-  | "access"
-  | "notifications"
-  | "danger";
+  "general" | "members" | "agents" | "access" | "notifications" | "danger";
 
 /**
  * The two-state control's own resolution, independent of React: what mode
@@ -290,11 +285,15 @@ export function ChannelSettingsPanel({
                     {CHAT_STRINGS.channelSettingsPinnedDescription}
                   </p>
                   <div className="chat-settings-field">
-                    <span>{CHAT_STRINGS.channelSettingsContextWindowLabel}</span>
+                    <span>
+                      {CHAT_STRINGS.channelSettingsContextWindowLabel}
+                    </span>
                     <div
                       className="chat-context-window-control"
                       role="radiogroup"
-                      aria-label={CHAT_STRINGS.channelSettingsContextWindowLabel}
+                      aria-label={
+                        CHAT_STRINGS.channelSettingsContextWindowLabel
+                      }
                     >
                       <label className="chat-context-window-option">
                         <input
@@ -330,9 +329,7 @@ export function ChannelSettingsPanel({
                     {CHAT_STRINGS.channelSettingsContextWindowDescription}
                   </p>
                   <div className="chat-settings-callout">
-                    <strong>
-                      {CHAT_STRINGS.channelSettingsDeliveryTitle}
-                    </strong>
+                    <strong>{CHAT_STRINGS.channelSettingsDeliveryTitle}</strong>
                     <p>{CHAT_STRINGS.channelSettingsDeliveryBody}</p>
                   </div>
                 </div>
@@ -354,9 +351,7 @@ export function ChannelSettingsPanel({
                     onInvite={onInviteParticipant}
                   />
                   <div className="chat-settings-callout">
-                    <strong>
-                      {CHAT_STRINGS.channelSettingsAutonomyTitle}
-                    </strong>
+                    <strong>{CHAT_STRINGS.channelSettingsAutonomyTitle}</strong>
                     <p>{CHAT_STRINGS.channelSettingsAutonomyBody}</p>
                   </div>
                 </div>
@@ -380,7 +375,10 @@ export function ChannelSettingsPanel({
                     {(
                       [
                         ["all", CHAT_STRINGS.channelSettingsNotifyAll],
-                        ["mentions", CHAT_STRINGS.channelSettingsNotifyMentions],
+                        [
+                          "mentions",
+                          CHAT_STRINGS.channelSettingsNotifyMentions,
+                        ],
                         ["mute", CHAT_STRINGS.channelSettingsNotifyMute],
                       ] as const
                     ).map(([id, label]) => (

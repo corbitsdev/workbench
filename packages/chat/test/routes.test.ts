@@ -856,7 +856,9 @@ describe("cross-tenant channel isolation", () => {
     const postB = await appB.request(`/channels/${channel.id}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ parts: [{ kind: "text", text: "cross-tenant write" }] }),
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "cross-tenant write" }],
+      }),
     });
     expect(postB.status).toBe(404);
     expect(

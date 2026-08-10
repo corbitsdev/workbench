@@ -271,10 +271,7 @@ export function SkillsPage({
       if (selectedId !== null) setSelectedId(null);
       return;
     }
-    if (
-      selectedId === null ||
-      !skills.some((s) => s.id === selectedId)
-    ) {
+    if (selectedId === null || !skills.some((s) => s.id === selectedId)) {
       setSelectedId(skills[0]!.id);
     }
   }, [skills, selectedId]);
@@ -335,11 +332,7 @@ export function SkillsPage({
           onChange={setQuery}
         />
         <ViewToggle mode={viewMode} onChange={setViewMode} />
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => setCreateOpen(true)}
-        >
+        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
           Create skill
         </Button>
       </div>

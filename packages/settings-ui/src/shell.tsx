@@ -86,7 +86,13 @@ export function SettingsShell({
     groups !== undefined && groups.length > 0
       ? groups
       : flatSections !== undefined && flatSections.length > 0
-        ? [{ id: "all", label: SETTINGS_STRINGS.pageTitle, sections: flatSections }]
+        ? [
+            {
+              id: "all",
+              label: SETTINGS_STRINGS.pageTitle,
+              sections: flatSections,
+            },
+          ]
         : [];
 
   const sections = flattenSettingsSections(resolvedGroups);
@@ -119,7 +125,10 @@ export function SettingsShell({
 
   return (
     <div className="settings-shell">
-      <nav className="settings-nav" aria-label={SETTINGS_STRINGS.sectionsNavLabel}>
+      <nav
+        className="settings-nav"
+        aria-label={SETTINGS_STRINGS.sectionsNavLabel}
+      >
         {resolvedGroups.map((group) => (
           <div key={group.id} className="settings-nav-group">
             <div className="settings-nav-group-label">{group.label}</div>
@@ -150,7 +159,9 @@ export function SettingsShell({
             <span className="settings-stage-title-sep" aria-hidden="true">
               ·
             </span>
-            <span className="settings-stage-section">{activeSection.title}</span>
+            <span className="settings-stage-section">
+              {activeSection.title}
+            </span>
           </h1>
         </header>
         <div className="settings-stage-body">

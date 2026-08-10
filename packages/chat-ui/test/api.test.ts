@@ -196,12 +196,9 @@ describe("sendMessage", () => {
         201,
       ),
     );
-    await sendMessage(
-      "tenant_1",
-      "chan_1",
-      [{ kind: "text", text: "reply" }],
-      { threadId: "thr_1" },
-    );
+    await sendMessage("tenant_1", "chan_1", [{ kind: "text", text: "reply" }], {
+      threadId: "thr_1",
+    });
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
       parts: [{ kind: "text", text: "reply" }],
       threadId: "thr_1",

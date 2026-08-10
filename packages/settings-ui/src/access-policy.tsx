@@ -12,7 +12,9 @@ import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 
 export function AccessPolicyBlock() {
-  const [state, setState] = useState<LoadState<AuthConfig>>({ kind: "loading" });
+  const [state, setState] = useState<LoadState<AuthConfig>>({
+    kind: "loading",
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -44,11 +46,7 @@ export function AccessPolicyBlock() {
   return <AccessPolicyView config={state.data} />;
 }
 
-export function AccessPolicyView({
-  config,
-}: {
-  readonly config: AuthConfig;
-}) {
+export function AccessPolicyView({ config }: { readonly config: AuthConfig }) {
   const signupLabel =
     config.signupMode === "open"
       ? SETTINGS_STRINGS.accessPolicySignupOpen
@@ -56,7 +54,9 @@ export function AccessPolicyView({
 
   return (
     <div className="settings-access-policy">
-      <h3 className="settings-subhead">{SETTINGS_STRINGS.accessPolicyHeading}</h3>
+      <h3 className="settings-subhead">
+        {SETTINGS_STRINGS.accessPolicyHeading}
+      </h3>
       <dl className="settings-detail-list">
         <dt>{SETTINGS_STRINGS.accessPolicySignupLabel}</dt>
         <dd>

@@ -69,7 +69,10 @@ export function ArtifactCard({
       ].join(" ")}
     >
       <div className="flex items-start justify-between gap-2">
-        <Badge tone="access" className="font-mono text-[0.65rem] uppercase tracking-wide">
+        <Badge
+          tone="access"
+          className="font-mono text-[0.65rem] uppercase tracking-wide"
+        >
           {artifact.kind}
         </Badge>
         {trailing}

@@ -46,7 +46,9 @@ export function AgentSection() {
       title={SETTINGS_STRINGS.agentSectionTitle}
       description={SETTINGS_STRINGS.agentSectionDescription}
     >
-      <h3 className="settings-subhead">{SETTINGS_STRINGS.agentAutonomyHeading}</h3>
+      <h3 className="settings-subhead">
+        {SETTINGS_STRINGS.agentAutonomyHeading}
+      </h3>
       <label className="settings-form-field">
         <span>{SETTINGS_STRINGS.agentAutonomyLabel}</span>
         <select
@@ -89,7 +91,9 @@ export function AgentSection() {
         />
       </label>
 
-      <h3 className="settings-subhead">{SETTINGS_STRINGS.agentPinnedHeading}</h3>
+      <h3 className="settings-subhead">
+        {SETTINGS_STRINGS.agentPinnedHeading}
+      </h3>
       <div className="settings-chip-row">
         {pinned.map((skill) => (
           <span key={skill} className="settings-chip">
@@ -107,7 +111,9 @@ export function AgentSection() {
       </div>
       <p className="settings-field-hint">{SETTINGS_STRINGS.agentPinnedHint}</p>
 
-      <h3 className="settings-subhead">{SETTINGS_STRINGS.agentInferenceHeading}</h3>
+      <h3 className="settings-subhead">
+        {SETTINGS_STRINGS.agentInferenceHeading}
+      </h3>
       <label className="settings-form-field">
         <span>
           {SETTINGS_STRINGS.agentCreativityLabel} ({creativity})

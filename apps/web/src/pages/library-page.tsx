@@ -144,9 +144,7 @@ function PreviewPane({
         ) : null}
         {!loading && error === null && detail !== null ? (
           <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">
-            {detail.content === ""
-              ? "(empty content)"
-              : detail.content}
+            {detail.content === "" ? "(empty content)" : detail.content}
           </pre>
         ) : null}
       </div>

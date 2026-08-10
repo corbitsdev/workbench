@@ -425,11 +425,7 @@ function ThreadAffordance({
           <span className="chat-thread-last-activity">{activity}</span>
         ) : null}
       </span>
-      <button
-        type="button"
-        className="chat-thread-open"
-        onClick={onOpen}
-      >
+      <button type="button" className="chat-thread-open" onClick={onOpen}>
         Open
       </button>
     </div>

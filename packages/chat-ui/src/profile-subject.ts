@@ -32,9 +32,7 @@ export function profileSubjectFromParticipant(
   participant: ParticipantRecord,
 ): ProfileSubject {
   const isAgent = isAgentAddress(participant.address);
-  const displayName = isAgent
-    ? `@${participant.handle}`
-    : participant.handle;
+  const displayName = isAgent ? `@${participant.handle}` : participant.handle;
   return {
     kind: isAgent ? "agent" : "member",
     address: participant.address,

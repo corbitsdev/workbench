@@ -248,7 +248,12 @@ export function createInboxRoutes(
       id,
     });
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "mark_read");
+    publish(
+      bus,
+      { tenantId: tenant.id, principalId: principal.id },
+      id,
+      "mark_read",
+    );
     return c.json({ ok: true });
   });
 
@@ -262,7 +267,12 @@ export function createInboxRoutes(
       id,
     });
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "mark_unread");
+    publish(
+      bus,
+      { tenantId: tenant.id, principalId: principal.id },
+      id,
+      "mark_unread",
+    );
     return c.json({ ok: true });
   });
 
@@ -278,7 +288,12 @@ export function createInboxRoutes(
     const ok = await enrichMailboxMessage(db, scope, { status: "done" });
     if (!ok) return c.json({ error: "not found" }, 404);
     await markMailboxMessageRead(db, scope);
-    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "enrich");
+    publish(
+      bus,
+      { tenantId: tenant.id, principalId: principal.id },
+      id,
+      "enrich",
+    );
     return c.json({ ok: true });
   });
 
@@ -303,7 +318,12 @@ export function createInboxRoutes(
       { status: "snoozed" },
     );
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "enrich");
+    publish(
+      bus,
+      { tenantId: tenant.id, principalId: principal.id },
+      id,
+      "enrich",
+    );
     return c.json({
       ok: true,
       ...(until !== undefined ? { until } : {}),
@@ -320,7 +340,12 @@ export function createInboxRoutes(
       { status: "open" },
     );
     if (!ok) return c.json({ error: "not found" }, 404);
-    publish(bus, { tenantId: tenant.id, principalId: principal.id }, id, "enrich");
+    publish(
+      bus,
+      { tenantId: tenant.id, principalId: principal.id },
+      id,
+      "enrich",
+    );
     return c.json({ ok: true });
   });
 
