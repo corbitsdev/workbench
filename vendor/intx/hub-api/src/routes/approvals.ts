@@ -262,8 +262,11 @@ export function createApprovalRoutes(
     },
   );
 
+  // Param routes exclude the reserved segment `needs-you` so hosts can
+  // mount a sibling display list at `/approvals/needs-you` without this
+  // `/:approvalId` route stealing the path (and returning 404).
   app.get(
-    "/:approvalId",
+    "/:approvalId{^(?!needs-you$)[^/]+}",
     describeRoute({
       tags: ["Approvals"],
       summary: "Get approval details",
@@ -334,7 +337,7 @@ export function createApprovalRoutes(
   );
 
   app.post(
-    "/:approvalId/approve",
+    "/:approvalId{^(?!needs-you$)[^/]+}/approve",
     describeRoute({
       tags: ["Approvals"],
       summary: "Approve an action",
@@ -407,7 +410,7 @@ export function createApprovalRoutes(
   );
 
   app.post(
-    "/:approvalId/reject",
+    "/:approvalId{^(?!needs-you$)[^/]+}/reject",
     describeRoute({
       tags: ["Approvals"],
       summary: "Reject an action",

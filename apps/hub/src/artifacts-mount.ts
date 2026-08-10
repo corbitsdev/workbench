@@ -1,15 +1,19 @@
 /**
  * Hub-side artifacts engine mount — the host's own analog of
- * `@corbits/dock`'s `mountArtifacts`. `@corbits/artifacts` (git pin)
- * persists artifacts + immutable version history in Postgres; its
- * `artifact`/`artifact_version` tables carry hard FKs into the host's own
- * `public.tenant` / `public.principal` tables, so the engine MUST point at
- * the same Postgres cluster as this hub's control plane.
+ * `@corbits/dock`'s `mountArtifacts`.
  *
- * Degrades cleanly when unconfigured: `ARTIFACTS_DATABASE_URL` unset
- * (and no explicit `databaseUrl` passed) means "no artifacts
- * persistence", logged once at boot, never thrown — same contract as
- * the dock mount.
+ * Same Postgres URL as the hub control plane, different schema: the package
+ * owns `artifacts.*` (tables, migrations, ledger) and never writes the host
+ * search_path. Hard FKs from `artifacts.artifact` into `public.tenant` /
+ * `public.principal` require that shared URL — a separate database would
+ * break those FKs.
+ *
+ * URL resolution order: explicit `databaseUrl` option →
+ * `ARTIFACTS_DATABASE_URL` → `DATABASE_URL`. Prefer the control-plane URL
+ * (default). `ARTIFACTS_DATABASE_URL` is only an override when you must pin
+ * the same cluster under a different env name — not a second database.
+ * When none of the three is set, the mount is skipped (logged once, never
+ * thrown) — same optional contract as the dock mount.
  *
  * This module lands the mount + factory only. Tenant-scoped HTTP
  * list/get/upload routes live in `artifact-routes.ts` and are registered
@@ -27,7 +31,10 @@ import {
 const log = getLogger(["hub", "artifacts-mount"]);
 
 export type MountArtifactsOptions = {
-  /** Defaults to `process.env.ARTIFACTS_DATABASE_URL`. */
+  /**
+   * Explicit database URL. When omitted, falls back to
+   * `ARTIFACTS_DATABASE_URL`, then `DATABASE_URL`.
+   */
   databaseUrl?: string;
 };
 
@@ -44,18 +51,27 @@ export async function mountArtifacts(
   options: MountArtifactsOptions = {},
 ): Promise<ArtifactsMountHandle | undefined> {
   const databaseUrl =
-    options.databaseUrl ?? process.env["ARTIFACTS_DATABASE_URL"];
+    options.databaseUrl ??
+    process.env["ARTIFACTS_DATABASE_URL"] ??
+    process.env["DATABASE_URL"];
   if (!databaseUrl) {
     log.info(
-      "ARTIFACTS_DATABASE_URL not set — artifacts will not be persisted",
+      "No ARTIFACTS_DATABASE_URL or DATABASE_URL — artifacts will not be persisted",
     );
     return undefined;
   }
 
+  const source =
+    options.databaseUrl !== undefined
+      ? "options.databaseUrl"
+      : process.env["ARTIFACTS_DATABASE_URL"] !== undefined
+        ? "ARTIFACTS_DATABASE_URL"
+        : "DATABASE_URL";
+
   const { db } = createArtifactDb(databaseUrl);
   await runArtifactMigrations(db);
   log.info(
-    "Artifacts engine mounted — artifacts persist as versioned rows by kind",
+    `Artifacts engine mounted (${source}) — artifacts persist as versioned rows by kind`,
   );
   return { db, contentStore: InlineContentStore };
 }
