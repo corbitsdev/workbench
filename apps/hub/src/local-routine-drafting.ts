@@ -73,8 +73,9 @@ export function proposedNameFromPrompt(prompt: string): string | undefined {
 export type LocalRoutineDraftingOptions = {
   /**
    * Optional host hook: pick a workflow definition for the draft when the
-   * prompt alone cannot name one. Return null when the tenant has none so
-   * the draft keeps definitionId null honestly.
+   * prompt alone cannot name one. Hosts should auto-pin only when the tenant
+   * has exactly one definition; return null for 0 or >1 so the draft keeps
+   * definitionId unset honestly (approve path still needs an explicit pick).
    */
   readonly resolveDefinitionId?: (tenantId: string) => Promise<string | null>;
 };

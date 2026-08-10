@@ -8,7 +8,7 @@ import {
   isOrphanedInstance,
   purposeAgentDefinitions,
   purposeAgentInstances,
-} from "../src/pages/agents-directory";
+} from "../src/agents-directory";
 
 const researcher: AgentDefinition = {
   id: "wfd_1",

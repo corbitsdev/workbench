@@ -593,17 +593,18 @@ export async function createHub(config: HubConfig) {
     createRoutineRoutes({
       store: routineStore,
       drafts: routineDraftStore,
-      // Local prompt→steps drafting until Myra owns the port. When the
-      // tenant already has a workflow definition, attach the oldest one
+      // Local prompt→steps drafting until Myra owns the port. Auto-pin a
+      // definitionId only when the tenant has exactly one workflow definition
       // so describe-to-agent drafts are approvable without a second pick.
+      // 0 or >1 → null (honest; approve path still needs an explicit pick).
       drafting: createLocalRoutineDrafting({
         resolveDefinitionId: async (tenantId) => {
-          const row = await db.query.workflowDefinition.findFirst({
+          const rows = await db.query.workflowDefinition.findMany({
             where: eq(workflowDefinition.tenantId, tenantId),
             columns: { id: true },
-            orderBy: (def, { asc }) => [asc(def.createdAt)],
+            limit: 2,
           });
-          return row?.id ?? null;
+          return rows.length === 1 ? (rows[0]?.id ?? null) : null;
         },
       }),
       launcher: routineLauncher,

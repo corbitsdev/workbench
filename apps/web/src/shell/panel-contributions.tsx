@@ -26,20 +26,19 @@ import {
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import {
+  filterDefinitions,
+  purposeAgentDefinitions,
+} from "../agents-directory";
 import { useAgentDirectory } from "../agents-api";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
 import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
-import {
-  filterDefinitions,
-  purposeAgentDefinitions,
-} from "../pages/agents-directory";
-import { agentIdFromPath } from "../pages/agents-page";
-import { skillIdFromPath } from "../pages/skills-page";
-import { useSessionSkills } from "../pages/skills-session";
+import { agentIdFromPath, skillIdFromPath } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
+import { useSessionSkills } from "../skills-session";
 import { useBenchActivity } from "./bench-activity";
 import {
   registerPanelContribution,

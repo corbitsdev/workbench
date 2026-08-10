@@ -77,11 +77,12 @@ describe("createLocalRoutineDrafting", () => {
     expect(result.definitionId).toBeUndefined();
   });
 
-  test("sets definitionId when resolveDefinitionId returns one", async () => {
+  test("sets definitionId when resolveDefinitionId auto-pins the sole definition", async () => {
     const port = createLocalRoutineDrafting({
       resolveDefinitionId: async (tenantId) => {
         expect(tenantId).toBe("t1");
-        return "wfd_oldest";
+        // Host pin: exactly one definition for the tenant.
+        return "wfd_only";
       },
     });
     const result = await port.propose({
@@ -89,11 +90,12 @@ describe("createLocalRoutineDrafting", () => {
       principalId: "u1",
       prompt: "Do the thing",
     });
-    expect(result.definitionId).toBe("wfd_oldest");
+    expect(result.definitionId).toBe("wfd_only");
   });
 
-  test("leaves definitionId unset when resolveDefinitionId returns null", async () => {
+  test("leaves definitionId unset when resolveDefinitionId returns null (0 or multi-def)", async () => {
     const port = createLocalRoutineDrafting({
+      // Host returns null for zero or multiple definitions — no fake pick.
       resolveDefinitionId: async () => null,
     });
     const result = await port.propose({

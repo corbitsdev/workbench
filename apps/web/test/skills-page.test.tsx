@@ -11,8 +11,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { validationIssues } from "../src/pages/create-skill-dialog";
 import { SkillsPage } from "../src/pages/skills-page";
-import type { Skill } from "../src/pages/skills-session";
-import { resetSessionSkills } from "../src/pages/skills-session";
+import type { Skill } from "../src/skills-session";
+import { resetSessionSkills } from "../src/skills-session";
 
 const draftSkill: Skill = {
   id: "skill_1",

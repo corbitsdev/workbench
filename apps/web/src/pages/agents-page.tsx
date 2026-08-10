@@ -14,29 +14,25 @@ import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createChannel } from "@corbits/chat-ui";
 
-import type { AgentDefinition, AgentInstance } from "../agents-api";
-import type { AgentDirectoryData } from "../agents-api";
-import type { APIQuery } from "../api";
-import { useAgentDirectory } from "../agents-api";
-import { useBench } from "../bench-context";
-import { channelPath } from "../channel-path";
-import { tenantKeys } from "../query-client";
-import { QueryView } from "../query-view";
-import { CreateAgentDialog } from "./create-agent-dialog";
+import {
+  useAgentDirectory,
+  type AgentDefinition,
+  type AgentDirectoryData,
+  type AgentInstance,
+} from "../agents-api";
 import {
   definitionsById,
   isOrphanedInstance,
   purposeAgentDefinitions,
   purposeAgentInstances,
-} from "./agents-directory";
-
-const AGENTS_PATH_PREFIX = "/agents";
-
-export function agentIdFromPath(path: string): string | null {
-  if (!path.startsWith(`${AGENTS_PATH_PREFIX}/`)) return null;
-  const rest = path.slice(AGENTS_PATH_PREFIX.length + 1);
-  return rest === "" ? null : decodeURIComponent(rest);
-}
+} from "../agents-directory";
+import type { APIQuery } from "../api";
+import { useBench } from "../bench-context";
+import { channelPath } from "../channel-path";
+import { AGENTS_PATH_PREFIX, agentIdFromPath } from "../path-ids";
+import { tenantKeys } from "../query-client";
+import { QueryView } from "../query-view";
+import { CreateAgentDialog } from "./create-agent-dialog";
 
 const DEFINITION_STATUS_TONE: Record<AgentDefinition["status"], BadgeTone> = {
   deployed: "success",

@@ -1,12 +1,13 @@
-// Pure logic behind the Agents page: filtering out the chat anchor
+// Pure logic for the Agents directory: filtering out the chat anchor
 // machinery's channel hosts (they are plumbing, not an agent a person
 // created), full-text search across the fields a person actually reads
 // (never an id), and flagging an instance whose definition has since
-// gone missing from the tenant's own listing.
+// gone missing from the tenant's own listing. Shared by shell col2 and
+// the agents page so neither layer imports the other.
 
 import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
 
-import type { AgentDefinition, AgentInstance } from "../agents-api";
+import type { AgentDefinition, AgentInstance } from "./agents-api";
 
 /** Every definition and instance a bench holds, minus the chat anchor
  * machinery's channel hosts — those are internal plumbing, never a

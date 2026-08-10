@@ -20,24 +20,17 @@ import {
 import { Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { CreateSkillDialog, type SkillDraft } from "./create-skill-dialog";
+import { SKILLS_PATH_PREFIX, skillIdFromPath } from "../path-ids";
 import {
   addSessionSkill,
   updateSessionSkills,
   useSessionSkills,
   type Skill,
   type SkillVersion,
-} from "./skills-session";
+} from "../skills-session";
+import { CreateSkillDialog, type SkillDraft } from "./create-skill-dialog";
 
 export type { Skill, SkillVersion };
-
-const SKILLS_PATH_PREFIX = "/skills";
-
-export function skillIdFromPath(path: string): string | null {
-  if (!path.startsWith(`${SKILLS_PATH_PREFIX}/`)) return null;
-  const rest = path.slice(SKILLS_PATH_PREFIX.length + 1);
-  return rest === "" ? null : decodeURIComponent(rest);
-}
 
 function accessTone(access: Skill["access"]): "info" | "neutral" {
   return access === "Shared" ? "info" : "neutral";
