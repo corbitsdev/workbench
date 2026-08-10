@@ -69,6 +69,7 @@ describe("route table", () => {
     expect(APP_ROUTES.map((route) => route.path)).toEqual([
       "/",
       "/c",
+      "/inbox",
       "/routines",
       "/library",
       "/agents",
@@ -78,8 +79,9 @@ describe("route table", () => {
     ]);
   });
 
-  test("rail nav is Routines, Library, Agents, Skills, Insights (no Home)", () => {
+  test("rail nav is Inbox, Routines, Library, Agents, Skills, Insights (no Home)", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
+      "Inbox",
       "Routines",
       "Library",
       "Agents",
