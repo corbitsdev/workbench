@@ -1,5 +1,6 @@
 // Screen-level proof for the Routines page's pure components: real
 // (possibly empty) `APIQuery` props in, honest markup out — no live fetch.
+// List rows live in shell col2; this page owns create + detail only.
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -61,26 +62,25 @@ const listProps = {
 };
 
 describe("RoutinesListPage", () => {
-  test("says there are no routines yet", () => {
+  test("says there are no routines yet when the list is empty", () => {
     const markup = renderToStaticMarkup(
       <RoutinesListPage routines={ready([])} {...listProps} />,
     );
     expect(markup).toContain("No routines yet");
-    expect(markup).toContain("Search routines");
+    expect(markup).toContain("New routine");
   });
 
-  test("renders a routine by name and when, never a raw id", () => {
+  test("prompts to select when routines exist but none is open", () => {
     const markup = renderToStaticMarkup(
       <RoutinesListPage
         {...listProps}
         routines={ready([routine])}
         definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
-        now={Date.parse("2026-01-01T00:00:00.000Z")}
       />,
     );
-    expect(markup).toContain("Morning brief");
-    // List "when" prefers the next fire time when the routine is on.
-    expect(markup).toMatch(/in \d|Daily at 09:00 UTC/);
+    expect(markup).toContain("Select a routine");
+    // List rows live in col2 — the stage must not re-render the master list.
+    expect(markup).not.toContain("Morning brief");
     expect(markup).not.toContain("rtn_1");
   });
 
@@ -107,9 +107,11 @@ describe("RoutinesListPage", () => {
         definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
       />,
     );
+    expect(markup).toContain("Morning brief");
     expect(markup).toContain("Pull signups");
     expect(markup).toContain("Recent runs");
     expect(markup).toContain("completed");
+    expect(markup).not.toContain("rtn_1");
   });
 });
 

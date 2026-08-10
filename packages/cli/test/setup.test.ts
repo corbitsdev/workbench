@@ -156,7 +156,6 @@ describe("runSetup", () => {
       return undefined;
     });
 
-
     expect(
       runSetup({ config: CONFIG, api, runDbSetup: okDbSetup, log }),
     ).rejects.toThrow(/status 409/);

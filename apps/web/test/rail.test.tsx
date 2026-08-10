@@ -12,7 +12,6 @@ import {
   RAIL_SEARCH,
   RAIL_SETTINGS,
   RAIL_UTILITY_ROUTES,
-  SETTINGS_PATH,
 } from "../src/routes";
 import { Rail } from "../src/shell/rail";
 import { TestQueryProvider } from "./test-query-provider";

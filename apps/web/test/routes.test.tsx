@@ -9,12 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
-import {
-  APP_ROUTES,
-  matchesRoute,
-  NAV_ROUTES,
-  SETTINGS_PATH,
-} from "../src/routes";
+import { APP_ROUTES, matchesRoute, NAV_ROUTES } from "../src/routes";
 import type { SessionState } from "../src/session";
 
 const noNavigate = () => undefined;

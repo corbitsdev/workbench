@@ -33,7 +33,7 @@ import {
 import type { BadgeTone } from "@corbits/react-ui";
 import type { Channel } from "@corbits/chat-ui";
 import { listChannels } from "@corbits/chat-ui";
-import { Clock, Plus, Search } from "lucide-react";
+import { Clock, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -42,7 +42,7 @@ import type { APIQuery, WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
-import { approximateNextRun, cadenceLabel } from "../routine-trigger";
+import { cadenceLabel } from "../routine-trigger";
 import {
   approveRoutineDraft,
   createRoutine,
@@ -794,55 +794,6 @@ function CreateRoutineDialog({
   );
 }
 
-function RoutineListRow({
-  routine,
-  selected,
-  now,
-  onSelect,
-  onToggleEnabled,
-}: {
-  readonly routine: Routine;
-  readonly selected: boolean;
-  readonly now: number;
-  readonly onSelect: () => void;
-  readonly onToggleEnabled: (enabled: boolean) => void;
-}) {
-  const nextRun = routine.enabled
-    ? approximateNextRun(routine.trigger, new Date(now))
-    : null;
-  const when =
-    nextRun === null
-      ? cadenceLabel(routine.trigger)
-      : formatRelativeTime(nextRun.toISOString(), now);
-
-  return (
-    <div
-      className={[
-        "flex items-center gap-2 border-b border-[var(--ui-border)] px-3 py-2.5 last:border-b-0",
-        selected
-          ? "bg-[var(--ui-accent-soft)]"
-          : "hover:bg-[var(--ui-bg-muted)]",
-      ].join(" ")}
-    >
-      <button
-        type="button"
-        onClick={onSelect}
-        className="min-w-0 flex-1 text-left"
-      >
-        <div className="truncate text-sm font-medium text-[var(--ui-fg)]">
-          {routine.name}
-        </div>
-        <div className="truncate text-xs text-[var(--ui-fg-muted)]">{when}</div>
-      </button>
-      <Switch
-        checked={routine.enabled}
-        label={`${routine.enabled ? "Pause" : "Resume"} ${routine.name}`}
-        onCheckedChange={onToggleEnabled}
-      />
-    </div>
-  );
-}
-
 function RunsTable({
   runs,
   now,
@@ -906,8 +857,9 @@ export function RoutinesListPage({
   definitions,
   channels,
   selectedId,
-  onSelect,
+  onSelect: _onSelect,
   onCreate,
+
   onDescribe,
   onApproveDraft,
   onDiscardDraft,
@@ -930,7 +882,6 @@ export function RoutinesListPage({
   readonly onRunNow: (routine: Routine) => Promise<void>;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [showAllRuns, setShowAllRuns] = useState(false);
 
   useEffect(() => {
@@ -973,177 +924,117 @@ export function RoutinesListPage({
         </Button>
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        <div className="flex w-full min-w-0 flex-col border-r border-[var(--ui-border)] md:w-[min(22rem,40%)] md:shrink-0">
-          <div className="border-b border-[var(--ui-border)] p-2">
-            <label className="relative block">
-              <Search
-                aria-hidden
-                className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-[var(--ui-fg-muted)]"
+      {/* List lives in shell col2; stage is detail only. */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        {selected === null ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            {routines.kind === "ready" && routines.data.length === 0 ? (
+              <RichEmptyState
+                icon={<Clock />}
+                title="No routines yet"
+                description="Create a routine to run a workflow on a schedule or fire it manually whenever you need it."
+                actions={[
+                  {
+                    label: "New routine",
+                    onClick: () => setCreateOpen(true),
+                    variant: "primary",
+                  },
+                ]}
               />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search routines"
-                aria-label="Search routines"
-                className="pl-8"
-              />
-            </label>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <QueryView query={routines} label="your routines">
-              {(items) => {
-                const q = query.trim().toLowerCase();
-                const visible =
-                  q === ""
-                    ? items
-                    : items.filter((r) => r.name.toLowerCase().includes(q));
-                if (items.length === 0) {
-                  return (
-                    <div className="p-4">
-                      <RichEmptyState
-                        icon={<Clock />}
-                        title="No routines yet"
-                        description="Create a routine to run a workflow on a schedule or fire it manually whenever you need it."
-                        actions={[
-                          {
-                            label: "New routine",
-                            onClick: () => setCreateOpen(true),
-                            variant: "primary",
-                          },
-                        ]}
-                      />
-                    </div>
-                  );
-                }
-                if (visible.length === 0) {
-                  return (
-                    <div className="p-4">
-                      <EmptyState
-                        icon={<Search />}
-                        title="No matching routines"
-                        description={`Nothing matches “${query.trim()}”.`}
-                      />
-                    </div>
-                  );
-                }
-                return (
-                  <div role="list" aria-label="Routines">
-                    {visible.map((routine) => (
-                      <RoutineListRow
-                        key={routine.id}
-                        routine={routine}
-                        selected={selectedId === routine.id}
-                        now={now}
-                        onSelect={() => onSelect(routine.id)}
-                        onToggleEnabled={(enabled) =>
-                          onToggleEnabled(routine, enabled)
-                        }
-                      />
-                    ))}
-                  </div>
-                );
-              }}
-            </QueryView>
-          </div>
-        </div>
-
-        <div className="hidden min-w-0 flex-1 flex-col md:flex">
-          {selected === null ? (
-            <div className="flex flex-1 items-center justify-center p-6">
+            ) : (
               <EmptyState
                 icon={<Clock />}
                 title="Select a routine"
-                description="Pick a routine from the list to see its steps and recent runs."
+                description="Pick a routine from the sidebar to see its steps and recent runs."
               />
-            </div>
-          ) : (
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--ui-border)] px-4 py-3">
-                <div className="min-w-0">
-                  <h2 className="truncate text-base font-semibold text-[var(--ui-fg)]">
-                    {selected.name}
-                  </h2>
-                  <p className="mt-0.5 text-xs text-[var(--ui-fg-muted)]">
-                    {cadenceLabel(selected.trigger)}
-                    {" · "}
-                    {selected.enabled ? "On" : "Off"}
-                    {" · last: "}
-                    {lastResultLabel(selectedRuns)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={selected.enabled}
-                    label={`${selected.enabled ? "Pause" : "Resume"} ${selected.name}`}
-                    onCheckedChange={(enabled) =>
-                      onToggleEnabled(selected, enabled)
-                    }
-                  />
-                  <RunNowButton
-                    variant="outline"
-                    size="sm"
-                    onRun={() => onRunNow(selected)}
-                  />
-                </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--ui-border)] px-4 py-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-semibold text-[var(--ui-fg)]">
+                  {selected.name}
+                </h2>
+                <p className="mt-0.5 text-xs text-[var(--ui-fg-muted)]">
+                  {cadenceLabel(selected.trigger)}
+                  {" · "}
+                  {selected.enabled ? "On" : "Off"}
+                  {" · last: "}
+                  {lastResultLabel(selectedRuns)}
+                </p>
               </div>
-
-              <section className="border-b border-[var(--ui-border)] px-4 py-3">
-                <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-                  Steps
-                </h3>
-                {steps.length === 0 ? (
-                  <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">
-                    Runs workflow{" "}
-                    <span className="font-medium text-[var(--ui-fg)]">
-                      {definitions.find((d) => d.id === selected.definitionId)
-                        ?.name ?? "selected definition"}
-                    </span>
-                    .
-                  </p>
-                ) : (
-                  <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm">
-                    {steps.map((step, index) => (
-                      <li key={`${step.title}-${index}`}>
-                        <span className="font-medium">{step.title}</span>
-                        {step.detail !== undefined ? (
-                          <span className="text-[var(--ui-fg-muted)]">
-                            {" — "}
-                            {step.detail}
-                          </span>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </section>
-
-              <section className="px-4 py-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-                    {showAllRuns ? "All runs & traces" : "Recent runs"}
-                  </h3>
-                  {selectedRuns.length > 3 ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setShowAllRuns((v) => !v)}
-                    >
-                      {showAllRuns ? "Show three" : "All runs & traces"}
-                    </Button>
-                  ) : null}
-                </div>
-                <RunsTable
-                  runs={showAllRuns ? selectedRuns : recentRuns}
-                  now={now}
-                  emptyTitle="No runs yet"
-                  emptyDescription="This routine has not fired yet — manually or on a schedule."
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={selected.enabled}
+                  label={`${selected.enabled ? "Pause" : "Resume"} ${selected.name}`}
+                  onCheckedChange={(enabled) =>
+                    onToggleEnabled(selected, enabled)
+                  }
                 />
-              </section>
+                <RunNowButton
+                  variant="outline"
+                  size="sm"
+                  onRun={() => onRunNow(selected)}
+                />
+              </div>
             </div>
-          )}
-        </div>
+
+            <section className="border-b border-[var(--ui-border)] px-4 py-3">
+              <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
+                Steps
+              </h3>
+              {steps.length === 0 ? (
+                <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">
+                  Runs workflow{" "}
+                  <span className="font-medium text-[var(--ui-fg)]">
+                    {definitions.find((d) => d.id === selected.definitionId)
+                      ?.name ?? "selected definition"}
+                  </span>
+                  .
+                </p>
+              ) : (
+                <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm">
+                  {steps.map((step, index) => (
+                    <li key={`${step.title}-${index}`}>
+                      <span className="font-medium">{step.title}</span>
+                      {step.detail !== undefined ? (
+                        <span className="text-[var(--ui-fg-muted)]">
+                          {" — "}
+                          {step.detail}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+
+            <section className="px-4 py-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
+                  {showAllRuns ? "All runs & traces" : "Recent runs"}
+                </h3>
+                {selectedRuns.length > 3 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAllRuns((v) => !v)}
+                  >
+                    {showAllRuns ? "Show three" : "All runs & traces"}
+                  </Button>
+                ) : null}
+              </div>
+              <RunsTable
+                runs={showAllRuns ? selectedRuns : recentRuns}
+                now={now}
+                emptyTitle="No runs yet"
+                emptyDescription="This routine has not fired yet — manually or on a schedule."
+              />
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );

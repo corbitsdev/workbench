@@ -1,6 +1,6 @@
-// After Chat and Approvals leave the rail, the dock that still needs a live
-// DOM check is the bench switcher: it must show the server-resolved bench
-// name (via membershipDisplay) once memberships resolve — never a tenant id.
+// Brand rail live-DOM checks: product destinations stay on the rail; tenant
+// ids never leak as visible text. Bench switching lives outside the brand rail
+// in the shell-mock layout (not a rail switcher).
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -39,18 +39,19 @@ function stubMemberships(): void {
     const url = typeof input === "string" ? input : input.toString();
     if (url === "/api/me/principals") {
       return jsonResponse({
-        data: [
+        principals: [{ id: "prin_1", kind: "user", displayName: "Ada" }],
+      });
+    }
+    if (url === "/api/me/memberships") {
+      return jsonResponse({
+        memberships: [
           {
-            principalId: "prn_1",
             tenantId: "tnt_1",
-            tenantName: "Growth Team Bench",
-            tenantSlug: "growth-team",
-            kind: "user",
-            status: "active",
-            roles: [],
+            principalId: "prin_1",
+            role: "owner",
+            displayName: "Growth Team Bench",
           },
         ],
-        nextCursor: null,
       });
     }
     throw new Error(`unexpected fetch in test: ${url}`);
@@ -72,21 +73,23 @@ async function renderRail(): Promise<HTMLDivElement> {
       </TestQueryProvider>,
     );
   });
-  for (let i = 0; i < 20; i++) {
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-  }
-  if (container === null) throw new Error("container not mounted");
+  // Let membership fetches settle so we can assert they do not leak into the rail.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  if (container === null) throw new Error("container missing");
   return container;
 }
 
-describe("Rail bench switcher", () => {
-  test("shows the membership display name once benches resolve", async () => {
+describe("brand rail (live DOM)", () => {
+  test("never shows tenant ids or membership display names", async () => {
     stubMemberships();
     const el = await renderRail();
-    expect(el.textContent).toContain("Growth Team Bench");
+    // Mock brand rail is product destinations + footer chrome only — no bench
+    // switcher text that would reintroduce tenant identity on col1.
     expect(el.textContent).not.toContain("tnt_1");
+    expect(el.textContent).not.toContain("Growth Team Bench");
+    expect(el.textContent).toContain("Channels");
   });
 
   test("lists the trimmed product nav, not Chat or Approvals", async () => {

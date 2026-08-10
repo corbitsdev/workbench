@@ -28,13 +28,14 @@ import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
 import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
+import { tenantKeys } from "../query-client";
+import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
 import { useBenchActivity } from "./bench-activity";
 import { resolveChannelTitle } from "./channel-context";
 import {
   registerPanelContribution,
   type PanelRenderContext,
 } from "./panel-contribution";
-import type { RoutineActivityItem } from "./routine-activity";
 
 function pathMatches(prefix: string, path: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`);
@@ -364,54 +365,100 @@ function ChannelsBand({
   );
 }
 
+function routineIdFromPath(path: string): string | null {
+  if (!path.startsWith("/routines/")) return null;
+  const rest = path.slice("/routines/".length);
+  return rest === "" ? null : decodeURIComponent(rest);
+}
+
 function RoutinesFeedBand({
+  path,
   onNavigate,
 }: {
+  readonly path: string;
   readonly onNavigate: (to: string) => void;
 }) {
   const { selectedTenantId } = useBench();
-  const activity = useBenchActivity(selectedTenantId);
+  const [query, setQuery] = useState("");
+  const selectedId = routineIdFromPath(path);
+  const routines = useTenantQuery(
+    selectedTenantId === null
+      ? (["tenant", "none", "routines"] as const)
+      : tenantKeys.routines(selectedTenantId),
+    selectedTenantId !== null,
+    () => listRoutines(selectedTenantId ?? ""),
+  );
 
-  if (activity.kind === "loading") {
-    return <Skeleton className="shell-activity-skeleton" />;
-  }
-  if (activity.kind === "empty") {
+  if (selectedTenantId === null) {
     return (
       <EmptyState
         icon={<Workflow />}
         title="No bench selected"
-        description="Choose a bench from the rail to see running routines."
+        description="Choose a bench from the rail to see routines."
       />
     );
   }
-  if (activity.kind === "error") {
+  if (routines.kind === "loading") {
+    return <Skeleton className="shell-activity-skeleton" />;
+  }
+  if (routines.kind === "error") {
     return (
       <EmptyState
         icon={<Workflow />}
-        title="Couldn't load activity"
-        description={activity.message}
+        title="Couldn't load routines"
+        description={routines.message}
       />
     );
   }
-  if (activity.routines.length === 0) {
+  if (routines.kind === "unauthenticated") {
     return (
       <EmptyState
         icon={<Workflow />}
-        title="Nothing running"
-        description="A routine running in this bench shows up here while it executes."
+        title="Sign in required"
+        description="Sign in to see routines for this bench."
       />
     );
   }
+
+  const q = query.trim().toLowerCase();
+  const items: readonly Routine[] =
+    q === ""
+      ? routines.data
+      : routines.data.filter((r) => r.name.toLowerCase().includes(q));
+
   return (
-    <div className="panel-stack">
-      {activity.routines.map((routine: RoutineActivityItem) => (
-        <SidebarItemRow
-          key={routine.id}
-          name={routine.name}
-          meta={routine.status}
-          onSelect={() => onNavigate(`/routines/${routine.id}`)}
+    <div className="panel-stack" aria-label="Routines">
+      <Input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search routines"
+        aria-label="Search routines"
+      />
+      {routines.data.length === 0 ? (
+        <EmptyState
+          icon={<Workflow />}
+          title="No routines yet"
+          description="Create a routine to run a workflow on a schedule."
         />
-      ))}
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={<Workflow />}
+          title="No matching routines"
+          description={`Nothing matches “${query.trim()}”.`}
+        />
+      ) : (
+        items.map((routine) => (
+          <SidebarItemRow
+            key={routine.id}
+            name={routine.name}
+            meta={routine.enabled ? "On" : "Off"}
+            selected={selectedId === routine.id}
+            onSelect={() =>
+              onNavigate(`/routines/${encodeURIComponent(routine.id)}`)
+            }
+          />
+        ))
+      )}
     </div>
   );
 }
@@ -690,7 +737,9 @@ export function ensurePanelContributions(): void {
         },
       ],
     }),
-    pageSpecific: (ctx) => <RoutinesFeedBand onNavigate={ctx.onNavigate} />,
+    pageSpecific: (ctx) => (
+      <RoutinesFeedBand path={ctx.path} onNavigate={ctx.onNavigate} />
+    ),
   });
 
   registerPanelContribution({

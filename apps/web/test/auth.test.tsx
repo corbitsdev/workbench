@@ -142,14 +142,15 @@ describe("the gate", () => {
     expect(markup).not.toContain("Sign out");
   });
 
-  test("signed in renders the shell with the screens and a sign-out control", () => {
+  test("signed in renders the shell with rail screens and avatar settings control", () => {
     const markup = renderApp({ kind: "signed-in", user });
-    expect(markup).toContain("Sign out");
-    expect(markup).toContain("ada@example.com");
-    // Default land is the Myra channel canvas — no rail destination is current
-    // (channel paths are not rail items). Assert the rail and shell still mount.
+    // Brand rail: product destinations + avatar → settings (sign-out is
+    // context-menu only — no visible "Sign out" chrome in the mock).
     expect(markup).toContain('data-slot="sidebar-rail"');
     expect(markup).toContain('data-slot="sidebar-rail-item"');
+    expect(markup).toContain("shell-rail-avatar-btn");
+    expect(markup).toContain('aria-label="ada · Settings"');
+    expect(markup).not.toContain("user_1");
   });
 
   test("loading and error are their own screens, not a broken shell", () => {
