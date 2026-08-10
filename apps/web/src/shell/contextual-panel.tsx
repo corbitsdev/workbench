@@ -133,7 +133,6 @@ export function ContextualPanel({
             className="panel-band panel-band-page-specific"
             aria-label="Page details"
           >
-            <h3 className="panel-band-heading">{pageBand.title}</h3>
             {pageSpecific}
           </section>
         ) : null}

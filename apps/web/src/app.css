@@ -47,7 +47,8 @@ html {
   --shell-canvas-width: min(36rem, 42vw);
   --shell-rail-brand: #e98428;
   --shell-rail-brand-hover: #d47420;
-  --shell-rail-on-brand: #1a1208;
+  /* Mock --on-accent: charcoal ink on brand orange (not near-black). */
+  --shell-rail-on-brand: #2b2627;
 }
 
 .shell-main {
@@ -97,6 +98,7 @@ html {
   scrollbar-width: thin;
 }
 
+/* Mock .col2-foot: full-width bench dock padding. */
 .shell-contextual-panel [data-slot="sidebar-panel-footer"] {
   padding: 0.45rem 0.7rem 0.7rem;
   border-top: 1px solid
@@ -104,7 +106,7 @@ html {
   background: var(--background, #fff);
 }
 
-/* Mock .section labels in col2 lists. */
+/* Mock .section labels in col2 lists — always 0.65rem / 0.07em. */
 .shell-contextual-panel .panel-band-heading,
 .shell-contextual-panel .panel-band-subheading {
   font-size: 0.65rem;
@@ -125,6 +127,13 @@ html {
   min-height: 0;
 }
 
+/* Kill heavy band chrome inside col2 — lists sit flush in the scroll body. */
+.shell-contextual-panel .panel-band {
+  gap: 0.15rem;
+  padding: 0;
+  border-bottom: none;
+}
+
 .panel-band-inset {
   display: flex;
   flex-wrap: wrap;
@@ -137,6 +146,11 @@ html {
   flex: 1;
   overflow-y: auto;
   border-bottom: none;
+}
+
+/* Header already prints the page title — never re-title the body band. */
+.shell-contextual-panel .panel-band-page-specific > .panel-band-heading {
+  display: none;
 }
 
 .panel-page-header {
@@ -174,6 +188,35 @@ html {
   gap: 0.125rem;
 }
 
+/* Mock .icon-sm: compact muted header tools (settings, canvas). */
+.shell-contextual-panel [data-slot="sidebar-panel-header"] [data-slot="button"],
+.shell-contextual-panel .panel-page-tools [data-slot="button"] {
+  width: 1.8rem;
+  height: 1.8rem;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0.45rem;
+  color: var(--muted-foreground, #8a8080);
+  background: transparent;
+}
+
+.shell-contextual-panel
+  [data-slot="sidebar-panel-header"]
+  [data-slot="button"]:hover,
+.shell-contextual-panel .panel-page-tools [data-slot="button"]:hover {
+  background: color-mix(in srgb, var(--foreground, #2b2627) 5%, transparent);
+  color: var(--foreground, #2b2627);
+}
+
+.shell-contextual-panel
+  [data-slot="sidebar-panel-header"]
+  [data-slot="button"]
+  svg,
+.shell-contextual-panel .panel-page-tools [data-slot="button"] svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
 .panel-page-actions {
   display: flex;
   flex-wrap: wrap;
@@ -184,16 +227,16 @@ html {
 .panel-page-actions [data-slot="button"] {
   height: 1.7rem;
   padding: 0 0.55rem;
-  border-radius: 0;
+  border-radius: 0.45rem;
   font-size: 0.72rem;
   font-weight: 550;
 }
 
 .panel-band-heading {
   margin: 0;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
@@ -201,9 +244,9 @@ html {
 .panel-band-subheading {
   margin: 0;
   padding: 0.25rem 0.5rem 0.125rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
@@ -462,10 +505,34 @@ html {
   padding-top: 0;
 }
 
+/* Mock .rail-btn: 2.5rem hit, 1.15rem glyph, idle opacity 0.78, r 0.6rem.
+   Overrides react-ui size-10 / [&_svg]:size-5 and primary/10 active wash. */
+.shell-brand-rail [data-slot="sidebar-rail"] > ul {
+  gap: 0.15rem;
+}
+
+.shell-brand-rail [data-slot="sidebar-rail"] > div {
+  gap: 0.15rem;
+}
+
 .shell-brand-rail [data-slot="sidebar-rail-item"] {
-  color: color-mix(in srgb, var(--shell-rail-on-brand) 78%, transparent);
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
   border-radius: 0.6rem;
-  opacity: 0.9;
+  color: var(--shell-rail-on-brand);
+  background: transparent;
+  opacity: 0.78;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+.shell-brand-rail [data-slot="sidebar-rail-item"] svg {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .shell-brand-rail [data-slot="sidebar-rail-item"]:hover {
@@ -484,9 +551,39 @@ html {
   color: inherit;
 }
 
+/* ThemeToggle / ghost buttons in the brand rail footer — match .rail-btn. */
+.shell-rail-footer [data-slot="button"],
+.shell-brand-rail-column [data-slot="button"] {
+  width: 2.5rem;
+  height: 2.5rem;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0.6rem;
+  color: var(--shell-rail-on-brand);
+  background: transparent;
+  opacity: 0.78;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+.shell-rail-footer [data-slot="button"]:hover,
+.shell-brand-rail-column [data-slot="button"]:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--shell-rail-on-brand);
+  opacity: 1;
+}
+
+.shell-rail-footer [data-slot="button"] svg,
+.shell-brand-rail-column [data-slot="button"] svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
 .shell-bench-dock {
   width: 100%;
-  padding: 0.25rem 0;
+  padding: 0;
 }
 
 .shell-rail-footer {
@@ -507,7 +604,7 @@ html {
   border: 0;
   padding: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--shell-rail-on-brand) 78%, transparent);
+  color: var(--shell-rail-on-brand);
   cursor: pointer;
   opacity: 0.78;
   transition:
@@ -538,6 +635,7 @@ html {
   height: 1.15rem;
 }
 
+/* Square monogram avatar — never circular on the brand rail. */
 .shell-rail-avatar-btn {
   display: grid;
   place-items: center;
@@ -549,6 +647,18 @@ html {
   cursor: pointer;
   border-radius: 0;
   color: var(--shell-rail-on-brand);
+  opacity: 1;
+}
+
+.shell-rail-avatar-btn [data-slot="avatar"],
+.shell-rail-avatar-btn > span {
+  border-radius: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  color: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .shell-rail-avatar-btn:focus-visible {
@@ -739,6 +849,110 @@ html {
 /* ChannelsBand search — mock searchBox at top of col2 body. */
 .shell-channels-search {
   margin: 0 0 0.35rem;
+}
+
+/* Mock .search: compact inputs in col2 body (channels + filters). */
+.shell-contextual-panel .shell-channels-search [data-slot="input"],
+.shell-contextual-panel [data-slot="sidebar-panel-body"] [data-slot="input"] {
+  height: 2.15rem;
+  min-height: 2.15rem;
+  padding: 0 0.65rem;
+  border-radius: 0.55rem;
+  border: 1px solid
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+  background: var(--card, var(--background, #fff));
+  font-size: 0.84rem;
+  color: var(--foreground, #2b2627);
+  box-shadow: none;
+}
+
+.shell-contextual-panel .shell-channels-search [data-slot="input"]::placeholder,
+.shell-contextual-panel
+  [data-slot="sidebar-panel-body"]
+  [data-slot="input"]::placeholder {
+  color: var(--muted-foreground, #8a8080);
+}
+
+.shell-contextual-panel
+  .shell-channels-search
+  [data-slot="input"]:focus-visible,
+.shell-contextual-panel
+  [data-slot="sidebar-panel-body"]
+  [data-slot="input"]:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--foreground, #2b2627) 16%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--primary, #e98428) 22%, transparent);
+}
+
+/* Mock .list-item / denser SidebarItemRow in col2 — selected = card + inset
+   border, never primary/10 orange wash. Idle text muted. */
+.shell-contextual-panel [data-slot="sidebar-item-row"] {
+  list-style: none;
+}
+
+.shell-contextual-panel [data-slot="sidebar-item-row"] > div {
+  gap: 0.35rem;
+  border-radius: 0.45rem;
+  padding-right: 0.2rem;
+  color: var(--muted-foreground, #5c5555);
+  background: transparent;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.shell-contextual-panel [data-slot="sidebar-item-row"] > div:hover {
+  background: color-mix(in srgb, var(--foreground, #2b2627) 5%, transparent);
+  color: var(--foreground, #2b2627);
+}
+
+.shell-contextual-panel
+  [data-slot="sidebar-item-row"]
+  > div:has(button[aria-current="true"]) {
+  background: var(--card, var(--background, #fff));
+  color: var(--foreground, #2b2627);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+}
+
+/* Kill react-ui selected wash utilities if they win cascade order. */
+.shell-contextual-panel [data-slot="sidebar-item-row"] > div.bg-primary\/10,
+.shell-contextual-panel
+  [data-slot="sidebar-item-row"]
+  > div:has(button[aria-current="true"]) {
+  background-color: var(--card, var(--background, #fff));
+  color: var(--foreground, #2b2627);
+}
+
+.shell-contextual-panel [data-slot="sidebar-item-row"] > div > button {
+  gap: 0.45rem;
+  padding: 0.35rem 0.42rem;
+  border-radius: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 580;
+  line-height: 1.3;
+  color: inherit;
+}
+
+.shell-contextual-panel
+  [data-slot="sidebar-item-row"]
+  > div
+  > button
+  > span:first-child {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.shell-contextual-panel
+  [data-slot="sidebar-item-row"]
+  > div
+  > button
+  > span:first-child
+  svg {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 .shell-rail-identity {
