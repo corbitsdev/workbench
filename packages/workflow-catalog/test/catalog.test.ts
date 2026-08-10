@@ -26,6 +26,16 @@ describe("workflow catalog", () => {
     expect(workflowDisplayName("echo")).toBe("Echo");
   });
 
+  test("productizes the seeded assistant under the Myra display name", () => {
+    // The assistant workflow ships in DEFAULT_WORKFLOWS for every personal
+    // bench. Its catalog display name is the productized label Myra, not
+    // the generic "Assistant" — the routines picker and seeded asset both
+    // read it from here.
+    expect(workflowDisplayName("assistant")).toBe("Myra");
+    const entry = WORKFLOW_CATALOG.find((e) => e.assetName === "assistant");
+    expect(entry?.displayName).toBe("Myra");
+  });
+
   test("falls back to description, then humanized name — never blank", () => {
     expect(workflowDisplayName("unknown-flow", "  Weekly brief  ")).toBe(
       "Weekly brief",

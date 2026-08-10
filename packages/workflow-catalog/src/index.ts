@@ -26,7 +26,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
   },
   {
     assetName: "assistant",
-    displayName: "Assistant",
+    displayName: "Myra",
     automatable: false,
   },
   {
