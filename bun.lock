@@ -27,6 +27,8 @@
         "@corbits/chat": "workspace:*",
         "@corbits/commands": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
+        "@corbits/inbox": "workspace:*",
+        "@corbits/mailbox": "workspace:*",
         "@corbits/memory": "github:corbitsdev/corbits-memory#800340252dc60393f017fa933c59a1c9e67e7264",
         "@corbits/routines": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
@@ -336,6 +338,22 @@
         "typescript": "catalog:",
       },
     },
+    "packages/inbox": {
+      "name": "@corbits/inbox",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/mailbox": "workspace:*",
+        "@corbits/notify": "workspace:*",
+        "@intx/hub-api": "workspace:*",
+        "arktype": "catalog:",
+        "hono": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "postgres": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/insights": {
       "name": "@corbits/insights",
       "version": "0.0.1",
@@ -448,6 +466,25 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
+      },
+    },
+    "vendor/corbits/mailbox": {
+      "name": "@corbits/mailbox",
+      "version": "0.1.0",
+      "dependencies": {
+        "@hono/standard-validator": "0.2.3",
+        "@standard-community/standard-json": "0.3.5",
+        "@standard-community/standard-openapi": "0.2.9",
+        "arktype": "^2.2.0",
+        "hono-openapi": "1.3.1",
+      },
+      "peerDependencies": {
+        "@intx/log": "^0.2.2",
+        "@intx/mime": "^0.2.2",
+        "@intx/types": "^0.2.2",
+        "drizzle-orm": "^0.45.2",
+        "hono": "^4.12.0",
+        "postgres": "^3.4.0",
       },
     },
     "vendor/intx/agent": {
@@ -882,7 +919,11 @@
 
     "@corbits/heartbeat-workflow": ["@corbits/heartbeat-workflow@workspace:workflows/heartbeat"],
 
+    "@corbits/inbox": ["@corbits/inbox@workspace:packages/inbox"],
+
     "@corbits/insights": ["@corbits/insights@workspace:packages/insights"],
+
+    "@corbits/mailbox": ["@corbits/mailbox@workspace:vendor/corbits/mailbox"],
 
     "@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#8003402", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-8003402", "sha512-F1ypnvRuJLKScrm8sgknPyh4f87xeo/v5Nnm2/JyIckWiez7HZi80crTSK8S+udGBcCkr5v8F8NhB9GdwKlX7g=="],
 

@@ -1,0 +1,12 @@
+Source: https://github.com/corbitsdev/corbits-mailbox (packages/mailbox)
+Commit: 408bf8a
+License: LGPL-2.1-only
+Local modifications:
+- exports map repointed from upstream dist to direct TypeScript source
+  resolution (types/default -> ./src/index.ts); dist references, scripts, and
+  build config removed; test files excluded
+- tsconfig extends workbench root tsconfig.base.json
+- re-export publishMailboxEvent from the package entry (upstream keeps it
+  package-private; product routes need the same best-effort publish helper)
+- encodeMailboxListCursor only assigns optional rank/priorities when defined
+  (workbench enables exactOptionalPropertyTypes)

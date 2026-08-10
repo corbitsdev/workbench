@@ -33,4 +33,7 @@ vendor/intx/types | sawyer | 2026-09-05 | 0b580264bdc08d77c6765c778e29bb5ae4226b
 vendor/intx/workflow | sawyer | 2026-09-05 | 321435a4a492e93e7d0a10d2403c61a15a6f297d4db81126a3601c32452fad9c
 vendor/intx/workflow-deploy | sawyer | 2026-09-05 | b6743bcdd0a070db347510244fc399b31581ee60f8432f9e6e0d3f533c3575ab
 vendor/intx/workflow-host | sawyer | 2026-09-05 | d5f61380132ff67f826038a11449d22d09574ee87df2d36781f0086a7c4ddb22
+vendor/corbits/mailbox | sawyer | 2026-11-01 | 1f97bc92936c54430046b04140b225cb0dd9b2de6b791c3eedbda8a7de38eb93
+
 packages/folded-runs | sawyer | 2026-11-01
+

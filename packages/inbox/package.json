@@ -1,0 +1,27 @@
+{
+  "name": "@corbits/inbox",
+  "private": true,
+  "description": "Workbench product inbox over @corbits/mailbox: three groups, mark-all-read, clear-done",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/mailbox": "workspace:*",
+    "@corbits/notify": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "arktype": "catalog:",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "postgres": "catalog:",
+    "typescript": "catalog:"
+  }
+}

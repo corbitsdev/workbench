@@ -13,7 +13,10 @@ import { and, eq } from "drizzle-orm";
 import { generateKeyPair } from "@intx/crypto";
 import { timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
-import { createApp, createRequireGrant, type AppEnv } from "@intx/hub-api";
+import { createApp, createRequireGrant, type AppEnv, type TenantEnv } from "@intx/hub-api";
+
+import { createAgentDefinitionRoutes } from "@corbits/agent-directory";
+
 import {
   createChatOrchestrator,
   createChatRoutes,
@@ -25,7 +28,21 @@ import {
   startWorkflowCommand,
 } from "@corbits/chat";
 import { createCryptoProviderCache } from "@corbits/folded-runs";
-import { createAgentDefinitionRoutes } from "@corbits/agent-directory";
+import {
+  createInboxRoutes,
+  createWorkbenchMailboxDelivery,
+  WORKBENCH_MAILBOX_VOCABULARY,
+} from "@corbits/inbox";
+import {
+  createInMemoryMailboxEventBus,
+  createMailboxDb,
+  mountMailbox,
+} from "@corbits/mailbox";
+import {
+  createCommandRegistry,
+  createCommandRoutes,
+  createWorkflowCommandPlugin,
+} from "@corbits/commands";
 import {
   createDrizzleWebhookTriggerStore,
   createWebhookIngressRoutes,
@@ -33,14 +50,10 @@ import {
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
 import {
-  createCommandRegistry,
-  createCommandRoutes,
-  createWorkflowCommandPlugin,
-} from "@corbits/commands";
-import {
   createDrizzleRoutineStore,
   createRoutineRoutes,
 } from "@corbits/routines";
+
 import {
   createAgentRepoStore,
   createAssetService,
@@ -68,7 +81,8 @@ import {
 
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { type Context, type Next } from "hono";
+import { type Context, Hono, type Next } from "hono";
+
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { readHubConfig, type HubConfig } from "./config";
 import { createHubRoutineLauncher } from "./routine-launcher";
@@ -138,7 +152,20 @@ function createStaticHandler(staticDir: string) {
 
 export async function createHub(config: HubConfig) {
   const { db, close } = createDB(dbConfigFromUrl(config.databaseUrl));
+  const { db: mailboxDb, close: closeMailbox } = createMailboxDb(
+    config.databaseUrl,
+  );
+  const mailboxBus = createInMemoryMailboxEventBus();
+  // Delivery adapter for `@corbits/notify` — kept at the composition root so
+  // routine / approval / mention writers can inject it without the hub
+  // re-implementing mailbox writes.
+  const _mailboxDelivery = createWorkbenchMailboxDelivery({
+    db: mailboxDb,
+    bus: mailboxBus,
+  });
+  void _mailboxDelivery;
   const log = getLogger(["hub", "auth"]);
+
   const auth = betterAuth({
     baseURL: config.baseUrl,
     secret: config.sessionSecret,
@@ -390,7 +417,37 @@ export async function createHub(config: HubConfig) {
     commands: commandRegistry,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
+  // Product inbox over `@corbits/mailbox` — three groups, mark-all-read
+  // (mentions + deliveries only), clear-done. The raw package surface
+  // (including SSE events) mounts under `/mailbox` for hosts and tools
+  // that need the universal API.
+  app.route(
+    `${TENANT_PREFIX}/inbox`,
+    createInboxRoutes({ db: mailboxDb, bus: mailboxBus }),
+  );
+  {
+    const mailboxApp = new Hono<TenantEnv>();
+    mountMailbox(mailboxApp, {
+      db: mailboxDb,
+      bus: mailboxBus,
+      vocabulary: WORKBENCH_MAILBOX_VOCABULARY,
+      resolvePrincipal: (ctx) => {
+        // Mounted under the hub tenant middleware; principal + tenant are set.
+        const c = ctx as {
+          get(key: "tenant"): { id: string };
+          get(key: "principal"): { id: string };
+        };
+        return {
+          tenantId: c.get("tenant").id,
+          principalId: c.get("principal").id,
+        };
+      },
+    });
+    app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
+  }
+
   // Agent definitions a person authors by hand from the Agents page's
+
   // create form, materialized the same way the platform's own starter
   // agents are (see `@corbits/agent-directory`'s doc comment). Shares
   // `chatGrantStore`/`chatConditionRegistry` with every other extension
@@ -621,6 +678,7 @@ export async function createHub(config: HubConfig) {
     close: async () => {
       chatOrchestrator.dispose();
       routineScheduler.stop();
+      await closeMailbox();
       await close();
     },
   };

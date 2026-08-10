@@ -44,6 +44,9 @@ never a convenience.
 | `vendor/intx/workflow`        | `@intx/workflow` source (`src/`, manifest, tsconfig)                           | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7144eb` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
 | `vendor/intx/workflow-deploy` | `@intx/workflow-deploy` source (`src/`, manifest, tsconfig)                    | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7144eb` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
 | `vendor/intx/workflow-host`   | `@intx/workflow-host` source (`src/`, manifest, tsconfig)                      | [faremeter/interchange](https://github.com/faremeter/interchange) @ `cd7144eb` | npm 0.2.2 predates the folded model; retired by the next @intx npm publish covering it | sawyer | 2026-09-05 | `check:killdates` |
+| `vendor/corbits/mailbox`      | `@corbits/mailbox` source (`src/`, manifest, tsconfig)                         | [corbitsdev/corbits-mailbox](https://github.com/corbitsdev/corbits-mailbox) @ `408bf8a` | not yet published to npm; product inbox needs the universal principal-keyed store | sawyer | 2026-11-01 | `check:killdates` |
+
+
 
 Local modifications (all `vendor/intx/*` rows): each package's exports map
 is repointed from the upstream `intx-src` resolve condition to direct
@@ -68,3 +71,14 @@ routes exclude the reserved segment `needs-you` so hosts can mount a sibling
 - [ ] Drop the `vendor/intx/*` rows from `scripts/checks/kill-dates.txt`.
 - [ ] `bun install`
 - [ ] `bun run check`
+
+### Un-vendoring `vendor/corbits/mailbox`
+
+- [ ] Delete `vendor/corbits/mailbox/` and remove `vendor/corbits/*` from the
+      root `package.json` workspaces if empty.
+- [ ] Point `@corbits/mailbox` consumers (`packages/inbox`, `apps/hub`) at the
+      published npm version.
+- [ ] Delete the ledger row above and its `kill-dates.txt` entry.
+- [ ] `bun install`
+- [ ] `bun run check`
+
