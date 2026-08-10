@@ -82,13 +82,15 @@ describeIfDb("applyChatMigrations", () => {
           `WHERE table_schema = 'public' AND table_name IN ` +
           `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy', 'chat_bench_settings')`,
       );
-      expect(tables.map((row) => String(row["table_name"])).sort()).toEqual([
-        "chat_bench_settings",
-        "channel_launch",
-        "channel_read_state",
-        "channel_settings",
-        "channel_tenancy",
-      ]);
+      expect(tables.map((row) => String(row["table_name"])).sort()).toEqual(
+        [
+          "chat_bench_settings",
+          "channel_launch",
+          "channel_read_state",
+          "channel_settings",
+          "channel_tenancy",
+        ].sort(),
+      );
 
       // `listChildChannelTenancies` filters on `parent_tenant_id` on
       // every `GET /channels` call — without an index that is a
