@@ -44,8 +44,10 @@ import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 import { approximateNextRun, cadenceLabel } from "../routine-trigger";
 import {
+  approveRoutineDraft,
   createRoutine,
   createRoutineDraft,
+  discardRoutineDraft,
   listRoutineRuns,
   listRoutines,
   listWorkflowDefinitions,
@@ -57,6 +59,7 @@ import type {
   CreateDraftInput,
   CreateRoutineInput,
   Routine,
+  RoutineDraft,
   RoutineRun,
   RoutineTrigger,
   WorkflowDefinitionSummary,
@@ -310,19 +313,43 @@ function DeliveryChannelPicker({
 }
 
 type CreatePath = "catalog" | "describe";
+type CreateStage = "compose" | "review";
+
+/** Readable autonomy lines for the draft review panel (pure for tests). */
+export function autonomyReviewLines(
+  autonomy: Record<string, unknown> | null,
+): readonly string[] {
+  if (autonomy === null) return [];
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(autonomy)) {
+    if (value === null || value === undefined) continue;
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      lines.push(`${key}: ${String(value)}`);
+    }
+  }
+  return lines;
+}
 
 function CreateRoutineDialog({
   definitions,
   channels,
   onCreate,
   onDescribe,
+  onApproveDraft,
+  onDiscardDraft,
   open: openProp,
   onOpenChange,
 }: {
   readonly definitions: readonly WorkflowDefinitionSummary[];
   readonly channels: readonly Channel[];
   readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
-  readonly onDescribe: (input: CreateDraftInput) => Promise<void>;
+  readonly onDescribe: (input: CreateDraftInput) => Promise<RoutineDraft>;
+  readonly onApproveDraft: (draftId: string) => Promise<void>;
+  readonly onDiscardDraft: (draftId: string) => Promise<void>;
   readonly open?: boolean;
   readonly onOpenChange?: (open: boolean) => void;
 }) {
@@ -330,6 +357,7 @@ function CreateRoutineDialog({
   const open = openProp ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [path, setPath] = useState<CreatePath>("catalog");
+  const [stage, setStage] = useState<CreateStage>("compose");
   const [name, setName] = useState("");
   const [definitionId, setDefinitionId] = useState(definitions[0]?.id ?? "");
   const [runMode, setRunMode] = useState<"once" | "schedule">("once");
@@ -338,6 +366,7 @@ function CreateRoutineDialog({
   const [deliveryChannelId, setDeliveryChannelId] = useState(
     channels[0]?.id ?? "",
   );
+  const [pendingDraft, setPendingDraft] = useState<RoutineDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -354,23 +383,178 @@ function CreateRoutineDialog({
   }, [definitions, definitionId]);
 
   const catalogComplete =
-    name.trim().length > 0 &&
-    definitionId !== "" &&
-    deliveryChannelId !== "";
-  const describeComplete =
-    prompt.trim().length > 0 && deliveryChannelId !== "";
+    name.trim().length > 0 && definitionId !== "" && deliveryChannelId !== "";
+  const describeComplete = prompt.trim().length > 0 && deliveryChannelId !== "";
   const complete = path === "catalog" ? catalogComplete : describeComplete;
 
   const reset = () => {
     setPath("catalog");
+    setStage("compose");
     setName("");
     setDefinitionId(definitions[0]?.id ?? "");
     setRunMode("once");
     setTrigger(null);
     setPrompt("");
     setDeliveryChannelId(channels[0]?.id ?? "");
+    setPendingDraft(null);
     setError(null);
   };
+
+  const closeDialog = () => {
+    setOpen(false);
+    reset();
+  };
+
+  const cancelReview = () => {
+    const draft = pendingDraft;
+    setBusy(true);
+    setError(null);
+    const work = draft !== null ? onDiscardDraft(draft.id) : Promise.resolve();
+    void work
+      .catch(() => {
+        // Discard best-effort; still leave the compose/review flow.
+      })
+      .finally(() => {
+        setBusy(false);
+        closeDialog();
+      });
+  };
+
+  if (stage === "review" && pendingDraft !== null) {
+    const draft = pendingDraft;
+    const draftName =
+      draft.proposedName !== null && draft.proposedName !== ""
+        ? draft.proposedName
+        : draft.prompt.slice(0, 80);
+    const autonomyLines = autonomyReviewLines(draft.autonomy);
+
+    return (
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) {
+            cancelReview();
+            return;
+          }
+          setOpen(next);
+        }}
+      >
+        {openProp === undefined ? (
+          <Button size="sm" onClick={() => setOpen(true)}>
+            <Plus /> New routine
+          </Button>
+        ) : null}
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Review draft</DialogTitle>
+            <DialogDescription>
+              Check the proposed steps, then approve to create the routine.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                Name
+              </span>
+              <p className="text-sm font-medium text-[var(--ui-fg)]">
+                {draftName}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                Proposed steps
+              </span>
+              {draft.proposedSteps.length === 0 ? (
+                <p className="text-sm text-[var(--ui-fg-muted)]" role="status">
+                  No steps proposed yet.
+                </p>
+              ) : (
+                <ol className="list-decimal space-y-1.5 pl-5 text-sm">
+                  {draft.proposedSteps.map((step, index) => (
+                    <li key={`${step.title}-${String(index)}`}>
+                      <span className="font-medium">{step.title}</span>
+                      {step.detail !== undefined ? (
+                        <span className="text-[var(--ui-fg-muted)]">
+                          {" — "}
+                          {step.detail}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+
+            {draft.proposedTrigger !== null ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                  Schedule
+                </span>
+                <p className="text-sm">{cadenceLabel(draft.proposedTrigger)}</p>
+              </div>
+            ) : null}
+
+            {autonomyLines.length > 0 ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                  Autonomy
+                </span>
+                <ul className="list-disc space-y-0.5 pl-5 text-sm text-[var(--ui-fg-muted)]">
+                  {autonomyLines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <p className="text-xs text-[var(--ui-fg-muted)]">
+              From: {draft.prompt}
+            </p>
+
+            {error !== null ? (
+              <p className="text-xs text-[var(--ui-danger)]" role="alert">
+                {error}
+              </p>
+            ) : null}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => cancelReview()}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  setError(null);
+                  void onApproveDraft(draft.id)
+                    .then(() => {
+                      closeDialog();
+                    })
+                    .catch((cause: unknown) => {
+                      setError(
+                        cause instanceof Error ? cause.message : String(cause),
+                      );
+                    })
+                    .finally(() => setBusy(false));
+                }}
+              >
+                {busy ? "Approving…" : "Approve"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
@@ -399,25 +583,34 @@ function CreateRoutineDialog({
             if (!complete) return;
             setBusy(true);
             setError(null);
-            const work =
-              path === "catalog"
-                ? onCreate({
-                    name: name.trim(),
-                    definitionId,
-                    scope: "bench",
-                    deliveryChannelId,
-                    trigger: runMode === "once" ? null : trigger,
-                    runOnceNow: runMode === "once",
-                  })
-                : onDescribe({
-                    prompt: prompt.trim(),
-                    deliveryChannelId,
-                    scope: "bench",
-                  });
-            void work
-              .then(() => {
-                setOpen(false);
-                reset();
+            if (path === "catalog") {
+              void onCreate({
+                name: name.trim(),
+                definitionId,
+                scope: "bench",
+                deliveryChannelId,
+                trigger: runMode === "once" ? null : trigger,
+                runOnceNow: runMode === "once",
+              })
+                .then(() => {
+                  closeDialog();
+                })
+                .catch((cause: unknown) => {
+                  setError(
+                    cause instanceof Error ? cause.message : String(cause),
+                  );
+                })
+                .finally(() => setBusy(false));
+              return;
+            }
+            void onDescribe({
+              prompt: prompt.trim(),
+              deliveryChannelId,
+              scope: "bench",
+            })
+              .then((draft) => {
+                setPendingDraft(draft);
+                setStage("review");
               })
               .catch((cause: unknown) => {
                 setError(
@@ -468,11 +661,17 @@ function CreateRoutineDialog({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <span id="routine-definition-label" className="text-xs font-medium">
+                <span
+                  id="routine-definition-label"
+                  className="text-xs font-medium"
+                >
                   Workflow
                 </span>
                 {definitions.length === 0 ? (
-                  <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
+                  <p
+                    className="text-xs text-[var(--ui-fg-muted)]"
+                    role="status"
+                  >
                     No automatable workflows on this bench yet.
                   </p>
                 ) : (
@@ -556,10 +755,7 @@ function CreateRoutineDialog({
           )}
 
           <div className="flex flex-col gap-1.5">
-            <span
-              id="routine-delivery-label"
-              className="text-xs font-medium"
-            >
+            <span id="routine-delivery-label" className="text-xs font-medium">
               Deliver results to
             </span>
             <DeliveryChannelPicker
@@ -693,9 +889,7 @@ function RunsTable({
                   "—"
                 )}
               </TableCell>
-              <TableCell>
-                {formatRelativeTime(run.createdAt, now)}
-              </TableCell>
+              <TableCell>{formatRelativeTime(run.createdAt, now)}</TableCell>
             </TableRow>
           );
         })}
@@ -715,6 +909,8 @@ export function RoutinesListPage({
   onSelect,
   onCreate,
   onDescribe,
+  onApproveDraft,
+  onDiscardDraft,
   onToggleEnabled,
   onRunNow,
 }: {
@@ -727,7 +923,9 @@ export function RoutinesListPage({
   readonly selectedId: string | null;
   readonly onSelect: (routineId: string | null) => void;
   readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
-  readonly onDescribe: (input: CreateDraftInput) => Promise<void>;
+  readonly onDescribe: (input: CreateDraftInput) => Promise<RoutineDraft>;
+  readonly onApproveDraft: (draftId: string) => Promise<void>;
+  readonly onDiscardDraft: (draftId: string) => Promise<void>;
   readonly onToggleEnabled: (routine: Routine, enabled: boolean) => void;
   readonly onRunNow: (routine: Routine) => Promise<void>;
 }) {
@@ -753,8 +951,7 @@ export function RoutinesListPage({
   const selectedRuns =
     selectedId !== null ? (runHistories.get(selectedId) ?? []) : [];
   const recentRuns = selectedRuns.slice(0, 3);
-  const steps =
-    selected !== null ? draftedStepsFromInput(selected.input) : [];
+  const steps = selected !== null ? draftedStepsFromInput(selected.input) : [];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -763,6 +960,8 @@ export function RoutinesListPage({
         channels={channels}
         onCreate={onCreate}
         onDescribe={onDescribe}
+        onApproveDraft={onApproveDraft}
+        onDiscardDraft={onDiscardDraft}
         open={createOpen}
         onOpenChange={setCreateOpen}
       />
@@ -1207,10 +1406,21 @@ export function RoutinesRoute({
         invalidateRoutines();
       }}
       onDescribe={async (input) => {
+        if (tenantId === null) throw new Error("No bench to draft this in yet");
+        return createRoutineDraft(tenantId, input);
+      }}
+      onApproveDraft={async (draftId) => {
         if (tenantId === null)
-          throw new Error("No bench to draft this in yet");
-        await createRoutineDraft(tenantId, input);
+          throw new Error("No bench to approve this draft in yet");
+        const result = await approveRoutineDraft(tenantId, draftId);
         invalidateRoutines();
+        navigate(
+          `${ROUTINES_PATH_PREFIX}/${encodeURIComponent(result.routine.id)}`,
+        );
+      }}
+      onDiscardDraft={async (draftId) => {
+        if (tenantId === null) return;
+        await discardRoutineDraft(tenantId, draftId);
       }}
       onToggleEnabled={(routine, enabled) => {
         if (tenantId === null) return;
