@@ -3,11 +3,17 @@
 // `../routes.tsx` mounts inside this same frame — there is no per-route
 // shell variant. The canvas hosts the channel chat surface; its toggle
 // lives in the panel page band, never as an absolute overlay over page
-// actions. Deep links (`/c/:channelId`) open the canvas onto that channel.
+// actions. Deep links (`/c/:channelId`) open the canvas onto that channel
+// under the currently selected workbench.
+//
+// Workbench (tenant) selection is the outer scope for channels. Switching
+// workbenches clears any open canvas channel and leaves channel deep links
+// so a foreign conversation cannot stay loaded under the new workbench.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PanelLeft } from "lucide-react";
 
+import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
 import { useNavigate } from "../navigation";
 import type { SessionUser } from "../session";
@@ -21,6 +27,8 @@ import { useShellFocusRescue } from "./focus-rescue";
 import { useScrollReset } from "./use-scroll-reset";
 import {
   applyChannelPathToCanvas,
+  channelIdForTenant,
+  clearCanvasForTenantSwitch,
   clearProfileInCanvas,
   initialCanvasColumnState,
   openChannelInCanvas,
@@ -47,33 +55,57 @@ export function AppShell({
   readonly children: ReactNode;
 }) {
   const navigate = useNavigate();
+  const { selectedTenantId } = useBench();
   const layoutMode = useShellLayoutMode();
-  // Deep links seed canvas state on first paint (SSR and client) so a `/c/:id`
-  // URL is not effect-only. Later path changes re-apply through the effect.
+  // Deep links seed canvas state on first paint only when a workbench is
+  // already selected; otherwise the path effect waits for tenant resolution.
   const [canvasState, setCanvasState] = useState(() =>
-    applyChannelPathToCanvas(initialCanvasColumnState(), path),
+    applyChannelPathToCanvas(
+      initialCanvasColumnState(),
+      path,
+      selectedTenantId,
+    ),
   );
   const canvasAllowed = canvasColumnAllowed(layoutMode);
   const canvasOpen = resolveCanvasVisibility(canvasState, canvasAllowed);
+  const canvasChannelId = channelIdForTenant(canvasState, selectedTenantId);
   const showContextualColumn = contextualPanelVisible(layoutMode);
   const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
   const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
   const frameRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
+  // Tracks the last workbench we applied so a real switch (A→B) can drop
+  // channel state without treating the initial null→ready resolve as a switch.
+  const previousTenantIdRef = useRef<string | null>(selectedTenantId);
   useShellFocusRescue(layoutMode, frameRef);
   // Route changes must not inherit the previous page's scroll position.
   useScrollReset(mainRef, path);
 
-  // A deep link or in-app channel navigation feeds the canvas the same
-  // channel id the URL carries. Closing the canvas does not clear the URL
-  // here — the toggle only flips open/closed so reopening lands on the
-  // same conversation.
+  // Workbench switch and channel deep links share one effect so a switch
+  // never races a path re-apply that would reopen the foreign channel.
   useEffect(() => {
-    setCanvasState((state) => applyChannelPathToCanvas(state, path));
-  }, [path]);
+    const previousTenantId = previousTenantIdRef.current;
+    if (
+      previousTenantId !== null &&
+      selectedTenantId !== null &&
+      previousTenantId !== selectedTenantId
+    ) {
+      previousTenantIdRef.current = selectedTenantId;
+      setCanvasState(clearCanvasForTenantSwitch());
+      if (isChannelPath(path) && channelIdFromPath(path) !== null) {
+        navigate(channelPath(null));
+      }
+      return;
+    }
+    previousTenantIdRef.current = selectedTenantId;
+    setCanvasState((state) =>
+      applyChannelPathToCanvas(state, path, selectedTenantId),
+    );
+  }, [path, selectedTenantId, navigate]);
 
   const handleChannelChange = (channelId: string) => {
-    setCanvasState(openChannelInCanvas(channelId));
+    if (selectedTenantId === null) return;
+    setCanvasState(openChannelInCanvas(channelId, selectedTenantId));
     if (!isChannelPath(path) || channelIdFromPath(path) !== channelId) {
       navigate(channelPath(channelId));
     }
@@ -84,7 +116,8 @@ export function AppShell({
   // col2 should pop the conversation open in col4 and keep the user on /library
   // (or wherever they are). Deep-link navigation is reserved for the URL.
   const handleOpenInCanvas = (channelId: string) => {
-    setCanvasState(openChannelInCanvas(channelId));
+    if (selectedTenantId === null) return;
+    setCanvasState(openChannelInCanvas(channelId, selectedTenantId));
   };
 
   const handleOpenProfile = (subject: ProfileSubject) => {
@@ -132,7 +165,7 @@ export function AppShell({
         {canvasAllowed && (
           <CanvasColumn
             open={canvasOpen}
-            channelId={canvasState.channelId}
+            channelId={canvasChannelId}
             profile={canvasState.profile}
             onChannelChange={handleChannelChange}
             onOpenProfile={handleOpenProfile}

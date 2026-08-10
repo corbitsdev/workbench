@@ -80,11 +80,13 @@ describe("canvas column state", () => {
     const open = {
       open: true,
       channelId: "ch_1" as string | null,
+      channelTenantId: "tnt_a" as string | null,
       profile: null,
     };
     const closed = {
       open: false,
       channelId: null as string | null,
+      channelTenantId: null as string | null,
       profile: null,
     };
     expect(resolveCanvasVisibility(open, true)).toBe(true);
