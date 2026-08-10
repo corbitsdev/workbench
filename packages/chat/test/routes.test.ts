@@ -180,6 +180,39 @@ describe("POST /channels", () => {
       "This definition declares no model requirements",
     );
   });
+
+  test("agent launch failure returns 422, not 500, and compensates the channel", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [{ id: "wfd_echo", name: "Echo" }],
+        launchInvite: () =>
+          Promise.reject(new Error("blocked: too many @mentions; max 5")),
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/channels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", definitionId: "wfd_echo" }),
+    });
+
+    expect(response.status).toBe(422);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("agent_launch_failed");
+    expect(body.error.message).toContain("too many @mentions");
+
+    // The half-built channel is rolled back: its settings row is gone
+    // and its minted tenant is compensated, so a retry starts clean.
+    const tenancy = deps.tenancy as ReturnType<
+      typeof createInMemoryChannelTenancyStore
+    >;
+    const channels = await deps.store.listChannelSettings(TENANT.id);
+    expect(channels).toHaveLength(0);
+    expect(await tenancy.listChildChannelTenancies(TENANT.id)).toHaveLength(0);
+  });
 });
 
 describe("POST /channels/:id/invite", () => {

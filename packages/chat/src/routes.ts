@@ -409,6 +409,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // same launch-and-join core `POST .../invite` uses, run inline
       // here so the chat comes back from this single call already
       // carrying its one agent participant.
+      //
+      // The agent launch runs after the host, tenant, and settings are
+      // all live. Any failure here leaves a half-built channel that must
+      // be rolled back: the tenant and settings this handler minted are
+      // compensated and deleted exactly as the host-launch path above
+      // compensates a tenant whose host never came up, so a retry starts
+      // clean rather than reusing an orphaned tenant.
+      //
+      // InferenceResolutionError (no model requirements / no inference
+      // source) is a caller-correctable config problem → 409. Other launch
+      // failures (too many @mentions, transient platform errors) → 422.
+      // Compensation failures are logged loudly and never swallow the
+      // original launch error.
       try {
         const joined = await launchAndJoinAgent(
           { store: deps.store, platform: deps.platform, publish },
@@ -443,13 +456,40 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           201,
         );
       } catch (err) {
+        log.error(
+          "Agent launch failed for channel {channelId} after the host " +
+            "launched and settings were written; compensating the channel " +
+            "tenant and deleting its settings",
+          { channelId, tenantId: channelTenant.tenantId, err },
+        );
+        try {
+          await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
+          await deps.store.deleteChannelSettings(tenant.id, channelId);
+        } catch (compensationErr) {
+          log.error(
+            "Compensation failed after agent launch failure for channel " +
+              "{channelId}; the orphaned tenant {tenantId} and/or its " +
+              "settings require manual cleanup",
+            {
+              channelId,
+              tenantId: channelTenant.tenantId,
+              compensationErr,
+            },
+          );
+        }
         if (err instanceof InferenceResolutionError) {
           return c.json(
             ErrorEnvelope("not_launchable", err.resolutionMessage),
             409,
           );
         }
-        throw err;
+        return c.json(
+          ErrorEnvelope(
+            "agent_launch_failed",
+            err instanceof Error ? err.message : String(err),
+          ),
+          422,
+        );
       }
     },
   );
