@@ -39,6 +39,15 @@ export function signUpResponse(): FakeResponse {
   return { status: 200, data: { user: { id: "usr_1" } } };
 }
 
+/** No matching account — authenticate continues to sign-up. */
+export function signInMissing(): FakeResponse {
+  return { status: 401, data: { error: "invalid credentials" } };
+}
+
+export function signInResponse(): FakeResponse {
+  return { status: 200, data: { user: { id: "usr_1" } } };
+}
+
 export function tenantRow() {
   return {
     id: TENANT_ID,

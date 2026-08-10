@@ -6,6 +6,7 @@ import {
   collector,
   fakeAPI,
   principalsResponse,
+  signInMissing,
   signUpResponse,
   tenantRow,
   TENANT_ID,
@@ -58,6 +59,8 @@ describe("runSeed", () => {
   test("authenticates, resolves the bench by slug, and starts seeding it", async () => {
     const { lines, log } = collector();
     const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "GET" && path === "/api/me/principals")
@@ -89,6 +92,8 @@ describe("runSeed", () => {
     const TIMESTAMP = "2026-01-01T00:00:00.000Z";
     const startedRuns: string[] = [];
     const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "GET" && path === "/api/me/principals")
@@ -266,6 +271,8 @@ describe("runSeed", () => {
     const TIMESTAMP = "2026-01-01T00:00:00.000Z";
     const startedRuns: string[] = [];
     const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "GET" && path === "/api/me/principals")
@@ -439,6 +446,8 @@ describe("runSeed", () => {
 
   test("a missing bench points at workbench setup", async () => {
     const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "GET" && path === "/api/me/principals")

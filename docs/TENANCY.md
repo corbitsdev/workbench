@@ -38,6 +38,11 @@ Env: `WORKBENCH_SIGNUP=open|closed` (default **`closed`**).
   Optional `WORKBENCH_ALLOWED_EMAIL_DOMAINS` (comma-separated) restricts
   which email domains may sign up when open.
 
+Local `bun run dev` injects `WORKBENCH_SIGNUP=open` when the variable is
+unset, so a zero-edit `.env` can still seed the admin account. An
+explicit value in `.env` always wins. Production deploys that do not
+use the dev launcher keep the closed default.
+
 ### Workbench icon
 
 Product metadata per tenant: monogram (1–2 characters) + color token.

@@ -165,6 +165,13 @@ const apps: App[] = [
     label: "hub",
     dir: join(repoRoot, "apps", "hub"),
     command: ["bun", "--watch", "--env-file=../../.env", "src/index.ts"],
+    // Zero-edit local bootstrap: when the operator has not set a signup
+    // mode, open it so seedDevAccount can create alice. Production hub
+    // still defaults closed when this script is not the launcher.
+    // Explicit WORKBENCH_SIGNUP in .env always wins (bun loads env-file).
+    ...(process.env["WORKBENCH_SIGNUP"] === undefined
+      ? { env: { WORKBENCH_SIGNUP: "open" } }
+      : {}),
   },
   {
     label: "sidecar",
@@ -314,12 +321,17 @@ async function requireDatabaseSetUp(config: HubConfig): Promise<void> {
  * Create the administrator account once the hub answers, so a fresh
  * checkout can sign in immediately. Runs beside the apps; unset
  * identity variables fall back to the same defaults the CLI uses, so a
- * zero-edit .env still yields a signable account.
+ * zero-edit .env still yields a signable account when signup is open.
  * "Already exists" is a skip, not an error — re-runs stay quiet.
+ *
+ * Sign-in is tried first so a closed signup mode still works once the
+ * admin has been created. Fresh registration needs WORKBENCH_SIGNUP=open
+ * (local `bun run dev` opens it when the env var is unset — see apps).
  */
 async function seedDevAccount(config: HubConfig): Promise<void> {
   const email = process.env["HUB_ADMIN_EMAIL"] ?? "alice@example.com";
   const password = process.env["HUB_ADMIN_PASSWORD"] ?? "password123";
+  const name = email.split("@")[0] ?? email;
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {
@@ -331,27 +343,44 @@ async function seedDevAccount(config: HubConfig): Promise<void> {
     await new Promise((r) => setTimeout(r, 500));
   }
   try {
-    const response = await fetch(`${config.baseUrl}/api/auth/sign-up/email`, {
+    const signIn = await fetch(`${config.baseUrl}/api/auth/sign-in/email`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password,
-        name: email.split("@")[0] ?? email,
-      }),
+      body: JSON.stringify({ email, password }),
     });
-    if (response.ok) {
-      console.log(`[dev] seeded account ${email} (password from .env)`);
-    } else {
-      const body = await response.text();
-      if (/exist/i.test(body)) {
-        console.log(`[dev] account ${email} already exists`);
-      } else {
-        console.error(
-          `[dev] could not seed account ${email}: ${response.status} ${body}`,
-        );
-      }
+    if (signIn.ok) {
+      console.log(`[dev] account ${email} already exists`);
+      return;
     }
+
+    const signUp = await fetch(`${config.baseUrl}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password, name }),
+    });
+    if (signUp.ok) {
+      console.log(`[dev] seeded account ${email} (password from .env)`);
+      return;
+    }
+
+    const body = await signUp.text();
+    if (/exist/i.test(body)) {
+      console.log(`[dev] account ${email} already exists`);
+      return;
+    }
+    if (signUp.status === 403 && /signup_closed/i.test(body)) {
+      console.error(
+        [
+          `[dev] could not seed account ${email}: self-serve signup is closed`,
+          "and the account does not exist yet. Set WORKBENCH_SIGNUP=open in",
+          ".env, restart, then re-run `bun run dev` once.",
+        ].join(" "),
+      );
+      return;
+    }
+    console.error(
+      `[dev] could not seed account ${email}: ${signUp.status} ${body}`,
+    );
   } catch (error) {
     console.error(
       `[dev] could not seed account ${email}: ${error instanceof Error ? error.message : String(error)}`,

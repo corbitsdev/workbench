@@ -7,6 +7,7 @@ import {
   fakeAPI,
   principalsResponse,
   rolesResponse,
+  signInMissing,
   signUpResponse,
   tenantRow,
   TENANT_ID,
@@ -28,6 +29,8 @@ describe("runSetup", () => {
     const { lines, log } = collector();
     let dbSetupRuns = 0;
     const api = fakeAPI((method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "POST" && path === "/api/tenants")
@@ -61,8 +64,6 @@ describe("runSetup", () => {
   test("re-run reports skips instead of duplicating", async () => {
     const { lines, log } = collector();
     const api = fakeAPI((method, path) => {
-      if (method === "POST" && path === "/api/auth/sign-up/email")
-        return { status: 422, data: { error: "already registered" } };
       if (method === "POST" && path === "/api/auth/sign-in/email")
         return signUpResponse();
       if (method === "POST" && path === "/api/tenants")
@@ -102,6 +103,8 @@ describe("runSetup", () => {
   test("zero platform roles is an error, never a silent success", async () => {
     const { log } = collector();
     const api = fakeAPI((method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "POST" && path === "/api/tenants")
@@ -122,10 +125,10 @@ describe("runSetup", () => {
   test("a wrong password for an existing administrator names the variable to fix", async () => {
     const { log } = collector();
     const api = fakeAPI((method, path) => {
-      if (method === "POST" && path === "/api/auth/sign-up/email")
-        return { status: 422, data: {} };
       if (method === "POST" && path === "/api/auth/sign-in/email")
         return { status: 401, data: {} };
+      if (method === "POST" && path === "/api/auth/sign-up/email")
+        return { status: 422, data: {} };
       return undefined;
     });
 
@@ -142,6 +145,8 @@ describe("runSetup", () => {
   test("an unresolvable tenant conflict fails with the failing status", async () => {
     const { log } = collector();
     const api = fakeAPI((method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
       if (method === "POST" && path === "/api/auth/sign-up/email")
         return signUpResponse();
       if (method === "POST" && path === "/api/tenants")
@@ -150,6 +155,7 @@ describe("runSetup", () => {
         return { status: 200, data: { data: [], nextCursor: null } };
       return undefined;
     });
+
 
     expect(
       runSetup({ config: CONFIG, api, runDbSetup: okDbSetup, log }),
