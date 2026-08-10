@@ -16,7 +16,8 @@
   "dependencies": {
     "@corbits/bench-ui": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
-    "@corbits/react-ui": "github:corbitsdev/react-ui#bd5057b0f740947ad117fc2c9cbe82bf992423d2",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+
     "@intx/types": "workspace:*",
     "arktype": "catalog:",
     "lucide-react": "^1.27.0",
