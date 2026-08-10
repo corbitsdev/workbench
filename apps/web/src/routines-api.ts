@@ -92,7 +92,9 @@ export type CreateRoutineInput = {
   readonly definitionId: string;
   readonly trigger: RoutineTrigger;
   readonly scope: "personal" | "bench";
+  readonly deliveryChannelId: string;
   readonly input?: Record<string, unknown>;
+  readonly runOnceNow?: boolean;
 };
 
 export type UpdateRoutineInput = {
@@ -100,6 +102,36 @@ export type UpdateRoutineInput = {
   readonly trigger?: RoutineTrigger;
   readonly enabled?: boolean;
   readonly input?: Record<string, unknown>;
+  readonly deliveryChannelId?: string;
+};
+
+export const DraftedStep = type({
+  title: "string",
+  "detail?": "string",
+});
+export type DraftedStep = typeof DraftedStep.infer;
+
+export const RoutineDraft = type({
+  id: "string",
+  prompt: "string",
+  status: "'draft' | 'reviewed' | 'approved' | 'discarded'",
+  proposedSteps: DraftedStep.array(),
+  proposedTrigger: RoutineTrigger,
+  proposedName: "string | null",
+  definitionId: "string | null",
+  deliveryChannelId: "string",
+  scope: "'personal' | 'bench'",
+  autonomy: "Record<string, unknown> | null",
+  approvedRoutineId: "string | null",
+  createdAt: "string",
+  updatedAt: "string",
+});
+export type RoutineDraft = typeof RoutineDraft.infer;
+
+export type CreateDraftInput = {
+  readonly prompt: string;
+  readonly deliveryChannelId: string;
+  readonly scope: "personal" | "bench";
 };
 
 export class RoutinesApiError extends Error {
@@ -211,6 +243,47 @@ export function listRoutineRuns(
     `/api/tenants/${tenantId}/routines/${id}/runs`,
     RoutineRunsResponse,
   ).then((page) => page.items);
+}
+
+export function createRoutineDraft(
+  tenantId: string,
+  input: CreateDraftInput,
+): Promise<RoutineDraft> {
+  return request(`/api/tenants/${tenantId}/routine-drafts`, RoutineDraft, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function listRoutineDrafts(
+  tenantId: string,
+): Promise<readonly RoutineDraft[]> {
+  return request(
+    `/api/tenants/${tenantId}/routine-drafts`,
+    type({ items: RoutineDraft.array() }),
+  ).then((page) => page.items);
+}
+
+export function approveRoutineDraft(
+  tenantId: string,
+  id: string,
+): Promise<{ draft: RoutineDraft; routine: Routine }> {
+  return request(
+    `/api/tenants/${tenantId}/routine-drafts/${id}/approve`,
+    type({ draft: RoutineDraft, routine: Routine }),
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export function discardRoutineDraft(
+  tenantId: string,
+  id: string,
+): Promise<RoutineDraft> {
+  return request(
+    `/api/tenants/${tenantId}/routine-drafts/${id}/discard`,
+    RoutineDraft,
+    { method: "POST", body: JSON.stringify({}) },
+  );
 }
 
 /**

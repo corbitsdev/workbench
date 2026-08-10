@@ -60,6 +60,7 @@ import {
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
 import {
+  createDrizzleDraftStore,
   createDrizzleRoutineStore,
   createRoutineRoutes,
 } from "@corbits/routines";
@@ -561,6 +562,7 @@ export async function createHub(config: HubConfig) {
   // real status instead of a bare run id.
   const routineGrantStore = createGrantStore(db);
   const routineStore = createDrizzleRoutineStore(db);
+  const routineDraftStore = createDrizzleDraftStore(db);
   const routineLauncher = createHubRoutineLauncher({
     db,
     sessionService,
@@ -568,10 +570,14 @@ export async function createHub(config: HubConfig) {
     sidecarRouter,
     eventCollectors,
   });
+  // Routines routes own their `/routines` and `/routine-drafts` prefixes, so
+  // mount at the tenant root (same pattern as a package that ships absolute
+  // resource paths) rather than under a second `/routines` segment.
   app.route(
-    `${TENANT_PREFIX}/routines`,
+    TENANT_PREFIX,
     createRoutineRoutes({
       store: routineStore,
+      drafts: routineDraftStore,
       launcher: routineLauncher,
       requireGrant: createRequireGrant({
         grantStore: routineGrantStore,
