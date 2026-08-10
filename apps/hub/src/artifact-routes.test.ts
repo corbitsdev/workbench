@@ -9,10 +9,7 @@ import {
 } from "./artifact-routes";
 import type { SerializedArtifact } from "@corbits/artifacts";
 
-function listItem(
-  id: string,
-  tenantId: string,
-): ArtifactListPage["data"][number] {
+function listItem(id: string): ArtifactListPage["data"][number] {
   return {
     id,
     kind: "document",
@@ -27,9 +24,9 @@ function listItem(
   };
 }
 
-function detail(id: string, tenantId: string): SerializedArtifact {
+function detail(id: string): SerializedArtifact {
   return {
-    ...listItem(id, tenantId),
+    ...listItem(id),
     content: `body of ${id}`,
   };
 }
@@ -77,10 +74,7 @@ describe("createArtifactRoutes", () => {
   test("lists artifacts for the tenant (happy path)", async () => {
     const store = memoryStore({
       listByTenant: {
-        tenant_a: [
-          listItem("art_1", "tenant_a"),
-          listItem("art_2", "tenant_a"),
-        ],
+        tenant_a: [listItem("art_1"), listItem("art_2")],
       },
       details: {},
     });
@@ -103,7 +97,7 @@ describe("createArtifactRoutes", () => {
   });
 
   test("get returns the artifact body for the owning tenant", async () => {
-    const row = detail("art_9", "tenant_a");
+    const row = detail("art_9");
     const store = memoryStore({
       listByTenant: {},
       details: { art_9: { tenantId: "tenant_a", row } },
@@ -124,7 +118,7 @@ describe("createArtifactRoutes", () => {
   });
 
   test("get returns 404 when the artifact belongs to another tenant", async () => {
-    const row = detail("art_x", "tenant_b");
+    const row = detail("art_x");
     const store = memoryStore({
       listByTenant: {},
       details: { art_x: { tenantId: "tenant_b", row } },
