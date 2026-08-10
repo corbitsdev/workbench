@@ -125,6 +125,9 @@ export async function bootIsolationHub(
     sessionSecret: "insecure-isolation-suite-secret-0000",
     dataDir: hubDataDir,
     extraEnv: {
+      // Isolation suite mints throwaway accounts over the public signup
+      // surface; production default is closed, so open it only for this boot.
+      WORKBENCH_SIGNUP: "open",
       SIGNUP_RATE_LIMIT_MAX: String(ISOLATION_SIGNUP_RATE_LIMIT_MAX),
       SIGNUP_RATE_LIMIT_WINDOW_SECONDS: String(
         ISOLATION_SIGNUP_RATE_LIMIT_WINDOW_SECONDS,
