@@ -51,6 +51,12 @@ const HubEnv = type({
   "SIGNUP_RATE_LIMIT_MAX?": type(/^[1-9]\d*$/).describe(
     "the maximum sign-ups a single IP may make per window, e.g. 5",
   ),
+  "WORKBENCH_SIGNUP?": type("'open' | 'closed'").describe(
+    "open = self-serve email signup allowed; closed (default) = owner adds users or copy-link invite only",
+  ),
+  "WORKBENCH_ALLOWED_EMAIL_DOMAINS?": type("string").describe(
+    "comma-separated email domains allowed when WORKBENCH_SIGNUP=open, e.g. acme.example",
+  ),
   "ANTHROPIC_API_KEY?": type("string > 0").describe(
     "your Anthropic API key; optional, enables the default workflow set for freshly self-served benches",
   ),
@@ -101,6 +107,10 @@ export type HubConfig = {
     readonly windowSeconds: number;
     readonly max: number;
   };
+  /** Self-serve signup. Default closed — see docs/TENANCY.md. */
+  readonly signupMode: "open" | "closed";
+  /** Domains allowed when signupMode is open. Empty = any domain. */
+  readonly allowedEmailDomains: readonly string[];
   readonly seedModel?: ModelSource;
   readonly socialProviders: Readonly<
     Partial<Record<SocialProviderId, SocialProviderCredential>>
@@ -192,6 +202,14 @@ export function readHubConfig(
   const seedModel = seedModelFrom(parsed);
   const socialProviders = socialProvidersFrom(parsed);
 
+  const allowedEmailDomains =
+    parsed.WORKBENCH_ALLOWED_EMAIL_DOMAINS === undefined ||
+    parsed.WORKBENCH_ALLOWED_EMAIL_DOMAINS.trim() === ""
+      ? []
+      : parsed.WORKBENCH_ALLOWED_EMAIL_DOMAINS.split(",")
+          .map((d) => d.trim())
+          .filter((d) => d.length > 0);
+
   const hubConfig: { -readonly [K in keyof HubConfig]: HubConfig[K] } = {
     databaseUrl: parsed.DATABASE_URL,
     baseUrl: parsed.BASE_URL,
@@ -199,6 +217,8 @@ export function readHubConfig(
     hubDataDir: parsed.HUB_DATA_DIR,
     hubStaticDir: parsed.HUB_STATIC_DIR,
     socialProviders,
+    signupMode: parsed.WORKBENCH_SIGNUP ?? "closed",
+    allowedEmailDomains,
     signupRateLimit: {
       windowSeconds: parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS
         ? Number(parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS)

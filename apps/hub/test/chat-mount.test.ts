@@ -25,6 +25,8 @@ const config: HubConfig = {
   hubStaticDir: staticDir,
   signupRateLimit: { windowSeconds: 60, max: 5 },
   socialProviders: {},
+  signupMode: "closed",
+  allowedEmailDomains: [],
 };
 
 const closers: (() => Promise<void>)[] = [];

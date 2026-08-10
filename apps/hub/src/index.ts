@@ -92,10 +92,12 @@ const DEFAULT_CHANNEL_HOST_INFERENCE_PREFERENCES = [
   { provider: "anthropic", model: "claude-sonnet-5" },
 ];
 
-// Open signup is safe by enumeration: BYOK means there is nothing free
-// to burn, and the hosted deployment only ever runs Corbits-signed
-// packages, so signup mints no operator-credential grants.
-// Email+password signup is always wired up. Google/GitHub OAuth are
+// Signup mode is operator-controlled (WORKBENCH_SIGNUP). Default closed:
+// self-serve email signup is rejected; owners add users or share a
+// copy-link invite (docs/TENANCY.md). Open mode keeps email+password
+// signup and the existing rate limit. Email delivery of invites is out
+// of scope.
+// Email+password sign-in is always wired up. Google/GitHub OAuth are
 // wired up too, but only the providers `readHubConfig` found a full
 // credential pair for — better-auth's own `socialProviders` map is
 // literally the set config.socialProviders resolved to, so a provider
@@ -195,7 +197,56 @@ export async function createHub(config: HubConfig) {
       const result = await auth.api.getSession({ headers });
       return result ? { user: result.user, session: result.session } : null;
     },
-    authHandler: (c) => auth.handler(c.req.raw),
+    authHandler: async (c) => {
+      // Gate self-serve email signup. Sign-in stays open; only the
+      // sign-up/email path is product-controlled (docs/TENANCY.md).
+      if (
+        c.req.method === "POST" &&
+        c.req.path.endsWith(SIGN_UP_EMAIL_PATH)
+      ) {
+        if (config.signupMode === "closed") {
+          return c.json(
+            {
+              error: "signup_closed",
+              message:
+                "Self-serve signup is disabled. Ask an owner for an invite.",
+            },
+            403,
+          );
+        }
+        if (config.allowedEmailDomains.length > 0) {
+          let email = "";
+          try {
+            const body: unknown = await c.req.raw.clone().json();
+            if (
+              body !== null &&
+              typeof body === "object" &&
+              "email" in body &&
+              typeof (body as { email: unknown }).email === "string"
+            ) {
+              email = (body as { email: string }).email.toLowerCase();
+            }
+          } catch {
+            email = "";
+          }
+          const at = email.lastIndexOf("@");
+          const domain = at >= 0 ? email.slice(at + 1) : "";
+          const allow = new Set(
+            config.allowedEmailDomains.map((d) => d.toLowerCase()),
+          );
+          if (!allow.has(domain)) {
+            return c.json(
+              {
+                error: "email_domain_not_allowed",
+                message: "That email domain is not allowed to sign up.",
+              },
+              403,
+            );
+          }
+        }
+      }
+      return auth.handler(c.req.raw);
+    },
     db,
     sidecarRouter,
     sessionService,
@@ -553,7 +604,11 @@ export async function createHub(config: HubConfig) {
   // since this decides what the sign-in screen even offers.
   const enabledSocialProviders = Object.keys(config.socialProviders);
   app.get("/api/auth-config", (c) =>
-    c.json({ socialProviders: enabledSocialProviders }),
+    c.json({
+      socialProviders: enabledSocialProviders,
+      signupMode: config.signupMode,
+      allowedEmailDomains: config.allowedEmailDomains,
+    }),
   );
 
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));

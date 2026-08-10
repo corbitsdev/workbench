@@ -32,3 +32,25 @@ export type {
   BenchMembership,
   CreateBenchInput,
 } from "./api";
+
+export {
+  INTERCHANGE_ROLES,
+  DEFAULT_SIGNUP_MODE,
+  SignupMode,
+  WorkbenchIcon,
+  DmChannelFlag,
+  dmChannelName,
+  createDmChannelSpec,
+  validateParentId,
+  wouldCreateParentCycle,
+  emailAllowedForSignup,
+  parseAllowedEmailDomains,
+  parseSignupMode,
+  isInterchangeRole,
+  canShareChannelWithinParent,
+} from "./tenancy-contracts";
+export type {
+  InterchangeRole,
+  TenantParentLookup,
+  ParentValidationResult,
+} from "./tenancy-contracts";

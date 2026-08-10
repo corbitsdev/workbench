@@ -29,6 +29,8 @@ describe("readHubConfig", () => {
       hubDataDir: validEnv.HUB_DATA_DIR,
       hubStaticDir: validEnv.HUB_STATIC_DIR,
       socialProviders: {},
+      signupMode: "closed",
+      allowedEmailDomains: [],
       signupRateLimit: { windowSeconds: 60, max: 5 },
     });
   });
@@ -108,6 +110,22 @@ describe("readHubConfig", () => {
       SIGNUP_RATE_LIMIT_MAX: "2",
     });
     expect(config.signupRateLimit).toEqual({ windowSeconds: 30, max: 2 });
+  });
+
+  test("WORKBENCH_SIGNUP defaults closed and accepts open", () => {
+    expect(readHubConfig(validEnv).signupMode).toBe("closed");
+    expect(
+      readHubConfig({ ...validEnv, WORKBENCH_SIGNUP: "open" }).signupMode,
+    ).toBe("open");
+  });
+
+  test("WORKBENCH_ALLOWED_EMAIL_DOMAINS parses a comma list", () => {
+    expect(
+      readHubConfig({
+        ...validEnv,
+        WORKBENCH_ALLOWED_EMAIL_DOMAINS: "acme.example, corp.example",
+      }).allowedEmailDomains,
+    ).toEqual(["acme.example", "corp.example"]);
   });
 
   test("the seed model is absent when ANTHROPIC_API_KEY is not set", () => {
