@@ -129,7 +129,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: "/insights",
     label: "Insights",
     icon: <ChartColumn />,
-    render: () => <InsightsRoute />,
+    render: (path: string) => <InsightsRoute path={path} />,
   },
   {
     path: SETTINGS_PATH,

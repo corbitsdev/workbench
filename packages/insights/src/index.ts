@@ -24,6 +24,7 @@ export {
   type UsageStore,
   type UsageTurnRecord,
 } from "./store";
+export { createPostgresUsageStore } from "./pg-store";
 export {
   createUsageSink,
   type UsageEvent,

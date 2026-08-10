@@ -33,6 +33,7 @@ import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import { applyRoutineMigrations } from "../packages/routines/src/migrations";
 import { applyMailboxMigrations } from "../packages/inbox/src/migrations";
+import { applyInsightsMigrations } from "../packages/insights/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -52,6 +53,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/routines", apply: applyRoutineMigrations },
   { name: "@corbits/notify", apply: applyNotifyMigrations },
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
+  { name: "@corbits/insights", apply: applyInsightsMigrations },
 ];
 
 /**

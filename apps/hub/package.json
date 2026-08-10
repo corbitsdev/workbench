@@ -19,6 +19,7 @@
     "@corbits/commands": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
     "@corbits/inbox": "workspace:*",
+    "@corbits/insights": "workspace:*",
     "@corbits/mailbox": "workspace:*",
     "@corbits/memory": "github:corbitsdev/corbits-memory#800340252dc60393f017fa933c59a1c9e67e7264",
     "@corbits/routines": "workspace:*",

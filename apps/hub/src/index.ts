@@ -39,6 +39,11 @@ import {
   WORKBENCH_MAILBOX_VOCABULARY,
 } from "@corbits/inbox";
 import {
+  applyInsightsMigrations,
+  createInsightsRoutes,
+  createPostgresUsageStore,
+} from "@corbits/insights";
+import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
   mountMailbox,
@@ -427,6 +432,21 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/inbox`,
     createInboxRoutes({ db: mailboxDb, bus: mailboxBus }),
   );
+  // Insights usage sink + read API. Package-owned tables are migrated
+  // at hub start (idempotent ledger); the store is Postgres-backed so
+  // numbers survive restarts. Absent rates / pre-sink history stay null.
+  await applyInsightsMigrations(config.databaseUrl);
+  const insightsUsage = createPostgresUsageStore(config.databaseUrl);
+  app.route(
+    `${TENANT_PREFIX}/insights`,
+    createInsightsRoutes({
+      store: insightsUsage.store,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
   {
     const mailboxApp = new Hono<TenantEnv>();
     mountMailbox(mailboxApp, {
@@ -679,6 +699,7 @@ export async function createHub(config: HubConfig) {
     close: async () => {
       chatOrchestrator.dispose();
       routineScheduler.stop();
+      await insightsUsage.close();
       await closeMailbox();
       await close();
     },
