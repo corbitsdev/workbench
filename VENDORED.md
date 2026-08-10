@@ -52,7 +52,9 @@ references and the `customConditions` entry in the shared tsconfig removed —
 workbench forbids custom resolve conditions; `vendor/intx/harness` also drops
 the unvendored `@intx/inference-testing` devDependency; `vendor/intx/hub-api`
 adds a `@types/ssri` devDependency that bun's isolated linker does not hoist
-from tool-packaging the way upstream's install does. Each package's
+from tool-packaging the way upstream's install does, and its approval param
+routes exclude the reserved segment `needs-you` so hosts can mount a sibling
+`/approvals/needs-you` list without `/:approvalId` capturing it. Each package's
 `VENDORED-FROM` file restates its own delta.
 
 ### Un-vendoring `vendor/intx`
