@@ -114,6 +114,48 @@ export function canInviteAgent(kind: string | undefined): boolean {
   return !isKnownChannelKind(kind) || kind !== "chat";
 }
 
+/**
+ * Which message source the timeline should load for the current view.
+ *
+ * - Open reply/delivery thread → that thread's membership only
+ * - Brand-new reply (pending parent, no thread yet) → empty
+ * - Channel root feed → the channel's root thread only (never full channel
+ *   mail, which mixes reply-thread messages into the root timeline)
+ * - Threads API unavailable (empty rootThreadId) → full mailbox fallback
+ */
+export type MessageFeedTarget =
+  | { readonly kind: "thread"; readonly threadId: string }
+  | { readonly kind: "empty" }
+  | { readonly kind: "root-thread"; readonly rootThreadId: string }
+  | { readonly kind: "channel-mail" };
+
+export function resolveMessageFeedTarget(args: {
+  readonly openThreadId: string | null;
+  readonly pendingParentMessageId: string | null;
+  readonly rootThreadId: string | null;
+}): MessageFeedTarget {
+  if (args.openThreadId !== null) {
+    return { kind: "thread", threadId: args.openThreadId };
+  }
+  if (args.pendingParentMessageId !== null) {
+    return { kind: "empty" };
+  }
+  if (args.rootThreadId !== null && args.rootThreadId !== "") {
+    return { kind: "root-thread", rootThreadId: args.rootThreadId };
+  }
+  return { kind: "channel-mail" };
+}
+
+function sortMessagesOldestFirst(
+  items: readonly MessageItem[],
+): MessageItem[] {
+  return [...items].sort((a, b) =>
+    a.createdAt === b.createdAt
+      ? a.id.localeCompare(b.id)
+      : a.createdAt.localeCompare(b.createdAt),
+  );
+}
+
 function useChannelLists(tenantId: string, refreshKey: number) {
   const [state, setState] = useState<ChannelsState>({ kind: "loading" });
 
@@ -186,6 +228,9 @@ function ChatWorkspaceInner({
     string | null
   >(null);
   const [threads, setThreads] = useState<readonly ChannelThread[]>([]);
+  // Root-thread id from listThreads — used so the root feed loads
+  // root-thread membership only, not the full channel mailbox.
+  const [rootThreadId, setRootThreadId] = useState<string | null>(null);
   const [threadMetaByMessageId, setThreadMetaByMessageId] = useState<
     ReadonlyMap<string, ThreadAffordanceMeta>
   >(new Map());
@@ -197,6 +242,9 @@ function ChatWorkspaceInner({
       try {
         const page = await listThreads(tenantId, channelId);
         setThreads(page.items);
+        setRootThreadId(
+          page.rootThreadId !== "" ? page.rootThreadId : null,
+        );
         // Build affordance meta for parent messages that already have a
         // reply thread. Reply counts load lazily when the thread is opened;
         // until then we surface "Thread" via replyCount 0+.
@@ -239,6 +287,7 @@ function ChatWorkspaceInner({
         setThreadMetaByMessageId(meta);
       } catch {
         setThreads([]);
+        setRootThreadId(null);
         setThreadMetaByMessageId(new Map());
       }
     },
@@ -256,31 +305,69 @@ function ChatWorkspaceInner({
       const background = options?.background ?? false;
       if (!background) setMessagesState({ kind: "loading" });
       try {
+        // Root feed may race with loadThreads on channel switch: if we
+        // don't yet know the root thread id, resolve it from listThreads
+        // before loading messages so we never fall back to full mail while
+        // threads are available.
+        let resolvedRootThreadId = rootThreadId;
+        if (
+          openThreadId === null &&
+          pendingParentMessageId === null &&
+          (resolvedRootThreadId === null || resolvedRootThreadId === "")
+        ) {
+          try {
+            const threadsPage = await listThreads(tenantId, channelId);
+            resolvedRootThreadId =
+              threadsPage.rootThreadId !== ""
+                ? threadsPage.rootThreadId
+                : null;
+            setRootThreadId(resolvedRootThreadId);
+            setThreads(threadsPage.items);
+          } catch {
+            resolvedRootThreadId = null;
+          }
+        }
+
+        const target = resolveMessageFeedTarget({
+          openThreadId,
+          pendingParentMessageId,
+          rootThreadId: resolvedRootThreadId,
+        });
+
         let items: MessageItem[];
-        if (openThreadId !== null) {
-          const page = await listThreadMessages(
-            tenantId,
-            channelId,
-            openThreadId,
-          );
-          items = [...page.items].sort((a, b) =>
-            a.createdAt === b.createdAt
-              ? a.id.localeCompare(b.id)
-              : a.createdAt.localeCompare(b.createdAt),
-          );
-        } else if (pendingParentMessageId !== null) {
-          // Brand-new reply thread — nothing to load yet.
-          items = [];
-        } else {
-          const page = await listMessages(tenantId, channelId);
-          // The server lists newest-first; the timeline renders top-to-bottom
-          // oldest-first with the viewport pinned to the end, so order once
-          // here — .at(-1) below is then genuinely the newest message.
-          items = [...page.items].sort((a, b) =>
-            a.createdAt === b.createdAt
-              ? a.id.localeCompare(b.id)
-              : a.createdAt.localeCompare(b.createdAt),
-          );
+        switch (target.kind) {
+          case "thread": {
+            const page = await listThreadMessages(
+              tenantId,
+              channelId,
+              target.threadId,
+            );
+            items = sortMessagesOldestFirst(page.items);
+            break;
+          }
+          case "empty":
+            // Brand-new reply thread — nothing to load yet.
+            items = [];
+            break;
+          case "root-thread": {
+            const page = await listThreadMessages(
+              tenantId,
+              channelId,
+              target.rootThreadId,
+            );
+            // Membership order is assignment order; timeline wants
+            // oldest-first with the viewport pinned to the end.
+            items = sortMessagesOldestFirst(page.items);
+            break;
+          }
+          case "channel-mail": {
+            // Threads not available on this hub — full mailbox is the
+            // only feed source (and there is no reply-thread membership
+            // to mix in).
+            const page = await listMessages(tenantId, channelId);
+            items = sortMessagesOldestFirst(page.items);
+            break;
+          }
         }
         setMessagesState((current) =>
           nextMessagesState(current, { kind: "success", items }, background),
@@ -307,7 +394,7 @@ function ChatWorkspaceInner({
         );
       }
     },
-    [tenantId, openThreadId, pendingParentMessageId],
+    [tenantId, openThreadId, pendingParentMessageId, rootThreadId],
   );
 
   useEffect(() => {
@@ -321,6 +408,7 @@ function ChatWorkspaceInner({
     unauthorizedRef.current = false;
     setOpenThreadId(null);
     setPendingParentMessageId(null);
+    setRootThreadId(null);
     if (activeChannelId !== null) {
       void loadThreads(activeChannelId);
       void loadMessages(activeChannelId);

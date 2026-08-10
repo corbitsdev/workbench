@@ -12,6 +12,7 @@ import type { Part } from "../src/parts";
 import { createChatRoutes } from "../src/routes";
 import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
 import { createInMemoryChatStore } from "../src/store";
+import { createInMemoryThreadStore } from "../src/threads";
 import {
   buildDeps,
   createChannel,
@@ -330,6 +331,87 @@ describe("messages", () => {
       name: null,
       address: "prn_alice@acme.example",
     });
+  });
+});
+
+describe("threads — root feed vs reply membership (4a)", () => {
+  test("root-thread messages exclude reply-thread posts; open reply still works", async () => {
+    const deps = buildDeps({ threads: createInMemoryThreadStore() });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const rootPost = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "root note" }] }),
+    });
+    expect(rootPost.status).toBe(201);
+    const rootSent = (await rootPost.json()) as {
+      id: string;
+      threadId: string;
+    };
+
+    const replyPost = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "reply note" }],
+        inReplyToMessageId: rootSent.id,
+      }),
+    });
+    expect(replyPost.status).toBe(201);
+    const replySent = (await replyPost.json()) as {
+      id: string;
+      threadId: string;
+    };
+    expect(replySent.threadId).not.toBe(rootSent.threadId);
+
+    // Full mailbox still lists both (platform mail is unfiltered).
+    const allMail = await app.request(`/channels/${channel.id}/messages`);
+    const allBody = (await allMail.json()) as { items: { id: string }[] };
+    expect(allBody.items.map((i) => i.id).sort()).toEqual(
+      [rootSent.id, replySent.id].sort(),
+    );
+
+    // Root-thread feed is root membership only.
+    const rootFeed = await app.request(
+      `/channels/${channel.id}/threads/${rootSent.threadId}/messages`,
+    );
+    expect(rootFeed.status).toBe(200);
+    const rootBody = (await rootFeed.json()) as {
+      items: { id: string; parts: Part[] }[];
+    };
+    expect(rootBody.items.map((i) => i.id)).toEqual([rootSent.id]);
+    expect(rootBody.items[0]?.parts).toEqual([
+      { kind: "text", text: "root note" },
+    ]);
+
+    // Open-thread view still returns reply-thread membership.
+    const replyFeed = await app.request(
+      `/channels/${channel.id}/threads/${replySent.threadId}/messages`,
+    );
+    expect(replyFeed.status).toBe(200);
+    const replyBody = (await replyFeed.json()) as {
+      items: { id: string; parts: Part[] }[];
+    };
+    expect(replyBody.items.map((i) => i.id)).toEqual([replySent.id]);
+    expect(replyBody.items[0]?.parts).toEqual([
+      { kind: "text", text: "reply note" },
+    ]);
+
+    // listThreads exposes rootThreadId for the client root feed.
+    const threadsRes = await app.request(`/channels/${channel.id}/threads`);
+    expect(threadsRes.status).toBe(200);
+    const threadsBody = (await threadsRes.json()) as {
+      rootThreadId: string;
+      items: { id: string; kind: string }[];
+    };
+    expect(threadsBody.rootThreadId).toBe(rootSent.threadId);
+    expect(
+      threadsBody.items.some(
+        (t) => t.id === replySent.threadId && t.kind === "reply",
+      ),
+    ).toBe(true);
   });
 });
 

@@ -6,7 +6,11 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { canInviteAgent, nextMessagesState } from "../src/chat-workspace";
+import {
+  canInviteAgent,
+  nextMessagesState,
+  resolveMessageFeedTarget,
+} from "../src/chat-workspace";
 import type { MessagesState } from "../src/chat-workspace";
 import { draftAfterSend } from "../src/composer";
 import { shouldConnect } from "../src/use-channel-stream";
@@ -93,6 +97,68 @@ describe("canInviteAgent (a chat's agent is fixed at creation; the server 409s a
 
   test("is true for a kind this UI doesn't otherwise recognize", () => {
     expect(canInviteAgent("archive")).toBe(true);
+  });
+});
+
+describe("resolveMessageFeedTarget (4a: root feed is root-thread only)", () => {
+  test("open thread loads that thread's messages", () => {
+    expect(
+      resolveMessageFeedTarget({
+        openThreadId: "thr_reply",
+        pendingParentMessageId: null,
+        rootThreadId: "thr_root",
+      }),
+    ).toEqual({ kind: "thread", threadId: "thr_reply" });
+  });
+
+  test("open thread wins over a pending parent", () => {
+    expect(
+      resolveMessageFeedTarget({
+        openThreadId: "thr_reply",
+        pendingParentMessageId: "msg_parent",
+        rootThreadId: "thr_root",
+      }),
+    ).toEqual({ kind: "thread", threadId: "thr_reply" });
+  });
+
+  test("pending new reply loads an empty feed", () => {
+    expect(
+      resolveMessageFeedTarget({
+        openThreadId: null,
+        pendingParentMessageId: "msg_parent",
+        rootThreadId: "thr_root",
+      }),
+    ).toEqual({ kind: "empty" });
+  });
+
+  test("root feed uses the root thread, not full channel mail", () => {
+    expect(
+      resolveMessageFeedTarget({
+        openThreadId: null,
+        pendingParentMessageId: null,
+        rootThreadId: "thr_root",
+      }),
+    ).toEqual({ kind: "root-thread", rootThreadId: "thr_root" });
+  });
+
+  test("empty rootThreadId falls back to channel mail (threads unavailable)", () => {
+    expect(
+      resolveMessageFeedTarget({
+        openThreadId: null,
+        pendingParentMessageId: null,
+        rootThreadId: "",
+      }),
+    ).toEqual({ kind: "channel-mail" });
+  });
+
+  test("null rootThreadId falls back to channel mail until threads resolve", () => {
+    expect(
+      resolveMessageFeedTarget({
+        openThreadId: null,
+        pendingParentMessageId: null,
+        rootThreadId: null,
+      }),
+    ).toEqual({ kind: "channel-mail" });
   });
 });
 
