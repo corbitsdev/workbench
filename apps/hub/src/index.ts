@@ -19,6 +19,7 @@ import {
   createChatRoutes,
   createDrizzleChannelTenancyStore,
   createDrizzleChatStore,
+  createDrizzleThreadStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
   startWorkflowCommand,
@@ -300,6 +301,7 @@ export async function createHub(config: HubConfig) {
     time_window: timeWindowEvaluator,
   };
   const chatStore = createDrizzleChatStore(db);
+  const threadStore = createDrizzleThreadStore(db);
   // Mounted outside the tenant prefix — the sidecar reaches it as a
   // plain inference endpoint, never through tenant-scoped auth, the
   // same way it reaches a real provider's API. `config.baseUrl` (not
@@ -374,6 +376,7 @@ export async function createHub(config: HubConfig) {
     store: chatStore,
     platform: chatPlatform,
     tenancy: chatTenancy,
+    threads: threadStore,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,

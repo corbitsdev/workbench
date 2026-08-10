@@ -64,6 +64,7 @@ import {
 import type { CommandRegistry, CommandResult } from "@corbits/commands";
 import { InferenceResolutionError } from "@corbits/folded-runs";
 import type { ChannelTenancyStore } from "./channel-tenancy";
+import type { ThreadStore } from "./threads";
 
 export type {
   ChannelEvents,
@@ -103,6 +104,14 @@ export type CreateChatRoutesDeps = {
    * up front, but `launchChannel` then fails loud at creation time.
    */
   channelHostInferencePreferences?: readonly InferencePreference[];
+  /**
+   * Thread identity store (root / reply / delivery). When omitted,
+   * thread list routes return empty and delivery-thread creation is
+   * unavailable — composition that wants threads (hub) injects a
+   * real store. Optional so unit tests that only exercise channel
+   * CRUD stay free of thread tables.
+   */
+  threads?: ThreadStore;
   /**
    * The `/name args` and `@name args` command registry — see
    * `@corbits/commands`. Omitted entirely, a message is always posted
@@ -530,6 +539,132 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   app.get(
+    "/channels/:id/threads",
+    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+      if (deps.threads === undefined) {
+        return c.json({ items: [] as const });
+      }
+      const root = await deps.threads.ensureRootThread(tenant.id, channelId);
+      const items = await deps.threads.listThreads(tenant.id, channelId);
+      return c.json({
+        rootThreadId: root.id,
+        items: items.map((t) => ({
+          id: t.id,
+          kind: t.kind,
+          parentMessageId: t.parentMessageId,
+          runRef: t.runRef,
+          title: t.title,
+          createdAt: t.createdAt.toISOString(),
+        })),
+      });
+    },
+  );
+
+  app.get(
+    "/channels/:id/threads/:threadId/messages",
+    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      const threadId = c.req.param("threadId");
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+      if (deps.threads === undefined) {
+        return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
+      }
+      const thread = await deps.threads.getThread(tenant.id, threadId);
+      if (thread === undefined || thread.channelId !== channelId) {
+        return c.json(ErrorEnvelope("not_found", "thread not found"), 404);
+      }
+      const messageIds = await deps.threads.listMessageIds(tenant.id, threadId);
+      const listed = await deps.platform.listMail({
+        tenantId: tenant.id,
+        channelId,
+      });
+      const byId = new Map(listed.items.map((item) => [item.id, item]));
+      const items = await Promise.all(
+        messageIds.flatMap((id) => {
+          const item = byId.get(id);
+          if (item === undefined) return [];
+          return [
+            (async () => ({
+              id: item.id,
+              createdAt: item.createdAt,
+              sender: senderOf(item.mail),
+              parts: await decodeMail(item.mail, {
+                fetchBlob: (blobId) =>
+                  deps.platform.fetchBlob(channelId, blobId),
+              }),
+            }))(),
+          ];
+        }),
+      );
+      return c.json({
+        thread: {
+          id: thread.id,
+          kind: thread.kind,
+          parentMessageId: thread.parentMessageId,
+          runRef: thread.runRef,
+          title: thread.title,
+          createdAt: thread.createdAt.toISOString(),
+        },
+        items,
+      });
+    },
+  );
+
+  app.post(
+    "/channels/:id/delivery-threads",
+    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+      if (deps.threads === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", "threads not available"),
+          404,
+        );
+      }
+      const body = type({
+        runRef: "string",
+        "title?": "string",
+      })(await c.req.json().catch(() => undefined));
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope("bad_request", `invalid body: ${body.summary}`),
+          400,
+        );
+      }
+      const thread = await deps.threads.createDeliveryThread({
+        tenantId: tenant.id,
+        channelId,
+        runRef: body.runRef,
+        ...(body.title !== undefined ? { title: body.title } : {}),
+      });
+      return c.json(
+        {
+          id: thread.id,
+          kind: thread.kind,
+          runRef: thread.runRef,
+          title: thread.title,
+          createdAt: thread.createdAt.toISOString(),
+        },
+        201,
+      );
+    },
+  );
+
+  app.get(
     "/channels/:id/messages",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
@@ -628,6 +763,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           messageParts,
         },
       );
+
+      if (deps.threads !== undefined) {
+        const root = await deps.threads.ensureRootThread(tenant.id, channelId);
+        await deps.threads.assignMessage({
+          tenantId: tenant.id,
+          channelId,
+          threadId: root.id,
+          messageId: sent.id,
+        });
+      }
 
       return c.json({ id: sent.id, createdAt: sent.createdAt }, 201);
     },

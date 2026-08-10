@@ -5,6 +5,7 @@
 // own state, keyed by tenant.
 import {
   boolean,
+  index,
   jsonb,
   pgTable,
   primaryKey,
@@ -118,3 +119,58 @@ export const channelTenancy = pgTable("channel_tenancy", {
     .notNull()
     .defaultNow(),
 });
+
+/**
+ * A thread inside a channel. The root feed is the thread with
+ * `kind = 'root'` (one per channel). Reply threads hang off a parent
+ * message id; delivery threads hang off a routine run ref. Messages
+ * themselves still live in platform mail — this table is workbench
+ * thread identity only (see `./threads.ts`).
+ */
+export const channelThreads = pgTable(
+  "channel_threads",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    /** root | reply | delivery */
+    kind: text("kind").notNull(),
+    /** Message id this reply thread answers; null for root/delivery. */
+    parentMessageId: text("parent_message_id"),
+    /** Routine/run reference for delivery threads; null otherwise. */
+    runRef: text("run_ref"),
+    title: text("title"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("channel_threads_channel_idx").on(table.tenantId, table.channelId),
+  ],
+);
+
+/**
+ * Membership of a platform mail message id in a thread. A message
+ * belongs to exactly one thread (root feed by default).
+ */
+export const channelThreadMessages = pgTable(
+  "channel_thread_messages",
+  {
+    tenantId: text("tenant_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    threadId: text("thread_id").notNull(),
+    messageId: text("message_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.tenantId, table.channelId, table.messageId],
+    }),
+    index("channel_thread_messages_thread_idx").on(
+      table.tenantId,
+      table.threadId,
+    ),
+  ],
+);

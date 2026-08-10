@@ -65,6 +65,7 @@ describeIfDb("applyChatMigrations", () => {
     "0006_channel_tenancy_parent_index",
     "0007_chat_bench_settings",
     "0008_channel_context_window_explicit_inherit",
+    "0009_channel_threads",
   ];
 
   test("applies every table and is idempotent on a second run", async () => {
@@ -80,15 +81,17 @@ describeIfDb("applyChatMigrations", () => {
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'public' AND table_name IN ` +
-          `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy', 'chat_bench_settings')`,
+          `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy', 'chat_bench_settings', 'channel_threads', 'channel_thread_messages')`,
       );
       expect(tables.map((row) => String(row["table_name"])).sort()).toEqual(
         [
-          "chat_bench_settings",
           "channel_launch",
           "channel_read_state",
           "channel_settings",
           "channel_tenancy",
+          "channel_thread_messages",
+          "channel_threads",
+          "chat_bench_settings",
         ].sort(),
       );
 

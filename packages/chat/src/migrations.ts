@@ -120,6 +120,33 @@ export const chatMigrations: readonly ChatMigration[] = [
       WHERE NOT ("settings" ? 'chat/contextWindow');
     `,
   },
+  {
+    name: "0009_channel_threads",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "channel_threads" (
+        "id" text PRIMARY KEY,
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "kind" text NOT NULL,
+        "parent_message_id" text,
+        "run_ref" text,
+        "title" text,
+        "created_at" timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS "channel_threads_channel_idx"
+        ON "channel_threads" ("tenant_id", "channel_id");
+      CREATE TABLE IF NOT EXISTS "channel_thread_messages" (
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "thread_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "channel_id", "message_id")
+      );
+      CREATE INDEX IF NOT EXISTS "channel_thread_messages_thread_idx"
+        ON "channel_thread_messages" ("tenant_id", "thread_id");
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named

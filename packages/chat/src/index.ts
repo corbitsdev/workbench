@@ -74,6 +74,22 @@ export type {
 export { createDrizzleChatStore, createInMemoryChatStore } from "./store";
 export type { ChatDb, ChatStore } from "./store";
 
+export {
+  createInMemoryThreadStore,
+  createDrizzleThreadStore,
+  createDeliveryThread,
+  resolveTargetThread,
+} from "./threads";
+export type {
+  ThreadStore,
+  ChannelThread,
+  ThreadKind,
+  CreateDeliveryThreadInput,
+  OpenReplyThreadInput,
+  AssignMessageInput,
+  ThreadDb,
+} from "./threads";
+
 export { createNoopInferenceRoutes } from "./noop-inference";
 export {
   launchAndJoinAgent,
