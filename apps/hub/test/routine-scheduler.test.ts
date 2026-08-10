@@ -24,6 +24,7 @@ describe("tickRoutineScheduler", () => {
       trigger: CRON,
       scope: "bench",
       input: { x: 1 },
+      deliveryChannelId: "ch_delivery",
       createdBy: "user_1",
     });
     const at = new Date(
@@ -56,6 +57,7 @@ describe("tickRoutineScheduler", () => {
       trigger: CRON,
       scope: "bench",
       input: {},
+      deliveryChannelId: "ch_delivery",
       createdBy: "user_1",
     });
     const at = new Date(
@@ -95,6 +97,7 @@ describe("tickRoutineScheduler", () => {
       trigger: CRON,
       scope: "bench",
       input: {},
+      deliveryChannelId: "ch_delivery",
       createdBy: "user_1",
     });
     const at = new Date(
@@ -139,6 +142,7 @@ describe("tickRoutineScheduler", () => {
       trigger: CRON,
       scope: "bench",
       input: {},
+      deliveryChannelId: "ch_delivery",
       createdBy: "user_1",
     });
     let clock = new Date(

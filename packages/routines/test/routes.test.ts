@@ -96,6 +96,7 @@ const VALID_BODY = {
   definitionId: "def_digest",
   trigger: { kind: "daily", hour: 9, minute: 0 },
   scope: "bench",
+  deliveryChannelId: "ch_delivery",
 };
 
 describe("createRoutineRoutes", () => {
@@ -293,6 +294,7 @@ describe("fireScheduledRoutine", () => {
       trigger: { kind: "interval", unit: "hours", every: 6 },
       scope: "bench",
       input: {},
+      deliveryChannelId: "ch_delivery",
       createdBy: "user_1",
     });
 

@@ -56,6 +56,30 @@ export const routineMigrations: readonly RoutineMigration[] = [
         ADD COLUMN IF NOT EXISTS "error" text;
     `,
   },
+  {
+    name: "0003_routine_draft",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "routine_draft" (
+        "id" text PRIMARY KEY,
+        "tenant_id" text NOT NULL,
+        "prompt" text NOT NULL,
+        "status" text NOT NULL,
+        "proposed_steps" jsonb NOT NULL DEFAULT '[]'::jsonb,
+        "proposed_trigger" jsonb,
+        "proposed_name" text,
+        "definition_id" text,
+        "delivery_channel_id" text NOT NULL,
+        "scope" text NOT NULL,
+        "autonomy" jsonb,
+        "created_by" text NOT NULL,
+        "approved_routine_id" text,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        "updated_at" timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS "routine_draft_tenant_idx"
+        ON "routine_draft" ("tenant_id", "status");
+    `,
+  },
 ];
 
 // Named distinctly from the platform's setup ledger and from any

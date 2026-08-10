@@ -19,6 +19,7 @@ import type { RoutineRow, RoutineRunRow, RoutineStore } from "./store";
 
 export interface LaunchedRoutineRun {
   readonly runId: string;
+  readonly deliveryThreadId?: string;
 }
 
 /**
@@ -27,6 +28,9 @@ export interface LaunchedRoutineRun {
  * the host (`@corbits/folded-runs` in this repo), then record the
  * correlation. Keeping this a port, not a direct dependency, is what
  * keeps `@corbits/routines` hosted-service-agnostic.
+ *
+ * When `deliveryChannelId` is set, the host must post results into that
+ * channel's delivery thread (`deliveryThreadId` when provided).
  */
 export interface RoutineLauncher {
   launchRoutineRun(input: {
@@ -34,7 +38,23 @@ export interface RoutineLauncher {
     principalId: string;
     definitionId: string;
     input: Record<string, unknown>;
+    deliveryChannelId?: string | null | undefined;
+    deliveryThreadId?: string | null | undefined;
+    runRef?: string | undefined;
   }): Promise<LaunchedRoutineRun>;
+}
+
+/**
+ * Optional port: open a delivery thread in the routine's channel before
+ * launch. Wired to `@corbits/chat` `createDeliveryThread` at the hub.
+ */
+export interface DeliveryThreadPort {
+  createDeliveryThread(input: {
+    tenantId: string;
+    channelId: string;
+    runRef: string;
+    title?: string;
+  }): Promise<{ id: string }>;
 }
 
 /**
@@ -63,6 +83,17 @@ export type CreateRoutineRoutesDeps = {
     tenantId: string,
     definitionId: string,
   ) => Promise<boolean>;
+  /**
+   * Delivery-thread creation for the delivery invariant. When set,
+   * every fire with a `deliveryChannelId` opens (or reuses) a delivery
+   * thread before launch.
+   */
+  deliveryThreads?: DeliveryThreadPort | undefined;
+  /**
+   * Describe-to-agent drafting. When omitted, draft routes return 404.
+   */
+  drafts?: import("./drafts").RoutineDraftStore | undefined;
+  drafting?: import("./drafts").RoutineDraftingPort | undefined;
 };
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -75,7 +106,10 @@ const CreateRoutineBody = type({
   trigger: RoutineTrigger,
   scope: "'personal' | 'bench'",
   "input?": "Record<string, unknown>",
-  "deliveryChannelId?": "string | null",
+  // Delivery is required: every routine lands results in a channel
+  // (owner decision). Null is not accepted on create.
+  deliveryChannelId: "string",
+  "runOnceNow?": "boolean",
 });
 
 const UpdateRoutineBody = type({
@@ -83,11 +117,17 @@ const UpdateRoutineBody = type({
   "trigger?": RoutineTrigger,
   "input?": "Record<string, unknown>",
   "enabled?": "boolean",
-  "deliveryChannelId?": "string | null",
+  "deliveryChannelId?": "string",
 });
 
 const RunNowBody = type({
   "input?": "Record<string, unknown>",
+});
+
+const CreateDraftBody = type({
+  prompt: "string",
+  deliveryChannelId: "string",
+  scope: "'personal' | 'bench'",
 });
 
 /**
@@ -131,9 +171,16 @@ async function runView(
  * successful launch, rethrow loudly with the run id in the message —
  * never silently orphan a platform run. Clears fire-failure counters
  * only after both steps succeed.
+ *
+ * When the routine has a delivery channel and a deliveryThreads port is
+ * wired, opens a delivery thread first and passes it to the launcher.
  */
 async function launchAndCorrelate(
-  deps: { store: RoutineStore; launcher: RoutineLauncher },
+  deps: {
+    store: RoutineStore;
+    launcher: RoutineLauncher;
+    deliveryThreads?: DeliveryThreadPort | undefined;
+  },
   input: {
     tenantId: string;
     principalId: string;
@@ -141,13 +188,37 @@ async function launchAndCorrelate(
     input: Record<string, unknown>;
     routineId: string;
     triggeredBy: string;
+    deliveryChannelId: string | null;
+    routineName?: string;
   },
 ): Promise<LaunchedRoutineRun> {
+  let deliveryThreadId: string | undefined;
+  if (
+    input.deliveryChannelId !== null &&
+    input.deliveryChannelId !== "" &&
+    deps.deliveryThreads !== undefined
+  ) {
+    // runRef is stable per fire attempt: routine id + triggeredBy + time bucket
+    const runRef = `${input.routineId}:${input.triggeredBy}:${Date.now()}`;
+    const thread = await deps.deliveryThreads.createDeliveryThread({
+      tenantId: input.tenantId,
+      channelId: input.deliveryChannelId,
+      runRef,
+      ...(input.routineName !== undefined
+        ? { title: input.routineName }
+        : {}),
+    });
+    deliveryThreadId = thread.id;
+  }
+
   const launched = await deps.launcher.launchRoutineRun({
     tenantId: input.tenantId,
     principalId: input.principalId,
     definitionId: input.definitionId,
     input: input.input,
+    deliveryChannelId: input.deliveryChannelId,
+    deliveryThreadId: deliveryThreadId !== undefined ? deliveryThreadId : null,
+    runRef: deliveryThreadId !== undefined ? input.routineId : undefined,
   });
   try {
     await deps.store.recordRoutineRun({
@@ -165,7 +236,10 @@ async function launchAndCorrelate(
     );
   }
   await deps.store.clearFireFailures(input.routineId);
-  return launched;
+  return {
+    runId: launched.runId,
+    ...(deliveryThreadId !== undefined ? { deliveryThreadId } : {}),
+  };
 }
 
 export function createRoutineRoutes(
@@ -208,9 +282,29 @@ export function createRoutineRoutes(
         trigger: body.trigger as RoutineTriggerT,
         scope: body.scope,
         input: body.input ?? {},
-        deliveryChannelId: body.deliveryChannelId ?? null,
+        deliveryChannelId: body.deliveryChannelId,
         createdBy: principal.id,
       });
+
+      if (body.runOnceNow === true) {
+        await launchAndCorrelate(
+          {
+            store: deps.store,
+            launcher: deps.launcher,
+            deliveryThreads: deps.deliveryThreads,
+          },
+          {
+            tenantId: tenant.id,
+            principalId: principal.id,
+            definitionId: row.definitionId,
+            input: row.input,
+            routineId: row.id,
+            triggeredBy: "manual",
+            deliveryChannelId: row.deliveryChannelId,
+            routineName: row.name,
+          },
+        );
+      }
 
       return c.json(routineView(row), 201);
     },
@@ -340,8 +434,24 @@ export function createRoutineRoutes(
       // "Run now" is an unscheduled fire of the exact launcher a
       // scheduled trigger would call — the only difference is
       // `triggeredBy`, never a second launch code path.
+      if (
+        existing.deliveryChannelId === null ||
+        existing.deliveryChannelId === ""
+      ) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            "routine has no deliveryChannelId; set one before running",
+          ),
+          400,
+        );
+      }
       const launched = await launchAndCorrelate(
-        { store: deps.store, launcher: deps.launcher },
+        {
+          store: deps.store,
+          launcher: deps.launcher,
+          deliveryThreads: deps.deliveryThreads,
+        },
         {
           tenantId: tenant.id,
           principalId: principal.id,
@@ -349,14 +459,205 @@ export function createRoutineRoutes(
           input: body.input ?? existing.input,
           routineId,
           triggeredBy: "manual",
+          deliveryChannelId: existing.deliveryChannelId,
+          routineName: existing.name,
         },
       );
 
-      return c.json({ runId: launched.runId }, 201);
+      return c.json(
+        {
+          runId: launched.runId,
+          ...(launched.deliveryThreadId !== undefined
+            ? { deliveryThreadId: launched.deliveryThreadId }
+            : {}),
+        },
+        201,
+      );
+    },
+  );
+
+  // --- Describe-to-agent drafting (path b) ---
+
+  app.post(
+    "/routine-drafts",
+    deps.requireGrant("workflow-run:*", "create"),
+    async (c) => {
+      if (deps.drafts === undefined) {
+        return c.json(ErrorEnvelope("not_found", "drafts not available"), 404);
+      }
+      const body = CreateDraftBody(await c.req.json().catch(() => undefined));
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope("bad_request", `invalid draft body: ${body.summary}`),
+          400,
+        );
+      }
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const draft = await deps.drafts.createDraft({
+        tenantId: tenant.id,
+        prompt: body.prompt,
+        deliveryChannelId: body.deliveryChannelId,
+        scope: body.scope,
+        createdBy: principal.id,
+      });
+
+      if (deps.drafting !== undefined) {
+        const proposal = await deps.drafting.propose({
+          tenantId: tenant.id,
+          principalId: principal.id,
+          prompt: body.prompt,
+        });
+        const reviewed = await deps.drafts.markReviewed(tenant.id, draft.id, {
+          proposedSteps: proposal.steps,
+          proposedTrigger: proposal.trigger ?? null,
+          proposedName: proposal.name ?? null,
+          definitionId: proposal.definitionId ?? null,
+          autonomy: proposal.autonomy ?? null,
+        });
+        return c.json(draftView(reviewed), 201);
+      }
+
+      return c.json(draftView(draft), 201);
+    },
+  );
+
+  app.get(
+    "/routine-drafts",
+    deps.requireGrant("workflow-run:*", "read"),
+    async (c) => {
+      if (deps.drafts === undefined) {
+        return c.json({ items: [] as const });
+      }
+      const tenant = c.get("tenant");
+      const items = await deps.drafts.listDrafts(tenant.id);
+      return c.json({ items: items.map(draftView) });
+    },
+  );
+
+  app.get(
+    "/routine-drafts/:id",
+    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    async (c) => {
+      if (deps.drafts === undefined) {
+        return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
+      }
+      const tenant = c.get("tenant");
+      const draft = await deps.drafts.getDraft(tenant.id, c.req.param("id"));
+      if (draft === undefined) {
+        return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
+      }
+      return c.json(draftView(draft));
+    },
+  );
+
+  app.post(
+    "/routine-drafts/:id/approve",
+    deps.requireGrant(idResource("workflow-run", "id"), "create"),
+    async (c) => {
+      if (deps.drafts === undefined) {
+        return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
+      }
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const draftId = c.req.param("id");
+      const draft = await deps.drafts.getDraft(tenant.id, draftId);
+      if (draft === undefined) {
+        return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
+      }
+      if (draft.status !== "reviewed") {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `draft is ${draft.status}; only reviewed drafts can be approved`,
+          ),
+          400,
+        );
+      }
+      if (draft.definitionId === null || draft.definitionId === "") {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            "draft has no definitionId; review must pin a workflow definition",
+          ),
+          400,
+        );
+      }
+      const name =
+        draft.proposedName !== null && draft.proposedName !== ""
+          ? draft.proposedName
+          : draft.prompt.slice(0, 80);
+      const trigger = draft.proposedTrigger ?? null;
+      const routine = await deps.store.createRoutine({
+        tenantId: tenant.id,
+        name,
+        definitionId: draft.definitionId,
+        trigger,
+        scope: draft.scope,
+        input: {
+          draftedSteps: draft.proposedSteps,
+          ...(draft.autonomy !== null ? { autonomy: draft.autonomy } : {}),
+        },
+        deliveryChannelId: draft.deliveryChannelId,
+        createdBy: principal.id,
+      });
+      const approved = await deps.drafts.markApproved(
+        tenant.id,
+        draftId,
+        routine.id,
+      );
+      return c.json(
+        { draft: draftView(approved), routine: routineView(routine) },
+        201,
+      );
+    },
+  );
+
+  app.post(
+    "/routine-drafts/:id/discard",
+    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    async (c) => {
+      if (deps.drafts === undefined) {
+        return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
+      }
+      const tenant = c.get("tenant");
+      try {
+        const draft = await deps.drafts.markDiscarded(
+          tenant.id,
+          c.req.param("id"),
+        );
+        return c.json(draftView(draft));
+      } catch (err) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            err instanceof Error ? err.message : "discard failed",
+          ),
+          400,
+        );
+      }
     },
   );
 
   return app;
+}
+
+function draftView(row: import("./drafts").RoutineDraftRow) {
+  return {
+    id: row.id,
+    prompt: row.prompt,
+    status: row.status,
+    proposedSteps: row.proposedSteps,
+    proposedTrigger: row.proposedTrigger,
+    proposedName: row.proposedName,
+    definitionId: row.definitionId,
+    deliveryChannelId: row.deliveryChannelId,
+    scope: row.scope,
+    autonomy: row.autonomy,
+    approvedRoutineId: row.approvedRoutineId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
 /**
@@ -368,12 +669,24 @@ export function createRoutineRoutes(
  * re-implements the launch or the correlation write.
  */
 export async function fireScheduledRoutine(
-  deps: { store: RoutineStore; launcher: RoutineLauncher },
+  deps: {
+    store: RoutineStore;
+    launcher: RoutineLauncher;
+    deliveryThreads?: DeliveryThreadPort | undefined;
+  },
   params: { tenantId: string; routine: RoutineRow },
 ): Promise<LaunchedRoutineRun> {
   if (!params.routine.enabled) {
     throw new Error(
       `routine ${params.routine.id} is disabled; a scheduler must not fire it`,
+    );
+  }
+  if (
+    params.routine.deliveryChannelId === null ||
+    params.routine.deliveryChannelId === ""
+  ) {
+    throw new Error(
+      `routine ${params.routine.id} has no deliveryChannelId; cannot fire`,
     );
   }
   return launchAndCorrelate(deps, {
@@ -383,5 +696,7 @@ export async function fireScheduledRoutine(
     input: params.routine.input,
     routineId: params.routine.id,
     triggeredBy: "schedule",
+    deliveryChannelId: params.routine.deliveryChannelId,
+    routineName: params.routine.name,
   });
 }

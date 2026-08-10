@@ -91,3 +91,30 @@ export const routineRun = pgTable(
   },
   (table) => [primaryKey({ columns: [table.tenantId, table.runId] })],
 );
+
+/**
+ * Free-text drafting path for routines. Only an approved draft creates
+ * a `routine` row; until then nothing is schedulable.
+ */
+export const routineDraft = pgTable("routine_draft", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  prompt: text("prompt").notNull(),
+  /** draft | reviewed | approved | discarded */
+  status: text("status").notNull(),
+  proposedSteps: jsonb("proposed_steps").notNull().default([]),
+  proposedTrigger: jsonb("proposed_trigger"),
+  proposedName: text("proposed_name"),
+  definitionId: text("definition_id"),
+  deliveryChannelId: text("delivery_channel_id").notNull(),
+  scope: text("scope").notNull(),
+  autonomy: jsonb("autonomy"),
+  createdBy: text("created_by").notNull(),
+  approvedRoutineId: text("approved_routine_id"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
