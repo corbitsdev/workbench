@@ -1,11 +1,10 @@
 /**
  * Hub-side artifacts engine mount — the host's own analog of
- * `@corbits/dock`'s `mountArtifacts` (see Scout's
- * `packages/agent-dock/src/artifacts-store.ts`). `@corbits/artifacts`
- * (git pin) persists artifacts + immutable version history in Postgres;
- * its `artifact`/`artifact_version` tables carry hard FKs into the
- * host's own `public.tenant` / `public.principal` tables, so the engine
- * MUST point at the same Postgres cluster as this hub's control plane.
+ * `@corbits/dock`'s `mountArtifacts`. `@corbits/artifacts` (git pin)
+ * persists artifacts + immutable version history in Postgres; its
+ * `artifact`/`artifact_version` tables carry hard FKs into the host's own
+ * `public.tenant` / `public.principal` tables, so the engine MUST point at
+ * the same Postgres cluster as this hub's control plane.
  *
  * Degrades cleanly when unconfigured: `ARTIFACTS_DATABASE_URL` unset
  * (and no explicit `databaseUrl` passed) means "no artifacts
