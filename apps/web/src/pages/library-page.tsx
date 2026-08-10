@@ -24,13 +24,20 @@ import {
   sortArtifacts,
 } from "@corbits/artifact-ui";
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
-import { ArrowDownUp, FileStack } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ArrowDownUp, FileStack, Upload } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 
-import { AssetsSchema, useAPIQuery } from "../api";
+import { ArtifactListPageSchema, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
-import { mapAssetsToArtifacts } from "../shell/library-artifacts";
+import { tenantKeys } from "../query-client";
+
 import { QueryView } from "../query-view";
+import {
+  isArtifactsUnavailableMessage,
+  mapArtifactListToSummaries,
+  uploadArtifactFiles,
+} from "../shell/library-artifacts";
 
 const SORT_LABEL: Record<ArtifactSort, string> = {
   newest: "Newest first",
@@ -101,25 +108,48 @@ function ArtifactRows({
 
 /**
  * The artifact gallery. Real data all the way down — search, sort, view
- * mode. The route resolves the current bench's assets into the
- * `ArtifactSummary` rows this page renders (see `LibraryRoute`); an empty
- * list is a truthful empty bench, never fabricated rows.
+ * mode, and upload. The route resolves the current bench's artifacts into
+ * the `ArtifactSummary` rows this page renders (see `LibraryRoute`); an empty
+ * list is a truthful empty library, never fabricated rows.
  */
 export function LibraryPage({
   artifacts,
   now,
+  onUpload,
+  uploading,
+  uploadError,
+  query,
+  onQueryChange,
 }: {
   readonly artifacts: readonly ArtifactSummary[];
   /** Reference time for relative timestamps; injectable for tests. */
   readonly now?: number;
+  readonly onUpload?: (files: readonly File[]) => void;
+  readonly uploading?: boolean;
+  readonly uploadError?: string | null;
+  /** Controlled search string — when provided, the route owns server-side `q`. */
+  readonly query?: string;
+  readonly onQueryChange?: (value: string) => void;
 }) {
-  const [query, setQuery] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
   const [sort, setSort] = useState<ArtifactSort>("newest");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const activeQuery = query ?? localQuery;
+  const setActiveQuery = onQueryChange ?? setLocalQuery;
+
+  // When the route owns server-side search, filter is a no-op pass-through
+  // (rows already match). Local-only consumers still filter client-side.
   const visible = useMemo(
-    () => sortArtifacts(filterArtifacts(artifacts, query), sort),
-    [artifacts, query, sort],
+    () =>
+      sortArtifacts(
+        onQueryChange === undefined
+          ? filterArtifacts(artifacts, activeQuery)
+          : artifacts,
+        sort,
+      ),
+    [artifacts, activeQuery, sort, onQueryChange],
   );
 
   return (
@@ -127,8 +157,8 @@ export function LibraryPage({
       <div className="page-toolbar">
         <LibrarySearchInput
           label="Search artifacts"
-          value={query}
-          onChange={setQuery}
+          value={activeQuery}
+          onChange={setActiveQuery}
         />
         <Menu>
           <MenuTrigger asChild>
@@ -145,19 +175,50 @@ export function LibraryPage({
           </MenuContent>
         </Menu>
         <ViewToggle mode={viewMode} onChange={setViewMode} />
+        {onUpload !== undefined ? (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="sr-only"
+              aria-label="Upload artifacts"
+              onChange={(event) => {
+                const list = event.target.files;
+                if (list !== null && list.length > 0) {
+                  onUpload(Array.from(list));
+                }
+                event.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              size="sm"
+              disabled={uploading === true}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload /> {uploading === true ? "Uploading…" : "Upload"}
+            </Button>
+          </>
+        ) : null}
       </div>
+      {uploadError !== undefined && uploadError !== null ? (
+        <p className="px-4 pt-2 text-sm text-destructive sm:px-7" role="alert">
+          {uploadError}
+        </p>
+      ) : null}
       <PageShell width="full" className="page-fill">
         {artifacts.length === 0 ? (
           <RichEmptyState
             icon={<FileStack />}
             title="No artifacts yet"
-            description="This workbench has no assets yet — workflows, skills, package registries, and agent state show up here as soon as they exist."
+            description="Upload a file or wait for agents and workflows to produce artifacts — they land here as soon as they exist."
           />
         ) : visible.length === 0 ? (
           <RichEmptyState
             icon={<FileStack />}
             title="Nothing matches"
-            description={`No artifact matches "${query}".`}
+            description={`No artifact matches "${activeQuery}".`}
           />
         ) : viewMode === "rows" ? (
           <div className="px-4 pb-5 sm:px-7">
@@ -177,13 +238,21 @@ export function LibraryPage({
 
 export function LibraryRoute() {
   const { selectedTenantId } = useBench();
-  // Tenant-local assets are the honest Library source today: the hub has no
-  // separate artifact store, but every bench already owns workflows, skills,
-  // package registries, and agent state at GET /api/tenants/:id/assets.
-  const assets = useAPIQuery(
-    selectedTenantId === null ? "" : `/api/tenants/${selectedTenantId}/assets`,
-    AssetsSchema,
-  );
+  const queryClient = useQueryClient();
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Real artifacts plane — list is paginated; `q` is server-side text search.
+  const listPath =
+    selectedTenantId === null
+      ? ""
+      : `/api/tenants/${selectedTenantId}/artifacts${
+          searchQuery.trim() === ""
+            ? ""
+            : `?q=${encodeURIComponent(searchQuery.trim())}`
+        }`;
+  const page = useAPIQuery(listPath, ArtifactListPageSchema);
 
   if (selectedTenantId === null) {
     return (
@@ -191,15 +260,53 @@ export function LibraryRoute() {
         <RichEmptyState
           icon={<FileStack />}
           title="Select a workbench"
-          description="Pick a workbench from the switcher to browse the assets it owns."
+          description="Pick a workbench from the switcher to browse the artifacts it owns."
+        />
+      </PageShell>
+    );
+  }
+
+  if (page.kind === "error" && isArtifactsUnavailableMessage(page.message)) {
+    return (
+      <PageShell width="full" className="page-fill">
+        <RichEmptyState
+          icon={<FileStack />}
+          title="Library not configured"
+          description="This hub has no artifacts plane mounted yet. Set ARTIFACTS_DATABASE_URL and restart the hub to enable Library."
         />
       </PageShell>
     );
   }
 
   return (
-    <QueryView query={assets} label="library artifacts">
-      {(rows) => <LibraryPage artifacts={mapAssetsToArtifacts(rows)} />}
+    <QueryView query={page} label="library artifacts">
+      {(rows) => (
+        <LibraryPage
+          artifacts={mapArtifactListToSummaries(rows.data)}
+          uploading={uploading}
+          uploadError={uploadError}
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          onUpload={(files) => {
+            void (async () => {
+              setUploading(true);
+              setUploadError(null);
+              try {
+                await uploadArtifactFiles(selectedTenantId, files);
+                await queryClient.invalidateQueries({
+                  queryKey: tenantKeys.artifacts(selectedTenantId),
+                });
+              } catch (err) {
+                setUploadError(
+                  err instanceof Error ? err.message : String(err),
+                );
+              } finally {
+                setUploading(false);
+              }
+            })();
+          }}
+        />
+      )}
     </QueryView>
   );
 }

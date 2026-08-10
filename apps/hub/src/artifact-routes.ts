@@ -1,7 +1,7 @@
 /**
- * Tenant-scoped Library L2 HTTP surface over the mounted `@corbits/artifacts`
- * engine. List (newest-first, paginated) and get-by-id only — upload/search
- * UI stays on later tickets.
+ * Tenant-scoped Library HTTP surface over the mounted `@corbits/artifacts`
+ * engine: list (newest-first, paginated, optional text search), get-by-id,
+ * and multipart upload.
  *
  * Authz uses the existing `asset` resource family so Library grants keep
  * working without inventing a parallel vocabulary.
@@ -10,12 +10,16 @@
  * without a live Postgres.
  */
 import {
+  ARTIFACT_UPLOAD_POLICY,
   anonymousIdentity,
+  createFileArtifact,
   getArtifact,
   listArtifacts,
   serializeArtifact,
   serializeArtifactListItem,
+  UnsupportedUploadTypeError,
   type ArtifactDb,
+  type ContentStore,
   type SerializedArtifact,
   type SerializedArtifactListItem,
 } from "@corbits/artifacts";
@@ -24,19 +28,33 @@ import { Hono } from "hono";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_FILE_COUNT = 50;
+const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024;
 
 export type ArtifactListPage = {
   readonly data: readonly SerializedArtifactListItem[];
   readonly nextCursor: string | null;
 };
 
+export type ArtifactUploadInput = {
+  readonly filename: string;
+  readonly mimeType: string;
+  readonly bytes: Uint8Array;
+};
+
 /** Minimal port the routes need — production wraps the engine db. */
 export type ArtifactRoutesStore = {
   list(
     tenantId: string,
-    opts: { limit: number; cursor: string | null },
+    opts: { limit: number; cursor: string | null; query: string | null },
   ): Promise<ArtifactListPage>;
   get(tenantId: string, artifactId: string): Promise<SerializedArtifact | null>;
+  upload(
+    tenantId: string,
+    principalId: string,
+    files: readonly ArtifactUploadInput[],
+  ): Promise<readonly SerializedArtifact[]>;
 };
 
 export type CreateArtifactRoutesDeps = {
@@ -63,14 +81,33 @@ function parseCursor(
   return { at, id };
 }
 
-/** Production store over an artifacts engine db handle. */
-export function createArtifactDbStore(db: ArtifactDb): ArtifactRoutesStore {
+function parseQuery(raw: string | undefined): string | null {
+  if (raw === undefined) return null;
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  return trimmed.slice(0, 200);
+}
+
+/** Prefer the browser-declared type when the upload policy accepts it. */
+function resolveUploadMime(file: { name: string; type: string }): string {
+  if (file.type !== "" && ARTIFACT_UPLOAD_POLICY.accepts(file.type)) {
+    return file.type;
+  }
+  return file.type === "" ? "application/octet-stream" : file.type;
+}
+
+/** Production store over an artifacts engine db handle + content store. */
+export function createArtifactDbStore(
+  db: ArtifactDb,
+  contentStore: ContentStore,
+): ArtifactRoutesStore {
   return {
     async list(tenantId, opts) {
       const cursor = parseCursor(opts.cursor ?? undefined);
       const result = await listArtifacts(db, anonymousIdentity, tenantId, {
         limit: opts.limit,
         ...(cursor !== undefined ? { cursor } : {}),
+        ...(opts.query !== null ? { query: opts.query } : {}),
       });
       return {
         data: result.rows.map(serializeArtifactListItem),
@@ -81,6 +118,27 @@ export function createArtifactDbStore(db: ArtifactDb): ArtifactRoutesStore {
       const row = await getArtifact(db, artifactId);
       if (row === null || row.tenantId !== tenantId) return null;
       return serializeArtifact(row);
+    },
+    async upload(tenantId, principalId, files) {
+      const scope = { tenantId, principalId };
+      const rows = await db.transaction(async (tx) => {
+        const created = [];
+        for (const file of files) {
+          created.push(
+            await createFileArtifact(tx, contentStore, {
+              scope,
+              ownerPrincipalId: principalId,
+              filename: file.filename,
+              mimeType: file.mimeType,
+              policy: ARTIFACT_UPLOAD_POLICY,
+              bytes: file.bytes,
+              origin: "library-upload",
+            }),
+          );
+        }
+        return created;
+      });
+      return rows.map(serializeArtifact);
     },
   };
 }
@@ -94,8 +152,103 @@ export function createArtifactRoutes(
     const tenant = c.get("tenant");
     const limit = parseLimit(c.req.query("limit"));
     const cursor = c.req.query("cursor") ?? null;
-    const page = await deps.store.list(tenant.id, { limit, cursor });
+    const query = parseQuery(c.req.query("q") ?? undefined);
+    const page = await deps.store.list(tenant.id, { limit, cursor, query });
     return c.json(page);
+  });
+
+  app.post("/upload", deps.requireGrant("asset:*", "write"), async (c) => {
+    const tenant = c.get("tenant");
+    const principal = c.get("principal");
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = (await c.req.parseBody({ all: true })) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      return c.json(
+        { error: { code: "bad_request", message: "Invalid multipart body" } },
+        400,
+      );
+    }
+
+    const files: File[] = [];
+    for (const value of Object.values(parsed)) {
+      for (const entry of Array.isArray(value) ? value : [value]) {
+        if (entry instanceof File) files.push(entry);
+      }
+    }
+
+    if (files.length === 0) {
+      return c.json(
+        {
+          error: {
+            code: "bad_request",
+            message: "Expected at least one file field",
+          },
+        },
+        400,
+      );
+    }
+    if (files.length > MAX_UPLOAD_FILE_COUNT) {
+      return c.json(
+        {
+          error: {
+            code: "payload_too_large",
+            message: `Too many files: ${files.length} exceeds the ${MAX_UPLOAD_FILE_COUNT} file limit`,
+          },
+        },
+        413,
+      );
+    }
+
+    let totalBytes = 0;
+    const inputs: ArtifactUploadInput[] = [];
+    for (const file of files) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        return c.json(
+          {
+            error: {
+              code: "payload_too_large",
+              message: `File "${file.name}" exceeds the ${MAX_UPLOAD_BYTES} byte limit`,
+            },
+          },
+          413,
+        );
+      }
+      totalBytes += file.size;
+      if (totalBytes > MAX_UPLOAD_TOTAL_BYTES) {
+        return c.json(
+          {
+            error: {
+              code: "payload_too_large",
+              message: `Upload exceeds the ${MAX_UPLOAD_TOTAL_BYTES} byte aggregate limit`,
+            },
+          },
+          413,
+        );
+      }
+      inputs.push({
+        filename: file.name,
+        mimeType: resolveUploadMime(file),
+        bytes: new Uint8Array(await file.arrayBuffer()),
+      });
+    }
+
+    try {
+      const data = await deps.store.upload(tenant.id, principal.id, inputs);
+      return c.json({ data }, 201);
+    } catch (err) {
+      if (err instanceof UnsupportedUploadTypeError) {
+        return c.json(
+          { error: { code: "unsupported_media_type", message: err.message } },
+          415,
+        );
+      }
+      throw err;
+    }
   });
 
   app.get("/:artifactId", deps.requireGrant("asset:*", "read"), async (c) => {
@@ -111,5 +264,33 @@ export function createArtifactRoutes(
     return c.json(row);
   });
 
+  return app;
+}
+
+/**
+ * Honest degraded surface when the artifacts plane is not mounted: every
+ * route answers 503 so the Library UI can distinguish "not configured"
+ * from "empty bench" without inventing silent empty lists.
+ */
+export function createUnavailableArtifactRoutes(
+  requireGrant: RequireGrant,
+): Hono<TenantEnv> {
+  const app = new Hono<TenantEnv>();
+  const unavailable = (c: {
+    json: (body: unknown, status: 503) => Response | Promise<Response>;
+  }) =>
+    c.json(
+      {
+        error: {
+          code: "unavailable",
+          message: "Artifacts plane is not configured on this hub",
+        },
+      },
+      503,
+    );
+
+  app.get("/", requireGrant("asset:*", "read"), unavailable);
+  app.post("/upload", requireGrant("asset:*", "write"), unavailable);
+  app.get("/:artifactId", requireGrant("asset:*", "read"), unavailable);
   return app;
 }

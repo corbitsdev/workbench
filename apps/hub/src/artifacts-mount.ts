@@ -12,14 +12,16 @@
  * the dock mount.
  *
  * This module lands the mount + factory only. Tenant-scoped HTTP
- * list/get routes live in `artifact-routes.ts` and are registered from
- * the hub composition root when the mount succeeds.
+ * list/get/upload routes live in `artifact-routes.ts` and are registered
+ * from the hub composition root when the mount succeeds.
  */
 import { getLogger } from "@intx/log";
 import {
   createArtifactDb,
+  InlineContentStore,
   runArtifactMigrations,
   type ArtifactDb,
+  type ContentStore,
 } from "@corbits/artifacts";
 
 const log = getLogger(["hub", "artifacts-mount"]);
@@ -31,12 +33,11 @@ export type MountArtifactsOptions = {
 
 /**
  * Handle returned by a successful mount. The `db` is the engine's own
- * drizzle handle (the same shape dock's `mountArtifacts` exposes) so a
- * later routes module can build the persist/find/search/read surface on
- * top of it without re-deriving the connection.
+ * drizzle handle; `contentStore` is the byte sink used by upload routes.
  */
 export type ArtifactsMountHandle = {
   db: ArtifactDb;
+  contentStore: ContentStore;
 };
 
 export async function mountArtifacts(
@@ -56,5 +57,6 @@ export async function mountArtifacts(
   log.info(
     "Artifacts engine mounted — artifacts persist as versioned rows by kind",
   );
-  return { db };
+  return { db, contentStore: InlineContentStore };
+
 }

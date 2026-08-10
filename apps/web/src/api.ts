@@ -29,6 +29,33 @@ export const TenantApprovalsSchema = paginatedSchema(ApprovalResponse);
 // page renders as artifacts.
 export const AssetsSchema = AssetWithOriginResponse.array();
 
+// Real Library plane: paginated list from GET /api/tenants/:id/artifacts.
+// Content is intentionally omitted on list; detail fetches include it.
+export const ArtifactListItemSchema = type({
+  id: "string",
+  kind: "string",
+  title: "string",
+  source: "Record<string, unknown>",
+  version: "number",
+  ownerPrincipalId: "string | null",
+  ownerName: "string | null",
+  archivedAt: "string | null",
+  createdAt: "string",
+  updatedAt: "string",
+});
+export const ArtifactListPageSchema = type({
+  data: ArtifactListItemSchema.array(),
+  nextCursor: "string | null",
+});
+export const ArtifactDetailSchema = ArtifactListItemSchema.merge(
+  type({
+    content: "string",
+  }),
+);
+export const ArtifactUploadResponseSchema = type({
+  data: ArtifactDetailSchema.array(),
+});
+
 // `@corbits/approvals`'s "needs you" read: the same pending approvals as
 // `TenantApprovalsSchema`, but with the agent and bench names already
 // resolved server-side, so nothing here ever needs a raw id to render.
@@ -49,6 +76,9 @@ export type Principal = typeof PrincipalSummary.infer;
 export type WorkflowRun = typeof WorkflowRunSummary.infer;
 export type Approval = typeof ApprovalResponse.infer;
 export type AssetRow = typeof AssetWithOriginResponse.infer;
+export type ArtifactListItem = typeof ArtifactListItemSchema.infer;
+export type ArtifactListPage = typeof ArtifactListPageSchema.infer;
+export type ArtifactDetail = typeof ArtifactDetailSchema.infer;
 export type NeedsYou = typeof NeedsYouSchema.infer;
 export type NeedsYouItem = NeedsYou["items"][number];
 
