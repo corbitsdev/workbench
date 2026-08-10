@@ -48,7 +48,8 @@ mock.module("@intx/hub-api", () => ({
   },
 }));
 
-const { launchFoldedRun } = await import("../src/launch");
+const { launchFoldedRun, InferenceResolutionError } =
+  await import("../src/launch");
 
 type InsertChain = {
   values(values: unknown): Promise<void>;
@@ -365,7 +366,7 @@ describe("launchFoldedRun", () => {
     expect(runUpdate?.values).toEqual({ status: "failed" });
   });
 
-  test("fails loud when the tenant catalog has no launchable source", async () => {
+  test("throws InferenceResolutionError when the tenant catalog has no launchable source", async () => {
     resolveDefinitionSourcesResult = {
       ok: false,
       message: 'No launchable inference source for model "claude-sonnet-5"',
@@ -373,8 +374,9 @@ describe("launchFoldedRun", () => {
 
     const db = createFakeDb();
 
-    await expect(
-      launchFoldedRun(
+    let caught: unknown;
+    try {
+      await launchFoldedRun(
         {
           db: db as never,
           sessionService: createFakeSessionService(),
@@ -390,8 +392,18 @@ describe("launchFoldedRun", () => {
           foldedBody: FOLDED_BODY,
           launchLabel: "the channel host",
         },
-      ),
-    ).rejects.toThrow(/seed a tenant catalog source/);
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(InferenceResolutionError);
+    const err = caught as { resolutionMessage: string; message: string };
+    expect(err.resolutionMessage).toBe(
+      'No launchable inference source for model "claude-sonnet-5"',
+    );
+    expect(err.message).toMatch(/seed a tenant catalog source/);
+    expect(err.message).toMatch(/the channel host/);
   });
 
   test("uses a caller-supplied sources override verbatim, never touching the catalog", async () => {

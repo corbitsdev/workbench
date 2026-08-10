@@ -7,6 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
+import { InferenceResolutionError } from "@corbits/folded-runs";
 import type { Part } from "../src/parts";
 import { createChatRoutes } from "../src/routes";
 import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
@@ -148,6 +149,74 @@ describe("POST /channels", () => {
 
     expect(response.status).toBe(201);
     expect(body.title).toBe("My Assistant");
+  });
+
+  test("creating a chat whose agent has no launchable inference source returns 409, not 500", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [{ id: "wfd_echo", name: "Echo" }],
+        launchInvite: async () => {
+          throw new InferenceResolutionError(
+            "the invited agent",
+            "This definition declares no model requirements",
+          );
+        },
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/channels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", definitionId: "wfd_echo" }),
+    });
+
+    expect(response.status).toBe(409);
+    const errorBody = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(errorBody.error.code).toBe("not_launchable");
+    expect(errorBody.error.message).toBe(
+      "This definition declares no model requirements",
+    );
+  });
+});
+
+describe("POST /channels/:id/invite", () => {
+  test("an agent with no launchable inference source returns 409, not 500", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        launchInvite: async () => {
+          throw new InferenceResolutionError(
+            "the invited agent",
+            "No launchable inference source for that definition",
+          );
+        },
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    // Invite is for channels only; create one first.
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+    expect(channel.id).toBeTruthy();
+
+    const response = await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_new" }),
+    });
+
+    expect(response.status).toBe(409);
+    const errorBody = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(errorBody.error.code).toBe("not_launchable");
+    expect(errorBody.error.message).toBe(
+      "No launchable inference source for that definition",
+    );
   });
 });
 

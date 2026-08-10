@@ -62,6 +62,7 @@ import {
   resolveAtCommand,
 } from "@corbits/commands";
 import type { CommandRegistry, CommandResult } from "@corbits/commands";
+import { InferenceResolutionError } from "@corbits/folded-runs";
 import type { ChannelTenancyStore } from "./channel-tenancy";
 
 export type {
@@ -408,38 +409,48 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // same launch-and-join core `POST .../invite` uses, run inline
       // here so the chat comes back from this single call already
       // carrying its one agent participant.
-      const joined = await launchAndJoinAgent(
-        { store: deps.store, platform: deps.platform, publish },
-        {
-          tenantId: tenant.id,
-          principalId: principal.id,
-          channelId,
-          definitionId: body.definitionId,
-          existingSettings: row.settings,
-        },
-      );
+      try {
+        const joined = await launchAndJoinAgent(
+          { store: deps.store, platform: deps.platform, publish },
+          {
+            tenantId: tenant.id,
+            principalId: principal.id,
+            channelId,
+            definitionId: body.definitionId,
+            existingSettings: row.settings,
+          },
+        );
 
-      // The chat's default title, when the caller passes no name, is
-      // its agent's handle.
-      const finalSettings =
-        body.name === undefined
-          ? (
-              await deps.store.updateChannelSettings({
-                tenantId: tenant.id,
-                channelId,
-                settings: { ...joined.settings, "chat/name": joined.handle },
-                updatedBy: principal.id,
-              })
-            ).settings
-          : joined.settings;
+        // The chat's default title, when the caller passes no name, is
+        // its agent's handle.
+        const finalSettings =
+          body.name === undefined
+            ? (
+                await deps.store.updateChannelSettings({
+                  tenantId: tenant.id,
+                  channelId,
+                  settings: { ...joined.settings, "chat/name": joined.handle },
+                  updatedBy: principal.id,
+                })
+              ).settings
+            : joined.settings;
 
-      return c.json(
-        withTenancy(
-          channelView({ channelId, settings: finalSettings }),
-          channelTenant,
-        ),
-        201,
-      );
+        return c.json(
+          withTenancy(
+            channelView({ channelId, settings: finalSettings }),
+            channelTenant,
+          ),
+          201,
+        );
+      } catch (err) {
+        if (err instanceof InferenceResolutionError) {
+          return c.json(
+            ErrorEnvelope("not_launchable", err.resolutionMessage),
+            409,
+          );
+        }
+        throw err;
+      }
     },
   );
 
@@ -631,21 +642,31 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         );
       }
 
-      const joined = await launchAndJoinAgent(
-        { store: deps.store, platform: deps.platform, publish },
-        {
-          tenantId: tenant.id,
-          principalId: principal.id,
-          channelId,
-          definitionId: body.definitionId,
-          existingSettings: existing.settings,
-        },
-      );
+      try {
+        const joined = await launchAndJoinAgent(
+          { store: deps.store, platform: deps.platform, publish },
+          {
+            tenantId: tenant.id,
+            principalId: principal.id,
+            channelId,
+            definitionId: body.definitionId,
+            existingSettings: existing.settings,
+          },
+        );
 
-      return c.json(
-        { address: joined.address, definitionId: joined.definitionId },
-        201,
-      );
+        return c.json(
+          { address: joined.address, definitionId: joined.definitionId },
+          201,
+        );
+      } catch (err) {
+        if (err instanceof InferenceResolutionError) {
+          return c.json(
+            ErrorEnvelope("not_launchable", err.resolutionMessage),
+            409,
+          );
+        }
+        throw err;
+      }
     },
   );
 
