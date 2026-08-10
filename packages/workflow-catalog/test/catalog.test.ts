@@ -24,6 +24,7 @@ describe("workflow catalog", () => {
     expect(workflowDisplayName("channel-digest")).toBe("Channel digest");
     expect(workflowDisplayName("heartbeat")).toBe("Heartbeat");
     expect(workflowDisplayName("echo")).toBe("Echo");
+    expect(workflowDisplayName("assistant")).toBe("Myra");
   });
 
   test("productizes the seeded assistant under the Myra display name", () => {

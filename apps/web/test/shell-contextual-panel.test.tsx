@@ -93,7 +93,6 @@ describe("Rail bench switcher", () => {
     stubMemberships();
     const el = await renderRail();
     for (const label of [
-      "Home",
       "Routines",
       "Library",
       "Agents",
@@ -102,6 +101,7 @@ describe("Rail bench switcher", () => {
     ]) {
       expect(el.textContent).toContain(label);
     }
+    expect(el.textContent).not.toContain("Home");
     expect(el.textContent).not.toContain("Chat");
     expect(el.textContent).not.toContain("Approvals");
   });

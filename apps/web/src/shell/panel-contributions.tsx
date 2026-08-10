@@ -482,7 +482,7 @@ export function ensurePanelContributions(): void {
   registerPanelContribution({
     id: "home",
     match: (path) => path === "/",
-    pageBand: defaultBand("Home", "Your workbench at a glance"),
+    pageBand: defaultBand("Myra", "Opening your default channel"),
     pageSpecific: (ctx) => (
       <LiveActivityBand path={ctx.path} onNavigate={ctx.onNavigate} />
     ),

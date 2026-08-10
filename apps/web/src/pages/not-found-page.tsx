@@ -12,7 +12,7 @@ export function NotFoundPage({ path }: { readonly path: string }) {
         description={`Nothing lives at ${path}.`}
         action={
           <Button asChild variant="outline">
-            <Link to="/">Back to home</Link>
+            <Link to="/">Back to Myra</Link>
           </Button>
         }
       />
