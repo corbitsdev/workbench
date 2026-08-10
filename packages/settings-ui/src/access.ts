@@ -1,9 +1,9 @@
-// Whether the People/Roles/Grants sections belong in the settings nav at
-// all, decided the way the rest of this surface's og pages already gate
-// access: never a disabled tab, just an absent one. There's no capability
-// listing to read this off of, so this probes the one grant-checked route
-// that requires no grant of its own — `evaluate` — for the resource each
-// section is built on.
+// Whether the People/Roles/Grants/Credentials sections belong in the
+// settings nav at all, decided the way the rest of this surface's og
+// pages already gate access: never a disabled tab, just an absent one.
+// There's no capability listing to read this off of, so this probes the
+// one grant-checked route that requires no grant of its own —
+// `evaluate` — for the resource each section is built on.
 
 import { useEffect, useState } from "react";
 
@@ -15,6 +15,7 @@ export type TenancyAccess = {
   readonly people: SectionAccess;
   readonly roles: SectionAccess;
   readonly grants: SectionAccess;
+  readonly credentials: SectionAccess;
 };
 
 function useResourceAccess(
@@ -58,5 +59,6 @@ export function useTenancyAccess(
     people: useResourceAccess(tenantId, principalId, "principal"),
     roles: useResourceAccess(tenantId, principalId, "role"),
     grants: useResourceAccess(tenantId, principalId, "grant"),
+    credentials: useResourceAccess(tenantId, principalId, "credential"),
   };
 }

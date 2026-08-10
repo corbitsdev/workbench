@@ -10,6 +10,7 @@ import {
   AccountSection,
   BenchSection,
   ChatSection,
+  CredentialsSection,
   GrantsSection,
   PeopleSection,
   RolesSection,
@@ -69,6 +70,15 @@ export function SettingsRoute() {
       title: "Grants",
       render: (ctx: SettingsContext) => (
         <GrantsSection tenantId={ctx.tenantId} />
+      ),
+    });
+  }
+  if (access.credentials === "allowed") {
+    sections.push({
+      id: "credentials",
+      title: "Credentials",
+      render: (ctx: SettingsContext) => (
+        <CredentialsSection tenantId={ctx.tenantId} />
       ),
     });
   }

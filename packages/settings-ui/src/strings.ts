@@ -134,4 +134,30 @@ export const SETTINGS_STRINGS = {
   grantsFilterEffect: "Effect",
   grantsFilterAny: "Any",
   grantsNoExpiry: "Never",
+
+  credentialsSectionTitle: "Credentials",
+  credentialsSectionDescription:
+    "API keys and tokens this bench stores for providers. Secrets are write-only — they are never shown again after create.",
+  credentialsLoadError: "this bench's credentials",
+  credentialsEmptyTitle: "No credentials yet",
+  credentialsEmptyDescription:
+    "Add a provider credential so agents and tools can authenticate.",
+  credentialsCreateAction: "New credential",
+  credentialsCreateDialogTitle: "New credential",
+  credentialsCreateDialogDescription:
+    "Store a secret against a provider. The secret is encrypted and never returned on later reads.",
+  credentialsProviderLabel: "Provider",
+  credentialsNoProviders: "No providers configured yet",
+  credentialsNameLabel: "Name",
+  credentialsNamePlaceholder: "e.g. OpenAI production",
+  credentialsTypeLabel: "Type",
+  credentialsSecretLabel: "Secret",
+  credentialsDescriptionLabel: "Description (optional)",
+  credentialsCreateSubmit: "Store",
+  credentialsCreateSubmitting: "Storing…",
+  credentialsCreateCancel: "Cancel",
+  credentialsCreateError: "Couldn't store that credential — try again.",
+  credentialsDelete: "Revoke",
+  credentialsDeleteConfirm: "Revoke for good?",
+  credentialsDeleteError: "Couldn't revoke that credential — try again.",
 } as const;
