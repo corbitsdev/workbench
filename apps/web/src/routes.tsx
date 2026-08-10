@@ -4,7 +4,7 @@
 // sidebar's identity dock, not the top nav — `NAV_ROUTES` is what the nav
 // list shows. Channel deep links (`/c/:channelId`) stay routable for the
 // main-pane fallback when the canvas column is not available; the rail no
-// longer lists Chat. Approvals has no page — the notifications band owns them.
+// longer lists Chat. Approvals has no page — the Activity band owns them.
 // `/` is the Myra land hop (ensure + open channel), not a Home dashboard.
 
 import {
@@ -38,7 +38,7 @@ export const SETTINGS_PATH = "/settings";
 
 /** Paths the rail lists — product nav; channels open in the canvas.
  * Home is not a rail destination (Myra land is `/` only as a redirect hop).
- * Approvals has no route at all (notifications band owns its surface). */
+ * Approvals has no route at all (Activity band owns its surface). */
 const RAIL_NAV_PATHS = new Set([
   "/routines",
   "/library",

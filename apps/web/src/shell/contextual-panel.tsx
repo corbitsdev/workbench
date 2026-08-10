@@ -1,8 +1,9 @@
-// Column 2: route-aware contextual panel with three bands.
+// Column 2: route-aware contextual panel with four bands.
 //
 // 1. Page band — title, settings entry, quick actions, canvas toggle.
 // 2. Global pins — user-curated, same on every page (hidden when empty).
-// 3. Page-specific — contribution content for the current route (omitted when null).
+// 3. Global Activity — needs-you approvals (hidden when empty).
+// 4. Page-specific — contribution content for the current route (omitted when null).
 //
 // Live activity lives here (left), never in the right canvas. Clicking a
 // list item navigates to the full surface for that entity.
@@ -12,7 +13,7 @@ import { Settings } from "lucide-react";
 import { useState } from "react";
 
 import { CanvasToggle } from "./canvas-column";
-import { NotificationsBand } from "./notifications-band";
+import { ActivityBand } from "./activity-band";
 import { resolvePanelContribution } from "./panel-contribution";
 import { ensurePanelContributions } from "./panel-contributions";
 import { loadPins, type Pin } from "./pins";
@@ -113,7 +114,7 @@ export function ContextualPanel({
         </section>
       ) : null}
 
-      <NotificationsBand />
+      <ActivityBand />
 
       {pageSpecific !== null ? (
         <section

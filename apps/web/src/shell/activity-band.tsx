@@ -1,7 +1,7 @@
-// The global notifications band — a permanent section of the contextual
-// panel (shown on every page, like pins), not page-specific. Today its only
-// source is "needs you" approvals: pending permission requests the signed-in
-// user must approve or deny. The list reads
+// The global activity band — a permanent section of the contextual panel
+// (shown on every page, like pins), not page-specific. Today its only source
+// is "needs you" approvals: pending permission requests the signed-in user
+// must approve or deny. The list reads
 // `GET /api/tenants/:tenantId/approvals/needs-you` (`@corbits/approvals`),
 // which resolves each pending approval's agent and bench names so nothing
 // here renders a raw agent address or run id. Approve/reject post straight
@@ -11,9 +11,9 @@
 // and grant-scoped there. Approve only offers scope "once" — the hub rejects
 // "always" with a 400 — and reject collects an optional message.
 //
-// This is the new home for approvals after the `/approvals` page was killed:
-// the page left the rail long ago, now the deep link is gone too, and the
-// actionable cards live inline here wherever the user happens to be.
+// Per product, the band hides entirely once it resolves empty: no hollow
+// empty-state. It stays mounted while loading (or once items arrive) so the
+// user can resolve approvals without leaving the current page.
 
 import {
   ApprovalCard,
@@ -26,10 +26,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  EmptyState,
 } from "@corbits/react-ui";
 import type { ApprovalRequest } from "@corbits/react-ui";
-import { Bell, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -44,7 +43,7 @@ import { useBench } from "../bench-context";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 
-export function NotificationsBand() {
+export function ActivityBand() {
   const { selectedTenantId } = useBench();
   const queryClient = useQueryClient();
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -64,6 +63,10 @@ export function NotificationsBand() {
       : approvals.kind === "ready"
         ? { kind: "ready", data: approvals.data.items }
         : approvals;
+
+  // Empty and resolved (with a tenant) hides the band entirely; loading and
+  // non-empty still render so approvals stay reachable mid-flight.
+  if (rows.kind === "ready" && rows.data.length === 0) return null;
 
   const pendingCount = rows.kind === "ready" ? rows.data.length : 0;
 
@@ -95,12 +98,9 @@ export function NotificationsBand() {
   }
 
   return (
-    <section
-      className="panel-band panel-band-notifications"
-      aria-label="Notifications"
-    >
+    <section className="panel-band panel-band-activity" aria-label="Activity">
       <h3 className="panel-band-heading">
-        Notifications
+        Activity
         {pendingCount > 0 ? (
           <Badge tone="info" className="panel-band-badge">
             {pendingCount}
@@ -108,56 +108,46 @@ export function NotificationsBand() {
         ) : null}
       </h3>
       <QueryView query={rows} label="approvals">
-        {(items) =>
-          items.length === 0 ? (
-            <EmptyState
-              icon={<Bell />}
-              title="No notifications yet"
-              description="Approvals waiting on you — and mentions and mail-backed alerts once those sources are wired up — land here."
-            />
-          ) : (
-            <div className="notifications-list">
-              {items.map((approval) => {
-                const request: ApprovalRequest = {
-                  id: approval.id,
-                  headline: approval.headline,
-                  requestedBy: `${approval.agentName} in ${approval.benchName}`,
-                  details: Object.entries(approval.arguments).map(
-                    ([label, value]) => ({
-                      label,
-                      value:
-                        typeof value === "string"
-                          ? value
-                          : JSON.stringify(value),
-                    }),
-                  ),
-                };
-                const state =
-                  approvingId === approval.id
-                    ? "approving"
-                    : rejectingId === approval.id
-                      ? "rejecting"
-                      : "idle";
-                return (
-                  <ApprovalCard
-                    key={approval.id}
-                    request={request}
-                    onApprove={() => handleApprove(approval)}
-                    onReject={() => setRejectTarget(approval)}
-                    state={state}
-                    error={
-                      (approvingId === approval.id ||
-                        rejectingId === approval.id) &&
-                      actionError !== null
-                        ? actionError
-                        : null
-                    }
-                  />
-                );
-              })}
-            </div>
-          )
-        }
+        {(items) => (
+          <div className="activity-list">
+            {items.map((approval) => {
+              const request: ApprovalRequest = {
+                id: approval.id,
+                headline: approval.headline,
+                requestedBy: `${approval.agentName} in ${approval.benchName}`,
+                details: Object.entries(approval.arguments).map(
+                  ([label, value]) => ({
+                    label,
+                    value:
+                      typeof value === "string" ? value : JSON.stringify(value),
+                  }),
+                ),
+              };
+              const state =
+                approvingId === approval.id
+                  ? "approving"
+                  : rejectingId === approval.id
+                    ? "rejecting"
+                    : "idle";
+              return (
+                <ApprovalCard
+                  key={approval.id}
+                  request={request}
+                  onApprove={() => handleApprove(approval)}
+                  onReject={() => setRejectTarget(approval)}
+                  state={state}
+                  error={
+                    (approvingId === approval.id ||
+                      rejectingId === approval.id) &&
+                    actionError !== null
+                      ? actionError
+                      : null
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
       </QueryView>
       <RejectDialog
         approval={rejectTarget}
@@ -228,7 +218,7 @@ function RejectDialog({
   );
 }
 
-// `ShieldCheck` is kept available for future non-empty notification sources
+// `ShieldCheck` is kept available for future non-empty activity sources
 // (approvals already render through `ApprovalCard`); re-exported so the icon
 // import is not flagged unused while the only source is approvals.
 void ShieldCheck;
