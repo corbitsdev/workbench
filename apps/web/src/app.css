@@ -219,6 +219,82 @@
    `prefers-reduced-motion` in its theme.css), and these transitions inherit
    that like any other. */
 
+/* Narrow mode: the contextual column leaves the flow and becomes an overlay
+   drawer that slides in from the left, so it never permanently steals width
+   from the main pane. The backdrop dims and dismisses on click. The trigger
+   is a small floating button pinned to the main pane's top-left corner,
+   rendered only when the shell is in "narrow" layout (gated in JSX). */
+.shell-drawer-trigger {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 20;
+  display: grid;
+  height: 2rem;
+  width: 2rem;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.shell-drawer-trigger:hover {
+  background: var(--muted);
+}
+
+.shell-drawer-trigger svg {
+  height: 1rem;
+  width: 1rem;
+}
+
+/* When the drawer trigger is present, the main content needs top padding so
+   it doesn't collide with the button. */
+.shell-main:has(.shell-drawer-trigger) > .shell-main-content {
+  padding-top: 2.75rem;
+}
+
+.shell-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+
+.shell-drawer-backdrop[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.shell-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 40;
+  width: min(18rem, 85vw);
+  transform: translateX(-100%);
+  transition: transform 200ms ease;
+  overflow: hidden;
+}
+
+.shell-drawer[data-open="true"] {
+  transform: translateX(0);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.2));
+}
+
+.shell-drawer .shell-contextual-panel {
+  width: 100%;
+  height: 100%;
+  border-right: none;
+}
+
 /* Column 1's footer docks: the bench switcher and identity row. The rail
    itself is `@corbits/react-ui`'s `SidebarRail` (showLabels), styled in its
    own stylesheet; only the footer parts composed into its `footer` slot

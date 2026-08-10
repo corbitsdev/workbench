@@ -41,3 +41,24 @@ export function contextualPanelVisible(mode: ShellLayoutMode): boolean {
 export function canvasColumnAllowed(mode: ShellLayoutMode): boolean {
   return mode === "expanded";
 }
+
+/** The rail shows captions under its icons on every mode except "narrow",
+ * where width is at a premium. Icon-only still surfaces every destination —
+ * the labels collapse, not the items — so nothing is lost. */
+export function railShowLabels(mode: ShellLayoutMode): boolean {
+  return mode !== "narrow";
+}
+
+/** Below "narrow" the contextual panel leaves the flow entirely and becomes
+ * an overlay drawer, so it never permanently steals width from the main
+ * pane on a phone-width viewport. The drawer is always reachable via its
+ * trigger; the panel content is unchanged. */
+export function contextualPanelIsDrawer(mode: ShellLayoutMode): boolean {
+  return mode === "narrow";
+}
+
+// Smoke checklist — the three widths the responsive layout is verified
+// against. All three must show zero horizontal scroll:
+//   1280px (expanded) — rail + contextual column + canvas available
+//   1024px (compact)  — rail + contextual column, canvas hidden
+//    700px (narrow)   — rail icon-only + contextual as drawer overlay
