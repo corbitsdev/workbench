@@ -10,11 +10,15 @@ import { validationIssues } from "../src/pages/create-skill-dialog";
 import { SkillsPage } from "../src/pages/skills-page";
 
 describe("SkillsPage shell", () => {
-  test("renders the toolbar and the honest empty state", () => {
+  test("renders the honest empty state", () => {
     const markup = renderToStaticMarkup(<SkillsPage />);
-    expect(markup).toContain("Search skills");
     expect(markup).toContain("No skills yet");
     expect(markup).toContain("reusable capability");
+  });
+
+  test("hides the toolbar (search + view toggle) when there are no skills", () => {
+    const markup = renderToStaticMarkup(<SkillsPage />);
+    expect(markup).not.toContain("Search skills");
   });
 
   test("exposes a primary Create skill action from the empty state", () => {
