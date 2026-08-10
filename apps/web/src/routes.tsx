@@ -75,6 +75,7 @@ export function matchesRoute(routePath: string, path: string): boolean {
   }
   if (
     routePath === "/routines" ||
+    routePath === "/library" ||
     routePath === "/insights" ||
     routePath === "/inbox"
   ) {
@@ -118,19 +119,23 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: "/library",
     label: "Library",
     icon: <Library />,
-    render: () => <LibraryRoute />,
+    render: (path: string) => <LibraryRoute path={path} />,
   },
   {
     path: "/agents",
     label: "Agents",
     icon: <Bot />,
-    render: () => <AgentsRoute />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <AgentsRoute path={path} navigate={navigate} />
+    ),
   },
   {
     path: "/skills",
     label: "Skills",
     icon: <Wand2 />,
-    render: () => <SkillsRoute />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <SkillsRoute path={path} navigate={navigate} />
+    ),
   },
   {
     path: "/insights",

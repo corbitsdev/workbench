@@ -204,21 +204,23 @@ function TextBubble({
         </button>
       )}
       <div className="chat-bubble" data-own={isOwn}>
-        {display !== undefined && (
-          <button
-            type="button"
-            className="chat-bubble-sender-button"
-            disabled={profileSubject === null || onOpenProfile === undefined}
-            onClick={handleOpenProfile}
-          >
-            <span className="chat-bubble-sender">
-              {display.label}
-              {display.isAgent && <AgentBadge />}
-            </span>
-          </button>
-        )}
+        <div className="chat-bubble-head">
+          {display !== undefined && (
+            <button
+              type="button"
+              className="chat-bubble-sender-button"
+              disabled={profileSubject === null || onOpenProfile === undefined}
+              onClick={handleOpenProfile}
+            >
+              <span className="chat-bubble-sender">
+                {display.label}
+                {display.isAgent && <AgentBadge />}
+              </span>
+            </button>
+          )}
+          <span className="chat-bubble-time">{formatTimestamp(createdAt)}</span>
+        </div>
         <p className="chat-bubble-text">{text}</p>
-        <span className="chat-bubble-time">{formatTimestamp(createdAt)}</span>
       </div>
     </div>
   );

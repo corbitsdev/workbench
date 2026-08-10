@@ -439,9 +439,16 @@ export async function createHub(config: HubConfig) {
   // Insights usage sink + read API. Package-owned tables are migrated
   // at hub start (idempotent ledger); the store is Postgres-backed so
   // numbers survive restarts. Absent rates / pre-sink history stay null.
+  // runTraceReader is intentionally unmounted until a real reader exists.
   await applyInsightsMigrations(config.databaseUrl);
   const insightsUsage = createPostgresUsageStore(config.databaseUrl);
-  // Residual: no clean event-collector subscription without intx changes.
+  // Sink constructed so the store path is live for reads, but left
+  // unsubscribed: Interchange's event-collector drops inference.usage and
+  // exposes no product-side usage stream that carries tenantId + turnId
+  // with the tokens. sidecarRouter.events ("agent.event") does surface
+  // raw inference.usage, but correlating turn/tenant requires collector-
+  // private state or a DB scrape — not a clean <30-line subscribe.
+  // Pending an Interchange usage event stream, do not invent fake turns.
   void createUsageSink({
     store: insightsUsage.store,
     generateId: () => generateId("inferenceTurn"),
@@ -586,8 +593,19 @@ export async function createHub(config: HubConfig) {
     createRoutineRoutes({
       store: routineStore,
       drafts: routineDraftStore,
-      // Local prompt→steps drafting until Myra owns the port.
-      drafting: createLocalRoutineDrafting(),
+      // Local prompt→steps drafting until Myra owns the port. When the
+      // tenant already has a workflow definition, attach the oldest one
+      // so describe-to-agent drafts are approvable without a second pick.
+      drafting: createLocalRoutineDrafting({
+        resolveDefinitionId: async (tenantId) => {
+          const row = await db.query.workflowDefinition.findFirst({
+            where: eq(workflowDefinition.tenantId, tenantId),
+            columns: { id: true },
+            orderBy: (def, { asc }) => [asc(def.createdAt)],
+          });
+          return row?.id ?? null;
+        },
+      }),
       launcher: routineLauncher,
       requireGrant: createRequireGrant({
         grantStore: routineGrantStore,

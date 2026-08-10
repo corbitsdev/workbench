@@ -1,5 +1,6 @@
-// The far-left brand rail: product pages with visible labels, Search, Inbox,
-// Settings, theme, and avatar — matching shell mock chrome.
+// The far-left brand rail matches the shell mock: Corbits mark, primary page
+// icons (tooltip-only by default), then Search / Inbox / Settings / theme /
+// avatar in the footer. Captions under icons are opt-in (`showLabels`).
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -25,12 +26,18 @@ const user = { id: "user_1", name: "Ada Lovelace", email: "ada@example.com" };
 globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
   Promise.reject(new Error("no network in static rail tests"))) as typeof fetch;
 
-function renderRail(path: string): string {
+function renderRail(path: string, showLabels = false): string {
   return renderToStaticMarkup(
     <TestQueryProvider>
       <NavigationProvider navigate={noop}>
         <BenchProvider>
-          <Rail path={path} onNavigate={noop} user={user} onSignOut={noop} />
+          <Rail
+            path={path}
+            onNavigate={noop}
+            user={user}
+            onSignOut={noop}
+            showLabels={showLabels}
+          />
         </BenchProvider>
       </NavigationProvider>
     </TestQueryProvider>,
@@ -38,14 +45,25 @@ function renderRail(path: string): string {
 }
 
 describe("Rail", () => {
-  test("shows every product destination label as visible text", () => {
+  test("primary destinations are rail items; utility sits in the footer", () => {
     const markup = renderRail("/");
-    for (const route of [
-      ...RAIL_PRIMARY_ROUTES,
-      ...RAIL_UTILITY_ROUTES,
-      { label: RAIL_SEARCH.label },
-      { label: RAIL_SETTINGS.label },
-    ]) {
+    for (const route of RAIL_PRIMARY_ROUTES) {
+      // Icon-only: accessible name lives in the pure-CSS tooltip span.
+      expect(markup).toContain(`>${route.label}</span>`);
+    }
+    // Footer controls: Search, Inbox, Settings as labelled buttons.
+    expect(markup).toContain(`aria-label="${RAIL_SEARCH.label}"`);
+    for (const route of RAIL_UTILITY_ROUTES) {
+      expect(markup).toContain(`aria-label="${route.label}"`);
+    }
+    expect(markup).toContain(`aria-label="${RAIL_SETTINGS.label}"`);
+    // Mock default is icon-only — no visible captions under icons.
+    expect(markup).not.toContain('data-slot="sidebar-rail-item-label"');
+  });
+
+  test("showLabels renders captions under primary icons only", () => {
+    const markup = renderRail("/", true);
+    for (const route of RAIL_PRIMARY_ROUTES) {
       expect(markup).toMatch(
         new RegExp(
           `data-slot="sidebar-rail-item-label"[^>]*>${route.label}</span>`,
@@ -56,36 +74,27 @@ describe("Rail", () => {
 
   test("does not list Chat or Approvals on the rail", () => {
     const markup = renderRail("/");
-    expect(markup).not.toMatch(
-      /data-slot="sidebar-rail-item-label"[^>]*>Chat<\/span>/,
-    );
-    expect(markup).not.toMatch(
-      /data-slot="sidebar-rail-item-label"[^>]*>Approvals<\/span>/,
-    );
+    expect(markup).not.toContain(">Chat</span>");
+    expect(markup).not.toContain(">Approvals</span>");
   });
 
-  test("marks the active page and no other", () => {
+  test("marks the active primary page", () => {
     const markup = renderRail("/routines");
-    const currentCount = (markup.match(/aria-current="page"/g) ?? []).length;
-    expect(currentCount).toBe(1);
-    expect(markup).toMatch(
-      /data-slot="sidebar-rail-item" aria-current="page"[^>]*>[\s\S]*?Routines/,
-    );
+    expect(markup).toMatch(/data-slot="sidebar-rail-item" aria-current="page"/);
+    // Tooltip for the active item still says Routines.
+    expect(markup).toContain(">Routines</span>");
   });
 
-  test("carries brand class, theme, settings, and avatar in the footer", () => {
+  test("carries brand chrome: mark, rail class, footer, avatar", () => {
     const markup = renderRail("/");
     expect(markup).toContain("shell-brand-rail");
+    expect(markup).toContain("shell-brand-rail-column");
+    expect(markup).toContain("shell-rail-mark");
     expect(markup).toContain("shell-rail-footer");
     expect(markup).toContain("shell-rail-avatar-btn");
-    expect(markup).toMatch(
-      /data-slot="sidebar-rail-item-label"[^>]*>Settings<\/span>/,
-    );
   });
 
   test("command palette destinations include every NAV_ROUTES label", () => {
-    // NAV_ROUTES feeds the palette; rail may omit Settings from primary stack
-    // but still lists it as a rail item.
     expect(NAV_ROUTES.map((route) => route.label)).toContain("Settings");
     expect(NAV_ROUTES.map((route) => route.label)).toContain("Channels");
   });

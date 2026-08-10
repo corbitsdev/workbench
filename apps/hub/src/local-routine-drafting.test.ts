@@ -74,5 +74,33 @@ describe("createLocalRoutineDrafting", () => {
     expect(result.steps.length).toBeGreaterThan(0);
     expect(result.name).toBe("Weekly report");
     expect(result.steps.map((s) => s.title)).toContain("Gather metrics");
+    expect(result.definitionId).toBeUndefined();
+  });
+
+  test("sets definitionId when resolveDefinitionId returns one", async () => {
+    const port = createLocalRoutineDrafting({
+      resolveDefinitionId: async (tenantId) => {
+        expect(tenantId).toBe("t1");
+        return "wfd_oldest";
+      },
+    });
+    const result = await port.propose({
+      tenantId: "t1",
+      principalId: "u1",
+      prompt: "Do the thing",
+    });
+    expect(result.definitionId).toBe("wfd_oldest");
+  });
+
+  test("leaves definitionId unset when resolveDefinitionId returns null", async () => {
+    const port = createLocalRoutineDrafting({
+      resolveDefinitionId: async () => null,
+    });
+    const result = await port.propose({
+      tenantId: "t1",
+      principalId: "u1",
+      prompt: "Do the thing",
+    });
+    expect(result.definitionId).toBeUndefined();
   });
 });

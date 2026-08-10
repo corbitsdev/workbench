@@ -1,8 +1,14 @@
-// Column 1: brand-orange global rail matching the shell mock. Product pages
-// sit above a spacer; Search / Inbox / Settings / theme / avatar sit below.
-// Surfaces compose `@corbits/react-ui` SidebarRail + Avatar + ThemeToggle.
+// Column 1: brand-orange global rail matching the shell mock 1:1.
+// Primary product pages above a spacer; Search / Inbox / Settings / theme /
+// avatar below. Surfaces compose `@corbits/react-ui` SidebarRail + Avatar +
+// ThemeToggle + CorbitsMark.
 
-import { Avatar, SidebarRail, ThemeToggle } from "@corbits/react-ui";
+import {
+  Avatar,
+  CorbitsMark,
+  SidebarRail,
+  ThemeToggle,
+} from "@corbits/react-ui";
 import type { ReactNode } from "react";
 
 import { CHANNEL_PATH_PREFIX } from "../channel-path";
@@ -31,47 +37,57 @@ function routeItem(route: AppRoute): {
   };
 }
 
+function FooterIconButton({
+  label,
+  active,
+  onClick,
+  children,
+}: {
+  readonly label: string;
+  readonly active?: boolean;
+  readonly onClick: () => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="shell-rail-footer-btn"
+      aria-label={label}
+      title={label}
+      aria-current={active === true ? "page" : undefined}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function Rail({
   path,
   onNavigate,
   user,
   onSignOut,
-  showLabels = true,
+  showLabels = false,
 }: {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
   readonly user: SessionUser;
   readonly onSignOut: () => void;
+  /** Mock is icon+tooltip only; captions are opt-in for wide breakpoints. */
   readonly showLabels?: boolean;
 }) {
-  const primaryActive =
-    RAIL_PRIMARY_ROUTES.find((route) => matchesRoute(route.path, path)) ??
-    RAIL_UTILITY_ROUTES.find((route) => matchesRoute(route.path, path));
-
+  const primaryActive = RAIL_PRIMARY_ROUTES.find((route) =>
+    matchesRoute(route.path, path),
+  );
+  const inboxActive = RAIL_UTILITY_ROUTES.some((route) =>
+    matchesRoute(route.path, path),
+  );
   const settingsActive = matchesRoute(SETTINGS_PATH, path);
-  const activeId = settingsActive ? SETTINGS_PATH : (primaryActive?.path ?? "");
+  const activeId = primaryActive?.path ?? "";
 
-  const items = [
-    ...RAIL_PRIMARY_ROUTES.map(routeItem),
-    routeItem({
-      path: RAIL_SEARCH.id,
-      label: RAIL_SEARCH.label,
-      icon: RAIL_SEARCH.icon,
-      render: () => <></>,
-    }),
-    ...RAIL_UTILITY_ROUTES.map(routeItem),
-    {
-      id: RAIL_SETTINGS.id,
-      label: RAIL_SETTINGS.label,
-      icon: RAIL_SETTINGS.icon,
-    },
-  ];
+  const items = RAIL_PRIMARY_ROUTES.map(routeItem);
 
   function handleSelect(id: string) {
-    if (id === RAIL_SEARCH.id) {
-      requestOpenCommandPalette();
-      return;
-    }
     // Channels rail lands Myra (ensure + open), not a bare /c prefix.
     if (id === CHANNEL_PATH_PREFIX) {
       onNavigate("/");
@@ -80,37 +96,72 @@ export function Rail({
     onNavigate(id);
   }
 
+  const inboxRoute = RAIL_UTILITY_ROUTES[0];
+
   return (
-    <SidebarRail
-      label="Workbench"
-      className="shell-brand-rail"
-      showLabels={showLabels}
-      activeId={activeId}
-      items={items}
-      onSelect={handleSelect}
-      footer={
-        <div className="shell-rail-footer">
-          <ThemeToggle />
-          <button
-            type="button"
-            className="shell-rail-avatar-btn"
-            aria-label={`${user.name} · Settings`}
-            title={`${user.name} · Settings`}
-            onClick={() => onNavigate(SETTINGS_PATH)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              onSignOut();
-            }}
-          >
-            <Avatar
-              initials={initialsOf(user.name)}
-              label={user.name}
-              size="sm"
-              tone="neutral"
-            />
-          </button>
-        </div>
-      }
-    />
+    <div className="shell-brand-rail-column">
+      <button
+        type="button"
+        className="shell-rail-mark"
+        aria-label="Workbench home"
+        title="Workbench"
+        onClick={() => onNavigate("/")}
+      >
+        <CorbitsMark decorative className="shell-rail-mark-svg" />
+      </button>
+      <SidebarRail
+        label="Workbench"
+        className="shell-brand-rail"
+        showLabels={showLabels}
+        activeId={activeId}
+        items={items}
+        onSelect={handleSelect}
+        footer={
+          <div className="shell-rail-footer">
+            <FooterIconButton
+              label={RAIL_SEARCH.label}
+              onClick={() => requestOpenCommandPalette()}
+            >
+              {RAIL_SEARCH.icon}
+            </FooterIconButton>
+            {inboxRoute !== undefined ? (
+              <FooterIconButton
+                label={inboxRoute.label}
+                active={inboxActive}
+                onClick={() => onNavigate(inboxRoute.path)}
+              >
+                {inboxRoute.icon}
+              </FooterIconButton>
+            ) : null}
+            <FooterIconButton
+              label={RAIL_SETTINGS.label}
+              active={settingsActive}
+              onClick={() => onNavigate(SETTINGS_PATH)}
+            >
+              {RAIL_SETTINGS.icon}
+            </FooterIconButton>
+            <ThemeToggle />
+            <button
+              type="button"
+              className="shell-rail-avatar-btn"
+              aria-label={`${user.name} · Settings`}
+              title={`${user.name} · Settings`}
+              onClick={() => onNavigate(SETTINGS_PATH)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                onSignOut();
+              }}
+            >
+              <Avatar
+                initials={initialsOf(user.name)}
+                label={user.name}
+                size="sm"
+                tone="neutral"
+              />
+            </button>
+          </div>
+        }
+      />
+    </div>
   );
 }

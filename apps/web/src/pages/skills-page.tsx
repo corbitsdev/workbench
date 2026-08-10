@@ -1,12 +1,11 @@
-// Skills master-detail. There is no hub skill registry yet, so this page
-// keeps session-local drafts created via the dialog. Empty is honest;
-// once a draft exists, cards show access/owner/updated/version and the
-// detail pane shows about + pinned-by + version history with Restore.
+// Skills master-detail. There is no hub skill registry yet, so drafts
+// live in a session store shared with col2. Stage is detail-only (or
+// empty “select from sidebar”); the list is shell col2.
 
 import {
   Badge,
   Button,
-  LibrarySearchInput,
+  EmptyState,
   PageShell,
   RichEmptyState,
   Section,
@@ -16,81 +15,32 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  ViewToggle,
   formatRelativeTime,
 } from "@corbits/react-ui";
-import type { ViewMode } from "@corbits/react-ui";
 import { Sparkles } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { CreateSkillDialog, type SkillDraft } from "./create-skill-dialog";
+import {
+  addSessionSkill,
+  updateSessionSkills,
+  useSessionSkills,
+  type Skill,
+  type SkillVersion,
+} from "./skills-session";
 
-export type SkillVersion = {
-  readonly version: string;
-  readonly note: string;
-  readonly who: string;
-  readonly whenIso: string;
-  readonly current: boolean;
-};
+export type { Skill, SkillVersion };
 
-export type Skill = {
-  readonly id: string;
-  readonly name: string;
-  readonly description: string;
-  readonly body: string;
-  readonly access: "Shared" | "Private";
-  readonly owner: string;
-  readonly updatedAt: string;
-  readonly version: string;
-  readonly pinnedBy: readonly string[];
-  readonly versions: readonly SkillVersion[];
-  /** True when this row only lives in the current browser session. */
-  readonly sessionLocal: boolean;
-};
+const SKILLS_PATH_PREFIX = "/skills";
+
+export function skillIdFromPath(path: string): string | null {
+  if (!path.startsWith(`${SKILLS_PATH_PREFIX}/`)) return null;
+  const rest = path.slice(SKILLS_PATH_PREFIX.length + 1);
+  return rest === "" ? null : decodeURIComponent(rest);
+}
 
 function accessTone(access: Skill["access"]): "info" | "neutral" {
   return access === "Shared" ? "info" : "neutral";
-}
-
-function SkillCard({
-  skill,
-  selected,
-  now,
-  onSelect,
-}: {
-  readonly skill: Skill;
-  readonly selected: boolean;
-  readonly now: number;
-  readonly onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-current={selected ? "true" : undefined}
-      className={[
-        "flex w-full flex-col gap-1.5 rounded-lg border bg-card p-3 text-left transition-colors",
-        selected
-          ? "border-primary ring-1 ring-primary/40"
-          : "border-border hover:border-primary/40",
-      ].join(" ")}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <Badge tone={accessTone(skill.access)}>{skill.access}</Badge>
-        <span className="font-mono text-[0.7rem] text-muted-foreground">
-          v{skill.version}
-        </span>
-      </div>
-      <span className="truncate text-sm font-semibold">{skill.name}</span>
-      <span className="line-clamp-2 text-xs text-muted-foreground">
-        {skill.description === "" ? "No description" : skill.description}
-      </span>
-      <span className="truncate text-[0.7rem] text-muted-foreground">
-        {skill.owner} · {formatRelativeTime(skill.updatedAt, now)}
-        {skill.sessionLocal ? " · session draft" : ""}
-      </span>
-    </button>
-  );
 }
 
 function SkillDetail({
@@ -212,7 +162,11 @@ function SkillDetail({
   );
 }
 
-function draftToSkill(draft: SkillDraft, id: string, nowIso: string): Skill {
+export function draftToSkill(
+  draft: SkillDraft,
+  id: string,
+  nowIso: string,
+): Skill {
   return {
     id,
     name: draft.name.trim(),
@@ -237,25 +191,47 @@ function draftToSkill(draft: SkillDraft, id: string, nowIso: string): Skill {
 }
 
 /**
- * Skills page: toolbar when non-empty, dense cards, detail pane with
- * about / pinned-by / version history. Zero skills → empty state only
- * (no inert search chrome). Auto-selects the first skill when the list
- * becomes non-empty.
+ * Skills stage: list lives in shell col2; stage is detail only. Create is
+ * pageBand / workbench:skills:create. `skills` prop injects rows for tests;
+ * production uses the session store via SkillsRoute.
  */
 export function SkillsPage({
-  skills: initialSkills = [],
+  skills: controlledSkills,
   now = Date.now(),
+  path = SKILLS_PATH_PREFIX,
+  navigate,
+  initialSelectedId,
+  onSkillsChange,
 }: {
   readonly skills?: readonly Skill[];
   readonly now?: number;
+  readonly path?: string;
+  readonly navigate?: (to: string) => void;
+  /** Injectable selection for tests that assert detail without routing. */
+  readonly initialSelectedId?: string;
+  /** Called when the controlled list mutates (tests / non-session hosts). */
+  readonly onSkillsChange?: (next: readonly Skill[]) => void;
 } = {}) {
-  const [skills, setSkills] = useState<readonly Skill[]>(initialSkills);
-  const [query, setQuery] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const sessionSkills = useSessionSkills();
+  const skills = controlledSkills ?? sessionSkills;
   const [createOpen, setCreateOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(
-    initialSkills[0]?.id ?? null,
-  );
+  const pathSelectedId = skillIdFromPath(path);
+  const selectedId =
+    pathSelectedId ??
+    initialSelectedId ??
+    // Tests that inject skills without a path id still get the first row
+    // selected so detail assertions stay one-shot SSR friendly.
+    (controlledSkills !== undefined ? (controlledSkills[0]?.id ?? null) : null);
+
+  // Mock master-detail: when the list is non-empty and the path is bare
+  // /skills, open the first skill. Real registry routing can drop this.
+  useEffect(() => {
+    if (pathSelectedId !== null || navigate === undefined) return;
+    if (skills.length === 0) return;
+    const first = skills[0];
+    if (first === undefined) return;
+    navigate(`${SKILLS_PATH_PREFIX}/${encodeURIComponent(first.id)}`);
+  }, [pathSelectedId, skills, navigate]);
 
   useEffect(() => {
     const onCreate = () => setCreateOpen(true);
@@ -264,61 +240,54 @@ export function SkillsPage({
       window.removeEventListener("workbench:skills:create", onCreate);
   }, []);
 
-  // Auto-select first skill when the list becomes non-empty and nothing
-  // is selected (or the selection disappeared).
-  useEffect(() => {
-    if (skills.length === 0) {
-      if (selectedId !== null) setSelectedId(null);
-      return;
-    }
-    if (selectedId === null || !skills.some((s) => s.id === selectedId)) {
-      const first = skills[0];
-      if (first !== undefined) setSelectedId(first.id);
-    }
-  }, [skills, selectedId]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (q === "") return skills;
-    return skills.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q),
-    );
-  }, [skills, query]);
-
   const selected =
     selectedId === null
       ? null
       : (skills.find((s) => s.id === selectedId) ?? null);
 
+  function commitSkills(next: readonly Skill[]): void {
+    if (controlledSkills !== undefined) {
+      onSkillsChange?.(next);
+      return;
+    }
+    updateSessionSkills(() => next);
+  }
+
+  function handleCreated(draft: SkillDraft): void {
+    const id = `skill_local_${crypto.randomUUID()}`;
+    const next = draftToSkill(draft, id, new Date(now).toISOString());
+    if (controlledSkills !== undefined) {
+      onSkillsChange?.([next, ...controlledSkills]);
+    } else {
+      addSessionSkill(next);
+    }
+    setCreateOpen(false);
+    navigate?.(`${SKILLS_PATH_PREFIX}/${encodeURIComponent(id)}`);
+  }
+
   if (skills.length === 0) {
     return (
       <>
         <PageShell width="full" className="page-fill">
-          <RichEmptyState
-            icon={<Sparkles />}
-            title="No skills yet"
-            description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent definition can declare and a bench can install. There's no skill registry on the hub yet; drafts you create stay in this session only."
-            actions={[
-              {
-                label: "Create skill",
-                onClick: () => setCreateOpen(true),
-                variant: "primary",
-              },
-            ]}
-          />
+          <div className="flex flex-1 items-center justify-center p-6">
+            <RichEmptyState
+              icon={<Sparkles />}
+              title="No skills yet"
+              description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent definition can declare and a bench can install. There's no skill registry on the hub yet; drafts you create stay in this session only."
+              actions={[
+                {
+                  label: "Create skill",
+                  onClick: () => setCreateOpen(true),
+                  variant: "primary",
+                },
+              ]}
+            />
+          </div>
         </PageShell>
         <CreateSkillDialog
           open={createOpen}
           onOpenChange={setCreateOpen}
-          onCreated={(draft) => {
-            const id = `skill_local_${crypto.randomUUID()}`;
-            const next = draftToSkill(draft, id, new Date(now).toISOString());
-            setSkills((prev) => [next, ...prev]);
-            setSelectedId(id);
-            setCreateOpen(false);
-          }}
+          onCreated={handleCreated}
         />
       </>
     );
@@ -326,128 +295,64 @@ export function SkillsPage({
 
   return (
     <>
-      <div className="page-toolbar">
-        <LibrarySearchInput
-          label="Search skills"
-          value={query}
-          onChange={setQuery}
-        />
-        <ViewToggle mode={viewMode} onChange={setViewMode} />
-        <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-          Create skill
-        </Button>
-      </div>
-      <div className="flex min-h-0 flex-1">
-        <div
-          className={[
-            "min-h-0 overflow-auto border-r border-border",
-            selected === null ? "flex-1" : "w-full max-w-sm shrink-0",
-          ].join(" ")}
-        >
-          {filtered.length === 0 ? (
-            <div className="p-6">
-              <RichEmptyState
-                icon={<Sparkles />}
-                title="Nothing matches"
-                description={`No skill matches "${query}".`}
-              />
-            </div>
-          ) : viewMode === "rows" ? (
-            <div className="p-3">
-              <Table aria-label="Skills">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Access</TableHead>
-                    <TableHead>Version</TableHead>
-                    <TableHead>Updated</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((skill) => (
-                    <TableRow
-                      key={skill.id}
-                      className="cursor-pointer"
-                      data-state={
-                        selectedId === skill.id ? "selected" : undefined
-                      }
-                      onClick={() => setSelectedId(skill.id)}
-                    >
-                      <TableCell className="font-medium">
-                        {skill.name}
-                      </TableCell>
-                      <TableCell>
-                        <Badge tone={accessTone(skill.access)}>
-                          {skill.access}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        v{skill.version}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatRelativeTime(skill.updatedAt, now)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-2 p-3">
-              {filtered.map((skill) => (
-                <SkillCard
-                  key={skill.id}
-                  skill={skill}
-                  selected={selectedId === skill.id}
-                  now={now}
-                  onSelect={() => setSelectedId(skill.id)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+      {/* List lives in shell col2; stage is detail only. */}
+      <PageShell width="full" className="page-fill">
         {selected !== null ? (
-          <div className="min-h-0 min-w-0 flex-1">
-            <SkillDetail
-              skill={selected}
-              now={now}
-              onRestore={(version) => {
-                // Registry-backed restore is not wired; only non-session
-                // skills would flip current. Keep the surface honest.
-                setSkills((prev) =>
-                  prev.map((s) => {
-                    if (s.id !== selected.id || s.sessionLocal) return s;
-                    return {
-                      ...s,
-                      version,
-                      versions: s.versions.map((v) => ({
-                        ...v,
-                        current: v.version === version,
-                      })),
-                      updatedAt: new Date(now).toISOString(),
-                    };
-                  }),
-                );
-              }}
+          <SkillDetail
+            skill={selected}
+            now={now}
+            onRestore={(version) => {
+              // Registry-backed restore is not wired; only non-session
+              // skills would flip current. Keep the surface honest.
+              commitSkills(
+                skills.map((s) => {
+                  if (s.id !== selected.id || s.sessionLocal) return s;
+                  return {
+                    ...s,
+                    version,
+                    versions: s.versions.map((v) => ({
+                      ...v,
+                      current: v.version === version,
+                    })),
+                    updatedAt: new Date(now).toISOString(),
+                  };
+                }),
+              );
+            }}
+          />
+        ) : selectedId !== null ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <EmptyState
+              icon={<Sparkles />}
+              title="Skill not found"
+              description="That draft is not in this session. Pick another from the sidebar."
             />
           </div>
-        ) : null}
-      </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <EmptyState
+              icon={<Sparkles />}
+              title="Select a skill"
+              description="Pick a skill from the sidebar to see its about, pins, and version history."
+            />
+          </div>
+        )}
+      </PageShell>
       <CreateSkillDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={(draft) => {
-          const id = `skill_local_${crypto.randomUUID()}`;
-          const next = draftToSkill(draft, id, new Date(now).toISOString());
-          setSkills((prev) => [next, ...prev]);
-          setSelectedId(id);
-          setCreateOpen(false);
-        }}
+        onCreated={handleCreated}
       />
     </>
   );
 }
 
-export function SkillsRoute() {
-  return <SkillsPage />;
+export function SkillsRoute({
+  path,
+  navigate,
+}: {
+  readonly path: string;
+  readonly navigate: (to: string) => void;
+}) {
+  return <SkillsPage path={path} navigate={navigate} />;
 }

@@ -3,28 +3,12 @@ import {
   Button,
   Card,
   EmptyState,
-  LibrarySearchInput,
   PageShell,
   RichEmptyState,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  Tabs,
-  ViewToggle,
   formatRelativeTime,
 } from "@corbits/react-ui";
-import type { BadgeTone, ViewMode } from "@corbits/react-ui";
-import {
-  ArrowLeft,
-  Bot,
-  Copy,
-  MessageSquare,
-  Users,
-  Workflow,
-} from "lucide-react";
+import type { BadgeTone } from "@corbits/react-ui";
+import { ArrowLeft, Bot, Copy, MessageSquare, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -41,12 +25,18 @@ import { QueryView } from "../query-view";
 import { CreateAgentDialog } from "./create-agent-dialog";
 import {
   definitionsById,
-  filterDefinitions,
-  filterInstances,
   isOrphanedInstance,
   purposeAgentDefinitions,
   purposeAgentInstances,
 } from "./agents-directory";
+
+const AGENTS_PATH_PREFIX = "/agents";
+
+export function agentIdFromPath(path: string): string | null {
+  if (!path.startsWith(`${AGENTS_PATH_PREFIX}/`)) return null;
+  const rest = path.slice(AGENTS_PATH_PREFIX.length + 1);
+  return rest === "" ? null : decodeURIComponent(rest);
+}
 
 const DEFINITION_STATUS_TONE: Record<AgentDefinition["status"], BadgeTone> = {
   deployed: "success",
@@ -60,8 +50,6 @@ const INSTANCE_STATUS_TONE: Record<AgentInstance["status"], BadgeTone> = {
   stopped: "neutral",
   error: "danger",
 };
-
-const INSTANCE_CAP = 4;
 
 /** Copies an instance's mailbox address to the clipboard on demand —
  * the only way this page ever exposes it. The address never renders as
@@ -101,135 +89,10 @@ function CopyAddressButton({ address }: { readonly address: string }) {
   );
 }
 
-function InstanceBadges({
-  instances,
-}: {
-  readonly instances: readonly (AgentInstance & {
-    readonly orphaned: boolean;
-  })[];
-}) {
-  if (instances.length === 0) {
-    return <span className="text-sm text-muted-foreground">No instances</span>;
-  }
-  const shown = instances.slice(0, INSTANCE_CAP);
-  const overflow = instances.length - shown.length;
-  return (
-    <span className="flex flex-wrap items-center gap-1">
-      {shown.map((instance) => (
-        <Badge key={instance.id} tone={INSTANCE_STATUS_TONE[instance.status]}>
-          {instance.status}
-        </Badge>
-      ))}
-      {overflow > 0 && (
-        <span className="text-xs text-muted-foreground">+{overflow} more</span>
-      )}
-    </span>
-  );
-}
-
-function DefinitionCard({
-  definition,
-  instances,
-  onSelect,
-}: {
-  readonly definition: AgentDefinition;
-  readonly instances: readonly (AgentInstance & {
-    readonly orphaned: boolean;
-  })[];
-  readonly onSelect: (definitionId: string) => void;
-}) {
-  return (
-    <Card
-      className="flex cursor-pointer flex-col gap-2 p-4"
-      role="button"
-      tabIndex={0}
-      aria-label={`Open ${definition.name} details`}
-      onClick={() => onSelect(definition.id)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect(definition.id);
-        }
-      }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span className="truncate font-semibold">{definition.name}</span>
-        <Badge tone={DEFINITION_STATUS_TONE[definition.status]}>
-          {definition.status}
-        </Badge>
-      </div>
-      <p className="line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
-        {definition.description ?? "No description"}
-      </p>
-      <InstanceBadges instances={instances} />
-    </Card>
-  );
-}
-
-function DefinitionRows({
-  definitions,
-  instancesByDefinition,
-  onSelect,
-}: {
-  readonly definitions: readonly AgentDefinition[];
-  readonly instancesByDefinition: ReadonlyMap<
-    string,
-    readonly (AgentInstance & { readonly orphaned: boolean })[]
-  >;
-  readonly onSelect: (definitionId: string) => void;
-}) {
-  return (
-    <Table aria-label="Agent definitions">
-      <TableHeader>
-        <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>Description</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Instances</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {definitions.map((definition) => (
-          <TableRow
-            key={definition.id}
-            className="cursor-pointer"
-            role="button"
-            tabIndex={0}
-            aria-label={`Open ${definition.name} details`}
-            onClick={() => onSelect(definition.id)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                onSelect(definition.id);
-              }
-            }}
-          >
-            <TableCell className="font-medium">{definition.name}</TableCell>
-            <TableCell className="max-w-xs truncate text-muted-foreground">
-              {definition.description ?? "—"}
-            </TableCell>
-            <TableCell>
-              <Badge tone={DEFINITION_STATUS_TONE[definition.status]}>
-                {definition.status}
-              </Badge>
-            </TableCell>
-            <TableCell>
-              <InstanceBadges
-                instances={instancesByDefinition.get(definition.id) ?? []}
-              />
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-/** The agent detail panel: shown when a definition row/card is selected.
+/** The agent detail panel: shown when a definition is selected from col2.
  * Renders the full description, lifecycle status, version, the definition's
  * deployed instances, and the two launch actions — Start chat and Open in
- * channel. The instances list reuses the same rows/cards as the main tab so
- * the detail view never invents a third rendering of an instance. */
+ * channel. */
 function AgentDetailPanel({
   definition,
   instances,
@@ -393,85 +256,34 @@ function InstanceCard({
   );
 }
 
-function InstanceRows({
-  instances,
-  now,
-}: {
-  readonly instances: readonly (AgentInstance & {
-    readonly orphaned: boolean;
-  })[];
-  readonly now: number;
-}) {
-  return (
-    <Table aria-label="Agent instances">
-      <TableHeader>
-        <TableRow>
-          <TableHead>Agent</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Started</TableHead>
-          <TableHead>Mailbox</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {instances.map((instance) => (
-          <TableRow key={instance.id}>
-            <TableCell className="font-medium">
-              <span className="flex items-center gap-2">
-                {instance.definitionName}
-                {instance.orphaned && (
-                  <Badge tone="danger">Unlinked definition</Badge>
-                )}
-              </span>
-            </TableCell>
-            <TableCell>
-              <Badge tone={INSTANCE_STATUS_TONE[instance.status]}>
-                {instance.status}
-              </Badge>
-            </TableCell>
-            <TableCell className="text-muted-foreground">
-              {formatRelativeTime(instance.createdAt, now)}
-            </TableCell>
-            <TableCell>
-              <CopyAddressButton address={instance.address} />
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-type AgentsTab = "definitions" | "instances";
-
+/**
+ * Agents stage: list lives in shell col2; stage is detail only (or empty
+ * "select from sidebar"). Create is pageBand / workbench:agents:create.
+ */
 export function AgentsPage({
   directory,
   onAgentCreated,
   now = Date.now(),
-  initialTab = "definitions",
-  initialSelectedDefinitionId,
+  path = AGENTS_PATH_PREFIX,
   navigate,
+  initialSelectedDefinitionId,
 }: {
   readonly directory: APIQuery<AgentDirectoryData>;
   readonly onAgentCreated: (definition: AgentDefinition) => void;
   /** Reference time for relative timestamps; injectable for tests. */
   readonly now?: number;
-  /** Which tab is active on first render; injectable for tests that need
-   * to inspect the instances panel without a click. */
-  readonly initialTab?: AgentsTab;
-  /** Which definition is expanded in the detail panel on first render;
-   * injectable for tests that need to assert detail markup without a click. */
-  readonly initialSelectedDefinitionId?: string;
-  /** Client-side navigation callback; Start chat and Open in channel rely
-   * on this to route into /c after creating/inviting. */
+  /** Current location — selection is `/agents/:id`. */
+  readonly path?: string;
+  /** Client-side navigation; Start chat / Open in channel / back rely on this. */
   readonly navigate?: (to: string) => void;
+  /** Which definition is expanded on first render when path has no id;
+   * injectable for tests that assert detail markup without routing. */
+  readonly initialSelectedDefinitionId?: string;
 }) {
-  const [query, setQuery] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [tab, setTab] = useState<AgentsTab>(initialTab);
   const [createOpen, setCreateOpen] = useState(false);
-  const [selectedDefinitionId, setSelectedDefinitionId] = useState<
-    string | null
-  >(initialSelectedDefinitionId ?? null);
+  const pathSelectedId = agentIdFromPath(path);
+  const selectedDefinitionId =
+    pathSelectedId ?? initialSelectedDefinitionId ?? null;
   const canCreate =
     directory.kind === "ready" && directory.data.tenantId !== "";
 
@@ -486,14 +298,8 @@ export function AgentsPage({
 
   return (
     <>
-      <div className="page-toolbar">
-        <LibrarySearchInput
-          label="Search agents"
-          value={query}
-          onChange={setQuery}
-        />
-        <ViewToggle mode={viewMode} onChange={setViewMode} />
-      </div>
+      {/* List lives in shell col2; stage is detail only. Create is
+          pageBand / workbench:agents:create — no stage list chrome. */}
       <PageShellBody>
         <QueryView query={directory} label="your agents">
           {(data) => {
@@ -507,8 +313,6 @@ export function AgentsPage({
                 ),
               }),
             );
-            const visibleDefinitions = filterDefinitions(definitions, query);
-            const visibleInstances = filterInstances(instances, query);
             const instancesByDefinition = new Map<
               string,
               (AgentInstance & { readonly orphaned: boolean })[]
@@ -524,29 +328,33 @@ export function AgentsPage({
 
             if (definitions.length === 0 && instances.length === 0) {
               return (
-                <RichEmptyState
-                  icon={<Bot />}
-                  title="No agents yet"
-                  description="Create your first agent — a name, a system prompt, and optionally a model — and it appears here immediately, ready to start a chat or invite into a channel."
-                  actions={[
-                    {
-                      label: "Create agent",
-                      onClick: () => setCreateOpen(true),
-                      variant: "primary",
-                    },
-                  ]}
-                />
+                <div className="flex flex-1 items-center justify-center p-6">
+                  <RichEmptyState
+                    icon={<Bot />}
+                    title="No agents yet"
+                    description="Create your first agent — a name, a system prompt, and optionally a model — and it appears in the sidebar, ready to start a chat or invite into a channel."
+                    actions={
+                      canCreate
+                        ? [
+                            {
+                              label: "Create agent",
+                              onClick: () => setCreateOpen(true),
+                              variant: "primary",
+                            },
+                          ]
+                        : []
+                    }
+                  />
+                </div>
               );
             }
 
-            // Detail panel: when a definition is selected, render the full
-            // detail view instead of the tabbed list. The panel owns its own
-            // back button that clears the selection.
             const selectedDefinition =
               selectedDefinitionId !== null
                 ? (definitions.find((d) => d.id === selectedDefinitionId) ??
                   null)
                 : null;
+
             if (selectedDefinition !== null) {
               return (
                 <AgentDetailPanel
@@ -556,7 +364,7 @@ export function AgentsPage({
                   }
                   tenantId={data.tenantId}
                   now={now}
-                  onBack={() => setSelectedDefinitionId(null)}
+                  onBack={() => navigate?.(AGENTS_PATH_PREFIX)}
                   onChatStarted={() => {
                     /* parent may invalidate chat queries; no-op by default */
                   }}
@@ -565,93 +373,31 @@ export function AgentsPage({
               );
             }
 
+            if (selectedDefinitionId !== null) {
+              return (
+                <div className="flex flex-1 items-center justify-center p-6">
+                  <EmptyState
+                    icon={<Bot />}
+                    title="Agent not found"
+                    description="That definition is not on this bench. Pick another from the sidebar."
+                  />
+                </div>
+              );
+            }
+
             return (
-              <Tabs
-                tabs={[
-                  {
-                    id: "definitions",
-                    label: "Definitions",
-                    count: visibleDefinitions.length,
-                  },
-                  {
-                    id: "instances",
-                    label: "Instances",
-                    count: visibleInstances.length,
-                  },
-                ]}
-                active={tab}
-                onChange={setTab}
-                label="Agent views"
-              >
-                {(active) => {
-                  if (active === "definitions") {
-                    if (visibleDefinitions.length === 0) {
-                      return (
-                        <EmptyState
-                          icon={<Bot />}
-                          title="Nothing matches"
-                          description={`No agent definition matches "${query}".`}
-                        />
-                      );
-                    }
-                    return viewMode === "rows" ? (
-                      <div className="px-4 pb-5 sm:px-7">
-                        <DefinitionRows
-                          definitions={visibleDefinitions}
-                          instancesByDefinition={instancesByDefinition}
-                          onSelect={setSelectedDefinitionId}
-                        />
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-3 px-4 pb-5 sm:px-7">
-                        {visibleDefinitions.map((definition) => (
-                          <DefinitionCard
-                            key={definition.id}
-                            definition={definition}
-                            instances={
-                              instancesByDefinition.get(definition.id) ?? []
-                            }
-                            onSelect={setSelectedDefinitionId}
-                          />
-                        ))}
-                      </div>
-                    );
-                  }
-                  if (visibleInstances.length === 0) {
-                    return (
-                      <EmptyState
-                        icon={<Workflow />}
-                        title="Nothing matches"
-                        description={
-                          instances.length === 0
-                            ? "No agent instance is deployed in this bench yet. Invite a definition into a channel to launch one."
-                            : `No agent instance matches "${query}".`
-                        }
-                      />
-                    );
-                  }
-                  return viewMode === "rows" ? (
-                    <div className="px-4 pb-5 sm:px-7">
-                      <InstanceRows instances={visibleInstances} now={now} />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-3 px-4 pb-5 sm:px-7">
-                      {visibleInstances.map((instance) => (
-                        <InstanceCard
-                          key={instance.id}
-                          instance={instance}
-                          now={now}
-                        />
-                      ))}
-                    </div>
-                  );
-                }}
-              </Tabs>
+              <div className="flex flex-1 items-center justify-center p-6">
+                <EmptyState
+                  icon={<Bot />}
+                  title="Select an agent"
+                  description="Pick an agent from the sidebar to see its details and instances."
+                />
+              </div>
             );
           }}
         </QueryView>
       </PageShellBody>
-      {canCreate && (
+      {canCreate && directory.kind === "ready" ? (
         <CreateAgentDialog
           open={createOpen}
           onOpenChange={setCreateOpen}
@@ -660,16 +406,20 @@ export function AgentsPage({
           {...(directory.data.modelsError !== undefined
             ? { modelsError: directory.data.modelsError }
             : {})}
-          onCreated={onAgentCreated}
+          onCreated={(definition) => {
+            onAgentCreated(definition);
+            navigate?.(
+              `${AGENTS_PATH_PREFIX}/${encodeURIComponent(definition.id)}`,
+            );
+          }}
         />
-      )}
+      ) : null}
     </>
   );
 }
 
-// A thin, named wrapper around `PageShell` so the two very different
-// child shapes above (`RichEmptyState`/`Tabs`) share one shell call
-// site instead of duplicating its props at both return points.
+// A thin, named wrapper around `PageShell` so empty / select / detail
+// shapes share one shell call site.
 function PageShellBody({ children }: { readonly children: ReactNode }) {
   return (
     <PageShell width="full" className="page-fill">
@@ -678,7 +428,13 @@ function PageShellBody({ children }: { readonly children: ReactNode }) {
   );
 }
 
-export function AgentsRoute() {
+export function AgentsRoute({
+  path,
+  navigate,
+}: {
+  readonly path: string;
+  readonly navigate: (to: string) => void;
+}) {
   // BenchProvider is the only source of the active tenant — never re-fetch
   // /api/me/principals and take memberships[0], which ignores the switcher.
   const { memberships, selectedTenantId } = useBench();
@@ -703,14 +459,13 @@ export function AgentsRoute() {
   return (
     <AgentsPage
       directory={resolvedDirectory}
+      path={path}
+      navigate={navigate}
       onAgentCreated={() => {
         if (selectedTenantId === null) return;
         void queryClient.invalidateQueries({
           queryKey: tenantKeys.agentDirectory(selectedTenantId),
         });
-      }}
-      navigate={(to) => {
-        window.location.assign(to);
       }}
     />
   );

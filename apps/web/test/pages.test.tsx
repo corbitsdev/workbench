@@ -68,7 +68,7 @@ describe("empty states", () => {
       />,
     );
     expect(markup).toContain("Brief writer");
-    expect(markup).toContain("Search skills");
+    // Search lives in shell col2; stage is detail chrome only.
     expect(markup).toContain("Version history");
     expect(markup).toContain("Pinned by");
   });
@@ -135,44 +135,41 @@ describe("live data", () => {
     models: [],
   };
 
-  test("agents lists definitions by name and description, never a raw id", () => {
+  test("agents stage is detail-only: select prompt when nothing is open", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
         directory={ready(directoryData)}
         onAgentCreated={() => undefined}
       />,
     );
-    expect(markup).toContain("Researcher");
-    expect(markup).toContain("Answers research questions");
+    expect(markup).toContain("Select an agent");
     expect(markup).not.toContain("wfd_1");
   });
 
-  test("agents never renders an instance's mailbox address as visible text", () => {
+  test("agents detail never renders an instance's mailbox address as visible text", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
         directory={ready(directoryData)}
         onAgentCreated={() => undefined}
-        initialTab="instances"
+        initialSelectedDefinitionId="wfd_1"
+        navigate={() => undefined}
       />,
     );
     expect(markup).toContain("Researcher");
     expect(markup).not.toContain("ins_1@acme.localhost");
   });
 
-  test("agents flags an instance whose definition is not in the listing", () => {
-    const orphan: AgentInstance = {
-      ...instance,
-      id: "ins_2",
-      definitionId: "wfd_missing",
-    };
+  test("agents detail lists instances for the selected definition", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
-        directory={ready({ ...directoryData, instances: [instance, orphan] })}
+        directory={ready(directoryData)}
         onAgentCreated={() => undefined}
-        initialTab="instances"
+        initialSelectedDefinitionId="wfd_1"
+        navigate={() => undefined}
       />,
     );
-    expect(markup).toContain("Unlinked definition");
+    expect(markup).toContain("Instances (1)");
+    expect(markup).toContain("Answers research questions");
   });
 
   test("agents says there are no agents yet", () => {
@@ -202,10 +199,7 @@ describe("live data", () => {
         onAgentCreated={() => undefined}
       />,
     );
-    expect(markup).toMatch(
-      /disabled[^>]*>[\s\S]*Create agent|Create agent[\s\S]*disabled/,
-    );
-    // Dialog must not mount without a real tenant — no create form markup.
+    // Create lives on pageBand / dialog; without a tenant the dialog does not mount.
     expect(markup).not.toContain("Define a new agent");
   });
 });

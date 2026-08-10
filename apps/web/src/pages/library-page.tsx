@@ -43,6 +43,10 @@ import {
   mapArtifactListToSummaries,
   uploadArtifactFiles,
 } from "../shell/library-artifacts";
+import {
+  artifactMatchesLibraryKindSegment,
+  libraryKindSegmentFromPath,
+} from "../shell/library-filters";
 
 const SORT_LABEL: Record<ArtifactSort, string> = {
   newest: "Newest first",
@@ -316,13 +320,14 @@ export function LibraryPage({
   );
 }
 
-export function LibraryRoute() {
+export function LibraryRoute({ path }: { readonly path: string }) {
   const { selectedTenantId } = useBench();
   const queryClient = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const kindSegment = libraryKindSegmentFromPath(path);
 
   const listPath =
     selectedTenantId === null
@@ -340,12 +345,14 @@ export function LibraryRoute() {
       : `/api/tenants/${selectedTenantId}/artifacts/${encodeURIComponent(selectedId)}`;
   const detail = useAPIQuery(detailPath, ArtifactDetailSchema);
 
-  // Drop selection when the list no longer contains the id.
+  // Drop selection when the filtered list no longer contains the id.
   useEffect(() => {
     if (selectedId === null || page.kind !== "ready") return;
-    const stillThere = page.data.data.some((row) => row.id === selectedId);
+    const stillThere = mapArtifactListToSummaries(page.data.data)
+      .filter((row) => artifactMatchesLibraryKindSegment(row, kindSegment))
+      .some((row) => row.id === selectedId);
     if (!stillThere) setSelectedId(null);
-  }, [page, selectedId]);
+  }, [page, selectedId, kindSegment]);
 
   if (selectedTenantId === null) {
     return (
@@ -373,42 +380,47 @@ export function LibraryRoute() {
 
   return (
     <QueryView query={page} label="library artifacts">
-      {(rows) => (
-        <LibraryPage
-          artifacts={mapArtifactListToSummaries(rows.data)}
-          uploading={uploading}
-          uploadError={uploadError}
-          query={searchQuery}
-          onQueryChange={setSearchQuery}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          preview={detail.kind === "ready" ? detail.data : null}
-          previewLoading={detail.kind === "loading" && selectedId !== null}
-          previewError={
-            detail.kind === "error" && selectedId !== null
-              ? detail.message
-              : null
-          }
-          onUpload={(files) => {
-            void (async () => {
-              setUploading(true);
-              setUploadError(null);
-              try {
-                await uploadArtifactFiles(selectedTenantId, files);
-                await queryClient.invalidateQueries({
-                  queryKey: tenantKeys.artifacts(selectedTenantId),
-                });
-              } catch (err) {
-                setUploadError(
-                  err instanceof Error ? err.message : String(err),
-                );
-              } finally {
-                setUploading(false);
-              }
-            })();
-          }}
-        />
-      )}
+      {(rows) => {
+        const artifacts = mapArtifactListToSummaries(rows.data).filter((row) =>
+          artifactMatchesLibraryKindSegment(row, kindSegment),
+        );
+        return (
+          <LibraryPage
+            artifacts={artifacts}
+            uploading={uploading}
+            uploadError={uploadError}
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            preview={detail.kind === "ready" ? detail.data : null}
+            previewLoading={detail.kind === "loading" && selectedId !== null}
+            previewError={
+              detail.kind === "error" && selectedId !== null
+                ? detail.message
+                : null
+            }
+            onUpload={(files) => {
+              void (async () => {
+                setUploading(true);
+                setUploadError(null);
+                try {
+                  await uploadArtifactFiles(selectedTenantId, files);
+                  await queryClient.invalidateQueries({
+                    queryKey: tenantKeys.artifacts(selectedTenantId),
+                  });
+                } catch (err) {
+                  setUploadError(
+                    err instanceof Error ? err.message : String(err),
+                  );
+                } finally {
+                  setUploading(false);
+                }
+              })();
+            }}
+          />
+        );
+      }}
     </QueryView>
   );
 }

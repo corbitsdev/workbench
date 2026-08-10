@@ -41,9 +41,9 @@ html {
   overflow: hidden;
 }
 
-/* ~17.5rem matches mock --col2-w; clamps down on laptop widths. */
+/* Mock --col2-w: 18rem (fixed; not a clamp mid). */
 :root {
-  --shell-contextual-width: clamp(14rem, 17.5rem, 20rem);
+  --shell-contextual-width: 18rem;
   --shell-canvas-width: min(36rem, 42vw);
   --shell-rail-brand: #e98428;
   --shell-rail-brand-hover: #d47420;
@@ -67,10 +67,53 @@ html {
   flex-direction: column;
 }
 
-/* Column 2: SidebarPanel root; width overrides the library default (w-72). */
+/* Column 2: SidebarPanel root; width overrides the library default (w-72).
+   Mock: --col2-w 18rem, pure ground, light right border. */
 .shell-contextual-panel {
   width: var(--shell-contextual-width);
   min-width: var(--shell-contextual-width);
+  background: var(--background, #fff);
+  border-right: 1px solid
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+}
+
+/* Mock .col2-head: tight title row, not a tall bordered chrome band. */
+.shell-contextual-panel [data-slot="sidebar-panel-header"] {
+  min-height: 0;
+  height: auto;
+  padding: 0.85rem 0.85rem 0.5rem;
+  border-bottom: none;
+  gap: 0.4rem;
+}
+
+.shell-contextual-panel [data-slot="sidebar-panel-header"] h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.shell-contextual-panel [data-slot="sidebar-panel-body"] {
+  padding: 0.1rem 0.55rem 0.5rem;
+  scrollbar-width: thin;
+}
+
+.shell-contextual-panel [data-slot="sidebar-panel-footer"] {
+  padding: 0.45rem 0.7rem 0.7rem;
+  border-top: 1px solid
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+  background: var(--background, #fff);
+}
+
+/* Mock .section labels in col2 lists. */
+.shell-contextual-panel .panel-band-heading,
+.shell-contextual-panel .panel-band-subheading {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground, #8a8080);
+  padding: 0.65rem 0.45rem 0.3rem;
+  margin: 0;
 }
 
 .panel-band {
@@ -86,8 +129,8 @@ html {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--border);
+  padding: 0 0.7rem 0.55rem;
+  border-bottom: none;
 }
 
 .panel-band-page-specific {
@@ -116,10 +159,12 @@ html {
 }
 
 .panel-page-subtitle {
-  margin: 0.125rem 0 0;
-  font-size: 0.75rem;
+  margin: 0;
+  padding: 0 0.85rem 0.35rem;
+  font-size: 0.72rem;
   line-height: 1.35;
   color: var(--muted-foreground);
+  border-bottom: none;
 }
 
 .panel-page-tools {
@@ -132,7 +177,16 @@ html {
 .panel-page-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: 0.3rem;
+}
+
+/* Mock .qa-chip strip. */
+.panel-page-actions [data-slot="button"] {
+  height: 1.7rem;
+  padding: 0 0.55rem;
+  border-radius: 0;
+  font-size: 0.72rem;
+  font-weight: 550;
 }
 
 .panel-band-heading {
@@ -354,28 +408,76 @@ html {
   border-right: none;
 }
 
-/* Column 1: brand-orange rail matching the shell mock. The rail itself is
-   `@corbits/react-ui`'s `SidebarRail`; brand paint is applied here so the
-   workbench pin does not need a react-ui bump to ship chrome parity. Footer
-   docks (theme + avatar) compose below the page icons. */
-.shell-brand-rail[data-slot="sidebar-rail"] {
+/* Column 1: brand-orange rail matching the shell mock. Mark sits above
+   SidebarRail; footer holds Search / Inbox / Settings / theme / avatar. */
+.shell-brand-rail-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  width: 3.4rem;
+  flex-shrink: 0;
   background: var(--shell-rail-brand);
-  border-right-color: var(--shell-rail-brand-hover);
   color: var(--shell-rail-on-brand);
+}
+
+.shell-rail-mark {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  margin: 0.65rem 0 0.55rem;
+  padding: 0.22rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--shell-rail-on-brand);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 140ms ease;
+}
+
+.shell-rail-mark:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.shell-rail-mark:focus-visible {
+  outline: 2px solid var(--shell-rail-on-brand);
+  outline-offset: 2px;
+}
+
+.shell-rail-mark-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.shell-brand-rail[data-slot="sidebar-rail"] {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background: transparent;
+  border-right: none;
+  color: var(--shell-rail-on-brand);
+  padding-top: 0;
 }
 
 .shell-brand-rail [data-slot="sidebar-rail-item"] {
-  color: color-mix(in srgb, var(--shell-rail-on-brand) 72%, transparent);
+  color: color-mix(in srgb, var(--shell-rail-on-brand) 78%, transparent);
+  border-radius: 0.6rem;
+  opacity: 0.9;
 }
 
 .shell-brand-rail [data-slot="sidebar-rail-item"]:hover {
-  background: var(--shell-rail-brand-hover);
+  background: rgba(0, 0, 0, 0.1);
   color: var(--shell-rail-on-brand);
+  opacity: 1;
 }
 
 .shell-brand-rail [data-slot="sidebar-rail-item"][aria-current="page"] {
-  background: color-mix(in srgb, #000 18%, var(--shell-rail-brand));
+  background: rgba(0, 0, 0, 0.16);
   color: var(--shell-rail-on-brand);
+  opacity: 1;
 }
 
 .shell-brand-rail [data-slot="sidebar-rail-item-label"] {
@@ -391,23 +493,252 @@ html {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.15rem;
   padding-bottom: 0.35rem;
+  width: 100%;
+}
+
+.shell-rail-footer-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.6rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--shell-rail-on-brand) 78%, transparent);
+  cursor: pointer;
+  opacity: 0.78;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+.shell-rail-footer-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--shell-rail-on-brand);
+  opacity: 1;
+}
+
+.shell-rail-footer-btn[aria-current="page"] {
+  background: rgba(0, 0, 0, 0.16);
+  color: var(--shell-rail-on-brand);
+  opacity: 1;
+}
+
+.shell-rail-footer-btn:focus-visible {
+  outline: 2px solid var(--shell-rail-on-brand);
+  outline-offset: 2px;
+}
+
+.shell-rail-footer-btn svg {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .shell-rail-avatar-btn {
   display: grid;
   place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
   padding: 0;
   border: 0;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.18);
   cursor: pointer;
-  border-radius: 0.25rem;
+  border-radius: 0;
+  color: var(--shell-rail-on-brand);
 }
 
 .shell-rail-avatar-btn:focus-visible {
   outline: 2px solid var(--shell-rail-on-brand);
   outline-offset: 2px;
+}
+
+/* Mock-dense channel rows in col2: one line — stack, name, shared/live, time, unread. */
+.shell-ch-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.55rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.32rem 0.42rem;
+  border-radius: 0.6rem;
+  color: var(--muted-foreground, var(--ui-fg-muted));
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.shell-ch-row:hover {
+  background: color-mix(in srgb, var(--foreground, #2b2627) 5%, transparent);
+  color: var(--foreground, var(--ui-fg));
+}
+
+.shell-ch-row[aria-current="true"],
+.shell-ch-row[data-active="true"] {
+  background: var(--card, #fff);
+  color: var(--foreground, var(--ui-fg));
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+}
+
+.shell-ch-stack {
+  display: flex;
+  width: 1.35rem;
+  height: 1.4rem;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.shell-ch-stack span {
+  position: absolute;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 0;
+  border: 1.5px solid var(--background, #fff);
+  display: grid;
+  place-items: center;
+  font-size: 0.55rem;
+  font-weight: 700;
+  background: var(--muted, #f4f4f4);
+  color: var(--foreground, #2b2627);
+}
+
+.shell-ch-stack span:nth-child(1) {
+  left: 0;
+  top: 0.2rem;
+  z-index: 3;
+}
+
+.shell-ch-stack span:nth-child(2) {
+  left: 0.45rem;
+  top: 0.2rem;
+  z-index: 2;
+  background: color-mix(in srgb, var(--muted, #e8e8e8) 100%, #e8e8e8);
+}
+
+.shell-ch-stack span:nth-child(3) {
+  left: 0.9rem;
+  top: 0.2rem;
+  z-index: 1;
+}
+
+.shell-ch-stack span[data-agent="true"] {
+  background: var(--primary, #e98428);
+  color: var(--primary-foreground, #2b2627);
+}
+
+.shell-ch-meta {
+  min-width: 0;
+}
+
+.shell-ch-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.shell-ch-name {
+  font-weight: 580;
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mock .shared-badge — only rendered when shared metadata exists. */
+.shell-ch-shared-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--info, #1f5fa8);
+  background: color-mix(in srgb, var(--info, #1f5fa8) 10%, transparent);
+  padding: 0.1rem 0.3rem;
+  flex-shrink: 0;
+}
+
+/* Mock .live — activity pulse; only when live signal exists and no unread. */
+.shell-ch-live {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 0;
+  background: var(--ok, #37904a);
+  flex-shrink: 0;
+  animation: shell-ch-pulse 2s ease infinite;
+}
+
+@keyframes shell-ch-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok, #37904a) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+.shell-ch-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.28rem;
+  flex-shrink: 0;
+}
+
+.shell-ch-time {
+  font-size: 0.66rem;
+  color: var(--muted-foreground, var(--ui-fg-muted));
+}
+
+/* Mock .badge — unread count; only when count > 0. */
+.shell-ch-badge {
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 0;
+  background: var(--primary, #e98428);
+  color: var(--primary-foreground, #2b2627);
+  font-size: 0.62rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.shell-ch-row-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 0.15rem;
+  width: 100%;
+}
+
+.shell-ch-row-wrap .shell-ch-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-ch-row-menu {
+  opacity: 0;
+  flex-shrink: 0;
+  align-self: center;
+  transition: opacity 120ms ease;
+}
+
+.shell-ch-row-wrap:hover .shell-ch-row-menu,
+.shell-ch-row-wrap:focus-within .shell-ch-row-menu {
+  opacity: 1;
+}
+
+/* ChannelsBand search — mock searchBox at top of col2 body. */
+.shell-channels-search {
+  margin: 0 0 0.35rem;
 }
 
 .shell-rail-identity {

@@ -120,3 +120,14 @@ export function runRefFromItem(
     ? { id: ref.id }
     : { id: ref.id, label: ref.label };
 }
+
+export function channelRefFromItem(
+  item: Pick<InboxItem, "refs">,
+): { id: string; label?: string } | null {
+  if (item.refs === undefined) return null;
+  const ref = item.refs.find((r) => r.kind === "channel");
+  if (ref === undefined) return null;
+  return ref.label === undefined
+    ? { id: ref.id }
+    : { id: ref.id, label: ref.label };
+}

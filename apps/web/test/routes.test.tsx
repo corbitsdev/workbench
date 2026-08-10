@@ -45,21 +45,32 @@ function panelPageTitle(markup: string): string | undefined {
   );
 }
 
-/** The rail marks exactly one page active at a time (an icon+label button,
- * not a link — see `shell/rail.tsx`); this resolves its visible caption so a
- * test can confirm it is the *right* page, not merely that some page is
- * active. The caption lives in `SidebarRail`'s `sidebar-rail-item-label`
- * slot (its `showLabels` mode), keyed off the active item's `data-slot`. */
+/** The rail marks exactly one page active at a time. Primary destinations
+ * are `SidebarRail` items (`aria-current` + `sidebar-rail-item-label` when
+ * `showLabels` is on). Inbox / Settings live in the footer as icon buttons
+ * with `aria-label` + `aria-current` (see `shell/rail.tsx` FooterIconButton).
+ * Returns the active destination's label so tests confirm the *right* page. */
 function activeRailLabel(markup: string): string | undefined {
-  const active =
+  const primary =
     /data-slot="sidebar-rail-item"[^>]*aria-current="page"[^>]*>[\s\S]*?<\/button>/.exec(
       markup,
     );
-  if (active === null) return undefined;
-  const label = /data-slot="sidebar-rail-item-label"[^>]*>([^<]*)<\/span>/.exec(
-    active[0],
-  );
-  return label?.[1];
+  if (primary !== null) {
+    const label =
+      /data-slot="sidebar-rail-item-label"[^>]*>([^<]*)<\/span>/.exec(
+        primary[0],
+      );
+    if (label?.[1] !== undefined) return label[1];
+  }
+  // Footer utility (Inbox / Settings): aria-label is the accessible name.
+  const footer =
+    /class="shell-rail-footer-btn"[^>]*aria-label="([^"]+)"[^>]*aria-current="page"/.exec(
+      markup,
+    ) ??
+    /class="shell-rail-footer-btn"[^>]*aria-current="page"[^>]*aria-label="([^"]+)"/.exec(
+      markup,
+    );
+  return footer?.[1];
 }
 
 const NAV_PATHS = new Set(NAV_ROUTES.map((route) => route.path));

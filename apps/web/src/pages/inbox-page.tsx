@@ -18,11 +18,13 @@ import { useEffect, useMemo, useState } from "react";
 import { approveApproval, rejectApproval, useAPIQuery } from "../api";
 import type { APIQuery } from "../api";
 import { useBench } from "../bench-context";
+import { channelPath } from "../channel-path";
 import {
   InboxCountsSchema,
   InboxItemDetailSchema,
   InboxListSchema,
   approvalIdFromItem,
+  channelRefFromItem,
   clearDoneInbox,
   inboxCountsPath,
   inboxDetailPath,
@@ -127,6 +129,7 @@ function InboxDetail({
   onDone,
   onSnooze,
   onOpenRun,
+  onOpenChannel,
 }: {
   readonly detail: APIQuery<InboxItemDetail>;
   readonly busy: boolean;
@@ -136,6 +139,7 @@ function InboxDetail({
   readonly onDone: (id: string) => void;
   readonly onSnooze: (id: string) => void;
   readonly onOpenRun: (runId: string) => void;
+  readonly onOpenChannel: (channelId: string) => void;
 }) {
   if (detail.kind === "loading") {
     return (
@@ -161,6 +165,7 @@ function InboxDetail({
   const item = detail.data;
   const approvalId = approvalIdFromItem(item);
   const run = runRefFromItem(item);
+  const channel = channelRefFromItem(item);
 
   return (
     <article
@@ -214,13 +219,22 @@ function InboxDetail({
             View run trace
           </Button>
         )}
+        {channel !== null && (
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => onOpenChannel(channel.id)}
+          >
+            Open in channel
+          </Button>
+        )}
         {item.group === "action" ? (
           <Button
             variant="secondary"
             disabled={busy}
             onClick={() => onSnooze(item.id)}
           >
-            Snooze
+            Snooze 1h
           </Button>
         ) : (
           <Button
@@ -386,24 +400,28 @@ export function InboxPage({
               detail={detailQuery}
               busy={busy}
               actionError={actionError}
-              onApprove={(approvalId) =>
+              onApprove={(approvalId) => {
+                const itemId = selectedId;
+                if (itemId === null) return;
                 runAction(
                   () =>
-                    approveApproval(selectedTenantId, approvalId).then(
-                      () => undefined,
+                    approveApproval(selectedTenantId, approvalId).then(() =>
+                      markInboxItemDone(selectedTenantId, itemId),
                     ),
-                  selectedId ?? undefined,
-                )
-              }
-              onDeny={(approvalId) =>
+                  itemId,
+                );
+              }}
+              onDeny={(approvalId) => {
+                const itemId = selectedId;
+                if (itemId === null) return;
                 runAction(
                   () =>
-                    rejectApproval(selectedTenantId, approvalId).then(
-                      () => undefined,
+                    rejectApproval(selectedTenantId, approvalId).then(() =>
+                      markInboxItemDone(selectedTenantId, itemId),
                     ),
-                  selectedId ?? undefined,
-                )
-              }
+                  itemId,
+                );
+              }}
               onDone={(id) =>
                 runAction(() => markInboxItemDone(selectedTenantId, id), id)
               }
@@ -412,6 +430,9 @@ export function InboxPage({
               }
               onOpenRun={(runId) => {
                 navigate(`/insights/runs/${encodeURIComponent(runId)}`);
+              }}
+              onOpenChannel={(channelId) => {
+                navigate(channelPath(channelId));
               }}
             />
           )

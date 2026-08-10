@@ -80,11 +80,17 @@ const RUN_STATUS_TONE: Record<string, BadgeTone> = {
   cancelled: "neutral",
 };
 
-function lastResultLabel(runs: readonly RoutineRun[]): string {
-  const [latest] = runs;
-  if (latest === undefined) return "Never run";
-  const status = latest.run?.status;
-  return typeof status === "string" ? status : "Started";
+/** One calm sentence under the routine name; deliver-to only when known. */
+function routineDetailSentence(
+  routine: Routine,
+  channels: readonly Channel[],
+): string {
+  const when = cadenceLabel(routine.trigger);
+  const channel = channels.find((c) => c.id === routine.deliveryChannelId);
+  if (channel !== undefined) {
+    return `${when}, delivers to ${channel.title}.`;
+  }
+  return `${when}.`;
 }
 
 function draftedStepsFromInput(
@@ -917,14 +923,8 @@ export function RoutinesListPage({
         onOpenChange={setCreateOpen}
       />
 
-      <div className="flex items-center justify-between gap-2 border-b border-[var(--ui-border)] px-3 py-2">
-        <h1 className="text-sm font-semibold text-[var(--ui-fg)]">Routines</h1>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus /> New routine
-        </Button>
-      </div>
-
-      {/* List lives in shell col2; stage is detail only. */}
+      {/* List lives in shell col2; stage is detail only. Create is
+          pageBand / workbench:routines:create — no stage chrome header. */}
       <div className="flex min-h-0 flex-1 flex-col">
         {selected === null ? (
           <div className="flex flex-1 items-center justify-center p-6">
@@ -932,7 +932,7 @@ export function RoutinesListPage({
               <RichEmptyState
                 icon={<Clock />}
                 title="No routines yet"
-                description="Create a routine to run a workflow on a schedule or fire it manually whenever you need it."
+                description="Create one from a workflow or a prompt."
                 actions={[
                   {
                     label: "New routine",
@@ -957,11 +957,7 @@ export function RoutinesListPage({
                   {selected.name}
                 </h2>
                 <p className="mt-0.5 text-xs text-[var(--ui-fg-muted)]">
-                  {cadenceLabel(selected.trigger)}
-                  {" · "}
-                  {selected.enabled ? "On" : "Off"}
-                  {" · last: "}
-                  {lastResultLabel(selectedRuns)}
+                  {routineDetailSentence(selected, channels)}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1233,6 +1229,15 @@ export function RoutinesRoute({
       : allRuns;
 
   const openRoutineId = routineIdFromPath(path);
+
+  // Mock master-detail: bare /routines with a non-empty list opens the first.
+  useEffect(() => {
+    if (openRoutineId !== null) return;
+    if (routines.kind !== "ready" || routines.data.length === 0) return;
+    const first = routines.data[0];
+    if (first === undefined) return;
+    navigate(`${ROUTINES_PATH_PREFIX}/${encodeURIComponent(first.id)}`);
+  }, [openRoutineId, routines, navigate]);
 
   // Mobile full-page detail when deep-linked; desktop uses the split pane.
   const isNarrow =

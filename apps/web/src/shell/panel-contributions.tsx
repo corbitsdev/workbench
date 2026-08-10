@@ -16,22 +16,31 @@ import { CHAT_STRINGS, patchChannelSettings } from "@corbits/chat-ui";
 import type { Channel } from "@corbits/chat-ui";
 import {
   Bell,
+  Bot,
   Hash,
   MessageSquare,
   MoreHorizontal,
+  Sparkles,
   Workflow,
 } from "lucide-react";
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import { useAgentDirectory } from "../agents-api";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
 import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
+import {
+  filterDefinitions,
+  purposeAgentDefinitions,
+} from "../pages/agents-directory";
+import { agentIdFromPath } from "../pages/agents-page";
+import { skillIdFromPath } from "../pages/skills-page";
+import { useSessionSkills } from "../pages/skills-session";
 import { tenantKeys } from "../query-client";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
 import { useBenchActivity } from "./bench-activity";
-import { resolveChannelTitle } from "./channel-context";
 import {
   registerPanelContribution,
   type PanelRenderContext,
@@ -94,22 +103,35 @@ export function channelDetails(
 }
 
 /**
- * One channel row in the panel list, with a hover-revealed ellipsis menu for
- * rename (inline) and the pin/unpin archive toggle. Both go through the
- * single `PATCH /channels/:id/settings` route via `patchChannelSettings`.
- * The rename keeps a local display title so the row updates the moment the
- * PATCH resolves, without waiting for the band's activity refetch.
+ * Optional row signals the mock shows (shared / live / time / unread). The
+ * channel wire today only carries id/title/kind/pinned/participants — so these
+ * stay undefined until the list API grows them. Render only when present; never
+ * invent counts or timestamps.
+ */
+type ChannelRowSignals = {
+  readonly sharedLabel?: string;
+  readonly live?: boolean;
+  readonly time?: string;
+  readonly unread?: number;
+};
+
+/**
+ * One channel row in the panel list — mock-dense nav row: avatar stack, name,
+ * optional shared/live, optional time + unread badge, hover menu for rename /
+ * pin. Mutations go through `PATCH /channels/:id/settings`.
  */
 function ChannelPanelRow({
   channel,
   active,
   tenantId,
   onSelect,
+  signals = {},
 }: {
   readonly channel: Channel;
   readonly active: boolean;
   readonly tenantId: string;
   readonly onSelect: () => void;
+  readonly signals?: ChannelRowSignals;
 }) {
   const [title, setTitle] = useState(channel.title);
   const [renaming, setRenaming] = useState(false);
@@ -172,34 +194,78 @@ function ChannelPanelRow({
     );
   }
 
+  const displayTitle = title || CHAT_STRINGS.unnamedChannel;
+  const faces = channel.participants.slice(0, 3);
+  const { sharedLabel, live, time, unread } = signals;
+  const hasUnread = typeof unread === "number" && unread > 0;
+
   return (
-    <div className="chat-sidebar-row">
+    <div className="shell-ch-row-wrap">
       <button
         type="button"
-        className="chat-sidebar-item"
+        className="shell-ch-row"
         aria-current={active ? "true" : undefined}
-        data-active={active}
+        data-active={active ? "true" : undefined}
         onClick={onSelect}
       >
-        <span>{title || CHAT_STRINGS.unnamedChannel}</span>
+        <span className="shell-ch-stack" aria-hidden="true">
+          {faces.length === 0 ? (
+            <span>{displayTitle.slice(0, 1).toUpperCase()}</span>
+          ) : (
+            faces.map((p) => (
+              <span
+                key={p.address}
+                data-agent={
+                  p.address.includes("agent") || p.address.includes("ins_")
+                    ? "true"
+                    : undefined
+                }
+              >
+                {p.handle.slice(0, 1).toUpperCase()}
+              </span>
+            ))
+          )}
+        </span>
+        <span className="shell-ch-meta">
+          <span className="shell-ch-name-row">
+            <span className="shell-ch-name">{displayTitle}</span>
+            {sharedLabel !== undefined && sharedLabel !== "" ? (
+              <span className="shell-ch-shared-badge" title={sharedLabel}>
+                shared
+              </span>
+            ) : null}
+            {/* Mock: live pulse only when no unread badge. */}
+            {live === true && !hasUnread ? (
+              <span className="shell-ch-live" title="Active" />
+            ) : null}
+          </span>
+        </span>
+        <span className="shell-ch-right">
+          {time !== undefined && time !== "" ? (
+            <span className="shell-ch-time">{time}</span>
+          ) : null}
+          {hasUnread ? <span className="shell-ch-badge">{unread}</span> : null}
+        </span>
       </button>
-      <Menu>
-        <MenuTrigger asChild>
-          <button
-            type="button"
-            className="chat-sidebar-row-menu-trigger"
-            aria-label={CHAT_STRINGS.rowMenuLabel}
-          >
-            <MoreHorizontal />
-          </button>
-        </MenuTrigger>
-        <MenuContent align="start">
-          <MenuItem onSelect={startRename}>{renameLabel}</MenuItem>
-          <MenuItem onSelect={() => void togglePinned()}>
-            {archiveLabel}
-          </MenuItem>
-        </MenuContent>
-      </Menu>
+      <div className="shell-ch-row-menu">
+        <Menu>
+          <MenuTrigger asChild>
+            <button
+              type="button"
+              className="chat-sidebar-row-menu-trigger"
+              aria-label={CHAT_STRINGS.rowMenuLabel}
+            >
+              <MoreHorizontal />
+            </button>
+          </MenuTrigger>
+          <MenuContent align="start">
+            <MenuItem onSelect={startRename}>{renameLabel}</MenuItem>
+            <MenuItem onSelect={() => void togglePinned()}>
+              {archiveLabel}
+            </MenuItem>
+          </MenuContent>
+        </Menu>
+      </div>
     </div>
   );
 }
@@ -231,21 +297,6 @@ function ChannelDetails({ channel }: { readonly channel: Channel }) {
       </dl>
     </div>
   );
-}
-
-/** Live page-band title for an open channel — falls back while loading. */
-function ChannelPageTitle({
-  channelId,
-  fallback,
-}: {
-  readonly channelId: string | null;
-  readonly fallback: string;
-}) {
-  const { selectedTenantId } = useBench();
-  const activity = useBenchActivity(selectedTenantId);
-  const title = resolveChannelTitle(activity, channelId);
-  if (title !== null) return title;
-  return fallback;
 }
 
 /**
@@ -290,6 +341,7 @@ function ChannelsBand({
   const { selectedTenantId } = useBench();
   const activity = useBenchActivity(selectedTenantId);
   const activeId = channelIdFromPath(path);
+  const [query, setQuery] = useState("");
 
   if (activity.kind === "loading") {
     return <Skeleton className="shell-activity-skeleton" />;
@@ -324,6 +376,17 @@ function ChannelsBand({
     );
   }
 
+  const q = query.trim().toLowerCase();
+  const filtered =
+    q === ""
+      ? all
+      : all.filter((channel) => {
+          const name = (
+            channel.title || CHAT_STRINGS.unnamedChannel
+          ).toLowerCase();
+          return name.includes(q);
+        });
+
   const selected =
     activeId === null
       ? undefined
@@ -334,33 +397,51 @@ function ChannelsBand({
   for (const bucket of CHANNEL_BUCKETS) {
     byBucket.set(bucket.id, []);
   }
-  for (const channel of all) {
+  for (const channel of filtered) {
     const id = assignChannelBucket(channel);
     byBucket.get(id)?.push(channel);
   }
 
+  const hasVisibleRows = filtered.length > 0;
+
   return (
-    <div className="panel-stack">
+    <div className="panel-stack" aria-label="Channels">
+      <div className="shell-channels-search">
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search channels…"
+          aria-label="Search channels"
+        />
+      </div>
       {selected !== undefined ? <ChannelDetails channel={selected} /> : null}
-      {CHANNEL_BUCKETS.map((bucket) => {
-        const rows = byBucket.get(bucket.id) ?? [];
-        if (rows.length === 0 && bucket.hideWhenEmpty) return null;
-        if (rows.length === 0) return null;
-        return (
-          <div key={bucket.id} className="panel-stack-group">
-            <p className="panel-band-subheading">{bucket.label}</p>
-            {rows.map((channel) => (
-              <ChannelPanelRow
-                key={channel.id}
-                channel={channel}
-                active={channel.id === activeId}
-                tenantId={tenantId}
-                onSelect={() => onOpenInCanvas(channel.id)}
-              />
-            ))}
-          </div>
-        );
-      })}
+      {!hasVisibleRows ? (
+        <EmptyState
+          icon={<MessageSquare />}
+          title="No matching channels"
+          description={`Nothing matches “${query.trim()}”.`}
+        />
+      ) : (
+        CHANNEL_BUCKETS.map((bucket) => {
+          const rows = byBucket.get(bucket.id) ?? [];
+          if (rows.length === 0 && bucket.hideWhenEmpty) return null;
+          if (rows.length === 0) return null;
+          return (
+            <div key={bucket.id} className="panel-stack-group">
+              <p className="panel-band-subheading">{bucket.label}</p>
+              {rows.map((channel) => (
+                <ChannelPanelRow
+                  key={channel.id}
+                  channel={channel}
+                  active={channel.id === activeId}
+                  tenantId={tenantId}
+                  onSelect={() => onOpenInCanvas(channel.id)}
+                />
+              ))}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -455,6 +536,149 @@ function RoutinesFeedBand({
             selected={selectedId === routine.id}
             onSelect={() =>
               onNavigate(`/routines/${encodeURIComponent(routine.id)}`)
+            }
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+function AgentsFeedBand({
+  path,
+  onNavigate,
+}: {
+  readonly path: string;
+  readonly onNavigate: (to: string) => void;
+}) {
+  const { selectedTenantId } = useBench();
+  const [query, setQuery] = useState("");
+  const selectedId = agentIdFromPath(path);
+  const directory = useAgentDirectory(selectedTenantId ?? undefined);
+
+  if (selectedTenantId === null) {
+    return (
+      <EmptyState
+        icon={<Bot />}
+        title="No bench selected"
+        description="Choose a bench from the rail to see agents."
+      />
+    );
+  }
+  if (directory.kind === "loading") {
+    return <Skeleton className="shell-activity-skeleton" />;
+  }
+  if (directory.kind === "error") {
+    return (
+      <EmptyState
+        icon={<Bot />}
+        title="Couldn't load agents"
+        description={directory.message}
+      />
+    );
+  }
+  if (directory.kind === "unauthenticated") {
+    return (
+      <EmptyState
+        icon={<Bot />}
+        title="Sign in required"
+        description="Sign in to see agents for this bench."
+      />
+    );
+  }
+
+  const definitions = purposeAgentDefinitions(directory.data.definitions);
+  const items = filterDefinitions(definitions, query);
+
+  return (
+    <div className="panel-stack" aria-label="Agents">
+      <Input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search agents"
+        aria-label="Search agents"
+      />
+      {definitions.length === 0 ? (
+        <EmptyState
+          icon={<Bot />}
+          title="No agents yet"
+          description="Create an agent to start chats or invite into a channel."
+        />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={<Bot />}
+          title="No matching agents"
+          description={`Nothing matches “${query.trim()}”.`}
+        />
+      ) : (
+        items.map((definition) => (
+          <SidebarItemRow
+            key={definition.id}
+            name={definition.name}
+            meta={definition.status}
+            selected={selectedId === definition.id}
+            onSelect={() =>
+              onNavigate(`/agents/${encodeURIComponent(definition.id)}`)
+            }
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+function SkillsFeedBand({
+  path,
+  onNavigate,
+}: {
+  readonly path: string;
+  readonly onNavigate: (to: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const selectedId = skillIdFromPath(path);
+  const skills = useSessionSkills();
+
+  const q = query.trim().toLowerCase();
+  const items =
+    q === ""
+      ? skills
+      : skills.filter(
+          (s) =>
+            s.name.toLowerCase().includes(q) ||
+            s.description.toLowerCase().includes(q),
+        );
+
+  return (
+    <div className="panel-stack" aria-label="Skills">
+      {skills.length > 0 ? (
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search skills"
+          aria-label="Search skills"
+        />
+      ) : null}
+      {skills.length === 0 ? (
+        <EmptyState
+          icon={<Sparkles />}
+          title="No skills yet"
+          description="No skill registry on the hub yet. Drafts you create stay in this session and list here."
+        />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={<Sparkles />}
+          title="No matching skills"
+          description={`Nothing matches “${query.trim()}”.`}
+        />
+      ) : (
+        items.map((skill) => (
+          <SidebarItemRow
+            key={skill.id}
+            name={skill.name}
+            meta={skill.sessionLocal ? `${skill.access} · draft` : skill.access}
+            selected={selectedId === skill.id}
+            onSelect={() =>
+              onNavigate(`/skills/${encodeURIComponent(skill.id)}`)
             }
           />
         ))
@@ -652,14 +876,10 @@ export function ensurePanelContributions(): void {
     id: "channels",
     match: (path) => isChannelPath(path),
     pageBand: (ctx) => {
-      const channelId = channelIdFromPath(ctx.path);
       return {
         // Header title must stay a string for SidebarPanelHeader (react-ui pin).
+        // Mock col2 head is title-only — no subtitle under "Channels".
         title: "Channels",
-        subtitle:
-          channelId === null
-            ? "Open a conversation in the canvas"
-            : "Channel open in the canvas",
         actions: [
           {
             id: "new-channel",
@@ -672,12 +892,6 @@ export function ensurePanelContributions(): void {
             },
           },
         ],
-        stats: (
-          <ChannelPageTitle
-            channelId={channelId}
-            fallback="No channel selected"
-          />
-        ),
       };
     },
     pageSpecific: (ctx) => (
@@ -715,7 +929,7 @@ export function ensurePanelContributions(): void {
       ],
     }),
     pageSpecific: (ctx) => (
-      <LiveActivityBand path={ctx.path} onNavigate={ctx.onNavigate} />
+      <AgentsFeedBand path={ctx.path} onNavigate={ctx.onNavigate} />
     ),
   });
 
@@ -777,16 +991,22 @@ export function ensurePanelContributions(): void {
   registerPanelContribution({
     id: "skills",
     match: (path) => pathMatches("/skills", path),
-    pageBand: defaultBand(
-      "Skills",
-      "Packaged capabilities an agent definition can pick up",
-    ),
-    pageSpecific: () => (
-      <div className="panel-stack" aria-label="Skills filters">
-        <SidebarItemRow name="All skills" selected meta="session" />
-        <SidebarItemRow name="Shared" />
-        <SidebarItemRow name="Private" />
-      </div>
+    pageBand: (ctx) => ({
+      title: "Skills",
+      subtitle: "Packaged capabilities an agent definition can pick up",
+      actions: [
+        {
+          id: "create-skill",
+          label: "Create skill",
+          onSelect: () => {
+            window.dispatchEvent(new CustomEvent("workbench:skills:create"));
+            if (!pathMatches("/skills", ctx.path)) ctx.onNavigate("/skills");
+          },
+        },
+      ],
+    }),
+    pageSpecific: (ctx) => (
+      <SkillsFeedBand path={ctx.path} onNavigate={ctx.onNavigate} />
     ),
   });
 

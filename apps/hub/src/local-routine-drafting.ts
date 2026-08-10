@@ -70,14 +70,30 @@ export function proposedNameFromPrompt(prompt: string): string | undefined {
   return name === "" ? undefined : name;
 }
 
-export function createLocalRoutineDrafting(): RoutineDraftingPort {
+export type LocalRoutineDraftingOptions = {
+  /**
+   * Optional host hook: pick a workflow definition for the draft when the
+   * prompt alone cannot name one. Return null when the tenant has none so
+   * the draft keeps definitionId null honestly.
+   */
+  readonly resolveDefinitionId?: (tenantId: string) => Promise<string | null>;
+};
+
+export function createLocalRoutineDrafting(
+  options: LocalRoutineDraftingOptions = {},
+): RoutineDraftingPort {
   return {
-    async propose({ prompt }) {
+    async propose({ prompt, tenantId }) {
       const steps = proposedStepsFromPrompt(prompt);
       const name = proposedNameFromPrompt(prompt);
+      const definitionId =
+        options.resolveDefinitionId !== undefined
+          ? await options.resolveDefinitionId(tenantId)
+          : null;
       return {
         steps,
         ...(name !== undefined ? { name } : {}),
+        ...(definitionId !== null ? { definitionId } : {}),
       };
     },
   };

@@ -67,6 +67,7 @@ describe("RoutinesListPage", () => {
       <RoutinesListPage routines={ready([])} {...listProps} />,
     );
     expect(markup).toContain("No routines yet");
+    expect(markup).toContain("Create one from a workflow or a prompt.");
     expect(markup).toContain("New routine");
   });
 
@@ -105,9 +106,19 @@ describe("RoutinesListPage", () => {
         runHistories={runHistories}
         selectedId={routine.id}
         definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+        channels={[
+          {
+            id: "ch_1",
+            title: "Ops",
+            kind: "channel",
+            pinned: false,
+            participants: [],
+          },
+        ]}
       />,
     );
     expect(markup).toContain("Morning brief");
+    expect(markup).toContain("Daily at 09:00 UTC, delivers to Ops.");
     expect(markup).toContain("Pull signups");
     expect(markup).toContain("Recent runs");
     expect(markup).toContain("completed");
