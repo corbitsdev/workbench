@@ -29,7 +29,6 @@ describe("empty states", () => {
     expect(markup).toContain(
       "Upload a file or wait for agents and workflows to produce artifacts",
     );
-
   });
 
   test("skills renders the shell with an honest empty state and Create action", () => {

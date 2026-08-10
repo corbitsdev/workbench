@@ -48,9 +48,8 @@ function sampleListItem(id: string, tenantId: string) {
 function memoryStore(): ArtifactRoutesStore & {
   rows: Array<ReturnType<typeof sampleListItem> & { content: string }>;
 } {
-  const rows: Array<
-    ReturnType<typeof sampleListItem> & { content: string }
-  > = [];
+  const rows: Array<ReturnType<typeof sampleListItem> & { content: string }> =
+    [];
   return {
     rows,
     async list(tenantId, opts) {

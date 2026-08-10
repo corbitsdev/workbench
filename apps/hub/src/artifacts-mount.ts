@@ -58,5 +58,4 @@ export async function mountArtifacts(
     "Artifacts engine mounted — artifacts persist as versioned rows by kind",
   );
   return { db, contentStore: InlineContentStore };
-
 }

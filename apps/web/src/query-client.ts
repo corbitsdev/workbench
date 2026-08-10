@@ -64,7 +64,9 @@ export function pathToQueryKey(path: string): readonly unknown[] {
   if (needsYou?.[1] !== undefined) return tenantKeys.needsYou(needsYou[1]);
   const assets = /^\/api\/tenants\/([^/]+)\/assets$/.exec(path);
   if (assets?.[1] !== undefined) return tenantKeys.assets(assets[1]);
-  const artifacts = /^\/api\/tenants\/([^/]+)\/artifacts(?:\?(.*))?$/.exec(path);
+  const artifacts = /^\/api\/tenants\/([^/]+)\/artifacts(?:\?(.*))?$/.exec(
+    path,
+  );
   if (artifacts?.[1] !== undefined) {
     return [...tenantKeys.artifacts(artifacts[1]), artifacts[2] ?? ""] as const;
   }
