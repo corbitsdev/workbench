@@ -118,7 +118,7 @@ export function ContextualPanel({
       {pageSpecific !== null ? (
         <section
           className="panel-band panel-band-page-specific"
-          aria-label={`${pageBand.title} details`}
+          aria-label="Page details"
         >
           <h3 className="panel-band-heading">{pageBand.title}</h3>
           {pageSpecific}
