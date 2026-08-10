@@ -23,11 +23,9 @@ import { createMemory, loadMemoryConfig, type Memory } from "@corbits/memory";
 
 const log = getLogger(["hub", "memory-mount"]);
 
-export type MountMemoryOptions = {
+export type MountMemoryOptions<E extends object = object> = {
   /** Hub Hono app (routes register under tenant memory paths). */
-  // Hono env is invariant across package roots; accept any app env here.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  app: Hono<any>;
+  app: Hono<E>;
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
   /**
@@ -45,8 +43,8 @@ export type MemoryMountHandle = {
  * Returns a memory handle when the plane is configured and mounted; `undefined`
  * when optional and env is absent.
  */
-export function mountMemory(
-  options: MountMemoryOptions,
+export function mountMemory<E extends object = object>(
+  options: MountMemoryOptions<E>,
 ): MemoryMountHandle | undefined {
   const optional = options.optional !== false;
   const knowledgeUrl = process.env["KNOWLEDGE_DATABASE_URL"];
