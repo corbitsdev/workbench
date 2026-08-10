@@ -1,8 +1,27 @@
 // Registers each page's contextual-panel contribution. Imported once from
 // the shell so matchers are on the registry before first render.
 
-import { EmptyState, SidebarItemRow, Skeleton } from "@corbits/react-ui";
-import { Hash, MessageSquare, Workflow, Bell } from "lucide-react";
+import {
+  EmptyState,
+  Input,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  SidebarItemRow,
+  Skeleton,
+} from "@corbits/react-ui";
+import { CHAT_STRINGS, patchChannelSettings } from "@corbits/chat-ui";
+import type { Channel } from "@corbits/chat-ui";
+import {
+  Bell,
+  Hash,
+  MessageSquare,
+  MoreHorizontal,
+  Workflow,
+} from "lucide-react";
+import { useState } from "react";
+import type { KeyboardEvent } from "react";
 
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
@@ -15,6 +34,198 @@ import type { RoutineActivityItem } from "./routine-activity";
 
 function pathMatches(prefix: string, path: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+/**
+ * The ellipsis-menu item labels for a panel channel row. The panel's row menu
+ * carries only the two affordances that don't need the full settings dialog —
+ * rename and the pin/unpin "archive" toggle — so this is a strict subset of
+ * the chat sidebar's three-item menu. Pure so the pinned-state wording
+ * ("Pin" vs "Unpin") is testable without opening the (portaled, Radix)
+ * menu. Pinning is the closest the settings PATCH (`chat/pinned`) gets to an
+ * archive affordance; there is no separate archive endpoint.
+ */
+export function panelRowMenuLabels(
+  channel: Pick<Channel, "pinned">,
+): readonly [rename: string, archive: string] {
+  return [
+    CHAT_STRINGS.rowMenuRename,
+    channel.pinned ? CHAT_STRINGS.rowMenuUnpin : CHAT_STRINGS.rowMenuPin,
+  ];
+}
+
+/**
+ * What a rename submission should send: `undefined` for input that resolves
+ * to nothing worth saving (blank, or unchanged from the channel's current
+ * title) — the caller's cue to treat the rename as a no-op cancel rather
+ * than firing an empty-name PATCH. Mirrors the chat sidebar's helper.
+ */
+export function panelRenamePayload(
+  input: string,
+  currentTitle: string,
+): string | undefined {
+  const trimmed = input.trim();
+  if (trimmed.length === 0 || trimmed === currentTitle) return undefined;
+  return trimmed;
+}
+
+/**
+ * The read-only detail lines a "channel details" panel contribution prints
+ * for the selected channel — name, kind, and pinned state. Pure so the
+ * mapping is testable without rendering.
+ */
+export function channelDetails(
+  channel: Pick<Channel, "title" | "kind" | "pinned">,
+): {
+  readonly title: string;
+  readonly kind: string;
+  readonly pinned: boolean;
+} {
+  return {
+    title: channel.title || CHAT_STRINGS.unnamedChannel,
+    kind: channel.kind,
+    pinned: channel.pinned,
+  };
+}
+
+/**
+ * One channel row in the panel list, with a hover-revealed ellipsis menu for
+ * rename (inline) and the pin/unpin archive toggle. Both go through the
+ * single `PATCH /channels/:id/settings` route via `patchChannelSettings`.
+ * The rename keeps a local display title so the row updates the moment the
+ * PATCH resolves, without waiting for the band's activity refetch.
+ */
+function ChannelPanelRow({
+  channel,
+  active,
+  tenantId,
+  onSelect,
+}: {
+  readonly channel: Channel;
+  readonly active: boolean;
+  readonly tenantId: string;
+  readonly onSelect: () => void;
+}) {
+  const [title, setTitle] = useState(channel.title);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(channel.title);
+  const [renameLabel, archiveLabel] = panelRowMenuLabels(channel);
+
+  function startRename() {
+    setRenameValue(title);
+    setRenaming(true);
+  }
+
+  async function commitRename() {
+    const payload = panelRenamePayload(renameValue, title);
+    setRenaming(false);
+    if (payload === undefined) return;
+    setTitle(payload);
+    try {
+      await patchChannelSettings(tenantId, channel.id, {
+        "chat/name": payload,
+      });
+    } catch {
+      // Revert the optimistic title on failure; the band will refetch on the
+      // next bench selection and reconcile either way.
+      setTitle(channel.title);
+    }
+  }
+
+  function handleRenameKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void commitRename();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setRenaming(false);
+    }
+  }
+
+  async function togglePinned() {
+    try {
+      await patchChannelSettings(tenantId, channel.id, {
+        "chat/pinned": !channel.pinned,
+      });
+    } catch {
+      // Best-effort: the band refetches on bench change and reconciles.
+    }
+  }
+
+  if (renaming) {
+    return (
+      <Input
+        autoFocus
+        value={renameValue}
+        aria-label={CHAT_STRINGS.rowMenuRename}
+        onChange={(event) =>
+          setRenameValue((event.target as HTMLInputElement).value)
+        }
+        onKeyDown={handleRenameKeyDown}
+        onBlur={() => void commitRename()}
+      />
+    );
+  }
+
+  return (
+    <div className="chat-sidebar-row">
+      <button
+        type="button"
+        className="chat-sidebar-item"
+        aria-current={active ? "true" : undefined}
+        data-active={active}
+        onClick={onSelect}
+      >
+        <span>{title || CHAT_STRINGS.unnamedChannel}</span>
+      </button>
+      <Menu>
+        <MenuTrigger asChild>
+          <button
+            type="button"
+            className="chat-sidebar-row-menu-trigger"
+            aria-label={CHAT_STRINGS.rowMenuLabel}
+          >
+            <MoreHorizontal />
+          </button>
+        </MenuTrigger>
+        <MenuContent align="start">
+          <MenuItem onSelect={startRename}>{renameLabel}</MenuItem>
+          <MenuItem onSelect={() => void togglePinned()}>
+            {archiveLabel}
+          </MenuItem>
+        </MenuContent>
+      </Menu>
+    </div>
+  );
+}
+
+/**
+ * The channel details panel contribution: when a specific channel is open in
+ * the canvas, print its name, kind, and pinned state above the channel list
+ * so the panel doubles as a details surface without a second fetch. Falls
+ * back to nothing when no channel is selected.
+ */
+function ChannelDetails({ channel }: { readonly channel: Channel }) {
+  const details = channelDetails(channel);
+  return (
+    <div className="panel-stack-group">
+      <p className="panel-band-subheading">Details</p>
+      <dl className="panel-channel-details">
+        <div>
+          <dt>Name</dt>
+          <dd>{details.title}</dd>
+        </div>
+        <div>
+          <dt>Type</dt>
+          <dd>{details.kind}</dd>
+        </div>
+        <div>
+          <dt>Pinned</dt>
+          <dd>{details.pinned ? "Yes" : "No"}</dd>
+        </div>
+      </dl>
+    </div>
+  );
 }
 
 function ChannelsBand({
@@ -62,16 +273,24 @@ function ChannelsBand({
     );
   }
 
+  const selected =
+    activeId === null
+      ? undefined
+      : [...channels, ...chats].find((channel) => channel.id === activeId);
+  const tenantId = selectedTenantId ?? "";
+
   return (
     <div className="panel-stack">
+      {selected !== undefined ? <ChannelDetails channel={selected} /> : null}
       {channels.length > 0 ? (
         <div className="panel-stack-group">
           <p className="panel-band-subheading">Channels</p>
           {channels.map((channel) => (
-            <SidebarItemRow
+            <ChannelPanelRow
               key={channel.id}
-              name={channel.title || "Untitled channel"}
-              selected={channel.id === activeId}
+              channel={channel}
+              active={channel.id === activeId}
+              tenantId={tenantId}
               onSelect={() => onOpenInCanvas(channel.id)}
             />
           ))}
@@ -81,10 +300,11 @@ function ChannelsBand({
         <div className="panel-stack-group">
           <p className="panel-band-subheading">Chats</p>
           {chats.map((channel) => (
-            <SidebarItemRow
+            <ChannelPanelRow
               key={channel.id}
-              name={channel.title || "Untitled chat"}
-              selected={channel.id === activeId}
+              channel={channel}
+              active={channel.id === activeId}
+              tenantId={tenantId}
               onSelect={() => onOpenInCanvas(channel.id)}
             />
           ))}
@@ -195,6 +415,8 @@ function LiveActivityBand({
     );
   }
 
+  const tenantId = selectedTenantId ?? "";
+
   return (
     <div className="panel-stack">
       {activity.routines.length > 0 ? (
@@ -214,10 +436,11 @@ function LiveActivityBand({
         <div className="panel-stack-group">
           <p className="panel-band-subheading">Channels</p>
           {activity.channels.map((channel) => (
-            <SidebarItemRow
+            <ChannelPanelRow
               key={channel.id}
-              name={channel.title || "Untitled channel"}
-              selected={channel.id === activeId}
+              channel={channel}
+              active={channel.id === activeId}
+              tenantId={tenantId}
               onSelect={() => onNavigate(`${channelPath(channel.id)}`)}
             />
           ))}
@@ -227,10 +450,11 @@ function LiveActivityBand({
         <div className="panel-stack-group">
           <p className="panel-band-subheading">Chats</p>
           {activity.chats.map((channel) => (
-            <SidebarItemRow
+            <ChannelPanelRow
               key={channel.id}
-              name={channel.title || "Untitled chat"}
-              selected={channel.id === activeId}
+              channel={channel}
+              active={channel.id === activeId}
+              tenantId={tenantId}
               onSelect={() => onNavigate(`${channelPath(channel.id)}`)}
             />
           ))}
