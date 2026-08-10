@@ -3,21 +3,61 @@
 
 export const SETTINGS_STRINGS = {
   pageTitle: "Settings",
-  pageSubtitle: "Your bench, its chats and channels, and your account",
+  pageSubtitle: "Personal preferences and shared workspace configuration",
   sectionsNavLabel: "Settings sections",
   emptySectionsTitle: "Nothing to show",
   emptySectionsDescription: "No settings sections are available right now.",
+  groupPersonalLabel: "Personal · only you",
+  groupWorkspaceLabel: "Workspace · shared",
 
-  benchSectionTitle: "Bench",
-  benchSectionDescription: "The bench you're currently working in.",
+  agentSectionTitle: "Your agent",
+  agentSectionDescription: "How your default agent works for you on this bench.",
+  agentAutonomyHeading: "Autonomy",
+  agentAutonomyLabel: "Default behavior",
+  agentAutonomyPrepare: "Prepare only — draft, never send",
+  agentAutonomyGated: "Execute with gates — ask before side effects",
+  agentAutonomyAutonomous: "Autonomous in approved channels",
+  agentBriefLabel: "Morning brief",
+  agentBriefOff: "Off",
+  agentBrief0730: "07:30 local",
+  agentBrief0900: "09:00 local",
+  agentInstructionsHeading: "Standing instructions",
+  agentInstructionsLabel: "Applied to every chat",
+  agentInstructionsDefault:
+    "Concise, multiplayer-aware. Prefer canvas for artifacts. End turns with a clear next step.",
+  agentPinnedHeading: "Pinned skills",
+  agentPinnedHint:
+    "Pinning edits the skill library when that store is wired; chips here are draft-only for now.",
+  agentInferenceHeading: "Inference",
+  agentCreativityLabel: "Creativity",
+  agentThinkingLabel: "Thinking budget",
+  agentSaveAction: "Save",
+  agentSaveHonesty:
+    "Draft only — personal agent prefs are not stored on the hub yet.",
+
+  notificationsSectionTitle: "Notifications",
+  notificationsSectionDescription: "How activity reaches you.",
+  notificationsMentions: "Mentions & DMs",
+  notificationsApprovals: "Approvals",
+  notificationsRoutineFail: "Failed deliveries",
+  notificationsSaveAction: "Save",
+  notificationsSaveHonesty:
+    "Draft only — per-user notification prefs are not stored on the hub yet.",
+
+  benchSectionTitle: "This bench",
+  benchSectionDescription:
+    "Landing, chrome, and defaults for the selected workbench.",
   benchNameLabel: "Name",
-  benchAddressLabel: "Address",
+  benchAddressLabel: "Slug",
+  benchIconLabel: "Workbench icon",
+  benchIconHint:
+    "Shown on the workbench switcher. Color is a local preview — tenant branding storage is not mounted yet.",
   benchLoadError: "this bench",
   benchNoneSelectedTitle: "No bench selected",
   benchNoneSelectedDescription: "Choose a bench from the switcher first.",
   benchSaveError: "Couldn't rename this bench — try again.",
 
-  chatSectionTitle: "Chats & channels",
+  chatSectionTitle: "Conversation defaults",
   chatSectionDescription:
     "Bench-wide defaults every chat and channel inherits, unless it sets its own override in its own settings.",
   chatLoadError: "this bench's chat defaults",
@@ -67,6 +107,18 @@ export const SETTINGS_STRINGS = {
   peopleKindUser: "user",
   peopleKindAgent: "agent",
   peopleKindWorkflow: "workflow",
+
+  accessPolicyHeading: "Access policy",
+  accessPolicyLoadError: "access policy",
+  accessPolicySignupLabel: "Self-signup",
+  accessPolicySignupClosed: "Off (default)",
+  accessPolicySignupOpen: "Allowed domains only",
+  accessPolicySignupEnvNote: "· set by operator env, not editable here",
+  accessPolicyDomainsLabel: "Allowed email domains",
+  accessPolicyDomainsAny: "Any domain (open signup with empty allowlist)",
+  accessPolicyDomainsNone: "None — invites only",
+  accessPolicyNote:
+    "Closed by default: no open signup, no self-serve tenancies. Loosen deliberately via WORKBENCH_SIGNUP and WORKBENCH_SIGNUP_DOMAINS.",
 
   rolesSectionTitle: "Roles",
   rolesSectionDescription: "This bench's roles and who they're assigned to.",
@@ -160,4 +212,14 @@ export const SETTINGS_STRINGS = {
   credentialsDelete: "Revoke",
   credentialsDeleteConfirm: "Revoke for good?",
   credentialsDeleteError: "Couldn't revoke that credential — try again.",
+
+  auditSectionTitle: "Audit",
+  auditSectionDescription: "Who changed what, when — orientation only.",
+  auditWhen: "When",
+  auditAction: "Action",
+  auditActor: "Actor",
+  auditTarget: "Target",
+  auditEmpty: "No recent changes to show yet.",
+  auditHonestyNote:
+    "Current-state view, not an append-only audit log — treat as orientation, not evidence.",
 } as const;

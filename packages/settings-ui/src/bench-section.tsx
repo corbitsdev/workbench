@@ -1,9 +1,9 @@
-// The "Bench" settings section: the current bench's name and address, plus
-// its member list (member management itself is `@corbits/bench-ui`'s to own
+// The "This bench" settings section: name, slug, workbench icon preview, and
+// the member list (member management itself is `@corbits/bench-ui`'s to own
 // — this section mounts its `MembersPanel`, never re-implements it).
 // Renaming goes through the native `PATCH /api/tenants/:tenantId` route;
 // there is no native route for changing a bench's slug, so the address
-// stays read-only.
+// stays read-only. Icon color is a local preview until tenant branding ships.
 
 import type { BenchMembership } from "@corbits/bench-ui";
 import { listMyMemberships, MembersPanel } from "@corbits/bench-ui";
@@ -15,6 +15,21 @@ import { renameBench } from "./api";
 import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 
+const ICON_SWATCHES = [
+  "#e98428",
+  "#4a7ab5",
+  "#3f8f5f",
+  "#8a5ab5",
+  "#b55a5a",
+] as const;
+
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return (parts[0] ?? "?").slice(0, 2).toUpperCase();
+  return `${(parts[0] ?? "").slice(0, 1)}${(parts[1] ?? "").slice(0, 1)}`.toUpperCase();
+}
+
 export function BenchSection({
   tenantId,
 }: {
@@ -24,6 +39,7 @@ export function BenchSection({
     kind: "loading",
   });
   const [name, setName] = useState("");
+  const [iconColor, setIconColor] = useState<string>(ICON_SWATCHES[0]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -105,11 +121,13 @@ export function BenchSection({
       <BenchSectionView
         name={name}
         slug={state.data.tenantSlug}
+        iconColor={iconColor}
         dirty={dirty}
         saving={saving}
         error={saveError}
         savedAt={savedAt}
         onNameChange={setName}
+        onIconColorChange={setIconColor}
         onSave={handleSave}
         onReset={() => setName(state.data.tenantName)}
       />
@@ -127,21 +145,25 @@ export function BenchSection({
 export function BenchSectionView({
   name,
   slug,
+  iconColor = ICON_SWATCHES[0],
   dirty,
   saving,
   error,
   savedAt,
   onNameChange,
+  onIconColorChange,
   onSave,
   onReset,
 }: {
   readonly name: string;
   readonly slug: string;
+  readonly iconColor?: string;
   readonly dirty: boolean;
   readonly saving: boolean;
   readonly error: string | null;
   readonly savedAt: string | null;
   readonly onNameChange: (name: string) => void;
+  readonly onIconColorChange?: (color: string) => void;
   readonly onSave: () => void;
   readonly onReset: () => void;
 }) {
@@ -163,6 +185,30 @@ export function BenchSectionView({
           onChange={(event) => onNameChange(event.target.value)}
         />
       </label>
+      <div className="settings-form-field">
+        <span>{SETTINGS_STRINGS.benchIconLabel}</span>
+        <div className="settings-wb-icon-row">
+          <span
+            className="settings-wb-icon-preview"
+            style={{ background: iconColor }}
+            aria-hidden="true"
+          >
+            {initialsFromName(name)}
+          </span>
+          {ICON_SWATCHES.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className="settings-wb-swatch"
+              style={{ background: color }}
+              aria-pressed={iconColor === color}
+              aria-label={`Icon color ${color}`}
+              onClick={() => onIconColorChange?.(color)}
+            />
+          ))}
+        </div>
+        <p className="settings-field-hint">{SETTINGS_STRINGS.benchIconHint}</p>
+      </div>
       <label className="settings-form-field">
         <span>{SETTINGS_STRINGS.benchAddressLabel}</span>
         <Input value={slug} disabled readOnly />

@@ -29,7 +29,9 @@ import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { principalLabel } from "./identity";
+import { AccessPolicyBlock } from "./access-policy";
 import { errorMessage, type LoadState } from "./load-state";
+
 import { SETTINGS_STRINGS } from "./strings";
 import {
   TenancyApiError,
@@ -170,6 +172,7 @@ export function PeopleSection({
         onReactivate={(p) => handleStatusChange(p, "active")}
         onRemove={handleRemove}
       />
+      <AccessPolicyBlock />
       <InvitePersonDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}

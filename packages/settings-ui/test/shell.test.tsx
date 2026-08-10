@@ -4,8 +4,11 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { resolveActiveSection } from "../src/shell";
-import type { SettingsSection } from "../src/shell";
+import {
+  flattenSettingsSections,
+  resolveActiveSection,
+} from "../src/shell";
+import type { SettingsSection, SettingsSectionGroup } from "../src/shell";
 
 function section(id: string): SettingsSection {
   return { id, title: id, render: () => <div>{id}</div> } as SettingsSection;
@@ -29,5 +32,28 @@ describe("resolveActiveSection", () => {
 
   test("returns undefined, not a crash, for an empty registry", () => {
     expect(resolveActiveSection([], "anything")).toBeUndefined();
+  });
+});
+
+describe("flattenSettingsSections", () => {
+  test("walks Personal then Workspace in order", () => {
+    const groups: SettingsSectionGroup[] = [
+      {
+        id: "personal",
+        label: "Personal · only you",
+        sections: [section("agent"), section("account")],
+      },
+      {
+        id: "workspace",
+        label: "Workspace · shared",
+        sections: [section("bench"), section("audit")],
+      },
+    ];
+    expect(flattenSettingsSections(groups).map((s) => s.id)).toEqual([
+      "agent",
+      "account",
+      "bench",
+      "audit",
+    ]);
   });
 });

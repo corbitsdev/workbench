@@ -1,9 +1,21 @@
-export { SettingsShell, resolveActiveSection } from "./shell";
-export type { SettingsContext, SettingsSection } from "./shell";
+export {
+  SettingsShell,
+  resolveActiveSection,
+  flattenSettingsSections,
+} from "./shell";
+export type {
+  SettingsContext,
+  SettingsSection,
+  SettingsSectionGroup,
+} from "./shell";
 
 export { BenchSection, BenchSectionView } from "./bench-section";
 export { ChatSection, ChatSectionView } from "./chat-section";
 export { AccountSection, AccountSectionView } from "./account-section";
+export { AgentSection } from "./agent-section";
+export { NotificationsSection } from "./notifications-section";
+export { AuditSection } from "./audit-section";
+export { AccessPolicyBlock, AccessPolicyView } from "./access-policy";
 export {
   PeopleSection,
   PeopleTable,
@@ -82,5 +94,10 @@ export {
 
 export { SETTINGS_STRINGS } from "./strings";
 
-export { SettingsApiError, getAccount, renameBench } from "./api";
-export type { Account, Bench } from "./api";
+export {
+  SettingsApiError,
+  getAccount,
+  getAuthConfig,
+  renameBench,
+} from "./api";
+export type { Account, AuthConfig, Bench } from "./api";

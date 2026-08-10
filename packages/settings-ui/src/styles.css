@@ -3,6 +3,111 @@
    comes from `@corbits/react-ui`'s prebuilt stylesheet and the theme's
    tokens. */
 
+.settings-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 1rem;
+  width: 14rem;
+  border-right: 1px solid var(--border);
+  padding: 1rem 0.75rem;
+  overflow-y: auto;
+}
+
+.settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.settings-nav-group-label {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.settings-nav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.settings-nav-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 0.375rem;
+  background: transparent;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.settings-nav-item:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.settings-nav-item[aria-current="page"] {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  font-weight: 600;
+}
+
+.settings-stage {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-stage-header {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0.85rem 1.25rem;
+}
+
+.settings-stage-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.settings-stage-title-sep {
+  margin: 0 0.35rem;
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
+.settings-stage-section {
+  font-weight: 600;
+}
+
+.settings-stage-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 .settings-form-field {
   display: flex;
   flex-direction: column;
@@ -61,6 +166,17 @@
   font-size: 0.875rem;
 }
 
+.settings-textarea {
+  border-radius: var(--radius, 0.375rem);
+  border: 1px solid var(--input);
+  background: var(--card);
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.875rem;
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
 .settings-section-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -81,4 +197,115 @@
 .settings-member-email {
   color: var(--muted-foreground);
   font-size: 0.8125rem;
+}
+
+.settings-subhead {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.settings-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card, var(--background));
+  padding: 0.2rem 0.55rem;
+  font-size: 0.8125rem;
+}
+
+.settings-chip-remove {
+  border: 0;
+  background: transparent;
+  padding: 0 0.1rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+
+.settings-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.settings-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: transparent;
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-check[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.settings-check-box {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.settings-wb-icon-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.settings-wb-icon-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.4rem;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.settings-wb-swatch {
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.settings-wb-swatch[aria-pressed="true"] {
+  border-color: var(--foreground);
+}
+
+.settings-access-policy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
 }
