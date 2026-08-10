@@ -38,6 +38,41 @@ describe("empty states", () => {
     expect(markup).not.toContain("Search skills");
   });
 
+  test("skills with a session draft shows card chrome and detail", () => {
+    const markup = renderToStaticMarkup(
+      <SkillsPage
+        skills={[
+          {
+            id: "skill_1",
+            name: "Brief writer",
+            description: "Turns notes into a research brief",
+            body: "Always cite sources.",
+            access: "Private",
+            owner: "You",
+            updatedAt: "2026-08-05T11:00:00.000Z",
+            version: "0.1.0",
+            pinnedBy: [],
+            versions: [
+              {
+                version: "0.1.0",
+                note: "Session draft",
+                who: "You",
+                whenIso: "2026-08-05T11:00:00.000Z",
+                current: true,
+              },
+            ],
+            sessionLocal: true,
+          },
+        ]}
+        now={Date.parse("2026-08-05T12:00:00.000Z")}
+      />,
+    );
+    expect(markup).toContain("Brief writer");
+    expect(markup).toContain("Search skills");
+    expect(markup).toContain("Version history");
+    expect(markup).toContain("Pinned by");
+  });
+
   test("agents reports a missing session instead of empty panels", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage

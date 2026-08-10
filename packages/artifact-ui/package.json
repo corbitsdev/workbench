@@ -13,10 +13,13 @@
     "test": "bun test"
   },
   "dependencies": {
-    "arktype": "catalog:"
+    "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+    "arktype": "catalog:",
+    "react": "^19.2.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
     "typescript": "catalog:"
   }
 }

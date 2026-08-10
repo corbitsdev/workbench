@@ -7,6 +7,7 @@ import {
   MenuTrigger,
   PageShell,
   RichEmptyState,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -19,19 +20,24 @@ import {
 } from "@corbits/react-ui";
 import type { ViewMode } from "@corbits/react-ui";
 import {
+  ArtifactCard,
   artifactKindColor,
   filterArtifacts,
   sortArtifacts,
 } from "@corbits/artifact-ui";
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDownUp, FileStack, Upload } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { ArrowDownUp, FileStack, Upload, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ArtifactListPageSchema, useAPIQuery } from "../api";
+import {
+  ArtifactDetailSchema,
+  ArtifactListPageSchema,
+  useAPIQuery,
+  type ArtifactDetail,
+} from "../api";
 import { useBench } from "../bench-context";
 import { tenantKeys } from "../query-client";
-
 import { QueryView } from "../query-view";
 import {
   isArtifactsUnavailableMessage,
@@ -44,34 +50,16 @@ const SORT_LABEL: Record<ArtifactSort, string> = {
   oldest: "Oldest first",
 };
 
-/**
- * One tile in the grid view: a kind-colored band over a title and kind
- * label, so a mixed gallery reads as distinct groups at a glance — the same
- * idea as the reference gallery's per-kind card fill.
- */
-function ArtifactTile({ artifact }: { readonly artifact: ArtifactSummary }) {
-  return (
-    <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-card text-left">
-      <span
-        aria-hidden
-        className={`block h-20 w-full ${artifactKindColor(artifact.kind)}`}
-      />
-      <span className="flex min-w-0 flex-col gap-0.5 p-3">
-        <span className="truncate text-sm font-semibold">{artifact.title}</span>
-        <span className="truncate font-mono text-xs text-muted-foreground">
-          {artifactKindLabel(artifact.kind)}
-        </span>
-      </span>
-    </div>
-  );
-}
-
 function ArtifactRows({
   artifacts,
   now,
+  selectedId,
+  onSelect,
 }: {
   readonly artifacts: readonly ArtifactSummary[];
   readonly now: number | undefined;
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string) => void;
 }) {
   return (
     <Table aria-label="Artifacts">
@@ -85,7 +73,12 @@ function ArtifactRows({
       </TableHeader>
       <TableBody>
         {artifacts.map((artifact) => (
-          <TableRow key={artifact.id}>
+          <TableRow
+            key={artifact.id}
+            data-state={selectedId === artifact.id ? "selected" : undefined}
+            className="cursor-pointer"
+            onClick={() => onSelect(artifact.id)}
+          >
             <TableCell className="font-medium">{artifact.title}</TableCell>
             <TableCell className="text-muted-foreground">
               {artifactKindLabel(artifact.kind)}
@@ -106,11 +99,64 @@ function ArtifactRows({
   );
 }
 
+function PreviewPane({
+  detail,
+  loading,
+  error,
+  onClose,
+}: {
+  readonly detail: ArtifactDetail | null;
+  readonly loading: boolean;
+  readonly error: string | null;
+  readonly onClose: () => void;
+}) {
+  return (
+    <aside className="flex min-h-0 min-w-0 flex-col border-l border-border bg-card">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">
+            {detail?.title ?? (loading ? "Loading…" : "Preview")}
+          </p>
+          {detail !== null ? (
+            <p className="truncate text-xs text-muted-foreground">
+              {artifactKindLabel(detail.kind)}
+              {detail.ownerName !== null ? ` · ${detail.ownerName}` : ""}
+              {` · v${detail.version}`}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          aria-label="Close preview"
+          onClick={onClose}
+        >
+          <X />
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        {loading ? <Skeleton className="h-40 w-full" /> : null}
+        {error !== null ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {!loading && error === null && detail !== null ? (
+          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">
+            {detail.content === ""
+              ? "(empty content)"
+              : detail.content}
+          </pre>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
 /**
- * The artifact gallery. Real data all the way down — search, sort, view
- * mode, and upload. The route resolves the current bench's artifacts into
- * the `ArtifactSummary` rows this page renders (see `LibraryRoute`); an empty
- * list is a truthful empty library, never fabricated rows.
+ * Artifact gallery with dense cards (kind badge, title, owner · updated)
+ * and an in-stage preview when a row is selected. Real data only.
  */
 export function LibraryPage({
   artifacts,
@@ -120,27 +166,36 @@ export function LibraryPage({
   uploadError,
   query,
   onQueryChange,
+  selectedId = null,
+  onSelect,
+  preview = null,
+  previewLoading = false,
+  previewError = null,
 }: {
   readonly artifacts: readonly ArtifactSummary[];
-  /** Reference time for relative timestamps; injectable for tests. */
   readonly now?: number;
   readonly onUpload?: (files: readonly File[]) => void;
   readonly uploading?: boolean;
   readonly uploadError?: string | null;
-  /** Controlled search string — when provided, the route owns server-side `q`. */
   readonly query?: string;
   readonly onQueryChange?: (value: string) => void;
+  readonly selectedId?: string | null;
+  readonly onSelect?: (id: string | null) => void;
+  readonly preview?: ArtifactDetail | null;
+  readonly previewLoading?: boolean;
+  readonly previewError?: string | null;
 }) {
   const [localQuery, setLocalQuery] = useState("");
   const [sort, setSort] = useState<ArtifactSort>("newest");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [localSelected, setLocalSelected] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeQuery = query ?? localQuery;
   const setActiveQuery = onQueryChange ?? setLocalQuery;
+  const activeSelected = onSelect !== undefined ? selectedId : localSelected;
+  const select = onSelect ?? setLocalSelected;
 
-  // When the route owns server-side search, filter is a no-op pass-through
-  // (rows already match). Local-only consumers still filter client-side.
   const visible = useMemo(
     () =>
       sortArtifacts(
@@ -207,31 +262,59 @@ export function LibraryPage({
           {uploadError}
         </p>
       ) : null}
-      <PageShell width="full" className="page-fill">
-        {artifacts.length === 0 ? (
-          <RichEmptyState
-            icon={<FileStack />}
-            title="No artifacts yet"
-            description="Upload a file or wait for agents and workflows to produce artifacts — they land here as soon as they exist."
-          />
-        ) : visible.length === 0 ? (
-          <RichEmptyState
-            icon={<FileStack />}
-            title="Nothing matches"
-            description={`No artifact matches "${activeQuery}".`}
-          />
-        ) : viewMode === "rows" ? (
-          <div className="px-4 pb-5 sm:px-7">
-            <ArtifactRows artifacts={visible} now={now} />
+      <div className="flex min-h-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+          <PageShell width="full" className="page-fill">
+            {artifacts.length === 0 ? (
+              <RichEmptyState
+                icon={<FileStack />}
+                title="No artifacts yet"
+                description="Upload a file or wait for agents and workflows to produce artifacts — they land here as soon as they exist."
+              />
+            ) : visible.length === 0 ? (
+              <RichEmptyState
+                icon={<FileStack />}
+                title="Nothing matches"
+                description={`No artifact matches "${activeQuery}".`}
+              />
+            ) : viewMode === "rows" ? (
+              <div className="px-4 pb-5 sm:px-7">
+                <ArtifactRows
+                  artifacts={visible}
+                  now={now}
+                  selectedId={activeSelected}
+                  onSelect={(id) => select(id)}
+                />
+              </div>
+            ) : (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3 px-4 pb-5 sm:px-7">
+                {visible.map((artifact) => (
+                  <ArtifactCard
+                    key={artifact.id}
+                    artifact={artifact}
+                    selected={activeSelected === artifact.id}
+                    now={now}
+                    onSelect={() => select(artifact.id)}
+                    meta={{
+                      snippet: null,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </PageShell>
+        </div>
+        {activeSelected !== null ? (
+          <div className="hidden w-[min(28rem,40%)] shrink-0 md:flex md:flex-col">
+            <PreviewPane
+              detail={preview}
+              loading={previewLoading}
+              error={previewError}
+              onClose={() => select(null)}
+            />
           </div>
-        ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-3 px-4 pb-5 sm:px-7">
-            {visible.map((artifact) => (
-              <ArtifactTile key={artifact.id} artifact={artifact} />
-            ))}
-          </div>
-        )}
-      </PageShell>
+        ) : null}
+      </div>
     </>
   );
 }
@@ -242,8 +325,8 @@ export function LibraryRoute() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Real artifacts plane — list is paginated; `q` is server-side text search.
   const listPath =
     selectedTenantId === null
       ? ""
@@ -253,6 +336,19 @@ export function LibraryRoute() {
             : `?q=${encodeURIComponent(searchQuery.trim())}`
         }`;
   const page = useAPIQuery(listPath, ArtifactListPageSchema);
+
+  const detailPath =
+    selectedTenantId === null || selectedId === null
+      ? ""
+      : `/api/tenants/${selectedTenantId}/artifacts/${encodeURIComponent(selectedId)}`;
+  const detail = useAPIQuery(detailPath, ArtifactDetailSchema);
+
+  // Drop selection when the list no longer contains the id.
+  useEffect(() => {
+    if (selectedId === null || page.kind !== "ready") return;
+    const stillThere = page.data.data.some((row) => row.id === selectedId);
+    if (!stillThere) setSelectedId(null);
+  }, [page, selectedId]);
 
   if (selectedTenantId === null) {
     return (
@@ -287,6 +383,15 @@ export function LibraryRoute() {
           uploadError={uploadError}
           query={searchQuery}
           onQueryChange={setSearchQuery}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          preview={detail.kind === "ready" ? detail.data : null}
+          previewLoading={detail.kind === "loading" && selectedId !== null}
+          previewError={
+            detail.kind === "error" && selectedId !== null
+              ? detail.message
+              : null
+          }
           onUpload={(files) => {
             void (async () => {
               setUploading(true);
