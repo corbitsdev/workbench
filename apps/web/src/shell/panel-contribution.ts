@@ -24,8 +24,6 @@ export type PageBand = {
 export type PanelRenderContext = {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
-  /** Open a channel in the canvas without navigating away from the page. */
-  readonly onOpenInCanvas: (channelId: string) => void;
 };
 
 export type PanelContribution = {

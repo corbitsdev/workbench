@@ -14,7 +14,6 @@ import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 
 import { ActivityBand } from "./activity-band";
-import { CanvasToggle } from "./canvas-column";
 import { BenchDock } from "./docks";
 import { resolvePanelContribution } from "./panel-contribution";
 import { ensurePanelContributions } from "./panel-contributions";
@@ -25,20 +24,12 @@ ensurePanelContributions();
 export function ContextualPanel({
   path,
   onNavigate,
-  canvasOpen,
-  onToggleCanvas,
-  canvasAllowed,
-  onOpenInCanvas,
 }: {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
-  readonly canvasOpen: boolean;
-  readonly onToggleCanvas: () => void;
-  readonly canvasAllowed: boolean;
-  readonly onOpenInCanvas: (channelId: string) => void;
 }) {
   const contribution = resolvePanelContribution(path);
-  const renderCtx = { path, onNavigate, onOpenInCanvas };
+  const renderCtx = { path, onNavigate };
   const pageBand = contribution?.pageBand(renderCtx) ?? {
     title: "Workbench",
     subtitle: "Navigate from the rail",
@@ -73,9 +64,6 @@ export function ContextualPanel({
         >
           <SlidersHorizontal />
         </Button>
-      ) : null}
-      {canvasAllowed ? (
-        <CanvasToggle open={canvasOpen} onToggle={onToggleCanvas} />
       ) : null}
     </div>
   );

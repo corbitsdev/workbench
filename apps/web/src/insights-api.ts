@@ -97,22 +97,57 @@ export type ToolsResponse = typeof ToolsResponseSchema.infer;
 export type RunTrace = typeof RunTraceSchema.infer;
 export type RunTraceSpan = typeof RunTraceSpanSchema.infer;
 
-export function insightsUsagePath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/insights/usage`;
+/** Stable ISO from/to shared by usage, activity, and tools path builders. */
+export type InsightsRange = {
+  readonly from: string;
+  readonly to: string;
+};
+
+/** Default Insights landing window (honest 7-day KPIs and charts). */
+export const INSIGHTS_WINDOW_DAYS = 7;
+
+/**
+ * Build a fixed [from, to] window ending at `now`. Pass an explicit `now`
+ * (and keep the result) so React query keys stay stable across rerenders.
+ */
+export function createInsightsWindow(
+  days: number = INSIGHTS_WINDOW_DAYS,
+  now: Date = new Date(),
+): InsightsRange {
+  const to = now.toISOString();
+  const from = new Date(
+    now.getTime() - days * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  return { from, to };
 }
 
-export function insightsActivityPath(tenantId: string, days = 14): string {
-  const to = new Date();
-  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+function withInsightsRange(path: string, range: InsightsRange): string {
   const params = new URLSearchParams({
-    from: from.toISOString(),
-    to: to.toISOString(),
+    from: range.from,
+    to: range.to,
   });
-  return `/api/tenants/${tenantId}/insights/activity?${params.toString()}`;
+  return `${path}?${params.toString()}`;
 }
 
-export function insightsToolsPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/insights/tools`;
+export function insightsUsagePath(
+  tenantId: string,
+  range: InsightsRange,
+): string {
+  return withInsightsRange(`/api/tenants/${tenantId}/insights/usage`, range);
+}
+
+export function insightsActivityPath(
+  tenantId: string,
+  range: InsightsRange,
+): string {
+  return withInsightsRange(`/api/tenants/${tenantId}/insights/activity`, range);
+}
+
+export function insightsToolsPath(
+  tenantId: string,
+  range: InsightsRange,
+): string {
+  return withInsightsRange(`/api/tenants/${tenantId}/insights/tools`, range);
 }
 
 export function insightsRunTracePath(tenantId: string, runId: string): string {

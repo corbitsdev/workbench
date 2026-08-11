@@ -99,7 +99,13 @@ export function Rail({
   const inboxRoute = RAIL_UTILITY_ROUTES[0];
 
   return (
-    <div className="shell-brand-rail-column">
+    <div
+      className={
+        showLabels
+          ? "shell-brand-rail-column shell-brand-rail-column--labels"
+          : "shell-brand-rail-column"
+      }
+    >
       <button
         type="button"
         className="shell-rail-mark"

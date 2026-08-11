@@ -28,6 +28,25 @@ export function purposeRunsForInsights(
   return runs.filter((run) => !isChannelHostDefinitionName(run.definitionName));
 }
 
+/**
+ * Keep runs whose `createdAt` falls inside `[fromIso, toIso]` (inclusive).
+ * Invalid timestamps are dropped so KPIs never invent rows.
+ */
+export function filterRunsByCreatedAt(
+  runs: readonly WorkflowRun[],
+  fromIso: string,
+  toIso: string,
+): readonly WorkflowRun[] {
+  const fromMs = Date.parse(fromIso);
+  const toMs = Date.parse(toIso);
+  if (Number.isNaN(fromMs) || Number.isNaN(toMs)) return [];
+  return runs.filter((run) => {
+    const t = Date.parse(run.createdAt);
+    if (Number.isNaN(t)) return false;
+    return t >= fromMs && t <= toMs;
+  });
+}
+
 export function computeInsightsStats(
   runs: readonly WorkflowRun[],
   routines: readonly Routine[],

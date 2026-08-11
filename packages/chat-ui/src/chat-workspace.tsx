@@ -771,8 +771,10 @@ export function ChatWorkspace({
 }) {
   switch (tenant.kind) {
     case "ready":
+      // Remount on tenant switch so prior-tenant state cannot leak.
       return (
         <ChatWorkspaceInner
+          key={tenant.tenantId}
           tenantId={tenant.tenantId}
           channelId={channelId}
           {...(onChannelChange !== undefined ? { onChannelChange } : {})}

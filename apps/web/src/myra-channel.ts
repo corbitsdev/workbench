@@ -24,7 +24,7 @@ export function findMyraChannel(
 /**
  * List channel + chat kinds, reuse a Myra-titled row if one exists, otherwise
  * create a multiplayer channel named Myra. Full defineAgent-per-channel seed
- * is CL-5656; this is the land path that opens canvas onto a real channel.
+ * is CL-5656; this is the land path that opens stage onto a real channel.
  */
 export async function ensureMyraChannel(
   tenantId: string,

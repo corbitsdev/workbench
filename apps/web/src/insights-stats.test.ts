@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { WorkflowRun } from "./api";
-import { computeInsightsStats } from "./insights-stats";
+import { computeInsightsStats, filterRunsByCreatedAt } from "./insights-stats";
 import type { Routine } from "./routines-api";
 
 function run(
@@ -86,5 +86,53 @@ describe("computeInsightsStats", () => {
     const stats = computeInsightsStats(runs, [], 2);
     expect(stats.recentRuns).toHaveLength(2);
     expect(stats.deployed).toBe(5);
+  });
+});
+
+describe("filterRunsByCreatedAt", () => {
+  const from = "2026-01-08T18:00:00.000Z";
+  const to = "2026-01-15T18:00:00.000Z";
+
+  test("keeps runs inside the inclusive window", () => {
+    const filtered = filterRunsByCreatedAt(
+      [
+        run({
+          id: "old",
+          status: "stopped",
+          createdAt: "2026-01-08T17:59:59.000Z",
+        }),
+        run({ id: "edge-from", status: "stopped", createdAt: from }),
+        run({
+          id: "mid",
+          status: "running",
+          createdAt: "2026-01-12T12:00:00.000Z",
+        }),
+        run({ id: "edge-to", status: "deployed", createdAt: to }),
+        run({
+          id: "future",
+          status: "running",
+          createdAt: "2026-01-15T18:00:01.000Z",
+        }),
+      ],
+      from,
+      to,
+    );
+    expect(filtered.map((r) => r.id)).toEqual(["edge-from", "mid", "edge-to"]);
+  });
+
+  test("drops invalid createdAt timestamps", () => {
+    const filtered = filterRunsByCreatedAt(
+      [
+        run({ id: "bad", status: "stopped", createdAt: "not-a-date" }),
+        run({
+          id: "ok",
+          status: "stopped",
+          createdAt: "2026-01-10T00:00:00.000Z",
+        }),
+      ],
+      from,
+      to,
+    );
+    expect(filtered.map((r) => r.id)).toEqual(["ok"]);
   });
 });

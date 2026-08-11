@@ -1,27 +1,20 @@
 // Insights over packages/insights: cost KPIs, activity bars, token mosaic,
 // cost-by-model, calls-by-tool, recent purpose runs, runs history, and
 // run-trace detail. Null costs and rates render as em-dash — never zero.
+// Stage layout mirrors the shell mock: KPI row → chart/card grid → recent runs.
 
 import {
   Badge,
-  CategoryBars,
   PageShell,
   RichEmptyState,
   Section,
   Skeleton,
-  StatGrid,
-  StatTile,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
   TokenMosaic,
   TraceWaterfall,
   type TraceSpan,
 } from "@corbits/react-ui";
 import { ChartColumn } from "lucide-react";
+import { useMemo } from "react";
 
 import {
   RunsSchema,
@@ -31,6 +24,7 @@ import {
 } from "../api";
 import { useBench } from "../bench-context";
 import {
+  createInsightsWindow,
   durationLabel,
   formatCount,
   formatRate,
@@ -46,6 +40,7 @@ import {
   RunTraceSchema,
   ToolsResponseSchema,
   type DayActivity,
+  type InsightsRange,
   type ModelUsage,
   type OverallUsage,
   type RunTrace,
@@ -53,6 +48,7 @@ import {
 } from "../insights-api";
 import {
   computeInsightsStats,
+  filterRunsByCreatedAt,
   purposeRunsForInsights,
 } from "../insights-stats";
 import { useNavigate } from "../navigation";
@@ -83,10 +79,12 @@ function statusTone(
     case "completed":
     case "succeeded":
     case "ok":
+    case "deployed":
       return "success";
     case "running":
     case "pending":
     case "awaiting":
+    case "updating":
       return "info";
     case "failed":
     case "errored":
@@ -104,39 +102,6 @@ function tileValue(value: string | number | null, loading: boolean): string {
   if (loading) return "…";
   if (value === null) return "—";
   return String(value);
-}
-
-function activityBarsData(days: readonly DayActivity[]) {
-  // Package DayActivity has no costUsd — secondary is token count when present.
-  return days.map((d) => ({
-    label: d.day.slice(5),
-    value: d.turns,
-    secondaryLabel: formatCount(d.tokens),
-  }));
-}
-
-function modelBarsData(models: readonly ModelUsage[]) {
-  return models.map((m) => {
-    const secondary =
-      m.costUsd === null && m.tokens.total > 0
-        ? "rates unknown"
-        : formatUsd(m.costUsd);
-    return {
-      label: m.model,
-      value: m.tokens.total,
-      secondaryLabel: secondary,
-    };
-  });
-}
-
-function toolBarsData(tools: readonly ToolCall[]) {
-  return tools.map((t) => {
-    const secondary =
-      t.errorRate === null ? undefined : `${formatRate(t.errorRate)} err`;
-    return secondary === undefined
-      ? { label: t.tool, value: t.calls }
-      : { label: t.tool, value: t.calls, secondaryLabel: secondary };
-  });
 }
 
 function tokenParts(summary: OverallUsage) {
@@ -183,6 +148,195 @@ function cacheHitRate(summary: OverallUsage): number | null {
   return t.cacheRead / denom;
 }
 
+/** Weekday short label for a UTC YYYY-MM-DD activity day. */
+function dayWeekdayLabel(day: string): string {
+  const date = new Date(`${day}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return day.slice(5);
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+}
+
+/** Prefer the most recent 7 buckets when the sink returns a longer window. */
+function recentActivityDays(
+  days: readonly DayActivity[],
+  limit = 7,
+): readonly DayActivity[] {
+  if (days.length <= limit) return days;
+  return days.slice(days.length - limit);
+}
+
+function runsDetailLabel(stats: {
+  readonly running: number;
+  readonly errored: number;
+}): string {
+  if (stats.running > 0) {
+    return `${formatCount(stats.running)} running`;
+  }
+  if (stats.errored > 0) {
+    return `${formatCount(stats.errored)} errored`;
+  }
+  return "purpose workflows";
+}
+
+function InsightsStat({
+  label,
+  value,
+  detail,
+  onClick,
+  loading,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly detail?: string;
+  readonly onClick?: () => void;
+  readonly loading?: boolean;
+}) {
+  const body = (
+    <>
+      <div className="insights-stat-k">{label}</div>
+      <div className="insights-stat-v">{loading ? "…" : value}</div>
+      {detail !== undefined ? (
+        <div className="insights-stat-d">{loading ? " " : detail}</div>
+      ) : null}
+    </>
+  );
+  if (onClick !== undefined) {
+    return (
+      <button type="button" className="insights-stat" onClick={onClick}>
+        {body}
+      </button>
+    );
+  }
+  return <div className="insights-stat">{body}</div>;
+}
+
+function ActivityBars({ days }: { readonly days: readonly DayActivity[] }) {
+  const window = recentActivityDays(days);
+  const max = Math.max(1, ...window.map((d) => d.turns));
+  return (
+    <div className="insights-gen-bars" role="img" aria-label="Daily turns">
+      {window.map((d) => {
+        const pct = Math.round((d.turns / max) * 100);
+        return (
+          <div key={d.day} className="insights-gen-bar-row">
+            <span title={d.day}>{dayWeekdayLabel(d.day)}</span>
+            <div className="insights-gen-bar">
+              <i style={{ width: `${pct}%` }} />
+            </div>
+            <span>{formatCount(d.turns)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ModelCostTable({
+  models,
+}: {
+  readonly models: readonly ModelUsage[];
+}) {
+  return (
+    <div className="insights-table-wrap">
+      <table className="insights-table">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Cost</th>
+            <th>Input</th>
+            <th>Cache read</th>
+            <th>Output</th>
+          </tr>
+        </thead>
+        <tbody>
+          {models.map((m) => (
+            <tr key={m.model}>
+              <td title={m.model}>{m.model}</td>
+              <td>
+                {m.costUsd === null && m.tokens.total > 0
+                  ? "—"
+                  : formatUsd(m.costUsd)}
+              </td>
+              <td>{formatCount(m.tokens.input)}</td>
+              <td>{formatCount(m.tokens.cacheRead)}</td>
+              <td>{formatCount(m.tokens.output)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ToolCallsTable({ tools }: { readonly tools: readonly ToolCall[] }) {
+  return (
+    <div className="insights-table-wrap">
+      <table className="insights-table">
+        <thead>
+          <tr>
+            <th>Tool</th>
+            <th>Calls</th>
+            <th>Errors</th>
+            <th>Error rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tools.map((t) => (
+            <tr key={t.tool}>
+              <td title={t.tool}>{t.tool}</td>
+              <td>{formatCount(t.calls)}</td>
+              <td>{formatCount(t.errors)}</td>
+              <td>{formatRate(t.errorRate)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RecentRunRows({
+  runs,
+  onOpenRun,
+  onOpenRuns,
+}: {
+  readonly runs: readonly WorkflowRun[];
+  readonly onOpenRun: (id: string) => void;
+  readonly onOpenRuns: () => void;
+}) {
+  return (
+    <div className="insights-run-list">
+      {runs.map((row) => (
+        <button
+          key={row.id}
+          type="button"
+          className="insights-run-row"
+          onClick={() => onOpenRun(row.id)}
+        >
+          <span className="insights-run-meta">
+            <strong>{row.definitionName}</strong>
+            <span>
+              {formatWhen(row.createdAt)} · {row.tenantName}
+            </span>
+          </span>
+          <Badge tone={statusTone(row.status)}>{row.status}</Badge>
+        </button>
+      ))}
+      <button
+        type="button"
+        className="insights-run-row insights-run-row-more"
+        onClick={onOpenRuns}
+      >
+        <span className="insights-run-meta">
+          <strong>All runs & traces →</strong>
+        </span>
+      </button>
+    </div>
+  );
+}
+
 function InsightsLanding({
   summary,
   activity,
@@ -190,6 +344,7 @@ function InsightsLanding({
   byTool,
   runs,
   routines,
+  range,
   loading,
   onOpenRun,
   onOpenRuns,
@@ -200,12 +355,16 @@ function InsightsLanding({
   readonly byTool: readonly ToolCall[] | null;
   readonly runs: readonly WorkflowRun[];
   readonly routines: readonly Routine[];
+  /** Same 7-day window as usage/activity/tools requests. */
+  readonly range: InsightsRange;
   readonly loading: boolean;
   readonly onOpenRun: (id: string) => void;
   readonly onOpenRuns: () => void;
 }) {
-  const stats = computeInsightsStats(runs, routines);
-  const purposeRuns = purposeRunsForInsights(runs);
+  // KPI count + recent list only — history/detail keep full run list.
+  const windowedRuns = filterRunsByCreatedAt(runs, range.from, range.to);
+  const stats = computeInsightsStats(windowedRuns, routines);
+  const purposeRuns = purposeRunsForInsights(windowedRuns);
   const empty =
     !loading &&
     (summary === null || summary.turns === 0) &&
@@ -226,148 +385,117 @@ function InsightsLanding({
 
   const mosaicParts = summary === null ? [] : tokenParts(summary);
   const hitRate = summary === null ? null : cacheHitRate(summary);
+  const missingRates = summary === null ? [] : modelsWithMissingRates(summary);
+  const activityDays =
+    activity !== null && activity.length > 0 ? activity : null;
+  const models = byModel !== null && byModel.length > 0 ? byModel : null;
+  const tools = byTool !== null && byTool.length > 0 ? byTool : null;
+  const recent = purposeRuns.slice(0, 12);
 
   return (
-    <>
-      <Section
-        title="Cost & activity"
-        description="Live usage for this bench. Missing rates show as —."
-      >
-        <StatGrid>
-          <StatTile
-            label="Total cost"
-            value={tileValue(
-              summary === null ? null : formatUsd(summary.costUsd),
-              loading,
-            )}
+    <div className="insights-layout">
+      <div className="insights-stat-row">
+        <InsightsStat
+          label="Cost"
+          value={tileValue(
+            summary === null ? null : formatUsd(summary.costUsd),
+            loading,
+          )}
+          detail={
+            summary === null
+              ? "tokens unknown"
+              : `${formatCount(summary.tokens.total)} tokens`
+          }
+          loading={loading}
+        />
+        <InsightsStat
+          label="Activity"
+          value={tileValue(
+            summary === null ? null : formatCount(summary.turns),
+            loading,
+          )}
+          detail="turns"
+          loading={loading}
+        />
+        <InsightsStat
+          label="Runs"
+          value={tileValue(formatCount(stats.totalRuns), loading)}
+          detail={runsDetailLabel(stats)}
+          onClick={onOpenRuns}
+          loading={loading}
+        />
+        {stats.running > 0 || loading ? (
+          <InsightsStat
+            label="Running now"
+            value={tileValue(formatCount(stats.running), loading)}
+            detail="in flight"
+            loading={loading}
           />
-          <StatTile
-            label="Total tokens"
-            value={tileValue(
-              summary === null ? null : formatCount(summary.tokens.total),
-              loading,
-            )}
-          />
-          <StatTile
-            label="Turns"
-            value={tileValue(
-              summary === null ? null : formatCount(summary.turns),
-              loading,
-            )}
-          />
-          <StatTile
-            label="Purpose runs"
-            value={tileValue(formatCount(stats.totalRuns), loading)}
-          />
-        </StatGrid>
-        {summary !== null && modelsWithMissingRates(summary).length > 0 ? (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Rates unknown for: {modelsWithMissingRates(summary).join(", ")}.
-            Those turns do not contribute a fabricated cost.
-          </p>
         ) : null}
-      </Section>
+      </div>
 
-      {activity !== null && activity.length > 0 ? (
-        <Section title="Activity" description="Turns per UTC day.">
-          <CategoryBars
-            title="Daily turns"
-            data={activityBarsData(activity)}
-            valueLabel="Turns"
-          />
-        </Section>
+      {missingRates.length > 0 ? (
+        <p className="insights-note">
+          Rates unknown for: {missingRates.join(", ")}. Those turns do not
+          contribute a fabricated cost.
+        </p>
       ) : null}
 
-      {summary !== null && mosaicParts.length > 0 ? (
-        <Section
-          title="Token mix"
-          description="Share of tokens by class for recorded turns."
-        >
-          <div className="grid gap-4 md:grid-cols-[1fr_auto_auto]">
+      <div className="insights-grid">
+        {activityDays !== null ? (
+          <section className="insights-panel">
+            <h3>Activity · last {Math.min(7, activityDays.length)} days</h3>
+            <ActivityBars days={activityDays} />
+          </section>
+        ) : null}
+
+        {summary !== null && mosaicParts.length > 0 ? (
+          <section className="insights-panel">
+            <h3>Token mix</h3>
             <TokenMosaic parts={mosaicParts} label="Token usage by class" />
-            <StatTile
-              label="Cache hit rate"
-              value={tileValue(formatRate(hitRate), false)}
-            />
-            <StatTile
-              label="Running now"
-              value={tileValue(formatCount(stats.running), false)}
-            />
+            <div className="insights-stat-row insights-stat-row-nested">
+              <InsightsStat
+                label="Cache hit"
+                value={tileValue(formatRate(hitRate), false)}
+                detail="cache read / (input + cache read)"
+              />
+              <InsightsStat
+                label="Total tokens"
+                value={formatCount(summary.tokens.total)}
+                detail={`${formatCount(summary.turns)} turns`}
+              />
+            </div>
+          </section>
+        ) : null}
+
+        {models !== null ? (
+          <section className="insights-panel">
+            <h3>Cost by model</h3>
+            <ModelCostTable models={models} />
+          </section>
+        ) : null}
+
+        {tools !== null ? (
+          <section className="insights-panel">
+            <h3>Calls by tool</h3>
+            <ToolCallsTable tools={tools} />
+          </section>
+        ) : null}
+      </div>
+
+      {recent.length > 0 ? (
+        <section className="insights-section">
+          <div className="insights-section-head">
+            <h2>Recent runs</h2>
           </div>
-        </Section>
-      ) : null}
-
-      {byModel !== null && byModel.length > 0 ? (
-        <Section title="Cost by model" description="Tokens and cost per model.">
-          <CategoryBars
-            title="Models"
-            data={modelBarsData(byModel)}
-            valueLabel="Tokens"
-            format={(n) => formatCount(n)}
+          <RecentRunRows
+            runs={recent}
+            onOpenRun={onOpenRun}
+            onOpenRuns={onOpenRuns}
           />
-        </Section>
+        </section>
       ) : null}
-
-      {byTool !== null && byTool.length > 0 ? (
-        <Section
-          title="Calls by tool"
-          description="Tool invocations on this bench."
-        >
-          <CategoryBars
-            title="Tools"
-            data={toolBarsData(byTool)}
-            valueLabel="Calls"
-          />
-        </Section>
-      ) : null}
-
-      {purposeRuns.length > 0 ? (
-        <Section
-          title="Recent runs"
-          description="Newest purpose workflow runs first. Open a row for the trace when one is available."
-        >
-          <div className="mb-2 flex justify-end">
-            <button
-              type="button"
-              className="text-sm text-primary underline-offset-2 hover:underline"
-              onClick={onOpenRuns}
-            >
-              All runs
-            </button>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Workflow</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Bench</TableHead>
-                <TableHead>Started</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {purposeRuns.slice(0, 12).map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <button
-                      type="button"
-                      className="text-left text-primary underline-offset-2 hover:underline"
-                      onClick={() => onOpenRun(row.id)}
-                    >
-                      {row.definitionName}
-                    </button>
-                  </TableCell>
-                  <TableCell>
-                    <Badge tone={statusTone(row.status)}>{row.status}</Badge>
-                  </TableCell>
-                  <TableCell>{row.tenantName}</TableCell>
-                  <TableCell>{formatWhen(row.createdAt)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Section>
-      ) : null}
-    </>
+    </div>
   );
 }
 
@@ -385,21 +513,14 @@ function InsightsRunsHistory({
   const purpose = purposeRunsForInsights(runs);
   return (
     <PageShell width="full" className="page-fill">
-      <Section
-        title="Runs"
-        description={
-          <>
-            <button
-              type="button"
-              className="text-primary underline-offset-2 hover:underline"
-              onClick={onBack}
-            >
-              Insights
-            </button>
-            {" / Runs history"}
-          </>
-        }
-      >
+      <div className="insights-layout">
+        <div className="insights-crumb">
+          <button type="button" className="insights-crumb-btn" onClick={onBack}>
+            Insights
+          </button>
+          <span className="insights-crumb-sep">/</span>
+          <span>Runs</span>
+        </div>
         {loading ? (
           <Skeleton className="h-40 w-full" />
         ) : purpose.length === 0 ? (
@@ -409,38 +530,26 @@ function InsightsRunsHistory({
             description="When a routine or purpose workflow fires, it shows up here."
           />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Workflow</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Bench</TableHead>
-                <TableHead>Started</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {purpose.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <button
-                      type="button"
-                      className="text-left text-primary underline-offset-2 hover:underline"
-                      onClick={() => onOpenRun(row.id)}
-                    >
-                      {row.definitionName}
-                    </button>
-                  </TableCell>
-                  <TableCell>
-                    <Badge tone={statusTone(row.status)}>{row.status}</Badge>
-                  </TableCell>
-                  <TableCell>{row.tenantName}</TableCell>
-                  <TableCell>{formatWhen(row.createdAt)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="insights-run-list">
+            {purpose.map((row) => (
+              <button
+                key={row.id}
+                type="button"
+                className="insights-run-row"
+                onClick={() => onOpenRun(row.id)}
+              >
+                <span className="insights-run-meta">
+                  <strong>{row.definitionName}</strong>
+                  <span>
+                    {formatWhen(row.createdAt)} · {row.tenantName}
+                  </span>
+                </span>
+                <Badge tone={statusTone(row.status)}>{row.status}</Badge>
+              </button>
+            ))}
+          </div>
         )}
-      </Section>
+      </div>
     </PageShell>
   );
 }
@@ -460,70 +569,69 @@ function InsightsRunDetail({
 
   return (
     <PageShell width="full" className="page-fill">
-      <Section
-        title={run?.definitionName ?? runId}
-        description={
-          <>
-            <button
-              type="button"
-              className="text-primary underline-offset-2 hover:underline"
-              onClick={onBack}
-            >
-              Runs
-            </button>
-            {` / ${runId}`}
-          </>
-        }
-      >
-        <StatGrid>
-          <StatTile label="Status" value={dash(run?.status ?? null)} />
-          <StatTile
+      <div className="insights-layout">
+        <div className="insights-crumb">
+          <button type="button" className="insights-crumb-btn" onClick={onBack}>
+            Runs
+          </button>
+          <span className="insights-crumb-sep">/</span>
+          <span>{run?.definitionName ?? runId}</span>
+        </div>
+
+        <div className="insights-stat-row">
+          <InsightsStat label="Status" value={dash(run?.status ?? null)} />
+          <InsightsStat
             label="Started"
             value={dash(run !== null ? formatWhen(run.createdAt) : null)}
           />
-          <StatTile label="Cost" value="—" />
-          <StatTile label="Tokens" value="—" />
-        </StatGrid>
-      </Section>
-
-      {trace.kind === "loading" ? <Skeleton className="h-48 w-full" /> : null}
-      {trace.kind === "error" ? (
-        <RichEmptyState
-          title="Trace not available"
-          description={
-            trace.message.includes("404") ||
-            trace.message.toLowerCase().includes("not found")
-              ? "No span data is recorded for this run yet. Pre-sink history is absent on purpose — not shown as zeros."
-              : trace.message
-          }
-        />
-      ) : null}
-      {trace.kind === "unauthenticated" ? <SignedOutNotice /> : null}
-      {trace.kind === "ready" &&
-      "absent" in trace.data &&
-      trace.data.spans === null ? (
-        <RichEmptyState
-          title="Trace reader not mounted"
-          description="Run-trace detail is not wired on this hub yet. Spans stay absent — not shown as zeros."
-        />
-      ) : null}
-      {trace.kind === "ready" && spans.length > 0 ? (
-        <Section title="Trace" description="Span timeline for this run.">
-          <TraceWaterfall
-            title="Run trace"
-            spans={spans}
-            description={`${spans.length} span${spans.length === 1 ? "" : "s"}`}
+          <InsightsStat label="Bench" value={dash(run?.tenantName ?? null)} />
+          <InsightsStat
+            label="Cost"
+            value="—"
+            detail="per-run cost not wired"
           />
-        </Section>
-      ) : null}
-      {trace.kind === "ready" &&
-      spans.length === 0 &&
-      !("absent" in trace.data) ? (
-        <RichEmptyState
-          title="Empty trace"
-          description="The run exists but has no recorded spans yet."
-        />
-      ) : null}
+        </div>
+
+        {trace.kind === "loading" ? <Skeleton className="h-48 w-full" /> : null}
+        {trace.kind === "error" ? (
+          <RichEmptyState
+            title="Trace not available"
+            description={
+              trace.message.includes("404") ||
+              trace.message.toLowerCase().includes("not found")
+                ? "No span data is recorded for this run yet. Pre-sink history is absent on purpose — not shown as zeros."
+                : trace.message
+            }
+          />
+        ) : null}
+        {trace.kind === "unauthenticated" ? <SignedOutNotice /> : null}
+        {trace.kind === "ready" &&
+        "absent" in trace.data &&
+        trace.data.spans === null ? (
+          <RichEmptyState
+            title="Trace reader not mounted"
+            description="Run-trace detail is not wired on this hub yet. Spans stay absent — not shown as zeros."
+          />
+        ) : null}
+        {trace.kind === "ready" && spans.length > 0 ? (
+          <section className="insights-panel">
+            <h3>Timeline</h3>
+            <TraceWaterfall
+              title="Run trace"
+              spans={spans}
+              description={`${spans.length} span${spans.length === 1 ? "" : "s"}`}
+            />
+          </section>
+        ) : null}
+        {trace.kind === "ready" &&
+        spans.length === 0 &&
+        !("absent" in trace.data) ? (
+          <RichEmptyState
+            title="Empty trace"
+            description="The run exists but has no recorded spans yet."
+          />
+        ) : null}
+      </div>
     </PageShell>
   );
 }
@@ -552,6 +660,7 @@ export function InsightsPage({
   byTool,
   runs,
   routines,
+  range,
 }: {
   readonly path: string;
   readonly summary: APIQuery<OverallUsage>;
@@ -559,6 +668,8 @@ export function InsightsPage({
   readonly byTool: APIQuery<readonly ToolCall[]>;
   readonly runs: APIQuery<{ data: readonly WorkflowRun[] }>;
   readonly routines: APIQuery<readonly Routine[]>;
+  /** Stable 7-day window created once per route mount. */
+  readonly range: InsightsRange;
 }) {
   const navigate = useNavigate();
   const { mode, runId } = parseInsightsPath(path);
@@ -641,10 +752,7 @@ export function InsightsPage({
 
   return (
     <PageShell width="full" className="page-fill">
-      <Section
-        title="Insights"
-        description="Usage, cost, and purpose-run activity for this bench."
-      >
+      <Section title="Insights" description="Overview">
         <InsightsLanding
           summary={summaryData}
           activity={activityData}
@@ -652,6 +760,7 @@ export function InsightsPage({
           byTool={byToolData}
           runs={runsData}
           routines={routinesData}
+          range={range}
           loading={loading}
           onOpenRun={(id) =>
             navigate(`/insights/runs/${encodeURIComponent(id)}`)
@@ -689,16 +798,22 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     path ??
     (typeof window !== "undefined" ? window.location.pathname : "/insights");
 
+  // One window per mount — shared by usage/activity/tools query keys and
+  // the landing run KPI/recent filter so labels stay honest and stable.
+  const range = useMemo(() => createInsightsWindow(), []);
+
   const summary = useAPIQuery(
-    selectedTenantId === null ? "" : insightsUsagePath(selectedTenantId),
+    selectedTenantId === null ? "" : insightsUsagePath(selectedTenantId, range),
     OverallUsageSchema,
   );
   const activityRaw = useAPIQuery(
-    selectedTenantId === null ? "" : insightsActivityPath(selectedTenantId, 14),
+    selectedTenantId === null
+      ? ""
+      : insightsActivityPath(selectedTenantId, range),
     ActivityResponseSchema,
   );
   const toolsRaw = useAPIQuery(
-    selectedTenantId === null ? "" : insightsToolsPath(selectedTenantId),
+    selectedTenantId === null ? "" : insightsToolsPath(selectedTenantId, range),
     ToolsResponseSchema,
   );
   const runs = useAPIQuery("/api/me/workflows/runs", RunsSchema);
@@ -757,6 +872,7 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       byTool={emptyList(byTool)}
       runs={runs}
       routines={routinesForPage}
+      range={range}
     />
   );
 }

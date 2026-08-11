@@ -1,7 +1,7 @@
 // Column 4: the optional canvas. Collapsed, it takes no space at all — the
-// main pane gets the width back — and open, it hosts the channel chat
-// surface (the retired `/chat` page's `ChatWorkspace`) and, when a profile
-// subject is set, a ProfileCard overlay for that member or agent.
+// main pane gets the width back — and open, it hosts targeted auxiliary
+// content (profile cards today). Primary channel conversation lives in the
+// main stage, not here.
 //
 // The collapse/expand motion lives entirely in `shell.css` as a CSS
 // transition on `transform`/`opacity` (plus width, so the main pane
@@ -17,59 +17,20 @@ import {
   ProfileCard,
   type ProfileCardAction,
 } from "@corbits/react-ui";
-import { ChatWorkspace, type ProfileSubject } from "@corbits/chat-ui";
-import {
-  LayoutPanelLeft,
-  MessageSquare,
-  PanelRightClose,
-  X,
-} from "lucide-react";
-
-import { useBench } from "../bench-context";
-import { tenantResolutionFromBench } from "./tenant-resolution";
-
-export function CanvasToggle({
-  open,
-  onToggle,
-}: {
-  readonly open: boolean;
-  readonly onToggle: () => void;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={onToggle}
-      aria-pressed={open}
-      aria-label={open ? "Hide canvas" : "Show canvas"}
-      title={open ? "Hide canvas" : "Show canvas"}
-    >
-      {open ? <PanelRightClose /> : <LayoutPanelLeft />}
-    </Button>
-  );
-}
+import type { ProfileSubject } from "@corbits/chat-ui";
+import { UserRound, X } from "lucide-react";
 
 export function CanvasColumn({
   open,
-  channelId,
   profile,
-  onChannelChange,
-  onOpenProfile,
   onCloseProfile,
   onNavigate,
 }: {
   readonly open: boolean;
-  readonly channelId: string | null;
   readonly profile: ProfileSubject | null;
-  readonly onChannelChange: (channelId: string) => void;
-  readonly onOpenProfile: (subject: ProfileSubject) => void;
   readonly onCloseProfile: () => void;
   readonly onNavigate: (path: string) => void;
 }) {
-  const bench = useBench();
-  const tenant = tenantResolutionFromBench(bench);
-  const principalId = bench.selectedPrincipalId ?? undefined;
-
   // `inert` rather than `aria-hidden`: a collapsed column has to be out of
   // both the accessibility tree and the tab order, and `aria-hidden` alone
   // only does the first — a focusable descendant inside an `aria-hidden`
@@ -84,21 +45,11 @@ export function CanvasColumn({
             onClose={onCloseProfile}
             onNavigate={onNavigate}
           />
-        ) : channelId === null ? (
-          <EmptyState
-            icon={<MessageSquare />}
-            title="No channel open"
-            description="Pick a channel from the panel, or open one from Agents or the command palette."
-          />
         ) : (
-          <ChatWorkspace
-            tenant={tenant}
-            channelId={channelId}
-            onChannelChange={onChannelChange}
-            onOpenProfile={onOpenProfile}
-            {...(principalId !== undefined
-              ? { currentUser: { principalId } }
-              : {})}
+          <EmptyState
+            icon={<UserRound />}
+            title="Nothing open"
+            description="Profiles and other details open here when you need them."
           />
         )}
       </div>

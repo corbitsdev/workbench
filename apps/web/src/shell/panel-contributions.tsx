@@ -305,10 +305,10 @@ export function assignChannelBucket(channel: Channel): ChannelBucketId {
 
 function ChannelsBand({
   path,
-  onOpenInCanvas,
+  onNavigate,
 }: {
   readonly path: string;
-  readonly onOpenInCanvas: (channelId: string) => void;
+  readonly onNavigate: (to: string) => void;
 }) {
   const { selectedTenantId } = useBench();
   const activity = useBenchActivity(selectedTenantId);
@@ -403,7 +403,7 @@ function ChannelsBand({
                   channel={channel}
                   active={channel.id === activeId}
                   tenantId={tenantId}
-                  onSelect={() => onOpenInCanvas(channel.id)}
+                  onSelect={() => onNavigate(channelPath(channel.id))}
                 />
               ))}
             </div>
@@ -619,12 +619,15 @@ function SkillsFeedBand({
   return (
     <div className="panel-stack" aria-label="Skills">
       {skills.length > 0 ? (
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search skills"
-          aria-label="Search skills"
-        />
+        <label className="shell-skills-search">
+          <Search aria-hidden="true" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search skills"
+            aria-label="Search skills"
+          />
+        </label>
       ) : null}
       {skills.length === 0 ? (
         <EmptyState
@@ -642,8 +645,28 @@ function SkillsFeedBand({
         items.map((skill) => (
           <SidebarItemRow
             key={skill.id}
-            name={skill.name}
-            meta={skill.sessionLocal ? `${skill.access} · draft` : skill.access}
+            leading={
+              <span className="shell-skill-mark" aria-hidden="true">
+                S
+              </span>
+            }
+            name={
+              <span className="shell-skill-row-copy">
+                <strong>{skill.name}</strong>
+                <span>v{skill.version}</span>
+              </span>
+            }
+            meta={
+              <span
+                className={
+                  skill.sessionLocal
+                    ? "shell-skill-status is-draft"
+                    : "shell-skill-status is-installed"
+                }
+              >
+                {skill.sessionLocal ? "Draft" : "Installed"}
+              </span>
+            }
             selected={selectedId === skill.id}
             onSelect={() =>
               onNavigate(`/skills/${encodeURIComponent(skill.id)}`)
@@ -864,7 +887,7 @@ export function ensurePanelContributions(): void {
       };
     },
     pageSpecific: (ctx) => (
-      <ChannelsBand path={ctx.path} onOpenInCanvas={ctx.onOpenInCanvas} />
+      <ChannelsBand path={ctx.path} onNavigate={ctx.onNavigate} />
     ),
   });
 

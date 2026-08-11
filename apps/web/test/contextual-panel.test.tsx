@@ -21,14 +21,7 @@ function renderPanel(path: string): string {
   return renderToStaticMarkup(
     <TestQueryProvider>
       <BenchProvider>
-        <ContextualPanel
-          path={path}
-          onNavigate={noop}
-          onOpenInCanvas={noop}
-          canvasOpen={false}
-          onToggleCanvas={noop}
-          canvasAllowed={false}
-        />
+        <ContextualPanel path={path} onNavigate={noop} />
       </BenchProvider>
     </TestQueryProvider>,
   );
@@ -65,14 +58,7 @@ describe("ContextualPanel", () => {
       root.render(
         <TestQueryProvider>
           <BenchProvider>
-            <ContextualPanel
-              path="/"
-              onNavigate={noop}
-              onOpenInCanvas={noop}
-              canvasOpen={false}
-              onToggleCanvas={noop}
-              canvasAllowed={false}
-            />
+            <ContextualPanel path="/" onNavigate={noop} />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -128,14 +114,7 @@ describe("ContextualPanel", () => {
       root.render(
         <TestQueryProvider>
           <BenchProvider>
-            <ContextualPanel
-              path="/"
-              onNavigate={noop}
-              onOpenInCanvas={noop}
-              canvasOpen={false}
-              onToggleCanvas={noop}
-              canvasAllowed={false}
-            />
+            <ContextualPanel path="/" onNavigate={noop} />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -206,14 +185,7 @@ describe("ContextualPanel", () => {
       root.render(
         <TestQueryProvider>
           <BenchProvider>
-            <ContextualPanel
-              path="/"
-              onNavigate={noop}
-              onOpenInCanvas={noop}
-              canvasOpen={false}
-              onToggleCanvas={noop}
-              canvasAllowed={false}
-            />
+            <ContextualPanel path="/" onNavigate={noop} />
           </BenchProvider>
         </TestQueryProvider>,
       );

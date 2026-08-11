@@ -1,13 +1,12 @@
 // The four-column app shell: the global rail, the contextual panel, the
 // main pane a route renders into, and the optional canvas. Every route in
 // `../routes.tsx` mounts inside this same frame — there is no per-route
-// shell variant. The canvas hosts the channel chat surface; its toggle
-// lives in the panel page band, never as an absolute overlay over page
-// actions. Deep links (`/c/:channelId`) open the canvas onto that channel
-// under the currently selected workbench.
+// shell variant. Channel conversation lives in the main stage; the canvas
+// is auxiliary (profiles and similar) and opens on use, then closes
+// internally. There is no permanent canvas toggle.
 //
 // Workbench (tenant) selection is the outer scope for channels. Switching
-// workbenches clears any open canvas channel and leaves channel deep links
+// workbenches clears canvas auxiliary content and leaves channel deep links
 // so a foreign conversation cannot stay loaded under the new workbench.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -26,15 +25,11 @@ import {
 import { useShellFocusRescue } from "./focus-rescue";
 import { useScrollReset } from "./use-scroll-reset";
 import {
-  applyChannelPathToCanvas,
-  channelIdForTenant,
   clearCanvasForTenantSwitch,
   clearProfileInCanvas,
   initialCanvasColumnState,
-  openChannelInCanvas,
   openProfileInCanvas,
   resolveCanvasVisibility,
-  toggleCanvasColumn,
 } from "./canvas-column-state";
 import { CanvasAvailabilityProvider } from "./canvas-availability";
 import { CanvasColumn } from "./canvas-column";
@@ -57,32 +52,24 @@ export function AppShell({
   const navigate = useNavigate();
   const { selectedTenantId } = useBench();
   const layoutMode = useShellLayoutMode();
-  // Deep links seed canvas state on first paint only when a workbench is
-  // already selected; otherwise the path effect waits for tenant resolution.
-  const [canvasState, setCanvasState] = useState(() =>
-    applyChannelPathToCanvas(
-      initialCanvasColumnState(),
-      path,
-      selectedTenantId,
-    ),
-  );
+  const [canvasState, setCanvasState] = useState(initialCanvasColumnState);
   const canvasAllowed = canvasColumnAllowed(layoutMode);
   const canvasOpen = resolveCanvasVisibility(canvasState, canvasAllowed);
-  const canvasChannelId = channelIdForTenant(canvasState, selectedTenantId);
   const showContextualColumn = contextualPanelVisible(layoutMode);
   const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
   const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
   const frameRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   // Tracks the last workbench we applied so a real switch (A→B) can drop
-  // channel state without treating the initial null→ready resolve as a switch.
+  // canvas state without treating the initial null→ready resolve as a switch.
   const previousTenantIdRef = useRef<string | null>(selectedTenantId);
   useShellFocusRescue(layoutMode, frameRef);
   // Route changes must not inherit the previous page's scroll position.
   useScrollReset(mainRef, path);
 
-  // Workbench switch and channel deep links share one effect so a switch
-  // never races a path re-apply that would reopen the foreign channel.
+  // Workbench switch clears auxiliary canvas content and leaves any channel
+  // deep link so the stage does not keep a foreign conversation under the
+  // new workbench.
   useEffect(() => {
     const previousTenantId = previousTenantIdRef.current;
     if (
@@ -98,27 +85,7 @@ export function AppShell({
       return;
     }
     previousTenantIdRef.current = selectedTenantId;
-    setCanvasState((state) =>
-      applyChannelPathToCanvas(state, path, selectedTenantId),
-    );
   }, [path, selectedTenantId, navigate]);
-
-  const handleChannelChange = (channelId: string) => {
-    if (selectedTenantId === null) return;
-    setCanvasState(openChannelInCanvas(channelId, selectedTenantId));
-    if (!isChannelPath(path) || channelIdFromPath(path) !== channelId) {
-      navigate(channelPath(channelId));
-    }
-  };
-
-  // Open a channel into the canvas without leaving the current page. Unlike
-  // handleChannelChange, this never touches the URL — a channel row click in
-  // col2 should pop the conversation open in col4 and keep the user on /library
-  // (or wherever they are). Deep-link navigation is reserved for the URL.
-  const handleOpenInCanvas = (channelId: string) => {
-    if (selectedTenantId === null) return;
-    setCanvasState(openChannelInCanvas(channelId, selectedTenantId));
-  };
 
   const handleOpenProfile = (subject: ProfileSubject) => {
     setCanvasState((state) => openProfileInCanvas(state, subject));
@@ -129,7 +96,10 @@ export function AppShell({
   };
 
   return (
-    <CanvasAvailabilityProvider allowed={canvasAllowed}>
+    <CanvasAvailabilityProvider
+      allowed={canvasAllowed}
+      openProfile={handleOpenProfile}
+    >
       <div className="shell-frame" ref={frameRef} data-layout={layoutMode}>
         <Rail
           path={path}
@@ -139,14 +109,7 @@ export function AppShell({
           showLabels={railShowLabels(layoutMode)}
         />
         {showContextualColumn && (
-          <ContextualPanel
-            path={path}
-            onNavigate={navigate}
-            canvasOpen={canvasState.open}
-            onToggleCanvas={() => setCanvasState(toggleCanvasColumn)}
-            canvasAllowed={canvasAllowed}
-            onOpenInCanvas={handleOpenInCanvas}
-          />
+          <ContextualPanel path={path} onNavigate={navigate} />
         )}
         <div className="shell-main" ref={mainRef}>
           {contextualAsDrawer && (
@@ -165,10 +128,7 @@ export function AppShell({
         {canvasAllowed && (
           <CanvasColumn
             open={canvasOpen}
-            channelId={canvasChannelId}
             profile={canvasState.profile}
-            onChannelChange={handleChannelChange}
-            onOpenProfile={handleOpenProfile}
             onCloseProfile={handleCloseProfile}
             onNavigate={navigate}
           />
@@ -185,14 +145,7 @@ export function AppShell({
               data-open={narrowPanelOpen}
               inert={!narrowPanelOpen}
             >
-              <ContextualPanel
-                path={path}
-                onNavigate={navigate}
-                canvasOpen={canvasState.open}
-                onToggleCanvas={() => setCanvasState(toggleCanvasColumn)}
-                canvasAllowed={canvasAllowed}
-                onOpenInCanvas={handleOpenInCanvas}
-              />
+              <ContextualPanel path={path} onNavigate={navigate} />
             </div>
           </>
         )}

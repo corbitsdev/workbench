@@ -8,9 +8,17 @@ import {
 } from "../src/shell/breakpoints";
 import {
   initialCanvasColumnState,
+  openProfileInCanvas,
   resolveCanvasVisibility,
-  toggleCanvasColumn,
 } from "../src/shell/canvas-column-state";
+
+const sampleProfile = {
+  kind: "member" as const,
+  address: "u1@example.com",
+  handle: "ada",
+  displayName: "Ada",
+  initials: "AD",
+};
 
 describe("shellLayoutModeForWidth", () => {
   test("wide desktop widths are expanded", () => {
@@ -62,33 +70,9 @@ describe("canvas column state", () => {
     expect(initialCanvasColumnState().open).toBe(false);
   });
 
-  test("toggle flips open, and flips back", () => {
-    const opened = toggleCanvasColumn(initialCanvasColumnState());
-    expect(opened.open).toBe(true);
-    expect(toggleCanvasColumn(opened).open).toBe(false);
-  });
-
-  test("rapid toggling always lands on the correct parity", () => {
-    let state = initialCanvasColumnState();
-    for (let toggle = 0; toggle < 7; toggle += 1) {
-      state = toggleCanvasColumn(state);
-    }
-    expect(state.open).toBe(true);
-  });
-
-  test("visibility requires both the toggle and the viewport to agree", () => {
-    const open = {
-      open: true,
-      channelId: "ch_1" as string | null,
-      channelTenantId: "tnt_a" as string | null,
-      profile: null,
-    };
-    const closed = {
-      open: false,
-      channelId: null as string | null,
-      channelTenantId: null as string | null,
-      profile: null,
-    };
+  test("visibility requires both demand-driven open and the viewport", () => {
+    const open = openProfileInCanvas(initialCanvasColumnState(), sampleProfile);
+    const closed = initialCanvasColumnState();
     expect(resolveCanvasVisibility(open, true)).toBe(true);
     expect(resolveCanvasVisibility(open, false)).toBe(false);
     expect(resolveCanvasVisibility(closed, true)).toBe(false);

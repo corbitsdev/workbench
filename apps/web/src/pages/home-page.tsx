@@ -1,6 +1,6 @@
-// Default land: open (or create) the Myra channel in the canvas. Home as a
+// Default land: open (or create) the Myra channel in the main stage. Home as a
 // dashboard does not earn its keep — `/` only exists as the ensure+redirect
-// hop. Deep links to other pages are unchanged.
+// hop onto `/c/:channelId`. Deep links to other pages are unchanged.
 
 import { BootScreen, EmptyState, PageShell } from "@corbits/react-ui";
 import { CircleAlert } from "lucide-react";

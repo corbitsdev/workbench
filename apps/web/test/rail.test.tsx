@@ -63,13 +63,22 @@ describe("Rail", () => {
 
   test("showLabels renders captions under primary icons only", () => {
     const markup = renderRail("/", true);
+    // Wider labeled column so every caption fits without ellipsis.
+    expect(markup).toContain("shell-brand-rail-column--labels");
     for (const route of RAIL_PRIMARY_ROUTES) {
+      // Full label text is in the caption slot — never a truncated fragment.
       expect(markup).toMatch(
         new RegExp(
           `data-slot="sidebar-rail-item-label"[^>]*>${route.label}</span>`,
         ),
       );
     }
+  });
+
+  test("icon-only mode keeps the narrow column (no labeled modifier)", () => {
+    const markup = renderRail("/");
+    expect(markup).toContain("shell-brand-rail-column");
+    expect(markup).not.toContain("shell-brand-rail-column--labels");
   });
 
   test("does not list Chat or Approvals on the rail", () => {
