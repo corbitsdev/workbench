@@ -909,10 +909,11 @@ export function ensurePanelContributions(): void {
     pageBand: (ctx) => ({
       title: "Agents",
       subtitle: "Definitions that run on this bench",
-      actions: [
+      headerActions: [
         {
           id: "create-agent",
           label: "Create agent",
+          icon: <Plus />,
           onSelect: () => {
             window.dispatchEvent(new CustomEvent("workbench:agents:create"));
             if (!pathMatches("/agents", ctx.path)) ctx.onNavigate("/agents");
@@ -931,10 +932,11 @@ export function ensurePanelContributions(): void {
     pageBand: (ctx) => ({
       title: "Routines",
       subtitle: "Scheduled and on-demand workflows",
-      actions: [
+      headerActions: [
         {
           id: "create-routine",
           label: "Create routine",
+          icon: <Plus />,
           onSelect: () => {
             window.dispatchEvent(new CustomEvent("workbench:routines:create"));
             if (!pathMatches("/routines", ctx.path))
@@ -986,10 +988,11 @@ export function ensurePanelContributions(): void {
     pageBand: (ctx) => ({
       title: "Skills",
       subtitle: "Packaged capabilities an agent definition can pick up",
-      actions: [
+      headerActions: [
         {
           id: "create-skill",
           label: "Create skill",
+          icon: <Plus />,
           onSelect: () => {
             window.dispatchEvent(new CustomEvent("workbench:skills:create"));
             if (!pathMatches("/skills", ctx.path)) ctx.onNavigate("/skills");
