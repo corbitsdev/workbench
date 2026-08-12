@@ -33,6 +33,7 @@ export {
 } from "./collector";
 export {
   activityByDay,
+  emptyOverallUsageSummary,
   emptyToolCallReader,
   summarizeUsage,
   type DayActivity,

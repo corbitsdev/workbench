@@ -1,10 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import type { Channel } from "@corbits/chat-ui";
 
+import { resetPendingLibraryUpload } from "../library-upload";
+import { resolvePanelContribution } from "./panel-contribution";
 import {
   assignChannelBucket,
   channelDetails,
+  ensurePanelContributions,
   panelRenamePayload,
   panelRowMenuLabels,
 } from "./panel-contributions";
@@ -58,6 +61,54 @@ describe("channel details panel contribution", () => {
 
   test("reflects a pinned channel", () => {
     expect(channelDetails({ ...baseChannel, pinned: true }).pinned).toBe(true);
+  });
+});
+
+describe("library panel contribution", () => {
+  test("/library pageBand exposes Upload header action", () => {
+    ensurePanelContributions();
+    const contribution = resolvePanelContribution("/library");
+    expect(contribution?.id).toBe("library");
+    if (!contribution) {
+      throw new Error("expected library panel contribution");
+    }
+    const band = contribution.pageBand({
+      path: "/library",
+      onNavigate: () => undefined,
+    });
+    expect(
+      band.headerActions?.map((action) => ({
+        id: action.id,
+        label: action.label,
+      })),
+    ).toEqual([{ id: "upload-artifact", label: "Upload" }]);
+  });
+
+  test("Upload off /library navigates without requiring a live listener", () => {
+    ensurePanelContributions();
+    // Resolve from an on-library path so pageBand exists; action still sees
+    // the off-route ctx.path passed into pageBand.
+    const contribution = resolvePanelContribution("/library");
+    if (!contribution) {
+      throw new Error("expected library panel contribution");
+    }
+    const navigated: string[] = [];
+    const band = contribution.pageBand({
+      path: "/agents",
+      onNavigate: (to) => {
+        navigated.push(to);
+      },
+    });
+    const upload = band.headerActions?.find(
+      (action) => action.id === "upload-artifact",
+    );
+    expect(upload).toBeDefined();
+    upload?.onSelect();
+    expect(navigated).toEqual(["/library"]);
+  });
+
+  afterEach(() => {
+    resetPendingLibraryUpload();
   });
 });
 

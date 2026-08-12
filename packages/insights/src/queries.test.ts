@@ -1,9 +1,24 @@
 import { describe, expect, test } from "bun:test";
 
 import { createMemoryUsageStore } from "./store";
-import { activityByDay, summarizeUsage } from "./queries";
+import {
+  activityByDay,
+  emptyOverallUsageSummary,
+  summarizeUsage,
+} from "./queries";
 
 describe("summarizeUsage", () => {
+  test("empty sink returns zero metrics, not null cost or NaN", async () => {
+    const store = createMemoryUsageStore();
+    const summary = await summarizeUsage(store, "tenant-acme");
+    expect(summary).toEqual(emptyOverallUsageSummary());
+    expect(summary.turns).toBe(0);
+    expect(summary.costUsd).toBe(0);
+    expect(summary.tokens.total).toBe(0);
+    expect(summary.byModel).toEqual([]);
+    expect(Number.isNaN(summary.costUsd)).toBe(false);
+  });
+
   test("aggregates by model and overall with known rates", async () => {
     const store = createMemoryUsageStore([
       {
@@ -113,6 +128,12 @@ describe("summarizeUsage", () => {
 });
 
 describe("activityByDay", () => {
+  test("empty sink returns empty series (no fabricated peaks)", async () => {
+    const store = createMemoryUsageStore();
+    const days = await activityByDay(store, "tenant-acme");
+    expect(days).toEqual([]);
+  });
+
   test("buckets by UTC day", async () => {
     const store = createMemoryUsageStore();
     await store.insertUsage({

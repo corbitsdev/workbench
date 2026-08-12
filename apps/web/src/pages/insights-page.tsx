@@ -1,6 +1,8 @@
 // Insights over packages/insights: cost KPIs, activity bars, token mosaic,
 // cost-by-model, calls-by-tool, recent purpose runs, runs history, and
-// run-trace detail. Null costs and rates render as em-dash — never zero.
+// run-trace detail. Absent usage is zero metrics + zero day series
+// (EMPTY_OVERALL_USAGE / activitySeriesForWindow). Null cost/rate still
+// means "rate unknown" when turns exist — em-dash, not a fabricated cost.
 // Stage layout mirrors the shell mock: KPI row → chart/card grid → recent runs.
 
 import {
@@ -24,8 +26,10 @@ import {
 } from "../api";
 import { useBench } from "../bench-context";
 import {
+  activitySeriesForWindow,
   createInsightsWindow,
   durationLabel,
+  EMPTY_OVERALL_USAGE,
   formatCount,
   formatRate,
   formatUsd,
@@ -365,29 +369,14 @@ function InsightsLanding({
   const windowedRuns = filterRunsByCreatedAt(runs, range.from, range.to);
   const stats = computeInsightsStats(windowedRuns, routines);
   const purposeRuns = purposeRunsForInsights(windowedRuns);
-  const empty =
-    !loading &&
-    (summary === null || summary.turns === 0) &&
-    stats.totalRuns === 0;
 
-  if (empty) {
-    return (
-      <RichEmptyState
-        icon={<ChartColumn />}
-        title="Nothing to chart yet"
-        description="Usage and purpose runs land here once agents start turning. Cost and token numbers stay blank until the sink has data — never fake zeros."
-        actions={[
-          { label: "Open Routines", href: "/routines", variant: "primary" },
-        ]}
-      />
-    );
-  }
-
-  const mosaicParts = summary === null ? [] : tokenParts(summary);
-  const hitRate = summary === null ? null : cacheHitRate(summary);
-  const missingRates = summary === null ? [] : modelsWithMissingRates(summary);
-  const activityDays =
-    activity !== null && activity.length > 0 ? activity : null;
+  // Absent usage → zeros at the client boundary (never demo peaks / em-dash
+  // for "no spend"). Real fetched summary is preserved when present.
+  const usage = summary ?? EMPTY_OVERALL_USAGE;
+  const mosaicParts = tokenParts(usage);
+  const hitRate = cacheHitRate(usage);
+  const missingRates = modelsWithMissingRates(usage);
+  const activityDays = activitySeriesForWindow(activity ?? [], range);
   const models = byModel !== null && byModel.length > 0 ? byModel : null;
   const tools = byTool !== null && byTool.length > 0 ? byTool : null;
   const recent = purposeRuns.slice(0, 12);
@@ -397,23 +386,13 @@ function InsightsLanding({
       <div className="insights-stat-row">
         <InsightsStat
           label="Cost"
-          value={tileValue(
-            summary === null ? null : formatUsd(summary.costUsd),
-            loading,
-          )}
-          detail={
-            summary === null
-              ? "tokens unknown"
-              : `${formatCount(summary.tokens.total)} tokens`
-          }
+          value={tileValue(formatUsd(usage.costUsd), loading)}
+          detail={`${formatCount(usage.tokens.total)} tokens`}
           loading={loading}
         />
         <InsightsStat
           label="Activity"
-          value={tileValue(
-            summary === null ? null : formatCount(summary.turns),
-            loading,
-          )}
+          value={tileValue(formatCount(usage.turns), loading)}
           detail="turns"
           loading={loading}
         />
@@ -442,14 +421,12 @@ function InsightsLanding({
       ) : null}
 
       <div className="insights-grid">
-        {activityDays !== null ? (
-          <section className="insights-panel">
-            <h3>Activity · last {Math.min(7, activityDays.length)} days</h3>
-            <ActivityBars days={activityDays} />
-          </section>
-        ) : null}
+        <section className="insights-panel">
+          <h3>Activity · last {activityDays.length} days</h3>
+          <ActivityBars days={activityDays} />
+        </section>
 
-        {summary !== null && mosaicParts.length > 0 ? (
+        {mosaicParts.length > 0 ? (
           <section className="insights-panel">
             <h3>Token mix</h3>
             <TokenMosaic parts={mosaicParts} label="Token usage by class" />
@@ -461,8 +438,8 @@ function InsightsLanding({
               />
               <InsightsStat
                 label="Total tokens"
-                value={formatCount(summary.tokens.total)}
-                detail={`${formatCount(summary.turns)} turns`}
+                value={formatCount(usage.tokens.total)}
+                detail={`${formatCount(usage.turns)} turns`}
               />
             </div>
           </section>
@@ -694,23 +671,23 @@ export function InsightsPage({
     runs.kind === "loading" ||
     routines.kind === "loading";
 
-  const failed =
+  // Usage/activity/tools errors must surface. Loading (and ready-empty /
+  // no-tenant ready zeros from InsightsRoute) still render zero defaults so
+  // the dashboard never invents spend. Runs/routines soft-empty on landing.
+  const usageError =
     summary.kind === "error"
       ? summary.message
       : activity.kind === "error"
         ? activity.message
-        : runs.kind === "error"
-          ? runs.message
-          : routines.kind === "error"
-            ? routines.message
-            : null;
+        : byTool.kind === "error"
+          ? byTool.message
+          : null;
 
-  // Soft-fail usage endpoints (e.g. pre-mount / empty sink) — still show runs.
-  // byModel comes from usage.byModel (no separate /by-model route).
-  const summaryData = summary.kind === "ready" ? summary.data : null;
-  const activityData = activity.kind === "ready" ? activity.data : null;
-  const byModelData = summaryData?.byModel ?? null;
-  const byToolData = byTool.kind === "ready" ? byTool.data : null;
+  const summaryData =
+    summary.kind === "ready" ? summary.data : EMPTY_OVERALL_USAGE;
+  const activityData = activity.kind === "ready" ? activity.data : [];
+  const byModelData = summaryData.byModel;
+  const byToolData = byTool.kind === "ready" ? byTool.data : [];
   const runsData = runs.kind === "ready" ? runs.data.data : [];
   const routinesData = routines.kind === "ready" ? routines.data : [];
 
@@ -738,13 +715,13 @@ export function InsightsPage({
     );
   }
 
-  if (failed !== null && summary.kind === "error" && runs.kind === "error") {
+  if (usageError !== null) {
     return (
       <PageShell width="full" className="page-fill">
         <RichEmptyState
           icon={<ChartColumn />}
           title="Couldn't load insights"
-          description={failed}
+          description={usageError}
         />
       </PageShell>
     );
@@ -838,26 +815,11 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       ? { kind: "ready", data: toolsRaw.data.tools }
       : toolsRaw;
 
-  // No tenant: usage endpoints stay empty-ready so the page can still show
-  // me-scoped purpose runs without inventing bench usage.
+  // No tenant: zero usage defaults so the page can still show me-scoped
+  // purpose runs without inventing nonzero bench usage.
   const emptySummary: APIQuery<OverallUsage> =
     selectedTenantId === null
-      ? {
-          kind: "ready",
-          data: {
-            costUsd: null,
-            tokens: {
-              input: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-              output: 0,
-              thinking: 0,
-              total: 0,
-            },
-            turns: 0,
-            byModel: [],
-          },
-        }
+      ? { kind: "ready", data: EMPTY_OVERALL_USAGE }
       : summary;
   const emptyList = <T,>(q: APIQuery<T>): APIQuery<T> =>
     selectedTenantId === null

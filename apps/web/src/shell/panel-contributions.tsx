@@ -37,6 +37,7 @@ import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
 import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
+import { requestLibraryUpload } from "../library-upload";
 import { agentIdFromPath, skillIdFromPath } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
@@ -953,7 +954,23 @@ export function ensurePanelContributions(): void {
   registerPanelContribution({
     id: "library",
     match: (path) => pathMatches("/library", path),
-    pageBand: defaultBand("Library", "Artifacts this bench has produced"),
+    pageBand: (ctx) => ({
+      title: "Library",
+      subtitle: "Artifacts this bench has produced",
+      headerActions: [
+        {
+          id: "upload-artifact",
+          label: "Upload",
+          icon: <Plus />,
+          onSelect: () => {
+            requestLibraryUpload({
+              alreadyOnLibrary: pathMatches("/library", ctx.path),
+              navigateToLibrary: () => ctx.onNavigate("/library"),
+            });
+          },
+        },
+      ],
+    }),
     pageSpecific: (ctx) => (
       <div className="panel-stack" aria-label="Library kinds">
         {(

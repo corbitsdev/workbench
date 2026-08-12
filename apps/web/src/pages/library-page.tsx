@@ -26,7 +26,7 @@ import {
 } from "@corbits/artifact-ui";
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDownUp, FileStack, Upload, X } from "lucide-react";
+import { ArrowDownUp, FileStack, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -36,6 +36,10 @@ import {
   type ArtifactDetail,
 } from "../api";
 import { useBench } from "../bench-context";
+import {
+  consumePendingLibraryUpload,
+  LIBRARY_UPLOAD_EVENT,
+} from "../library-upload";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 import {
@@ -208,8 +212,36 @@ export function LibraryPage({
     [artifacts, activeQuery, sort, onQueryChange],
   );
 
+  useEffect(() => {
+    if (onUpload === undefined) return;
+    const openPicker = () => {
+      if (uploading === true) return;
+      fileInputRef.current?.click();
+    };
+    // Off-route Upload navigates first and leaves a pending flag; open now.
+    if (consumePendingLibraryUpload()) openPicker();
+    window.addEventListener(LIBRARY_UPLOAD_EVENT, openPicker);
+    return () => window.removeEventListener(LIBRARY_UPLOAD_EVENT, openPicker);
+  }, [onUpload, uploading]);
+
   return (
     <>
+      {onUpload !== undefined ? (
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="sr-only"
+          aria-label="Upload artifacts"
+          onChange={(event) => {
+            const list = event.target.files;
+            if (list !== null && list.length > 0) {
+              onUpload(Array.from(list));
+            }
+            event.target.value = "";
+          }}
+        />
+      ) : null}
       <div className="page-toolbar">
         <LibrarySearchInput
           label="Search artifacts"
@@ -218,8 +250,14 @@ export function LibraryPage({
         />
         <Menu>
           <MenuTrigger asChild>
-            <Button type="button" variant="outline" size="sm">
-              <ArrowDownUp /> {SORT_LABEL[sort]}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={SORT_LABEL[sort]}
+              title={SORT_LABEL[sort]}
+            >
+              <ArrowDownUp />
             </Button>
           </MenuTrigger>
           <MenuContent align="end">
@@ -231,32 +269,6 @@ export function LibraryPage({
           </MenuContent>
         </Menu>
         <ViewToggle mode={viewMode} onChange={setViewMode} />
-        {onUpload !== undefined ? (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="sr-only"
-              aria-label="Upload artifacts"
-              onChange={(event) => {
-                const list = event.target.files;
-                if (list !== null && list.length > 0) {
-                  onUpload(Array.from(list));
-                }
-                event.target.value = "";
-              }}
-            />
-            <Button
-              type="button"
-              size="sm"
-              disabled={uploading === true}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload /> {uploading === true ? "Uploading…" : "Upload"}
-            </Button>
-          </>
-        ) : null}
       </div>
       {uploadError !== undefined && uploadError !== null ? (
         <p className="px-4 pt-2 text-sm text-destructive sm:px-7" role="alert">

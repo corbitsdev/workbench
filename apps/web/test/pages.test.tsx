@@ -108,6 +108,20 @@ describe("live data", () => {
     expect(markup).toContain("Signups export");
   });
 
+  test("library with onUpload keeps upload off the stage toolbar", () => {
+    const markup = renderToStaticMarkup(
+      <LibraryPage artifacts={[reportArtifact]} onUpload={() => undefined} />,
+    );
+    // Hidden file input for the pageBand Upload action (workbench:library:upload).
+    expect(markup).toContain('type="file"');
+    expect(markup).toContain('aria-label="Upload artifacts"');
+    expect(markup).toContain("sr-only");
+    // Stage toolbar is search / sort / view only — no visible Upload button.
+    expect(markup).not.toMatch(/>\s*Upload\s*</);
+    // Sort is icon-only with an accessible name.
+    expect(markup).toContain('aria-label="Newest first"');
+  });
+
   const definition: AgentDefinition = {
     id: "wfd_1",
     tenantId: "tenant_1",

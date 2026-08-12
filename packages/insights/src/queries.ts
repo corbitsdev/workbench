@@ -53,9 +53,20 @@ function toTotals(t: TokenClasses): TokenTotals {
   return { ...t, total: totalTokens(t) };
 }
 
+/** Empty-sink usage summary: zero turns/tokens/cost, no model rows. */
+export function emptyOverallUsageSummary(): OverallUsageSummary {
+  return {
+    turns: 0,
+    tokens: toTotals(emptyTokens()),
+    costUsd: 0,
+    byModel: [],
+  };
+}
+
 /**
- * Aggregate usage by model and overall for a tenant. Cost is null when
- * any contributing class lacks a rate — never a fabricated zero.
+ * Aggregate usage by model and overall for a tenant. Empty sink → zeros
+ * (see emptyOverallUsageSummary). Cost is null when any contributing class
+ * lacks a rate — never a fabricated cost for unknown rates.
  */
 export async function summarizeUsage(
   store: UsageStore,
@@ -63,6 +74,8 @@ export async function summarizeUsage(
   opts?: { from?: Date; to?: Date },
 ): Promise<OverallUsageSummary> {
   const rows = await store.listUsageByTenant(tenantId, opts);
+  if (rows.length === 0) return emptyOverallUsageSummary();
+
   const byModel = new Map<string, { turns: number; tokens: TokenClasses }>();
 
   for (const row of rows) {
