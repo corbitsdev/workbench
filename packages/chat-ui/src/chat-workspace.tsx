@@ -43,7 +43,8 @@ import type {
   MessageItem,
 } from "./api";
 import { ChannelSettingsPanel } from "./channel-settings-panel";
-import { Composer } from "./composer";
+import { Composer, partsForSend } from "./composer";
+import type { ComposerSendPayload } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
@@ -467,26 +468,25 @@ function ChatWorkspaceInner({
     await loadMessages(activeChannelId);
   }
 
-  async function handleSend(text: string): Promise<boolean> {
+  async function handleSend(payload: ComposerSendPayload): Promise<boolean> {
     if (activeChannelId === null) return false;
+    const parts = partsForSend(payload.text, payload.attachments);
+    if (parts.length === 0) return false;
     try {
       if (openThreadId !== null) {
-        await sendMessage(tenantId, activeChannelId, [{ kind: "text", text }], {
+        await sendMessage(tenantId, activeChannelId, parts, {
           threadId: openThreadId,
         });
       } else if (pendingParentMessageId !== null) {
-        const sent = await sendMessage(
-          tenantId,
-          activeChannelId,
-          [{ kind: "text", text }],
-          { inReplyToMessageId: pendingParentMessageId },
-        );
+        const sent = await sendMessage(tenantId, activeChannelId, parts, {
+          inReplyToMessageId: pendingParentMessageId,
+        });
         if (sent.threadId !== undefined) {
           setOpenThreadId(sent.threadId);
           setPendingParentMessageId(null);
         }
       } else {
-        await sendMessage(tenantId, activeChannelId, [{ kind: "text", text }]);
+        await sendMessage(tenantId, activeChannelId, parts);
       }
       await loadThreads(activeChannelId);
       await loadMessages(activeChannelId, { background: true });

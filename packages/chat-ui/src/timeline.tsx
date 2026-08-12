@@ -296,6 +296,21 @@ function FallbackPart({ part }: { part: Part }) {
   );
 }
 
+/**
+ * A file part shows only its name and media type — never the base64 payload
+ * or blob id, which are transport details rather than something a reader
+ * should see in the timeline.
+ */
+function FilePartView({ part }: { part: Part & { kind: "file" } }) {
+  return (
+    <div className="chat-file-part">
+      <span className="chat-file-part-label">{CHAT_STRINGS.filePartLabel}</span>
+      <span className="chat-file-part-name">{part.name}</span>
+      <span className="chat-file-part-type">{part.mediaType}</span>
+    </div>
+  );
+}
+
 function DayDivider({ createdAt }: { createdAt: string }) {
   return (
     <div className="chat-day-divider">
@@ -348,6 +363,9 @@ function MessageParts({
               participants={participants}
             />
           );
+        }
+        if (part.kind === "file") {
+          return <FilePartView key={key} part={part} />;
         }
         return <FallbackPart key={key} part={part} />;
       })}

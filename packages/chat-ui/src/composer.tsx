@@ -1,15 +1,17 @@
 // The message composer: a plain textarea (Enter sends, Shift+Enter breaks
-// the line), disabled while empty, with an @-mention popover listing the
-// active channel's agent participants. Kept local and simple rather than adopting the
-// library's `ChatInput` — that component is built around the agent-chat
-// `ChatMessage` model (working/stop, attachments) this surface does not use,
-// and its send affordance does not compose with an inline mention popover.
+// the line), an accessible file picker for attachments, disabled while
+// empty, with an @-mention popover listing the active channel's agent
+// participants. Kept local and simple rather than adopting the library's
+// `ChatInput` — that component is built around the agent-chat `ChatMessage`
+// model (working/stop) this surface does not use, and its send affordance
+// does not compose with an inline mention popover.
 
 import { Button } from "@corbits/react-ui";
-import { Send } from "lucide-react";
+import { Paperclip, Send, X } from "lucide-react";
 import { useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { ChangeEvent, KeyboardEvent } from "react";
 
+import type { Part } from "./api";
 import {
   activeMentionQuery,
   filterMentionCandidates,
@@ -17,6 +19,19 @@ import {
 } from "./mentions";
 import type { MentionCandidate, MentionQuery } from "./mentions";
 import { CHAT_STRINGS } from "./strings";
+
+/** A file the user picked in the composer, already base64-encoded for the wire. */
+export type ComposerAttachment = {
+  readonly id: string;
+  readonly name: string;
+  readonly mediaType: string;
+  readonly data: string;
+};
+
+export type ComposerSendPayload = {
+  readonly text: string;
+  readonly attachments: readonly ComposerAttachment[];
+};
 
 /**
  * The B2 fix, isolated as a pure rule: a successful send clears the draft;
@@ -29,23 +44,224 @@ export function draftAfterSend(
   return succeeded ? "" : previousValue;
 }
 
+/**
+ * Same rule for selected files: clear the attachment list only after a
+ * successful send so a failed post does not force the user to re-pick files.
+ */
+export function attachmentsAfterSend(
+  previous: readonly ComposerAttachment[],
+  succeeded: boolean,
+): readonly ComposerAttachment[] {
+  return succeeded ? [] : previous;
+}
+
+/**
+ * Build the wire `Part[]` for a composer send. Empty trimmed text is omitted;
+ * each attachment becomes a `FilePart` carrying inline base64 `data`.
+ */
+export function partsForSend(
+  text: string,
+  attachments: readonly ComposerAttachment[],
+): Part[] {
+  const parts: Part[] = [];
+  const trimmed = text.trim();
+  if (trimmed.length > 0) {
+    parts.push({ kind: "text", text: trimmed });
+  }
+  for (const file of attachments) {
+    parts.push({
+      kind: "file",
+      name: file.name,
+      mediaType: file.mediaType,
+      data: file.data,
+    });
+  }
+  return parts;
+}
+
+export function canSendComposer(
+  text: string,
+  attachments: readonly ComposerAttachment[],
+): boolean {
+  return text.trim().length > 0 || attachments.length > 0;
+}
+
+/**
+ * Client-side attachment ceilings, kept under the platform's decoded-byte
+ * limits (10 MiB per file / 30 MiB total) so a pick fails in the composer
+ * rather than after a failed post.
+ */
+export const COMPOSER_ATTACHMENT_LIMITS = {
+  maxCount: 5,
+  maxPerFileBytes: 5 * 1024 * 1024,
+  maxTotalBytes: 15 * 1024 * 1024,
+} as const;
+
+export type ComposerAttachmentLimits = {
+  readonly maxCount: number;
+  readonly maxPerFileBytes: number;
+  readonly maxTotalBytes: number;
+};
+
+/** Size metadata available before FileReader runs (File.size). */
+export type AttachmentPickCandidate = {
+  readonly name: string;
+  readonly size: number;
+};
+
+export type AttachmentValidationError =
+  | { readonly kind: "count"; readonly max: number; readonly attempted: number }
+  | {
+      readonly kind: "perFile";
+      readonly name: string;
+      readonly size: number;
+      readonly max: number;
+    }
+  | { readonly kind: "total"; readonly total: number; readonly max: number };
+
+/**
+ * Validate a multi-file pick against count, per-file, and total size limits
+ * before any FileReader work. Failures are all-or-nothing for the pick.
+ */
+export function validateAttachmentPick(
+  existingCount: number,
+  existingTotalBytes: number,
+  candidates: readonly AttachmentPickCandidate[],
+  limits: ComposerAttachmentLimits = COMPOSER_ATTACHMENT_LIMITS,
+): AttachmentValidationError | null {
+  if (candidates.length === 0) return null;
+  const attempted = existingCount + candidates.length;
+  if (attempted > limits.maxCount) {
+    return { kind: "count", max: limits.maxCount, attempted };
+  }
+  let addedBytes = 0;
+  for (const file of candidates) {
+    if (file.size > limits.maxPerFileBytes) {
+      return {
+        kind: "perFile",
+        name: file.name,
+        size: file.size,
+        max: limits.maxPerFileBytes,
+      };
+    }
+    addedBytes += file.size;
+  }
+  const total = existingTotalBytes + addedBytes;
+  if (total > limits.maxTotalBytes) {
+    return { kind: "total", total, max: limits.maxTotalBytes };
+  }
+  return null;
+}
+
+/** Decoded byte length of a standard base64 payload (padding-aware). */
+export function base64DecodedByteLength(data: string): number {
+  if (data.length === 0) return 0;
+  let padding = 0;
+  if (data.endsWith("==")) padding = 2;
+  else if (data.endsWith("=")) padding = 1;
+  return (data.length * 3) / 4 - padding;
+}
+
+export function attachmentBytesOnComposer(
+  attachments: readonly ComposerAttachment[],
+): number {
+  let total = 0;
+  for (const file of attachments) {
+    total += base64DecodedByteLength(file.data);
+  }
+  return total;
+}
+
+function formatLimitMiB(bytes: number): number {
+  return Math.round(bytes / (1024 * 1024));
+}
+
+export function attachmentValidationMessage(
+  error: AttachmentValidationError,
+): string {
+  switch (error.kind) {
+    case "count":
+      return CHAT_STRINGS.composerAttachmentCountError(error.max);
+    case "perFile":
+      return CHAT_STRINGS.composerAttachmentPerFileError(
+        error.name,
+        formatLimitMiB(error.max),
+      );
+    case "total":
+      return CHAT_STRINGS.composerAttachmentTotalError(
+        formatLimitMiB(error.max),
+      );
+  }
+}
+
+/** Send/Enter stay blocked while a send or file read is in flight. */
+export function canSendComposerAction(
+  text: string,
+  attachments: readonly ComposerAttachment[],
+  state: { readonly sending: boolean; readonly preparing: boolean },
+): boolean {
+  if (state.sending || state.preparing) return false;
+  return canSendComposer(text, attachments);
+}
+
+/** Attach stays blocked while a send or file read is in flight. */
+export function canAttachComposer(state: {
+  readonly sending: boolean;
+  readonly preparing: boolean;
+}): boolean {
+  return !state.sending && !state.preparing;
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("expected a data URL from FileReader"));
+        return;
+      }
+      const comma = result.indexOf(",");
+      resolve(comma === -1 ? result : result.slice(comma + 1));
+    };
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("failed to read attachment"));
+    reader.readAsDataURL(file);
+  });
+}
+
+let attachmentSeq = 0;
+
+function nextAttachmentId(): string {
+  attachmentSeq += 1;
+  return `att_${attachmentSeq}`;
+}
+
 export function Composer({
   agents,
   onSend,
 }: {
   readonly agents: readonly MentionCandidate[];
-  /** Resolves to whether the send succeeded; the composer decides what to do with the draft from that. */
-  readonly onSend: (text: string) => Promise<boolean>;
+  /** Resolves to whether the send succeeded; the composer decides draft/attachment cleanup from that. */
+  readonly onSend: (payload: ComposerSendPayload) => Promise<boolean>;
 }) {
   const [value, setValue] = useState("");
+  const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>(
+    [],
+  );
   const [mention, setMention] = useState<MentionQuery | null>(null);
   const [highlight, setHighlight] = useState(0);
   const [sending, setSending] = useState(false);
-  const [sendFailed, setSendFailed] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const candidates =
     mention !== null ? filterMentionCandidates(agents, mention.query) : [];
+  const busy = { sending, preparing };
+  const canSend = canSendComposerAction(value, attachments, busy);
+  const canAttach = canAttachComposer(busy);
 
   function syncMentionState(text: string, caret: number) {
     const next = activeMentionQuery(text, caret);
@@ -66,18 +282,74 @@ export function Composer({
     });
   }
 
+  function resetFileInput() {
+    if (fileInputRef.current !== null) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  async function addFiles(fileList: FileList | null) {
+    if (fileList === null || fileList.length === 0) return;
+    if (!canAttachComposer({ sending, preparing })) return;
+
+    const files = Array.from(fileList);
+    const validation = validateAttachmentPick(
+      attachments.length,
+      attachmentBytesOnComposer(attachments),
+      files.map((file) => ({ name: file.name, size: file.size })),
+    );
+    if (validation !== null) {
+      setErrorMessage(attachmentValidationMessage(validation));
+      resetFileInput();
+      return;
+    }
+
+    setPreparing(true);
+    setErrorMessage(null);
+    try {
+      const next: ComposerAttachment[] = [];
+      for (const file of files) {
+        const data = await readFileAsBase64(file);
+        next.push({
+          id: nextAttachmentId(),
+          name: file.name,
+          mediaType:
+            file.type.length > 0 ? file.type : "application/octet-stream",
+          data,
+        });
+      }
+      // All-or-nothing: only commit once every file in the pick has read.
+      setAttachments((previous) => [...previous, ...next]);
+    } catch {
+      setErrorMessage(CHAT_STRINGS.composerAttachmentReadError);
+    } finally {
+      setPreparing(false);
+      resetFileInput();
+    }
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((previous) => previous.filter((file) => file.id !== id));
+  }
+
   async function send() {
-    const trimmed = value.trim();
-    if (trimmed.length === 0 || sending) return;
+    if (!canSendComposerAction(value, attachments, { sending, preparing })) {
+      return;
+    }
+    const payload: ComposerSendPayload = {
+      text: value,
+      attachments,
+    };
     setSending(true);
-    setSendFailed(false);
-    const succeeded = await onSend(trimmed);
+    setErrorMessage(null);
+    const succeeded = await onSend(payload);
     setSending(false);
     setValue((previous) => draftAfterSend(previous, succeeded));
+    setAttachments((previous) => attachmentsAfterSend(previous, succeeded));
     if (succeeded) {
       setMention(null);
     } else {
-      setSendFailed(true);
+      setErrorMessage(CHAT_STRINGS.sendFailedMessage);
     }
   }
 
@@ -112,6 +384,10 @@ export function Composer({
     }
   }
 
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    void addFiles(event.target.files);
+  }
+
   return (
     <div className="chat-composer">
       {mention !== null && (
@@ -143,7 +419,46 @@ export function Composer({
           )}
         </div>
       )}
+      {attachments.length > 0 && (
+        <ul
+          className="chat-composer-attachments"
+          aria-label={CHAT_STRINGS.composerAttachmentsLabel}
+        >
+          {attachments.map((file) => (
+            <li key={file.id} className="chat-composer-attachment">
+              <span className="chat-composer-attachment-name">{file.name}</span>
+              <button
+                type="button"
+                className="chat-composer-attachment-remove"
+                aria-label={CHAT_STRINGS.composerRemoveAttachment(file.name)}
+                onClick={() => removeAttachment(file.id)}
+              >
+                <X aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="chat-composer-row">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="chat-composer-file-input"
+          onChange={handleFileChange}
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={!canAttach}
+          onClick={() => fileInputRef.current?.click()}
+          aria-label={CHAT_STRINGS.composerAttach}
+        >
+          <Paperclip />
+        </Button>
         <textarea
           ref={textareaRef}
           className="chat-composer-input"
@@ -163,16 +478,23 @@ export function Composer({
           type="button"
           variant="primary"
           size="icon"
-          disabled={value.trim().length === 0 || sending}
+          disabled={!canSend}
           onClick={() => void send()}
           aria-label={CHAT_STRINGS.composerSend}
         >
           <Send />
         </Button>
       </div>
-      {sendFailed && (
+      <div
+        className="chat-composer-status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {preparing ? CHAT_STRINGS.composerPreparing : null}
+      </div>
+      {errorMessage !== null && (
         <div className="chat-composer-error" role="alert">
-          {CHAT_STRINGS.sendFailedMessage}
+          {errorMessage}
         </div>
       )}
     </div>

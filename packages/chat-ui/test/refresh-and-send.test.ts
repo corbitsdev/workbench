@@ -12,7 +12,21 @@ import {
   resolveMessageFeedTarget,
 } from "../src/chat-workspace";
 import type { MessagesState } from "../src/chat-workspace";
-import { draftAfterSend } from "../src/composer";
+import {
+  attachmentsAfterSend,
+  attachmentBytesOnComposer,
+  attachmentValidationMessage,
+  base64DecodedByteLength,
+  canAttachComposer,
+  canSendComposer,
+  canSendComposerAction,
+  COMPOSER_ATTACHMENT_LIMITS,
+  draftAfterSend,
+  partsForSend,
+  validateAttachmentPick,
+} from "../src/composer";
+import type { ComposerAttachment } from "../src/composer";
+import { CHAT_STRINGS } from "../src/strings";
 import { shouldConnect } from "../src/use-channel-stream";
 
 describe("nextMessagesState (B1: background refresh keeps the composer mounted)", () => {
@@ -79,6 +93,184 @@ describe("draftAfterSend (B2: a failed send keeps the draft)", () => {
 
   test("keeps exactly what was typed when the send fails", () => {
     expect(draftAfterSend("hello there", false)).toBe("hello there");
+  });
+});
+
+const sampleAttachment: ComposerAttachment = {
+  id: "att_1",
+  name: "notes.txt",
+  mediaType: "text/plain",
+  data: "aGVsbG8=",
+};
+
+describe("partsForSend (text + file wire shape)", () => {
+  test("emits a text part and a file part with name, mediaType, and data", () => {
+    expect(partsForSend("  hello  ", [sampleAttachment])).toEqual([
+      { kind: "text", text: "hello" },
+      {
+        kind: "file",
+        name: "notes.txt",
+        mediaType: "text/plain",
+        data: "aGVsbG8=",
+      },
+    ]);
+  });
+
+  test("omits empty trimmed text and still sends attachment-only parts", () => {
+    expect(partsForSend("   ", [sampleAttachment])).toEqual([
+      {
+        kind: "file",
+        name: "notes.txt",
+        mediaType: "text/plain",
+        data: "aGVsbG8=",
+      },
+    ]);
+  });
+});
+
+describe("canSendComposer (attachment-only eligibility)", () => {
+  test("allows send with attachments and no text", () => {
+    expect(canSendComposer("", [sampleAttachment])).toBe(true);
+  });
+
+  test("blocks send when both text and attachments are empty", () => {
+    expect(canSendComposer("   ", [])).toBe(false);
+  });
+});
+
+describe("attachmentsAfterSend (clear on success, retain on failure)", () => {
+  test("clears attachments after a successful send", () => {
+    expect(attachmentsAfterSend([sampleAttachment], true)).toEqual([]);
+  });
+
+  test("keeps the same attachments when the send fails", () => {
+    const previous = [sampleAttachment];
+    expect(attachmentsAfterSend(previous, false)).toBe(previous);
+  });
+});
+
+describe("validateAttachmentPick (count / per-file / total limits)", () => {
+  const limits = COMPOSER_ATTACHMENT_LIMITS;
+
+  test("accepts a pick within every limit", () => {
+    expect(
+      validateAttachmentPick(0, 0, [
+        { name: "a.txt", size: 1024 },
+        { name: "b.txt", size: 2048 },
+      ]),
+    ).toBeNull();
+  });
+
+  test("rejects when the pick would exceed max attachment count", () => {
+    const candidates = Array.from({ length: limits.maxCount }, (_, i) => ({
+      name: `f${i}.txt`,
+      size: 1,
+    }));
+    expect(validateAttachmentPick(1, 0, candidates)).toEqual({
+      kind: "count",
+      max: limits.maxCount,
+      attempted: limits.maxCount + 1,
+    });
+  });
+
+  test("rejects a single file over the per-file limit before any read", () => {
+    expect(
+      validateAttachmentPick(0, 0, [
+        { name: "huge.bin", size: limits.maxPerFileBytes + 1 },
+      ]),
+    ).toEqual({
+      kind: "perFile",
+      name: "huge.bin",
+      size: limits.maxPerFileBytes + 1,
+      max: limits.maxPerFileBytes,
+    });
+  });
+
+  test("rejects when existing plus pick total exceeds the message total", () => {
+    // Stay under the per-file ceiling so the total rule is what fires.
+    const chunk = limits.maxPerFileBytes;
+    const existing = limits.maxTotalBytes - chunk + 1;
+    expect(
+      validateAttachmentPick(1, existing, [{ name: "more.bin", size: chunk }]),
+    ).toEqual({
+      kind: "total",
+      total: existing + chunk,
+      max: limits.maxTotalBytes,
+    });
+  });
+
+  test("is all-or-nothing: one oversize file fails the whole pick", () => {
+    const error = validateAttachmentPick(0, 0, [
+      { name: "ok.txt", size: 10 },
+      { name: "bad.bin", size: limits.maxPerFileBytes + 1 },
+    ]);
+    expect(error?.kind).toBe("perFile");
+  });
+
+  test("maps validation errors to accessible composer copy", () => {
+    expect(
+      attachmentValidationMessage({
+        kind: "count",
+        max: 5,
+        attempted: 6,
+      }),
+    ).toBe(CHAT_STRINGS.composerAttachmentCountError(5));
+    expect(
+      attachmentValidationMessage({
+        kind: "perFile",
+        name: "x.pdf",
+        size: 1,
+        max: 5 * 1024 * 1024,
+      }),
+    ).toBe(CHAT_STRINGS.composerAttachmentPerFileError("x.pdf", 5));
+    expect(
+      attachmentValidationMessage({
+        kind: "total",
+        total: 1,
+        max: 15 * 1024 * 1024,
+      }),
+    ).toBe(CHAT_STRINGS.composerAttachmentTotalError(15));
+  });
+});
+
+describe("base64DecodedByteLength / attachmentBytesOnComposer", () => {
+  test("decodes padding-aware base64 lengths", () => {
+    // "hello" → aGVsbG8=
+    expect(base64DecodedByteLength("aGVsbG8=")).toBe(5);
+    expect(base64DecodedByteLength("")).toBe(0);
+  });
+
+  test("sums attachment payload sizes on the composer", () => {
+    expect(attachmentBytesOnComposer([sampleAttachment])).toBe(5);
+  });
+});
+
+describe("composer busy state rules (preparing blocks send and attach)", () => {
+  test("canSendComposerAction blocks while preparing even with content", () => {
+    expect(
+      canSendComposerAction("", [sampleAttachment], {
+        sending: false,
+        preparing: true,
+      }),
+    ).toBe(false);
+  });
+
+  test("canSendComposerAction blocks while sending", () => {
+    expect(
+      canSendComposerAction("hi", [], { sending: true, preparing: false }),
+    ).toBe(false);
+  });
+
+  test("canSendComposerAction allows a ready draft", () => {
+    expect(
+      canSendComposerAction("hi", [], { sending: false, preparing: false }),
+    ).toBe(true);
+  });
+
+  test("canAttachComposer is false while preparing or sending", () => {
+    expect(canAttachComposer({ sending: false, preparing: true })).toBe(false);
+    expect(canAttachComposer({ sending: true, preparing: false })).toBe(false);
+    expect(canAttachComposer({ sending: false, preparing: false })).toBe(true);
   });
 });
 

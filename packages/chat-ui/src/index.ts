@@ -3,7 +3,27 @@ export type { TenantResolution } from "./chat-workspace";
 
 export { ChannelTimeline } from "./timeline";
 export type { CurrentUser } from "./timeline";
-export { Composer } from "./composer";
+export {
+  Composer,
+  draftAfterSend,
+  attachmentsAfterSend,
+  partsForSend,
+  canSendComposer,
+  canSendComposerAction,
+  canAttachComposer,
+  COMPOSER_ATTACHMENT_LIMITS,
+  validateAttachmentPick,
+  attachmentValidationMessage,
+  attachmentBytesOnComposer,
+  base64DecodedByteLength,
+} from "./composer";
+export type {
+  ComposerAttachment,
+  ComposerSendPayload,
+  ComposerAttachmentLimits,
+  AttachmentPickCandidate,
+  AttachmentValidationError,
+} from "./composer";
 export { renamePayload, rowMenuLabels } from "./sidebar";
 
 export { NewChannelDialog } from "./new-channel-dialog";

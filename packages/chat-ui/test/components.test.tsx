@@ -145,6 +145,30 @@ describe("ChannelTimeline", () => {
     expect(markup).not.toContain("member.joined");
   });
 
+  test("renders a file part with name and media type, never base64 or blob ids", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "report.pdf",
+            mediaType: "application/pdf",
+            data: "JVBERi0xLjQK",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(<ChannelTimeline items={withFile} />);
+    expect(markup).toContain("report.pdf");
+    expect(markup).toContain("application/pdf");
+    expect(markup).toContain("Attachment");
+    expect(markup).not.toContain("JVBERi0xLjQK");
+    expect(markup).not.toContain("blob:");
+  });
+
   test("renders the signed-in user's own bubble right-aligned, others left-aligned", () => {
     const bothSenders: MessageItem[] = [
       {
@@ -256,6 +280,18 @@ describe("Composer", () => {
       />,
     );
     expect(markup).not.toContain("@undefined");
+  });
+
+  test("exposes an attach control, file input, and polite preparing live region", () => {
+    const markup = renderToStaticMarkup(
+      <Composer agents={[]} onSend={() => Promise.resolve(true)} />,
+    );
+    expect(markup).toContain('aria-label="Attach files"');
+    expect(markup).toContain('type="file"');
+    expect(markup).toContain('aria-live="polite"');
+    expect(markup).toContain("chat-composer-status");
+    expect(markup).not.toContain("Preparing attachments");
+    expect(markup).not.toContain('role="alert"');
   });
 });
 

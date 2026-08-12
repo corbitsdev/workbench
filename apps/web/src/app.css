@@ -41,14 +41,71 @@ html {
   overflow: hidden;
 }
 
-/* Mock --col2-w: 16.5rem (fixed; not a clamp mid). */
+/* Shell chrome only: pointer when enabled, not-allowed when disabled.
+   Scoped to rail / col2 / drawer so stage content keeps library defaults. */
+.shell-brand-rail-column button:not(:disabled):not([aria-disabled="true"]),
+.shell-brand-rail-column
+  [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
+.shell-brand-rail-column
+  [data-slot="sidebar-rail-item"]:not(:disabled):not([aria-disabled="true"]),
+.shell-contextual-panel button:not(:disabled):not([aria-disabled="true"]),
+.shell-contextual-panel
+  [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
+.shell-contextual-panel
+  [data-slot="sidebar-item-row"]
+  button:not(:disabled):not([aria-disabled="true"]),
+.shell-contextual-panel
+  .shell-ch-row:not(:disabled):not([aria-disabled="true"]),
+.shell-drawer button:not(:disabled):not([aria-disabled="true"]),
+.shell-drawer [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
+.shell-drawer
+  [data-slot="sidebar-item-row"]
+  button:not(:disabled):not([aria-disabled="true"]),
+.shell-drawer .shell-ch-row:not(:disabled):not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+.shell-brand-rail-column button:disabled,
+.shell-brand-rail-column button[aria-disabled="true"],
+.shell-brand-rail-column [data-slot="button"]:disabled,
+.shell-brand-rail-column [data-slot="button"][aria-disabled="true"],
+.shell-brand-rail-column [data-slot="sidebar-rail-item"]:disabled,
+.shell-brand-rail-column [data-slot="sidebar-rail-item"][aria-disabled="true"],
+.shell-contextual-panel button:disabled,
+.shell-contextual-panel button[aria-disabled="true"],
+.shell-contextual-panel [data-slot="button"]:disabled,
+.shell-contextual-panel [data-slot="button"][aria-disabled="true"],
+.shell-contextual-panel [data-slot="sidebar-item-row"] button:disabled,
+.shell-contextual-panel
+  [data-slot="sidebar-item-row"]
+  button[aria-disabled="true"],
+.shell-contextual-panel .shell-ch-row:disabled,
+.shell-contextual-panel .shell-ch-row[aria-disabled="true"],
+.shell-drawer button:disabled,
+.shell-drawer button[aria-disabled="true"],
+.shell-drawer [data-slot="button"]:disabled,
+.shell-drawer [data-slot="button"][aria-disabled="true"],
+.shell-drawer [data-slot="sidebar-item-row"] button:disabled,
+.shell-drawer [data-slot="sidebar-item-row"] button[aria-disabled="true"],
+.shell-drawer .shell-ch-row:disabled,
+.shell-drawer .shell-ch-row[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* Mock --col2-w: 18rem; canvas-on tightens to --col2-w-tight 14.5rem. */
 :root {
-  --shell-contextual-width: 16.5rem;
+  --shell-contextual-width: 18rem;
+  --shell-contextual-width-tight: 14.5rem;
   --shell-canvas-width: min(36rem, 42vw);
   --shell-rail-brand: #e98428;
   --shell-rail-brand-hover: #d47420;
   /* Mock --on-accent: charcoal ink on brand orange (not near-black). */
   --shell-rail-on-brand: #2b2627;
+}
+
+/* Mock .app[data-canvas="on"] { --col2-w: var(--col2-w-tight) }. */
+.shell-frame:has(.shell-canvas-column[data-open="true"]) {
+  --shell-contextual-width: var(--shell-contextual-width-tight);
 }
 
 .shell-main {
@@ -76,21 +133,24 @@ html {
   background: var(--background, #fff);
   border-right: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+  transition:
+    width 200ms ease,
+    min-width 200ms ease;
 }
 
-/* Mock .col2-head: tight title row, not a tall bordered chrome band. */
+/* Mock .col2-head: padding 0.85/0.85/0.5, title 0.95rem/650. */
 .shell-contextual-panel [data-slot="sidebar-panel-header"] {
   min-height: 0;
   height: auto;
-  padding: 0.7rem 0.75rem 0.4rem;
+  padding: 0.85rem 0.85rem 0.5rem;
   border-bottom: none;
   gap: 0.4rem;
 }
 
 .shell-contextual-panel [data-slot="sidebar-panel-header"] h2 {
   margin: 0;
-  font-size: 0.8125rem;
-  font-weight: 600;
+  font-size: 0.95rem;
+  font-weight: 650;
   letter-spacing: -0.01em;
 }
 
@@ -196,7 +256,7 @@ html {
   height: 1.8rem;
   min-height: 0;
   padding: 0;
-  border-radius: 0;
+  border-radius: 0.45rem;
   color: var(--muted-foreground, #8a8080);
   background: transparent;
 }
@@ -701,7 +761,7 @@ html {
   outline-offset: 2px;
 }
 
-/* Mock-dense channel rows in col2: one line — stack, name, shared/live, time, unread. */
+/* Mock .ch rows in col2: pad 0.32/0.42, r 0.6rem. */
 .shell-ch-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -709,7 +769,7 @@ html {
   align-items: center;
   width: 100%;
   padding: 0.32rem 0.42rem;
-  border-radius: 0;
+  border-radius: 0.6rem;
   color: var(--muted-foreground, var(--ui-fg-muted));
   text-align: left;
   border: 0;
@@ -880,15 +940,15 @@ html {
   opacity: 1;
 }
 
-/* ChannelsBand search — mock searchBox at top of col2 body. */
+/* ChannelsBand search — mock .search: 2.15rem / r 0.55rem. */
 .shell-channels-search {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin: 0 0 0.35rem;
-  height: 2rem;
-  padding: 0 0.5rem 0 0;
-  border-radius: 0;
+  gap: 0.45rem;
+  margin: 0 0 0.55rem;
+  height: 2.15rem;
+  padding: 0 0.65rem;
+  border-radius: 0.55rem;
   border: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
   background: var(--card, var(--background, #fff));
@@ -899,16 +959,15 @@ html {
   width: 0.85rem;
   height: 0.85rem;
   flex-shrink: 0;
-  margin-left: 0.5rem;
 }
 
 /* Mock .search: compact inputs in col2 body (channels + filters). */
 .shell-contextual-panel .shell-channels-search [data-slot="input"],
 .shell-contextual-panel [data-slot="sidebar-panel-body"] [data-slot="input"] {
-  height: 2rem;
-  min-height: 2rem;
+  height: 2.15rem;
+  min-height: 2.15rem;
   padding: 0 0.65rem 0 0;
-  border-radius: 0;
+  border-radius: 0.55rem;
   border: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
   background: var(--card, var(--background, #fff));
@@ -956,15 +1015,15 @@ html {
     color-mix(in srgb, var(--primary, #e98428) 22%, transparent);
 }
 
-/* Mock .list-item / denser SidebarItemRow in col2 — selected = card + inset
-   border, never primary/10 orange wash. Idle text muted. */
+/* Mock .ch / denser SidebarItemRow in col2 — r 0.6rem, pad 0.32/0.42.
+   Selected = card ground + foreground + subtle inset border (mock .ch). */
 .shell-contextual-panel [data-slot="sidebar-item-row"] {
   list-style: none;
 }
 
 .shell-contextual-panel [data-slot="sidebar-item-row"] > div {
   gap: 0.35rem;
-  border-radius: 0;
+  border-radius: 0.6rem;
   padding-right: 0.2rem;
   color: var(--muted-foreground, #5c5555);
   background: transparent;
@@ -982,9 +1041,10 @@ html {
 .shell-contextual-panel
   [data-slot="sidebar-item-row"]
   > div:has(button[aria-current="true"]) {
-  background: color-mix(in srgb, var(--foreground, #2b2627) 5%, transparent);
-  color: var(--primary, #e98428);
-  box-shadow: none;
+  background: var(--card, var(--background, #fff));
+  color: var(--foreground, #2b2627);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
 }
 
 /* Kill react-ui selected wash utilities if they win cascade order. */
@@ -992,18 +1052,16 @@ html {
 .shell-contextual-panel
   [data-slot="sidebar-item-row"]
   > div:has(button[aria-current="true"]) {
-  background-color: color-mix(
-    in srgb,
-    var(--foreground, #2b2627) 5%,
-    transparent
-  );
-  color: var(--primary, #e98428);
+  background-color: var(--card, var(--background, #fff));
+  color: var(--foreground, #2b2627);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
 }
 
 .shell-contextual-panel [data-slot="sidebar-item-row"] > div > button {
   gap: 0.45rem;
-  padding: 0.35rem 0.42rem;
-  border-radius: 0;
+  padding: 0.32rem 0.42rem;
+  border-radius: 0.6rem;
   font-size: 0.8125rem;
   font-weight: 500;
   line-height: 1.3;
@@ -1721,15 +1779,15 @@ button.insights-stat:hover {
   max-width: 100%;
 }
 
-/* SkillsFeedBand — search + denser skill rows in col2. */
+/* SkillsFeedBand — mock .search tokens (match channels search). */
 .shell-skills-search {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin: 0 0 0.35rem;
-  height: 2rem;
-  padding: 0 0.5rem 0 0;
-  border-radius: 0;
+  gap: 0.45rem;
+  margin: 0 0 0.55rem;
+  height: 2.15rem;
+  padding: 0 0.65rem;
+  border-radius: 0.55rem;
   border: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
   background: var(--card, var(--background, #fff));
@@ -1740,17 +1798,16 @@ button.insights-stat:hover {
   width: 0.85rem;
   height: 0.85rem;
   flex-shrink: 0;
-  margin-left: 0.5rem;
 }
 
 .shell-contextual-panel .shell-skills-search [data-slot="input"] {
   flex: 1;
   min-width: 0;
-  height: 2rem;
-  min-height: 2rem;
+  height: 2.15rem;
+  min-height: 2.15rem;
   padding: 0 0.65rem 0 0;
   border: none;
-  border-radius: 0;
+  border-radius: 0.55rem;
   background: transparent;
   box-shadow: none;
   font-size: 0.84rem;

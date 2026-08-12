@@ -42,6 +42,18 @@ export const CHAT_STRINGS = {
   couldNotLoadMessages: "messages",
   composerPlaceholder: "Message this channel… use @ to mention an agent",
   composerSend: "Send",
+  composerAttach: "Attach files",
+  composerAttachmentsLabel: "Selected attachments",
+  composerRemoveAttachment: (name: string) => `Remove ${name}`,
+  composerPreparing: "Preparing attachments…",
+  composerAttachmentCountError: (max: number) =>
+    `You can attach at most ${max} files.`,
+  composerAttachmentPerFileError: (name: string, maxMiB: number) =>
+    `"${name}" is too large (max ${maxMiB} MB per file).`,
+  composerAttachmentTotalError: (maxMiB: number) =>
+    `Those files total more than ${maxMiB} MB.`,
+  composerAttachmentReadError: "Couldn't read one of those files — try again.",
+  filePartLabel: "Attachment",
   emptyTimelineTitle: "No messages yet",
   emptyTimelineDescription: "Say something to get the conversation going.",
   reconnectingMessage: "Reconnecting to the channel…",
