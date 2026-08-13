@@ -103,3 +103,5 @@ export type {
 } from "./channel-settings-panel";
 export { profileSubjectFromParticipant } from "./profile-subject";
 export type { ProfileSubject } from "./profile-subject";
+
+export { ArtifactChip } from "./artifact-chip";

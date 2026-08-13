@@ -20,6 +20,7 @@ import type {
   ParticipantRecord,
   Part,
 } from "./api";
+import { ArtifactChip } from "./artifact-chip";
 import { BlockPartView } from "./blocks/registry";
 import type { ProfileSubject } from "./profile-subject";
 import { profileSubjectFromParticipant } from "./profile-subject";
@@ -36,7 +37,7 @@ export type CurrentUser = {
   readonly name?: string;
 };
 
-function localPartOf(address: string): string {
+export function localPartOf(address: string): string {
   const at = address.indexOf("@");
   return at === -1 ? address : address.slice(0, at);
 }
@@ -301,15 +302,21 @@ function FallbackPart({ part }: { part: Part }) {
 /**
  * A file part shows only its name and media type — never the base64 payload
  * or blob id, which are transport details rather than something a reader
- * should see in the timeline.
+ * should see in the timeline. Rendered as the mock's artifact chip; see
+ * `artifact-chip.tsx` for when it opens versus stays inert.
  */
-function FilePartView({ part }: { part: Part & { kind: "file" } }) {
+function FilePartView({
+  part,
+  onOpenArtifact,
+}: {
+  part: Part & { kind: "file" };
+  onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+}) {
   return (
-    <div className="chat-file-part">
-      <span className="chat-file-part-label">{CHAT_STRINGS.filePartLabel}</span>
-      <span className="chat-file-part-name">{part.name}</span>
-      <span className="chat-file-part-type">{part.mediaType}</span>
-    </div>
+    <ArtifactChip
+      part={part}
+      {...(onOpenArtifact !== undefined ? { onOpen: onOpenArtifact } : {})}
+    />
   );
 }
 
@@ -329,6 +336,7 @@ function MessageParts({
   threadMeta,
   onOpenThread,
   onOpenProfile,
+  onOpenArtifact,
 }: {
   readonly item: MessageItem;
   readonly participants: readonly ParticipantRecord[];
@@ -337,6 +345,7 @@ function MessageParts({
   readonly threadMeta?: ThreadAffordanceMeta | undefined;
   readonly onOpenThread?: (messageId: string) => void;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
+  readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
 }) {
   return (
     <>
@@ -367,7 +376,13 @@ function MessageParts({
           );
         }
         if (part.kind === "file") {
-          return <FilePartView key={key} part={part} />;
+          return (
+            <FilePartView
+              key={key}
+              part={part}
+              {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+            />
+          );
         }
         if (part.kind === "block") {
           return <BlockPartView key={key} block={part.block} />;
@@ -464,6 +479,7 @@ export function ChannelTimeline({
   threadMetaByMessageId,
   onOpenThread,
   onOpenProfile,
+  onOpenArtifact,
 }: {
   readonly items: readonly MessageItem[];
   readonly participants?: readonly ParticipantRecord[];
@@ -472,6 +488,10 @@ export function ChannelTimeline({
   readonly threadMetaByMessageId?: ReadonlyMap<string, ThreadAffordanceMeta>;
   readonly onOpenThread?: (messageId: string) => void;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
+  /** Open a message's artifact chip — the host resolves where that goes
+   * (Library today; canvas is a follow-up). No chat-ui component owns
+   * routing, mirroring `onOpenThread` and `onOpenProfile`. */
+  readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Starts true so a channel's first render always lands pinned to the
@@ -529,6 +549,7 @@ export function ChannelTimeline({
             threadMeta={threadMetaByMessageId?.get(item.id)}
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
             {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
+            {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
           />
         );
       })}

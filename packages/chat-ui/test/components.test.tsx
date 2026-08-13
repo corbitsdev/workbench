@@ -169,6 +169,77 @@ describe("ChannelTimeline", () => {
     expect(markup).not.toContain("blob:");
   });
 
+  test("a data-only file part (not yet persisted) renders its artifact chip inert", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file-inline",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "notes.txt",
+            mediaType: "text/plain",
+            data: "aGVsbG8=",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline items={withFile} onOpenArtifact={() => {}} />,
+    );
+    expect(markup).toMatch(
+      /<button[^>]*class="chat-artifact-chip"[^>]*disabled/,
+    );
+  });
+
+  test("a blobId-backed file part renders its artifact chip clickable when onOpenArtifact is wired", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file-blob",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "matrix.csv",
+            mediaType: "text/csv",
+            blobId: "blob_fixture1_1",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline items={withFile} onOpenArtifact={() => {}} />,
+    );
+    expect(markup).toContain("matrix.csv");
+    expect(markup).not.toMatch(
+      /<button[^>]*class="chat-artifact-chip"[^>]*disabled/,
+    );
+  });
+
+  test("a blobId-backed file part stays inert with no onOpenArtifact wired", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file-blob-unwired",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "matrix.csv",
+            mediaType: "text/csv",
+            blobId: "blob_fixture1_1",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(<ChannelTimeline items={withFile} />);
+    expect(markup).toMatch(
+      /<button[^>]*class="chat-artifact-chip"[^>]*disabled/,
+    );
+  });
+
   test("renders the signed-in user's own bubble right-aligned, others left-aligned", () => {
     const bothSenders: MessageItem[] = [
       {
