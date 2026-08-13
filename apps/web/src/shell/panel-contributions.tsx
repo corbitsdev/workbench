@@ -43,6 +43,7 @@ import { tenantKeys } from "../query-client";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
 import { useSessionSkills } from "../skills-session";
 import { useBenchActivity } from "./bench-activity";
+import { InsightsViewsBand } from "./insights-band";
 import {
   registerPanelContribution,
   type PanelRenderContext,
@@ -1026,6 +1027,9 @@ export function ensurePanelContributions(): void {
     id: "insights",
     match: (path) => pathMatches("/insights", path),
     pageBand: defaultBand("Insights", "Usage and audit trail for this bench"),
+    pageSpecific: (ctx) => (
+      <InsightsViewsBand path={ctx.path} onNavigate={ctx.onNavigate} />
+    ),
   });
 
   registerPanelContribution({
