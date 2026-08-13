@@ -12,11 +12,8 @@ import { useState } from "react";
 
 import { AppShell } from "../src/shell/app-shell";
 import { COMPACT_MAX_WIDTH, NARROW_MAX_WIDTH } from "../src/shell/breakpoints";
-import {
-  StageChromeProvider,
-  StageCrumbs,
-  StageTopBar,
-} from "../src/shell/stage-top-bar";
+import { StageChromeProvider } from "../src/shell/stage-chrome";
+import { StageCrumbs, StageTopBar } from "../src/shell/stage-top-bar";
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { TestQueryProvider } from "./test-query-provider";
@@ -54,11 +51,18 @@ describe("StageTopBar", () => {
 
   test("reflects the collapsed state on the toggle", () => {
     const markup = renderToStaticMarkup(
-      <StageChromeProvider value={{ col2Collapsed: true, toggleCol2: noop }}>
+      <StageChromeProvider
+        value={{
+          col2Collapsed: true,
+          toggleCol2: noop,
+          registerToggle: () => noop,
+        }}
+      >
         <StageTopBar title="Library" />
       </StageChromeProvider>,
     );
     expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain('aria-controls="shell-col2"');
   });
 });
 
@@ -103,12 +107,12 @@ const emptyMemberships = () =>
 
 const user = { id: "user_1", name: "Ada Lovelace", email: "ada@example.com" };
 
-function ShellHarness() {
+function ShellHarness({ path = "/inbox" }: { readonly path?: string }) {
   return (
     <TestQueryProvider>
       <NavigationProvider navigate={noop}>
         <BenchProvider>
-          <AppShell path="/inbox" user={user} onSignOut={noop}>
+          <AppShell path={path} user={user} onSignOut={noop}>
             <StageTopBar title="Inbox" />
           </AppShell>
         </BenchProvider>
@@ -169,6 +173,27 @@ describe("shell col2 collapse", () => {
     expect(toggleButton().getAttribute("aria-expanded")).toBe("true");
   });
 
+  test("navigation resets a collapsed col2", async () => {
+    stubMatchMedia({});
+    await act(async () => {
+      root.render(<ShellHarness path="/inbox" />);
+    });
+    await act(async () => {
+      toggleButton().click();
+    });
+    expect(
+      container.querySelector('[data-testid="shell-contextual-panel"]'),
+    ).toBeNull();
+
+    await act(async () => {
+      root.render(<ShellHarness path="/routines" />);
+    });
+    expect(
+      container.querySelector('[data-testid="shell-contextual-panel"]'),
+    ).not.toBeNull();
+    expect(toggleButton().getAttribute("aria-expanded")).toBe("true");
+  });
+
   test("narrow layout has no floating drawer trigger — the toggle opens the drawer", async () => {
     stubMatchMedia({
       [`(max-width: ${String(NARROW_MAX_WIDTH - 1)}px)`]: true,
@@ -203,6 +228,7 @@ describe("StageChromeProvider wiring", () => {
           value={{
             col2Collapsed: collapsed,
             toggleCol2: () => setCollapsed((value) => !value),
+            registerToggle: () => noop,
           }}
         >
           <StageTopBar title="Agents" />

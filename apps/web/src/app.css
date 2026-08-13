@@ -549,6 +549,34 @@ html {
   color: var(--muted-foreground);
 }
 
+/* Shell-owned fallback for stage states that render no top bar (boot
+   screens, signed-out notices, load failures): a small floating toggle
+   pinned to the main pane's top-left, so the single col2 control is always
+   reachable. Hidden automatically while any real toggle is mounted. */
+.stage-toggle-fallback {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 20;
+  display: grid;
+  height: 2rem;
+  width: 2rem;
+  place-items: center;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.stage-toggle-fallback:hover {
+  background: var(--muted);
+}
+
+.stage-toggle-fallback svg {
+  height: 1rem;
+  width: 1rem;
+}
+
 /* Page-local toolbars replace TopBar action clusters (search, view toggle)
    that still need component state on the page. Identity lives in the panel. */
 .page-toolbar {

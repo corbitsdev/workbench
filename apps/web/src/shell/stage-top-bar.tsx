@@ -2,43 +2,20 @@
 // control on the left, then title · dot · subtitle, then right-aligned
 // per-page actions. Breadcrumb trails (channel / thread / run) render in
 // the title slot via StageCrumbs so back affordances stay top-left. The
-// shell owns the collapsed state; pages only mount the bar.
+// shell owns the collapsed state (see stage-chrome.tsx); pages only mount
+// the bar.
 
 import { Button } from "@corbits/react-ui";
 import { PanelLeft } from "lucide-react";
-import { createContext, Fragment, useContext, type ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
-export type StageChrome = {
-  readonly col2Collapsed: boolean;
-  readonly toggleCol2: () => void;
-};
+import { COL2_ID, useRegisteredToggle } from "./stage-chrome";
 
-const StageChromeContext = createContext<StageChrome>({
-  col2Collapsed: false,
-  toggleCol2: () => undefined,
-});
-
-export function StageChromeProvider({
-  value,
-  children,
-}: {
-  readonly value: StageChrome;
-  readonly children: ReactNode;
-}) {
-  return (
-    <StageChromeContext.Provider value={value}>
-      {children}
-    </StageChromeContext.Provider>
-  );
-}
-
-export function useStageChrome(): StageChrome {
-  return useContext(StageChromeContext);
-}
-
-/** The one collapse control for col2 — no per-column chevrons anywhere. */
+/** The one collapse control for col2 — no per-column chevrons anywhere.
+ * Registers itself with the shell so the fallback control stays hidden
+ * while any top bar (or the chat header) carries it. */
 export function StageTopBarToggle() {
-  const { col2Collapsed, toggleCol2 } = useStageChrome();
+  const { col2Collapsed, toggleCol2 } = useRegisteredToggle();
   return (
     <Button
       type="button"
@@ -48,6 +25,7 @@ export function StageTopBarToggle() {
       aria-label="Toggle sidebar"
       title="Toggle sidebar"
       aria-expanded={!col2Collapsed}
+      aria-controls={COL2_ID}
       onClick={toggleCol2}
     >
       <PanelLeft />
