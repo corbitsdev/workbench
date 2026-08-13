@@ -27,7 +27,7 @@ import {
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownUp, FileStack, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ArtifactDetailSchema,
@@ -213,23 +213,18 @@ export function LibraryPage({
     [artifacts, activeQuery, sort, onQueryChange],
   );
 
-  const openPicker = () => {
+  const openPicker = useCallback(() => {
     if (uploading === true) return;
     fileInputRef.current?.click();
-  };
+  }, [uploading]);
 
   useEffect(() => {
     if (onUpload === undefined) return;
-    const openFromEvent = () => {
-      if (uploading === true) return;
-      fileInputRef.current?.click();
-    };
     // Off-route Upload navigates first and leaves a pending flag; open now.
-    if (consumePendingLibraryUpload()) openFromEvent();
-    window.addEventListener(LIBRARY_UPLOAD_EVENT, openFromEvent);
-    return () =>
-      window.removeEventListener(LIBRARY_UPLOAD_EVENT, openFromEvent);
-  }, [onUpload, uploading]);
+    if (consumePendingLibraryUpload()) openPicker();
+    window.addEventListener(LIBRARY_UPLOAD_EVENT, openPicker);
+    return () => window.removeEventListener(LIBRARY_UPLOAD_EVENT, openPicker);
+  }, [onUpload, openPicker]);
 
   const selectedSummary =
     activeSelected === null

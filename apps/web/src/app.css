@@ -1905,33 +1905,6 @@ button.insights-stat:hover {
   white-space: nowrap;
 }
 
-.insights-crumb {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.insights-crumb-btn {
-  border: 0;
-  padding: 0;
-  background: none;
-  font: inherit;
-  font-weight: 600;
-  color: var(--primary, #e98428);
-  cursor: pointer;
-}
-
-.insights-crumb-btn:hover {
-  text-decoration: underline;
-}
-
-.insights-crumb-sep {
-  color: var(--muted-foreground, #8a8080);
-  opacity: 0.6;
-}
-
 /* Legacy I2 day-bucket strip (still used by insights-timeline helpers). */
 .insights-timeline {
   display: flex;

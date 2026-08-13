@@ -241,7 +241,8 @@ function InstanceCard({
 
 /**
  * Agents stage: list lives in shell col2; stage is detail only (or empty
- * "select from sidebar"). Create is pageBand / workbench:agents:create.
+ * "select from sidebar"). Create runs from the top bar action or the
+ * workbench:agents:create event.
  */
 export function AgentsPage({
   directory,
@@ -366,12 +367,6 @@ export function AgentsPage({
                   </div>
                 );
               }
-
-              const selectedDefinition =
-                selectedDefinitionId !== null
-                  ? (definitions.find((d) => d.id === selectedDefinitionId) ??
-                    null)
-                  : null;
 
               if (selectedDefinition !== null) {
                 return (
