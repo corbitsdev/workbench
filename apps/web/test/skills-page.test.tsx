@@ -1,6 +1,7 @@
 // Screen-level proof for the Skills page shell (UI only). The page is
-// honest about having no registry yet: it renders an empty state and a
-// Create action, and the create dialog collects a draft but never POSTs.
+// honest about having no registry yet: it renders an empty state, with the
+// top bar's New skill button as the only creation action, and the create
+// dialog collects a draft but never POSTs.
 // Mirrors the SSR shape used by pages.test.tsx / agents-page.test.tsx.
 // Auto-select navigates via useEffect, so that case mounts under happy-dom.
 
@@ -48,9 +49,9 @@ describe("SkillsPage shell", () => {
     expect(markup).not.toContain("Search skills");
   });
 
-  test("exposes a primary Create skill action from the empty state", () => {
+  test("exposes the New skill action from the top bar, not a second empty-state button", () => {
     const markup = renderToStaticMarkup(<SkillsPage />);
-    expect(markup).toContain("Create skill");
+    expect(markup).toContain("New skill");
   });
 
   test("session drafts keep Restore disabled (no registry)", () => {
