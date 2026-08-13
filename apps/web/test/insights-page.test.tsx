@@ -98,3 +98,53 @@ describe("InsightsPage usage honesty", () => {
     expect(markup).toContain("tools route 500");
   });
 });
+
+const purposeRun = {
+  id: "run_1",
+  tenantId: "tnt_1",
+  tenantName: "Test Bench",
+  definitionId: "wfd_1",
+  definitionName: "Morning brief",
+  address: "run@agents.example",
+  status: "running",
+  createdAt: "2026-01-15T12:00:00.000Z",
+} as const;
+
+function renderAtPath(path: string): string {
+  return renderToStaticMarkup(
+    <TestQueryProvider>
+      <NavigationProvider navigate={() => undefined}>
+        <BenchProvider>
+          <InsightsPage
+            path={path}
+            summary={{ kind: "ready", data: EMPTY_OVERALL_USAGE }}
+            activity={{ kind: "ready", data: [] }}
+            byTool={{ kind: "ready", data: [] }}
+            runs={{ kind: "ready", data: { data: [purposeRun] } }}
+            routines={emptyRoutines}
+            range={range}
+          />
+        </BenchProvider>
+      </NavigationProvider>
+    </TestQueryProvider>,
+  );
+}
+
+describe("InsightsPage breadcrumbs", () => {
+  test("runs history puts an Insights / Runs trail in the top bar", () => {
+    const markup = renderAtPath("/insights/runs");
+    expect(markup).toContain('data-testid="stage-top-bar"');
+    expect(markup).toContain('aria-label="Breadcrumb"');
+    expect(markup).toContain(">Insights</button>");
+    expect(markup).toContain('aria-current="page">Runs</span>');
+    expect(markup).not.toContain("insights-crumb");
+  });
+
+  test("run detail puts a Runs / {run} trail in the top bar", () => {
+    const markup = renderAtPath("/insights/runs/run_1");
+    expect(markup).toContain('aria-label="Breadcrumb"');
+    expect(markup).toContain(">Runs</button>");
+    expect(markup).toContain('aria-current="page">Morning brief</span>');
+    expect(markup).not.toContain("insights-crumb");
+  });
+});

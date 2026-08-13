@@ -13,9 +13,13 @@ import type {
   AgentDirectoryData,
   AgentInstance,
 } from "../src/agents-api";
+import { BenchProvider } from "../src/bench-context";
+import { NavigationProvider } from "../src/navigation";
 import { AgentsPage } from "../src/pages/agents-page";
 import { LibraryPage } from "../src/pages/library-page";
+import { SettingsRoute } from "../src/pages/settings-page";
 import { SkillsPage } from "../src/pages/skills-page";
+import { TestQueryProvider } from "./test-query-provider";
 
 function ready<T>(data: T): APIQuery<T> {
   return { kind: "ready", data };
@@ -216,5 +220,21 @@ describe("live data", () => {
     );
     // Create lives on pageBand / dialog; without a tenant the dialog does not mount.
     expect(markup).not.toContain("Define a new agent");
+  });
+});
+
+describe("settings top bar", () => {
+  test("titles the bar with the active section", () => {
+    const markup = renderToStaticMarkup(
+      <TestQueryProvider>
+        <NavigationProvider navigate={() => undefined}>
+          <BenchProvider>
+            <SettingsRoute />
+          </BenchProvider>
+        </NavigationProvider>
+      </TestQueryProvider>,
+    );
+    expect(markup).toContain('data-testid="stage-top-bar"');
+    expect(markup).toContain("Settings · Your agent");
   });
 });
