@@ -82,7 +82,7 @@ function Root() {
       : "corbits-theme";
 
   return (
-    <ThemeProvider storageKey={themeStorageKey}>
+    <ThemeProvider storageKey={themeStorageKey} defaultMode="light">
       <App
         path={path}
         navigate={navigate}
