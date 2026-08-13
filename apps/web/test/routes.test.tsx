@@ -108,6 +108,12 @@ describe("route table", () => {
     expect(matchesRoute("/c", "/chat/ch_1")).toBe(true);
     expect(matchesRoute("/c", "/c/ch_1")).toBe(true);
   });
+
+  test("/settings/:section stays on the settings route", () => {
+    expect(matchesRoute("/settings", "/settings")).toBe(true);
+    expect(matchesRoute("/settings", "/settings/people")).toBe(true);
+    expect(matchesRoute("/settings", "/settings-lookalike")).toBe(false);
+  });
 });
 
 describe("routes render", () => {

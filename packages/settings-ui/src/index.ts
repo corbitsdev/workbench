@@ -9,6 +9,8 @@ export type {
   SettingsSectionGroup,
 } from "./shell";
 
+export { resolveSettingsSectionGroups } from "./section-registry";
+
 export { BenchSection, BenchSectionView } from "./bench-section";
 export { ChatSection, ChatSectionView } from "./chat-section";
 export { AccountSection, AccountSectionView } from "./account-section";

@@ -50,6 +50,11 @@ export const tenantKeys = {
     ["tenant", tenantId, "agents", "directory"] as const,
   assets: (tenantId: string) => ["tenant", tenantId, "assets"] as const,
   artifacts: (tenantId: string) => ["tenant", tenantId, "artifacts"] as const,
+  /** Settings section-nav gating (People/Roles/Grants/Credentials). Keyed
+   * so col2's nav band and the settings stage — mounted in separate
+   * subtrees — share one cached probe instead of each firing its own. */
+  settingsAccess: (tenantId: string, principalId: string) =>
+    ["tenant", tenantId, "settings-access", principalId] as const,
 };
 
 /**
