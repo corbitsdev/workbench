@@ -5,7 +5,10 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { nextRoutinePathForFilter } from "./routines-feed-band";
+import {
+  nextRoutinePathForFilter,
+  routineTriggerSummary,
+} from "./routines-feed-band";
 import type { Routine } from "../routines-api";
 
 function routine(id: string, trigger: Routine["trigger"]): Routine {
@@ -40,9 +43,9 @@ describe("nextRoutinePathForFilter", () => {
   });
 
   test("falls back to the bare list when nothing matches", () => {
-    expect(
-      nextRoutinePathForFilter([scheduled], "trigger", "rtn_daily"),
-    ).toBe("/routines");
+    expect(nextRoutinePathForFilter([scheduled], "trigger", "rtn_daily")).toBe(
+      "/routines",
+    );
   });
 
   test("with no current selection, picks the first match under the filter", () => {
@@ -53,5 +56,43 @@ describe("nextRoutinePathForFilter", () => {
 
   test("an empty routine list always falls back to the bare list", () => {
     expect(nextRoutinePathForFilter([], "all", null)).toBe("/routines");
+  });
+});
+
+describe("routineTriggerSummary", () => {
+  test("interval triggers read as a cadence", () => {
+    expect(
+      routineTriggerSummary({ kind: "interval", unit: "minutes", every: 15 }),
+    ).toBe("Every 15 minutes");
+    expect(
+      routineTriggerSummary({ kind: "interval", unit: "hours", every: 1 }),
+    ).toBe("Every 1 hour");
+  });
+
+  test("daily triggers read as a zero-padded time", () => {
+    expect(routineTriggerSummary({ kind: "daily", hour: 9, minute: 0 })).toBe(
+      "Daily 09:00",
+    );
+  });
+
+  test("weekly triggers name the day", () => {
+    expect(
+      routineTriggerSummary({
+        kind: "weekly",
+        dayOfWeek: 1,
+        hour: 9,
+        minute: 30,
+      }),
+    ).toBe("Every Monday 09:30");
+  });
+
+  test("cron triggers show the expression", () => {
+    expect(
+      routineTriggerSummary({ kind: "cron", expression: "0 9 * * 1-5" }),
+    ).toBe("Cron 0 9 * * 1-5");
+  });
+
+  test("a null trigger is on demand", () => {
+    expect(routineTriggerSummary(null)).toBe("On demand");
   });
 });
