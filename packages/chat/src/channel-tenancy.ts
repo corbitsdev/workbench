@@ -162,6 +162,18 @@ export interface ChannelTenancyStore {
   ): Promise<ChannelTenancyRow[]>;
 
   /**
+   * Which of `tenantIds` is itself a channel's own tenant — the
+   * workbench-owned answer to "is this a workbench or a channel child
+   * tenancy", since native tenant rows carry no such marker. Callers
+   * (the bench switcher's memberships filter, chiefly) hold a list of
+   * tenant ids from `/api/me/principals` and need to know which ones
+   * to exclude, regardless of which parent each channel belongs to.
+   */
+  listChannelTenantIds(
+    tenantIds: readonly string[],
+  ): Promise<ReadonlySet<string>>;
+
+  /**
    * Re-parents a channel's tenancy, but only after re-verifying —
    * inside the very transaction that performs the move, under row
    * locks — that `newParentTenantId` names a real tenant and that
@@ -374,6 +386,15 @@ export function createDrizzleChannelTenancyStore<
         .select()
         .from(channelTenancy)
         .where(eq(channelTenancy.parentTenantId, parentTenantId));
+    },
+
+    async listChannelTenantIds(tenantIds) {
+      if (tenantIds.length === 0) return new Set();
+      const rows = await db
+        .select({ tenantId: channelTenancy.tenantId })
+        .from(channelTenancy)
+        .where(inArray(channelTenancy.tenantId, tenantIds));
+      return new Set(rows.map((row) => row.tenantId));
     },
 
     async moveChannelTenancy({ channelId, newParentTenantId, callerRefId }) {
@@ -632,6 +653,16 @@ export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
     async listChildChannelTenancies(parentTenantId) {
       return [...byChannelId.values()].filter(
         (row) => row.parentTenantId === parentTenantId,
+      );
+    },
+
+    async listChannelTenantIds(tenantIds) {
+      const requested = new Set(tenantIds);
+      const channelTenantIds = new Set(
+        [...byChannelId.values()].map((row) => row.tenantId),
+      );
+      return new Set(
+        [...requested].filter((tenantId) => channelTenantIds.has(tenantId)),
       );
     },
 

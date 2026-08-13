@@ -131,6 +131,9 @@ export type {
   MoveChannelTenancyInput,
 } from "./channel-tenancy";
 
+export { createChannelTenancyRoutes } from "./channel-tenancy-routes";
+export type { CreateChannelTenancyRoutesDeps } from "./channel-tenancy-routes";
+
 export { createHubChatPlatform } from "./platform-adapter";
 export type {
   CreateHubChatPlatformDeps,

@@ -106,3 +106,21 @@ export function inviteMember(
     body: JSON.stringify({ email }),
   });
 }
+
+const ChannelTenantIds = type({
+  channelTenantIds: "string[]",
+});
+
+/** Which of `tenantIds` are channel child tenancies rather than
+ * workbenches — the one fact `/api/me/principals` cannot answer, since
+ * a native tenant row carries no kind marker (see `./tenancy-kind.ts`).
+ * An empty input never round-trips: there is nothing to ask. */
+export function listChannelTenantIds(
+  tenantIds: readonly string[],
+): Promise<ReadonlySet<string>> {
+  if (tenantIds.length === 0) return Promise.resolve(new Set());
+  return request("/api/channel-tenancies/kinds", ChannelTenantIds, {
+    method: "POST",
+    body: JSON.stringify({ tenantIds }),
+  }).then((body) => new Set(body.channelTenantIds));
+}

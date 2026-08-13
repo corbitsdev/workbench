@@ -13,10 +13,17 @@ export { MembersPanel, inviteMemberErrorMessage } from "./members-panel";
 export {
   deriveBenchSlug,
   canCreateBench,
+  isRawIdentifier,
   membershipDisplay,
   memberDisplayName,
   memberRoleLabel,
 } from "./membership";
+
+export {
+  classifyBenchMembership,
+  filterWorkbenchMemberships,
+} from "./tenancy-kind";
+export type { TenancyKind } from "./tenancy-kind";
 
 export { BENCH_STRINGS } from "./strings";
 
@@ -26,6 +33,7 @@ export {
   createBench,
   listMembers,
   inviteMember,
+  listChannelTenantIds,
 } from "./api";
 export type {
   Bench,

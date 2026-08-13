@@ -23,6 +23,7 @@ import {
 import { createAgentDefinitionRoutes } from "@corbits/agent-directory";
 
 import {
+  createChannelTenancyRoutes,
   createChatOrchestrator,
   createChatRoutes,
   createDrizzleChannelTenancyStore,
@@ -351,6 +352,13 @@ export async function createHub(config: HubConfig) {
   const chatTenancy = createDrizzleChannelTenancyStore(db, {
     conditionRegistry: chatConditionRegistry,
   });
+  // Mounted outside the tenant prefix, like `/api/onboarding`: the bench
+  // switcher asks this across every tenant a signed-in user belongs to,
+  // not one tenant at a time (see `apps/web/src/bench-context.tsx`).
+  app.route(
+    "/api/channel-tenancies",
+    createChannelTenancyRoutes({ tenancy: chatTenancy }),
+  );
   const chatPlatform = createHubChatPlatform({
     db,
     sessionService,
