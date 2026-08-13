@@ -151,20 +151,29 @@ export function ChannelSettingsSurface({
   return (
     <div className="channel-settings-stage">
       <div className="channel-settings-topbar">
-        <nav
-          className="channel-settings-breadcrumb"
-          aria-label={CHAT_STRINGS.channelSettingsBreadcrumbLabel}
-        >
-          <button type="button" onClick={onBack}>
-            {channelTitle}
-          </button>
-          <span className="channel-settings-breadcrumb-sep" aria-hidden="true">
-            /
+        <div className="channel-settings-topbar-identity">
+          <nav
+            className="channel-settings-breadcrumb"
+            aria-label={CHAT_STRINGS.channelSettingsBreadcrumbLabel}
+          >
+            <button type="button" onClick={onBack}>
+              {channelTitle}
+            </button>
+            <span
+              className="channel-settings-breadcrumb-sep"
+              aria-hidden="true"
+            >
+              /
+            </span>
+            <span className="channel-settings-breadcrumb-current">
+              {CHAT_STRINGS.channelSettingsBreadcrumbCurrent}
+            </span>
+          </nav>
+          <span className="channel-settings-section-dot" aria-hidden="true" />
+          <span className="channel-settings-section-label">
+            {activeSection.label}
           </span>
-          <span className="channel-settings-breadcrumb-current">
-            {CHAT_STRINGS.channelSettingsBreadcrumbCurrent}
-          </span>
-        </nav>
+        </div>
         <button
           type="button"
           className="channel-settings-save"

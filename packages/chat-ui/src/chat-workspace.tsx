@@ -535,6 +535,24 @@ function ChatWorkspaceInner({
       )
     : undefined;
 
+  // A settings URL for a channel id that resolved channels don't contain
+  // (deleted, mistyped, cross-tenant) would otherwise leave the surface
+  // silently showing the ordinary chat view under a lying /settings URL —
+  // correct the route instead of no-opping.
+  useEffect(() => {
+    if (!settingsOpen) return;
+    if (channelsState.kind !== "ready") return;
+    if (activeChannelId === null) return;
+    if (activeChannel !== undefined) return;
+    onSettingsOpenChange?.(false);
+  }, [
+    settingsOpen,
+    channelsState.kind,
+    activeChannelId,
+    activeChannel,
+    onSettingsOpenChange,
+  ]);
+
   const replyThreads = useMemo(
     () => threads.filter((t) => t.kind === "reply"),
     [threads],

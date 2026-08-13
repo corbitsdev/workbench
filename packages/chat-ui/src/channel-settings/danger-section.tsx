@@ -5,7 +5,7 @@ import { CHAT_STRINGS } from "../strings";
 
 export function DangerSection() {
   return (
-    <div className="channel-settings-pane" role="tabpanel">
+    <div className="channel-settings-pane">
       <div className="chat-settings-callout chat-settings-callout-danger">
         <strong>{CHAT_STRINGS.channelSettingsArchiveTitle}</strong>
         <p>{CHAT_STRINGS.channelSettingsArchiveBody}</p>

@@ -6,7 +6,7 @@ import { CHAT_STRINGS } from "../strings";
 
 export function AccessSection() {
   return (
-    <div className="channel-settings-pane" role="tabpanel">
+    <div className="channel-settings-pane">
       <p className="chat-settings-field-hint">
         {CHAT_STRINGS.channelSettingsAccessBody}
       </p>

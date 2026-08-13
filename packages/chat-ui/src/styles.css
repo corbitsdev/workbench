@@ -83,12 +83,34 @@
   padding: 0 0.9rem;
 }
 
+.channel-settings-topbar-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
 .channel-settings-breadcrumb {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
   font-size: 0.875rem;
+}
+
+.channel-settings-section-dot {
+  width: 3px;
+  height: 3px;
+  flex-shrink: 0;
+  background: var(--muted-foreground);
+}
+
+.channel-settings-section-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
 }
 
 .channel-settings-breadcrumb button {

@@ -18,7 +18,7 @@ export function AgentsSection({
 }) {
   const agents = participants.filter((p) => isAgentAddress(p.address));
   return (
-    <div className="channel-settings-pane" role="tabpanel">
+    <div className="channel-settings-pane">
       <div className="chat-settings-field">
         <span>{CHAT_STRINGS.channelSettingsAgentsLabel}</span>
         {agents.length === 0 ? (

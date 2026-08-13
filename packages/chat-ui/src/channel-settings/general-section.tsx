@@ -35,7 +35,7 @@ export function GeneralSection({
   readonly benchDefault: number;
 }) {
   return (
-    <div className="channel-settings-pane" role="tabpanel">
+    <div className="channel-settings-pane">
       <label className="chat-settings-field">
         <span>{CHAT_STRINGS.channelSettingsNameLabel}</span>
         <Input

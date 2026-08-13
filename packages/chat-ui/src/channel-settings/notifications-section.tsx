@@ -19,7 +19,7 @@ export function NotificationsSection({
   readonly onChange: (value: NotificationPreference) => void;
 }) {
   return (
-    <div className="channel-settings-pane" role="tabpanel">
+    <div className="channel-settings-pane">
       <div
         role="radiogroup"
         aria-label={CHAT_STRINGS.channelSettingsNotificationsLabel}
