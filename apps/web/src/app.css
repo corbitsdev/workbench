@@ -1749,7 +1749,7 @@ html {
 .insights-stat {
   display: block;
   width: 100%;
-  padding: 0.85rem 1rem;
+  padding: 0.75rem 0.85rem;
   text-align: left;
   border: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
@@ -1774,7 +1774,7 @@ button.insights-stat:hover {
 }
 
 .insights-stat-k {
-  font-size: 0.625rem;
+  font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1805,7 +1805,7 @@ button.insights-stat:hover {
 
 .insights-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
   gap: 0.8rem;
 }
 
@@ -1874,7 +1874,14 @@ button.insights-stat:hover {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.82rem;
-  min-width: 20rem;
+  min-width: 32rem;
+}
+
+/* This card scrolls sideways instead of truncating cells — override the
+   page-fill "fit the slot, ellipsis on overflow" default those other
+   tables use. */
+.page-fill .insights-table {
+  table-layout: auto;
 }
 
 .insights-table th,
@@ -1884,10 +1891,14 @@ button.insights-stat:hover {
   border-bottom: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
   vertical-align: middle;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+.page-fill .insights-table th,
+.page-fill .insights-table td {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
 }
 
 .insights-table th {
