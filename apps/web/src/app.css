@@ -864,13 +864,13 @@ html {
   line-height: 1.1;
 }
 
-/* ThemeToggle / ghost buttons in the brand rail footer — match .rail-btn. */
+/* ThemeToggle / ghost buttons and the hand-rolled FooterIconButton in the
+   brand rail footer share one visual spec — match .rail-btn. */
 .shell-rail-footer [data-slot="button"],
-.shell-brand-rail-column [data-slot="button"] {
+.shell-brand-rail-column [data-slot="button"],
+.shell-rail-footer-btn {
   width: 2.5rem;
   height: 2.5rem;
-  min-height: 0;
-  padding: 0;
   border-radius: 0.6rem;
   color: var(--shell-rail-on-brand);
   background: transparent;
@@ -881,15 +881,31 @@ html {
     opacity 140ms ease;
 }
 
+.shell-rail-footer [data-slot="button"],
+.shell-brand-rail-column [data-slot="button"] {
+  min-height: 0;
+  padding: 0;
+}
+
+.shell-rail-footer-btn {
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
 .shell-rail-footer [data-slot="button"]:hover,
-.shell-brand-rail-column [data-slot="button"]:hover {
+.shell-brand-rail-column [data-slot="button"]:hover,
+.shell-rail-footer-btn:hover {
   background: rgba(0, 0, 0, 0.1);
   color: var(--shell-rail-on-brand);
   opacity: 1;
 }
 
 .shell-rail-footer [data-slot="button"] svg,
-.shell-brand-rail-column [data-slot="button"] svg {
+.shell-brand-rail-column [data-slot="button"] svg,
+.shell-rail-footer-btn svg {
   width: 1.15rem;
   height: 1.15rem;
 }
@@ -908,30 +924,6 @@ html {
   width: 100%;
 }
 
-.shell-rail-footer-btn {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.6rem;
-  display: grid;
-  place-items: center;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--shell-rail-on-brand);
-  cursor: pointer;
-  opacity: 0.78;
-  transition:
-    background 140ms ease,
-    color 140ms ease,
-    opacity 140ms ease;
-}
-
-.shell-rail-footer-btn:hover {
-  background: rgba(0, 0, 0, 0.1);
-  color: var(--shell-rail-on-brand);
-  opacity: 1;
-}
-
 .shell-rail-footer-btn[aria-current="page"] {
   background: rgba(0, 0, 0, 0.16);
   color: var(--shell-rail-on-brand);
@@ -941,11 +933,6 @@ html {
 .shell-rail-footer-btn:focus-visible {
   outline: 2px solid var(--shell-rail-on-brand);
   outline-offset: 2px;
-}
-
-.shell-rail-footer-btn svg {
-  width: 1.15rem;
-  height: 1.15rem;
 }
 
 /* Square monogram avatar — never circular on the brand rail. */
