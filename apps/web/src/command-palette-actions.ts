@@ -7,8 +7,8 @@
 // always loses. `pending-dialog-request.ts` generalizes that pattern; the
 // target pages (agents-page.tsx, routines-page.tsx, skills-page.tsx,
 // chat-page.tsx) consume the pending flag on mount. "New thread" is out of
-// scope (killed by owner decision); "Toggle sidebar" has no equivalent yet
-// — see AGENTS.md flags in the PR description.
+// scope (killed by owner decision); "Toggle sidebar" drives the same
+// `toggleCol2` the stage top bar's own control uses (see `stage-chrome.ts`).
 
 import {
   CHANNEL_PATH_PREFIX,
@@ -54,6 +54,7 @@ export type ActionCommandId =
   | "upload-artifact"
   | "toggle-theme"
   | "close-canvas"
+  | "toggle-sidebar"
   | "talk-to-myra"
   | "go-channels";
 
@@ -92,6 +93,11 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
     subtitle: "Full-width stage",
   },
   {
+    id: "toggle-sidebar",
+    title: "Toggle sidebar",
+    subtitle: "Show or hide context column",
+  },
+  {
     id: "talk-to-myra",
     title: "Talk to Myra",
     subtitle: "Open personal agent channel",
@@ -109,6 +115,7 @@ export type ActionCommandContext = {
   readonly tenantId: string | null;
   readonly cycleTheme: () => void;
   readonly closeCanvas: () => void;
+  readonly toggleCol2: () => void;
 };
 
 /**
@@ -173,6 +180,10 @@ export async function runActionCommand(
     }
     case "close-canvas": {
       ctx.closeCanvas();
+      return;
+    }
+    case "toggle-sidebar": {
+      ctx.toggleCol2();
       return;
     }
     case "talk-to-myra": {

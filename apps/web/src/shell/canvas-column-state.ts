@@ -14,12 +14,18 @@ export type CanvasColumnState = {
   readonly open: boolean;
   /** When set, the canvas shows a ProfileCard for this subject. */
   readonly profile: ProfileSubject | null;
+  /** Canvas-dominant reading mode (mock's `data-canvas="focus"`): the canvas
+   * takes over the stage and col2 collapses until focus exits. No caller
+   * enters this mode yet — CL-5936 wires the transitions so a canvas-focus
+   * trigger only has to call `focusCanvas`/`unfocusCanvas` when it lands. */
+  readonly focus: boolean;
 };
 
 export function initialCanvasColumnState(): CanvasColumnState {
   return {
     open: false,
     profile: null,
+    focus: false,
   };
 }
 
@@ -40,7 +46,17 @@ export function openProfileInCanvas(
 export function clearProfileInCanvas(
   state: CanvasColumnState,
 ): CanvasColumnState {
-  return { ...state, open: false, profile: null };
+  return { ...state, open: false, profile: null, focus: false };
+}
+
+/** Enter canvas-dominant focus (opens the canvas if it was not already). */
+export function focusCanvas(state: CanvasColumnState): CanvasColumnState {
+  return { ...state, open: true, focus: true };
+}
+
+/** Exit focus without closing the canvas — it settles back to the even split. */
+export function unfocusCanvas(state: CanvasColumnState): CanvasColumnState {
+  return { ...state, focus: false };
 }
 
 /** What actually renders: demand-driven open state, gated by whether the
@@ -50,4 +66,14 @@ export function resolveCanvasVisibility(
   allowed: boolean,
 ): boolean {
   return state.open && allowed;
+}
+
+/** Whether the canvas is in its dominant focus mode right now — the one
+ * input col2's width state needs from canvas at all (see `stage-chrome.ts`'s
+ * `deriveCol2Width`). */
+export function resolveCanvasFocus(
+  state: CanvasColumnState,
+  allowed: boolean,
+): boolean {
+  return state.open && state.focus && allowed;
 }

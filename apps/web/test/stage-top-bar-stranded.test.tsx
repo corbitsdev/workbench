@@ -11,6 +11,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 import { AppShell } from "../src/shell/app-shell";
 import { COMPACT_MAX_WIDTH, NARROW_MAX_WIDTH } from "../src/shell/breakpoints";
+import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
 import { StageTopBar } from "../src/shell/stage-top-bar";
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
@@ -48,9 +49,11 @@ function Harness({ children }: { readonly children: React.ReactNode }) {
     <TestQueryProvider>
       <NavigationProvider navigate={noop}>
         <BenchProvider>
-          <AppShell path="/inbox" user={user} onSignOut={noop}>
-            {children}
-          </AppShell>
+          <ShellChromeProvider path="/inbox" navigate={noop}>
+            <AppShell path="/inbox" user={user} onSignOut={noop}>
+              {children}
+            </AppShell>
+          </ShellChromeProvider>
         </BenchProvider>
       </NavigationProvider>
     </TestQueryProvider>

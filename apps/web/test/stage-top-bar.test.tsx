@@ -12,6 +12,7 @@ import { useState } from "react";
 
 import { AppShell } from "../src/shell/app-shell";
 import { COMPACT_MAX_WIDTH, NARROW_MAX_WIDTH } from "../src/shell/breakpoints";
+import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
 import { StageChromeProvider } from "../src/shell/stage-chrome";
 import { StageCrumbs, StageTopBar } from "../src/shell/stage-top-bar";
 import { BenchProvider } from "../src/bench-context";
@@ -54,8 +55,10 @@ describe("StageTopBar", () => {
       <StageChromeProvider
         value={{
           col2Collapsed: true,
+          col2Width: "collapsed",
           toggleCol2: noop,
           registerToggle: () => noop,
+          toggleMounted: true,
         }}
       >
         <StageTopBar title="Library" />
@@ -112,9 +115,11 @@ function ShellHarness({ path = "/inbox" }: { readonly path?: string }) {
     <TestQueryProvider>
       <NavigationProvider navigate={noop}>
         <BenchProvider>
-          <AppShell path={path} user={user} onSignOut={noop}>
-            <StageTopBar title="Inbox" />
-          </AppShell>
+          <ShellChromeProvider path={path} navigate={noop}>
+            <AppShell path={path} user={user} onSignOut={noop}>
+              <StageTopBar title="Inbox" />
+            </AppShell>
+          </ShellChromeProvider>
         </BenchProvider>
       </NavigationProvider>
     </TestQueryProvider>
@@ -227,8 +232,10 @@ describe("StageChromeProvider wiring", () => {
         <StageChromeProvider
           value={{
             col2Collapsed: collapsed,
+            col2Width: collapsed ? "collapsed" : "normal",
             toggleCol2: () => setCollapsed((value) => !value),
             registerToggle: () => noop,
+            toggleMounted: true,
           }}
         >
           <StageTopBar title="Agents" />
