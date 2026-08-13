@@ -57,6 +57,7 @@ export const SETTINGS_STRINGS = {
   benchNoneSelectedTitle: "No bench selected",
   benchNoneSelectedDescription: "Choose a bench from the switcher first.",
   benchSaveError: "Couldn't rename this bench — try again.",
+  settingsSavedToast: "Settings saved",
 
   chatSectionTitle: "Conversation defaults",
   chatSectionDescription:
@@ -187,6 +188,8 @@ export const SETTINGS_STRINGS = {
   grantsFilterEffect: "Effect",
   grantsFilterAny: "Any",
   grantsNoExpiry: "Never",
+  grantCreatedToast: "Grant created",
+  grantRevokedToast: "Grant revoked",
 
   credentialsSectionTitle: "Credentials",
   credentialsSectionDescription:
@@ -213,6 +216,8 @@ export const SETTINGS_STRINGS = {
   credentialsDelete: "Revoke",
   credentialsDeleteConfirm: "Revoke for good?",
   credentialsDeleteError: "Couldn't revoke that credential — try again.",
+  credentialSavedToast: "Credential saved · value hidden",
+  credentialRevokedToast: "Credential revoked",
 
   auditSectionTitle: "Audit",
   auditSectionDescription: "Who changed what, when — orientation only.",
