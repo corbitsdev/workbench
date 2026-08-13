@@ -2007,3 +2007,12 @@ button.insights-stat:hover {
   background: color-mix(in srgb, var(--primary, #e98428) 16%, transparent);
   color: var(--primary, #e98428);
 }
+
+/* Global context menu (`shell/context-menu`): the keyboard shortcut hint
+   right-aligned in a menu row. Everything else about the menu's look is
+   react-ui's Menu component. */
+.context-menu-shortcut {
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: var(--muted-foreground, #8a8080);
+}
