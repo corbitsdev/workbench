@@ -1,12 +1,14 @@
 // The command palette's `>` action commands: everything the shell mock's
 // `buildCmdkEntries` lists under "Commands" that this app can actually wire
-// today. Each command dispatches the same event or calls the same function a
-// visible button already uses — see the header actions in
-// `shell/panel-contributions.tsx` for "New channel" / "New agent" /
-// "New routine" / "New skill", `library-upload.ts` for "Upload artifact",
-// and `myra-channel.ts` for "Talk to Myra". "New thread" is out of scope
-// (killed by owner decision); "Toggle sidebar" has no equivalent yet — see
-// AGENTS.md flags in the PR description.
+// today. Each create command uses the same off-route-safe pending-flag
+// pattern `library-upload.ts` already established: the palette can fire
+// from any page, before the target page (and its window-event listener) has
+// mounted, so a same-tick `dispatchEvent` would be a race the listener
+// always loses. `pending-dialog-request.ts` generalizes that pattern; the
+// target pages (agents-page.tsx, routines-page.tsx, skills-page.tsx,
+// chat-page.tsx) consume the pending flag on mount. "New thread" is out of
+// scope (killed by owner decision); "Toggle sidebar" has no equivalent yet
+// — see AGENTS.md flags in the PR description.
 
 import {
   CHANNEL_PATH_PREFIX,
@@ -15,6 +17,34 @@ import {
 } from "./channel-path";
 import { ensureMyraChannel } from "./myra-channel";
 import { requestLibraryUpload } from "./library-upload";
+import { createPendingDialogRequest } from "./pending-dialog-request";
+
+export const NEW_CHANNEL_EVENT = "workbench:chat:new-channel";
+export const NEW_AGENT_EVENT = "workbench:agents:create";
+export const NEW_ROUTINE_EVENT = "workbench:routines:create";
+export const NEW_SKILL_EVENT = "workbench:skills:create";
+
+const newChannelRequest = createPendingDialogRequest();
+const newAgentRequest = createPendingDialogRequest();
+const newRoutineRequest = createPendingDialogRequest();
+const newSkillRequest = createPendingDialogRequest();
+
+/** Consumed by chat-page.tsx on mount. */
+export const consumePendingNewChannel = newChannelRequest.consumePending;
+/** Consumed by agents-page.tsx on mount. */
+export const consumePendingNewAgent = newAgentRequest.consumePending;
+/** Consumed by routines-page.tsx on mount. */
+export const consumePendingNewRoutine = newRoutineRequest.consumePending;
+/** Consumed by skills-page.tsx on mount. */
+export const consumePendingNewSkill = newSkillRequest.consumePending;
+
+/** Test helper — drop leftover pending state between cases. */
+export function resetPendingDialogRequests(): void {
+  newChannelRequest.resetPending();
+  newAgentRequest.resetPending();
+  newRoutineRequest.resetPending();
+  newSkillRequest.resetPending();
+}
 
 export type ActionCommandId =
   | "new-channel"
@@ -82,10 +112,10 @@ export type ActionCommandContext = {
 };
 
 /**
- * Runs one action command. Navigation-plus-dispatch commands mirror the
- * exact sequence the visible header actions already use (dispatch the
- * create event, then navigate only if the target page is not already
- * mounted) so opening the same dialog from the palette behaves identically.
+ * Runs one action command. The four create commands go through a pending
+ * flag when the palette fires them off-route (see the module doc), so the
+ * target page's own mount effect opens the dialog instead of a dispatch
+ * racing against that page's not-yet-mounted listener.
  */
 export async function runActionCommand(
   id: ActionCommandId,
@@ -93,29 +123,40 @@ export async function runActionCommand(
 ): Promise<void> {
   switch (id) {
     case "new-channel": {
-      window.dispatchEvent(new CustomEvent("workbench:chat:new-channel"));
-      if (!isChannelPath(ctx.path)) ctx.navigate(channelPath(null));
+      newChannelRequest.request({
+        alreadyOnTargetRoute: isChannelPath(ctx.path),
+        navigateToTargetRoute: () => ctx.navigate(channelPath(null)),
+        dispatch: () =>
+          window.dispatchEvent(new CustomEvent(NEW_CHANNEL_EVENT)),
+      });
       return;
     }
     case "new-agent": {
-      window.dispatchEvent(new CustomEvent("workbench:agents:create"));
-      if (ctx.path !== "/agents" && !ctx.path.startsWith("/agents/")) {
-        ctx.navigate("/agents");
-      }
+      newAgentRequest.request({
+        alreadyOnTargetRoute:
+          ctx.path === "/agents" || ctx.path.startsWith("/agents/"),
+        navigateToTargetRoute: () => ctx.navigate("/agents"),
+        dispatch: () => window.dispatchEvent(new CustomEvent(NEW_AGENT_EVENT)),
+      });
       return;
     }
     case "new-routine": {
-      window.dispatchEvent(new CustomEvent("workbench:routines:create"));
-      if (ctx.path !== "/routines" && !ctx.path.startsWith("/routines/")) {
-        ctx.navigate("/routines");
-      }
+      newRoutineRequest.request({
+        alreadyOnTargetRoute:
+          ctx.path === "/routines" || ctx.path.startsWith("/routines/"),
+        navigateToTargetRoute: () => ctx.navigate("/routines"),
+        dispatch: () =>
+          window.dispatchEvent(new CustomEvent(NEW_ROUTINE_EVENT)),
+      });
       return;
     }
     case "new-skill": {
-      window.dispatchEvent(new CustomEvent("workbench:skills:create"));
-      if (ctx.path !== "/skills" && !ctx.path.startsWith("/skills/")) {
-        ctx.navigate("/skills");
-      }
+      newSkillRequest.request({
+        alreadyOnTargetRoute:
+          ctx.path === "/skills" || ctx.path.startsWith("/skills/"),
+        navigateToTargetRoute: () => ctx.navigate("/skills"),
+        dispatch: () => window.dispatchEvent(new CustomEvent(NEW_SKILL_EVENT)),
+      });
       return;
     }
     case "upload-artifact": {

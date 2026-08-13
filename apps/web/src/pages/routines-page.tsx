@@ -40,6 +40,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAPIQuery, RunsSchema } from "../api";
 import type { APIQuery, WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
+import { consumePendingNewRoutine } from "../command-palette-actions";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 import { cadenceLabel } from "../routine-trigger";
@@ -895,6 +896,13 @@ export function RoutinesListPage({
     window.addEventListener("workbench:routines:create", onCreateEvent);
     return () =>
       window.removeEventListener("workbench:routines:create", onCreateEvent);
+  }, []);
+
+  // The command palette may have requested "New routine" from another page,
+  // before this listener existed to catch the dispatch — see
+  // pending-dialog-request.ts. Consume that flag now that we've mounted.
+  useEffect(() => {
+    if (consumePendingNewRoutine()) setCreateOpen(true);
   }, []);
 
   useEffect(() => {

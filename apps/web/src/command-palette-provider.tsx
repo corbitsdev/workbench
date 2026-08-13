@@ -8,12 +8,12 @@ import { listChannels } from "@corbits/chat-ui";
 import {
   buildCommandPaletteGroups,
   buildStaticCommands,
+  isBareScopeQuery,
   parsePaletteQuery,
   useEntitySearch,
   type PaletteResultItem,
+  type PaletteSource,
   type RecentEntry,
-  type ScopedPaletteSource,
-  type UnscopedPaletteSource,
 } from "@corbits/command-palette";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -114,7 +114,7 @@ export function CommandPaletteProvider({
     }));
   }, [selectedTenantId]);
 
-  const sources = useMemo(
+  const entitySearchSources = useMemo(
     () => [
       { category: "channels", fetch: listChannelsForSearch },
       { category: "runs", fetch: listRunsForSearch },
@@ -124,12 +124,68 @@ export function CommandPaletteProvider({
   );
 
   const strippedQuery = useMemo(() => parsePaletteQuery(query).query, [query]);
+  const bareScopeKind = useMemo(() => {
+    if (!isBareScopeQuery(query)) return null;
+    return parsePaletteQuery(query).scope?.kind ?? null;
+  }, [query]);
 
   const { results, loading, error, hasMore, loadMore } = useEntitySearch({
     query: strippedQuery,
     enabled: open,
-    sources,
+    sources: entitySearchSources,
   });
+
+  // A bare `#` or `@` strips to an empty query, which useEntitySearch never
+  // fetches for (by design — the unscoped default view should not dump
+  // every entity on open). The mock shows every item in an active scope for
+  // this input, so fetch that scope's raw list directly instead.
+  const [bareChannels, setBareChannels] = useState<
+    readonly PaletteResultItem[]
+  >([]);
+  const [bareAgents, setBareAgents] = useState<readonly PaletteResultItem[]>(
+    [],
+  );
+
+  useEffect(() => {
+    if (bareScopeKind !== "channels" || !open) {
+      setBareChannels([]);
+      return;
+    }
+    let cancelled = false;
+    void listChannelsForSearch().then((rows) => {
+      if (cancelled) return;
+      setBareChannels(
+        rows.map((row) => ({
+          id: `entity:channels:${row.id}`,
+          title: row.name,
+        })),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bareScopeKind, open, listChannelsForSearch]);
+
+  useEffect(() => {
+    if (bareScopeKind !== "people" || !open) {
+      setBareAgents([]);
+      return;
+    }
+    let cancelled = false;
+    void listAgentsForSearch().then((rows) => {
+      if (cancelled) return;
+      setBareAgents(
+        rows.map((row) => ({
+          id: `entity:agents:${row.id}`,
+          title: row.name,
+          subtitle: "Agent",
+        })),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bareScopeKind, open, listAgentsForSearch]);
 
   const routinesQuery = useTenantQuery(
     tenantKeys.routines(selectedTenantId ?? ""),
@@ -182,28 +238,26 @@ export function CommandPaletteProvider({
     return [...commands, ...runNow];
   }, [routinesQuery]);
 
-  const channelItems = useMemo<readonly PaletteResultItem[]>(
-    () =>
-      results
-        .filter((result) => result.category === "channels")
-        .map((channel) => ({
-          id: `entity:channels:${channel.id}`,
-          title: channel.title,
-        })),
-    [results],
-  );
+  const channelItems = useMemo<readonly PaletteResultItem[]>(() => {
+    if (bareScopeKind === "channels") return bareChannels;
+    return results
+      .filter((result) => result.category === "channels")
+      .map((channel) => ({
+        id: `entity:channels:${channel.id}`,
+        title: channel.title,
+      }));
+  }, [results, bareScopeKind, bareChannels]);
 
-  const agentItems = useMemo<readonly PaletteResultItem[]>(
-    () =>
-      results
-        .filter((result) => result.category === "agents")
-        .map((agent) => ({
-          id: `entity:agents:${agent.id}`,
-          title: agent.title,
-          subtitle: "Agent",
-        })),
-    [results],
-  );
+  const agentItems = useMemo<readonly PaletteResultItem[]>(() => {
+    if (bareScopeKind === "people") return bareAgents;
+    return results
+      .filter((result) => result.category === "agents")
+      .map((agent) => ({
+        id: `entity:agents:${agent.id}`,
+        title: agent.title,
+        subtitle: "Agent",
+      }));
+  }, [results, bareScopeKind, bareAgents]);
 
   const runItems = useMemo<readonly PaletteResultItem[]>(
     () =>
@@ -253,7 +307,10 @@ export function CommandPaletteProvider({
     [artifactsQuery],
   );
 
-  const scopedSources = useMemo<readonly ScopedPaletteSource[]>(
+  // Order matches the mock's buildCmdkEntries: Commands, Channels, Pages,
+  // then the unscoped catalogs (Runs, Routines, Skills, Library), with
+  // People & agents last among the palette's groups.
+  const sources = useMemo<readonly PaletteSource[]>(
     () => [
       {
         id: "actions",
@@ -268,6 +325,10 @@ export function CommandPaletteProvider({
         items: channelItems,
       },
       { id: "pages", heading: "Pages", kind: "pages", items: pageItems },
+      { id: "runs", heading: "Runs", items: runItems },
+      { id: "routines", heading: "Routines", items: routineItems },
+      { id: "skills", heading: "Skills", items: skillItems },
+      { id: "library", heading: "Library", items: libraryItems },
       {
         id: "people",
         heading: "People & agents",
@@ -275,17 +336,16 @@ export function CommandPaletteProvider({
         items: agentItems,
       },
     ],
-    [actionItems, channelItems, pageItems, agentItems],
-  );
-
-  const unscopedSources = useMemo<readonly UnscopedPaletteSource[]>(
-    () => [
-      { id: "runs", heading: "Runs", items: runItems },
-      { id: "routines", heading: "Routines", items: routineItems },
-      { id: "skills", heading: "Skills", items: skillItems },
-      { id: "library", heading: "Library", items: libraryItems },
+    [
+      actionItems,
+      channelItems,
+      pageItems,
+      runItems,
+      routineItems,
+      skillItems,
+      libraryItems,
+      agentItems,
     ],
-    [runItems, routineItems, skillItems, libraryItems],
   );
 
   const recentItems = useMemo<readonly PaletteResultItem[]>(
@@ -302,15 +362,14 @@ export function CommandPaletteProvider({
     const built = buildCommandPaletteGroups({
       query,
       recents: recentItems,
-      scoped: scopedSources,
-      unscoped: unscopedSources,
+      sources,
     });
     return built.map((group) => ({
       id: group.id,
       heading: group.heading,
       items: group.items,
     }));
-  }, [query, recentItems, scopedSources, unscopedSources]);
+  }, [query, recentItems, sources]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -343,9 +402,16 @@ export function CommandPaletteProvider({
         pushRecent({ kind: "channels", id, title, subtitle: "Channel" });
       } else if (id.startsWith("entity:runs:")) {
         // Routines page owns the /routines prefix (including detail segments).
-        navigate(`/routines/${id.slice("entity:runs:".length)}`);
+        const runId = id.slice("entity:runs:".length);
+        const title = runItems.find((item) => item.id === id)?.title ?? runId;
+        navigate(`/routines/${runId}`);
+        pushRecent({ kind: "runs", id, title, subtitle: "Run" });
       } else if (id.startsWith("entity:agents:")) {
-        navigate("/agents");
+        const agentId = id.slice("entity:agents:".length);
+        const title =
+          agentItems.find((item) => item.id === id)?.title ?? agentId;
+        navigate(`/agents/${encodeURIComponent(agentId)}`);
+        pushRecent({ kind: "agents", id, title, subtitle: "Agent" });
       } else if (id.startsWith("entity:routines:")) {
         const routineId = id.slice("entity:routines:".length);
         const title =
@@ -376,6 +442,8 @@ export function CommandPaletteProvider({
       closeCanvas,
       pushRecent,
       channelItems,
+      runItems,
+      agentItems,
       routineItems,
       skillItems,
       libraryItems,

@@ -1,6 +1,20 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
-import { ACTION_COMMANDS, runActionCommand } from "./command-palette-actions";
+import {
+  ACTION_COMMANDS,
+  consumePendingNewAgent,
+  consumePendingNewChannel,
+  consumePendingNewRoutine,
+  consumePendingNewSkill,
+  resetPendingDialogRequests,
+  runActionCommand,
+} from "./command-palette-actions";
+import { resetPendingLibraryUpload } from "./library-upload";
+
+afterEach(() => {
+  resetPendingDialogRequests();
+  resetPendingLibraryUpload();
+});
 
 function context(overrides: {
   readonly path: string;
@@ -42,7 +56,8 @@ function context(overrides: {
 
 describe("ACTION_COMMANDS", () => {
   test("does not include New thread — killed by owner decision", () => {
-    expect(ACTION_COMMANDS.some((c) => c.id === "new-thread")).toBe(false);
+    const ids: readonly string[] = ACTION_COMMANDS.map((c) => c.id);
+    expect(ids.includes("new-thread")).toBe(false);
   });
 
   test("every command has a stable id, title, and subtitle", () => {
@@ -60,41 +75,49 @@ describe("ACTION_COMMANDS", () => {
 });
 
 describe("runActionCommand", () => {
-  test("new-channel dispatches the shared event and navigates off a non-channel path", async () => {
-    const { ctx, navigated, dispatched } = context({ path: "/library" });
+  test("new-channel dispatches immediately when already on a channel path", async () => {
+    const { ctx, navigated, dispatched } = context({ path: "/c/abc" });
     await runActionCommand("new-channel", ctx);
     expect(dispatched).toContain("workbench:chat:new-channel");
-    expect(navigated).toEqual(["/c"]);
-  });
-
-  test("new-channel does not navigate when already on a channel path", async () => {
-    const { ctx, navigated } = context({ path: "/c/abc" });
-    await runActionCommand("new-channel", ctx);
     expect(navigated).toEqual([]);
+    expect(consumePendingNewChannel()).toBe(false);
   });
 
-  test("new-agent dispatches and navigates only when off /agents", async () => {
+  test("new-channel off-route navigates and records a pending flag instead of dispatching", async () => {
+    const { ctx, navigated, dispatched } = context({ path: "/library" });
+    await runActionCommand("new-channel", ctx);
+    expect(dispatched).toEqual([]);
+    expect(navigated).toEqual(["/c"]);
+    expect(consumePendingNewChannel()).toBe(true);
+  });
+
+  test("new-agent dispatches on-route, records a pending flag and navigates off-route", async () => {
     const onAgents = context({ path: "/agents" });
     await runActionCommand("new-agent", onAgents.ctx);
     expect(onAgents.navigated).toEqual([]);
+    expect(onAgents.dispatched).toContain("workbench:agents:create");
 
     const elsewhere = context({ path: "/library" });
     await runActionCommand("new-agent", elsewhere.ctx);
     expect(elsewhere.navigated).toEqual(["/agents"]);
+    expect(elsewhere.dispatched).toEqual([]);
+    expect(consumePendingNewAgent()).toBe(true);
   });
 
-  test("new-routine dispatches and navigates only when off /routines", async () => {
+  test("new-routine off-route navigates and records a pending flag instead of dispatching", async () => {
     const { ctx, navigated, dispatched } = context({ path: "/library" });
     await runActionCommand("new-routine", ctx);
-    expect(dispatched).toContain("workbench:routines:create");
+    expect(dispatched).toEqual([]);
     expect(navigated).toEqual(["/routines"]);
+    expect(consumePendingNewRoutine()).toBe(true);
   });
 
-  test("new-skill dispatches and navigates only when off /skills", async () => {
+  test("new-skill off-route navigates and records a pending flag instead of dispatching", async () => {
     const { ctx, navigated, dispatched } = context({ path: "/library" });
     await runActionCommand("new-skill", ctx);
-    expect(dispatched).toContain("workbench:skills:create");
+    expect(dispatched).toEqual([]);
     expect(navigated).toEqual(["/skills"]);
+    expect(consumePendingNewSkill()).toBe(true);
   });
 
   test("upload-artifact navigates to /library when off-route", async () => {
