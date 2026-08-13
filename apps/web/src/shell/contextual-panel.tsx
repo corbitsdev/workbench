@@ -32,7 +32,6 @@ export function ContextualPanel({
   const renderCtx = { path, onNavigate };
   const pageBand = contribution?.pageBand(renderCtx) ?? {
     title: "Workbench",
-    subtitle: "Navigate from the rail",
   };
   const pageSpecific = contribution?.pageSpecific?.(renderCtx) ?? null;
   const [pins] = useState<readonly Pin[]>(() => loadPins());
@@ -75,12 +74,6 @@ export function ContextualPanel({
       aria-label="Contextual panel"
     >
       <SidebarPanelHeader title={pageBand.title} action={headerAction} />
-
-      {pageBand.subtitle !== undefined ? (
-        <p className="panel-page-subtitle panel-band-inset">
-          {pageBand.subtitle}
-        </p>
-      ) : null}
 
       {pageBand.actions !== undefined && pageBand.actions.length > 0 ? (
         <div className="panel-page-actions panel-band-inset">

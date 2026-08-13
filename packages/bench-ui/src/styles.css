@@ -6,17 +6,18 @@
   position: relative;
 }
 
-/* Mock .bench: compact monogram-like dock trigger (col2 foot). */
+/* Mock .bench: compact monogram dock trigger (col2 foot) on the ground. */
 .bench-switcher-trigger {
   display: flex;
   width: 100%;
   min-height: 0;
   align-items: center;
   gap: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 0.55rem;
+  border: 1px solid
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+  border-radius: 0;
   padding: 0.45rem 0.5rem;
-  background: var(--card, var(--background));
+  background: var(--background, #fff);
   font: inherit;
   font-size: 0.84rem;
   font-weight: 580;
@@ -30,9 +31,24 @@
 }
 
 .bench-switcher-trigger:hover {
-  background: var(--card, var(--background));
+  background: var(--background, #fff);
   border-color: color-mix(in srgb, var(--foreground, #2b2627) 16%, transparent);
   color: var(--foreground);
+}
+
+/* Mock .bench .bm: square monogram avatar. */
+.bench-switcher-mark {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: 0;
+  background: var(--muted, #f4f4f4);
+  color: var(--foreground, #2b2627);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .bench-switcher-name {

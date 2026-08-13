@@ -14,7 +14,6 @@ export type PanelAction = {
 export type PageBand = {
   /** SidebarPanelHeader title — string for the react-ui pin contract. */
   readonly title: string;
-  readonly subtitle?: string;
   readonly settingsPath?: string;
   readonly headerActions?: readonly PanelAction[];
   readonly actions?: readonly PanelAction[];

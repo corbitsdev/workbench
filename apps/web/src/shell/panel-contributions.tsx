@@ -384,12 +384,12 @@ function ChannelsBand({
 
   return (
     <div className="panel-stack" aria-label="Channels">
-      <label className="shell-channels-search">
+      <label className="shell-panel-search">
         <Search aria-hidden="true" />
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search channels…"
+          placeholder="Search…"
           aria-label="Search channels"
         />
       </label>
@@ -472,12 +472,15 @@ function AgentsFeedBand({
 
   return (
     <div className="panel-stack" aria-label="Agents">
-      <Input
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search agents"
-        aria-label="Search agents"
-      />
+      <label className="shell-panel-search">
+        <Search aria-hidden="true" />
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search…"
+          aria-label="Search agents"
+        />
+      </label>
       {definitions.length === 0 ? (
         <EmptyState
           icon={<Bot />}
@@ -494,8 +497,24 @@ function AgentsFeedBand({
         items.map((definition) => (
           <SidebarItemRow
             key={definition.id}
-            name={definition.name}
-            meta={definition.status}
+            leading={<Bot />}
+            name={
+              <span className="panel-row-copy">
+                <strong>{definition.name}</strong>
+                <span>v{definition.currentVersion}</span>
+              </span>
+            }
+            meta={
+              <span
+                className={
+                  definition.status === "deployed"
+                    ? "panel-status is-ok"
+                    : "panel-status is-muted"
+                }
+              >
+                {definition.status}
+              </span>
+            }
             selected={selectedId === definition.id}
             onSelect={() =>
               onNavigate(`/agents/${encodeURIComponent(definition.id)}`)
@@ -531,12 +550,12 @@ function SkillsFeedBand({
   return (
     <div className="panel-stack" aria-label="Skills">
       {skills.length > 0 ? (
-        <label className="shell-skills-search">
+        <label className="shell-panel-search">
           <Search aria-hidden="true" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search skills"
+            placeholder="Search…"
             aria-label="Search skills"
           />
         </label>
@@ -557,13 +576,9 @@ function SkillsFeedBand({
         items.map((skill) => (
           <SidebarItemRow
             key={skill.id}
-            leading={
-              <span className="shell-skill-mark" aria-hidden="true">
-                S
-              </span>
-            }
+            leading={<Sparkles />}
             name={
-              <span className="shell-skill-row-copy">
+              <span className="panel-row-copy">
                 <strong>{skill.name}</strong>
                 <span>v{skill.version}</span>
               </span>
@@ -572,8 +587,8 @@ function SkillsFeedBand({
               <span
                 className={
                   skill.sessionLocal
-                    ? "shell-skill-status is-draft"
-                    : "shell-skill-status is-installed"
+                    ? "panel-status is-muted"
+                    : "panel-status is-ok"
                 }
               >
                 {skill.sessionLocal ? "Draft" : "Installed"}
@@ -751,10 +766,9 @@ function LiveActivityBand({
   );
 }
 
-function defaultBand(title: string, subtitle: string, settingsPath?: string) {
+function defaultBand(title: string, settingsPath?: string) {
   return (_ctx: PanelRenderContext) => ({
     title,
-    subtitle,
     ...(settingsPath !== undefined ? { settingsPath } : {}),
   });
 }
@@ -769,7 +783,7 @@ export function ensurePanelContributions(): void {
   registerPanelContribution({
     id: "home",
     match: (path) => path === "/",
-    pageBand: defaultBand("Myra", "Opening your default channel"),
+    pageBand: defaultBand("Myra"),
     pageSpecific: (ctx) => (
       <LiveActivityBand path={ctx.path} onNavigate={ctx.onNavigate} />
     ),
@@ -781,7 +795,6 @@ export function ensurePanelContributions(): void {
     pageBand: (ctx) => {
       return {
         // Header title must stay a string for SidebarPanelHeader (react-ui pin).
-        // Mock col2 head is title-only — no subtitle under "Channels".
         title: "Channels",
         headerActions: [
           {
@@ -806,10 +819,7 @@ export function ensurePanelContributions(): void {
   registerPanelContribution({
     id: "inbox",
     match: (path) => pathMatches("/inbox", path),
-    pageBand: defaultBand(
-      "Inbox",
-      "Approvals and notifications for this bench",
-    ),
+    pageBand: defaultBand("Inbox"),
     pageSpecific: (ctx) => (
       <InboxFiltersBand path={ctx.path} onNavigate={ctx.onNavigate} />
     ),
@@ -820,7 +830,6 @@ export function ensurePanelContributions(): void {
     match: (path) => pathMatches("/agents", path),
     pageBand: (ctx) => ({
       title: "Agents",
-      subtitle: "Definitions that run on this bench",
       headerActions: [
         {
           id: "create-agent",
@@ -843,7 +852,6 @@ export function ensurePanelContributions(): void {
     match: (path) => pathMatches("/routines", path),
     pageBand: (ctx) => ({
       title: "Routines",
-      subtitle: "Scheduled and on-demand workflows",
       headerActions: [
         {
           id: "create-routine",
@@ -867,7 +875,6 @@ export function ensurePanelContributions(): void {
     match: (path) => pathMatches("/library", path),
     pageBand: (ctx) => ({
       title: "Library",
-      subtitle: "Artifacts this bench has produced",
       headerActions: [
         {
           id: "upload-artifact",
@@ -905,7 +912,6 @@ export function ensurePanelContributions(): void {
     match: (path) => pathMatches("/skills", path),
     pageBand: (ctx) => ({
       title: "Skills",
-      subtitle: "Packaged capabilities an agent definition can pick up",
       headerActions: [
         {
           id: "create-skill",
@@ -926,7 +932,7 @@ export function ensurePanelContributions(): void {
   registerPanelContribution({
     id: "insights",
     match: (path) => pathMatches("/insights", path),
-    pageBand: defaultBand("Insights", "Usage and audit trail for this bench"),
+    pageBand: defaultBand("Insights"),
     pageSpecific: (ctx) => (
       <InsightsViewsBand path={ctx.path} onNavigate={ctx.onNavigate} />
     ),
@@ -935,12 +941,12 @@ export function ensurePanelContributions(): void {
   registerPanelContribution({
     id: "settings",
     match: (path) => pathMatches("/settings", path),
-    pageBand: defaultBand("Settings", "Bench, members, and preferences"),
+    pageBand: defaultBand("Settings"),
   });
 
   registerPanelContribution({
     id: "benches",
     match: (path) => pathMatches("/benches", path),
-    pageBand: defaultBand("Benches", "Every workbench you can access"),
+    pageBand: defaultBand("Benches"),
   });
 }
