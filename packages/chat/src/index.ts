@@ -10,6 +10,16 @@ export {
   Part,
   parsePart,
 } from "./parts";
+export {
+  ApproveBlockData,
+  StepsBlockData,
+  MetricsBlockData,
+  PollBlockData,
+  FormBlockData,
+  StreamBlockData,
+  parseBlock,
+} from "./blocks";
+export type { Block, BlockParseResult } from "./blocks";
 export { encodeParts, decodeParts, decodeMail, senderOf } from "./codec";
 export type {
   MailContent,
