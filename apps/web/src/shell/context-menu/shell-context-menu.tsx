@@ -26,7 +26,8 @@ export function ShellContextMenu() {
   const navigate = useNavigate();
   const openProfile = useOpenProfileInCanvas();
   const { cycleMode } = useTheme();
-  const { open, x, y, menu, show, hide } = useContextMenuState();
+  const { open, x, y, menu, triggerElement, show, hide } =
+    useContextMenuState();
 
   const actions: ShellContextMenuActions = {
     tenantId: selectedTenantId,
@@ -57,6 +58,7 @@ export function ShellContextMenu() {
       y={y}
       menu={menu}
       open={open}
+      restoreFocusTo={triggerElement}
       onOpenChange={(next) => {
         if (!next) hide();
       }}

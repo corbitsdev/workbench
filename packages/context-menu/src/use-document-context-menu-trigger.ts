@@ -11,7 +11,14 @@ export type ContextMenuTriggerOptions = {
   /** Resolves the right-clicked element to a menu, or `null` for "nothing to
    * show here" (the shell background outside any known target). */
   readonly resolve: (target: EventTarget | null) => ContextMenu | null;
-  readonly onOpen: (x: number, y: number, menu: ContextMenu) => void;
+  /** `origin` is the element the pointer event actually landed on — the
+   * caller's cue for where to restore focus once the menu closes. */
+  readonly onOpen: (
+    x: number,
+    y: number,
+    menu: ContextMenu,
+    origin: Element | null,
+  ) => void;
 };
 
 /**
@@ -38,7 +45,8 @@ export function useDocumentContextMenuTrigger(
       const menu = resolve(event.target);
       if (isContextMenuEmpty(menu) || menu === null) return;
       event.preventDefault();
-      onOpen(event.clientX, event.clientY, menu);
+      const origin = event.target instanceof Element ? event.target : null;
+      onOpen(event.clientX, event.clientY, menu, origin);
     }
     document.addEventListener("contextmenu", handleContextMenu);
     return () => document.removeEventListener("contextmenu", handleContextMenu);

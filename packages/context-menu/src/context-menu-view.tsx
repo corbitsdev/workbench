@@ -7,6 +7,7 @@ import {
   MenuTrigger,
 } from "@corbits/react-ui";
 
+import { restoreFocus } from "./focus-restore";
 import type { ContextMenu } from "./menu";
 
 /**
@@ -17,7 +18,10 @@ import type { ContextMenu } from "./menu";
  * shares its dismissable-layer stack with react-ui's `Dialog` — the same
  * stack the command palette's dialog uses — so a context menu never
  * out-races a dialog on Escape. The only custom part is anchoring the
- * (Radix-required) trigger to the click point instead of a visible button.
+ * (Radix-required) trigger to the click point instead of a visible button:
+ * that anchor is an inert, unfocusable point, so Radix's default
+ * close-focus-the-trigger behavior is overridden to focus `restoreFocusTo`
+ * (the row that was right-clicked) instead.
  */
 export function ContextMenuView({
   x,
@@ -25,12 +29,14 @@ export function ContextMenuView({
   menu,
   open,
   onOpenChange,
+  restoreFocusTo = null,
 }: {
   readonly x: number;
   readonly y: number;
   readonly menu: ContextMenu | null;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  readonly restoreFocusTo?: Element | null;
 }) {
   if (menu === null) return null;
   return (
@@ -48,7 +54,14 @@ export function ContextMenuView({
           }}
         />
       </MenuTrigger>
-      <MenuContent align="start" side="bottom">
+      <MenuContent
+        align="start"
+        side="bottom"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          restoreFocus(restoreFocusTo);
+        }}
+      >
         {menu.label !== undefined ? <MenuLabel>{menu.label}</MenuLabel> : null}
         {menu.entries.map((entry, index) =>
           entry.kind === "separator" ? (

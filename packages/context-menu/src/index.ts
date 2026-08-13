@@ -1,9 +1,10 @@
 // `@corbits/context-menu`: the deployment-agnostic half of the global
-// right-click / Ctrl-click context-menu system. Resolving a DOM event to a
-// typed target (`target-resolver`), deciding whether a modal overlay should
-// suppress it (`dialog-guard`), the open/position state machine
+// right-click context-menu system. Resolving a DOM event to a typed target
+// (`target-resolver`), deciding whether a modal overlay should suppress it
+// (`dialog-guard`), the open/position state machine
 // (`use-context-menu-state`), the single document listener that drives it
-// (`use-document-context-menu-trigger`), and the react-ui-backed presentation
+// (`use-document-context-menu-trigger`), returning focus to the right-clicked
+// row on close (`focus-restore`), and the react-ui-backed presentation
 // (`context-menu-view`) all apply to any Interchange app with typed rows to
 // right-click on. What counts as a target and which items it offers is
 // product-specific and stays with the consumer.
@@ -15,6 +16,8 @@ export {
   isBlockingOverlayOpen,
   isInsideInteractiveInput,
 } from "./dialog-guard";
+
+export { findFocusable, restoreFocus } from "./focus-restore";
 
 export {
   contextMenuItem,
