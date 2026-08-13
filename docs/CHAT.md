@@ -203,11 +203,19 @@ composer, mention picker, new-channel and invite-agent dialogs, and the live
 event stream — as a single `ChatWorkspace` component. A host supplies which
 bench to talk to and the current user, and mirrors the active channel into
 its own routing. Each sidebar row also carries a hover-revealed ellipsis
-menu (Rename, Pin/Unpin, Channel settings), and the channel header opens
-the fuller `ChannelSettingsPanel` — name, pinned, the inherit/override
-context-window control, and participants with invite, reusing the same
-invite flow already in `invite-agent-dialog.tsx` rather than duplicating
-it.
+menu (Rename, Pin/Unpin, Channel settings).
+
+Channels are tenants, so their settings are never a dialog: the gear icon
+in the channel header routes to a full stage surface,
+`ChannelSettingsSurface` (`packages/chat-ui/src/channel-settings/`) —
+a breadcrumb back to the channel, a left nav grouped Shared / Personal /
+Danger zone, and the active section's panel on the right. `ChatWorkspace`
+takes `settingsOpen` and `onSettingsOpenChange` the same way it takes
+`channelId` and `onChannelChange`, so the host mirrors the surface into its
+own routing (`@workbench/web` mounts it at `/c/:channelId/settings`). The
+General section still PATCHes name, pinned, and the inherit/override
+context-window control; Members and Agents reuse the same invite flow
+already in `invite-agent-dialog.tsx` rather than duplicating it.
 
 ```tsx
 import { ChatWorkspace } from "@corbits/chat-ui";
@@ -217,6 +225,10 @@ import { ChatWorkspace } from "@corbits/chat-ui";
   currentUser={{ principalId }}
   channelId={channelId}
   onChannelChange={(channelId) => navigate(`/chat/${channelId}`)}
+  settingsOpen={settingsOpen}
+  onSettingsOpenChange={(open) =>
+    navigate(open ? `/chat/${channelId}/settings` : `/chat/${channelId}`)
+  }
 />;
 ```
 
