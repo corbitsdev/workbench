@@ -95,6 +95,15 @@ describe("stage states without a top bar", () => {
     });
     const fallback = toggle();
     expect(fallback.className).toContain("stage-toggle-fallback");
+    // The fallback reserves its own row — same shape as a StageTopBar —
+    // rather than floating (position: absolute) over the stage content
+    // sibling, so it never overlaps a page's own heading.
+    const fallbackRow = fallback.closest(".stage-toggle-fallback-bar");
+    if (fallbackRow === null) throw new Error("fallback not in its own row");
+    const content = container.querySelector(".shell-main-content");
+    if (content === null) throw new Error("no shell-main-content");
+    expect(fallbackRow.contains(content)).toBe(false);
+    expect(content.contains(fallbackRow)).toBe(false);
     const drawer = container.querySelector(".shell-drawer");
     if (drawer === null) throw new Error("drawer not rendered");
     expect(drawer.getAttribute("data-open")).toBe("false");
@@ -133,6 +142,9 @@ describe("stage states without a top bar", () => {
     });
     const fallback = toggle();
     expect(fallback.className).toContain("stage-toggle-fallback");
+    if (fallback.closest(".stage-toggle-fallback-bar") === null) {
+      throw new Error("fallback not in its own row");
+    }
 
     await act(async () => {
       fallback.click();
