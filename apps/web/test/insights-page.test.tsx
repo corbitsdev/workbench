@@ -149,3 +149,16 @@ describe("InsightsPage breadcrumbs", () => {
     expect(markup).not.toContain("insights-crumb");
   });
 });
+
+describe("InsightsPage run-detail stat strip", () => {
+  test("shows the Owner/Steps/Completed/Failed/Duration set, honestly dashed without a trace", () => {
+    const markup = renderAtPath("/insights/runs/run_1");
+    expect(markup).toContain(">Owner<");
+    expect(markup).toContain(">Steps<");
+    expect(markup).toContain(">Completed<");
+    expect(markup).toContain(">Failed<");
+    expect(markup).toContain(">Duration<");
+    expect(markup).not.toContain(">Status<");
+    expect(markup).not.toContain(">Bench<");
+  });
+});

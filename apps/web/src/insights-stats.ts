@@ -5,7 +5,40 @@
 import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
 
 import type { WorkflowRun } from "./api";
+import type { RunTraceSpan } from "./insights-api";
 import type { Routine } from "./routines-api";
+
+export type TraceStats = {
+  readonly steps: number;
+  readonly completed: number;
+  readonly failed: number;
+  readonly durationMs: number;
+};
+
+/**
+ * Run-detail stat strip (steps/completed/failed/duration) is derived from
+ * the trace's own spans — never fabricated when the trace is absent or
+ * empty. Returns null when there is nothing to derive from.
+ */
+export function computeTraceStats(
+  spans: readonly RunTraceSpan[] | null,
+): TraceStats | null {
+  if (spans === null || spans.length === 0) return null;
+  let completed = 0;
+  let failed = 0;
+  for (const span of spans) {
+    if (span.phase === "ok") completed += 1;
+    if (span.phase === "failed") failed += 1;
+  }
+  const start = Math.min(...spans.map((s) => s.start));
+  const end = Math.max(...spans.map((s) => s.end));
+  return {
+    steps: spans.length,
+    completed,
+    failed,
+    durationMs: Math.max(0, end - start),
+  };
+}
 
 export type InsightsStats = {
   readonly totalRuns: number;

@@ -1,8 +1,29 @@
 import { describe, expect, test } from "bun:test";
 
 import type { WorkflowRun } from "./api";
-import { computeInsightsStats, filterRunsByCreatedAt } from "./insights-stats";
+import {
+  computeInsightsStats,
+  computeTraceStats,
+  filterRunsByCreatedAt,
+} from "./insights-stats";
+import type { RunTraceSpan } from "./insights-api";
 import type { Routine } from "./routines-api";
+
+function span(
+  partial: Partial<RunTraceSpan> & Pick<RunTraceSpan, "id">,
+): RunTraceSpan {
+  return {
+    label: partial.id,
+    kind: "tool",
+    start: 0,
+    end: 1000,
+    durationMs: null,
+    tokens: null,
+    phase: "ok",
+    error: null,
+    ...partial,
+  };
+}
 
 function run(
   partial: Partial<WorkflowRun> & Pick<WorkflowRun, "id" | "status">,
@@ -86,6 +107,27 @@ describe("computeInsightsStats", () => {
     const stats = computeInsightsStats(runs, [], 2);
     expect(stats.recentRuns).toHaveLength(2);
     expect(stats.deployed).toBe(5);
+  });
+});
+
+describe("computeTraceStats", () => {
+  test("returns null when spans are absent or empty", () => {
+    expect(computeTraceStats(null)).toBeNull();
+    expect(computeTraceStats([])).toBeNull();
+  });
+
+  test("derives steps, completed, failed, and duration from spans", () => {
+    const stats = computeTraceStats([
+      span({ id: "a", phase: "ok", start: 0, end: 500 }),
+      span({ id: "b", phase: "failed", start: 200, end: 900 }),
+      span({ id: "c", phase: "awaiting", start: 400, end: 1200 }),
+    ]);
+    expect(stats).toEqual({
+      steps: 3,
+      completed: 1,
+      failed: 1,
+      durationMs: 1200,
+    });
   });
 });
 

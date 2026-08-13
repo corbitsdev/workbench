@@ -55,6 +55,7 @@ import {
 } from "../insights-api";
 import {
   computeInsightsStats,
+  computeTraceStats,
   filterRunsByCreatedAt,
   purposeRunsForInsights,
 } from "../insights-stats";
@@ -557,6 +558,10 @@ function InsightsRunDetail({
   readonly onBack: () => void;
 }) {
   const spans = trace.kind === "ready" ? toTraceSpans(trace.data) : [];
+  const traceStats =
+    trace.kind === "ready" && !("absent" in trace.data)
+      ? computeTraceStats(trace.data.spans)
+      : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -575,19 +580,28 @@ function InsightsRunDetail({
         <PageShell width="full" className="page-fill">
           <div className="insights-layout">
             <div className="insights-stat-row">
-              <InsightsStat label="Status" value={dash(run?.status ?? null)} />
+              {/* Owner is not carried by WorkflowRunSummary yet — dash, not
+                  a fabricated identity. */}
+              <InsightsStat label="Owner" value="—" />
               <InsightsStat
-                label="Started"
-                value={dash(run !== null ? formatWhen(run.createdAt) : null)}
+                label="Steps"
+                value={dash(traceStats?.steps ?? null)}
               />
               <InsightsStat
-                label="Bench"
-                value={dash(run?.tenantName ?? null)}
+                label="Completed"
+                value={dash(traceStats?.completed ?? null)}
               />
               <InsightsStat
-                label="Cost"
-                value="—"
-                detail="per-run cost not wired"
+                label="Failed"
+                value={dash(traceStats?.failed ?? null)}
+              />
+              <InsightsStat
+                label="Duration"
+                value={dash(
+                  traceStats !== null
+                    ? durationLabel(traceStats.durationMs)
+                    : null,
+                )}
               />
             </div>
 
