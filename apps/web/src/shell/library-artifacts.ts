@@ -1,7 +1,8 @@
 // The Library page's one seam to the hub's real artifacts plane:
 // `GET /api/tenants/:tenantId/artifacts` (list) and
 // `GET /api/tenants/:tenantId/artifacts/:id` (detail), plus
-// `POST .../artifacts/upload` for file ingest.
+// `POST .../artifacts/upload` for file ingest and
+// `GET .../artifacts/counts` for the kind nav's counts.
 //
 // This module owns pure mapping + upload helper so the page stays thin and
 // the shape contract has its own tests. The old asset-shim path is gone.
@@ -43,6 +44,11 @@ export function mapArtifactListToSummaries(
   rows: readonly ArtifactListRow[],
 ): ArtifactSummary[] {
   return rows.map(artifactListRowToSummary);
+}
+
+/** `GET /api/tenants/:id/artifacts/counts` — the Library kind nav's counts. */
+export function artifactCountsPath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/artifacts/counts`;
 }
 
 /**

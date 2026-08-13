@@ -56,6 +56,17 @@ export const ArtifactUploadResponseSchema = type({
   data: ArtifactDetailSchema.array(),
 });
 
+// GET /api/tenants/:id/artifacts/counts — honest per-kind-segment counts
+// over the tenant's full artifact list, computed by the hub so the Library
+// nav never shows a number the page itself couldn't otherwise prove.
+export const ArtifactCountsSchema = type({
+  all: "number",
+  document: "number",
+  sheet: "number",
+  pdf: "number",
+  routine: "number",
+});
+
 // `@corbits/approvals`'s "needs you" read: the same pending approvals as
 // `TenantApprovalsSchema`, but with the agent and bench names already
 // resolved server-side, so nothing here ever needs a raw id to render.
@@ -79,6 +90,7 @@ export type AssetRow = typeof AssetWithOriginResponse.infer;
 export type ArtifactListItem = typeof ArtifactListItemSchema.infer;
 export type ArtifactListPage = typeof ArtifactListPageSchema.infer;
 export type ArtifactDetail = typeof ArtifactDetailSchema.infer;
+export type ArtifactCounts = typeof ArtifactCountsSchema.infer;
 export type NeedsYou = typeof NeedsYouSchema.infer;
 export type NeedsYouItem = NeedsYou["items"][number];
 

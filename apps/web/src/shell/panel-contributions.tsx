@@ -43,6 +43,7 @@ import { tenantKeys } from "../query-client";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
 import { useSessionSkills } from "../skills-session";
 import { useBenchActivity } from "./bench-activity";
+import { LibraryKindBand } from "./library-band";
 import {
   registerPanelContribution,
   type PanelRenderContext,
@@ -970,32 +971,22 @@ export function ensurePanelContributions(): void {
           },
         },
       ],
+      // Mock's Library qaStrip: jump to where artifacts come from.
+      actions: [
+        {
+          id: "library-qa-channels",
+          label: "Channels",
+          onSelect: () => ctx.onNavigate(channelPath(null)),
+        },
+        {
+          id: "library-qa-routines",
+          label: "Routines",
+          onSelect: () => ctx.onNavigate("/routines"),
+        },
+      ],
     }),
     pageSpecific: (ctx) => (
-      <div className="panel-stack" aria-label="Library kinds">
-        {(
-          [
-            ["all", "All"],
-            ["document", "Docs"],
-            ["sheet", "Sheets"],
-            ["pdf", "PDFs"],
-            ["routine", "Routines"],
-          ] as const
-        ).map(([id, label]) => (
-          <SidebarItemRow
-            key={id}
-            name={label}
-            selected={
-              id === "all"
-                ? ctx.path === "/library"
-                : ctx.path === `/library/${id}`
-            }
-            onSelect={() =>
-              ctx.onNavigate(id === "all" ? "/library" : `/library/${id}`)
-            }
-          />
-        ))}
-      </div>
+      <LibraryKindBand path={ctx.path} onNavigate={ctx.onNavigate} />
     ),
   });
 
