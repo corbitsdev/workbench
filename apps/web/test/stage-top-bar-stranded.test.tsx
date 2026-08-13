@@ -1,8 +1,8 @@
-// The shell enforces the "toggle is always reachable" invariant itself: a
-// stage state that renders no StageTopBar (signed-out notice, home error,
-// chat tenant-loading, library no-tenant, ...) still gets a col2 control,
-// because AppShell renders a fallback toggle whenever no real toggle is
-// registered. Narrow users can always open the drawer; wide users can
+// The shell enforces "col2 collapsed → expand affordance at the boundary"
+// itself, purely from col2's own collapsed state — never from whether the
+// current page happens to render its own StageTopBar. AppShell renders the
+// edge handle whenever col2 is collapsed, with or without a bar-having page
+// mounted below it. Narrow users can always open the drawer; wide users can
 // always restore a collapsed col2.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -60,7 +60,7 @@ function Harness({ children }: { readonly children: React.ReactNode }) {
   );
 }
 
-describe("stage states without a top bar", () => {
+describe("col2 expand affordance without a page top bar", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -77,11 +77,11 @@ describe("stage states without a top bar", () => {
     container.remove();
   });
 
-  function toggle(): HTMLButtonElement {
+  function edgeHandle(): HTMLButtonElement {
     const button = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Toggle sidebar"]',
+      'button[aria-label="Expand sidebar"]',
     );
-    if (button === null) throw new Error("no col2 toggle in the tree");
+    if (button === null) throw new Error("no edge handle in the tree");
     return button;
   }
 
@@ -93,23 +93,14 @@ describe("stage states without a top bar", () => {
     await act(async () => {
       root.render(<Harness>{"Signed out"}</Harness>);
     });
-    const fallback = toggle();
-    expect(fallback.className).toContain("stage-toggle-fallback");
-    // The fallback reserves its own row — same shape as a StageTopBar —
-    // rather than floating (position: absolute) over the stage content
-    // sibling, so it never overlaps a page's own heading.
-    const fallbackRow = fallback.closest(".stage-toggle-fallback-bar");
-    if (fallbackRow === null) throw new Error("fallback not in its own row");
-    const content = container.querySelector(".shell-main-content");
-    if (content === null) throw new Error("no shell-main-content");
-    expect(fallbackRow.contains(content)).toBe(false);
-    expect(content.contains(fallbackRow)).toBe(false);
+    const handle = edgeHandle();
+    expect(handle.className).toContain("shell-col2-edge-handle");
     const drawer = container.querySelector(".shell-drawer");
     if (drawer === null) throw new Error("drawer not rendered");
     expect(drawer.getAttribute("data-open")).toBe("false");
 
     await act(async () => {
-      fallback.click();
+      handle.click();
     });
     expect(drawer.getAttribute("data-open")).toBe("true");
   });
@@ -123,31 +114,30 @@ describe("stage states without a top bar", () => {
         </Harness>,
       );
     });
-    // The real toggle suppresses the fallback — exactly one control.
-    expect(
-      container.querySelectorAll('button[aria-label="Toggle sidebar"]').length,
-    ).toBe(1);
-    expect(container.querySelector(".stage-toggle-fallback")).toBeNull();
+    // Col2 starts open — its own toggle is the only control, no edge handle yet.
+    expect(container.querySelector(".shell-col2-edge-handle")).toBeNull();
+    const collapseButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Collapse sidebar"]',
+    );
+    if (collapseButton === null)
+      throw new Error("collapse control not on col2");
 
     await act(async () => {
-      toggle().click();
+      collapseButton.click();
     });
     expect(
       container.querySelector('[data-testid="shell-contextual-panel"]'),
     ).toBeNull();
 
-    // Route swaps to a state that renders no top bar.
+    // Route swaps to a state that renders no top bar — the affordance stays.
     await act(async () => {
       root.render(<Harness>{"Signed out"}</Harness>);
     });
-    const fallback = toggle();
-    expect(fallback.className).toContain("stage-toggle-fallback");
-    if (fallback.closest(".stage-toggle-fallback-bar") === null) {
-      throw new Error("fallback not in its own row");
-    }
+    const handle = edgeHandle();
+    expect(handle.className).toContain("shell-col2-edge-handle");
 
     await act(async () => {
-      fallback.click();
+      handle.click();
     });
     expect(
       container.querySelector('[data-testid="shell-contextual-panel"]'),
