@@ -201,4 +201,105 @@ describe("ContextualPanel", () => {
     root.unmount();
     container.remove();
   });
+
+  test("activity band renders in the same fixed slot on two different routes", async () => {
+    // Regression for the band's position drifting with page-specific content
+    // length: it must live in `panel-activity-slot`, a sibling that sits
+    // between the scrollable body and the footer dock, on every route — not
+    // appended after whatever the page contributes inside the body.
+    const membership = {
+      data: [
+        {
+          principalId: "prn_1",
+          tenantId: "tnt_1",
+          tenantName: "Corbits Bench",
+          tenantSlug: "corbits-bench",
+          kind: "user",
+          status: "active",
+          roles: [],
+        },
+      ],
+      nextCursor: null,
+    };
+    const needsYou = {
+      items: [
+        {
+          id: "appr_1",
+          headline: "Write to Firecrawl",
+          agentName: "Myra",
+          benchName: "Corbits Bench",
+          arguments: {},
+        },
+      ],
+    };
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/api/me/principals")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(membership), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      if (path.includes("/approvals/needs-you")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(needsYou), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      const body = path.includes("/workflows/instances") ? [] : { items: [] };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }) as typeof fetch;
+
+    for (const path of ["/", "/benches"]) {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <TestQueryProvider>
+            <BenchProvider>
+              <ContextualPanel path={path} onNavigate={noop} />
+            </BenchProvider>
+          </TestQueryProvider>,
+        );
+      });
+      for (let i = 0; i < 40; i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        if (container.innerHTML.includes("panel-band-activity")) break;
+      }
+
+      const slot = container.querySelector(".panel-activity-slot");
+      const body = container.querySelector('[data-slot="sidebar-panel-body"]');
+      const footer = container.querySelector(
+        '[data-slot="sidebar-panel-footer"]',
+      );
+      expect(slot).not.toBeNull();
+      expect(slot?.querySelector(".panel-band-activity")).not.toBeNull();
+      // The band is a sibling, not nested inside the scrollable body.
+      expect(body?.contains(slot ?? document.body)).toBe(false);
+      // Fixed slot sits between the scrollable body and the footer dock.
+      const position = slot?.compareDocumentPosition(body ?? document.body);
+      const positionFooter = slot?.compareDocumentPosition(
+        footer ?? document.body,
+      );
+      expect((position ?? 0) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+      expect(
+        (positionFooter ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+
+      root.unmount();
+      container.remove();
+    }
+  });
 });
