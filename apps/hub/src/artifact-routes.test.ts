@@ -205,6 +205,55 @@ describe("artifact routes", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  test("GET /counts is all zero for a tenant with no artifacts", async () => {
+    const res = await app.request("/artifacts/counts");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      all: 0,
+      document: 0,
+      sheet: 0,
+      pdf: 0,
+      routine: 0,
+    });
+  });
+
+  test("GET /counts buckets by kind segment and ignores other tenants", async () => {
+    store.rows.push({
+      ...sampleRow("doc1", TENANT.id),
+      kind: "document",
+      title: "brief",
+    });
+    store.rows.push({
+      ...sampleRow("sheet1", TENANT.id),
+      kind: "file",
+      title: "budget.csv",
+    });
+    store.rows.push({
+      ...sampleRow("pdf1", TENANT.id),
+      kind: "pdf",
+      title: "contract.pdf",
+    });
+    store.rows.push({
+      ...sampleRow("routine1", TENANT.id),
+      kind: "routine",
+      title: "weekly digest",
+    });
+    store.rows.push({
+      ...sampleRow("other-tenant", OTHER.id),
+      kind: "document",
+      title: "not mine",
+    });
+    const res = await app.request("/artifacts/counts");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      all: 4,
+      document: 1,
+      sheet: 1,
+      pdf: 1,
+      routine: 1,
+    });
+  });
 });
 
 describe("unavailable artifact routes", () => {
@@ -217,7 +266,12 @@ describe("unavailable artifact routes", () => {
     });
     app.route("/artifacts", createUnavailableArtifactRoutes(allowAll));
 
-    for (const path of ["/artifacts", "/artifacts/upload", "/artifacts/x"]) {
+    for (const path of [
+      "/artifacts",
+      "/artifacts/upload",
+      "/artifacts/counts",
+      "/artifacts/x",
+    ]) {
       const method = path.endsWith("/upload") ? "POST" : "GET";
       const res = await app.request(path, { method });
       expect(res.status).toBe(503);
