@@ -31,10 +31,11 @@ function mount() {
 }
 
 describe("useContextMenuState", () => {
-  test("starts closed with no menu", () => {
+  test("starts closed with no menu and no trigger element", () => {
     const harness = mount();
     expect(harness.state.open).toBe(false);
     expect(harness.state.menu).toBeNull();
+    expect(harness.state.triggerElement).toBeNull();
     harness.unmount();
   });
 
@@ -54,6 +55,23 @@ describe("useContextMenuState", () => {
     expect(harness.state.x).toBe(120);
     expect(harness.state.y).toBe(340);
     expect(harness.state.menu).toEqual(menu);
+    harness.unmount();
+  });
+
+  test("show records the trigger element when given one", () => {
+    const harness = mount();
+    const menu = {
+      entries: [
+        contextMenuItem({
+          id: "open",
+          label: "Open",
+          onSelect: () => undefined,
+        }),
+      ],
+    };
+    const row = document.createElement("div");
+    act(() => harness.state.show(0, 0, menu, row));
+    expect(harness.state.triggerElement).toBe(row);
     harness.unmount();
   });
 

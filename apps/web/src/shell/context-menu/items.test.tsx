@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ContextMenuEntry } from "@corbits/context-menu";
 
+const toastSuccess = mock(() => undefined);
+const toastError = mock(() => undefined);
+mock.module("sonner", () => ({
+  toast: { success: toastSuccess, error: toastError },
+}));
+
 import { shellContextMenuFor } from "./items";
 import type { ShellContextMenuActions } from "./items";
 import type { ShellContextMenuTarget } from "./targets";
@@ -41,6 +47,8 @@ beforeEach(() => {
     configurable: true,
     value: { writeText: mock(() => Promise.resolve()) },
   });
+  toastSuccess.mockClear();
+  toastError.mockClear();
 });
 
 describe("shellContextMenuFor: channel", () => {
@@ -74,6 +82,21 @@ describe("shellContextMenuFor: channel", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       `${window.location.origin}/c/ch-1`,
     );
+    expect(toastSuccess).toHaveBeenCalledWith("Launch Planning link copied");
+  });
+
+  test("copy-link surfaces a toast instead of throwing when the clipboard write fails", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: mock(() => Promise.reject(new Error("denied"))) },
+    });
+    const menu = shellContextMenuFor(target, actions());
+
+    expect(() => findItem(menu.entries, "copy-link").onSelect()).not.toThrow();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(toastError).toHaveBeenCalledWith("Couldn't copy the link");
   });
 });
 

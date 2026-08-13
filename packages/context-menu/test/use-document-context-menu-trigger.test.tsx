@@ -16,12 +16,17 @@ function mount(resolve: (target: EventTarget | null) => ContextMenu | null) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  const opens: { x: number; y: number; menu: ContextMenu }[] = [];
+  const opens: {
+    x: number;
+    y: number;
+    menu: ContextMenu;
+    origin: Element | null;
+  }[] = [];
 
   function Host() {
     useDocumentContextMenuTrigger({
       resolve,
-      onOpen: (x, y, menu) => opens.push({ x, y, menu }),
+      onOpen: (x, y, menu, origin) => opens.push({ x, y, menu, origin }),
     });
     return null;
   }
@@ -57,7 +62,7 @@ describe("useDocumentContextMenuTrigger", () => {
     document.body.innerHTML = "";
   });
 
-  test("opens the resolved menu at the click point", () => {
+  test("opens the resolved menu at the click point, carrying the clicked element as origin", () => {
     const row = document.createElement("div");
     document.body.appendChild(row);
     const harness = mount(() => MENU);
@@ -65,7 +70,7 @@ describe("useDocumentContextMenuTrigger", () => {
     const event = fireContextMenu(row, { x: 12, y: 34 });
 
     expect(event.defaultPrevented).toBe(true);
-    expect(harness.opens).toEqual([{ x: 12, y: 34, menu: MENU }]);
+    expect(harness.opens).toEqual([{ x: 12, y: 34, menu: MENU, origin: row }]);
     harness.unmount();
   });
 
