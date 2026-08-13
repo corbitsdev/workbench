@@ -14,8 +14,8 @@
   "dependencies": {
     "@corbits/agent-directory": "workspace:*",
     "@corbits/approvals": "workspace:*",
-    "@corbits/artifact-ui": "workspace:*",
     "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
+    "@corbits/artifacts-hub": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/commands": "workspace:*",
     "@corbits/folded-runs": "workspace:*",

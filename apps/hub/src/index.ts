@@ -81,16 +81,16 @@ import {
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
 import { createNeedsYouRoutes } from "@corbits/approvals";
+import {
+  createArtifactDbStore,
+  createArtifactRoutes,
+  createUnavailableArtifactRoutes,
+} from "@corbits/artifacts-hub";
 import { createEchoRoutes } from "@workbench/echo";
 import { createGitWorkflowPusher } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
 import { mountMemory } from "./memory-mount";
 import { mountArtifacts } from "./artifacts-mount";
-import {
-  createArtifactDbStore,
-  createArtifactRoutes,
-  createUnavailableArtifactRoutes,
-} from "./artifact-routes";
 
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";

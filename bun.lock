@@ -23,8 +23,8 @@
       "dependencies": {
         "@corbits/agent-directory": "workspace:*",
         "@corbits/approvals": "workspace:*",
-        "@corbits/artifact-ui": "workspace:*",
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
+        "@corbits/artifacts-hub": "workspace:*",
         "@corbits/chat": "workspace:*",
         "@corbits/commands": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
@@ -183,6 +183,20 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "@types/react": "^19.2.2",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/artifacts-hub": {
+      "name": "@corbits/artifacts-hub",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/artifact-ui": "workspace:*",
+        "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
+        "@intx/hub-api": "workspace:*",
+        "hono": "^4.11.9",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -907,6 +921,8 @@
     "@corbits/artifact-ui": ["@corbits/artifact-ui@workspace:packages/artifact-ui"],
 
     "@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#81049ed", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/types": "^0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-81049ed", "sha512-oTE0iFDyQdz0ifG1epo39pwaCaYaw19YcKXwfaZqAEQ56a1g9YIozXwH9CG4NaUTwcJKUeYGuNls6oJsMPisCw=="],
+
+    "@corbits/artifacts-hub": ["@corbits/artifacts-hub@workspace:packages/artifacts-hub"],
 
     "@corbits/assistant-workflow": ["@corbits/assistant-workflow@workspace:workflows/assistant"],
 

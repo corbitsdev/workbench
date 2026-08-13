@@ -7,7 +7,7 @@ import {
   createUnavailableArtifactRoutes,
   type ArtifactRoutesStore,
   type ArtifactUploadInput,
-} from "./artifact-routes";
+} from "./routes";
 
 type Tenant = { id: string };
 type Principal = { id: string };

@@ -16,8 +16,8 @@
  * thrown) — same optional contract as the dock mount.
  *
  * This module lands the mount + factory only. Tenant-scoped HTTP
- * list/get/upload routes live in `artifact-routes.ts` and are registered
- * from the hub composition root when the mount succeeds.
+ * list/get/upload routes live in `@corbits/artifacts-hub` and are
+ * registered from the hub composition root when the mount succeeds.
  */
 import { getLogger } from "@intx/log";
 import {
