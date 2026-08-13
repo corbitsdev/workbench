@@ -204,9 +204,7 @@ async function launchAndCorrelate(
       tenantId: input.tenantId,
       channelId: input.deliveryChannelId,
       runRef,
-      ...(input.routineName !== undefined
-        ? { title: input.routineName }
-        : {}),
+      ...(input.routineName !== undefined ? { title: input.routineName } : {}),
     });
     deliveryThreadId = thread.id;
   }

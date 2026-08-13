@@ -69,8 +69,12 @@ export function createMemoryUsageStore(
     async listUsageByTenant(tenantId, opts) {
       return [...turns.values()]
         .filter((t) => t.tenantId === tenantId)
-        .filter((t) => (opts?.from === undefined ? true : t.recordedAt >= opts.from))
-        .filter((t) => (opts?.to === undefined ? true : t.recordedAt <= opts.to))
+        .filter((t) =>
+          opts?.from === undefined ? true : t.recordedAt >= opts.from,
+        )
+        .filter((t) =>
+          opts?.to === undefined ? true : t.recordedAt <= opts.to,
+        )
         .sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
     },
     async getPrice(model) {

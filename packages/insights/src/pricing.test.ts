@@ -5,7 +5,13 @@ import { computeCost, totalTokens } from "./pricing";
 describe("computeCost", () => {
   test("sums known rates into a total", () => {
     const result = computeCost(
-      { input: 1_000_000, cacheRead: 0, cacheWrite: 0, output: 500_000, thinking: 0 },
+      {
+        input: 1_000_000,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 500_000,
+        thinking: 0,
+      },
       {
         inputPerMTok: 3,
         cacheReadPerMTok: 0.3,
@@ -37,7 +43,13 @@ describe("computeCost", () => {
 
   test("missing rate with tokens makes total and class absent (not zero)", () => {
     const result = computeCost(
-      { input: 1_000_000, cacheRead: 0, cacheWrite: 0, output: 100_000, thinking: 0 },
+      {
+        input: 1_000_000,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 100_000,
+        thinking: 0,
+      },
       {
         inputPerMTok: 3,
         cacheReadPerMTok: null,

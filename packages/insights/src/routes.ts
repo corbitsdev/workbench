@@ -24,10 +24,12 @@ const RangeQuery = type({
   "to?": "string",
 });
 
-function parseRange(raw: { from?: string; to?: string }): {
-  from?: Date;
-  to?: Date;
-} | type.errors {
+function parseRange(raw: { from?: string; to?: string }):
+  | {
+      from?: Date;
+      to?: Date;
+    }
+  | type.errors {
   const opts: { from?: Date; to?: Date } = {};
   if (raw.from !== undefined) {
     const d = new Date(raw.from);
@@ -53,18 +55,26 @@ export type CreateInsightsRoutesDeps = {
   toolCallReader?: ToolCallReader;
 };
 
-export function createInsightsRoutes(deps: CreateInsightsRoutesDeps): Hono<TenantEnv> {
+export function createInsightsRoutes(
+  deps: CreateInsightsRoutesDeps,
+): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const tools = deps.toolCallReader ?? emptyToolCallReader();
 
   app.get("/usage", deps.requireGrant("insights:*", "read"), async (c) => {
     const raw = RangeQuery(c.req.query());
     if (raw instanceof type.errors) {
-      return c.json(ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`), 400);
+      return c.json(
+        ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`),
+        400,
+      );
     }
     const range = parseRange(raw);
     if (range instanceof type.errors) {
-      return c.json(ErrorEnvelope("bad_request", "invalid from/to timestamp"), 400);
+      return c.json(
+        ErrorEnvelope("bad_request", "invalid from/to timestamp"),
+        400,
+      );
     }
     const tenant = c.get("tenant");
     const summary = await summarizeUsage(deps.store, tenant.id, range);
@@ -74,11 +84,17 @@ export function createInsightsRoutes(deps: CreateInsightsRoutesDeps): Hono<Tenan
   app.get("/activity", deps.requireGrant("insights:*", "read"), async (c) => {
     const raw = RangeQuery(c.req.query());
     if (raw instanceof type.errors) {
-      return c.json(ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`), 400);
+      return c.json(
+        ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`),
+        400,
+      );
     }
     const range = parseRange(raw);
     if (range instanceof type.errors) {
-      return c.json(ErrorEnvelope("bad_request", "invalid from/to timestamp"), 400);
+      return c.json(
+        ErrorEnvelope("bad_request", "invalid from/to timestamp"),
+        400,
+      );
     }
     const tenant = c.get("tenant");
     const days = await activityByDay(deps.store, tenant.id, range);
@@ -88,36 +104,46 @@ export function createInsightsRoutes(deps: CreateInsightsRoutesDeps): Hono<Tenan
   app.get("/tools", deps.requireGrant("insights:*", "read"), async (c) => {
     const raw = RangeQuery(c.req.query());
     if (raw instanceof type.errors) {
-      return c.json(ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`), 400);
+      return c.json(
+        ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`),
+        400,
+      );
     }
     const range = parseRange(raw);
     if (range instanceof type.errors) {
-      return c.json(ErrorEnvelope("bad_request", "invalid from/to timestamp"), 400);
+      return c.json(
+        ErrorEnvelope("bad_request", "invalid from/to timestamp"),
+        400,
+      );
     }
     const tenant = c.get("tenant");
     const toolsSummary = await tools.summarize(tenant.id, range);
     return c.json({ tools: toolsSummary });
   });
 
-  app.get("/runs/:runId/trace", deps.requireGrant("insights:*", "read"), async (c) => {
-    const tenant = c.get("tenant");
-    const runId = c.req.param("runId");
-    if (deps.runTraceReader === undefined) {
-      return c.json(
-        {
-          runId,
-          spans: null,
-          absent: "run_trace_reader_not_mounted",
-        },
-        200,
-      );
-    }
-    const trace = await deps.runTraceReader.getTrace(tenant.id, runId);
-    if (trace === null) {
-      return c.json(ErrorEnvelope("not_found", "run not found"), 404);
-    }
-    return c.json(trace);
-  });
+  app.get(
+    "/runs/:runId/trace",
+    deps.requireGrant("insights:*", "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const runId = c.req.param("runId");
+      if (deps.runTraceReader === undefined) {
+        return c.json(
+          {
+            runId,
+            spans: null,
+            absent: "run_trace_reader_not_mounted",
+          },
+          200,
+        );
+      }
+      const trace = await deps.runTraceReader.getTrace(tenant.id, runId);
+      if (trace === null) {
+        return c.json(ErrorEnvelope("not_found", "run not found"), 404);
+      }
+      return c.json(trace);
+    },
+  );
 
   return app;
 }

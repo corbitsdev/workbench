@@ -36,7 +36,10 @@ export type CostBreakdown = {
  * that class — and therefore the total — absent (null). Never invents
  * a zero cost for an unknown rate.
  */
-export function computeCost(tokens: TokenClasses, rates: TokenRates): CostBreakdown {
+export function computeCost(
+  tokens: TokenClasses,
+  rates: TokenRates,
+): CostBreakdown {
   const input = classCost(tokens.input, rates.inputPerMTok);
   const cacheRead = classCost(tokens.cacheRead, rates.cacheReadPerMTok);
   const cacheWrite = classCost(tokens.cacheWrite, rates.cacheWritePerMTok);

@@ -13,7 +13,12 @@ import { and, eq } from "drizzle-orm";
 import { generateKeyPair } from "@intx/crypto";
 import { timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
-import { createApp, createRequireGrant, type AppEnv, type TenantEnv } from "@intx/hub-api";
+import {
+  createApp,
+  createRequireGrant,
+  type AppEnv,
+  type TenantEnv,
+} from "@intx/hub-api";
 
 import { createAgentDefinitionRoutes } from "@corbits/agent-directory";
 
@@ -228,10 +233,7 @@ export async function createHub(config: HubConfig) {
     authHandler: async (c) => {
       // Gate self-serve email signup. Sign-in stays open; only the
       // sign-up/email path is product-controlled (docs/TENANCY.md).
-      if (
-        c.req.method === "POST" &&
-        c.req.path.endsWith(SIGN_UP_EMAIL_PATH)
-      ) {
+      if (c.req.method === "POST" && c.req.path.endsWith(SIGN_UP_EMAIL_PATH)) {
         if (config.signupMode === "closed") {
           return c.json(
             {
@@ -434,8 +436,7 @@ export async function createHub(config: HubConfig) {
       resolvePrincipal: (ctx) => {
         // Mounted under the hub tenant middleware; principal + tenant are set.
         const c = ctx as {
-          get(key: "tenant"): { id: string };
-          get(key: "principal"): { id: string };
+          get(key: "tenant" | "principal"): { id: string };
         };
         return {
           tenantId: c.get("tenant").id,

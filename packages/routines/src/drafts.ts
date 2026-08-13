@@ -159,6 +159,14 @@ function asTrigger(raw: unknown): RoutineTriggerT | null {
   return parsed as RoutineTriggerT;
 }
 
+function requireReturningRow<T>(rows: readonly T[], what: string): T {
+  const row = rows[0];
+  if (row === undefined) {
+    throw new Error(`expected ${what} row from returning()`);
+  }
+  return row;
+}
+
 function mapDraft(row: typeof routineDraft.$inferSelect): RoutineDraftRow {
   return {
     id: row.id,
@@ -307,7 +315,7 @@ export function createDrizzleDraftStore<
           approvedRoutineId: null,
         })
         .returning();
-      return mapDraft(inserted[0]!);
+      return mapDraft(requireReturningRow(inserted, "routine draft"));
     },
 
     async getDraft(tenantId, draftId) {
@@ -335,9 +343,7 @@ export function createDrizzleDraftStore<
           ),
         )
         .orderBy(desc(routineDraft.createdAt));
-      return rows
-        .map(mapDraft)
-        .filter((r) => r.status !== "discarded");
+      return rows.map(mapDraft).filter((r) => r.status !== "discarded");
     },
 
     async markReviewed(tenantId, draftId, review) {
@@ -372,7 +378,7 @@ export function createDrizzleDraftStore<
           ),
         )
         .returning();
-      return mapDraft(updated[0]!);
+      return mapDraft(requireReturningRow(updated, "reviewed draft"));
     },
 
     async markApproved(tenantId, draftId, routineId) {
@@ -393,7 +399,7 @@ export function createDrizzleDraftStore<
           ),
         )
         .returning();
-      return mapDraft(updated[0]!);
+      return mapDraft(requireReturningRow(updated, "approved draft"));
     },
 
     async markDiscarded(tenantId, draftId) {
@@ -410,7 +416,7 @@ export function createDrizzleDraftStore<
           ),
         )
         .returning();
-      return mapDraft(updated[0]!);
+      return mapDraft(requireReturningRow(updated, "discarded draft"));
     },
   };
 }

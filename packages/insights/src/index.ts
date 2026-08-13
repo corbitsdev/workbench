@@ -44,7 +44,4 @@ export {
   type ToolCallReader,
   type ToolCallSummary,
 } from "./queries";
-export {
-  createInsightsRoutes,
-  type CreateInsightsRoutesDeps,
-} from "./routes";
+export { createInsightsRoutes, type CreateInsightsRoutesDeps } from "./routes";

@@ -34,7 +34,6 @@ import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import { applyRoutineMigrations } from "../packages/routines/src/migrations";
 import { applyMailboxMigrations } from "../packages/inbox/src/migrations";
 
-
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
 
@@ -54,7 +53,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/notify", apply: applyNotifyMigrations },
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
 ];
-
 
 /**
  * Apply every installed package's migration set, in the explicit

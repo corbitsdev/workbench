@@ -2,10 +2,7 @@
 // scripts/db-setup.ts can apply it the same way it applies every other
 // installed package's migrations.
 
-import {
-  createMailboxDb,
-  runMailboxMigrations,
-} from "@corbits/mailbox";
+import { createMailboxDb, runMailboxMigrations } from "@corbits/mailbox";
 
 export interface ApplyMailboxMigrationsReport {
   applied: string[];

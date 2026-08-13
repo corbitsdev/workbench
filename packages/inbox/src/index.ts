@@ -1,7 +1,4 @@
-export {
-  itemsEligibleForClearDone,
-  itemsEligibleForMarkAllRead,
-} from "./bulk";
+export { itemsEligibleForClearDone, itemsEligibleForMarkAllRead } from "./bulk";
 export {
   INBOX_GROUPS,
   classificationFromRefs,
@@ -34,7 +31,4 @@ export {
   applyMailboxMigrations,
   type ApplyMailboxMigrationsReport,
 } from "./migrations";
-export {
-  createInboxRoutes,
-  type CreateInboxRoutesDeps,
-} from "./routes";
+export { createInboxRoutes, type CreateInboxRoutesDeps } from "./routes";

@@ -47,10 +47,7 @@ export type AssignMessageInput = {
 };
 
 export interface ThreadStore {
-  ensureRootThread(
-    tenantId: string,
-    channelId: string,
-  ): Promise<ChannelThread>;
+  ensureRootThread(tenantId: string, channelId: string): Promise<ChannelThread>;
   createDeliveryThread(
     input: CreateDeliveryThreadInput,
   ): Promise<ChannelThread>;
@@ -201,8 +198,10 @@ export function createInMemoryThreadStore(): ThreadStore {
     async listThreads(tenantId, channelId) {
       const ids = byChannel.get(channelKey(tenantId, channelId)) ?? [];
       return ids
-        .map((id) => threads.get(id)!)
-        .filter((t) => t !== undefined)
+        .flatMap((id) => {
+          const t = threads.get(id);
+          return t === undefined ? [] : [t];
+        })
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     },
 
@@ -232,6 +231,14 @@ export function createInMemoryThreadStore(): ThreadStore {
 export type ThreadDb<
   TSchema extends Record<string, unknown> = Record<string, never>,
 > = PostgresJsDatabase<TSchema>;
+
+function requireReturningRow<T>(rows: readonly T[], what: string): T {
+  const row = rows[0];
+  if (row === undefined) {
+    throw new Error(`expected ${what} row from returning()`);
+  }
+  return row;
+}
 
 function mapThreadRow(row: typeof channelThreads.$inferSelect): ChannelThread {
   return {
@@ -276,7 +283,7 @@ export function createDrizzleThreadStore<
           title: null,
         })
         .returning();
-      return mapThreadRow(inserted[0]!);
+      return mapThreadRow(requireReturningRow(inserted, "root thread"));
     },
 
     async createDeliveryThread(input) {
@@ -306,7 +313,7 @@ export function createDrizzleThreadStore<
           title: input.title ?? null,
         })
         .returning();
-      return mapThreadRow(inserted[0]!);
+      return mapThreadRow(requireReturningRow(inserted, "delivery thread"));
     },
 
     async openReplyThread(input) {
@@ -336,7 +343,7 @@ export function createDrizzleThreadStore<
           title: input.title ?? null,
         })
         .returning();
-      return mapThreadRow(inserted[0]!);
+      return mapThreadRow(requireReturningRow(inserted, "reply thread"));
     },
 
     async getThread(tenantId, threadId) {

@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  createInMemoryDraftStore,
-  nextDraftStatus,
-} from "./drafts";
+import { createInMemoryDraftStore, nextDraftStatus } from "./drafts";
 
 describe("nextDraftStatus", () => {
   test("draft → reviewed → approved", () => {

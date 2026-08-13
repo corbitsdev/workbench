@@ -97,7 +97,13 @@ describe("summarizeUsage", () => {
       sessionId: "s2",
       turnId: "t2",
       model: "m",
-      tokens: { input: 99, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+      tokens: {
+        input: 99,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
     });
 
     const summary = await summarizeUsage(store, "tenant-acme");
@@ -115,7 +121,13 @@ describe("activityByDay", () => {
       sessionId: "s1",
       turnId: "t1",
       model: "m",
-      tokens: { input: 10, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+      tokens: {
+        input: 10,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
       recordedAt: new Date("2026-08-01T23:00:00Z"),
     });
     await store.insertUsage({

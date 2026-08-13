@@ -18,9 +18,8 @@ function memoryLookup(
 ): TenantParentLookup {
   return {
     async getParentId(id) {
-      return Object.prototype.hasOwnProperty.call(parents, id)
-        ? parents[id]!
-        : null;
+      if (!Object.prototype.hasOwnProperty.call(parents, id)) return null;
+      return parents[id] ?? null;
     },
     async exists(id) {
       return Object.prototype.hasOwnProperty.call(parents, id);

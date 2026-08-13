@@ -6,7 +6,9 @@ import {
 } from "../src/bulk";
 import type { InboxItem } from "../src/project";
 
-function item(over: Partial<InboxItem> & Pick<InboxItem, "id" | "group">): InboxItem {
+function item(
+  over: Partial<InboxItem> & Pick<InboxItem, "id" | "group">,
+): InboxItem {
   return {
     from: "agent:ops",
     date: "2026-08-10T12:00:00.000Z",

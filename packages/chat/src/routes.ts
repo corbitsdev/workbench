@@ -630,10 +630,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
       if (deps.threads === undefined) {
-        return c.json(
-          ErrorEnvelope("not_found", "threads not available"),
-          404,
-        );
+        return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
       }
       const body = type({
         runRef: "string",

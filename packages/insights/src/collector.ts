@@ -36,7 +36,9 @@ export function createUsageSink(deps: UsageSinkDeps) {
         turnId: event.turnId,
         model: event.model,
         tokens: event.tokens,
-        ...(event.recordedAt === undefined ? {} : { recordedAt: event.recordedAt }),
+        ...(event.recordedAt === undefined
+          ? {}
+          : { recordedAt: event.recordedAt }),
       });
       return result === null ? "duplicate" : "inserted";
     },

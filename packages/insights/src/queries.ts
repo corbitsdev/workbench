@@ -66,7 +66,10 @@ export async function summarizeUsage(
   const byModel = new Map<string, { turns: number; tokens: TokenClasses }>();
 
   for (const row of rows) {
-    const current = byModel.get(row.model) ?? { turns: 0, tokens: emptyTokens() };
+    const current = byModel.get(row.model) ?? {
+      turns: 0,
+      tokens: emptyTokens(),
+    };
     byModel.set(row.model, {
       turns: current.turns + 1,
       tokens: addTokens(current.tokens, row.tokens),
@@ -181,7 +184,10 @@ export type ToolCallSummary = {
  * return an empty list (no fabricated tools) and document the gap.
  */
 export type ToolCallReader = {
-  summarize(tenantId: string, opts?: { from?: Date; to?: Date }): Promise<readonly ToolCallSummary[]>;
+  summarize(
+    tenantId: string,
+    opts?: { from?: Date; to?: Date },
+  ): Promise<readonly ToolCallSummary[]>;
 };
 
 export function emptyToolCallReader(): ToolCallReader {

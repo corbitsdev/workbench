@@ -37,9 +37,10 @@ describe("resolveTargetThread", () => {
   });
 
   test("default is root", () => {
-    expect(
-      resolveTargetThread({ rootThreadId: "thr_root" }),
-    ).toEqual({ threadId: "thr_root", needsReplyOpen: false });
+    expect(resolveTargetThread({ rootThreadId: "thr_root" })).toEqual({
+      threadId: "thr_root",
+      needsReplyOpen: false,
+    });
   });
 });
 

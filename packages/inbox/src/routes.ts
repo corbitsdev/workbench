@@ -22,10 +22,7 @@ import { type } from "arktype";
 import { Hono } from "hono";
 
 import { isInboxGroup, type InboxGroup } from "./group";
-import {
-  itemsEligibleForClearDone,
-  itemsEligibleForMarkAllRead,
-} from "./bulk";
+import { itemsEligibleForClearDone, itemsEligibleForMarkAllRead } from "./bulk";
 import {
   projectInboxItem,
   projectInboxItemDetail,
@@ -33,7 +30,6 @@ import {
   type InboxItem,
 } from "./project";
 import { WORKBENCH_INBOX_PRIORITIES } from "./vocabulary";
-
 
 // Page size for bulk product ops (mark-all-read, clear-done, counts). Large
 // enough that a normal inbox finishes in one round-trip; anything past it
@@ -94,7 +90,9 @@ async function listAllOpen(
  * `/api/tenants/:tenantId/inbox` inside the hub's tenant middleware so
  * `c.get("principal")` and `c.get("tenant")` are already resolved.
  */
-export function createInboxRoutes(deps: CreateInboxRoutesDeps): Hono<TenantEnv> {
+export function createInboxRoutes(
+  deps: CreateInboxRoutesDeps,
+): Hono<TenantEnv> {
   const { db, bus } = deps;
   const app = new Hono<TenantEnv>();
 
@@ -137,7 +135,6 @@ export function createInboxRoutes(deps: CreateInboxRoutesDeps): Hono<TenantEnv> 
       marked += 1;
     }
     return c.json({ marked });
-
   });
 
   app.post("/clear-done", async (c) => {
@@ -154,7 +151,6 @@ export function createInboxRoutes(deps: CreateInboxRoutesDeps): Hono<TenantEnv> 
       }
     }
     return c.json({ cleared });
-
   });
 
   app.get("/", async (c) => {
@@ -200,7 +196,6 @@ export function createInboxRoutes(deps: CreateInboxRoutesDeps): Hono<TenantEnv> 
       }
       cursor = decoded;
     }
-
 
     const page = await listUserMailbox(db, {
       tenantId: tenant.id,
@@ -285,7 +280,11 @@ export function createInboxRoutes(deps: CreateInboxRoutesDeps): Hono<TenantEnv> 
     const UntilSchema = type({ "until?": "string" });
     const parsed = UntilSchema(body);
     if (parsed instanceof type.errors) {
-      return c.json({ error: parsed[0]!.message }, 400);
+      const first = parsed[0];
+      return c.json(
+        { error: first === undefined ? "invalid request" : first.message },
+        400,
+      );
     }
     const ok = await enrichMailboxMessage(
       db,
