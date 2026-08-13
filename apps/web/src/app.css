@@ -95,6 +95,13 @@ html {
 /* Mock v2 --col2-w: 16.5rem; canvas-on tightens to --col2-w-tight 14rem;
    --col2-w-wide 18.5rem is col2's Talk-to-Myra width (data-col2="wide"). */
 :root {
+  /* Mock's zero-radius rule is app-wide, not per-component: react-ui's
+     theme.css sets --radius: 0.5rem on :root, and this is the only place
+     that token is ever redefined. Loading after react-ui/styles.css in
+     main.tsx, this wins the cascade and zeroes every consumer at once
+     (Dialog, Button, Input, …) instead of chasing rounded corners
+     component by component. */
+  --radius: 0;
   --shell-contextual-width: 16.5rem;
   --shell-contextual-width-tight: 14rem;
   --shell-contextual-width-wide: 18.5rem;
@@ -180,7 +187,6 @@ html {
   padding-top: 0.85rem;
   border-top: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
-  background: color-mix(in srgb, var(--foreground, #2b2627) 2.5%, transparent);
 }
 
 /* Close control: shell-density hit area with hover/focus chrome. */

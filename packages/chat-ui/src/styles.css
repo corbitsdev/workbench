@@ -1384,8 +1384,8 @@
   flex-direction: column;
   gap: 0.2rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--card, var(--background));
+  border-radius: 0;
+  background: var(--background);
   padding: 0.65rem 0.75rem;
   text-align: left;
   font: inherit;
@@ -1393,8 +1393,9 @@
 }
 
 .chat-kind-card[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 5%, var(--background));
+  box-shadow: 0 0 0 1px var(--primary) inset;
 }
 
 .chat-kind-card-title {
@@ -1428,6 +1429,20 @@
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
+}
+
+/* Matches the app's established uppercase-label convention
+   (.panel-band-heading in apps/web/src/app.css). react-ui ships an
+   equivalent DialogFieldLabel, but it renders a <label>, which can't wrap
+   the group heading above the kind picker or the fieldset's <legend> here
+   without nesting form-control elements — this class carries the same
+   visual treatment onto whichever element is semantically correct instead. */
+.chat-field-label {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }
 
 .chat-radio-option {
