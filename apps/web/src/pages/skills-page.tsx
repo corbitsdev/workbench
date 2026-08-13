@@ -17,10 +17,11 @@ import {
   TableRow,
   formatRelativeTime,
 } from "@corbits/react-ui";
-import { Sparkles } from "lucide-react";
+import { Plus, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { SKILLS_PATH_PREFIX, skillIdFromPath } from "../path-ids";
+import { StageTopBar } from "../shell/stage-top-bar";
 import {
   addSessionSkill,
   updateSessionSkills,
@@ -258,9 +259,16 @@ export function SkillsPage({
     navigate?.(`${SKILLS_PATH_PREFIX}/${encodeURIComponent(id)}`);
   }
 
+  const newSkillAction = (
+    <Button size="sm" onClick={() => setCreateOpen(true)}>
+      <Plus /> New skill
+    </Button>
+  );
+
   if (skills.length === 0) {
     return (
-      <>
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar title="Skills" actions={newSkillAction} />
         <PageShell width="full" className="page-fill">
           <div className="flex flex-1 items-center justify-center p-6">
             <RichEmptyState
@@ -282,61 +290,72 @@ export function SkillsPage({
           onOpenChange={setCreateOpen}
           onCreated={handleCreated}
         />
-      </>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title={selected === null ? "Skills" : selected.name}
+        subtitle={
+          selected === null
+            ? `${skills.length} in catalog`
+            : `v${selected.version}`
+        }
+        actions={newSkillAction}
+      />
       {/* List lives in shell col2; stage is detail only. */}
-      <PageShell width="full" className="page-fill">
-        {selected !== null ? (
-          <SkillDetail
-            skill={selected}
-            now={now}
-            onRestore={(version) => {
-              // Registry-backed restore is not wired; only non-session
-              // skills would flip current. Keep the surface honest.
-              commitSkills(
-                skills.map((s) => {
-                  if (s.id !== selected.id || s.sessionLocal) return s;
-                  return {
-                    ...s,
-                    version,
-                    versions: s.versions.map((v) => ({
-                      ...v,
-                      current: v.version === version,
-                    })),
-                    updatedAt: new Date(now).toISOString(),
-                  };
-                }),
-              );
-            }}
-          />
-        ) : selectedId !== null ? (
-          <div className="flex flex-1 items-center justify-center p-6">
-            <EmptyState
-              icon={<Sparkles />}
-              title="Skill not found"
-              description="That draft is not in this session. Pick another from the sidebar."
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <PageShell width="full" className="page-fill">
+          {selected !== null ? (
+            <SkillDetail
+              skill={selected}
+              now={now}
+              onRestore={(version) => {
+                // Registry-backed restore is not wired; only non-session
+                // skills would flip current. Keep the surface honest.
+                commitSkills(
+                  skills.map((s) => {
+                    if (s.id !== selected.id || s.sessionLocal) return s;
+                    return {
+                      ...s,
+                      version,
+                      versions: s.versions.map((v) => ({
+                        ...v,
+                        current: v.version === version,
+                      })),
+                      updatedAt: new Date(now).toISOString(),
+                    };
+                  }),
+                );
+              }}
             />
-          </div>
-        ) : (
-          <div className="flex flex-1 items-center justify-center p-6">
-            <EmptyState
-              icon={<Sparkles />}
-              title="Select a skill"
-              description="Pick a skill from the sidebar to see its about, pins, and version history."
-            />
-          </div>
-        )}
-      </PageShell>
+          ) : selectedId !== null ? (
+            <div className="flex flex-1 items-center justify-center p-6">
+              <EmptyState
+                icon={<Sparkles />}
+                title="Skill not found"
+                description="That draft is not in this session. Pick another from the sidebar."
+              />
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-6">
+              <EmptyState
+                icon={<Sparkles />}
+                title="Select a skill"
+                description="Pick a skill from the sidebar to see its about, pins, and version history."
+              />
+            </div>
+          )}
+        </PageShell>
+      </div>
       <CreateSkillDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={handleCreated}
       />
-    </>
+    </div>
   );
 }
 

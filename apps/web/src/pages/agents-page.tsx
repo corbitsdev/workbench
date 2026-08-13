@@ -8,7 +8,7 @@ import {
   formatRelativeTime,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import { ArrowLeft, Bot, Copy, MessageSquare, Users } from "lucide-react";
+import { Bot, Copy, MessageSquare, Plus, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -32,6 +32,7 @@ import { channelPath } from "../channel-path";
 import { AGENTS_PATH_PREFIX, agentIdFromPath } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
+import { StageTopBar } from "../shell/stage-top-bar";
 import { CreateAgentDialog } from "./create-agent-dialog";
 
 const DEFINITION_STATUS_TONE: Record<AgentDefinition["status"], BadgeTone> = {
@@ -94,7 +95,6 @@ function AgentDetailPanel({
   instances,
   tenantId,
   now,
-  onBack,
   onChatStarted,
   navigate,
 }: {
@@ -104,7 +104,6 @@ function AgentDetailPanel({
   })[];
   readonly tenantId: string;
   readonly now: number;
-  readonly onBack: () => void;
   readonly onChatStarted: (channelId: string) => void;
   readonly navigate: ((to: string) => void) | undefined;
 }) {
@@ -139,18 +138,6 @@ function AgentDetailPanel({
       className="flex flex-col gap-4 px-4 pb-5 sm:px-7"
       data-testid="agent-detail-panel"
     >
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          aria-label="Back to agent list"
-        >
-          <ArrowLeft /> Back
-        </Button>
-      </div>
-
       <Card className="flex flex-col gap-3 p-5">
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-xl font-semibold">{definition.name}</h2>
@@ -254,7 +241,8 @@ function InstanceCard({
 
 /**
  * Agents stage: list lives in shell col2; stage is detail only (or empty
- * "select from sidebar"). Create is pageBand / workbench:agents:create.
+ * "select from sidebar"). Create runs from the top bar action or the
+ * workbench:agents:create event.
  */
 export function AgentsPage({
   directory,
@@ -292,107 +280,136 @@ export function AgentsPage({
       window.removeEventListener("workbench:agents:create", onCreate);
   }, [canCreate]);
 
+  const readyDefinitions =
+    directory.kind === "ready"
+      ? purposeAgentDefinitions(directory.data.definitions)
+      : [];
+  const selectedDefinition =
+    selectedDefinitionId !== null
+      ? (readyDefinitions.find((d) => d.id === selectedDefinitionId) ?? null)
+      : null;
+
   return (
-    <>
-      {/* List lives in shell col2; stage is detail only. Create is
-          pageBand / workbench:agents:create — no stage list chrome. */}
-      <PageShellBody>
-        <QueryView query={directory} label="your agents">
-          {(data) => {
-            const definitions = purposeAgentDefinitions(data.definitions);
-            const instances = purposeAgentInstances(data.instances).map(
-              (instance) => ({
-                ...instance,
-                orphaned: isOrphanedInstance(
-                  instance,
-                  definitionsById(definitions),
-                ),
-              }),
-            );
-            const instancesByDefinition = new Map<
-              string,
-              (AgentInstance & { readonly orphaned: boolean })[]
-            >();
-            for (const instance of instances) {
-              const list = instancesByDefinition.get(instance.definitionId);
-              if (list === undefined) {
-                instancesByDefinition.set(instance.definitionId, [instance]);
-              } else {
-                list.push(instance);
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Top bar is navigation only; launch actions live in the detail hero. */}
+      <StageTopBar
+        title={selectedDefinition === null ? "Agents" : selectedDefinition.name}
+        subtitle={
+          selectedDefinition === null
+            ? directory.kind === "ready"
+              ? `${readyDefinitions.length} agents`
+              : null
+            : `v${selectedDefinition.currentVersion}`
+        }
+        actions={
+          selectedDefinition !== null ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate?.(AGENTS_PATH_PREFIX)}
+            >
+              All agents
+            </Button>
+          ) : canCreate ? (
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus /> New agent
+            </Button>
+          ) : null
+        }
+      />
+      {/* List lives in shell col2; stage is detail only. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <PageShellBody>
+          <QueryView query={directory} label="your agents">
+            {(data) => {
+              const definitions = purposeAgentDefinitions(data.definitions);
+              const instances = purposeAgentInstances(data.instances).map(
+                (instance) => ({
+                  ...instance,
+                  orphaned: isOrphanedInstance(
+                    instance,
+                    definitionsById(definitions),
+                  ),
+                }),
+              );
+              const instancesByDefinition = new Map<
+                string,
+                (AgentInstance & { readonly orphaned: boolean })[]
+              >();
+              for (const instance of instances) {
+                const list = instancesByDefinition.get(instance.definitionId);
+                if (list === undefined) {
+                  instancesByDefinition.set(instance.definitionId, [instance]);
+                } else {
+                  list.push(instance);
+                }
               }
-            }
 
-            if (definitions.length === 0 && instances.length === 0) {
-              return (
-                <div className="flex flex-1 items-center justify-center p-6">
-                  <RichEmptyState
-                    icon={<Bot />}
-                    title="No agents yet"
-                    description="Create your first agent — a name, a system prompt, and optionally a model — and it appears in the sidebar, ready to start a chat or invite into a channel."
-                    actions={
-                      canCreate
-                        ? [
-                            {
-                              label: "Create agent",
-                              onClick: () => setCreateOpen(true),
-                              variant: "primary",
-                            },
-                          ]
-                        : []
+              if (definitions.length === 0 && instances.length === 0) {
+                return (
+                  <div className="flex flex-1 items-center justify-center p-6">
+                    <RichEmptyState
+                      icon={<Bot />}
+                      title="No agents yet"
+                      description="Create your first agent — a name, a system prompt, and optionally a model — and it appears in the sidebar, ready to start a chat or invite into a channel."
+                      actions={
+                        canCreate
+                          ? [
+                              {
+                                label: "Create agent",
+                                onClick: () => setCreateOpen(true),
+                                variant: "primary",
+                              },
+                            ]
+                          : []
+                      }
+                    />
+                  </div>
+                );
+              }
+
+              if (selectedDefinition !== null) {
+                return (
+                  <AgentDetailPanel
+                    definition={selectedDefinition}
+                    instances={
+                      instancesByDefinition.get(selectedDefinition.id) ?? []
                     }
+                    tenantId={data.tenantId}
+                    now={now}
+                    onChatStarted={() => {
+                      /* parent may invalidate chat queries; no-op by default */
+                    }}
+                    navigate={navigate}
                   />
-                </div>
-              );
-            }
+                );
+              }
 
-            const selectedDefinition =
-              selectedDefinitionId !== null
-                ? (definitions.find((d) => d.id === selectedDefinitionId) ??
-                  null)
-                : null;
+              if (selectedDefinitionId !== null) {
+                return (
+                  <div className="flex flex-1 items-center justify-center p-6">
+                    <EmptyState
+                      icon={<Bot />}
+                      title="Agent not found"
+                      description="That definition is not on this bench. Pick another from the sidebar."
+                    />
+                  </div>
+                );
+              }
 
-            if (selectedDefinition !== null) {
-              return (
-                <AgentDetailPanel
-                  definition={selectedDefinition}
-                  instances={
-                    instancesByDefinition.get(selectedDefinition.id) ?? []
-                  }
-                  tenantId={data.tenantId}
-                  now={now}
-                  onBack={() => navigate?.(AGENTS_PATH_PREFIX)}
-                  onChatStarted={() => {
-                    /* parent may invalidate chat queries; no-op by default */
-                  }}
-                  navigate={navigate}
-                />
-              );
-            }
-
-            if (selectedDefinitionId !== null) {
               return (
                 <div className="flex flex-1 items-center justify-center p-6">
                   <EmptyState
                     icon={<Bot />}
-                    title="Agent not found"
-                    description="That definition is not on this bench. Pick another from the sidebar."
+                    title="Select an agent"
+                    description="Pick an agent from the sidebar to see its details and instances."
                   />
                 </div>
               );
-            }
-
-            return (
-              <div className="flex flex-1 items-center justify-center p-6">
-                <EmptyState
-                  icon={<Bot />}
-                  title="Select an agent"
-                  description="Pick an agent from the sidebar to see its details and instances."
-                />
-              </div>
-            );
-          }}
-        </QueryView>
-      </PageShellBody>
+            }}
+          </QueryView>
+        </PageShellBody>
+      </div>
       {canCreate && directory.kind === "ready" ? (
         <CreateAgentDialog
           open={createOpen}
@@ -410,7 +427,7 @@ export function AgentsPage({
           }}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 

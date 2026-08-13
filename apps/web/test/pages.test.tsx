@@ -13,9 +13,13 @@ import type {
   AgentDirectoryData,
   AgentInstance,
 } from "../src/agents-api";
+import { BenchProvider } from "../src/bench-context";
+import { NavigationProvider } from "../src/navigation";
 import { AgentsPage } from "../src/pages/agents-page";
 import { LibraryPage } from "../src/pages/library-page";
+import { SettingsRoute } from "../src/pages/settings-page";
 import { SkillsPage } from "../src/pages/skills-page";
+import { TestQueryProvider } from "./test-query-provider";
 
 function ready<T>(data: T): APIQuery<T> {
   return { kind: "ready", data };
@@ -108,16 +112,17 @@ describe("live data", () => {
     expect(markup).toContain("Signups export");
   });
 
-  test("library with onUpload keeps upload off the stage toolbar", () => {
+  test("library with onUpload puts Upload in the top bar, not the toolbar", () => {
     const markup = renderToStaticMarkup(
       <LibraryPage artifacts={[reportArtifact]} onUpload={() => undefined} />,
     );
-    // Hidden file input for the pageBand Upload action (workbench:library:upload).
+    // Hidden file input behind the top-bar Upload action and
+    // workbench:library:upload.
     expect(markup).toContain('type="file"');
     expect(markup).toContain('aria-label="Upload artifacts"');
     expect(markup).toContain("sr-only");
-    // Stage toolbar is search / sort / view only — no visible Upload button.
-    expect(markup).not.toMatch(/>\s*Upload\s*</);
+    // Upload is a top-bar action (mock: primary chip in `.top`).
+    expect(markup).toMatch(/stage-top-bar-actions[\s\S]*?>Upload</);
     // Sort is icon-only with an accessible name.
     expect(markup).toContain('aria-label="Newest first"');
   });
@@ -215,5 +220,21 @@ describe("live data", () => {
     );
     // Create lives on pageBand / dialog; without a tenant the dialog does not mount.
     expect(markup).not.toContain("Define a new agent");
+  });
+});
+
+describe("settings top bar", () => {
+  test("titles the bar with the active section", () => {
+    const markup = renderToStaticMarkup(
+      <TestQueryProvider>
+        <NavigationProvider navigate={() => undefined}>
+          <BenchProvider>
+            <SettingsRoute />
+          </BenchProvider>
+        </NavigationProvider>
+      </TestQueryProvider>,
+    );
+    expect(markup).toContain('data-testid="stage-top-bar"');
+    expect(markup).toContain("Settings · Your agent");
   });
 });

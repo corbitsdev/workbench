@@ -196,6 +196,7 @@ function ChatWorkspaceInner({
   settingsOpen = false,
   onSettingsOpenChange,
   onOpenArtifact,
+  headerLeading,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
@@ -209,6 +210,7 @@ function ChatWorkspaceInner({
   readonly settingsOpen?: boolean;
   readonly onSettingsOpenChange?: (open: boolean) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  readonly headerLeading?: ReactNode;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -584,6 +586,15 @@ function ChatWorkspaceInner({
   // Member stack: up to three participant handles for the top bar.
   const memberStack = (activeChannel?.participants ?? []).slice(0, 3);
 
+  // The channel header only exists once a channel is active; the loading,
+  // error, and no-channel states still carry the host's leading control (the
+  // shell's col2 toggle) so the sidebar stays reachable.
+  const bareLeadingHeader =
+    headerLeading !== undefined &&
+    (channelsState.kind !== "ready" || activeChannelId === null) ? (
+      <div className="chat-channel-header">{headerLeading}</div>
+    ) : null;
+
   if (settingsOpen && activeChannelId !== null && activeChannel !== undefined) {
     return (
       <>
@@ -624,6 +635,7 @@ function ChatWorkspaceInner({
     <>
       <div className="chat-workspace">
         <div className="chat-main">
+          {bareLeadingHeader}
           {channelsState.kind === "loading" ? (
             <Skeleton className="query-skeleton" />
           ) : channelsState.kind === "error" ? (
@@ -646,6 +658,7 @@ function ChatWorkspaceInner({
           ) : (
             <>
               <div className="chat-channel-header">
+                {headerLeading}
                 {inThreadView ? (
                   <nav className="chat-thread-breadcrumb" aria-label="Thread">
                     <button
@@ -827,6 +840,7 @@ export function ChatWorkspace({
   settingsOpen,
   onSettingsOpenChange,
   onOpenArtifact,
+  headerLeading,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -850,6 +864,10 @@ export function ChatWorkspace({
   readonly onSettingsOpenChange?: (open: boolean) => void;
   /** Open a message's artifact chip — see `ChannelTimeline`'s `onOpenArtifact`. */
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  /** Host-supplied control rendered first in the channel header — the
+   * shell's single col2 toggle, so chat carries the same top-bar chrome as
+   * every other stage surface. */
+  readonly headerLeading?: ReactNode;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -867,6 +885,7 @@ export function ChatWorkspace({
             ? { onSettingsOpenChange }
             : {})}
           {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+          {...(headerLeading !== undefined ? { headerLeading } : {})}
         />
       );
     case "empty":

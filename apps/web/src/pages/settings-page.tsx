@@ -13,9 +13,11 @@ import {
   BenchSection,
   ChatSection,
   CredentialsSection,
+  flattenSettingsSections,
   GrantsSection,
   NotificationsSection,
   PeopleSection,
+  resolveActiveSection,
   RolesSection,
   SettingsShell,
   SETTINGS_STRINGS,
@@ -27,12 +29,15 @@ import type {
   SettingsSectionGroup,
 } from "@corbits/settings-ui";
 import { PageShell } from "@corbits/react-ui";
+import { useState } from "react";
 
 import { useBench } from "../bench-context";
+import { StageTopBar } from "../shell/stage-top-bar";
 
 export function SettingsRoute() {
   const { selectedTenantId, selectedPrincipalId } = useBench();
   const access = useTenancyAccess(selectedTenantId, selectedPrincipalId);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
 
   const personal: SettingsSection[] = [
     {
@@ -121,15 +126,33 @@ export function SettingsRoute() {
     },
   ];
 
+  const activeSection = resolveActiveSection(
+    flattenSettingsSections(groups),
+    activeSectionId,
+  );
+
   return (
-    <PageShell width="full" className="page-fill">
-      <SettingsShell
-        groups={groups}
-        context={{
-          tenantId: selectedTenantId,
-          principalId: selectedPrincipalId,
-        }}
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title={
+          activeSection === undefined
+            ? "Settings"
+            : `Settings · ${activeSection.title}`
+        }
       />
-    </PageShell>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageShell width="full" className="page-fill">
+          <SettingsShell
+            groups={groups}
+            context={{
+              tenantId: selectedTenantId,
+              principalId: selectedPrincipalId,
+            }}
+            activeId={activeSectionId}
+            onSelect={setActiveSectionId}
+          />
+        </PageShell>
+      </div>
+    </div>
   );
 }

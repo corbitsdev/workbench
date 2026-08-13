@@ -22,9 +22,13 @@ import { loadPins, type Pin } from "./pins";
 ensurePanelContributions();
 
 export function ContextualPanel({
+  id,
   path,
   onNavigate,
 }: {
+  /** DOM id for the shell toggle's aria-controls; only the in-flow column
+   * carries it (the narrow drawer wrapper owns the id instead). */
+  readonly id?: string;
   readonly path: string;
   readonly onNavigate: (to: string) => void;
 }) {
@@ -70,6 +74,7 @@ export function ContextualPanel({
 
   return (
     <SidebarPanel
+      {...(id !== undefined ? { id } : {})}
       className="shell-contextual-panel"
       data-testid="shell-contextual-panel"
       aria-label="Contextual panel"

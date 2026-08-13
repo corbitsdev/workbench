@@ -9,8 +9,7 @@
 // workbenches clears canvas auxiliary content and leaves channel deep links
 // so a foreign conversation cannot stay loaded under the new workbench.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { PanelLeft } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
@@ -35,6 +34,13 @@ import { CanvasAvailabilityProvider } from "./canvas-availability";
 import { CanvasColumn } from "./canvas-column";
 import { ContextualPanel } from "./contextual-panel";
 import { Rail } from "./rail";
+import {
+  COL2_ID,
+  StageChromeProvider,
+  StageToggleFallback,
+  useToggleRegistry,
+  type StageChrome,
+} from "./stage-chrome";
 import { useShellLayoutMode } from "./use-shell-layout";
 import type { ProfileSubject } from "@corbits/chat-ui";
 
@@ -58,6 +64,8 @@ export function AppShell({
   const showContextualColumn = contextualPanelVisible(layoutMode);
   const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
   const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
+  const [col2Collapsed, setCol2Collapsed] = useState(false);
+  const { toggleMounted, registerToggle } = useToggleRegistry();
   const frameRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   // Tracks the last workbench we applied so a real switch (A→B) can drop
@@ -66,6 +74,13 @@ export function AppShell({
   useShellFocusRescue(layoutMode, frameRef);
   // Route changes must not inherit the previous page's scroll position.
   useScrollReset(mainRef, path);
+
+  // Mock contract: every top-level navigation lands with col2 open again —
+  // a collapse is a per-surface choice, not a sticky preference (that is
+  // CL-5936's wide-mode territory).
+  useEffect(() => {
+    setCol2Collapsed(false);
+  }, [path]);
 
   // Workbench switch clears auxiliary canvas content and leaves any channel
   // deep link so the stage does not keep a foreign conversation under the
@@ -95,6 +110,24 @@ export function AppShell({
     setCanvasState((state) => clearProfileInCanvas(state));
   };
 
+  // ONE collapse control (the stage top bar's toggle) drives both regimes:
+  // in-flow col2 collapses on wide layouts; the overlay drawer opens on
+  // narrow ones. There are no per-column chevrons.
+  const stageChrome = useMemo<StageChrome>(
+    () => ({
+      col2Collapsed: contextualAsDrawer ? !narrowPanelOpen : col2Collapsed,
+      toggleCol2: () => {
+        if (contextualAsDrawer) {
+          setNarrowPanelOpen((open) => !open);
+          return;
+        }
+        setCol2Collapsed((collapsed) => !collapsed);
+      },
+      registerToggle,
+    }),
+    [contextualAsDrawer, narrowPanelOpen, col2Collapsed, registerToggle],
+  );
+
   return (
     <CanvasAvailabilityProvider
       allowed={canvasAllowed}
@@ -108,22 +141,14 @@ export function AppShell({
           onSignOut={onSignOut}
           showLabels={railShowLabels(layoutMode)}
         />
-        {showContextualColumn && (
-          <ContextualPanel path={path} onNavigate={navigate} />
+        {showContextualColumn && !col2Collapsed && (
+          <ContextualPanel id={COL2_ID} path={path} onNavigate={navigate} />
         )}
         <div className="shell-main" ref={mainRef}>
-          {contextualAsDrawer && (
-            <button
-              type="button"
-              className="shell-drawer-trigger"
-              aria-label="Open panel"
-              aria-expanded={narrowPanelOpen}
-              onClick={() => setNarrowPanelOpen(true)}
-            >
-              <PanelLeft />
-            </button>
-          )}
-          <div className="shell-main-content">{children}</div>
+          <StageChromeProvider value={stageChrome}>
+            {!toggleMounted && <StageToggleFallback />}
+            <div className="shell-main-content">{children}</div>
+          </StageChromeProvider>
         </div>
         {canvasAllowed && (
           <CanvasColumn
@@ -141,6 +166,7 @@ export function AppShell({
               onClick={() => setNarrowPanelOpen(false)}
             />
             <div
+              id={COL2_ID}
               className="shell-drawer"
               data-open={narrowPanelOpen}
               inert={!narrowPanelOpen}

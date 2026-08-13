@@ -488,6 +488,121 @@ html {
   opacity: 1;
 }
 
+/* Shared stage top bar — mock `.top`: a fixed 3rem row on every stage
+   surface. The col2 toggle sits left, then title · dot · subtitle, and
+   per-page actions right-align. Matches `.chat-channel-header` geometry so
+   channels and pages read as one chrome. */
+.stage-top-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 3rem;
+  height: 3rem;
+  min-width: 0;
+  padding: 0 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--background, transparent);
+}
+
+.stage-top-bar-toggle {
+  flex-shrink: 0;
+}
+
+.stage-top-bar-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+  font-weight: 640;
+}
+
+.stage-top-bar-dot {
+  width: 3px;
+  height: 3px;
+  flex-shrink: 0;
+  border-radius: 0;
+  background: var(--muted-foreground);
+}
+
+.stage-top-bar-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+  color: var(--muted-foreground);
+}
+
+.stage-top-bar-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+/* Breadcrumb trails live in the title slot, always top-left. */
+.stage-crumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.stage-crumbs button {
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 640;
+}
+
+.stage-crumbs button:hover {
+  color: var(--foreground);
+}
+
+.stage-crumbs [aria-current="page"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stage-crumbs-sep {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+/* Shell-owned fallback for stage states that render no top bar (boot
+   screens, signed-out notices, load failures): a small floating toggle
+   pinned to the main pane's top-left, so the single col2 control is always
+   reachable. Hidden automatically while any real toggle is mounted. */
+.stage-toggle-fallback {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 20;
+  display: grid;
+  height: 2rem;
+  width: 2rem;
+  place-items: center;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.stage-toggle-fallback:hover {
+  background: var(--muted);
+}
+
+.stage-toggle-fallback svg {
+  height: 1rem;
+  width: 1rem;
+}
+
 /* Page-local toolbars replace TopBar action clusters (search, view toggle)
    that still need component state on the page. Identity lives in the panel. */
 .page-toolbar {
@@ -568,42 +683,9 @@ html {
 
 /* Narrow mode: the contextual column leaves the flow and becomes an overlay
    drawer that slides in from the left, so it never permanently steals width
-   from the main pane. The backdrop dims and dismisses on click. The trigger
-   is a small floating button pinned to the main pane's top-left corner,
-   rendered only when the shell is in "narrow" layout (gated in JSX). */
-.shell-drawer-trigger {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
-  z-index: 20;
-  display: grid;
-  height: 2rem;
-  width: 2rem;
-  flex-shrink: 0;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--card);
-  color: var(--foreground);
-  cursor: pointer;
-  transition: background 150ms ease;
-}
-
-.shell-drawer-trigger:hover {
-  background: var(--muted);
-}
-
-.shell-drawer-trigger svg {
-  height: 1rem;
-  width: 1rem;
-}
-
-/* When the drawer trigger is present, the main content needs top padding so
-   it doesn't collide with the button. */
-.shell-main:has(.shell-drawer-trigger) > .shell-main-content {
-  padding-top: 2.75rem;
-}
-
+   from the main pane. The backdrop dims and dismisses on click. The stage
+   top bar's toggle is the one control that opens it — there is no separate
+   floating trigger. */
 .shell-drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -1847,33 +1929,6 @@ button.insights-stat:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.insights-crumb {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.insights-crumb-btn {
-  border: 0;
-  padding: 0;
-  background: none;
-  font: inherit;
-  font-weight: 600;
-  color: var(--primary, #e98428);
-  cursor: pointer;
-}
-
-.insights-crumb-btn:hover {
-  text-decoration: underline;
-}
-
-.insights-crumb-sep {
-  color: var(--muted-foreground, #8a8080);
-  opacity: 0.6;
 }
 
 /* Legacy I2 day-bucket strip (still used by insights-timeline helpers). */

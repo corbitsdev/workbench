@@ -13,6 +13,7 @@ import {
   isChannelSettingsPath,
 } from "../channel-path";
 import { useOpenProfileInCanvas } from "../shell/canvas-availability";
+import { StageTopBarToggle } from "../shell/stage-top-bar";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
 
 export function ChatPage({
@@ -52,6 +53,7 @@ export function ChatPage({
         );
       }}
       onOpenArtifact={openArtifact}
+      headerLeading={<StageTopBarToggle />}
     />
   );
 }
