@@ -455,7 +455,7 @@ function ChatWorkspaceInner({
   const { typingState, handleStreamEvent: handleTypingEvent } =
     useTypingIndicator(currentUser?.principalId, activeChannelId);
 
-  const streamState = useChannelStream(
+  useChannelStream(
     activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
     (eventType, data) => {
       handleTypingEvent(eventType, data);
@@ -773,11 +773,6 @@ function ChatWorkspaceInner({
                 />
               ) : (
                 <>
-                  {streamState !== "live" ? (
-                    <div className="chat-stream-indicator" role="status">
-                      {CHAT_STRINGS.reconnectingMessage}
-                    </div>
-                  ) : null}
                   <ChannelTimeline
                     items={messagesState.items}
                     participants={activeChannel?.participants ?? []}

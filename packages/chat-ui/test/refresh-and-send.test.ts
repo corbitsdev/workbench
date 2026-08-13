@@ -27,7 +27,7 @@ import {
 } from "../src/composer";
 import type { ComposerAttachment } from "../src/composer";
 import { CHAT_STRINGS } from "../src/strings";
-import { shouldConnect } from "../src/use-channel-stream";
+import { backoffDelayMs, shouldConnect } from "../src/use-channel-stream";
 
 describe("nextMessagesState (B1: background refresh keeps the composer mounted)", () => {
   const ready: MessagesState = {
@@ -351,6 +351,39 @@ describe("resolveMessageFeedTarget (4a: root feed is root-thread only)", () => {
         rootThreadId: null,
       }),
     ).toEqual({ kind: "channel-mail" });
+  });
+});
+
+describe("backoffDelayMs (exponential backoff + jitter, capped)", () => {
+  test("the first attempt is the base delay with no jitter", () => {
+    expect(backoffDelayMs(1, () => 0)).toBe(500);
+  });
+
+  test("doubles per attempt", () => {
+    expect(backoffDelayMs(2, () => 0)).toBe(1000);
+    expect(backoffDelayMs(3, () => 0)).toBe(2000);
+    expect(backoffDelayMs(4, () => 0)).toBe(4000);
+  });
+
+  test("caps at the max delay once the exponential curve reaches it, regardless of jitter", () => {
+    expect(backoffDelayMs(5, () => 0)).toBe(8000);
+    expect(backoffDelayMs(20, () => 0)).toBe(8000);
+    expect(backoffDelayMs(20, () => 1)).toBe(8000);
+  });
+
+  test("jitter adds up to 30% on top of the exponential value, never more", () => {
+    expect(backoffDelayMs(1, () => 1)).toBe(650); // 500 + 500*0.3
+    expect(backoffDelayMs(3, () => 1)).toBe(2600); // 2000 + 2000*0.3
+  });
+
+  test("jitter never pushes the delay past the cap", () => {
+    expect(backoffDelayMs(4, () => 1)).toBe(5200); // 4000 + 4000*0.3, under cap
+    expect(backoffDelayMs(5, () => 1)).toBe(8000); // would be 10400 uncapped
+  });
+
+  test("attempt numbers below 1 behave as attempt 1 (no negative exponent)", () => {
+    expect(backoffDelayMs(0, () => 0)).toBe(500);
+    expect(backoffDelayMs(-3, () => 0)).toBe(500);
   });
 });
 

@@ -357,14 +357,6 @@
   justify-content: center;
 }
 
-.chat-stream-indicator {
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-  padding: 0.3rem 1rem;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-
 .chat-agent-badge {
   display: inline-flex;
   align-items: center;
