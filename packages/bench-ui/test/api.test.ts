@@ -9,6 +9,7 @@ import {
   BenchApiError,
   createBench,
   inviteMember,
+  listChannelTenantIds,
   listMembers,
   listMyMemberships,
 } from "../src/api";
@@ -170,5 +171,25 @@ describe("inviteMember", () => {
     await expect(
       inviteMember("tnt_1", "nobody@example.com"),
     ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("listChannelTenantIds", () => {
+  test("posts the tenant ids and returns them as a set", async () => {
+    const calls = stubFetch(() => json({ channelTenantIds: ["tnt_2"] }));
+    const result = await listChannelTenantIds(["tnt_1", "tnt_2"]);
+    expect(calls[0]?.path).toBe("/api/channel-tenancies/kinds");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      tenantIds: ["tnt_1", "tnt_2"],
+    });
+    expect(result).toEqual(new Set(["tnt_2"]));
+  });
+
+  test("never round-trips for an empty request", async () => {
+    const calls = stubFetch(() => json({ channelTenantIds: [] }));
+    const result = await listChannelTenantIds([]);
+    expect(calls).toHaveLength(0);
+    expect(result).toEqual(new Set());
   });
 });

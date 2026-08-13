@@ -32,6 +32,8 @@ export const meKeys = {
   profile: ["me", "profile"] as const,
   principals: ["me", "principals"] as const,
   runs: ["me", "runs"] as const,
+  channelTenancyKinds: (tenantIds: readonly string[]) =>
+    ["me", "channel-tenancy-kinds", [...tenantIds].sort()] as const,
 };
 
 /** Tenant-scoped keys — removed wholesale when the user leaves a bench. */

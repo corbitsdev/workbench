@@ -3,11 +3,17 @@
 // compose them independently of whatever else the shell adds there later.
 
 import { Button, ThemeToggle } from "@corbits/react-ui";
-import { BenchSwitcher } from "@corbits/bench-ui";
+import {
+  BenchSwitcher,
+  filterWorkbenchMemberships,
+  listChannelTenantIds,
+} from "@corbits/bench-ui";
+import { useQuery } from "@tanstack/react-query";
 import { LogOut, SlidersHorizontal } from "lucide-react";
 
 import { useBench } from "../bench-context";
 import { handleLinkClick, useNavigate } from "../navigation";
+import { meKeys } from "../query-client";
 import { SETTINGS_PATH, matchesRoute } from "../routes";
 import type { SessionUser } from "../session";
 
@@ -33,15 +39,36 @@ export function initialsOf(name: string, email = ""): string {
 /** Bottom dock A: which bench the app is pointed at, and where a new one
  * is created. Hidden until the memberships listing is in — a switcher with
  * nothing to switch is noise, and the pages already surface loading/error
- * states for the same query. */
+ * states for the same query.
+ *
+ * `/api/me/principals` returns one row per tenant the account belongs to,
+ * workbenches and channel child tenancies alike — Interchange's tenant row
+ * has no kind field to tell them apart (see `@corbits/bench-ui`'s
+ * `tenancy-kind`). This dock is the one place that asks which of those
+ * tenant ids are channels and drops them before the switcher ever renders
+ * a row for one. */
 export function BenchDock() {
   const { memberships, selectedTenantId, selectTenant, onBenchCreated } =
     useBench();
+  const tenantIds =
+    memberships.kind === "ready"
+      ? memberships.data.data.map((membership) => membership.tenantId)
+      : [];
+  const channelTenancyKinds = useQuery({
+    queryKey: meKeys.channelTenancyKinds(tenantIds),
+    queryFn: () => listChannelTenantIds(tenantIds),
+    enabled: tenantIds.length > 0,
+  });
+
   if (memberships.kind !== "ready") return null;
+  const workbenches = filterWorkbenchMemberships(
+    memberships.data.data,
+    channelTenancyKinds.data ?? new Set(),
+  );
   return (
     <div className="shell-bench-dock">
       <BenchSwitcher
-        memberships={memberships.data.data}
+        memberships={workbenches}
         activeTenantId={selectedTenantId}
         onSelect={selectTenant}
         onBenchCreated={(bench) => onBenchCreated(bench.id)}

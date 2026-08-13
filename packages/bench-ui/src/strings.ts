@@ -13,7 +13,7 @@ export const BENCH_STRINGS = {
   memberUnnamed: "Unnamed member",
   memberRoleNone: "none",
 
-  createBenchAction: "+ New workbench",
+  createBenchAction: "New workbench",
   createBenchDialogTitle: "New workbench",
 
   createBenchDialogDescription:
