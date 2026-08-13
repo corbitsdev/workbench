@@ -108,16 +108,17 @@ describe("live data", () => {
     expect(markup).toContain("Signups export");
   });
 
-  test("library with onUpload keeps upload off the stage toolbar", () => {
+  test("library with onUpload puts Upload in the top bar, not the toolbar", () => {
     const markup = renderToStaticMarkup(
       <LibraryPage artifacts={[reportArtifact]} onUpload={() => undefined} />,
     );
-    // Hidden file input for the pageBand Upload action (workbench:library:upload).
+    // Hidden file input behind the top-bar Upload action and
+    // workbench:library:upload.
     expect(markup).toContain('type="file"');
     expect(markup).toContain('aria-label="Upload artifacts"');
     expect(markup).toContain("sr-only");
-    // Stage toolbar is search / sort / view only — no visible Upload button.
-    expect(markup).not.toMatch(/>\s*Upload\s*</);
+    // Upload is a top-bar action (mock: primary chip in `.top`).
+    expect(markup).toMatch(/stage-top-bar-actions[\s\S]*?>Upload</);
     // Sort is icon-only with an accessible name.
     expect(markup).toContain('aria-label="Newest first"');
   });

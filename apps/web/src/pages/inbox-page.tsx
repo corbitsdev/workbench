@@ -40,6 +40,7 @@ import {
 } from "../inbox-api";
 import { QueryView, SignedOutNotice } from "../query-view";
 import { inboxFilterFromPath } from "../shell/panel-contributions";
+import { StageTopBar } from "../shell/stage-top-bar";
 
 function formatWhen(iso: string): string {
   const date = new Date(iso);
@@ -358,29 +359,36 @@ export function InboxPage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <p className="m-0 text-sm text-muted-foreground">
-          {needAction === null || openCount === null
+      <StageTopBar
+        title="Inbox"
+        subtitle={
+          needAction === null || openCount === null
             ? "Loading inbox…"
-            : `${needAction} need action · ${openCount} open`}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onClick={() => runAction(() => markAllInboxRead(selectedTenantId))}
-          >
-            Mark all read
-          </Button>
-          <Button
-            variant="ghost"
-            disabled={busy}
-            onClick={() => runAction(() => clearDoneInbox(selectedTenantId))}
-          >
-            Clear done
-          </Button>
-        </div>
-      </header>
+            : `${needAction} need action · ${openCount} open`
+        }
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                runAction(() => markAllInboxRead(selectedTenantId))
+              }
+            >
+              Mark all read
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => runAction(() => clearDoneInbox(selectedTenantId))}
+            >
+              Clear done
+            </Button>
+          </>
+        }
+      />
       <TriagePane
         className="min-h-0 flex-1 border-t-0"
         list={

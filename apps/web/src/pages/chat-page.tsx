@@ -8,6 +8,7 @@ import { ChatWorkspace } from "@corbits/chat-ui";
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath } from "../channel-path";
 import { useOpenProfileInCanvas } from "../shell/canvas-availability";
+import { StageTopBarToggle } from "../shell/stage-top-bar";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
 
 export function ChatPage({
@@ -30,6 +31,7 @@ export function ChatPage({
       channelId={channelId}
       onChannelChange={(nextChannelId) => navigate(channelPath(nextChannelId))}
       onOpenProfile={openProfile}
+      headerLeading={<StageTopBarToggle />}
     />
   );
 }

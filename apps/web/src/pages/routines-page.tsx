@@ -43,6 +43,7 @@ import { useBench } from "../bench-context";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 import { cadenceLabel } from "../routine-trigger";
+import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
 import {
   approveRoutineDraft,
   createRoutine,
@@ -912,6 +913,45 @@ export function RoutinesListPage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title={selected === null ? "Routines" : selected.name}
+        subtitle={
+          selected === null
+            ? routines.kind === "ready"
+              ? `${routines.data.length} automations`
+              : null
+            : routineDetailSentence(selected, channels)
+        }
+        actions={
+          selected === null ? (
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus /> New routine
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCreateOpen(true)}
+              >
+                New routine
+              </Button>
+              <Switch
+                checked={selected.enabled}
+                label={`${selected.enabled ? "Pause" : "Resume"} ${selected.name}`}
+                onCheckedChange={(enabled) =>
+                  onToggleEnabled(selected, enabled)
+                }
+              />
+              <RunNowButton
+                variant="outline"
+                size="sm"
+                onRun={() => onRunNow(selected)}
+              />
+            </>
+          )
+        }
+      />
       <CreateRoutineDialog
         definitions={definitions}
         channels={channels}
@@ -923,8 +963,7 @@ export function RoutinesListPage({
         onOpenChange={setCreateOpen}
       />
 
-      {/* List lives in shell col2; stage is detail only. Create is
-          pageBand / workbench:routines:create — no stage chrome header. */}
+      {/* List lives in shell col2; stage is detail only. */}
       <div className="flex min-h-0 flex-1 flex-col">
         {selected === null ? (
           <div className="flex flex-1 items-center justify-center p-6">
@@ -951,31 +990,6 @@ export function RoutinesListPage({
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--ui-border)] px-4 py-3">
-              <div className="min-w-0">
-                <h2 className="truncate text-base font-semibold text-[var(--ui-fg)]">
-                  {selected.name}
-                </h2>
-                <p className="mt-0.5 text-xs text-[var(--ui-fg-muted)]">
-                  {routineDetailSentence(selected, channels)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={selected.enabled}
-                  label={`${selected.enabled ? "Pause" : "Resume"} ${selected.name}`}
-                  onCheckedChange={(enabled) =>
-                    onToggleEnabled(selected, enabled)
-                  }
-                />
-                <RunNowButton
-                  variant="outline"
-                  size="sm"
-                  onRun={() => onRunNow(selected)}
-                />
-              </div>
-            </div>
-
             <section className="border-b border-[var(--ui-border)] px-4 py-3">
               <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
                 Steps
@@ -1052,14 +1066,18 @@ export function RoutineDetailPage({
   const [showAll, setShowAll] = useState(false);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 border-b border-[var(--ui-border)] px-3 py-2">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          Back
-        </Button>
-        <h2 className="text-sm font-semibold">
-          {routine.kind === "ready" ? routine.data.name : "Routine"}
-        </h2>
-      </div>
+      <StageTopBar
+        title={
+          <StageCrumbs
+            crumbs={[
+              { label: "Routines", onSelect: onBack },
+              {
+                label: routine.kind === "ready" ? routine.data.name : "Routine",
+              },
+            ]}
+          />
+        }
+      />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <QueryView query={routine} label="this routine">
           {(data) => {

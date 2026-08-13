@@ -9,7 +9,6 @@ import {
   Badge,
   PageShell,
   RichEmptyState,
-  Section,
   Skeleton,
   TokenMosaic,
   TraceWaterfall,
@@ -33,6 +32,7 @@ import {
   formatCount,
   formatRate,
   formatUsd,
+  INSIGHTS_WINDOW_DAYS,
   insightsActivityPath,
   insightsRunTracePath,
   insightsToolsPath,
@@ -58,6 +58,7 @@ import {
 import { useNavigate } from "../navigation";
 import { SignedOutNotice } from "../query-view";
 import { tenantKeys } from "../query-client";
+import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
 
 function dash(value: string | number | null | undefined): string {
@@ -489,45 +490,53 @@ function InsightsRunsHistory({
 }) {
   const purpose = purposeRunsForInsights(runs);
   return (
-    <PageShell width="full" className="page-fill">
-      <div className="insights-layout">
-        <div className="insights-crumb">
-          <button type="button" className="insights-crumb-btn" onClick={onBack}>
-            Insights
-          </button>
-          <span className="insights-crumb-sep">/</span>
-          <span>Runs</span>
-        </div>
-        {loading ? (
-          <Skeleton className="h-40 w-full" />
-        ) : purpose.length === 0 ? (
-          <RichEmptyState
-            icon={<ChartColumn />}
-            title="No purpose runs yet"
-            description="When a routine or purpose workflow fires, it shows up here."
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title={
+          <StageCrumbs
+            crumbs={[
+              { label: "Insights", onSelect: onBack },
+              { label: "Runs" },
+            ]}
           />
-        ) : (
-          <div className="insights-run-list">
-            {purpose.map((row) => (
-              <button
-                key={row.id}
-                type="button"
-                className="insights-run-row"
-                onClick={() => onOpenRun(row.id)}
-              >
-                <span className="insights-run-meta">
-                  <strong>{row.definitionName}</strong>
-                  <span>
-                    {formatWhen(row.createdAt)} · {row.tenantName}
-                  </span>
-                </span>
-                <Badge tone={statusTone(row.status)}>{row.status}</Badge>
-              </button>
-            ))}
+        }
+        subtitle={`${purpose.length} purpose runs`}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageShell width="full" className="page-fill">
+          <div className="insights-layout">
+            {loading ? (
+              <Skeleton className="h-40 w-full" />
+            ) : purpose.length === 0 ? (
+              <RichEmptyState
+                icon={<ChartColumn />}
+                title="No purpose runs yet"
+                description="When a routine or purpose workflow fires, it shows up here."
+              />
+            ) : (
+              <div className="insights-run-list">
+                {purpose.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className="insights-run-row"
+                    onClick={() => onOpenRun(row.id)}
+                  >
+                    <span className="insights-run-meta">
+                      <strong>{row.definitionName}</strong>
+                      <span>
+                        {formatWhen(row.createdAt)} · {row.tenantName}
+                      </span>
+                    </span>
+                    <Badge tone={statusTone(row.status)}>{row.status}</Badge>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </PageShell>
       </div>
-    </PageShell>
+    </div>
   );
 }
 
@@ -545,71 +554,83 @@ function InsightsRunDetail({
   const spans = trace.kind === "ready" ? toTraceSpans(trace.data) : [];
 
   return (
-    <PageShell width="full" className="page-fill">
-      <div className="insights-layout">
-        <div className="insights-crumb">
-          <button type="button" className="insights-crumb-btn" onClick={onBack}>
-            Runs
-          </button>
-          <span className="insights-crumb-sep">/</span>
-          <span>{run?.definitionName ?? runId}</span>
-        </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title={
+          <StageCrumbs
+            crumbs={[
+              { label: "Runs", onSelect: onBack },
+              { label: run?.definitionName ?? runId },
+            ]}
+          />
+        }
+        subtitle={run !== null ? formatWhen(run.createdAt) : null}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageShell width="full" className="page-fill">
+          <div className="insights-layout">
+            <div className="insights-stat-row">
+              <InsightsStat label="Status" value={dash(run?.status ?? null)} />
+              <InsightsStat
+                label="Started"
+                value={dash(run !== null ? formatWhen(run.createdAt) : null)}
+              />
+              <InsightsStat
+                label="Bench"
+                value={dash(run?.tenantName ?? null)}
+              />
+              <InsightsStat
+                label="Cost"
+                value="—"
+                detail="per-run cost not wired"
+              />
+            </div>
 
-        <div className="insights-stat-row">
-          <InsightsStat label="Status" value={dash(run?.status ?? null)} />
-          <InsightsStat
-            label="Started"
-            value={dash(run !== null ? formatWhen(run.createdAt) : null)}
-          />
-          <InsightsStat label="Bench" value={dash(run?.tenantName ?? null)} />
-          <InsightsStat
-            label="Cost"
-            value="—"
-            detail="per-run cost not wired"
-          />
-        </div>
-
-        {trace.kind === "loading" ? <Skeleton className="h-48 w-full" /> : null}
-        {trace.kind === "error" ? (
-          <RichEmptyState
-            title="Trace not available"
-            description={
-              trace.message.includes("404") ||
-              trace.message.toLowerCase().includes("not found")
-                ? "No span data is recorded for this run yet. Pre-sink history is absent on purpose — not shown as zeros."
-                : trace.message
-            }
-          />
-        ) : null}
-        {trace.kind === "unauthenticated" ? <SignedOutNotice /> : null}
-        {trace.kind === "ready" &&
-        "absent" in trace.data &&
-        trace.data.spans === null ? (
-          <RichEmptyState
-            title="Trace reader not mounted"
-            description="Run-trace detail is not wired on this hub yet. Spans stay absent — not shown as zeros."
-          />
-        ) : null}
-        {trace.kind === "ready" && spans.length > 0 ? (
-          <section className="insights-panel">
-            <h3>Timeline</h3>
-            <TraceWaterfall
-              title="Run trace"
-              spans={spans}
-              description={`${spans.length} span${spans.length === 1 ? "" : "s"}`}
-            />
-          </section>
-        ) : null}
-        {trace.kind === "ready" &&
-        spans.length === 0 &&
-        !("absent" in trace.data) ? (
-          <RichEmptyState
-            title="Empty trace"
-            description="The run exists but has no recorded spans yet."
-          />
-        ) : null}
+            {trace.kind === "loading" ? (
+              <Skeleton className="h-48 w-full" />
+            ) : null}
+            {trace.kind === "error" ? (
+              <RichEmptyState
+                title="Trace not available"
+                description={
+                  trace.message.includes("404") ||
+                  trace.message.toLowerCase().includes("not found")
+                    ? "No span data is recorded for this run yet. Pre-sink history is absent on purpose — not shown as zeros."
+                    : trace.message
+                }
+              />
+            ) : null}
+            {trace.kind === "unauthenticated" ? <SignedOutNotice /> : null}
+            {trace.kind === "ready" &&
+            "absent" in trace.data &&
+            trace.data.spans === null ? (
+              <RichEmptyState
+                title="Trace reader not mounted"
+                description="Run-trace detail is not wired on this hub yet. Spans stay absent — not shown as zeros."
+              />
+            ) : null}
+            {trace.kind === "ready" && spans.length > 0 ? (
+              <section className="insights-panel">
+                <h3>Timeline</h3>
+                <TraceWaterfall
+                  title="Run trace"
+                  spans={spans}
+                  description={`${spans.length} span${spans.length === 1 ? "" : "s"}`}
+                />
+              </section>
+            ) : null}
+            {trace.kind === "ready" &&
+            spans.length === 0 &&
+            !("absent" in trace.data) ? (
+              <RichEmptyState
+                title="Empty trace"
+                description="The run exists but has no recorded spans yet."
+              />
+            ) : null}
+          </div>
+        </PageShell>
       </div>
-    </PageShell>
+    </div>
   );
 }
 
@@ -717,35 +738,44 @@ export function InsightsPage({
 
   if (usageError !== null) {
     return (
-      <PageShell width="full" className="page-fill">
-        <RichEmptyState
-          icon={<ChartColumn />}
-          title="Couldn't load insights"
-          description={usageError}
-        />
-      </PageShell>
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar title="Insights" />
+        <PageShell width="full" className="page-fill">
+          <RichEmptyState
+            icon={<ChartColumn />}
+            title="Couldn't load insights"
+            description={usageError}
+          />
+        </PageShell>
+      </div>
     );
   }
 
   return (
-    <PageShell width="full" className="page-fill">
-      <Section title="Insights" description="Overview">
-        <InsightsLanding
-          summary={summaryData}
-          activity={activityData}
-          byModel={byModelData}
-          byTool={byToolData}
-          runs={runsData}
-          routines={routinesData}
-          range={range}
-          loading={loading}
-          onOpenRun={(id) =>
-            navigate(`/insights/runs/${encodeURIComponent(id)}`)
-          }
-          onOpenRuns={() => navigate("/insights/runs")}
-        />
-      </Section>
-    </PageShell>
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title="Insights"
+        subtitle={`Last ${INSIGHTS_WINDOW_DAYS} days`}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageShell width="full" className="page-fill">
+          <InsightsLanding
+            summary={summaryData}
+            activity={activityData}
+            byModel={byModelData}
+            byTool={byToolData}
+            runs={runsData}
+            routines={routinesData}
+            range={range}
+            loading={loading}
+            onOpenRun={(id) =>
+              navigate(`/insights/runs/${encodeURIComponent(id)}`)
+            }
+            onOpenRuns={() => navigate("/insights/runs")}
+          />
+        </PageShell>
+      </div>
+    </div>
   );
 }
 

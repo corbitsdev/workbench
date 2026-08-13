@@ -26,7 +26,6 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  justify-content: space-between;
   gap: 0.55rem;
   min-height: 3rem;
   height: 3rem;
@@ -56,6 +55,7 @@
   flex-shrink: 0;
   align-items: center;
   gap: 0.25rem;
+  margin-left: auto;
 }
 
 .chat-settings-panel {

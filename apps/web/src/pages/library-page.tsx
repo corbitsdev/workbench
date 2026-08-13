@@ -51,6 +51,7 @@ import {
   artifactMatchesLibraryKindSegment,
   libraryKindSegmentFromPath,
 } from "../shell/library-filters";
+import { StageTopBar } from "../shell/stage-top-bar";
 
 const SORT_LABEL: Record<ArtifactSort, string> = {
   newest: "Newest first",
@@ -212,20 +213,57 @@ export function LibraryPage({
     [artifacts, activeQuery, sort, onQueryChange],
   );
 
+  const openPicker = () => {
+    if (uploading === true) return;
+    fileInputRef.current?.click();
+  };
+
   useEffect(() => {
     if (onUpload === undefined) return;
-    const openPicker = () => {
+    const openFromEvent = () => {
       if (uploading === true) return;
       fileInputRef.current?.click();
     };
     // Off-route Upload navigates first and leaves a pending flag; open now.
-    if (consumePendingLibraryUpload()) openPicker();
-    window.addEventListener(LIBRARY_UPLOAD_EVENT, openPicker);
-    return () => window.removeEventListener(LIBRARY_UPLOAD_EVENT, openPicker);
+    if (consumePendingLibraryUpload()) openFromEvent();
+    window.addEventListener(LIBRARY_UPLOAD_EVENT, openFromEvent);
+    return () =>
+      window.removeEventListener(LIBRARY_UPLOAD_EVENT, openFromEvent);
   }, [onUpload, uploading]);
 
+  const selectedSummary =
+    activeSelected === null
+      ? null
+      : (artifacts.find((artifact) => artifact.id === activeSelected) ?? null);
+
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
+        title={selectedSummary === null ? "Library" : selectedSummary.title}
+        subtitle={
+          selectedSummary === null
+            ? `${artifacts.length} artifacts`
+            : artifactKindLabel(selectedSummary.kind)
+        }
+        actions={
+          <>
+            {selectedSummary !== null ? (
+              <Button variant="outline" size="sm" onClick={() => select(null)}>
+                All
+              </Button>
+            ) : null}
+            {onUpload !== undefined ? (
+              <Button
+                size="sm"
+                disabled={uploading === true}
+                onClick={openPicker}
+              >
+                {uploading === true ? "Uploading…" : "Upload"}
+              </Button>
+            ) : null}
+          </>
+        }
+      />
       {onUpload !== undefined ? (
         <input
           ref={fileInputRef}
@@ -328,7 +366,7 @@ export function LibraryPage({
           </div>
         ) : null}
       </div>
-    </>
+    </div>
   );
 }
 

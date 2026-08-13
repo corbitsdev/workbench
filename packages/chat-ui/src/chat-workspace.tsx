@@ -187,12 +187,14 @@ function ChatWorkspaceInner({
   onChannelChange,
   currentUser,
   onOpenProfile,
+  headerLeading,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
   readonly onChannelChange?: (channelId: string) => void;
   readonly currentUser?: CurrentUser;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
+  readonly headerLeading?: ReactNode;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -545,10 +547,20 @@ function ChatWorkspaceInner({
   // Member stack: up to three participant handles for the top bar.
   const memberStack = (activeChannel?.participants ?? []).slice(0, 3);
 
+  // The channel header only exists once a channel is active; the loading,
+  // error, and no-channel states still carry the host's leading control (the
+  // shell's col2 toggle) so the sidebar stays reachable.
+  const bareLeadingHeader =
+    headerLeading !== undefined &&
+    (channelsState.kind !== "ready" || activeChannelId === null) ? (
+      <div className="chat-channel-header">{headerLeading}</div>
+    ) : null;
+
   return (
     <>
       <div className="chat-workspace">
         <div className="chat-main">
+          {bareLeadingHeader}
           {channelsState.kind === "loading" ? (
             <Skeleton className="query-skeleton" />
           ) : channelsState.kind === "error" ? (
@@ -571,6 +583,7 @@ function ChatWorkspaceInner({
           ) : (
             <>
               <div className="chat-channel-header">
+                {headerLeading}
                 {inThreadView ? (
                   <nav className="chat-thread-breadcrumb" aria-label="Thread">
                     <button
@@ -753,6 +766,7 @@ export function ChatWorkspace({
   onChannelChange,
   currentUser,
   onOpenProfile,
+  headerLeading,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -768,6 +782,10 @@ export function ChatWorkspace({
   readonly currentUser?: CurrentUser;
   /** Open a member/agent ProfileCard in the host canvas (shell mock § Profile). */
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
+  /** Host-supplied control rendered first in the channel header — the
+   * shell's single col2 toggle, so chat carries the same top-bar chrome as
+   * every other stage surface. */
+  readonly headerLeading?: ReactNode;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -780,6 +798,7 @@ export function ChatWorkspace({
           {...(onChannelChange !== undefined ? { onChannelChange } : {})}
           {...(currentUser !== undefined ? { currentUser } : {})}
           {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
+          {...(headerLeading !== undefined ? { headerLeading } : {})}
         />
       );
     case "empty":

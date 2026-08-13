@@ -76,7 +76,7 @@ describe("AgentDetailPanel", () => {
     expect(markup).toContain("Open in channel");
   });
 
-  test("renders a Back button to return to the agent list", () => {
+  test("detail mode routes back through the top bar's All agents action", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage
         directory={ready(directoryData)}
@@ -85,8 +85,10 @@ describe("AgentDetailPanel", () => {
         navigate={() => undefined}
       />,
     );
-    expect(markup).toContain("Back");
-    expect(markup).toContain('aria-label="Back to agent list"');
+    expect(markup).toContain("All agents");
+    expect(markup).toContain('data-testid="stage-top-bar"');
+    // The old in-body Back affordance is gone — one navigation control.
+    expect(markup).not.toContain('aria-label="Back to agent list"');
   });
 
   test("lists the definition's deployed instances inside the detail panel", () => {
