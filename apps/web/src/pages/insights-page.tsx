@@ -18,13 +18,6 @@ import { ChartColumn } from "lucide-react";
 import { useMemo } from "react";
 
 import {
-  RunsSchema,
-  useAPIQuery,
-  type APIQuery,
-  type WorkflowRun,
-} from "../api";
-import { useBench } from "../bench-context";
-import {
   activitySeriesForWindow,
   createInsightsWindow,
   durationLabel,
@@ -33,20 +26,30 @@ import {
   formatRate,
   formatUsd,
   INSIGHTS_WINDOW_DAYS,
-  insightsActivityPath,
-  insightsRunTracePath,
-  insightsToolsPath,
-  insightsUsagePath,
   modelsWithMissingRates,
   tokensLabel,
-  ActivityResponseSchema,
-  OverallUsageSchema,
-  RunTraceSchema,
-  ToolsResponseSchema,
   type DayActivity,
   type InsightsRange,
   type ModelUsage,
   type OverallUsage,
+} from "@corbits/insights/client";
+
+import {
+  RunsSchema,
+  useAPIQuery,
+  type APIQuery,
+  type WorkflowRun,
+} from "../api";
+import { useBench } from "../bench-context";
+import {
+  ActivityResponseSchema,
+  OverallUsageSchema,
+  RunTraceSchema,
+  ToolsResponseSchema,
+  insightsActivityPath,
+  insightsRunTracePath,
+  insightsToolsPath,
+  insightsUsagePath,
   type RunTrace,
   type ToolCall,
 } from "../insights-api";

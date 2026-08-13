@@ -1,15 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { APIQuery } from "../src/api";
-import { BenchProvider } from "../src/bench-context";
 import {
   createInsightsWindow,
   EMPTY_OVERALL_USAGE,
   type DayActivity,
   type OverallUsage,
-  type ToolCall,
-} from "../src/insights-api";
+} from "@corbits/insights/client";
+
+import type { APIQuery } from "../src/api";
+import { BenchProvider } from "../src/bench-context";
+import { type ToolCall } from "../src/insights-api";
 import { NavigationProvider } from "../src/navigation";
 import { InsightsPage } from "../src/pages/insights-page";
 import type { Routine } from "../src/routines-api";
