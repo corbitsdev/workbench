@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
+import { isMyraChannelId } from "../myra-channel";
 import { useNavigate } from "../navigation";
 import type { SessionUser } from "../session";
 import {
@@ -28,6 +29,7 @@ import {
   clearProfileInCanvas,
   initialCanvasColumnState,
   openProfileInCanvas,
+  resolveCanvasFocus,
   resolveCanvasVisibility,
 } from "./canvas-column-state";
 import { CanvasAvailabilityProvider } from "./canvas-availability";
@@ -37,6 +39,7 @@ import { ContextualPanel } from "./contextual-panel";
 import { Rail } from "./rail";
 import {
   COL2_ID,
+  deriveCol2Width,
   StageChromeProvider,
   StageToggleFallback,
   useToggleRegistry,
@@ -65,7 +68,7 @@ export function AppShell({
   const showContextualColumn = contextualPanelVisible(layoutMode);
   const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
   const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
-  const [col2Collapsed, setCol2Collapsed] = useState(false);
+  const [userCollapsedCol2, setUserCollapsedCol2] = useState(false);
   const { toggleMounted, registerToggle } = useToggleRegistry();
   const frameRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -77,10 +80,12 @@ export function AppShell({
   useScrollReset(mainRef, path);
 
   // Mock contract: every top-level navigation lands with col2 open again —
-  // a collapse is a per-surface choice, not a sticky preference (that is
-  // CL-5936's wide-mode territory).
+  // a collapse is a per-surface choice, not a sticky preference. Wide mode
+  // needs no reset here: it is derived straight from `path` every render
+  // (see `col2Width` below), so it already turns off the moment the route
+  // stops being the Myra channel.
   useEffect(() => {
-    setCol2Collapsed(false);
+    setUserCollapsedCol2(false);
   }, [path]);
 
   // Workbench switch clears auxiliary canvas content and leaves any channel
@@ -111,22 +116,41 @@ export function AppShell({
     setCanvasState((state) => clearProfileInCanvas(state));
   };
 
+  // Canvas-dominant focus collapses col2 outright — there is no room for a
+  // third column while the canvas is reading full-screen. No trigger sets
+  // `canvasState.focus` yet (that is a future canvas-focus control's job);
+  // this just makes col2 obey the moment one exists.
+  const canvasFocused = resolveCanvasFocus(canvasState, canvasAllowed);
+  // Wide is route-derived: col2 widens for the Talk-to-Myra context, the
+  // moment the open channel is the one "Talk to Myra" last landed us on.
+  const col2Wide = isMyraChannelId(channelIdFromPath(path));
+  const col2Width = contextualAsDrawer
+    ? narrowPanelOpen
+      ? "normal"
+      : "collapsed"
+    : deriveCol2Width({
+        userCollapsed: userCollapsedCol2,
+        canvasFocused,
+        wideRoute: col2Wide,
+      });
+  const col2Collapsed = col2Width === "collapsed";
+
   // ONE collapse control (the stage top bar's toggle) drives both regimes:
   // in-flow col2 collapses on wide layouts; the overlay drawer opens on
   // narrow ones. There are no per-column chevrons.
   const stageChrome = useMemo<StageChrome>(
     () => ({
-      col2Collapsed: contextualAsDrawer ? !narrowPanelOpen : col2Collapsed,
+      col2Collapsed,
       toggleCol2: () => {
         if (contextualAsDrawer) {
           setNarrowPanelOpen((open) => !open);
           return;
         }
-        setCol2Collapsed((collapsed) => !collapsed);
+        setUserCollapsedCol2((collapsed) => !collapsed);
       },
       registerToggle,
     }),
-    [contextualAsDrawer, narrowPanelOpen, col2Collapsed, registerToggle],
+    [contextualAsDrawer, col2Collapsed, registerToggle],
   );
 
   return (
@@ -135,7 +159,12 @@ export function AppShell({
       openProfile={handleOpenProfile}
       closeProfile={handleCloseProfile}
     >
-      <div className="shell-frame" ref={frameRef} data-layout={layoutMode}>
+      <div
+        className="shell-frame"
+        ref={frameRef}
+        data-layout={layoutMode}
+        data-col2={col2Width}
+      >
         <Rail
           path={path}
           onNavigate={navigate}

@@ -1,9 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   findMyraChannel,
+  isMyraChannelId,
   isMyraChannelTitle,
   MYRA_CHANNEL_TITLE,
+  resetMyraChannelCache,
 } from "./myra-channel";
 import type { Channel } from "@corbits/chat-ui";
 
@@ -22,6 +24,15 @@ function channel(partial: {
 }
 
 describe("myra-channel helpers", () => {
+  afterEach(() => {
+    resetMyraChannelCache();
+  });
+
+  test("isMyraChannelId is false until a channel id is cached", () => {
+    expect(isMyraChannelId("chan-1")).toBe(false);
+    expect(isMyraChannelId(null)).toBe(false);
+  });
+
   test("MYRA_CHANNEL_TITLE is Myra", () => {
     expect(MYRA_CHANNEL_TITLE).toBe("Myra");
   });

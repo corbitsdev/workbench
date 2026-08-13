@@ -3,9 +3,12 @@ import { describe, expect, test } from "bun:test";
 import {
   clearCanvasForTenantSwitch,
   clearProfileInCanvas,
+  focusCanvas,
   initialCanvasColumnState,
   openProfileInCanvas,
+  resolveCanvasFocus,
   resolveCanvasVisibility,
+  unfocusCanvas,
 } from "./canvas-column-state";
 
 const sampleProfile = {
@@ -25,10 +28,11 @@ const otherProfile = {
 };
 
 describe("canvas column state", () => {
-  test("starts closed with no profile", () => {
+  test("starts closed with no profile, not focused", () => {
     expect(initialCanvasColumnState()).toEqual({
       open: false,
       profile: null,
+      focus: false,
     });
   });
 
@@ -38,6 +42,7 @@ describe("canvas column state", () => {
     ).toEqual({
       open: true,
       profile: sampleProfile,
+      focus: false,
     });
   });
 
@@ -49,18 +54,43 @@ describe("canvas column state", () => {
     expect(openProfileInCanvas(withFirst, otherProfile)).toEqual({
       open: true,
       profile: otherProfile,
+      focus: false,
     });
   });
 
-  test("clearing a profile closes the canvas", () => {
-    const withProfile = openProfileInCanvas(
-      initialCanvasColumnState(),
-      sampleProfile,
+  test("clearing a profile closes the canvas and drops focus", () => {
+    const withProfile = focusCanvas(
+      openProfileInCanvas(initialCanvasColumnState(), sampleProfile),
     );
     expect(clearProfileInCanvas(withProfile)).toEqual({
       open: false,
       profile: null,
+      focus: false,
     });
+  });
+
+  test("focusCanvas opens the canvas and enters focus", () => {
+    expect(focusCanvas(initialCanvasColumnState())).toEqual({
+      open: true,
+      profile: null,
+      focus: true,
+    });
+  });
+
+  test("unfocusCanvas exits focus without closing the canvas", () => {
+    const focused = focusCanvas(initialCanvasColumnState());
+    expect(unfocusCanvas(focused)).toEqual({
+      open: true,
+      profile: null,
+      focus: false,
+    });
+  });
+
+  test("canvas focus is gated by the viewport allow flag, same as visibility", () => {
+    const focused = focusCanvas(initialCanvasColumnState());
+    expect(resolveCanvasFocus(focused, true)).toBe(true);
+    expect(resolveCanvasFocus(focused, false)).toBe(false);
+    expect(resolveCanvasFocus(initialCanvasColumnState(), true)).toBe(false);
   });
 
   test("visibility is gated by the viewport allow flag", () => {

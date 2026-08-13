@@ -14,6 +14,22 @@ export function isMyraChannelTitle(title: string): boolean {
   return title.trim().toLowerCase() === MYRA_CHANNEL_TITLE.toLowerCase();
 }
 
+/** The last channel id `ensureMyraChannel` resolved to, for the shell's
+ * col2-wide derivation (CL-5936): "Myra is the active surface" reduces to
+ * "the open channel is the one Talk-to-Myra last landed us on". Module-level
+ * because the shell needs it synchronously from `path` alone, with no
+ * channel-title fetch of its own. */
+let cachedMyraChannelId: string | null = null;
+
+export function isMyraChannelId(channelId: string | null): boolean {
+  return channelId !== null && channelId === cachedMyraChannelId;
+}
+
+/** Test helper — drop the cached id between cases. */
+export function resetMyraChannelCache(): void {
+  cachedMyraChannelId = null;
+}
+
 /** Prefer an exact Myra title; first match wins across the given list. */
 export function findMyraChannel(
   channels: readonly Channel[],
@@ -36,12 +52,14 @@ export async function ensureMyraChannel(
     ]);
     const existing = findMyraChannel(channels) ?? findMyraChannel(chats);
     if (existing !== undefined) {
+      cachedMyraChannelId = existing.id;
       return { kind: "ready", channelId: existing.id };
     }
     const created = await createChannel(tenantId, {
       kind: "channel",
       name: MYRA_CHANNEL_TITLE,
     });
+    cachedMyraChannelId = created.id;
     return { kind: "ready", channelId: created.id };
   } catch (cause) {
     return {

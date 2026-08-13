@@ -92,10 +92,12 @@ html {
   cursor: not-allowed;
 }
 
-/* Mock v2 --col2-w: 16.5rem; canvas-on tightens to --col2-w-tight 14rem. */
+/* Mock v2 --col2-w: 16.5rem; canvas-on tightens to --col2-w-tight 14rem;
+   --col2-w-wide 18.5rem is col2's Talk-to-Myra width (data-col2="wide"). */
 :root {
   --shell-contextual-width: 16.5rem;
   --shell-contextual-width-tight: 14rem;
+  --shell-contextual-width-wide: 18.5rem;
   --shell-canvas-width: min(36rem, 42vw);
   --shell-rail-brand: #e98428;
   --shell-rail-brand-hover: #d47420;
@@ -116,6 +118,14 @@ html {
 .dark {
   --ok: #5cb573;
   --warn: #d9a441;
+}
+
+/* Mock .app[data-col2="wide"] { grid-template-columns: ... var(--col2-w-wide) ... }.
+   Talk-to-Myra widens col2; canvas is still the only stage-width changer, so
+   the tightening rule below (later in the cascade, same specificity) wins
+   over this one whenever the canvas is also open. */
+.shell-frame[data-col2="wide"] {
+  --shell-contextual-width: var(--shell-contextual-width-wide);
 }
 
 /* Mock .app[data-canvas="on"] { --col2-w: var(--col2-w-tight) }. */
