@@ -16,6 +16,15 @@
 
 @import "tailwindcss";
 
+/* The import above re-emits Tailwind's default font tokens after react-ui's
+   prebuilt sheet declared the brand stacks — same layer, later order, so the
+   defaults were winning and the whole app fell back to system fonts. Declare
+   the brand stacks in this build so the last @layer theme carries them. */
+@theme {
+  --font-sans: "Red Hat Display", "Open Sans", Roboto, Arial, sans-serif;
+  --font-mono: "Space Mono", "Fira Code", Monaco, Consolas, monospace;
+}
+
 /* Workspace UI packages are source-only (no build step): their .tsx files
    carry className utilities and artifact-ui's kind-color.ts returns palette
    class strings. Tailwind v4's auto-detection stays inside apps/web, so each

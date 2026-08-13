@@ -10,7 +10,7 @@
 // open state and the create flow, so other sidebar variants can compose
 // the same parts.
 
-import { ChevronDown, LayoutGrid, Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import { useState } from "react";
 
 import { BenchApiError, createBench } from "./api";
@@ -24,6 +24,19 @@ export function createBenchErrorMessage(cause: unknown): string {
     return BENCH_STRINGS.createBenchConflictError;
   }
   return BENCH_STRINGS.createBenchError;
+}
+
+/** Square monogram for the trigger — the first letters of up to two words. */
+export function benchMonogram(name: string | null): string {
+  if (name === null) return "··";
+  const initials = name
+    .split(/[\s._-]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0))
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return initials.length > 0 ? initials : "··";
 }
 
 export function BenchSwitcherTrigger({
@@ -44,7 +57,9 @@ export function BenchSwitcherTrigger({
       aria-expanded={open}
       aria-label={BENCH_STRINGS.switcherLabel}
     >
-      <LayoutGrid size={17} aria-hidden />
+      <span className="bench-switcher-mark" aria-hidden>
+        {benchMonogram(activeName)}
+      </span>
       <span className="bench-switcher-name">
         {activeName ?? BENCH_STRINGS.switcherEmpty}
       </span>

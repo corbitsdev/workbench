@@ -18,7 +18,7 @@ import {
 } from "@corbits/react-ui";
 import { routineMatchesModeFilter } from "@corbits/routines/trigger";
 import type { RoutineModeFilter } from "@corbits/routines/trigger";
-import { Workflow } from "lucide-react";
+import { Search, Workflow } from "lucide-react";
 import { useState } from "react";
 
 import { useBench } from "../bench-context";
@@ -40,6 +40,38 @@ function routineIdFromPath(path: string): string | null {
 
 function routinePath(id: string): string {
   return `/routines/${encodeURIComponent(id)}`;
+}
+
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
+function clockTime(hour: number, minute: number): string {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+/** One-line cadence for a routine row's detail slot (mock's schedule line). */
+export function routineTriggerSummary(trigger: Routine["trigger"]): string {
+  if (trigger === null) return "On demand";
+  switch (trigger.kind) {
+    case "interval": {
+      const unit =
+        trigger.every === 1 ? trigger.unit.replace(/s$/, "") : trigger.unit;
+      return `Every ${trigger.every} ${unit}`;
+    }
+    case "daily":
+      return `Daily ${clockTime(trigger.hour, trigger.minute)}`;
+    case "weekly":
+      return `Every ${WEEKDAY_NAMES[trigger.dayOfWeek] ?? "week"} ${clockTime(trigger.hour, trigger.minute)}`;
+    case "cron":
+      return `Cron ${trigger.expression}`;
+  }
 }
 
 /**
@@ -130,12 +162,15 @@ export function RoutinesFeedBand({
 
   return (
     <div className="panel-stack" aria-label="Routines">
-      <Input
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search routines"
-        aria-label="Search routines"
-      />
+      <label className="shell-panel-search">
+        <Search aria-hidden="true" />
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search…"
+          aria-label="Search routines"
+        />
+      </label>
       <div
         className="panel-filter-row"
         role="group"
@@ -175,8 +210,24 @@ export function RoutinesFeedBand({
             data-ctx-routine-name={routine.name}
           >
             <SidebarItemRow
-              name={routine.name}
-              meta={routine.enabled ? "On" : "Off"}
+              leading={<Workflow />}
+              name={
+                <span className="panel-row-copy">
+                  <strong>{routine.name}</strong>
+                  <span>{routineTriggerSummary(routine.trigger)}</span>
+                </span>
+              }
+              meta={
+                <span
+                  className={
+                    routine.enabled
+                      ? "panel-status is-ok"
+                      : "panel-status is-muted"
+                  }
+                >
+                  {routine.enabled ? "On" : "Off"}
+                </span>
+              }
               selected={selectedId === routine.id}
               onSelect={() => onNavigate(routinePath(routine.id))}
             />
