@@ -853,6 +853,53 @@
   color: var(--muted-foreground);
 }
 
+/* Mock `.typing`: an agent-or-member row with a three-dot pulse, shown
+   between the timeline and the composer while `chat.typing` is fresh. */
+.chat-typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.7rem;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+}
+
+.chat-typing-indicator-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  height: 1rem;
+}
+
+.chat-typing-indicator-dots span {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 0;
+  background: var(--muted-foreground);
+  animation: chat-typing-dot 1.2s ease infinite;
+}
+
+.chat-typing-indicator-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-typing-indicator-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chat-typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
 .chat-composer-row {
   display: flex;
   align-items: flex-end;

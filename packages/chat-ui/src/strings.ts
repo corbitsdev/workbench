@@ -98,6 +98,7 @@ export const CHAT_STRINGS = {
   blockFormSubmit: "Submit",
   dayDividerToday: "Today",
   dayDividerYesterday: "Yesterday",
+  typingIndicator: (label: string) => `${label} is typing`,
   rowMenuLabel: "Channel actions",
   rowMenuRename: "Rename",
   rowMenuPin: "Pin",

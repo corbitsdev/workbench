@@ -41,6 +41,7 @@ import type {
   ChannelThread,
   CreateChannelInput,
   MessageItem,
+  Part,
 } from "./api";
 import { ChannelSettingsPanel } from "./channel-settings-panel";
 import { Composer, partsForSend } from "./composer";
@@ -51,8 +52,19 @@ import { NewChannelDialog } from "./new-channel-dialog";
 import { CHAT_STRINGS } from "./strings";
 import { AgentBadge, ChannelTimeline } from "./timeline";
 import type { CurrentUser, ThreadAffordanceMeta } from "./timeline";
+import {
+  nextTypingState,
+  typingLabel,
+  TypingIndicator,
+} from "./typing-indicator";
+import type { TypingState } from "./typing-indicator";
 import type { ProfileSubject } from "./profile-subject";
 import { useChannelStream } from "./use-channel-stream";
+
+/** How long a `chat.typing` ping stays reflected in the banner before it's
+ * treated as stale — the sender polls its own composer more often than
+ * this, so a live typist never visibly flickers. */
+const TYPING_INDICATOR_TIMEOUT_MS = 4000;
 
 /**
  * The host's answer to "which bench does this account chat in": mirrors
@@ -187,12 +199,14 @@ function ChatWorkspaceInner({
   onChannelChange,
   currentUser,
   onOpenProfile,
+  onOpenArtifact,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
   readonly onChannelChange?: (channelId: string) => void;
   readonly currentUser?: CurrentUser;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
+  readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -433,9 +447,47 @@ function ChatWorkspaceInner({
       void loadThreads(activeChannelId);
     }
   };
+
+  const [typingState, setTypingState] = useState<TypingState>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+
+  useEffect(
+    () => () => {
+      if (typingTimerRef.current !== undefined) {
+        clearTimeout(typingTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const handleStreamEvent = (eventType: string, data: unknown) => {
+    const next = nextTypingState(
+      typingState,
+      { eventType, data },
+      currentUser?.principalId,
+      Date.now(),
+      TYPING_INDICATOR_TIMEOUT_MS,
+    );
+    if (next !== typingState) {
+      setTypingState(next);
+      if (typingTimerRef.current !== undefined) {
+        clearTimeout(typingTimerRef.current);
+      }
+      if (next !== null) {
+        typingTimerRef.current = setTimeout(
+          () => setTypingState(null),
+          TYPING_INDICATOR_TIMEOUT_MS,
+        );
+      }
+    }
+    if (eventType !== "chat.typing") refreshUnlessUnauthorized();
+  };
+
   const streamState = useChannelStream(
     activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
-    refreshUnlessUnauthorized,
+    handleStreamEvent,
     refreshUnlessUnauthorized,
   );
 
@@ -694,7 +746,18 @@ function ChatWorkspaceInner({
                     threadMetaByMessageId={threadMetaByMessageId}
                     onOpenThread={openThreadForMessage}
                     {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
+                    {...(onOpenArtifact !== undefined
+                      ? { onOpenArtifact }
+                      : {})}
                   />
+                  {typingState !== null ? (
+                    <TypingIndicator
+                      label={typingLabel(
+                        typingState.principalId,
+                        activeChannel?.participants ?? [],
+                      )}
+                    />
+                  ) : null}
                   <Composer
                     agents={mentionCandidatesFromParticipants(
                       activeChannel?.participants ?? [],
@@ -753,6 +816,7 @@ export function ChatWorkspace({
   onChannelChange,
   currentUser,
   onOpenProfile,
+  onOpenArtifact,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -768,6 +832,8 @@ export function ChatWorkspace({
   readonly currentUser?: CurrentUser;
   /** Open a member/agent ProfileCard in the host canvas (shell mock § Profile). */
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
+  /** Open a message's artifact chip — see `ChannelTimeline`'s `onOpenArtifact`. */
+  readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -780,6 +846,7 @@ export function ChatWorkspace({
           {...(onChannelChange !== undefined ? { onChannelChange } : {})}
           {...(currentUser !== undefined ? { currentUser } : {})}
           {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
+          {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
         />
       );
     case "empty":
