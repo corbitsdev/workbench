@@ -912,37 +912,118 @@
   border: 0;
 }
 
-.chat-file-part {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.4rem 0.65rem;
+/* Mock `.artifact-chip`: a file part rendered as an open-able reference
+   rather than a plain label — accent-tinted so it reads as a link into the
+   Library, square-cornered like every other new surface in this pass. */
+.chat-artifact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
   margin: 0.15rem 0;
-  border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  background: var(--card, var(--background));
-  padding: 0.45rem 0.65rem;
-  font-size: 0.8125rem;
-  line-height: 1.35;
-}
-
-.chat-file-part-label {
-  color: var(--muted-foreground);
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.chat-file-part-name {
+  max-width: 100%;
+  min-width: 16rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border));
+  border-radius: 0;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
   color: var(--foreground);
-  font-weight: 500;
-  word-break: break-word;
+  font-size: 0.8125rem;
+  text-align: left;
+  transition: background 120ms ease;
 }
 
-.chat-file-part-type {
+.chat-artifact-chip:not(:disabled) {
+  cursor: pointer;
+}
+
+.chat-artifact-chip:not(:disabled):hover {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.chat-artifact-chip:disabled {
+  opacity: 0.8;
+}
+
+.chat-artifact-chip-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 1px solid var(--border);
+  background: var(--card, var(--background));
+  color: var(--primary);
+}
+
+.chat-artifact-chip-icon svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.chat-artifact-chip-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-artifact-chip-meta strong {
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-artifact-chip-meta span {
+  font-size: 0.7rem;
   color: var(--muted-foreground);
-  font-size: 0.75rem;
+}
+
+/* Mock `.typing`: an agent-or-member row with a three-dot pulse, shown
+   between the timeline and the composer while `chat.typing` is fresh. */
+.chat-typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.7rem;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+}
+
+.chat-typing-indicator-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  height: 1rem;
+}
+
+.chat-typing-indicator-dots span {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 0;
+  background: var(--muted-foreground);
+  animation: chat-typing-dot 1.2s ease infinite;
+}
+
+.chat-typing-indicator-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-typing-indicator-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chat-typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
 }
 
 .chat-composer-row {

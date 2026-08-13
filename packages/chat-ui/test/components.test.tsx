@@ -13,6 +13,13 @@ import {
 } from "../src/new-channel-dialog";
 import { profileSubjectFromParticipant } from "../src/profile-subject";
 import { renamePayload, rowMenuLabels } from "../src/sidebar";
+import {
+  isTypingStateExpired,
+  nextTypingState,
+  parseTypingEvent,
+  typingLabel,
+  TypingIndicator,
+} from "../src/typing-indicator";
 
 import { ChannelTimeline } from "../src/timeline";
 /** The floor: no rendered text may ever contain a raw identifier. */
@@ -162,6 +169,77 @@ describe("ChannelTimeline", () => {
     expect(markup).toContain("Attachment");
     expect(markup).not.toContain("JVBERi0xLjQK");
     expect(markup).not.toContain("blob:");
+  });
+
+  test("a data-only file part (not yet persisted) renders its artifact chip inert", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file-inline",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "notes.txt",
+            mediaType: "text/plain",
+            data: "aGVsbG8=",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline items={withFile} onOpenArtifact={() => {}} />,
+    );
+    expect(markup).toMatch(
+      /<button[^>]*class="chat-artifact-chip"[^>]*disabled/,
+    );
+  });
+
+  test("a blobId-backed file part renders its artifact chip clickable when onOpenArtifact is wired", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file-blob",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "matrix.csv",
+            mediaType: "text/csv",
+            blobId: "blob_fixture1_1",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline items={withFile} onOpenArtifact={() => {}} />,
+    );
+    expect(markup).toContain("matrix.csv");
+    expect(markup).not.toMatch(
+      /<button[^>]*class="chat-artifact-chip"[^>]*disabled/,
+    );
+  });
+
+  test("a blobId-backed file part stays inert with no onOpenArtifact wired", () => {
+    const withFile: MessageItem[] = [
+      {
+        id: "m-file-blob-unwired",
+        createdAt: "2026-01-01T00:08:00.000Z",
+        parts: [
+          {
+            kind: "file",
+            name: "matrix.csv",
+            mediaType: "text/csv",
+            blobId: "blob_fixture1_1",
+          },
+        ],
+        sender: { name: null, address: "prn_fixture1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(<ChannelTimeline items={withFile} />);
+    expect(markup).toMatch(
+      /<button[^>]*class="chat-artifact-chip"[^>]*disabled/,
+    );
   });
 
   test("renders the signed-in user's own bubble right-aligned, others left-aligned", () => {
@@ -458,5 +536,134 @@ describe("profileSubjectFromParticipant", () => {
     expect(subject.kind).toBe("member");
     expect(subject.displayName).toBe("Ada Lovelace");
     expect(subject.initials).toBe("AL");
+  });
+});
+
+describe("parseTypingEvent", () => {
+  test("accepts a well-shaped payload", () => {
+    expect(parseTypingEvent({ principalId: "prn_typist1" })).toEqual({
+      principalId: "prn_typist1",
+    });
+  });
+
+  test("rejects a missing principalId", () => {
+    expect(parseTypingEvent({})).toBeNull();
+  });
+
+  test("rejects a non-object payload", () => {
+    expect(parseTypingEvent("prn_typist1")).toBeNull();
+    expect(parseTypingEvent(null)).toBeNull();
+  });
+});
+
+describe("nextTypingState", () => {
+  test("a chat.typing event from someone else opens the banner with an expiry", () => {
+    const next = nextTypingState(
+      null,
+      { eventType: "chat.typing", data: { principalId: "prn_other1" } },
+      "prn_self1",
+      1000,
+      4000,
+    );
+    expect(next).toEqual({ principalId: "prn_other1", expiresAt: 5000 });
+  });
+
+  test("a chat.typing event carrying the signed-in user's own id is ignored", () => {
+    const next = nextTypingState(
+      null,
+      { eventType: "chat.typing", data: { principalId: "prn_self1" } },
+      "prn_self1",
+      1000,
+      4000,
+    );
+    expect(next).toBeNull();
+  });
+
+  test("any other event type leaves the current banner untouched", () => {
+    const current = { principalId: "prn_other1", expiresAt: 5000 };
+    const next = nextTypingState(
+      current,
+      { eventType: "chat.agent", data: {} },
+      "prn_self1",
+      1200,
+      4000,
+    );
+    expect(next).toBe(current);
+  });
+
+  test("a malformed chat.typing payload leaves the current banner untouched", () => {
+    const current = { principalId: "prn_other1", expiresAt: 5000 };
+    const next = nextTypingState(
+      current,
+      { eventType: "chat.typing", data: {} },
+      "prn_self1",
+      1200,
+      4000,
+    );
+    expect(next).toBe(current);
+  });
+
+  test("a second typist replaces the first — the banner always shows the latest ping", () => {
+    const afterA = nextTypingState(
+      null,
+      { eventType: "chat.typing", data: { principalId: "prn_a1" } },
+      "prn_self1",
+      1000,
+      4000,
+    );
+    const afterB = nextTypingState(
+      afterA,
+      { eventType: "chat.typing", data: { principalId: "prn_b1" } },
+      "prn_self1",
+      1500,
+      4000,
+    );
+    expect(afterB).toEqual({ principalId: "prn_b1", expiresAt: 5500 });
+  });
+});
+
+describe("isTypingStateExpired", () => {
+  test("is false before the expiry", () => {
+    expect(
+      isTypingStateExpired(
+        { principalId: "prn_other1", expiresAt: 5000 },
+        4000,
+      ),
+    ).toBe(false);
+  });
+
+  test("is true once past the expiry", () => {
+    expect(
+      isTypingStateExpired(
+        { principalId: "prn_other1", expiresAt: 5000 },
+        5000,
+      ),
+    ).toBe(true);
+  });
+
+  test("is false with no active state", () => {
+    expect(isTypingStateExpired(null, 5000)).toBe(false);
+  });
+});
+
+describe("typingLabel", () => {
+  test("uses the matching participant's handle, never the raw principal id", () => {
+    const label = typingLabel("prn_teammate1", [
+      { address: "prn_teammate1@agents.example", handle: "ada" },
+    ]);
+    expect(label).toBe("ada");
+    expect(label).not.toMatch(RAW_ID_PATTERN);
+  });
+
+  test("falls back to the deterministic Member label with no matching participant", () => {
+    expect(typingLabel("prn_unknown1", [])).toBe("Member");
+  });
+});
+
+describe("TypingIndicator", () => {
+  test("renders the given label as an 'is typing' status", () => {
+    const markup = renderToStaticMarkup(<TypingIndicator label="ada" />);
+    expect(markup).toContain("ada is typing");
+    expect(markup).toContain('role="status"');
   });
 });

@@ -104,3 +104,14 @@ export type {
 } from "./channel-settings";
 export { profileSubjectFromParticipant } from "./profile-subject";
 export type { ProfileSubject } from "./profile-subject";
+
+export { ArtifactChip } from "./artifact-chip";
+
+export {
+  TypingIndicator,
+  parseTypingEvent,
+  nextTypingState,
+  isTypingStateExpired,
+  typingLabel,
+} from "./typing-indicator";
+export type { TypingEvent, TypingState } from "./typing-indicator";

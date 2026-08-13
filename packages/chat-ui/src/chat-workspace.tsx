@@ -41,6 +41,7 @@ import type {
   ChannelThread,
   CreateChannelInput,
   MessageItem,
+  Part,
 } from "./api";
 import { ChannelSettingsSurface } from "./channel-settings";
 import { Composer, partsForSend } from "./composer";
@@ -51,6 +52,11 @@ import { NewChannelDialog } from "./new-channel-dialog";
 import { CHAT_STRINGS } from "./strings";
 import { AgentBadge, ChannelTimeline } from "./timeline";
 import type { CurrentUser, ThreadAffordanceMeta } from "./timeline";
+import {
+  typingLabel,
+  TypingIndicator,
+  useTypingIndicator,
+} from "./typing-indicator";
 import type { ProfileSubject } from "./profile-subject";
 import { useChannelStream } from "./use-channel-stream";
 
@@ -189,6 +195,7 @@ function ChatWorkspaceInner({
   onOpenProfile,
   settingsOpen = false,
   onSettingsOpenChange,
+  onOpenArtifact,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
@@ -201,6 +208,7 @@ function ChatWorkspaceInner({
    * URL (`/c/:id/settings`). */
   readonly settingsOpen?: boolean;
   readonly onSettingsOpenChange?: (open: boolean) => void;
+  readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -438,9 +446,16 @@ function ChatWorkspaceInner({
       void loadThreads(activeChannelId);
     }
   };
+
+  const { typingState, handleStreamEvent: handleTypingEvent } =
+    useTypingIndicator(currentUser?.principalId, activeChannelId);
+
   const streamState = useChannelStream(
     activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
-    refreshUnlessUnauthorized,
+    (eventType, data) => {
+      handleTypingEvent(eventType, data);
+      if (eventType !== "chat.typing") refreshUnlessUnauthorized();
+    },
     refreshUnlessUnauthorized,
   );
 
@@ -754,7 +769,18 @@ function ChatWorkspaceInner({
                     threadMetaByMessageId={threadMetaByMessageId}
                     onOpenThread={openThreadForMessage}
                     {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
+                    {...(onOpenArtifact !== undefined
+                      ? { onOpenArtifact }
+                      : {})}
                   />
+                  {typingState !== null ? (
+                    <TypingIndicator
+                      label={typingLabel(
+                        typingState.principalId,
+                        activeChannel?.participants ?? [],
+                      )}
+                    />
+                  ) : null}
                   <Composer
                     agents={mentionCandidatesFromParticipants(
                       activeChannel?.participants ?? [],
@@ -800,6 +826,7 @@ export function ChatWorkspace({
   onOpenProfile,
   settingsOpen,
   onSettingsOpenChange,
+  onOpenArtifact,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -821,6 +848,8 @@ export function ChatWorkspace({
   /** Fired when the settings surface should open or close, so the host can
    * reflect it in the URL. */
   readonly onSettingsOpenChange?: (open: boolean) => void;
+  /** Open a message's artifact chip — see `ChannelTimeline`'s `onOpenArtifact`. */
+  readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -837,6 +866,7 @@ export function ChatWorkspace({
           {...(onSettingsOpenChange !== undefined
             ? { onSettingsOpenChange }
             : {})}
+          {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
         />
       );
     case "empty":

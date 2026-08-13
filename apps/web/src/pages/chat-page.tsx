@@ -29,6 +29,14 @@ export function ChatPage({
   const tenant = tenantResolutionFromBench(bench);
   const principalId = bench.selectedPrincipalId ?? undefined;
 
+  // A chat file part only carries a blob id today — Library artifacts have
+  // no stored link back to it, so the chip can only send the reader to the
+  // Library at large. A real per-artifact deep link (and opening in canvas
+  // rather than navigating away) is follow-up work once that link exists.
+  function openArtifact() {
+    navigate("/library");
+  }
+
   return (
     <ChatWorkspace
       tenant={tenant}
@@ -43,6 +51,7 @@ export function ChatPage({
           open ? channelSettingsPath(channelId) : channelPath(channelId),
         );
       }}
+      onOpenArtifact={openArtifact}
     />
   );
 }
