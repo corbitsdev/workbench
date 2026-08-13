@@ -112,6 +112,15 @@ describe("library panel contribution", () => {
   });
 });
 
+describe("insights panel contribution", () => {
+  test("the /insights contribution declares pageSpecific", () => {
+    ensurePanelContributions();
+    const contribution = resolvePanelContribution("/insights/runs/run_123");
+    expect(contribution?.id).toBe("insights");
+    expect(contribution?.pageSpecific).toBeDefined();
+  });
+});
+
 describe("assignChannelBucket", () => {
   test("pinned channels go to pinned regardless of kind", () => {
     expect(assignChannelBucket({ ...baseChannel, pinned: true })).toBe(
