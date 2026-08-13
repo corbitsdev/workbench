@@ -1,4 +1,4 @@
-// Entry point for the `workbench` command: two curated verbs, no
+// Entry point for the `workbench` command: three curated verbs, no
 // generic flags, no raw-API escape hatch, and nothing interactive —
 // the same invocations serve local bootstrap and hosted provisioning.
 
@@ -9,7 +9,8 @@ import {
   isCliError,
 } from "@workbench/hub-client";
 import { readSeedConfig, readSetupConfig } from "./config";
-import { createDbSetupRunner } from "./db-setup";
+import { createDbSetupRunner, createResetRunner } from "./db-setup";
+import { runReset } from "./reset";
 import { runSeed } from "./seed";
 import { runSetup } from "./setup";
 
@@ -22,8 +23,11 @@ commands:
           report what you still need to supply
   seed    deploy the default workflow set to the bench and
           confirm every deployment answers
+  reset   tear down local state (database schema and on-disk
+          asset state) so the next \`bun run dev\` starts fresh;
+          refuses against anything but a local DATABASE_URL
 
-Both commands read their configuration from the environment (see
+All three commands read their configuration from the environment (see
 .env.example at the repository root) and are safe to re-run.
 `;
 
@@ -66,6 +70,13 @@ async function main(argv: string[]): Promise<void> {
         config,
         api: createHubAPI(config.hubUrl),
         pushWorkflow: createGitWorkflowPusher(),
+        log: out,
+      });
+      return;
+    }
+    case "reset": {
+      await runReset({
+        runReset: createResetRunner(REPO_ROOT),
         log: out,
       });
       return;
