@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/app";
 import {
   CREDENTIAL_PROVIDERS,
+  readOpenRouterConnectReturn,
   submitCredential,
   testCredential,
   triggerFirstLoginProvisioning,
@@ -310,5 +311,102 @@ describe("App once onboarding is behind you", () => {
     );
 
     expect(markup).toContain("shell-frame");
+  });
+});
+
+describe("readOpenRouterConnectReturn", () => {
+  test("an unrelated query string is nobody's outcome", () => {
+    expect(readOpenRouterConnectReturn("")).toBeNull();
+    expect(readOpenRouterConnectReturn("?foo=bar")).toBeNull();
+  });
+
+  test("a seeded return carries the bench and its confirmed routines", () => {
+    expect(
+      readOpenRouterConnectReturn(
+        "?connect=openrouter&outcome=seeded&tenantSlug=ada-user1&workflows=echo,assistant",
+      ),
+    ).toEqual({
+      kind: "seeded",
+      tenantSlug: "ada-user1",
+      workflows: ["echo", "assistant"],
+    });
+  });
+
+  test("a seeded return missing its details is an error, never a fabricated success", () => {
+    const result = readOpenRouterConnectReturn(
+      "?connect=openrouter&outcome=seeded",
+    );
+    expect(result?.kind).toBe("error");
+  });
+
+  test("a known failure code maps to its own copy", () => {
+    const result = readOpenRouterConnectReturn(
+      "?connect=openrouter&outcome=error&code=exchange_failed",
+    );
+    expect(result?.kind).toBe("error");
+    if (result?.kind === "error")
+      expect(result.message).toContain("did not hand back a key");
+  });
+
+  test("a rate-limited start maps to its own copy", () => {
+    const result = readOpenRouterConnectReturn(
+      "?connect=openrouter&outcome=error&code=rate_limited",
+    );
+    expect(result?.kind).toBe("error");
+    if (result?.kind === "error")
+      expect(result.message).toContain("Wait a moment");
+  });
+
+  test("an unknown failure code still reads as a failure", () => {
+    const result = readOpenRouterConnectReturn(
+      "?connect=openrouter&outcome=error&code=who_knows",
+    );
+    expect(result?.kind).toBe("error");
+    if (result?.kind === "error")
+      expect(result.message).toContain("did not finish");
+  });
+});
+
+describe("the OpenRouter connect card", () => {
+  const renderOnboardingAt = (url: string) => {
+    window.history.replaceState(null, "", url);
+    try {
+      return renderToStaticMarkup(
+        <App
+          path={ONBOARDING_PATH}
+          navigate={noop}
+          session={signedIn}
+          onSignedIn={noop}
+          onSignOut={noop}
+          onRetry={noop}
+        />,
+      );
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  };
+
+  test("the credential phase leads with the one-click connect above the key form", () => {
+    const markup = renderOnboardingAt(
+      "/onboarding?connect=openrouter&outcome=error&code=state_expired",
+    );
+
+    expect(markup).toContain("Connect with OpenRouter");
+    expect(markup).toContain("/api/onboarding/oauth/openrouter/start");
+    expect(markup.indexOf("onboarding-connect-card")).toBeLessThan(
+      markup.indexOf("onboarding-credential-form"),
+    );
+    // The failed round trip's reason is spelled out in the same phase.
+    expect(markup).toContain("took too long");
+  });
+
+  test("a seeded connect return lands on the running-routines ending", () => {
+    const markup = renderOnboardingAt(
+      "/onboarding?connect=openrouter&outcome=seeded&tenantSlug=ada-user1&workflows=echo,assistant",
+    );
+
+    expect(markup).toContain("Your first routines are running");
+    expect(markup).toContain("Echo routine");
+    expect(markup).toContain("Myra routine");
   });
 });
