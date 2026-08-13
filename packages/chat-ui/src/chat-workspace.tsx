@@ -42,7 +42,7 @@ import type {
   CreateChannelInput,
   MessageItem,
 } from "./api";
-import { ChannelSettingsPanel } from "./channel-settings-panel";
+import { ChannelSettingsSurface } from "./channel-settings";
 import { Composer, partsForSend } from "./composer";
 import type { ComposerSendPayload } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
@@ -187,12 +187,20 @@ function ChatWorkspaceInner({
   onChannelChange,
   currentUser,
   onOpenProfile,
+  settingsOpen = false,
+  onSettingsOpenChange,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
   readonly onChannelChange?: (channelId: string) => void;
   readonly currentUser?: CurrentUser;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
+  /** Whether the routed channel's settings surface should replace the
+   * conversation stage (mock § Channel settings — a full surface, never a
+   * dialog). Host-controlled the same way `channelId` is: driven from the
+   * URL (`/c/:id/settings`). */
+  readonly settingsOpen?: boolean;
+  readonly onSettingsOpenChange?: (open: boolean) => void;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -216,9 +224,6 @@ function ChatWorkspaceInner({
     null,
   );
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const [settingsChannelId, setSettingsChannelId] = useState<string | null>(
-    null,
-  );
   // null = channel root feed. A concrete id opens that thread in the same
   // geometry (timeline + composer). pendingParentMessageId is set when the
   // user opens a reply on a message that has no thread yet.
@@ -531,6 +536,24 @@ function ChatWorkspaceInner({
       )
     : undefined;
 
+  // A settings URL for a channel id that resolved channels don't contain
+  // (deleted, mistyped, cross-tenant) would otherwise leave the surface
+  // silently showing the ordinary chat view under a lying /settings URL —
+  // correct the route instead of no-opping.
+  useEffect(() => {
+    if (!settingsOpen) return;
+    if (channelsState.kind !== "ready") return;
+    if (activeChannelId === null) return;
+    if (activeChannel !== undefined) return;
+    onSettingsOpenChange?.(false);
+  }, [
+    settingsOpen,
+    channelsState.kind,
+    activeChannelId,
+    activeChannel,
+    onSettingsOpenChange,
+  ]);
+
   const replyThreads = useMemo(
     () => threads.filter((t) => t.kind === "reply"),
     [threads],
@@ -545,6 +568,42 @@ function ChatWorkspaceInner({
     (pendingParentMessageId !== null ? "New thread" : "Thread");
   // Member stack: up to three participant handles for the top bar.
   const memberStack = (activeChannel?.participants ?? []).slice(0, 3);
+
+  if (settingsOpen && activeChannelId !== null && activeChannel !== undefined) {
+    return (
+      <>
+        <div className="chat-workspace">
+          <ChannelSettingsSurface
+            key={activeChannelId}
+            tenantId={tenantId}
+            channelId={activeChannelId}
+            channelTitle={activeChannel.title || CHAT_STRINGS.unnamedChannel}
+            onBack={() => onSettingsOpenChange?.(false)}
+            onInviteParticipant={() => {
+              onSettingsOpenChange?.(false);
+              setInviteDialogOpen(true);
+            }}
+            onSaved={() => setChannelsRefresh((value) => value + 1)}
+          />
+        </div>
+        <NewChannelDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onCreate={(input) => void handleCreateChannel(input)}
+          tenantId={tenantId}
+          submitting={creating}
+          error={createChannelError}
+        />
+        <InviteAgentDialog
+          open={inviteDialogOpen}
+          onOpenChange={setInviteDialogOpen}
+          tenantId={tenantId}
+          channelId={activeChannelId}
+          onInvite={handleInvite}
+        />
+      </>
+    );
+  }
 
   return (
     <>
@@ -659,7 +718,7 @@ function ChatWorkspaceInner({
                     variant="outline"
                     size="sm"
                     aria-label={CHAT_STRINGS.channelSettingsAction}
-                    onClick={() => setSettingsChannelId(activeChannelId)}
+                    onClick={() => onSettingsOpenChange?.(true)}
                   >
                     <SlidersHorizontal />
                   </Button>
@@ -725,21 +784,6 @@ function ChatWorkspaceInner({
           onInvite={handleInvite}
         />
       ) : null}
-      {settingsChannelId !== null ? (
-        <ChannelSettingsPanel
-          open={settingsChannelId !== null}
-          onOpenChange={(nextOpen) => {
-            if (!nextOpen) setSettingsChannelId(null);
-          }}
-          tenantId={tenantId}
-          channelId={settingsChannelId}
-          onInviteParticipant={() => {
-            setSettingsChannelId(null);
-            setInviteDialogOpen(true);
-          }}
-          onSaved={() => setChannelsRefresh((value) => value + 1)}
-        />
-      ) : null}
     </>
   );
 }
@@ -754,6 +798,8 @@ export function ChatWorkspace({
   onChannelChange,
   currentUser,
   onOpenProfile,
+  settingsOpen,
+  onSettingsOpenChange,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -769,6 +815,12 @@ export function ChatWorkspace({
   readonly currentUser?: CurrentUser;
   /** Open a member/agent ProfileCard in the host canvas (shell mock § Profile). */
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
+  /** Whether the routed channel's settings surface should replace the
+   * conversation stage — host-controlled from the URL (`/c/:id/settings`). */
+  readonly settingsOpen?: boolean;
+  /** Fired when the settings surface should open or close, so the host can
+   * reflect it in the URL. */
+  readonly onSettingsOpenChange?: (open: boolean) => void;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -781,6 +833,10 @@ export function ChatWorkspace({
           {...(onChannelChange !== undefined ? { onChannelChange } : {})}
           {...(currentUser !== undefined ? { currentUser } : {})}
           {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
+          {...(settingsOpen !== undefined ? { settingsOpen } : {})}
+          {...(onSettingsOpenChange !== undefined
+            ? { onSettingsOpenChange }
+            : {})}
         />
       );
     case "empty":

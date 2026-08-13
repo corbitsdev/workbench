@@ -58,7 +58,170 @@
   gap: 0.25rem;
 }
 
-.chat-settings-panel {
+/* Channel settings — full stage surface (mock § Channel settings):
+   channels are tenants, so settings replace the whole stage. Breadcrumb top
+   bar, grouped left nav, panel on the right. Never a dialog. */
+
+.channel-settings-stage {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.channel-settings-topbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  min-height: 3rem;
+  height: 3rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0 0.9rem;
+}
+
+.channel-settings-topbar-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.channel-settings-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.channel-settings-section-dot {
+  width: 3px;
+  height: 3px;
+  flex-shrink: 0;
+  background: var(--muted-foreground);
+}
+
+.channel-settings-section-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.channel-settings-breadcrumb button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--accent, var(--foreground));
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.channel-settings-breadcrumb button:hover {
+  text-decoration: underline;
+}
+
+.channel-settings-breadcrumb-sep {
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}
+
+.channel-settings-breadcrumb-current {
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.channel-settings-save {
+  appearance: none;
+  border: 1px solid var(--foreground);
+  background: var(--foreground);
+  color: var(--background);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+}
+
+.channel-settings-save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.channel-settings-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.channel-settings-nav {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 0.1rem;
+  width: 14rem;
+  border-right: 1px solid var(--border);
+  padding: 1rem 0.75rem;
+  overflow-y: auto;
+}
+
+.channel-settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding-top: 0.7rem;
+}
+
+.channel-settings-nav-group-danger {
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.channel-settings-nav-group-label {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.channel-settings-nav-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.channel-settings-nav-item:hover {
+  background: var(--muted);
+}
+
+.channel-settings-nav-item[aria-current="page"] {
+  background: var(--muted);
+  font-weight: 600;
+}
+
+.channel-settings-panel-area {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -103,38 +266,7 @@
   gap: 0.25rem;
 }
 
-.chat-settings-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.chat-settings-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.5rem;
-}
-
-.chat-settings-tab {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--muted-foreground);
-  font: inherit;
-  font-size: 0.8125rem;
-  padding: 0.35rem 0.55rem;
-  border-radius: 0.25rem;
-  cursor: pointer;
-}
-
-.chat-settings-tab[aria-selected="true"] {
-  background: var(--muted);
-  color: var(--foreground);
-}
-
-.chat-settings-pane {
+.channel-settings-pane {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -167,12 +299,6 @@
 .chat-settings-choice-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
-  gap: 0.5rem;
-}
-
-.chat-settings-actions {
-  display: flex;
-  justify-content: flex-end;
   gap: 0.5rem;
 }
 
