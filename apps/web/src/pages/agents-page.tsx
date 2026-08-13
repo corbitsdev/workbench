@@ -29,6 +29,7 @@ import {
 import type { APIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
+import { consumePendingNewAgent } from "../command-palette-actions";
 import { AGENTS_PATH_PREFIX, agentIdFromPath } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
@@ -278,6 +279,14 @@ export function AgentsPage({
     window.addEventListener("workbench:agents:create", onCreate);
     return () =>
       window.removeEventListener("workbench:agents:create", onCreate);
+  }, [canCreate]);
+
+  // The command palette may have requested "New agent" from another page,
+  // before this listener existed to catch the dispatch — see
+  // pending-dialog-request.ts. Consume that flag once we can actually
+  // create (same gate the live event uses).
+  useEffect(() => {
+    if (canCreate && consumePendingNewAgent()) setCreateOpen(true);
   }, [canCreate]);
 
   const readyDefinitions =

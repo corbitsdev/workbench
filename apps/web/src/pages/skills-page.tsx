@@ -20,6 +20,7 @@ import {
 import { Plus, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { consumePendingNewSkill } from "../command-palette-actions";
 import { SKILLS_PATH_PREFIX, skillIdFromPath } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
@@ -232,6 +233,13 @@ export function SkillsPage({
     window.addEventListener("workbench:skills:create", onCreate);
     return () =>
       window.removeEventListener("workbench:skills:create", onCreate);
+  }, []);
+
+  // The command palette may have requested "New skill" from another page,
+  // before this listener existed to catch the dispatch — see
+  // pending-dialog-request.ts. Consume that flag now that we've mounted.
+  useEffect(() => {
+    if (consumePendingNewSkill()) setCreateOpen(true);
   }, []);
 
   const selected =

@@ -4,6 +4,7 @@
 // this workspace.
 
 import { ChatWorkspace } from "@corbits/chat-ui";
+import { useEffect } from "react";
 
 import { useBench } from "../bench-context";
 import {
@@ -12,6 +13,10 @@ import {
   channelSettingsPath,
   isChannelSettingsPath,
 } from "../channel-path";
+import {
+  consumePendingNewChannel,
+  NEW_CHANNEL_EVENT,
+} from "../command-palette-actions";
 import { useOpenProfileInCanvas } from "../shell/canvas-availability";
 import { StageTopBarToggle } from "../shell/stage-top-bar";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
@@ -37,6 +42,18 @@ export function ChatPage({
   function openArtifact() {
     navigate("/library");
   }
+
+  // The command palette may have requested "New channel" from another
+  // page, before ChatWorkspace's own listener existed to catch the
+  // dispatch — see pending-dialog-request.ts. React commits child effects
+  // before parent effects, so by the time this runs, ChatWorkspace (a
+  // child of this component) has already registered its listener for
+  // NEW_CHANNEL_EVENT — re-dispatching here is safe.
+  useEffect(() => {
+    if (consumePendingNewChannel()) {
+      window.dispatchEvent(new CustomEvent(NEW_CHANNEL_EVENT));
+    }
+  }, []);
 
   return (
     <ChatWorkspace

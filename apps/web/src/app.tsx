@@ -50,7 +50,7 @@ function Shell({
     <QueryClientProvider client={queryClient}>
       <NavigationProvider navigate={navigate}>
         <BenchProvider>
-          <CommandPaletteProvider navigate={navigate} />
+          <CommandPaletteProvider path={path} navigate={navigate} />
           <AppShell path={path} user={user} onSignOut={onSignOut}>
             {path === ONBOARDING_PATH ? (
               <OnboardingPage />
