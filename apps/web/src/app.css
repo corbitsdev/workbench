@@ -339,6 +339,19 @@ html {
   display: none;
 }
 
+/* Fixed slot above the footer dock — the activity band sits here on every
+   page, outside the scrollable body, so it never shifts with page-specific
+   content length. Renders no border when the band hides itself (empty). */
+.panel-activity-slot {
+  flex-shrink: 0;
+}
+
+.shell-contextual-panel .panel-band-activity {
+  padding: 0.5rem 0.7rem 0.6rem;
+  border-top: 1px solid
+    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
+}
+
 .panel-page-header {
   display: flex;
   align-items: flex-start;

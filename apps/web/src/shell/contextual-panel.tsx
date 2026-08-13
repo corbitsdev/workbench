@@ -126,8 +126,11 @@ export function ContextualPanel({
             {pageSpecific}
           </section>
         ) : null}
-        <ActivityBand />
       </SidebarPanelBody>
+
+      <div className="panel-activity-slot">
+        <ActivityBand />
+      </div>
 
       <SidebarPanelFooter>
         <BenchDock />
