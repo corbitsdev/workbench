@@ -52,6 +52,7 @@ import { NewChannelDialog } from "./new-channel-dialog";
 import { CHAT_STRINGS } from "./strings";
 import { AgentBadge, ChannelTimeline } from "./timeline";
 import type { CurrentUser, ThreadAffordanceMeta } from "./timeline";
+import type { ApprovalActions } from "./blocks/approval-actions";
 import {
   typingLabel,
   TypingIndicator,
@@ -196,6 +197,7 @@ function ChatWorkspaceInner({
   settingsOpen = false,
   onSettingsOpenChange,
   onOpenArtifact,
+  approvalActions,
   headerLeading,
 }: {
   readonly tenantId: string;
@@ -210,6 +212,7 @@ function ChatWorkspaceInner({
   readonly settingsOpen?: boolean;
   readonly onSettingsOpenChange?: (open: boolean) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  readonly approvalActions?: ApprovalActions;
   readonly headerLeading?: ReactNode;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
@@ -785,6 +788,9 @@ function ChatWorkspaceInner({
                     {...(onOpenArtifact !== undefined
                       ? { onOpenArtifact }
                       : {})}
+                    {...(approvalActions !== undefined
+                      ? { approvalActions }
+                      : {})}
                   />
                   {typingState !== null ? (
                     <TypingIndicator
@@ -840,6 +846,7 @@ export function ChatWorkspace({
   settingsOpen,
   onSettingsOpenChange,
   onOpenArtifact,
+  approvalActions,
   headerLeading,
 }: {
   readonly tenant: TenantResolution;
@@ -864,6 +871,9 @@ export function ChatWorkspace({
   readonly onSettingsOpenChange?: (open: boolean) => void;
   /** Open a message's artifact chip — see `ChannelTimeline`'s `onOpenArtifact`. */
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  /** The approve block's live round-trip — see `ChannelTimeline`'s
+   * `approvalActions`. */
+  readonly approvalActions?: ApprovalActions;
   /** Host-supplied control rendered first in the channel header — the
    * shell's single col2 toggle, so chat carries the same top-bar chrome as
    * every other stage surface. */
@@ -884,6 +894,7 @@ export function ChatWorkspace({
           {...(onSettingsOpenChange !== undefined
             ? { onSettingsOpenChange }
             : {})}
+          {...(approvalActions !== undefined ? { approvalActions } : {})}
           {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
           {...(headerLeading !== undefined ? { headerLeading } : {})}
         />

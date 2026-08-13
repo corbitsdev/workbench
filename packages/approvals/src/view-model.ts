@@ -11,13 +11,20 @@ type ApprovalRow = ReturnType<typeof parseApprovalRow>;
 // here into a name before this type's only two producers -- `hydrateNeedsYou`
 // and its tests -- ever construct one, so nothing downstream can render a raw
 // id even by accident: there is no field on this type that holds one.
+//
+// `status` carries the full `approval.status` union (not just `"pending"`):
+// the list route (`GET /`) only ever queries pending rows, so its items are
+// always `"pending"` in practice, but the single-item detail route
+// (`GET /:approvalId`) hydrates a row in any status so a caller that already
+// knows the id -- an in-chat approve card re-reading after resolve -- can
+// render "approved"/"rejected"/etc. through the same display-safe shape.
 export const NeedsYouItem = type({
   id: "string",
   agentName: "string",
   benchName: "string",
   headline: "string",
   arguments: "object",
-  status: '"pending"',
+  status: "'pending' | 'approved' | 'rejected' | 'timeout' | 'expired'",
   createdAt: "string.date.iso",
 });
 export type NeedsYouItem = typeof NeedsYouItem.infer;
@@ -87,7 +94,7 @@ export async function hydrateNeedsYou(
       benchName,
       headline: headlineFor(row.toolDefinition),
       arguments: row.toolArguments as object,
-      status: "pending" as const,
+      status: row.status,
       createdAt: row.createdAt.toISOString(),
     };
   });

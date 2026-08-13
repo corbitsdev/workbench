@@ -10,16 +10,27 @@ import type { ReactElement } from "react";
 
 import { CHAT_STRINGS } from "../strings";
 import { ApproveBlockView } from "./approve-block";
+import type { ApprovalActions } from "./approval-actions";
 import { FormBlockView } from "./form-block";
 import { MetricsBlockView } from "./metrics-block";
 import { PollBlockView } from "./poll-block";
 import { StepsBlockView } from "./steps-block";
 import { StreamBlockView } from "./stream-block";
 
-function renderKnownBlock(block: Block): ReactElement {
+function renderKnownBlock(
+  block: Block,
+  approvalActions: ApprovalActions | undefined,
+): ReactElement {
   switch (block.type) {
     case "approve":
-      return <ApproveBlockView data={block.data} />;
+      return (
+        <ApproveBlockView
+          data={block.data}
+          {...(approvalActions !== undefined
+            ? { actions: approvalActions }
+            : {})}
+        />
+      );
     case "steps":
       return <StepsBlockView data={block.data} />;
     case "metrics":
@@ -48,12 +59,16 @@ function UnsupportedBlock({ type }: { readonly type: string }) {
 
 export function BlockPartView({
   block,
+  approvalActions,
 }: {
   readonly block: BlockPart["block"];
+  /** Host-supplied approve/deny round-trip; only the "approve" block reads
+   * it. Absent means the pre-round-trip fixed-disabled framing. */
+  readonly approvalActions?: ApprovalActions;
 }) {
   const result = parseBlock(block);
   if (!result.ok) {
     return <UnsupportedBlock type={result.type} />;
   }
-  return renderKnownBlock(result.block);
+  return renderKnownBlock(result.block, approvalActions);
 }

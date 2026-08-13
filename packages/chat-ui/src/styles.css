@@ -645,6 +645,21 @@
   color: var(--muted-foreground);
 }
 
+.chat-block-approve-status {
+  margin: 0 0 0.4rem;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  color: var(--muted-foreground);
+}
+
+.chat-block-approve-status[data-status="approved"] {
+  color: var(--foreground);
+}
+
+.chat-block-approve-status[data-status="rejected"] {
+  color: var(--destructive);
+}
+
 .chat-block-steps {
   display: flex;
   flex-direction: column;

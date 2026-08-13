@@ -4,8 +4,10 @@
 // this workspace.
 
 import { ChatWorkspace } from "@corbits/chat-ui";
-import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
 
+import { createChatApprovalActions } from "../approval-actions";
 import { useBench } from "../bench-context";
 import {
   channelIdFromPath,
@@ -34,6 +36,15 @@ export function ChatPage({
   const openProfile = useOpenProfileInCanvas();
   const tenant = tenantResolutionFromBench(bench);
   const principalId = bench.selectedPrincipalId ?? undefined;
+  const queryClient = useQueryClient();
+  const tenantId = bench.selectedTenantId;
+  const approvalActions = useMemo(
+    () =>
+      tenantId === null
+        ? undefined
+        : createChatApprovalActions(tenantId, queryClient),
+    [tenantId, queryClient],
+  );
 
   // A chat file part only carries a blob id today — Library artifacts have
   // no stored link back to it, so the chip can only send the reader to the
@@ -70,6 +81,7 @@ export function ChatPage({
         );
       }}
       onOpenArtifact={openArtifact}
+      {...(approvalActions !== undefined ? { approvalActions } : {})}
       headerLeading={<StageTopBarToggle />}
     />
   );

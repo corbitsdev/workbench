@@ -82,6 +82,21 @@ export const NeedsYouSchema = type({
   }).array(),
 });
 
+// The single-approval sibling of `NeedsYouSchema` (`@corbits/approvals`'s
+// `GET .../approvals/needs-you/:approvalId`): the same display-safe
+// hydration, for one id, in any status -- not just pending. This is the
+// chat approve card's live status read; see `approval-actions.ts`.
+export const NeedsYouDetailSchema = type({
+  id: "string",
+  agentName: "string",
+  benchName: "string",
+  headline: "string",
+  arguments: "object",
+  status: "'pending' | 'approved' | 'rejected' | 'timeout' | 'expired'",
+  createdAt: "string.date.iso",
+});
+export type NeedsYouDetail = typeof NeedsYouDetailSchema.infer;
+
 export type Profile = typeof UserProfile.infer;
 export type Principal = typeof PrincipalSummary.infer;
 export type WorkflowRun = typeof WorkflowRunSummary.infer;
@@ -267,4 +282,40 @@ export function rejectApproval(
     ApprovalResponse,
     message === undefined ? {} : { message },
   );
+}
+
+export type NeedsYouDetailResult =
+  | { readonly kind: "ready"; readonly item: NeedsYouDetail }
+  | { readonly kind: "forbidden" }
+  | { readonly kind: "not-found" }
+  | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The chat approve card's live status read: `@corbits/approvals`'s
+ * single-approval "needs you" detail, in any status. A 403 here means the
+ * tenant-wide read grant was refused -- deliberately coarser than the
+ * native approve/reject routes' per-deployment grant, so it is not proof
+ * the viewer cannot resolve this approval (see `approval-actions.ts`).
+ */
+export async function getApprovalNeedsYou(
+  tenantId: string,
+  approvalId: string,
+): Promise<NeedsYouDetailResult> {
+  const response = await fetch(
+    `/api/tenants/${tenantId}/approvals/needs-you/${approvalId}`,
+    { headers: { accept: "application/json" } },
+  );
+  if (response.status === 403) return { kind: "forbidden" };
+  if (response.status === 404) return { kind: "not-found" };
+  if (!response.ok) {
+    return {
+      kind: "error",
+      message: `The hub answered ${response.status} for this approval.`,
+    };
+  }
+  const parsed = NeedsYouDetailSchema(await response.json());
+  if (parsed instanceof type.errors) {
+    return { kind: "error", message: parsed.summary };
+  }
+  return { kind: "ready", item: parsed };
 }
