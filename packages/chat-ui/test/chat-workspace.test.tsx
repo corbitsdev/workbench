@@ -18,16 +18,27 @@ const realFetch = globalThis.fetch;
 const realEventSource = globalThis.EventSource;
 
 class StubEventSource {
+  static instances: StubEventSource[] = [];
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  constructor(readonly url: string) {}
+  readyState = 0;
+  constructor(readonly url: string) {
+    StubEventSource.instances.push(this);
+  }
   addEventListener() {}
-  close() {}
+  close() {
+    this.readyState = 2;
+  }
+  fail() {
+    this.readyState = 2;
+    this.onerror?.();
+  }
 }
 
 afterEach(() => {
   globalThis.fetch = realFetch;
   globalThis.EventSource = realEventSource;
+  StubEventSource.instances = [];
 });
 
 const CHANNEL_WIRE = {
@@ -38,9 +49,9 @@ const CHANNEL_WIRE = {
   participants: [],
 };
 
-function stubFetch() {
+function stubFetch(sentMessages?: unknown[]) {
   globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), {
@@ -55,6 +66,10 @@ function stubFetch() {
       return json({ rootThreadId: "", items: [] });
     }
     if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+      if (init?.method === "POST") {
+        sentMessages?.push(JSON.parse(String(init.body)));
+        return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
+      }
       return json({ items: [] });
     }
     if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
@@ -75,6 +90,20 @@ function stubFetch() {
 const { ChatWorkspace } = await import("../src/chat-workspace");
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function firstStream(): StubEventSource {
+  const instance = StubEventSource.instances[0];
+  if (instance === undefined) throw new Error("no EventSource was opened");
+  return instance;
+}
+
+const textareaValueSetter = Object.getOwnPropertyDescriptor(
+  window.HTMLTextAreaElement.prototype,
+  "value",
+)?.set;
+if (textareaValueSetter === undefined) {
+  throw new Error("HTMLTextAreaElement.prototype.value has no native setter");
+}
 
 function mount(props: Parameters<typeof ChatWorkspace>[0]) {
   const container = document.createElement("div");
@@ -123,6 +152,62 @@ describe("ChatWorkspace settings surface", () => {
     ).toBeNull();
     expect(harness.container.querySelector(".chat-main")).not.toBeNull();
     expect(settingsOpenChanges).toEqual([false]);
+    harness.unmount();
+  });
+});
+
+describe("connection state is never rendered as chrome", () => {
+  test("a dropped stream shows no reconnecting banner or status text", async () => {
+    stubFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    firstStream().fail();
+    await harness.settle();
+
+    expect(
+      harness.container.querySelector(".chat-stream-indicator"),
+    ).toBeNull();
+    expect(harness.container.textContent).not.toContain("Reconnecting");
+    harness.unmount();
+  });
+
+  test("sending a message succeeds over HTTP while the stream is down", async () => {
+    const sentMessages: unknown[] = [];
+    stubFetch(sentMessages);
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    // Drop the stream before sending — the send path must not depend on it.
+    firstStream().fail();
+    await harness.settle();
+
+    const textarea = harness.container.querySelector(
+      ".chat-composer-input",
+    ) as HTMLTextAreaElement;
+    act(() => {
+      textareaValueSetter.call(textarea, "hello while down");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const sendButton = harness.container.querySelector(
+      'button[aria-label="Send"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      sendButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).toMatchObject({
+      parts: [{ kind: "text", text: "hello while down" }],
+    });
     harness.unmount();
   });
 });
