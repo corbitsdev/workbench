@@ -23,6 +23,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  toast,
 } from "@corbits/react-ui";
 import { credentialTypes } from "@intx/types";
 import type { CredentialType } from "@intx/types";
@@ -133,6 +134,7 @@ export function CredentialsSection({
       .then(() => {
         setCreateOpen(false);
         reload();
+        toast(SETTINGS_STRINGS.credentialSavedToast);
       })
       .catch(() => setCreateError(SETTINGS_STRINGS.credentialsCreateError))
       .finally(() => setCreating(false));
@@ -142,7 +144,10 @@ export function CredentialsSection({
     if (tenantId === null) return;
     setRowError(null);
     deleteCredential(tenantId, credential.id)
-      .then(reload)
+      .then(() => {
+        reload();
+        toast(SETTINGS_STRINGS.credentialRevokedToast);
+      })
       .catch(() => setRowError(SETTINGS_STRINGS.credentialsDeleteError));
   }
 

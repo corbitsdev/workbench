@@ -341,3 +341,11 @@ export function useTenantQuery<T>(
   });
   return toAPIQuery(result);
 }
+
+export function routineCreatedToast(name: string): string {
+  return `Routine created · ${name}`;
+}
+
+export function routineRunStartedToast(name: string): string {
+  return `Run started · ${name}`;
+}

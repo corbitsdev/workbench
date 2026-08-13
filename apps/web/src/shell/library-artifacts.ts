@@ -108,3 +108,10 @@ export function isArtifactsUnavailableMessage(message: string): boolean {
     message.toLowerCase().includes("not configured")
   );
 }
+
+export function artifactUploadToast(names: readonly string[]): string {
+  const [only] = names;
+  return only !== undefined && names.length === 1
+    ? `Uploaded · ${only}`
+    : `Uploaded ${names.length} files`;
+}

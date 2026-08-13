@@ -7,7 +7,13 @@
 
 import type { BenchMembership } from "@corbits/bench-ui";
 import { listMyMemberships, MembersPanel } from "@corbits/bench-ui";
-import { EmptyState, Input, SettingsPanel, Skeleton } from "@corbits/react-ui";
+import {
+  EmptyState,
+  Input,
+  SettingsPanel,
+  Skeleton,
+  toast,
+} from "@corbits/react-ui";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -111,6 +117,7 @@ export function BenchSection({
         );
         setName(bench.name);
         setSavedAt(new Date().toLocaleTimeString());
+        toast(SETTINGS_STRINGS.settingsSavedToast);
       })
       .catch(() => setSaveError(SETTINGS_STRINGS.benchSaveError))
       .finally(() => setSaving(false));

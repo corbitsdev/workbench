@@ -10,6 +10,7 @@ import {
   MenuTrigger,
   SidebarItemRow,
   Skeleton,
+  toast,
 } from "@corbits/react-ui";
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { CHAT_STRINGS, patchChannelSettings } from "@corbits/chat-ui";
@@ -136,9 +137,13 @@ function ChannelPanelRow({
   readonly signals?: ChannelRowSignals;
 }) {
   const [title, setTitle] = useState(channel.title);
+  // The channel prop only reconciles on bench change, so the effective
+  // pinned state lives here: without it a second toggle would re-send and
+  // re-announce the first one's transition.
+  const [pinned, setPinned] = useState(channel.pinned);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(channel.title);
-  const [renameLabel, archiveLabel] = panelRowMenuLabels(channel);
+  const [renameLabel, archiveLabel] = panelRowMenuLabels({ pinned });
 
   function startRename() {
     setRenameValue(title);
@@ -154,6 +159,7 @@ function ChannelPanelRow({
       await patchChannelSettings(tenantId, channel.id, {
         "chat/name": payload,
       });
+      toast(CHAT_STRINGS.channelRenamedToast(payload));
     } catch {
       // Revert the optimistic title on failure; the band will refetch on the
       // next bench selection and reconcile either way.
@@ -172,10 +178,13 @@ function ChannelPanelRow({
   }
 
   async function togglePinned() {
+    const next = !pinned;
     try {
       await patchChannelSettings(tenantId, channel.id, {
-        "chat/pinned": !channel.pinned,
+        "chat/pinned": next,
       });
+      setPinned(next);
+      toast(CHAT_STRINGS.channelPinnedToast(next, title));
     } catch {
       // Best-effort: the band refetches on bench change and reconciles.
     }

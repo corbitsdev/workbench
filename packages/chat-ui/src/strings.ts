@@ -82,6 +82,10 @@ export const CHAT_STRINGS = {
   inviteAgentInviteError: "Couldn't invite that agent — try again.",
   inviteAgentConflictError: "This chat already has its agent.",
   newChannelCreateError: "Couldn't create that channel — try again.",
+  channelCreatedToast: (title: string) => `Channel created · ${title}`,
+  channelRenamedToast: (title: string) => `Renamed to ${title}`,
+  channelPinnedToast: (pinned: boolean, title: string) =>
+    pinned ? `Pinned ${title}` : `Unpinned ${title}`,
   sendFailedMessage: "Couldn't send — retry",
   fallbackPartUnsupported: "Unsupported content",
   blockUnsupportedTitle: "Unsupported block",
@@ -158,6 +162,7 @@ export const CHAT_STRINGS = {
   channelSettingsLoadError: "Couldn't load this channel's settings",
   channelSettingsSaveError:
     "Couldn't save this channel's settings — try again.",
+  channelSettingsSavedToast: "Channel settings saved",
   channelSettingsClose: "Close",
   channelSettingsSave: "Save",
   channelSettingsSaving: "Saving…",

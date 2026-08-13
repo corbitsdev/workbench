@@ -2,7 +2,7 @@ import "@corbits/react-ui/styles.css";
 import "./app.css";
 import "./tailwind.css";
 
-import { ThemeProvider } from "@corbits/react-ui";
+import { ThemeProvider, Toaster } from "@corbits/react-ui";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -93,6 +93,7 @@ function Root() {
         provisioningError={provisioningError}
         onRetryProvisioning={handleRetryProvisioning}
       />
+      <Toaster />
     </ThemeProvider>
   );
 }

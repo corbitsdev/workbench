@@ -15,6 +15,7 @@ import {
   Input,
   Skeleton,
   Switch,
+  toast,
 } from "@corbits/react-ui";
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { CircleAlert, UserPlus } from "lucide-react";
@@ -199,6 +200,7 @@ export function ChannelSettingsPanel({
       .then((settings) => {
         onSaved?.(settings);
         onOpenChange(false);
+        toast(CHAT_STRINGS.channelSettingsSavedToast);
       })
       .catch(() => setSaveError(CHAT_STRINGS.channelSettingsSaveError))
       .finally(() => setSaving(false));
