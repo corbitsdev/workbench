@@ -21,6 +21,7 @@
     "dev": "bun run scripts/dev.ts",
     "setup": "bun packages/cli/src/index.ts setup",
     "seed": "bun packages/cli/src/index.ts seed",
+    "reset": "bun packages/cli/src/index.ts reset",
     "check:deletion": "bun run scripts/checks/deletion.ts",
     "check:killdates": "bun run scripts/checks/killdates.ts",
     "check:packages": "bun run scripts/checks/packages.ts",

@@ -79,6 +79,27 @@ deploys and confirms the default routines on the spot — no separate
 is only planted for Anthropic today; the other providers still get a
 credential and working routines, just not a catalog entry yet.
 
+### Resetting local state
+
+To test onboarding (the self-serve signup and first-login provisioning flow)
+from a clean slate, or to recover from a broken local database, run:
+
+```sh
+bun run reset
+```
+
+`bun run reset` drops the platform database schema and removes the hub's
+and the dev sidecar's on-disk asset directories — everything `bun run setup`
+and `bun run seed` created, plus anything provisioned through onboarding.
+Nothing is re-seeded: the next `bun run dev` recreates the schema from
+scratch and starts you at a fresh sign-up screen. Run `bun run setup && bun
+run seed` afterward instead if you want a reprovisioned bench rather than a
+blank slate.
+
+It refuses to run against anything but a local `DATABASE_URL` (localhost,
+127.0.0.1, or `::1`) — there is no override, since the schema drop is
+unrecoverable.
+
 ### OAuth sign-in
 
 Email/password sign-in always works. To let people sign in with an
