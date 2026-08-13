@@ -7,6 +7,7 @@ import { BootScreen, Button, CorbitsMark, EmptyState } from "@corbits/react-ui";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
 import { useMemo } from "react";
+import { Toaster } from "sonner";
 
 import { AuthScreen } from "./auth-screen";
 import { BenchProvider } from "./bench-context";
@@ -60,6 +61,7 @@ function Shell({
               route.render(path, navigate)
             )}
           </AppShell>
+          <Toaster />
         </BenchProvider>
       </NavigationProvider>
     </QueryClientProvider>

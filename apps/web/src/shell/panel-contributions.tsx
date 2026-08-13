@@ -25,7 +25,7 @@ import {
   Search,
   Sparkles,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import {
@@ -36,6 +36,10 @@ import { useAgentDirectory } from "../agents-api";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
+import {
+  REQUEST_CHANNEL_RENAME_EVENT,
+  isChannelRenameRequestFor,
+} from "../channel-rename-events";
 import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
 import { requestLibraryUpload } from "../library-upload";
 import { agentIdFromPath, skillIdFromPath } from "../path-ids";
@@ -150,6 +154,15 @@ function ChannelPanelRow({
     setRenaming(true);
   }
 
+  useEffect(() => {
+    function onRenameRequest(event: Event) {
+      if (isChannelRenameRequestFor(event, channel.id)) startRename();
+    }
+    window.addEventListener(REQUEST_CHANNEL_RENAME_EVENT, onRenameRequest);
+    return () =>
+      window.removeEventListener(REQUEST_CHANNEL_RENAME_EVENT, onRenameRequest);
+  }, [channel.id]);
+
   async function commitRename() {
     const payload = panelRenamePayload(renameValue, title);
     setRenaming(false);
@@ -211,7 +224,12 @@ function ChannelPanelRow({
   const hasUnread = typeof unread === "number" && unread > 0;
 
   return (
-    <div className="shell-ch-row-wrap">
+    <div
+      className="shell-ch-row-wrap"
+      data-ctx-channel={channel.id}
+      data-ctx-channel-title={displayTitle}
+      data-ctx-channel-pinned={channel.pinned ? "true" : "false"}
+    >
       <button
         type="button"
         className="shell-ch-row"
@@ -231,6 +249,8 @@ function ChannelPanelRow({
                     ? "true"
                     : undefined
                 }
+                data-ctx-profile-address={p.address}
+                data-ctx-profile-handle={p.handle}
               >
                 {p.handle.slice(0, 1).toUpperCase()}
               </span>
@@ -640,13 +660,14 @@ function InboxFiltersBand({
             ? null
             : counts[filter.countKey];
         return (
-          <SidebarItemRow
-            key={filter.id}
-            name={filter.label}
-            meta={n === null ? undefined : String(n)}
-            selected={active === filter.id}
-            onSelect={() => onNavigate(inboxPathForFilter(filter.id))}
-          />
+          <div key={filter.id} data-ctx-inbox-filter={filter.id}>
+            <SidebarItemRow
+              name={filter.label}
+              meta={n === null ? undefined : String(n)}
+              selected={active === filter.id}
+              onSelect={() => onNavigate(inboxPathForFilter(filter.id))}
+            />
+          </div>
         );
       })}
     </div>

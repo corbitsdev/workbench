@@ -245,9 +245,9 @@ describe("routineTriggerCategory", () => {
     expect(
       routineTriggerCategory({ kind: "interval", unit: "minutes", every: 5 }),
     ).toBe("schedule");
-    expect(
-      routineTriggerCategory({ kind: "daily", hour: 9, minute: 0 }),
-    ).toBe("schedule");
+    expect(routineTriggerCategory({ kind: "daily", hour: 9, minute: 0 })).toBe(
+      "schedule",
+    );
     expect(
       routineTriggerCategory({
         kind: "weekly",
@@ -263,14 +263,14 @@ describe("routineTriggerCategory", () => {
 });
 
 describe("routineMatchesModeFilter", () => {
-  test("\"all\" matches every trigger shape", () => {
+  test('"all" matches every trigger shape', () => {
     expect(routineMatchesModeFilter(null, "all")).toBe(true);
     expect(
       routineMatchesModeFilter({ kind: "daily", hour: 9, minute: 0 }, "all"),
     ).toBe(true);
   });
 
-  test("\"schedule\" matches presets and cron, not manual", () => {
+  test('"schedule" matches presets and cron, not manual', () => {
     expect(
       routineMatchesModeFilter(
         { kind: "daily", hour: 9, minute: 0 },
@@ -280,17 +280,14 @@ describe("routineMatchesModeFilter", () => {
     expect(routineMatchesModeFilter(null, "schedule")).toBe(false);
   });
 
-  test("\"demand\" matches only manual (null) triggers", () => {
+  test('"demand" matches only manual (null) triggers', () => {
     expect(routineMatchesModeFilter(null, "demand")).toBe(true);
     expect(
-      routineMatchesModeFilter(
-        { kind: "daily", hour: 9, minute: 0 },
-        "demand",
-      ),
+      routineMatchesModeFilter({ kind: "daily", hour: 9, minute: 0 }, "demand"),
     ).toBe(false);
   });
 
-  test("\"trigger\" matches nothing — webhook/event kind not modeled yet", () => {
+  test('"trigger" matches nothing — webhook/event kind not modeled yet', () => {
     expect(routineMatchesModeFilter(null, "trigger")).toBe(false);
     expect(
       routineMatchesModeFilter(

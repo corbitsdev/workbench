@@ -96,6 +96,7 @@
         "@corbits/chat": "workspace:*",
         "@corbits/chat-ui": "workspace:*",
         "@corbits/command-palette": "workspace:*",
+        "@corbits/context-menu": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
         "@corbits/routines": "workspace:*",
         "@corbits/settings-ui": "workspace:*",
@@ -291,6 +292,22 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/context-menu": {
+      "name": "@corbits/context-menu",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+        "react": "^19.2.0",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.11.2",
+        "@types/bun": "catalog:",
+        "@types/react": "^19.2.2",
+        "@types/react-dom": "^19.2.2",
+        "react-dom": "^19.2.0",
         "typescript": "catalog:",
       },
     },
@@ -903,6 +920,8 @@
     "@corbits/command-palette": ["@corbits/command-palette@workspace:packages/command-palette"],
 
     "@corbits/commands": ["@corbits/commands@workspace:packages/commands"],
+
+    "@corbits/context-menu": ["@corbits/context-menu@workspace:packages/context-menu"],
 
     "@corbits/echo-workflow": ["@corbits/echo-workflow@workspace:workflows/echo"],
 

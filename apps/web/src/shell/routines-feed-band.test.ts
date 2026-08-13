@@ -40,9 +40,9 @@ describe("nextRoutinePathForFilter", () => {
   });
 
   test("falls back to the bare list when nothing matches", () => {
-    expect(
-      nextRoutinePathForFilter([scheduled], "trigger", "rtn_daily"),
-    ).toBe("/routines");
+    expect(nextRoutinePathForFilter([scheduled], "trigger", "rtn_daily")).toBe(
+      "/routines",
+    );
   });
 
   test("with no current selection, picks the first match under the filter", () => {

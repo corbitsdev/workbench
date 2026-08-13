@@ -855,7 +855,9 @@ function EditRoutineDialog({
             void onSave({ name: name.trim(), trigger })
               .then(() => onOpenChange(false))
               .catch((cause: unknown) => {
-                setError(cause instanceof Error ? cause.message : String(cause));
+                setError(
+                  cause instanceof Error ? cause.message : String(cause),
+                );
               })
               .finally(() => setBusy(false));
           }}
@@ -1015,7 +1017,10 @@ export function RoutinesListPage({
   readonly onDiscardDraft: (draftId: string) => Promise<void>;
   readonly onToggleEnabled: (routine: Routine, enabled: boolean) => void;
   readonly onRunNow: (routine: Routine) => Promise<void>;
-  readonly onEdit: (routine: Routine, patch: UpdateRoutineInput) => Promise<void>;
+  readonly onEdit: (
+    routine: Routine,
+    patch: UpdateRoutineInput,
+  ) => Promise<void>;
   readonly onOpenRuns: () => void;
   readonly onOpenChannel: (channelId: string) => void;
 }) {
@@ -1221,7 +1226,10 @@ export function RoutineDetailPage({
   readonly definitions?: readonly WorkflowDefinitionSummary[];
   readonly onOpenRuns: () => void;
   readonly onOpenChannel: (channelId: string) => void;
-  readonly onEdit: (routine: Routine, patch: UpdateRoutineInput) => Promise<void>;
+  readonly onEdit: (
+    routine: Routine,
+    patch: UpdateRoutineInput,
+  ) => Promise<void>;
 }) {
   const [editOpen, setEditOpen] = useState(false);
   const deliveryChannelId =
@@ -1313,7 +1321,12 @@ export function RoutineDetailPage({
             <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
               Recent runs
             </h3>
-            <Button type="button" variant="ghost" size="sm" onClick={onOpenRuns}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onOpenRuns}
+            >
               All runs & traces →
             </Button>
           </div>
@@ -1472,7 +1485,8 @@ export function RoutinesRoute({
         onOpenRuns={() => navigate("/insights/runs")}
         onOpenChannel={(channelId) => navigate(channelPath(channelId))}
         onEdit={async (routine, patch) => {
-          if (tenantId === null) throw new Error("No bench to edit this in yet");
+          if (tenantId === null)
+            throw new Error("No bench to edit this in yet");
           await updateRoutine(tenantId, routine.id, patch);
           invalidateRoutines();
         }}

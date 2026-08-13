@@ -136,7 +136,11 @@ export function RoutinesFeedBand({
         placeholder="Search routines"
         aria-label="Search routines"
       />
-      <div className="panel-filter-row" role="group" aria-label="Filter by mode">
+      <div
+        className="panel-filter-row"
+        role="group"
+        aria-label="Filter by mode"
+      >
         {MODE_FILTERS.map((filter) => (
           <FilterChip
             key={filter.id}
@@ -165,13 +169,18 @@ export function RoutinesFeedBand({
         />
       ) : (
         items.map((routine) => (
-          <SidebarItemRow
+          <div
             key={routine.id}
-            name={routine.name}
-            meta={routine.enabled ? "On" : "Off"}
-            selected={selectedId === routine.id}
-            onSelect={() => onNavigate(routinePath(routine.id))}
-          />
+            data-ctx-routine={routine.id}
+            data-ctx-routine-name={routine.name}
+          >
+            <SidebarItemRow
+              name={routine.name}
+              meta={routine.enabled ? "On" : "Off"}
+              selected={selectedId === routine.id}
+              onSelect={() => onNavigate(routinePath(routine.id))}
+            />
+          </div>
         ))
       )}
     </div>

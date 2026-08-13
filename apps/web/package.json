@@ -18,6 +18,7 @@
     "@corbits/chat": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
     "@corbits/command-palette": "workspace:*",
+    "@corbits/context-menu": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/settings-ui": "workspace:*",

@@ -318,6 +318,7 @@ function RecentRunRows({
           key={row.id}
           type="button"
           className="insights-run-row"
+          data-ctx-insights-run={row.id}
           onClick={() => onOpenRun(row.id)}
         >
           <span className="insights-run-meta">
@@ -520,6 +521,7 @@ function InsightsRunsHistory({
                     key={row.id}
                     type="button"
                     className="insights-run-row"
+                    data-ctx-insights-run={row.id}
                     onClick={() => onOpenRun(row.id)}
                   >
                     <span className="insights-run-meta">

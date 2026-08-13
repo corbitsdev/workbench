@@ -32,6 +32,7 @@ import {
 } from "./canvas-column-state";
 import { CanvasAvailabilityProvider } from "./canvas-availability";
 import { CanvasColumn } from "./canvas-column";
+import { ShellContextMenu } from "./context-menu/shell-context-menu";
 import { ContextualPanel } from "./contextual-panel";
 import { Rail } from "./rail";
 import {
@@ -176,6 +177,7 @@ export function AppShell({
             </div>
           </>
         )}
+        <ShellContextMenu />
       </div>
     </CanvasAvailabilityProvider>
   );
