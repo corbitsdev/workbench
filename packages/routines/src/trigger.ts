@@ -121,6 +121,32 @@ export function timezoneForTrigger(trigger: RoutineTriggerT): string {
 }
 
 /**
+ * The mode filter ids the Routines panel offers: "all" plus the three
+ * cadence buckets. "trigger" (webhook/event-driven) has no representation
+ * in `RoutineTrigger` yet — the id exists so the filter chip can render,
+ * but no routine matches it until that trigger kind ships.
+ */
+export type RoutineModeFilter = "all" | "schedule" | "trigger" | "demand";
+
+/** Where a trigger's cadence sits for filtering: a manual (`null`) trigger
+ * is on-demand only; every preset and raw cron fires on its own schedule. */
+export function routineTriggerCategory(
+  trigger: RoutineTriggerT,
+): Exclude<RoutineModeFilter, "all" | "trigger"> {
+  return trigger === null ? "demand" : "schedule";
+}
+
+/** Whether a routine's trigger belongs under a mode filter chip. */
+export function routineMatchesModeFilter(
+  trigger: RoutineTriggerT,
+  filter: RoutineModeFilter,
+): boolean {
+  if (filter === "all") return true;
+  if (filter === "trigger") return false;
+  return routineTriggerCategory(trigger) === filter;
+}
+
+/**
  * When a routine with this trigger next fires, strictly after `after` —
  * `null` for a manual routine, which never auto-fires. Persisted as a
  * routine's `nextFireAt` on every create, trigger/enabled change, and

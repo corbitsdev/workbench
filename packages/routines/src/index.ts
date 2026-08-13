@@ -10,8 +10,10 @@ export {
   timezoneForTrigger,
   cronMatchesMinute,
   minuteKey,
+  routineTriggerCategory,
+  routineMatchesModeFilter,
 } from "./trigger";
-export type { RoutineTriggerT } from "./trigger";
+export type { RoutineTriggerT, RoutineModeFilter } from "./trigger";
 export { nextCronFireAfter, MAX_LOOKAHEAD_MINUTES, zonedParts } from "./cron";
 
 export { routine, routineRun, routineDraft } from "./schema";

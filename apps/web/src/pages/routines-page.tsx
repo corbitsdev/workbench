@@ -35,11 +35,13 @@ import type { Channel } from "@corbits/chat-ui";
 import { listChannels } from "@corbits/chat-ui";
 import { Clock, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useAPIQuery, RunsSchema } from "../api";
 import type { APIQuery, WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
+import { channelPath } from "../channel-path";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 import { cadenceLabel } from "../routine-trigger";
@@ -62,6 +64,7 @@ import type {
   RoutineDraft,
   RoutineRun,
   RoutineTrigger,
+  UpdateRoutineInput,
   WorkflowDefinitionSummary,
 } from "../routines-api";
 
@@ -800,16 +803,116 @@ function CreateRoutineDialog({
   );
 }
 
+/**
+ * Minimal edit surface: name and cadence only, over the existing `PATCH
+ * /routines/:id` route (`updateRoutine`). Delivery channel and workflow
+ * are set at create time and stay out of scope here.
+ */
+function EditRoutineDialog({
+  routine,
+  onSave,
+  open,
+  onOpenChange,
+}: {
+  readonly routine: Routine;
+  readonly onSave: (patch: UpdateRoutineInput) => Promise<void>;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  const [name, setName] = useState(routine.name);
+  const [trigger, setTrigger] = useState<RoutineTrigger>(routine.trigger);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(routine.name);
+    setTrigger(routine.trigger);
+    setError(null);
+  }, [open, routine.name, routine.trigger]);
+
+  const complete = name.trim().length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit routine</DialogTitle>
+          <DialogDescription>Name and cadence only.</DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!complete) return;
+            setBusy(true);
+            setError(null);
+            void onSave({ name: name.trim(), trigger })
+              .then(() => onOpenChange(false))
+              .catch((cause: unknown) => {
+                setError(cause instanceof Error ? cause.message : String(cause));
+              })
+              .finally(() => setBusy(false));
+          }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="routine-edit-name" className="text-xs font-medium">
+              Name
+            </label>
+            <Input
+              id="routine-edit-name"
+              value={name}
+              required
+              disabled={busy}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </div>
+
+          <TriggerPicker value={trigger} onChange={setTrigger} />
+
+          {error !== null ? (
+            <p className="text-xs text-[var(--ui-danger)]" role="alert">
+              {error}
+            </p>
+          ) : null}
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" size="sm" disabled={busy}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" size="sm" disabled={busy || !complete}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Recent-run rows deep-link to the channel the routine delivers to — a
+ * routine has one `deliveryChannelId`, not a per-run one, so every row in
+ * a given table shares the same destination. Rows render as plain data
+ * when there is nowhere to deep-link (`deliveryChannelId` absent or no
+ * `onOpenChannel` handler wired).
+ */
 function RunsTable({
   runs,
   now,
   emptyTitle,
   emptyDescription,
+  deliveryChannelId = null,
+  onOpenChannel,
 }: {
   readonly runs: readonly RoutineRun[];
   readonly now: number;
   readonly emptyTitle: string;
   readonly emptyDescription: string;
+  readonly deliveryChannelId?: string | null;
+  readonly onOpenChannel?: (channelId: string) => void;
 }) {
   if (runs.length === 0) {
     return (
@@ -820,6 +923,10 @@ function RunsTable({
       />
     );
   }
+  const channelId =
+    deliveryChannelId !== null && onOpenChannel !== undefined
+      ? deliveryChannelId
+      : null;
   return (
     <Table>
       <TableHeader>
@@ -832,8 +939,22 @@ function RunsTable({
       <TableBody>
         {runs.map((run) => {
           const status = run.run?.status;
+          const rowProps =
+            channelId !== null
+              ? {
+                  role: "link" as const,
+                  tabIndex: 0,
+                  className: "routine-run-row-linked",
+                  onClick: () => onOpenChannel?.(channelId),
+                  onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    onOpenChannel?.(channelId);
+                  },
+                }
+              : {};
           return (
-            <TableRow key={run.runId}>
+            <TableRow key={run.runId} {...rowProps}>
               <TableCell>
                 <Badge tone="neutral">{run.triggeredBy}</Badge>
               </TableCell>
@@ -871,6 +992,9 @@ export function RoutinesListPage({
   onDiscardDraft,
   onToggleEnabled,
   onRunNow,
+  onEdit,
+  onOpenRuns,
+  onOpenChannel,
 }: {
   readonly routines: APIQuery<readonly Routine[]>;
   readonly runHistories: ReadonlyMap<string, readonly RoutineRun[]>;
@@ -886,9 +1010,12 @@ export function RoutinesListPage({
   readonly onDiscardDraft: (draftId: string) => Promise<void>;
   readonly onToggleEnabled: (routine: Routine, enabled: boolean) => void;
   readonly onRunNow: (routine: Routine) => Promise<void>;
+  readonly onEdit: (routine: Routine, patch: UpdateRoutineInput) => Promise<void>;
+  readonly onOpenRuns: () => void;
+  readonly onOpenChannel: (channelId: string) => void;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
-  const [showAllRuns, setShowAllRuns] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => {
     const onCreateEvent = () => setCreateOpen(true);
@@ -898,7 +1025,7 @@ export function RoutinesListPage({
   }, []);
 
   useEffect(() => {
-    setShowAllRuns(false);
+    setEditOpen(false);
   }, [selectedId]);
 
   const selected =
@@ -922,6 +1049,14 @@ export function RoutinesListPage({
         open={createOpen}
         onOpenChange={setCreateOpen}
       />
+      {selected !== null ? (
+        <EditRoutineDialog
+          routine={selected}
+          onSave={(patch) => onEdit(selected, patch)}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+        />
+      ) : null}
 
       {/* List lives in shell col2; stage is detail only. Create is
           pageBand / workbench:routines:create — no stage chrome header. */}
@@ -973,6 +1108,14 @@ export function RoutinesListPage({
                   size="sm"
                   onRun={() => onRunNow(selected)}
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditOpen(true)}
+                >
+                  Edit
+                </Button>
               </div>
             </div>
 
@@ -1009,24 +1152,24 @@ export function RoutinesListPage({
             <section className="px-4 py-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-                  {showAllRuns ? "All runs & traces" : "Recent runs"}
+                  Recent runs
                 </h3>
-                {selectedRuns.length > 3 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowAllRuns((v) => !v)}
-                  >
-                    {showAllRuns ? "Show three" : "All runs & traces"}
-                  </Button>
-                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onOpenRuns}
+                >
+                  All runs & traces →
+                </Button>
               </div>
               <RunsTable
-                runs={showAllRuns ? selectedRuns : recentRuns}
+                runs={recentRuns}
                 now={now}
                 emptyTitle="No runs yet"
                 emptyDescription="This routine has not fired yet — manually or on a schedule."
+                deliveryChannelId={selected.deliveryChannelId}
+                onOpenChannel={onOpenChannel}
               />
             </section>
           </div>
@@ -1042,23 +1185,49 @@ export function RoutineDetailPage({
   onBack,
   now = Date.now(),
   definitions = [],
+  onOpenRuns,
+  onOpenChannel,
+  onEdit,
 }: {
   readonly routine: APIQuery<Routine>;
   readonly runs: APIQuery<readonly RoutineRun[]>;
   readonly onBack: () => void;
   readonly now?: number;
   readonly definitions?: readonly WorkflowDefinitionSummary[];
+  readonly onOpenRuns: () => void;
+  readonly onOpenChannel: (channelId: string) => void;
+  readonly onEdit: (routine: Routine, patch: UpdateRoutineInput) => Promise<void>;
 }) {
-  const [showAll, setShowAll] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const deliveryChannelId =
+    routine.kind === "ready" ? routine.data.deliveryChannelId : null;
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {routine.kind === "ready" ? (
+        <EditRoutineDialog
+          routine={routine.data}
+          onSave={(patch) => onEdit(routine.data, patch)}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+        />
+      ) : null}
       <div className="flex items-center gap-2 border-b border-[var(--ui-border)] px-3 py-2">
         <Button variant="ghost" size="sm" onClick={onBack}>
           Back
         </Button>
-        <h2 className="text-sm font-semibold">
+        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
           {routine.kind === "ready" ? routine.data.name : "Routine"}
         </h2>
+        {routine.kind === "ready" ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setEditOpen(true)}
+          >
+            Edit
+          </Button>
+        ) : null}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <QueryView query={routine} label="this routine">
@@ -1111,24 +1280,21 @@ export function RoutineDetailPage({
         <section className="mt-6" aria-label="Run history">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-              {showAll ? "All runs & traces" : "Recent runs"}
+              Recent runs
             </h3>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAll((v) => !v)}
-            >
-              {showAll ? "Show three" : "All runs & traces"}
+            <Button type="button" variant="ghost" size="sm" onClick={onOpenRuns}>
+              All runs & traces →
             </Button>
           </div>
           <QueryView query={runs} label="this routine's run history">
             {(items) => (
               <RunsTable
-                runs={showAll ? items : items.slice(0, 3)}
+                runs={items.slice(0, 3)}
                 now={now}
                 emptyTitle="No runs yet"
                 emptyDescription="This routine has not fired yet — manually or on a schedule."
+                deliveryChannelId={deliveryChannelId}
+                onOpenChannel={onOpenChannel}
               />
             )}
           </QueryView>
@@ -1272,6 +1438,13 @@ export function RoutinesRoute({
         runs={detailRuns}
         definitions={definitions}
         onBack={() => navigate(ROUTINES_PATH_PREFIX)}
+        onOpenRuns={() => navigate("/insights/runs")}
+        onOpenChannel={(channelId) => navigate(channelPath(channelId))}
+        onEdit={async (routine, patch) => {
+          if (tenantId === null) throw new Error("No bench to edit this in yet");
+          await updateRoutine(tenantId, routine.id, patch);
+          invalidateRoutines();
+        }}
       />
     );
   }
@@ -1329,6 +1502,13 @@ export function RoutinesRoute({
         await runRoutineNow(tenantId, routine.id);
         invalidateRoutines();
       }}
+      onEdit={async (routine, patch) => {
+        if (tenantId === null) throw new Error("No bench to edit this in yet");
+        await updateRoutine(tenantId, routine.id, patch);
+        invalidateRoutines();
+      }}
+      onOpenRuns={() => navigate("/insights/runs")}
+      onOpenChannel={(channelId) => navigate(channelPath(channelId))}
     />
   );
 }
