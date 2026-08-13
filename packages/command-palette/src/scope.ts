@@ -32,3 +32,16 @@ export function parsePaletteQuery(raw: string): ParsedPaletteQuery {
   const query = (scope === null ? raw : raw.slice(scope.prefix.length)).trim();
   return { scope, query };
 }
+
+/**
+ * True for a bare scope prefix with nothing typed after it (`"#"`, `"@ "`)
+ * — the mock shows every item in that scope for this input, which a
+ * debounced entity search that skips fetching on an empty query cannot
+ * produce on its own. A consumer backed by such a search should use this to
+ * decide when to fetch the scope's unfiltered list directly instead of
+ * routing the empty string through its normal search path.
+ */
+export function isBareScopeQuery(raw: string): boolean {
+  const { scope, query } = parsePaletteQuery(raw);
+  return scope !== null && query === "";
+}

@@ -76,7 +76,13 @@ export function createRecentsStore(
 
   function push(entry: RecentEntry): readonly RecentEntry[] {
     const next = addRecentEntry(load(), entry, max);
-    storage.setItem(storageKey, JSON.stringify(next));
+    try {
+      storage.setItem(storageKey, JSON.stringify(next));
+    } catch {
+      // A full or disabled store (private browsing, quota) loses
+      // persistence, not function — the caller still gets the updated list
+      // for this render.
+    }
     return next;
   }
 

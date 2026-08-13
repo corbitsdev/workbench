@@ -28,7 +28,7 @@ export type {
   UseEntitySearchResult,
 } from "./use-entity-search";
 
-export { parsePaletteQuery, PALETTE_SCOPES } from "./scope";
+export { isBareScopeQuery, parsePaletteQuery, PALETTE_SCOPES } from "./scope";
 export type {
   ParsedPaletteQuery,
   PaletteScope,
@@ -40,8 +40,7 @@ export type {
   BuildCommandPaletteGroupsInput,
   PaletteResultGroup,
   PaletteResultItem,
-  ScopedPaletteSource,
-  UnscopedPaletteSource,
+  PaletteSource,
 } from "./command-groups";
 
 export { addRecentEntry, createRecentsStore } from "./recents";

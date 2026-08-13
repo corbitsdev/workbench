@@ -2,18 +2,17 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildCommandPaletteGroups,
-  type ScopedPaletteSource,
-  type UnscopedPaletteSource,
+  type PaletteSource,
 } from "../src/command-groups";
 
-const actions: ScopedPaletteSource = {
+const actions: PaletteSource = {
   id: "actions",
   heading: "Commands",
   kind: "actions",
   items: [{ id: "action:theme", title: "Toggle theme" }],
 };
 
-const channels: ScopedPaletteSource = {
+const channels: PaletteSource = {
   id: "channels",
   heading: "Channels",
   kind: "channels",
@@ -23,28 +22,34 @@ const channels: ScopedPaletteSource = {
   ],
 };
 
-const pages: ScopedPaletteSource = {
+const pages: PaletteSource = {
   id: "pages",
   heading: "Pages",
   kind: "pages",
   items: [{ id: "route:/library", title: "Library" }],
 };
 
-const routines: UnscopedPaletteSource = {
+const routines: PaletteSource = {
   id: "routines",
   heading: "Routines",
   items: [{ id: "rt:1", title: "Weekly digest" }],
 };
 
+const people: PaletteSource = {
+  id: "people",
+  heading: "People & agents",
+  kind: "people",
+  items: [{ id: "ppl:myra", title: "Myra" }],
+};
+
 const recents = [{ id: "ch:eng", title: "Engineering" }];
 
 describe("buildCommandPaletteGroups", () => {
-  test("empty unscoped query shows recents plus every source", () => {
+  test("empty unscoped query shows recents plus every source, in caller order", () => {
     const groups = buildCommandPaletteGroups({
       query: "",
       recents,
-      scoped: [actions, channels, pages],
-      unscoped: [routines],
+      sources: [actions, channels, pages, routines, people],
     });
     expect(groups.map((g) => g.id)).toEqual([
       "recents",
@@ -52,15 +57,24 @@ describe("buildCommandPaletteGroups", () => {
       "channels",
       "pages",
       "routines",
+      "people",
     ]);
+  });
+
+  test("an unscoped source placed after scoped sources still renders after them — People & agents can sit last, matching the mock", () => {
+    const groups = buildCommandPaletteGroups({
+      query: "",
+      recents: [],
+      sources: [actions, channels, pages, routines, people],
+    });
+    expect(groups.at(-1)?.id).toBe("people");
   });
 
   test("recents are hidden once the query is non-empty", () => {
     const groups = buildCommandPaletteGroups({
       query: "eng",
       recents,
-      scoped: [channels],
-      unscoped: [],
+      sources: [channels],
     });
     expect(groups.find((g) => g.id === "recents")).toBeUndefined();
   });
@@ -69,8 +83,7 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "#",
       recents,
-      scoped: [channels],
-      unscoped: [],
+      sources: [channels],
     });
     expect(groups.find((g) => g.id === "recents")).toBeUndefined();
   });
@@ -79,8 +92,7 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "#",
       recents: [],
-      scoped: [actions, channels, pages],
-      unscoped: [routines],
+      sources: [actions, channels, pages, routines],
     });
     expect(groups.map((g) => g.id)).toEqual(["channels"]);
   });
@@ -89,8 +101,7 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: ">",
       recents: [],
-      scoped: [actions],
-      unscoped: [routines],
+      sources: [actions, routines],
     });
     expect(groups.map((g) => g.id)).toEqual(["actions"]);
   });
@@ -99,8 +110,7 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "#des",
       recents: [],
-      scoped: [channels],
-      unscoped: [],
+      sources: [channels],
     });
     expect(groups).toEqual([
       {
@@ -115,18 +125,16 @@ describe("buildCommandPaletteGroups", () => {
     const groups = buildCommandPaletteGroups({
       query: "zzz",
       recents: [],
-      scoped: [channels],
-      unscoped: [routines],
+      sources: [channels, routines],
     });
     expect(groups).toEqual([]);
   });
 
-  test("an unscoped query with no prefix still filters scoped sources by kind match text", () => {
+  test("an unscoped query with no prefix still filters unscoped sources by match text", () => {
     const groups = buildCommandPaletteGroups({
       query: "weekly",
       recents: [],
-      scoped: [channels],
-      unscoped: [routines],
+      sources: [channels, routines],
     });
     expect(groups).toEqual([
       {

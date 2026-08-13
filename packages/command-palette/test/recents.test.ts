@@ -59,6 +59,21 @@ describe("createRecentsStore", () => {
     expect(store.load()).toEqual([entry("b"), entry("a")]);
   });
 
+  test("push never throws when setItem throws (quota, disabled storage) — returns the updated list anyway", () => {
+    const throwingStorage: RecentsStorage = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+    };
+    const store = createRecentsStore(throwingStorage, "bench:1");
+    let result: readonly RecentEntry[] | undefined;
+    expect(() => {
+      result = store.push(entry("a"));
+    }).not.toThrow();
+    expect(result).toEqual([entry("a")]);
+  });
+
   test("two keys do not share state", () => {
     const storage = inMemoryStorage();
     const benchOne = createRecentsStore(storage, "bench:1");

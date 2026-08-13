@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { parsePaletteQuery } from "../src/scope";
+import { isBareScopeQuery, parsePaletteQuery } from "../src/scope";
 
 describe("parsePaletteQuery", () => {
   test("no prefix leaves the whole string unscoped", () => {
@@ -57,5 +57,25 @@ describe("parsePaletteQuery", () => {
       scope: null,
       query: "!eng",
     });
+  });
+});
+
+describe("isBareScopeQuery", () => {
+  test("a bare prefix with nothing after it is bare", () => {
+    expect(isBareScopeQuery("#")).toBe(true);
+    expect(isBareScopeQuery("@")).toBe(true);
+  });
+
+  test("a prefix followed only by whitespace is still bare", () => {
+    expect(isBareScopeQuery("#   ")).toBe(true);
+  });
+
+  test("a prefix with text after it is not bare", () => {
+    expect(isBareScopeQuery("#eng")).toBe(false);
+  });
+
+  test("no prefix at all is not a bare scope query", () => {
+    expect(isBareScopeQuery("")).toBe(false);
+    expect(isBareScopeQuery("eng")).toBe(false);
   });
 });
