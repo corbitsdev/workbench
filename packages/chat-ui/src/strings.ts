@@ -56,7 +56,6 @@ export const CHAT_STRINGS = {
   filePartLabel: "Attachment",
   emptyTimelineTitle: "No messages yet",
   emptyTimelineDescription: "Say something to get the conversation going.",
-  reconnectingMessage: "Reconnecting to the channel…",
   mentionEmpty: "No matching agents",
   unnamedChannel: "Untitled channel",
   unnamedRun: "Untitled agent",
