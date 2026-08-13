@@ -5,10 +5,13 @@ export {
   type SidecarConnection,
   type SidecarAuthIdentity,
   type SidecarAuthenticator,
+  type AllocatedSidecarTarget,
+  type SidecarAllocationRouter,
   type SendPackOptions,
   type WsHandle,
 } from "./sidecar-handler";
 export {
+  createSidecarCredentialResolver,
   createSidecarTokenAuthenticator,
   type CreateSidecarTokenAuthenticatorDeps,
 } from "./sidecar-token-authenticator";
@@ -22,4 +25,5 @@ export {
   type SidecarMailPersistedRow,
   type SidecarMailPersistedPayload,
   type MailTriggeredRunGrantsResult,
+  type WorkflowRunPackSource,
 } from "./sidecar-events";

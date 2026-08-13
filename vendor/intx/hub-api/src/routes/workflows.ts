@@ -1,11 +1,21 @@
 import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { type } from "arktype";
 
-import { asset, workflowDefinition, workflowRun } from "@intx/db/schema";
-import type { DB } from "@intx/db";
+import {
+  asset,
+  sidecarAllocation,
+  workflowDefinition,
+  workflowRun,
+} from "@intx/db/schema";
+import {
+  WorkflowRunDispatchPayloadConflictError,
+  type DB,
+  type DBExecutor,
+} from "@intx/db";
 import type { GrantStore } from "@intx/types/authz";
 import {
   assembleSignedContent,
@@ -19,12 +29,18 @@ import {
   correlationIdFromSignalName,
   deriveWorkflowRunId,
   ErrorResponse,
+  isSidecarAllocationDispatchable,
   SendMessage,
+  type SidecarAllocationStatus,
 } from "@intx/types";
 import { InferenceSource } from "@intx/types/runtime";
 import type { HarnessConfig } from "@intx/types/runtime";
+import type { RunGrantsFrame } from "@intx/types/sidecar";
+import { ToolPackagePinArray } from "@intx/types/tool-packages";
 import {
   createWorkflowRunReader,
+  ExclusiveWorkflowPlacementError,
+  resolveWorkflowSidecarPlacement,
   type AssetService,
   type RepoId,
   type RepoStore,
@@ -32,11 +48,12 @@ import {
   type SidecarRouter,
   type WorkflowDefinition,
   type WorkflowRunEvent,
+  type WorkflowAllocationService,
+  type WorkflowDispatchService,
 } from "@intx/hub-sessions";
 import { deriveRunPrincipalId, generateId } from "@intx/hub-common";
 import {
   deriveDeploymentAddress,
-  deriveWorkflowRunRepoId,
   WorkflowDefinitionInvalidError,
 } from "@intx/workflow-deploy";
 
@@ -47,10 +64,18 @@ import {
   collectCreatorGrants,
   commitRunGrants,
   hydrateDefinition,
+  loadCommittedRunGrants,
+  lockWorkflowRunState,
   parseGrantRequirements,
   stageRunGrants,
 } from "../run-grant-materialization";
 import { ts } from "../format";
+import type { MaterializedGrantRow } from "../grant-materialization";
+import {
+  readDurableWorkflowRunLifecycle,
+  workflowRunRepoIdForAddress,
+  WORKFLOW_RUN_REF,
+} from "../workflow-run-lifecycle";
 
 // DoS guard on the trigger route body. Sized identically to the agent
 // mail route: above the legitimate ceiling (the 30 MB per-message
@@ -59,10 +84,6 @@ import { ts } from "../format";
 // with a structured error, while genuine garbage is rejected here
 // before the JSON parser allocates a giant string.
 const MAX_MAIL_BODY_BYTES = 44 * 1024 * 1024;
-
-// Workflow-run events commit on the substrate's default branch; the
-// supervisor wires the workflow-process child against this ref.
-const WORKFLOW_RUN_REF = "refs/heads/main";
 
 // The sidecar's deploy router keys the workflow-run repo by
 // `deriveWorkflowRunRepoId(deploymentAddress)`, where the deployment
@@ -77,10 +98,29 @@ function workflowRunRepoId(deploymentId: string, tenantDomain: string): RepoId {
     deploymentId,
     deploymentDomain: tenantDomain,
   });
-  return {
-    kind: "workflow-run",
-    id: deriveWorkflowRunRepoId(deploymentAddress),
-  };
+  return workflowRunRepoIdForAddress(deploymentAddress);
+}
+
+async function lockDispatchableAllocation(
+  tx: DBExecutor,
+  allocationId: string,
+  anchorRunId: string,
+): Promise<boolean> {
+  const [allocation] = await tx
+    .select({ status: sidecarAllocation.status })
+    .from(sidecarAllocation)
+    .where(
+      and(
+        eq(sidecarAllocation.id, allocationId),
+        eq(sidecarAllocation.anchorRunId, anchorRunId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  return (
+    allocation !== undefined &&
+    isSidecarAllocationDispatchable(allocation.status)
+  );
 }
 
 // Request body for the general workflow deploy. The workflow definition
@@ -91,6 +131,7 @@ const DeployWorkflow = type({
   assetId: "string",
   sources: InferenceSource.array(),
   defaultSource: "string",
+  "toolPackages?": ToolPackagePinArray,
 });
 
 // Request body for signal delivery. `signalId` is caller-supplied and
@@ -153,12 +194,17 @@ function formatRunEvent(event: WorkflowRunEvent) {
 // the run's definition; a null asset is a corrupt definition the deployment
 // contract cannot represent, so it surfaces loudly rather than emitting null
 // into a string field.
-function formatDeployment(row: {
-  id: string;
-  tenantId: string;
-  definitionAssetId: string | null;
-  createdAt: Date;
-}) {
+function formatDeployment(
+  row: {
+    id: string;
+    tenantId: string;
+    definitionAssetId: string | null;
+    createdAt: Date;
+    allocationStatus?: SidecarAllocationStatus | null;
+    allocationNextAttemptAt?: Date | null;
+  },
+  statusOverride?: string,
+) {
   if (row.definitionAssetId === null) {
     throw new Error(
       `deployment ${row.id}: anchor run's definition has no asset`,
@@ -168,9 +214,35 @@ function formatDeployment(row: {
     id: row.id,
     tenantId: row.tenantId,
     definitionAssetId: row.definitionAssetId,
-    status: "deployed",
+    status: statusOverride ?? formatAllocationStatus(row),
     createdAt: ts(row.createdAt),
   };
+}
+
+function formatAllocationStatus(row: {
+  allocationStatus?: SidecarAllocationStatus | null;
+  allocationNextAttemptAt?: Date | null;
+}): string {
+  switch (row.allocationStatus) {
+    case undefined:
+    case null:
+      return "deployed";
+    case "pending":
+    case "provisioning":
+      return "pending";
+    case "allocated":
+      return row.allocationNextAttemptAt == null ? "deployed" : "pending";
+    case "replacing":
+      return "recovering";
+    case "releasing":
+    case "released":
+    case "failed":
+      return row.allocationStatus;
+    default: {
+      const unreachable: never = row.allocationStatus;
+      return unreachable;
+    }
+  }
 }
 
 // A deployment exists iff its anchor run does -- the workflow_run whose id is
@@ -199,6 +271,8 @@ async function deploymentAnchorRunExists(
 export type CreateWorkflowRoutesDeps = {
   db: DB["db"];
   sessionService: SessionService;
+  workflowAllocationService?: WorkflowAllocationService;
+  workflowDispatchService?: WorkflowDispatchService;
   sidecarRouter: SidecarRouter;
   assetService: AssetService;
   repoStore: RepoStore;
@@ -209,6 +283,8 @@ export type CreateWorkflowRoutesDeps = {
 export function createWorkflowRoutes({
   db,
   sessionService,
+  workflowAllocationService,
+  workflowDispatchService,
   sidecarRouter,
   assetService,
   repoStore,
@@ -217,6 +293,18 @@ export function createWorkflowRoutes({
 }: CreateWorkflowRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const runReader = createWorkflowRunReader(repoStore);
+
+  async function readRunLifecycle(
+    deploymentId: string,
+    tenantDomain: string,
+    runId: string,
+  ) {
+    const deploymentAddress = deriveDeploymentAddress({
+      deploymentId,
+      deploymentDomain: tenantDomain,
+    });
+    return readDurableWorkflowRunLifecycle(repoStore, deploymentAddress, runId);
+  }
 
   app.post(
     "/instances",
@@ -328,6 +416,28 @@ export function createWorkflowRoutes({
         );
       }
 
+      let placement;
+      try {
+        placement = await resolveWorkflowSidecarPlacement(
+          db,
+          tenant.id,
+          definition,
+        );
+      } catch (err) {
+        return c.json(
+          {
+            error: {
+              code: "placement_resolution_failed",
+              message:
+                err instanceof Error
+                  ? err.message
+                  : "Failed to resolve workflow sidecar placement",
+            },
+          },
+          500,
+        );
+      }
+
       const deploymentId = generateId("deployment");
       const sessionId = generateId("session");
       const config: HarnessConfig = {
@@ -343,46 +453,109 @@ export function createWorkflowRoutes({
         defaultSource: body.defaultSource,
       };
 
-      let result: Awaited<
-        ReturnType<SessionService["deployWorkflowDefinition"]>
-      >;
-      try {
-        result = await sessionService.deployWorkflowDefinition({
-          tenantId: tenant.id,
-          deploymentId,
-          deploymentDomain: tenant.domain,
-          definition,
-          definitionAssetId: assetRow.id,
-          config,
-          deployContent: { systemPrompt: "" },
-        });
-      } catch (err) {
-        // A single-step deploy whose source chain is invalid (head is not the
-        // default source, or a chain source the operator never approved) is a
-        // client/definition error, not a sidecar-reachability failure.
-        if (err instanceof WorkflowDefinitionInvalidError) {
+      let deployedId: string;
+      let deploymentStatus = "deployed";
+      if (placement?.sharing === "exclusive") {
+        if (workflowAllocationService === undefined) {
           return c.json(
             {
               error: {
-                code: "invalid_workflow",
-                message: err.message,
+                code: "exclusive_placement_unavailable",
+                message:
+                  "Exclusive workflow placement is not configured on this Hub",
               },
             },
             409,
           );
         }
-        return c.json(
-          {
-            error: {
-              code: "sidecar_unavailable",
-              message:
-                err instanceof Error
-                  ? err.message
-                  : "Failed to deploy workflow",
+        try {
+          const prepared =
+            await workflowAllocationService.prepareExclusiveDeployment({
+              tenantId: tenant.id,
+              deploymentId,
+              deploymentDomain: tenant.domain,
+              definition,
+              definitionAssetId: assetRow.id,
+              placement,
+              sessionId,
+              sourceAuthorityPrincipalId: c.get("principal").id,
+              sourceOfferingIds: body.sources.map((source) => source.id),
+              defaultSourceOfferingId: body.defaultSource,
+              deployContent: { systemPrompt: "" },
+              ...(body.toolPackages !== undefined
+                ? { toolPackagePins: body.toolPackages }
+                : {}),
+            });
+          deployedId = prepared.deploymentId;
+          deploymentStatus = prepared.status;
+        } catch (err) {
+          if (err instanceof ExclusiveWorkflowPlacementError) {
+            return c.json(
+              {
+                error: {
+                  code: err.code,
+                  message: err.message,
+                },
+              },
+              409,
+            );
+          }
+          return c.json(
+            {
+              error: {
+                code: "exclusive_deployment_failed",
+                message:
+                  err instanceof Error
+                    ? err.message
+                    : "Failed to prepare exclusive workflow deployment",
+              },
             },
-          },
-          502,
-        );
+            500,
+          );
+        }
+      } else {
+        try {
+          const result = await sessionService.deployWorkflowDefinition({
+            tenantId: tenant.id,
+            deploymentId,
+            deploymentDomain: tenant.domain,
+            definition,
+            definitionAssetId: assetRow.id,
+            config,
+            deployContent: { systemPrompt: "" },
+            ...(body.toolPackages !== undefined
+              ? { toolPackagePins: body.toolPackages }
+              : {}),
+          });
+          deployedId = result.deploymentId;
+        } catch (err) {
+          // A single-step deploy whose source chain is invalid (head is not the
+          // default source, or a chain source the operator never approved) is a
+          // client/definition error, not a sidecar-reachability failure.
+          if (err instanceof WorkflowDefinitionInvalidError) {
+            return c.json(
+              {
+                error: {
+                  code: "invalid_workflow",
+                  message: err.message,
+                },
+              },
+              409,
+            );
+          }
+          return c.json(
+            {
+              error: {
+                code: "sidecar_unavailable",
+                message:
+                  err instanceof Error
+                    ? err.message
+                    : "Failed to deploy workflow",
+              },
+            },
+            502,
+          );
+        }
       }
 
       // The sidecar deploy succeeded; reading back the anchor run is an
@@ -403,20 +576,20 @@ export function createWorkflowRoutes({
           workflowDefinition,
           eq(workflowRun.definitionId, workflowDefinition.id),
         )
-        .where(eq(workflowRun.id, result.deploymentId))
+        .where(eq(workflowRun.id, deployedId))
         .limit(1);
       if (!row) {
         return c.json(
           {
             error: {
               code: "anchor_run_missing",
-              message: `anchor workflow_run ${result.deploymentId} missing after deploy`,
+              message: `anchor workflow_run ${deployedId} missing after deploy`,
             },
           },
           500,
         );
       }
-      return c.json(formatDeployment(row), 201);
+      return c.json(formatDeployment(row, deploymentStatus), 201);
     },
   );
 
@@ -443,23 +616,30 @@ export function createWorkflowRoutes({
       const tenant = c.get("tenant");
       // List the deployments as their anchor runs -- the workflow_run whose id
       // equals its own deployment_id. There is deliberately NO run-status
-      // filter: the old projection never tracked teardown and listed every
-      // deployment as "deployed", so enumerating every anchor run regardless of
-      // its run-level status preserves that exact row-set and value. The
-      // `id = deployment_id` predicate (with the explicit non-null, matching
-      // deploymentAnchorRunExists) is the anchor-run identity; child and folded
-      // runs never satisfy it.
+      // filter: allocation lifecycle is separate from run execution status.
+      // Shared deployments have no allocation row and retain the legacy
+      // "deployed" projection; exclusive deployments derive their public
+      // lifecycle from the allocation joined below. The `id = deployment_id`
+      // predicate (with the explicit non-null, matching
+      // deploymentAnchorRunExists) is the anchor-run identity; child and
+      // folded runs never satisfy it.
       const rows = await db
         .select({
           id: workflowRun.id,
           tenantId: workflowRun.tenantId,
           definitionAssetId: workflowDefinition.assetId,
           createdAt: workflowRun.createdAt,
+          allocationStatus: sidecarAllocation.status,
+          allocationNextAttemptAt: sidecarAllocation.nextAttemptAt,
         })
         .from(workflowRun)
         .innerJoin(
           workflowDefinition,
           eq(workflowRun.definitionId, workflowDefinition.id),
+        )
+        .leftJoin(
+          sidecarAllocation,
+          eq(sidecarAllocation.anchorRunId, workflowRun.id),
         )
         .where(
           and(
@@ -469,7 +649,7 @@ export function createWorkflowRoutes({
           ),
         )
         .orderBy(desc(workflowRun.createdAt));
-      return c.json(rows.map(formatDeployment));
+      return c.json(rows.map((row) => formatDeployment(row)));
     },
   );
 
@@ -494,8 +674,17 @@ export function createWorkflowRoutes({
           description: "Workflow deployment not found",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
+        409: {
+          description:
+            "Workflow run has not started, is terminal, its deployment allocation is no longer active, or the signalId conflicts with a previously accepted payload",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
         502: {
           description: "Sidecar unavailable",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        503: {
+          description: "Durable workflow dispatch unavailable",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -506,8 +695,37 @@ export function createWorkflowRoutes({
       const deploymentId = c.req.param("deploymentId");
       const body = c.req.valid("json");
       const agentAddress = `ins_${deploymentId}@${tenant.domain}`;
+      const runId = deriveWorkflowRunId(agentAddress);
+      const signalRun = alias(workflowRun, "signal_top_level_run");
 
-      if (!(await deploymentAnchorRunExists(db, deploymentId, tenant.id))) {
+      const [deployment] = await db
+        .select({
+          allocationId: sidecarAllocation.id,
+          allocationStatus: sidecarAllocation.status,
+          anchorStatus: workflowRun.status,
+          runStatus: signalRun.status,
+        })
+        .from(workflowRun)
+        .leftJoin(
+          sidecarAllocation,
+          eq(sidecarAllocation.anchorRunId, workflowRun.id),
+        )
+        .leftJoin(
+          signalRun,
+          and(
+            eq(signalRun.id, runId),
+            eq(signalRun.deploymentId, workflowRun.id),
+          ),
+        )
+        .where(
+          and(
+            eq(workflowRun.id, deploymentId),
+            eq(workflowRun.tenantId, tenant.id),
+            isNotNull(workflowRun.deploymentId),
+          ),
+        )
+        .limit(1);
+      if (deployment === undefined) {
         return c.json(
           {
             error: {
@@ -541,7 +759,7 @@ export function createWorkflowRoutes({
       // synthetic body-child run id (or any other id) is not addressable: a
       // signal for a section body is delivered to the parent deployment run and
       // relayed down by the runtime, never addressed to the child directly.
-      if (body.runId !== deriveWorkflowRunId(agentAddress)) {
+      if (body.runId !== runId) {
         return c.json(
           {
             error: {
@@ -551,6 +769,147 @@ export function createWorkflowRoutes({
           },
           400,
         );
+      }
+
+      const durableLifecycle = await readRunLifecycle(
+        deploymentId,
+        tenant.domain,
+        runId,
+      );
+
+      if (
+        deployment.anchorStatus !== "running" ||
+        deployment.runStatus !== "running" ||
+        durableLifecycle !== "live"
+      ) {
+        return c.json(
+          {
+            error: {
+              code: "workflow_run_not_running",
+              message:
+                durableLifecycle !== "live"
+                  ? durableLifecycle === "terminal"
+                    ? "Workflow run is terminal"
+                    : "Workflow run has not started"
+                  : deployment.anchorStatus !== "running"
+                    ? `Workflow deployment is ${deployment.anchorStatus}`
+                    : deployment.runStatus === null
+                      ? "Workflow run has not started"
+                      : `Workflow run is ${deployment.runStatus}`,
+            },
+          },
+          409,
+        );
+      }
+
+      if (
+        deployment.allocationStatus !== null &&
+        !isSidecarAllocationDispatchable(deployment.allocationStatus)
+      ) {
+        return c.json(
+          {
+            error: {
+              code: "deployment_unreachable",
+              message: `Workflow deployment allocation is ${deployment.allocationStatus}`,
+            },
+          },
+          409,
+        );
+      }
+
+      const allocationId = deployment.allocationId;
+      if (allocationId !== null) {
+        if (workflowDispatchService === undefined) {
+          return c.json(
+            {
+              error: {
+                code: "workflow_dispatch_unavailable",
+                message:
+                  "Durable workflow dispatch is unavailable for this exclusive deployment",
+              },
+            },
+            503,
+          );
+        }
+        try {
+          const enqueued = await db.transaction(async (tx) => {
+            if (
+              !(await lockDispatchableAllocation(
+                tx,
+                allocationId,
+                deploymentId,
+              ))
+            ) {
+              return "allocation-unavailable" as const;
+            }
+            // Pack receipt advances Git while holding this allocation lock. Read
+            // again after acquiring it so the preflight result cannot go stale
+            // while this transaction waits behind a terminal pack.
+            if (
+              (await readRunLifecycle(deploymentId, tenant.domain, runId)) !==
+              "live"
+            ) {
+              return "run-not-running" as const;
+            }
+            if (
+              (await lockWorkflowRunState(tx, deploymentId, deploymentId)) !==
+                "running" ||
+              (await lockWorkflowRunState(tx, deploymentId, runId)) !==
+                "running"
+            ) {
+              return "run-not-running" as const;
+            }
+            await workflowDispatchService.enqueueSignal(
+              {
+                id: `dispatch:${deploymentId}:${body.signalId}`,
+                anchorRunId: deploymentId,
+                signal: {
+                  agentAddress,
+                  runId: body.runId,
+                  signalName: body.signalName,
+                  signalId: body.signalId,
+                  payload: body.payload ?? null,
+                },
+              },
+              tx,
+            );
+            return "enqueued" as const;
+          });
+          if (enqueued !== "enqueued") {
+            return c.json(
+              {
+                error: {
+                  code:
+                    enqueued === "run-not-running"
+                      ? "workflow_run_not_running"
+                      : "deployment_unreachable",
+                  message:
+                    enqueued === "run-not-running"
+                      ? "Workflow run is no longer running"
+                      : "Workflow deployment allocation is no longer active",
+                },
+              },
+              409,
+            );
+          }
+          // enqueueSignal may wake before the transaction commits.
+          workflowDispatchService.wake();
+          return c.body(null, 202);
+        } catch (error) {
+          if (error instanceof WorkflowRunDispatchPayloadConflictError) {
+            return c.json(
+              {
+                error: {
+                  code: "signal_id_conflict",
+                  message:
+                    "signalId has already been used with a different signal payload",
+                },
+              },
+              409,
+            );
+          }
+          throw error;
+        }
       }
 
       try {
@@ -587,7 +946,7 @@ export function createWorkflowRoutes({
       tags: ["Workflows"],
       summary: "Trigger a workflow run",
       description:
-        "Assembles a fresh signed conversation message and delivers it to the deployment's inbound mail address, starting a new workflow run. The run id is minted by the supervisor and is not returned synchronously; correlate the resulting RunStarted via the returned messageId.",
+        "Delivers a fresh signed conversation message to the deployment's stable top-level run. The first accepted message fires that run; while it remains live, later messages may resume its onTrigger input. A terminal deployment run cannot be fired again. The returned messageId identifies this trigger occurrence.",
       responses: {
         202: {
           description: "Trigger accepted for delivery",
@@ -607,11 +966,16 @@ export function createWorkflowRoutes({
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         409: {
-          description: "Deployment address is not routable",
+          description:
+            "Deployment address is not routable, its allocation is no longer active, or its top-level run is terminal",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         413: {
           description: "Request body exceeds the maximum allowed size",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        503: {
+          description: "Durable workflow dispatch unavailable",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -635,6 +999,9 @@ export function createWorkflowRoutes({
       const principal = c.get("principal");
       const deploymentId = c.req.param("deploymentId");
       const body = c.req.valid("json");
+      const address = `ins_${deploymentId}@${tenant.domain}`;
+      const runId = deriveWorkflowRunId(address);
+      const topLevelRun = alias(workflowRun, "mail_top_level_run");
 
       // Decode and validate attachments at the boundary, emitting
       // ordered, per-index structured errors, exactly as the agent mail
@@ -653,11 +1020,26 @@ export function createWorkflowRoutes({
         .select({
           definitionId: workflowRun.definitionId,
           definitionAssetId: workflowDefinition.assetId,
+          allocationId: sidecarAllocation.id,
+          allocationStatus: sidecarAllocation.status,
+          anchorStatus: workflowRun.status,
+          runStatus: topLevelRun.status,
         })
         .from(workflowRun)
         .innerJoin(
           workflowDefinition,
           eq(workflowRun.definitionId, workflowDefinition.id),
+        )
+        .leftJoin(
+          sidecarAllocation,
+          eq(sidecarAllocation.anchorRunId, workflowRun.id),
+        )
+        .leftJoin(
+          topLevelRun,
+          and(
+            eq(topLevelRun.id, runId),
+            eq(topLevelRun.deploymentId, workflowRun.id),
+          ),
         )
         .where(
           and(
@@ -678,6 +1060,40 @@ export function createWorkflowRoutes({
           404,
         );
       }
+      const durableLifecycle = await readRunLifecycle(
+        deploymentId,
+        tenant.domain,
+        runId,
+      );
+      if (
+        anchor.anchorStatus !== "running" ||
+        (anchor.runStatus !== null && anchor.runStatus !== "running") ||
+        durableLifecycle === "terminal"
+      ) {
+        return c.json(
+          {
+            error: {
+              code: "workflow_run_terminal",
+              message: `Workflow run ${runId} is terminal and cannot receive more mail`,
+            },
+          },
+          409,
+        );
+      }
+      if (
+        anchor.allocationStatus !== null &&
+        !isSidecarAllocationDispatchable(anchor.allocationStatus)
+      ) {
+        return c.json(
+          {
+            error: {
+              code: "deployment_unreachable",
+              message: `Workflow deployment allocation is ${anchor.allocationStatus}`,
+            },
+          },
+          409,
+        );
+      }
       const definitionAssetId = anchor.definitionAssetId;
       if (definitionAssetId === null) {
         // A native workflow definition names its asset; a null here is a
@@ -693,128 +1109,110 @@ export function createWorkflowRoutes({
         );
       }
 
-      const address = `ins_${deploymentId}@${tenant.domain}`;
       const messageId = `<${generateId("sessionMail")}@${tenant.domain}>`;
       const fromAddr = `${principal.refId}@${tenant.domain}`;
       const user = c.get("user");
       const from = user?.name ? `"${user.name}" <${fromAddr}>` : fromAddr;
 
-      // The runId is the deployment's mail address, shared by every run of
-      // the deployment -- NOT this message's Message-ID. The supervisor's
-      // dispatch loop waits on that id and reads the run's grants from
-      // `runs/<runId>/`, so the run principal and its grants must key off
-      // the same value or the run fails closed on its onRunStart barrier.
-      const runId = deriveWorkflowRunId(address);
-
-      // Derive the run's authorization grants from the deployment's workflow
-      // definition and stage them on a fresh run principal. Nothing is
-      // written to the database until the trigger is accepted for delivery:
-      // an unroutable deployment (409 below) must not leave an orphaned
-      // principal or grant rows behind.
-      let definition: WorkflowDefinition;
-      try {
-        definition = await hydrateDefinition(assetService, definitionAssetId);
-      } catch (err) {
-        return c.json(
-          {
-            error: {
-              code: "invalid_workflow",
-              message:
-                err instanceof Error
-                  ? err.message
-                  : "Failed to hydrate workflow definition",
-            },
-          },
-          409,
-        );
-      }
-
-      // Load the workflow asset row for its `creatorPrincipalId`: the CREATOR
-      // whose authority creator-sourced grant requirements resolve against.
-      // The deployment row alone does not carry the creator identity.
-      const assetRow = await db.query.asset.findFirst({
-        where: and(
-          eq(asset.id, definitionAssetId),
-          eq(asset.tenantId, tenant.id),
-          eq(asset.kind, "workflow"),
-        ),
-      });
-      if (!assetRow) {
-        return c.json(
-          {
-            error: {
-              code: "invalid_workflow",
-              message: `Workflow asset ${definitionAssetId} not found`,
-            },
-          },
-          409,
-        );
-      }
-
-      // Derive the run principal id from `(tenantId, runId)`. The runId is
-      // the stable deployment address, so every trigger of the deployment
-      // mints the same principal id; the commit's already-materialized guard
-      // makes all but the first a no-op, sharing one run principal with the
-      // mail-triggered path.
-      const runPrincipalId = await deriveRunPrincipalId(tenant.id, runId);
       const now = new Date();
-
-      // Declared grantRequirements resolve through the shared creator/invoker
-      // delegation path. Invoker-sourced requirements resolve against this
-      // trigger's caller and creator-sourced requirements against the
-      // workflow asset's creator, so two runs triggered by principals with
-      // different authority materialize different grants.
-      const parsedRequirements = parseGrantRequirements(definition);
-      if (!parsedRequirements.ok) {
-        return c.json(
-          {
-            error: {
-              code: "invalid_workflow",
-              message: parsedRequirements.message,
+      let runPrincipalId: string;
+      let stagedGrantRows: MaterializedGrantRow[];
+      let stepGrants: RunGrantsFrame["stepGrants"];
+      const committedRunGrants = await loadCommittedRunGrants(
+        db,
+        tenant.id,
+        runId,
+      );
+      if (committedRunGrants !== null) {
+        // This is another trigger occurrence for the one live top-level run.
+        // Reuse its immutable authorization snapshot; recomputing from the new
+        // caller would let one run change authority between sections.
+        runPrincipalId = committedRunGrants.runPrincipalId;
+        stagedGrantRows = [];
+        stepGrants = committedRunGrants.stepGrants;
+      } else {
+        let definition: WorkflowDefinition;
+        try {
+          definition = await hydrateDefinition(assetService, definitionAssetId);
+        } catch (err) {
+          return c.json(
+            {
+              error: {
+                code: "invalid_workflow",
+                message:
+                  err instanceof Error
+                    ? err.message
+                    : "Failed to hydrate workflow definition",
+              },
             },
-          },
-          409,
+            409,
+          );
+        }
+
+        const assetRow = await db.query.asset.findFirst({
+          where: and(
+            eq(asset.id, definitionAssetId),
+            eq(asset.tenantId, tenant.id),
+            eq(asset.kind, "workflow"),
+          ),
+        });
+        if (!assetRow) {
+          return c.json(
+            {
+              error: {
+                code: "invalid_workflow",
+                message: `Workflow asset ${definitionAssetId} not found`,
+              },
+            },
+            409,
+          );
+        }
+
+        runPrincipalId = await deriveRunPrincipalId(tenant.id, runId);
+        const parsedRequirements = parseGrantRequirements(definition);
+        if (!parsedRequirements.ok) {
+          return c.json(
+            {
+              error: {
+                code: "invalid_workflow",
+                message: parsedRequirements.message,
+              },
+            },
+            409,
+          );
+        }
+        const declaredGrantRequirements = parsedRequirements.requirements;
+        const invokerGrants = await grantStore.collectGrants(
+          principal.id,
+          tenant.id,
         );
+        const creatorGrants = await collectCreatorGrants(
+          grantStore,
+          tenant.id,
+          assetRow.creatorPrincipalId,
+          declaredGrantRequirements,
+        );
+        const staged = await stageRunGrants({
+          definition,
+          tenantId: tenant.id,
+          runPrincipalId,
+          now,
+          invokerGrants,
+          creatorGrants,
+          grantRequirements: declaredGrantRequirements,
+        });
+        if (!staged.ok) {
+          const { status, code, message } = staged.rejection;
+          return c.json({ error: { code, message } }, status);
+        }
+        stagedGrantRows = staged.grantRows;
+        stepGrants = staged.stepGrants;
       }
-      const declaredGrantRequirements = parsedRequirements.requirements;
-      const invokerGrants = await grantStore.collectGrants(
-        principal.id,
-        tenant.id,
-      );
-      // Creator-sourced requirements resolve against the workflow ASSET's
-      // creator (`asset.creatorPrincipalId`). When a creator-sourced
-      // requirement exists but the creator is null (the FK is `set null` on
-      // principal deletion), the grants stay empty and the staging below
-      // fails closed with its 403 rather than inventing a fallback principal.
-      const creatorGrants = await collectCreatorGrants(
-        grantStore,
-        tenant.id,
-        assetRow.creatorPrincipalId,
-        declaredGrantRequirements,
-      );
 
-      // Stage the run's grants: the walk's `tool:`/`effect:` runtime grants
-      // plus the resolved declared requirements. An overlap on the same
-      // (resource, action) is resolved by effect precedence at authz time,
-      // NOT by union of the rows here.
-      const staged = await stageRunGrants({
-        definition,
-        tenantId: tenant.id,
-        runPrincipalId,
-        now,
-        invokerGrants,
-        creatorGrants,
-        grantRequirements: declaredGrantRequirements,
-      });
-      if (!staged.ok) {
-        const { status, code, message } = staged.rejection;
-        return c.json({ error: { code, message } }, status);
-      }
-      const stagedGrantRows = staged.grantRows;
-
-      // A run trigger is threading-less by construction: it starts a new
-      // run rather than continuing a conversation, so no inReplyTo or
-      // references are stamped. This is the same fresh-signed-message
+      // A trigger occurrence is threading-less at the mail boundary, so no
+      // inReplyTo or references are stamped. The supervisor decides whether
+      // this first-fires the absent top-level log or resumes a live onTrigger
+      // input. This is the same fresh-signed-message
       // shape the deploy-flow fixture's mail trigger and the production
       // session-service mail path assemble. The route does not route
       // through sessionService.sendUserMessage because that path stamps
@@ -856,18 +1254,131 @@ export function createWorkflowRoutes({
       const rawMessage = assembleMessage(headers, signedContent, signature);
       const base64 = base64Encode(rawMessage);
 
-      // The run's grants ride the wire in the same validated encoding the
-      // agent.deploy frame's `config.grants` uses -- the staging above already
-      // projected them, so the frame carries exactly the rows the commit below
-      // writes.
-      const stepGrants = staged.stepGrants;
+      const allocationId = anchor.allocationId;
+      if (allocationId !== null) {
+        if (workflowDispatchService === undefined) {
+          return c.json(
+            {
+              error: {
+                code: "workflow_dispatch_unavailable",
+                message:
+                  "Durable workflow dispatch is unavailable for this exclusive deployment",
+              },
+            },
+            503,
+          );
+        }
+        const committed = await db.transaction(async (tx) => {
+          if (
+            !(await lockDispatchableAllocation(tx, allocationId, deploymentId))
+          ) {
+            return "allocation-unavailable" as const;
+          }
+          // The allocation lock serializes this read with authoritative pack
+          // advancement. An absent run is still valid for its first mail.
+          if (
+            (await readRunLifecycle(deploymentId, tenant.domain, runId)) ===
+            "terminal"
+          ) {
+            return "run-terminal" as const;
+          }
+          if (
+            (await lockWorkflowRunState(tx, deploymentId, deploymentId)) !==
+              "running" ||
+            (await lockWorkflowRunState(tx, deploymentId, runId)) === "terminal"
+          ) {
+            return "run-terminal" as const;
+          }
+          const canonicalStepGrants = await commitRunGrants(
+            {
+              db,
+              tenantId: tenant.id,
+              deploymentId,
+              definitionId: anchor.definitionId,
+              runId,
+              runPrincipalId,
+              now,
+              grantRows: stagedGrantRows,
+            },
+            tx,
+          );
+          await workflowDispatchService.enqueue(
+            {
+              id: `dispatch:${deploymentId}:${messageId}`,
+              anchorRunId: deploymentId,
+              messageId,
+              rawMessage,
+              stepGrants: canonicalStepGrants,
+              now,
+            },
+            tx,
+          );
+          return "committed" as const;
+        });
+        if (committed !== "committed") {
+          return c.json(
+            {
+              error: {
+                code:
+                  committed === "run-terminal"
+                    ? "workflow_run_terminal"
+                    : "deployment_unreachable",
+                message:
+                  committed === "run-terminal"
+                    ? `Workflow run ${runId} is terminal and cannot receive more mail`
+                    : "Workflow deployment allocation is no longer active",
+              },
+            },
+            409,
+          );
+        }
+        // enqueue may wake before the transaction commits.
+        workflowDispatchService.wake();
+        return c.json({ deploymentId, address, messageId }, 202);
+      }
+
+      const reserved = await db.transaction(async (tx) => {
+        if (
+          (await lockWorkflowRunState(tx, deploymentId, deploymentId)) !==
+            "running" ||
+          (await lockWorkflowRunState(tx, deploymentId, runId)) === "terminal"
+        ) {
+          return null;
+        }
+        return commitRunGrants(
+          {
+            db,
+            tenantId: tenant.id,
+            deploymentId,
+            definitionId: anchor.definitionId,
+            runId,
+            runPrincipalId,
+            now,
+            grantRows: stagedGrantRows,
+          },
+          tx,
+        );
+      });
+      if (reserved === null) {
+        return c.json(
+          {
+            error: {
+              code: "workflow_run_terminal",
+              message: `Workflow run ${runId} is terminal and cannot receive more mail`,
+            },
+          },
+          409,
+        );
+      }
+      stepGrants = reserved;
 
       // Send the run's grants BEFORE the trigger mail. Both frames route
       // through the same per-address channel, so same-websocket FIFO
       // ordering guarantees the grants land at the sidecar before the mail
-      // that dispatches the run -- no ack round-trip is needed. A `false`
-      // here means the deployment is unroutable; abandon the run without
-      // committing any authz state (no orphaned principal or grant rows).
+      // that dispatches the run -- no ack round-trip is needed. Reserving the
+      // grants first makes concurrent deliveries converge on this exact
+      // snapshot. If routing fails, the grants-only run remains eligible for
+      // its first fire because Git has no RunStarted event yet.
       const grantsDelivered = sidecarRouter.sendRunGrants(
         address,
         runId,
@@ -897,27 +1408,6 @@ export function createWorkflowRoutes({
           409,
         );
       }
-
-      // Commit the run principal and its grants after delivery is accepted,
-      // so the 409 path above never leaves orphaned authz state behind. The
-      // principal is a bare `workflow`-kind row keyed on the runId, mirroring
-      // the per-instance principal the agent.deploy path mints. The commit is
-      // idempotent on the runId (the stable deployment address, shared by
-      // every trigger), sharing the same staging and commit the
-      // mail-triggered run path uses.
-      // Anchor the run on the deployment's definition -- the one the anchor
-      // run already carries, resolved above.
-      const definitionId = anchor.definitionId;
-      await commitRunGrants({
-        db,
-        tenantId: tenant.id,
-        deploymentId,
-        definitionId,
-        runId,
-        runPrincipalId,
-        now,
-        grantRows: stagedGrantRows,
-      });
 
       return c.json({ deploymentId, address, messageId }, 202);
     },

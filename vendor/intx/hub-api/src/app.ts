@@ -28,6 +28,8 @@ import type {
   RepoStore,
   SessionService,
   SidecarRouter,
+  WorkflowAllocationService,
+  WorkflowDispatchService,
 } from "@intx/hub-sessions";
 
 import { createMeRoutes } from "./routes/me";
@@ -39,7 +41,11 @@ import { createGrantRoutes, createEvaluateRoutes } from "./routes/grants";
 import { createInstanceRoutes } from "./routes/instances";
 import { createWorkflowRoutes } from "./routes/workflows";
 import { createWorkflowDefinitionRoutes } from "./routes/workflow-definitions";
-import { createApprovalRoutes } from "./routes/approvals";
+import {
+  createApprovalRoutes,
+  type ReadRunLifecycles,
+} from "./routes/approvals";
+import { readDurableWorkflowRunLifecycles } from "./workflow-run-lifecycle";
 import { createWalletRoutes } from "./routes/wallets";
 import { createProviderRoutes } from "./routes/providers";
 import { createOAuthClientRoutes } from "./routes/oauth-clients";
@@ -106,6 +112,8 @@ export type MountHubRoutesDeps = {
   db: DB["db"];
   sidecarRouter: SidecarRouter;
   sessionService: SessionService;
+  workflowAllocationService?: WorkflowAllocationService;
+  workflowDispatchService?: WorkflowDispatchService;
   eventCollectors: EventCollectorRegistry;
   /**
    * Encrypts credential secrets at rest on the credential/oauth write paths.
@@ -118,6 +126,7 @@ export type MountHubRoutesDeps = {
   conditionRegistry?: ConditionRegistry;
   approvalStore?: ApprovalStore;
   signalCorrelationStore?: SignalCorrelationStore;
+  readRunLifecycles?: ReadRunLifecycles;
   sidecarWsHandler?: Handler<AppEnv>;
   /**
    * The asset REST endpoint and smart-HTTP route group mount under
@@ -155,10 +164,13 @@ export function mountHubRoutes(
     db,
     sidecarRouter,
     sessionService,
+    workflowAllocationService,
+    workflowDispatchService,
     eventCollectors,
     sidecarWsHandler,
     assetService,
     repoStore,
+    readRunLifecycles,
     maxTarballBytes,
   } = opts;
   if ((assetService === null) !== (repoStore === null)) {
@@ -305,6 +317,12 @@ export function mountHubRoutes(
       createWorkflowRoutes({
         db,
         sessionService,
+        ...(workflowAllocationService !== undefined
+          ? { workflowAllocationService }
+          : {}),
+        ...(workflowDispatchService !== undefined
+          ? { workflowDispatchService }
+          : {}),
         sidecarRouter,
         assetService,
         repoStore,
@@ -319,6 +337,30 @@ export function mountHubRoutes(
     createApprovalRoutes({
       db,
       sidecarRouter,
+      ...(workflowDispatchService !== undefined
+        ? { workflowDispatchService }
+        : {}),
+      ...(readRunLifecycles !== undefined
+        ? { readRunLifecycles }
+        : repoStore !== null
+          ? {
+              readRunLifecycles: async (
+                agentAddress: string,
+                topLevelRunId: string,
+                targetRunId: string,
+              ) => {
+                const lifecycles = await readDurableWorkflowRunLifecycles(
+                  repoStore,
+                  agentAddress,
+                  [topLevelRunId, targetRunId],
+                );
+                return {
+                  topLevel: lifecycles.get(topLevelRunId) ?? "absent",
+                  target: lifecycles.get(targetRunId) ?? "absent",
+                };
+              },
+            }
+          : {}),
       grantStore,
       conditionRegistry,
       approvalStore,
@@ -454,6 +496,8 @@ export type CreateAppOpts = {
   db: DB["db"];
   sidecarRouter: SidecarRouter;
   sessionService: SessionService;
+  workflowAllocationService?: WorkflowAllocationService;
+  workflowDispatchService?: WorkflowDispatchService;
   eventCollectors: EventCollectorRegistry;
   /**
    * Encrypts credential secrets at rest on the credential/oauth write paths.
@@ -465,6 +509,7 @@ export type CreateAppOpts = {
   grantStore?: GrantStore;
   approvalStore?: ApprovalStore;
   signalCorrelationStore?: SignalCorrelationStore;
+  readRunLifecycles?: ReadRunLifecycles;
   sidecarWsHandler?: Handler<AppEnv>;
   assetService: AssetService | null;
   repoStore: RepoStore | null;
@@ -482,11 +527,14 @@ export function createApp({
   db,
   sidecarRouter,
   sessionService,
+  workflowAllocationService,
+  workflowDispatchService,
   eventCollectors,
   credentialCipher,
   grantStore,
   approvalStore,
   signalCorrelationStore,
+  readRunLifecycles,
   sidecarWsHandler,
   assetService,
   repoStore,
@@ -509,6 +557,12 @@ export function createApp({
     db,
     sidecarRouter,
     sessionService,
+    ...(workflowAllocationService !== undefined
+      ? { workflowAllocationService }
+      : {}),
+    ...(workflowDispatchService !== undefined
+      ? { workflowDispatchService }
+      : {}),
     eventCollectors,
     ...(credentialCipher ? { credentialCipher } : {}),
     assetService,
@@ -517,6 +571,7 @@ export function createApp({
     ...(grantStore ? { grantStore } : {}),
     ...(approvalStore ? { approvalStore } : {}),
     ...(signalCorrelationStore ? { signalCorrelationStore } : {}),
+    ...(readRunLifecycles ? { readRunLifecycles } : {}),
     ...(sidecarWsHandler ? { sidecarWsHandler } : {}),
   });
 

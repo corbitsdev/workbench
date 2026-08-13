@@ -51,6 +51,7 @@ import {
   createWorkflowRunPackClient,
   createWorkflowRunPackPushingRepoStore,
 } from "./workflow-run-pack-client";
+import { createWorkflowRunPackRestorer } from "./workflow-run-pack-restore";
 
 await setup();
 
@@ -128,6 +129,14 @@ const workflowRunPackClient = createWorkflowRunPackClient({
   },
 });
 
+const restoreWorkflowRunPack = createWorkflowRunPackRestorer({
+  // Restore into the unwrapped substrate. Running Hub-authored history
+  // through the push facade would echo the same pack straight back to the
+  // Hub and incorrectly present it as a new supervisor write.
+  substrate: agentRepoStore.repoStore,
+  markRestored: workflowRunPackClient.markRestored,
+});
+
 const wrappedRepoStore = createWorkflowRunPackPushingRepoStore({
   underlying: agentRepoStore.repoStore,
   packClient: workflowRunPackClient,
@@ -198,6 +207,10 @@ const orchestrator = createSidecarOrchestrator({
   signalInboundRouter: multistepSignalRouter,
   drainInboundRouter: multistepDrainRouter,
   sourcesInboundRouter: multistepSourcesRouter,
+  // Install Hub-authoritative workflow-run history before a replacement
+  // supervisor spawns, against the unwrapped substrate so the restore is
+  // never echoed back to the Hub as a new sidecar-authored update.
+  applyWorkflowRunPack: restoreWorkflowRunPack,
   // Called from every connection's open handler -- the watchdog's
   // aliveness signal -- and from the close path, which immediately
   // re-schedules a reconnect that re-arms the deadline.

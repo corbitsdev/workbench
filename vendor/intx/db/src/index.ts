@@ -25,6 +25,39 @@ export {
   type WorkflowRunStore,
 } from "./workflow-run-store";
 export {
+  createWorkflowRunLaunchSpecStore,
+  type WorkflowRunLaunchSpecStore,
+} from "./workflow-run-launch-spec-store";
+export {
+  createWorkflowRunDispatchStore,
+  WorkflowRunDispatchPayloadConflictError,
+  type AcknowledgeWorkflowRunDispatchArgs,
+  type ClaimWorkflowRunDispatchArgs,
+  type EnqueueWorkflowRunDispatchArgs,
+  type EnqueueWorkflowRunDispatchResult,
+  type EnqueueWorkflowSignalDispatchArgs,
+  type RetryWorkflowRunDispatchArgs,
+  type WorkflowRunDispatchStore,
+} from "./workflow-run-dispatch-store";
+export {
+  createSidecarAllocationStore,
+  type BeginSidecarReleaseArgs,
+  type BeginSidecarReplacementArgs,
+  type BindInitialSidecarArgs,
+  type BindReplacementSidecarArgs,
+  type ClaimSidecarAllocationArgs,
+  type CreatePendingSidecarAllocationArgs,
+  type FailSidecarAllocationArgs,
+  type MarkSidecarAllocatedArgs,
+  type MarkSidecarConnectionLostArgs,
+  type MarkSidecarConnectionReadyArgs,
+  type MarkSidecarReleasedArgs,
+  type ParkSidecarReconciliationPolicy,
+  type ScheduleSidecarAllocationRetryArgs,
+  type SidecarAllocation,
+  type SidecarAllocationStore,
+} from "./sidecar-allocation-store";
+export {
   createWorkflowDefinitionStore,
   resolveDefinitionIdForAsset,
   type WorkflowDefinitionRollbackResult,
@@ -69,7 +102,9 @@ export {
   resolveModelSources,
   resolveInferencePreferences,
   resolveInstanceModelSources,
+  resolveSourcesByOfferingIds,
   type CatalogSourceResolution,
+  type OfferingSourceResolution,
   type SourceSkip,
 } from "./model-source-resolution";
 export {
@@ -78,6 +113,8 @@ export {
   parsePrincipalRow,
   parseSignalCorrelationRow,
   parseWorkflowRunRow,
+  parseWorkflowRunDispatchRow,
+  parseWorkflowRunLaunchSpecRow,
   parseWorkflowDefinitionRow,
   parseWorkflowDefinitionVersionRow,
   parseOfferingRow,

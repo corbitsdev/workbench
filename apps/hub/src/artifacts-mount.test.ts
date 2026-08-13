@@ -1,10 +1,19 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
+// `mock.module` replaces the module in bun's process-wide registry, so
+// every export must be preserved here — not just the three this file
+// overrides. Dropping the rest (as a bare replacement literal would)
+// starves any test file that runs later in the same `bun test` process
+// and imports `@corbits/artifacts` for its other exports (e.g.
+// `createFileArtifact` via `@corbits/artifacts-hub`).
+const actualArtifacts = await import("@corbits/artifacts");
+
 // Capture the URL `createArtifactDb` is called with so we can assert
 // resolution order without talking to Postgres.
 const createArtifactDbCalls: string[] = [];
 
 mock.module("@corbits/artifacts", () => ({
+  ...actualArtifacts,
   createArtifactDb: (databaseUrl: string) => {
     createArtifactDbCalls.push(databaseUrl);
     return { db: {} };
