@@ -10,7 +10,7 @@ import {
   SidebarPanelHeader,
   SidebarPanelPins,
 } from "@corbits/react-ui";
-import { SlidersHorizontal } from "lucide-react";
+import { PanelLeft, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 
 import { ActivityBand } from "./activity-band";
@@ -18,6 +18,7 @@ import { BenchDock } from "./docks";
 import { resolvePanelContribution } from "./panel-contribution";
 import { ensurePanelContributions } from "./panel-contributions";
 import { loadPins, type Pin } from "./pins";
+import { COL2_ID, useStageChrome } from "./stage-chrome";
 
 ensurePanelContributions();
 
@@ -26,8 +27,9 @@ export function ContextualPanel({
   path,
   onNavigate,
 }: {
-  /** DOM id for the shell toggle's aria-controls; only the in-flow column
-   * carries it (the narrow drawer wrapper owns the id instead). */
+  /** DOM id targeted by the collapse toggle's aria-controls; only the
+   * in-flow column carries it (the narrow drawer wrapper owns the id
+   * instead). */
   readonly id?: string;
   readonly path: string;
   readonly onNavigate: (to: string) => void;
@@ -39,6 +41,7 @@ export function ContextualPanel({
   };
   const pageSpecific = contribution?.pageSpecific?.(renderCtx) ?? null;
   const [pins] = useState<readonly Pin[]>(() => loadPins());
+  const { col2Collapsed, toggleCol2 } = useStageChrome();
 
   const headerAction = (
     <div className="panel-page-tools">
@@ -68,6 +71,17 @@ export function ContextualPanel({
           <SlidersHorizontal />
         </Button>
       ) : null}
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="Collapse sidebar"
+        title="Collapse sidebar"
+        aria-expanded={!col2Collapsed}
+        aria-controls={COL2_ID}
+        onClick={toggleCol2}
+      >
+        <PanelLeft />
+      </Button>
     </div>
   );
 

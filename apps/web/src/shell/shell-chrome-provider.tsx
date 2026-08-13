@@ -5,9 +5,8 @@
 // the sidebar" has to mutate the same state AppShell renders from, not a
 // second copy scoped to AppShell's own subtree. This is the one place that
 // state lives; AppShell consumes it through the same hooks page code
-// already uses (`useCloseCanvas`, `useStageChrome`, ...) plus the couple of
-// shell-only reads (`useCanvasColumnOpen`, `toggleMounted`) it needs for its
-// own render.
+// already uses (`useCloseCanvas`, `useStageChrome`, ...) plus the shell-only
+// read (`useCanvasColumnOpen`) it needs for its own render.
 
 import {
   useCallback,
@@ -35,7 +34,6 @@ import {
 import {
   deriveCol2Width,
   StageChromeProvider,
-  useToggleRegistry,
   type StageChrome,
 } from "./stage-chrome";
 import { useShellLayoutMode } from "./use-shell-layout";
@@ -57,7 +55,6 @@ export function ShellChromeProvider({
   const [canvasState, setCanvasState] = useState(initialCanvasColumnState);
   const [userCollapsedCol2, setUserCollapsedCol2] = useState(false);
   const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
-  const { toggleMounted, registerToggle } = useToggleRegistry();
 
   // Tracks the last workbench we applied so a real switch (A→B) can drop
   // canvas state without treating the initial null→ready resolve as a switch.
@@ -117,9 +114,10 @@ export function ShellChromeProvider({
       });
   const col2Collapsed = col2Width === "collapsed";
 
-  // ONE collapse control (the stage top bar's toggle) drives both regimes:
-  // in-flow col2 collapses on wide layouts; the overlay drawer opens on
-  // narrow ones. There are no per-column chevrons.
+  // ONE collapse control drives both regimes — col2's own header toggle
+  // while it's open, the shell's edge handle once it's collapsed: in-flow
+  // col2 collapses on wide layouts; the overlay drawer opens on narrow
+  // ones. There are no per-column chevrons.
   const toggleCol2 = useCallback(() => {
     if (contextualAsDrawer) {
       setNarrowPanelOpen((open) => !open);
@@ -133,10 +131,8 @@ export function ShellChromeProvider({
       col2Collapsed,
       col2Width,
       toggleCol2,
-      registerToggle,
-      toggleMounted,
     }),
-    [col2Collapsed, col2Width, toggleCol2, registerToggle, toggleMounted],
+    [col2Collapsed, col2Width, toggleCol2],
   );
 
   const canvasOpen = resolveCanvasVisibility(canvasState, canvasAllowed);

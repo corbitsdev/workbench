@@ -20,7 +20,6 @@ import {
   NEW_CHANNEL_EVENT,
 } from "../command-palette-actions";
 import { useOpenProfileInCanvas } from "../shell/canvas-availability";
-import { StageTopBarToggle } from "../shell/stage-top-bar";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
 
 export function ChatPage({
@@ -82,7 +81,6 @@ export function ChatPage({
       }}
       onOpenArtifact={openArtifact}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
-      headerLeading={<StageTopBarToggle />}
     />
   );
 }

@@ -8,7 +8,7 @@
 // target pages (agents-page.tsx, routines-page.tsx, skills-page.tsx,
 // chat-page.tsx) consume the pending flag on mount. "New thread" is out of
 // scope (killed by owner decision); "Toggle sidebar" drives the same
-// `toggleCol2` the stage top bar's own control uses (see `stage-chrome.ts`).
+// `toggleCol2` col2's own control uses (see `stage-chrome.ts`).
 
 import {
   CHANNEL_PATH_PREFIX,

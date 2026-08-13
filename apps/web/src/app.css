@@ -551,9 +551,11 @@ html {
 }
 
 /* Shared stage top bar — mock `.top`: a fixed 3rem row on every stage
-   surface. The col2 toggle sits left, then title · dot · subtitle, and
-   per-page actions right-align. Matches `.chat-channel-header` geometry so
-   channels and pages read as one chrome. */
+   surface. Title · dot · subtitle, then per-page actions right-align. The
+   col2 collapse control lives on col2 itself, not here — see
+   .shell-contextual-panel and .shell-col2-edge-handle below. Matches
+   `.chat-channel-header` geometry so channels and pages read as one
+   chrome. */
 .stage-top-bar {
   display: flex;
   flex-shrink: 0;
@@ -565,10 +567,6 @@ html {
   padding: 0 0.9rem;
   border-bottom: 1px solid var(--border);
   background: var(--background, transparent);
-}
-
-.stage-top-bar-toggle {
-  flex-shrink: 0;
 }
 
 .stage-top-bar-title {
@@ -637,40 +635,41 @@ html {
   color: var(--muted-foreground);
 }
 
-/* Shell-owned fallback for stage states that render no top bar (boot
-   screens, signed-out notices, load failures): a slim header row matching
-   stage-top-bar's own height, so the single col2 control is always
-   reachable without ever overlapping stage content. Hidden automatically
-   while any real toggle is mounted. */
-.stage-toggle-fallback-bar {
+/* Col2's own expand affordance once it has collapsed out of the flow: a
+   slim full-height strip at the boundary where col2 used to sit, so it is
+   always reachable without floating over stage content. 12px matches the
+   mock's edge-handle sizing; the chevron only shows on hover/focus so the
+   strip reads as chrome, not another button, at rest. */
+.shell-col2-edge-handle {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  min-height: 3rem;
-  height: 3rem;
-  padding: 0 0.9rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--background, transparent);
-}
-
-.stage-toggle-fallback {
-  display: grid;
-  height: 2rem;
-  width: 2rem;
-  place-items: center;
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--foreground);
+  justify-content: center;
+  width: 0.8rem;
+  border-right: 1px solid transparent;
+  color: var(--muted-foreground);
   cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
 }
 
-.stage-toggle-fallback:hover {
-  background: var(--muted);
+.shell-col2-edge-handle:hover,
+.shell-col2-edge-handle:focus-visible {
+  background: color-mix(in srgb, var(--foreground, #2b2627) 5%, transparent);
+  border-right-color: var(--border);
 }
 
-.stage-toggle-fallback svg {
-  height: 1rem;
-  width: 1rem;
+.shell-col2-edge-handle svg {
+  height: 0.85rem;
+  width: 0.85rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.shell-col2-edge-handle:hover svg,
+.shell-col2-edge-handle:focus-visible svg {
+  opacity: 1;
 }
 
 /* Page-local toolbars replace TopBar action clusters (search, view toggle)
@@ -753,8 +752,8 @@ html {
 
 /* Narrow mode: the contextual column leaves the flow and becomes an overlay
    drawer that slides in from the left, so it never permanently steals width
-   from the main pane. The backdrop dims and dismisses on click. The stage
-   top bar's toggle is the one control that opens it — there is no separate
+   from the main pane. The backdrop dims and dismisses on click. The shared
+   col2 edge handle is the one control that opens it — there is no separate
    floating trigger. */
 .shell-drawer-backdrop {
   position: fixed;

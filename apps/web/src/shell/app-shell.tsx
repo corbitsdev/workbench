@@ -32,7 +32,7 @@ import { CanvasColumn } from "./canvas-column";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
 import { ContextualPanel } from "./contextual-panel";
 import { Rail } from "./rail";
-import { COL2_ID, StageToggleFallback, useStageChrome } from "./stage-chrome";
+import { COL2_ID, Col2EdgeHandle, useStageChrome } from "./stage-chrome";
 import { useShellLayoutMode } from "./use-shell-layout";
 
 export function AppShell({
@@ -54,8 +54,7 @@ export function AppShell({
   const closeProfile = useCloseCanvas();
   const showContextualColumn = contextualPanelVisible(layoutMode);
   const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
-  const { col2Collapsed, col2Width, toggleCol2, toggleMounted } =
-    useStageChrome();
+  const { col2Collapsed, col2Width, toggleCol2 } = useStageChrome();
   const frameRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   useShellFocusRescue(layoutMode, frameRef);
@@ -79,8 +78,8 @@ export function AppShell({
       {showContextualColumn && !col2Collapsed && (
         <ContextualPanel id={COL2_ID} path={path} onNavigate={navigate} />
       )}
+      {col2Collapsed && <Col2EdgeHandle />}
       <div className="shell-main" ref={mainRef}>
-        {!toggleMounted && <StageToggleFallback />}
         <div className="shell-main-content">{children}</div>
       </div>
       {canvasAllowed && (

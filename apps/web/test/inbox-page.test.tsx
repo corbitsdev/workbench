@@ -92,8 +92,5 @@ describe("inbox top bar", () => {
     expect(bar.textContent).toContain("2 need action · 5 open");
     expect(bar.textContent).toContain("Mark all read");
     expect(bar.textContent).toContain("Clear done");
-    expect(
-      bar.querySelector('button[aria-label="Toggle sidebar"]'),
-    ).not.toBeNull();
   });
 });
