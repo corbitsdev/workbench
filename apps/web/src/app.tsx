@@ -20,6 +20,7 @@ import { createAppQueryClient } from "./query-client";
 import { APP_ROUTES, matchesRoute, ONBOARDING_PATH } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
+import { ShellChromeProvider } from "./shell/shell-chrome-provider";
 
 function Brand() {
   return (
@@ -51,16 +52,18 @@ function Shell({
     <QueryClientProvider client={queryClient}>
       <NavigationProvider navigate={navigate}>
         <BenchProvider>
-          <CommandPaletteProvider path={path} navigate={navigate} />
-          <AppShell path={path} user={user} onSignOut={onSignOut}>
-            {path === ONBOARDING_PATH ? (
-              <OnboardingPage />
-            ) : route === undefined ? (
-              <NotFoundPage path={path} />
-            ) : (
-              route.render(path, navigate)
-            )}
-          </AppShell>
+          <ShellChromeProvider path={path} navigate={navigate}>
+            <CommandPaletteProvider path={path} navigate={navigate} />
+            <AppShell path={path} user={user} onSignOut={onSignOut}>
+              {path === ONBOARDING_PATH ? (
+                <OnboardingPage />
+              ) : route === undefined ? (
+                <NotFoundPage path={path} />
+              ) : (
+                route.render(path, navigate)
+              )}
+            </AppShell>
+          </ShellChromeProvider>
           <Toaster />
         </BenchProvider>
       </NavigationProvider>

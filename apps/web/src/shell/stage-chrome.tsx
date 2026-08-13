@@ -40,16 +40,25 @@ export function deriveCol2Width(input: {
 
 export type StageChrome = {
   readonly col2Collapsed: boolean;
+  /** The full three-state width `col2Collapsed` collapses down from —
+   * AppShell reads this directly for `data-col2`; `col2Collapsed` remains
+   * the boolean pages actually branch on. */
+  readonly col2Width: Col2Width;
   readonly toggleCol2: () => void;
   /** Every mounted toggle registers itself and returns its unregister; the
    * shell shows its own fallback control while none is registered. */
   readonly registerToggle: () => () => void;
+  /** Whether some toggle is currently registered — AppShell's own read, so
+   * it can render `StageToggleFallback` while none is. */
+  readonly toggleMounted: boolean;
 };
 
 const StageChromeContext = createContext<StageChrome>({
   col2Collapsed: false,
+  col2Width: "normal",
   toggleCol2: () => undefined,
   registerToggle: () => () => undefined,
+  toggleMounted: false,
 });
 
 export function StageChromeProvider({
