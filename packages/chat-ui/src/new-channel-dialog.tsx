@@ -167,7 +167,9 @@ export function NewChannelDialog({
             }}
           >
             <div className="chat-form-field">
-              <span>{CHAT_STRINGS.newChannelKindLabel}</span>
+              <span className="chat-field-label">
+                {CHAT_STRINGS.newChannelKindLabel}
+              </span>
               <div
                 role="group"
                 aria-label={CHAT_STRINGS.newChannelKindLabel}
@@ -206,7 +208,9 @@ export function NewChannelDialog({
                 className="chat-form-field"
                 data-testid="new-chat-agent-picker"
               >
-                <legend>{CHAT_STRINGS.newChatAgentLabel}</legend>
+                <legend className="chat-field-label">
+                  {CHAT_STRINGS.newChatAgentLabel}
+                </legend>
                 {agentState.kind === "loading" ? (
                   <Skeleton className="query-skeleton" />
                 ) : agentState.kind === "error" ? (
@@ -241,7 +245,7 @@ export function NewChannelDialog({
               </fieldset>
             ) : null}
             <label className="chat-form-field">
-              <span>
+              <span className="chat-field-label">
                 {kind === "chat"
                   ? CHAT_STRINGS.newChatNameLabel
                   : CHAT_STRINGS.newChannelNameLabel}
@@ -258,7 +262,9 @@ export function NewChannelDialog({
               />
             </label>
             <label className="chat-form-field">
-              <span>{CHAT_STRINGS.newChannelPurposeLabel}</span>
+              <span className="chat-field-label">
+                {CHAT_STRINGS.newChannelPurposeLabel}
+              </span>
               <textarea
                 className="chat-textarea"
                 value={purpose}
