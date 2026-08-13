@@ -6,7 +6,12 @@
 import { ChatWorkspace } from "@corbits/chat-ui";
 
 import { useBench } from "../bench-context";
-import { channelIdFromPath, channelPath } from "../channel-path";
+import {
+  channelIdFromPath,
+  channelPath,
+  channelSettingsPath,
+  isChannelSettingsPath,
+} from "../channel-path";
 import { useOpenProfileInCanvas } from "../shell/canvas-availability";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
 
@@ -19,6 +24,7 @@ export function ChatPage({
 }) {
   const bench = useBench();
   const channelId = channelIdFromPath(path);
+  const settingsOpen = isChannelSettingsPath(path);
   const openProfile = useOpenProfileInCanvas();
   const tenant = tenantResolutionFromBench(bench);
   const principalId = bench.selectedPrincipalId ?? undefined;
@@ -30,6 +36,13 @@ export function ChatPage({
       channelId={channelId}
       onChannelChange={(nextChannelId) => navigate(channelPath(nextChannelId))}
       onOpenProfile={openProfile}
+      settingsOpen={settingsOpen}
+      onSettingsOpenChange={(open) => {
+        if (channelId === null) return;
+        navigate(
+          open ? channelSettingsPath(channelId) : channelPath(channelId),
+        );
+      }}
     />
   );
 }

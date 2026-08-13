@@ -90,16 +90,17 @@ export type {
   BenchChatSettings,
   BenchChatSettingsPatch,
 } from "./api";
-export { ChannelSettingsPanel } from "./channel-settings-panel";
+export { ChannelSettingsSurface } from "./channel-settings";
 export {
-  channelSettingsTabs,
-  channelSettingsTabLabel,
+  channelSettingsSections,
   contextWindowControlState,
   contextWindowPatchValue,
-} from "./channel-settings-panel";
+} from "./channel-settings";
 export type {
-  ChannelSettingsTabId,
+  ChannelSettingsSection,
+  ChannelSettingsSectionGroup,
+  ChannelSettingsSectionId,
   ContextWindowMode,
-} from "./channel-settings-panel";
+} from "./channel-settings";
 export { profileSubjectFromParticipant } from "./profile-subject";
 export type { ProfileSubject } from "./profile-subject";
