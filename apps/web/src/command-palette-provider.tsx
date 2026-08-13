@@ -29,6 +29,7 @@ import { NAV_ROUTES } from "./routes";
 import { ArtifactListPageSchema, RunsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
+import { useStageChrome } from "./shell/stage-chrome";
 import { listRoutines, runRoutineNow, useTenantQuery } from "./routines-api";
 import { useSessionSkills } from "./skills-session";
 import { tenantKeys } from "./query-client";
@@ -69,6 +70,7 @@ export function CommandPaletteProvider({
   const runsQuery = useAPIQuery("/api/me/workflows/runs", RunsSchema);
   const { cycleMode } = useTheme();
   const closeCanvas = useCloseCanvas();
+  const { toggleCol2 } = useStageChrome();
 
   const recentsStore = useMemo(
     () =>
@@ -386,6 +388,7 @@ export function CommandPaletteProvider({
           tenantId: selectedTenantId,
           cycleTheme: cycleMode,
           closeCanvas,
+          toggleCol2,
         });
       } else if (id.startsWith("route:")) {
         const routePath = id.slice("route:".length);
@@ -440,6 +443,7 @@ export function CommandPaletteProvider({
       selectedTenantId,
       cycleMode,
       closeCanvas,
+      toggleCol2,
       pushRecent,
       channelItems,
       runItems,
