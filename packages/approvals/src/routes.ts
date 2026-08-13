@@ -78,23 +78,18 @@ export function createNeedsYouRoutes(
   // deployment's approvals can still resolve them there even after a 403
   // here. Callers must treat that 403 as "could not determine," never as
   // "cannot act" -- see `packages/chat-ui/src/blocks/approve-card-state.ts`.
+  //
+  // Authorization runs before the existence lookup -- deliberately unlike
+  // the native detail route's not-found-masks-cross-tenant precedent (that
+  // route's grant is per-approval, so it must load the row first to know
+  // which deployment to check). This grant is tenant-wide and independent
+  // of the target id, so checking it first means an unauthorized caller
+  // always sees 403, never learning from a 404-vs-403 split whether some
+  // id exists in this tenant.
   app.get("/:approvalId", async (c) => {
     const tenant = c.get("tenant");
     const principal = c.get("principal");
     const approvalId = c.req.param("approvalId");
-
-    const row = await deps.db.query.approval.findFirst({
-      where: and(
-        eq(schema.approval.id, approvalId),
-        eq(schema.approval.tenantId, tenant.id),
-      ),
-    });
-    if (row === undefined) {
-      return c.json(
-        { error: { code: "not_found", message: "Approval not found" } },
-        404,
-      );
-    }
 
     const authz = await authorize(
       deps.grantStore,
@@ -113,6 +108,19 @@ export function createNeedsYouRoutes(
           },
         },
         403,
+      );
+    }
+
+    const row = await deps.db.query.approval.findFirst({
+      where: and(
+        eq(schema.approval.id, approvalId),
+        eq(schema.approval.tenantId, tenant.id),
+      ),
+    });
+    if (row === undefined) {
+      return c.json(
+        { error: { code: "not_found", message: "Approval not found" } },
+        404,
       );
     }
 

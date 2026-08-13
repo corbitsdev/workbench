@@ -291,6 +291,17 @@ describeIfDb("needs-you: resolving pending approvals to display labels", () => {
       expect(body.error.code).toBe("forbidden");
     });
 
+    // Authorization is checked before the row is loaded (the grant is
+    // tenant-wide, not keyed to the target id), so an unauthorized caller
+    // gets the same 403 whether the id exists or not -- a 404-vs-403 split
+    // here would let a stranger enumerate which ids exist in the tenant.
+    test("an unauthorized principal sees 403 even for an id that doesn't exist, never a leaking 404", async () => {
+      const response = await strangerApp().request("/apv_does_not_exist");
+      expect(response.status).toBe(403);
+      const body = (await response.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("forbidden");
+    });
+
     test("an unknown approval id 404s", async () => {
       const response = await approverApp().request("/apv_does_not_exist");
       expect(response.status).toBe(404);
