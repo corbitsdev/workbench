@@ -4,9 +4,11 @@
 // entity lists (channels, routines, agents — any source the consumer wires);
 // `useEntitySearch` is the one piece of React this package owns — debouncing
 // a typed query and fetching those lists, because that timing and caching is
-// inseparable from the pagination it resets. Rendering — the overlay, the
-// keyboard contract, the grouped/loading/empty/load-more states — stays a
-// react-ui concern.
+// inseparable from the pagination it resets. `parsePaletteQuery` and
+// `buildCommandPaletteGroups` are the prefix-scope and grouping rules the
+// shell mock's `buildCmdkEntries` encodes; `recents` is the small Recents
+// store. Rendering — the overlay, the keyboard contract, the
+// grouped/loading/empty/load-more states — stays a react-ui concern.
 export { buildStaticCommands, matchesQuery } from "./static-commands";
 export type { StaticCommand, StaticRoute } from "./static-commands";
 
@@ -25,3 +27,22 @@ export type {
   UseEntitySearchOptions,
   UseEntitySearchResult,
 } from "./use-entity-search";
+
+export { parsePaletteQuery, PALETTE_SCOPES } from "./scope";
+export type {
+  ParsedPaletteQuery,
+  PaletteScope,
+  PaletteScopeKind,
+} from "./scope";
+
+export { buildCommandPaletteGroups } from "./command-groups";
+export type {
+  BuildCommandPaletteGroupsInput,
+  PaletteResultGroup,
+  PaletteResultItem,
+  ScopedPaletteSource,
+  UnscopedPaletteSource,
+} from "./command-groups";
+
+export { addRecentEntry, createRecentsStore } from "./recents";
+export type { RecentEntry, RecentsStorage, RecentsStore } from "./recents";

@@ -99,6 +99,7 @@ export function AppShell({
     <CanvasAvailabilityProvider
       allowed={canvasAllowed}
       openProfile={handleOpenProfile}
+      closeProfile={handleCloseProfile}
     >
       <div className="shell-frame" ref={frameRef} data-layout={layoutMode}>
         <Rail

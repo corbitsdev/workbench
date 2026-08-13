@@ -1,18 +1,37 @@
-import { CommandPalette, useCommandShortcut } from "@corbits/react-ui";
+import {
+  CommandPalette,
+  useCommandShortcut,
+  useTheme,
+} from "@corbits/react-ui";
 import type { CommandPaletteGroup } from "@corbits/react-ui";
 import { listChannels } from "@corbits/chat-ui";
 import {
+  buildCommandPaletteGroups,
   buildStaticCommands,
-  matchesQuery,
+  parsePaletteQuery,
   useEntitySearch,
+  type PaletteResultItem,
+  type RecentEntry,
+  type ScopedPaletteSource,
+  type UnscopedPaletteSource,
 } from "@corbits/command-palette";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { listAgentDefinitions } from "./agents-api";
+import {
+  ACTION_COMMANDS,
+  runActionCommand,
+  type ActionCommandId,
+} from "./command-palette-actions";
 import { OPEN_COMMAND_PALETTE_EVENT } from "./command-palette-events";
+import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
-import { RunsSchema, useAPIQuery } from "./api";
+import { ArtifactListPageSchema, RunsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
+import { useCloseCanvas } from "./shell/canvas-availability";
+import { listRoutines, runRoutineNow, useTenantQuery } from "./routines-api";
+import { useSessionSkills } from "./skills-session";
+import { tenantKeys } from "./query-client";
 import type { Navigate } from "./navigation";
 
 const STATIC_COMMANDS = buildStaticCommands(
@@ -22,23 +41,52 @@ const STATIC_COMMANDS = buildStaticCommands(
 /**
  * Wires the data-driven react-ui command palette into the app shell.
  *
- * Static commands come from the routes the shell already renders; entity
- * results come from the same listChannels / workflow-runs / agent-definitions
- * calls the product pages already use — this file adds no new fetch of its
- * own beyond those. Sources are free-form labels the package carries through
- * so this provider can group results and map a selection to a real route.
- * Ranking, matching, and the "no raw identifier on screen" floor all live in
- * `@corbits/command-palette` and `@corbits/react-ui`.
+ * Grouping, `#`/`@`/`>`/`/` scope parsing, and the Recents rule live in
+ * `@corbits/command-palette` (`buildCommandPaletteGroups`) — this file only
+ * assembles the app's own sources (routes, channels, agents, routines,
+ * skills, library artifacts) and maps a selection back to a real route or
+ * action. Entity results for channels/runs/agents still come off the same
+ * `useEntitySearch` paging this provider already used; routines, skills and
+ * library artifacts are small per-bench catalogs fetched once and filtered
+ * client-side, the same way the static route list already is.
+ *
+ * react-ui's `CommandPalette` has no slot for a scope-chip badge or the
+ * footer prefix legend the mock shows next to the input — see the PR
+ * description for that flag; this provider ships everything its `groups` /
+ * `items` API can express.
  */
 export function CommandPaletteProvider({
+  path,
   navigate,
 }: {
+  readonly path: string;
   readonly navigate: Navigate;
 }) {
   const { selectedTenantId } = useBench();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [recents, setRecents] = useState<readonly RecentEntry[]>([]);
   const runsQuery = useAPIQuery("/api/me/workflows/runs", RunsSchema);
+  const { cycleMode } = useTheme();
+  const closeCanvas = useCloseCanvas();
+
+  const recentsStore = useMemo(
+    () =>
+      selectedTenantId === null ? null : recentsStoreForBench(selectedTenantId),
+    [selectedTenantId],
+  );
+
+  useEffect(() => {
+    setRecents(recentsStore?.load() ?? []);
+  }, [recentsStore]);
+
+  const pushRecent = useCallback(
+    (entry: RecentEntry) => {
+      if (recentsStore === null) return;
+      setRecents(recentsStore.push(entry));
+    },
+    [recentsStore],
+  );
 
   const listChannelsForSearch = useCallback(async () => {
     if (selectedTenantId === null) return [];
@@ -75,11 +123,26 @@ export function CommandPaletteProvider({
     [listChannelsForSearch, listRunsForSearch, listAgentsForSearch],
   );
 
+  const strippedQuery = useMemo(() => parsePaletteQuery(query).query, [query]);
+
   const { results, loading, error, hasMore, loadMore } = useEntitySearch({
-    query,
+    query: strippedQuery,
     enabled: open,
     sources,
   });
+
+  const routinesQuery = useTenantQuery(
+    tenantKeys.routines(selectedTenantId ?? ""),
+    open && selectedTenantId !== null,
+    () => listRoutines(selectedTenantId ?? ""),
+  );
+  const skills = useSessionSkills();
+  const artifactsQuery = useAPIQuery(
+    selectedTenantId === null || !open
+      ? ""
+      : `/api/tenants/${selectedTenantId}/artifacts`,
+    ArtifactListPageSchema,
+  );
 
   useCommandShortcut(() => setOpen((current) => !current));
 
@@ -93,76 +156,230 @@ export function CommandPaletteProvider({
     };
   }, []);
 
-  const groups = useMemo<readonly CommandPaletteGroup[]>(() => {
-    // Pages are matched here, client-side: they are a tiny fixed list, so
-    // there is no debounce or fetch to wait on — show the matches the moment
-    // the query changes (and all of them when it is empty).
-    const pages = STATIC_COMMANDS.filter((command) =>
-      matchesQuery(command.title, query),
-    );
-    const channels = results.filter((result) => result.category === "channels");
-    const runs = results.filter((result) => result.category === "runs");
-    const agents = results.filter((result) => result.category === "agents");
+  const pageItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      STATIC_COMMANDS.map((command) => ({
+        id: command.id,
+        title: command.title,
+      })),
+    [],
+  );
 
-    const groups: CommandPaletteGroup[] = [];
-    if (pages.length > 0) {
-      groups.push({
-        id: "pages",
-        heading: "Pages",
-        items: pages.map((command) => ({
-          id: command.id,
-          title: command.title,
-        })),
-      });
-    }
-    if (channels.length > 0) {
-      groups.push({
-        id: "channels",
-        heading: "Channels",
-        items: channels.map((channel) => ({
+  const actionItems = useMemo<readonly PaletteResultItem[]>(() => {
+    const commands = ACTION_COMMANDS.map((command) => ({
+      id: `action:${command.id}`,
+      title: command.title,
+      subtitle: command.subtitle,
+    }));
+    const runNow =
+      routinesQuery.kind === "ready"
+        ? routinesQuery.data.map((routine) => ({
+            id: `action:run-routine:${routine.id}`,
+            title: `Run · ${routine.name}`,
+            subtitle: "Run this routine now",
+          }))
+        : [];
+    return [...commands, ...runNow];
+  }, [routinesQuery]);
+
+  const channelItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      results
+        .filter((result) => result.category === "channels")
+        .map((channel) => ({
           id: `entity:channels:${channel.id}`,
           title: channel.title,
         })),
-      });
-    }
-    if (runs.length > 0) {
-      groups.push({
-        id: "runs",
-        heading: "Runs",
-        items: runs.map((run) => ({
+    [results],
+  );
+
+  const agentItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      results
+        .filter((result) => result.category === "agents")
+        .map((agent) => ({
+          id: `entity:agents:${agent.id}`,
+          title: agent.title,
+          subtitle: "Agent",
+        })),
+    [results],
+  );
+
+  const runItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      results
+        .filter((result) => result.category === "runs")
+        .map((run) => ({
           id: `entity:runs:${run.id}`,
           title: run.title,
         })),
-      });
-    }
-    if (agents.length > 0) {
-      groups.push({
-        id: "agents",
-        heading: "Agents",
-        items: agents.map((agent) => ({
-          id: `entity:agents:${agent.id}`,
-          title: agent.title,
-        })),
-      });
-    }
-    return groups;
-  }, [results, query]);
+    [results],
+  );
+
+  const routineItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      routinesQuery.kind === "ready"
+        ? routinesQuery.data.map((routine) => ({
+            id: `entity:routines:${routine.id}`,
+            title: routine.name,
+            subtitle:
+              routine.scope === "personal"
+                ? "Personal routine"
+                : "Bench routine",
+          }))
+        : [],
+    [routinesQuery],
+  );
+
+  const skillItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      skills.map((skill) => ({
+        id: `entity:skills:${skill.id}`,
+        title: skill.name,
+        subtitle: skill.description,
+      })),
+    [skills],
+  );
+
+  const libraryItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      artifactsQuery.kind === "ready"
+        ? artifactsQuery.data.data.map((artifact) => ({
+            id: `entity:library:${artifact.id}`,
+            title: artifact.title,
+            subtitle: artifact.kind,
+          }))
+        : [],
+    [artifactsQuery],
+  );
+
+  const scopedSources = useMemo<readonly ScopedPaletteSource[]>(
+    () => [
+      {
+        id: "actions",
+        heading: "Commands",
+        kind: "actions",
+        items: actionItems,
+      },
+      {
+        id: "channels",
+        heading: "Channels",
+        kind: "channels",
+        items: channelItems,
+      },
+      { id: "pages", heading: "Pages", kind: "pages", items: pageItems },
+      {
+        id: "people",
+        heading: "People & agents",
+        kind: "people",
+        items: agentItems,
+      },
+    ],
+    [actionItems, channelItems, pageItems, agentItems],
+  );
+
+  const unscopedSources = useMemo<readonly UnscopedPaletteSource[]>(
+    () => [
+      { id: "runs", heading: "Runs", items: runItems },
+      { id: "routines", heading: "Routines", items: routineItems },
+      { id: "skills", heading: "Skills", items: skillItems },
+      { id: "library", heading: "Library", items: libraryItems },
+    ],
+    [runItems, routineItems, skillItems, libraryItems],
+  );
+
+  const recentItems = useMemo<readonly PaletteResultItem[]>(
+    () =>
+      recents.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        ...(entry.subtitle === undefined ? {} : { subtitle: entry.subtitle }),
+      })),
+    [recents],
+  );
+
+  const groups = useMemo<readonly CommandPaletteGroup[]>(() => {
+    const built = buildCommandPaletteGroups({
+      query,
+      recents: recentItems,
+      scoped: scopedSources,
+      unscoped: unscopedSources,
+    });
+    return built.map((group) => ({
+      id: group.id,
+      heading: group.heading,
+      items: group.items,
+    }));
+  }, [query, recentItems, scopedSources, unscopedSources]);
 
   const handleSelect = useCallback(
     (id: string) => {
-      if (id.startsWith("route:")) {
-        navigate(id.slice("route:".length));
+      if (id.startsWith("action:run-routine:")) {
+        const routineId = id.slice("action:run-routine:".length);
+        if (selectedTenantId !== null) {
+          void runRoutineNow(selectedTenantId, routineId);
+        }
+        navigate(`/routines/${encodeURIComponent(routineId)}`);
+      } else if (id.startsWith("action:")) {
+        void runActionCommand(id.slice("action:".length) as ActionCommandId, {
+          path,
+          navigate,
+          tenantId: selectedTenantId,
+          cycleTheme: cycleMode,
+          closeCanvas,
+        });
+      } else if (id.startsWith("route:")) {
+        const routePath = id.slice("route:".length);
+        const label =
+          STATIC_COMMANDS.find((command) => command.id === id)?.title ??
+          routePath;
+        navigate(routePath);
+        pushRecent({ kind: "route", id, title: label });
       } else if (id.startsWith("entity:channels:")) {
-        navigate(`/c/${id.slice("entity:channels:".length)}`);
+        const channelId = id.slice("entity:channels:".length);
+        const title =
+          channelItems.find((item) => item.id === id)?.title ?? channelId;
+        navigate(`/c/${channelId}`);
+        pushRecent({ kind: "channels", id, title, subtitle: "Channel" });
       } else if (id.startsWith("entity:runs:")) {
         // Routines page owns the /routines prefix (including detail segments).
         navigate(`/routines/${id.slice("entity:runs:".length)}`);
       } else if (id.startsWith("entity:agents:")) {
         navigate("/agents");
+      } else if (id.startsWith("entity:routines:")) {
+        const routineId = id.slice("entity:routines:".length);
+        const title =
+          routineItems.find((item) => item.id === id)?.title ?? routineId;
+        navigate(`/routines/${encodeURIComponent(routineId)}`);
+        pushRecent({ kind: "routines", id, title, subtitle: "Routine" });
+      } else if (id.startsWith("entity:skills:")) {
+        const skillId = id.slice("entity:skills:".length);
+        const title =
+          skillItems.find((item) => item.id === id)?.title ?? skillId;
+        navigate(`/skills/${encodeURIComponent(skillId)}`);
+        pushRecent({ kind: "skills", id, title, subtitle: "Skill" });
+      } else if (id.startsWith("entity:library:")) {
+        // Library detail is local page state, not a route — see the PR
+        // description flag. This opens the Library list.
+        const title =
+          libraryItems.find((item) => item.id === id)?.title ?? "Library";
+        navigate("/library");
+        pushRecent({ kind: "library", id, title, subtitle: "Library" });
       }
       setOpen(false);
     },
-    [navigate],
+    [
+      navigate,
+      path,
+      selectedTenantId,
+      cycleMode,
+      closeCanvas,
+      pushRecent,
+      channelItems,
+      routineItems,
+      skillItems,
+      libraryItems,
+    ],
   );
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
@@ -182,7 +399,7 @@ export function CommandPaletteProvider({
       error={error ? "Search failed. Try again." : undefined}
       hasMore={hasMore}
       onLoadMore={loadMore}
-      placeholder="Search or jump to…"
+      placeholder="Search or jump to… (# channels · @ people · > actions · / pages)"
     />
   );
 }
