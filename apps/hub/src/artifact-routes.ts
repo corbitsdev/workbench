@@ -36,6 +36,17 @@ const MAX_LIMIT = 100;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_FILE_COUNT = 50;
 const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024;
+// Safety cap on the counts walk: 200 pages of MAX_LIMIT rows each is 20,000
+// artifacts, far past any real tenant today. A tenant that legitimately
+// exceeds it — or a store whose cursor stops advancing — gets an honest
+// "can't count that" instead of a route that hangs or lies with a partial
+// total.
+const MAX_COUNT_PAGES = 200;
+
+/** Thrown when the counts walk cannot finish honestly — capped out or the
+ * store's cursor stopped advancing — rather than ever returning a partial
+ * count as if it were the whole tenant. */
+export class ArtifactCountsIncompleteError extends Error {}
 
 export type ArtifactListPage = {
   readonly data: readonly SerializedArtifactListItem[];
@@ -117,12 +128,14 @@ async function countArtifactsByKindSegment(
   };
 
   let cursor: string | null = null;
+  let pages = 0;
   for (;;) {
     const page = await store.list(tenantId, {
       limit: MAX_LIMIT,
       cursor,
       query: null,
     });
+    pages += 1;
     for (const row of page.data) {
       all += 1;
       for (const segment of LIBRARY_KIND_SEGMENTS) {
@@ -132,6 +145,16 @@ async function countArtifactsByKindSegment(
       }
     }
     if (page.nextCursor === null) break;
+    if (page.nextCursor === cursor) {
+      throw new ArtifactCountsIncompleteError(
+        `Artifact list cursor for tenant ${tenantId} did not advance past page ${pages}`,
+      );
+    }
+    if (pages >= MAX_COUNT_PAGES) {
+      throw new ArtifactCountsIncompleteError(
+        `Artifact list for tenant ${tenantId} exceeds ${MAX_COUNT_PAGES} pages — counts would be incomplete`,
+      );
+    }
     cursor = page.nextCursor;
   }
 
@@ -309,8 +332,18 @@ export function createArtifactRoutes(
 
   app.get("/counts", deps.requireGrant("asset:*", "read"), async (c) => {
     const tenant = c.get("tenant");
-    const counts = await countArtifactsByKindSegment(deps.store, tenant.id);
-    return c.json(counts);
+    try {
+      const counts = await countArtifactsByKindSegment(deps.store, tenant.id);
+      return c.json(counts);
+    } catch (err) {
+      if (err instanceof ArtifactCountsIncompleteError) {
+        return c.json(
+          { error: { code: "counts_unavailable", message: err.message } },
+          503,
+        );
+      }
+      throw err;
+    }
   });
 
   app.get("/:artifactId", deps.requireGrant("asset:*", "read"), async (c) => {

@@ -256,6 +256,116 @@ describe("artifact routes", () => {
   });
 });
 
+describe("GET /counts pagination", () => {
+  function paginatedStore(rows: Row[], pageLimit: number): ArtifactRoutesStore {
+    return {
+      async list(tenantId, opts) {
+        const tenantRows = rows
+          .filter((r) => r._tenantId === tenantId)
+          .map((r) => {
+            const { content: _c, ...item } = stripTenant(r);
+            return item;
+          });
+        const offset =
+          opts.cursor === null ? 0 : Number.parseInt(opts.cursor, 10);
+        const limit = Math.min(opts.limit, pageLimit);
+        const page = tenantRows.slice(offset, offset + limit);
+        const nextOffset = offset + page.length;
+        return {
+          data: page,
+          nextCursor:
+            nextOffset < tenantRows.length ? String(nextOffset) : null,
+        };
+      },
+      async get() {
+        return null;
+      },
+      async upload() {
+        return [];
+      },
+    };
+  }
+
+  test("walks every cursor page without double-counting or dropping a row at the boundary", async () => {
+    const rows: Row[] = [];
+    const expected = { all: 0, document: 0, sheet: 0, pdf: 0, routine: 0 };
+    function rowKindAndTitle(i: number): { kind: string; title: string } {
+      switch (i % 4) {
+        case 0:
+          return { kind: "document", title: `brief-${i}` };
+        case 1:
+          return { kind: "pdf", title: `contract-${i}.pdf` };
+        case 2:
+          return { kind: "routine", title: `digest-${i}` };
+        default:
+          return { kind: "file", title: `budget-${i}.csv` }; // sheet, by extension
+      }
+    }
+    for (let i = 0; i < 250; i++) {
+      const { kind, title } = rowKindAndTitle(i);
+      rows.push({ ...sampleRow(`r${i}`, TENANT.id), kind, title });
+      expected.all += 1;
+      if (kind === "document") expected.document += 1;
+      if (kind === "pdf") expected.pdf += 1;
+      if (kind === "routine") expected.routine += 1;
+      if (kind === "file") expected.sheet += 1;
+    }
+    // Store's own page size (25) is smaller than the route's per-page walk
+    // limit (100, capped by MAX_LIMIT) so a real multi-page walk exercises
+    // several boundaries, not just the one the route itself requests.
+    const app = mount(paginatedStore(rows, 25));
+
+    const res = await app.request("/artifacts/counts");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(expected);
+  });
+
+  test("answers 503 instead of a partial count when the tenant list exceeds the page cap", async () => {
+    const neverEndingStore: ArtifactRoutesStore = {
+      async list(_tenantId, opts) {
+        const next =
+          opts.cursor === null
+            ? "1"
+            : String(Number.parseInt(opts.cursor, 10) + 1);
+        return { data: [], nextCursor: next };
+      },
+      async get() {
+        return null;
+      },
+      async upload() {
+        return [];
+      },
+    };
+    const app = mount(neverEndingStore);
+
+    const res = await app.request("/artifacts/counts");
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("counts_unavailable");
+  });
+
+  test("answers 503 instead of hanging when the store's cursor stops advancing", async () => {
+    const stuckCursorStore: ArtifactRoutesStore = {
+      async list(_tenantId, opts) {
+        const next = opts.cursor === null ? "A" : opts.cursor;
+        return { data: [], nextCursor: next };
+      },
+      async get() {
+        return null;
+      },
+      async upload() {
+        return [];
+      },
+    };
+    const app = mount(stuckCursorStore);
+
+    const res = await app.request("/artifacts/counts");
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("counts_unavailable");
+  });
+});
+
 describe("unavailable artifact routes", () => {
   test("every surface answers 503", async () => {
     const app = new Hono<TestEnv>();
