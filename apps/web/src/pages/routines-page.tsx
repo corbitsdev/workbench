@@ -453,11 +453,6 @@ function CreateRoutineDialog({
           setOpen(next);
         }}
       >
-        {openProp === undefined ? (
-          <Button size="sm" onClick={() => setOpen(true)}>
-            <Plus /> New routine
-          </Button>
-        ) : null}
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Review draft</DialogTitle>
@@ -578,11 +573,6 @@ function CreateRoutineDialog({
         if (!next) reset();
       }}
     >
-      {openProp === undefined ? (
-        <Button size="sm" onClick={() => setOpen(true)}>
-          <Plus /> New routine
-        </Button>
-      ) : null}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New routine</DialogTitle>
