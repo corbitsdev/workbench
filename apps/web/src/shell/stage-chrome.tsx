@@ -18,6 +18,26 @@ import {
  * narrow drawer — never both), targeted by every toggle's aria-controls. */
 export const COL2_ID = "shell-col2";
 
+/** The mock's `data-col2` values: `collapsed` (user toggle or canvas focus),
+ * `wide` (the Talk-to-Myra context wants more room), `normal` otherwise. */
+export type Col2Width = "collapsed" | "normal" | "wide";
+
+/**
+ * Pure precedence rule behind `data-col2`, mirroring the mock's
+ * `applyLayout`: canvas focus wins outright (there is no col2 to show while
+ * the canvas is dominant), then the user's own collapse choice, then the
+ * route-derived wide context, then normal.
+ */
+export function deriveCol2Width(input: {
+  readonly userCollapsed: boolean;
+  readonly canvasFocused: boolean;
+  readonly wideRoute: boolean;
+}): Col2Width {
+  if (input.canvasFocused || input.userCollapsed) return "collapsed";
+  if (input.wideRoute) return "wide";
+  return "normal";
+}
+
 export type StageChrome = {
   readonly col2Collapsed: boolean;
   readonly toggleCol2: () => void;
