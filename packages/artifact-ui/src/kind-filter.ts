@@ -1,10 +1,21 @@
 // Pure helpers for the Library kind nav (`/library`, `/library/document`, …).
-// The panel owns the links; this module owns segment parse + artifact match so
-// the page can filter without inventing size/snippet meta.
+// Framework-free so both the web app (rendering the nav + filtering the
+// visible list) and the hub (computing honest per-kind counts server-side)
+// share one mapping instead of two copies drifting apart.
 
-import type { ArtifactSummary } from "@corbits/artifact-ui";
+import type { ArtifactSummary } from "./types";
 
 const LIBRARY_PATH = "/library";
+
+/** Kind nav segments in display order, excluding the implicit "all". */
+export const LIBRARY_KIND_SEGMENTS = [
+  "document",
+  "sheet",
+  "pdf",
+  "routine",
+] as const;
+
+export type LibraryKindSegment = (typeof LIBRARY_KIND_SEGMENTS)[number];
 
 /** Path segment under `/library` used as a kind filter; empty means All. */
 export function libraryKindSegmentFromPath(path: string): string {
