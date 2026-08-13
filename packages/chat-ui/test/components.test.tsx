@@ -653,6 +653,24 @@ describe("nextTypingState", () => {
     );
     expect(next).toBe(current);
   });
+
+  test("a second typist replaces the first — the banner always shows the latest ping", () => {
+    const afterA = nextTypingState(
+      null,
+      { eventType: "chat.typing", data: { principalId: "prn_a1" } },
+      "prn_self1",
+      1000,
+      4000,
+    );
+    const afterB = nextTypingState(
+      afterA,
+      { eventType: "chat.typing", data: { principalId: "prn_b1" } },
+      "prn_self1",
+      1500,
+      4000,
+    );
+    expect(afterB).toEqual({ principalId: "prn_b1", expiresAt: 5500 });
+  });
 });
 
 describe("isTypingStateExpired", () => {

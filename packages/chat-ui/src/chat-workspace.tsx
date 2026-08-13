@@ -53,18 +53,12 @@ import { CHAT_STRINGS } from "./strings";
 import { AgentBadge, ChannelTimeline } from "./timeline";
 import type { CurrentUser, ThreadAffordanceMeta } from "./timeline";
 import {
-  nextTypingState,
   typingLabel,
   TypingIndicator,
+  useTypingIndicator,
 } from "./typing-indicator";
-import type { TypingState } from "./typing-indicator";
 import type { ProfileSubject } from "./profile-subject";
 import { useChannelStream } from "./use-channel-stream";
-
-/** How long a `chat.typing` ping stays reflected in the banner before it's
- * treated as stale — the sender polls its own composer more often than
- * this, so a live typist never visibly flickers. */
-const TYPING_INDICATOR_TIMEOUT_MS = 4000;
 
 /**
  * The host's answer to "which bench does this account chat in": mirrors
@@ -448,46 +442,15 @@ function ChatWorkspaceInner({
     }
   };
 
-  const [typingState, setTypingState] = useState<TypingState>(null);
-  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-
-  useEffect(
-    () => () => {
-      if (typingTimerRef.current !== undefined) {
-        clearTimeout(typingTimerRef.current);
-      }
-    },
-    [],
-  );
-
-  const handleStreamEvent = (eventType: string, data: unknown) => {
-    const next = nextTypingState(
-      typingState,
-      { eventType, data },
-      currentUser?.principalId,
-      Date.now(),
-      TYPING_INDICATOR_TIMEOUT_MS,
-    );
-    if (next !== typingState) {
-      setTypingState(next);
-      if (typingTimerRef.current !== undefined) {
-        clearTimeout(typingTimerRef.current);
-      }
-      if (next !== null) {
-        typingTimerRef.current = setTimeout(
-          () => setTypingState(null),
-          TYPING_INDICATOR_TIMEOUT_MS,
-        );
-      }
-    }
-    if (eventType !== "chat.typing") refreshUnlessUnauthorized();
-  };
+  const { typingState, handleStreamEvent: handleTypingEvent } =
+    useTypingIndicator(currentUser?.principalId, activeChannelId);
 
   const streamState = useChannelStream(
     activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
-    handleStreamEvent,
+    (eventType, data) => {
+      handleTypingEvent(eventType, data);
+      if (eventType !== "chat.typing") refreshUnlessUnauthorized();
+    },
     refreshUnlessUnauthorized,
   );
 
