@@ -625,14 +625,22 @@ html {
 }
 
 /* Shell-owned fallback for stage states that render no top bar (boot
-   screens, signed-out notices, load failures): a small floating toggle
-   pinned to the main pane's top-left, so the single col2 control is always
-   reachable. Hidden automatically while any real toggle is mounted. */
+   screens, signed-out notices, load failures): a slim header row matching
+   stage-top-bar's own height, so the single col2 control is always
+   reachable without ever overlapping stage content. Hidden automatically
+   while any real toggle is mounted. */
+.stage-toggle-fallback-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  min-height: 3rem;
+  height: 3rem;
+  padding: 0 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--background, transparent);
+}
+
 .stage-toggle-fallback {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
-  z-index: 20;
   display: grid;
   height: 2rem;
   width: 2rem;

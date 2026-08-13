@@ -20,7 +20,6 @@ import {
   PageShell,
   ProgressChecklist,
   ProviderMark,
-  Section,
 } from "@corbits/react-ui";
 import type { ChecklistStep, WorkflowStep } from "@corbits/react-ui";
 import {
@@ -41,6 +40,7 @@ import {
   triggerFirstLoginProvisioning,
 } from "../onboarding";
 import type { CredentialProvider } from "../onboarding";
+import { StageTopBar } from "../shell/stage-top-bar";
 
 const GUIDANCE_CARDS = [
   {
@@ -241,79 +241,92 @@ export function OnboardingPage() {
 
   if (state.phase === "naming") {
     return (
-      <PageShell width="full" className="page-fill">
-        <Section
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar
           title="Create your workbench"
-          description="Give your workbench a name. This labels your personal bench across the app — you can change it later."
-        >
-          <HorizontalStepper steps={wizardSteps(state.phase)} />
-          <form onSubmit={handleNameSubmit} className="onboarding-name-form">
-            <label htmlFor="onboarding-workbench-name">Workbench name</label>
-            <Input
-              id="onboarding-workbench-name"
-              type="text"
-              placeholder="e.g. Ada's bench"
-              value={workbenchName}
-              onChange={(event) => setWorkbenchName(event.target.value)}
-              required
-              aria-describedby="onboarding-workbench-name-help"
-              autoFocus
-            />
-            <p id="onboarding-workbench-name-help">
-              Used as the display name for your bench.
-            </p>
-            <Button type="submit" disabled={workbenchName.trim().length === 0}>
-              Continue
-            </Button>
-          </form>
-        </Section>
-      </PageShell>
+          subtitle="Give your workbench a name. This labels your personal bench across the app — you can change it later."
+        />
+        <PageShell width="full" className="page-fill">
+          <div className="flex flex-col gap-3">
+            <HorizontalStepper steps={wizardSteps(state.phase)} />
+            <form onSubmit={handleNameSubmit} className="onboarding-name-form">
+              <label htmlFor="onboarding-workbench-name">Workbench name</label>
+              <Input
+                id="onboarding-workbench-name"
+                type="text"
+                placeholder="e.g. Ada's bench"
+                value={workbenchName}
+                onChange={(event) => setWorkbenchName(event.target.value)}
+                required
+                aria-describedby="onboarding-workbench-name-help"
+                autoFocus
+              />
+              <p id="onboarding-workbench-name-help">
+                Used as the display name for your bench.
+              </p>
+              <Button
+                type="submit"
+                disabled={workbenchName.trim().length === 0}
+              >
+                Continue
+              </Button>
+            </form>
+          </div>
+        </PageShell>
+      </div>
     );
   }
 
   if (state.phase === "provisioning") {
     return (
-      <PageShell width="full" className="page-fill">
-        <Section title="Setting up your workbench" description="One moment.">
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar title="Setting up your workbench" subtitle="One moment." />
+        <PageShell width="full" className="page-fill">
           <div />
-        </Section>
-      </PageShell>
+        </PageShell>
+      </div>
     );
   }
 
   if (state.phase === "provisioning-error") {
     return (
-      <PageShell width="full" className="page-fill">
-        <EmptyState
-          icon={<CircleAlert />}
-          title="Couldn't set up your workbench"
-          description={state.message}
-          action={
-            <Button
-              variant="outline"
-              onClick={() => runProvisioning(workbenchName)}
-            >
-              Try again
-            </Button>
-          }
-        />
-      </PageShell>
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar title="Couldn't set up your workbench" />
+        <PageShell width="full" className="page-fill">
+          <EmptyState
+            icon={<CircleAlert />}
+            title="Couldn't set up your workbench"
+            description={state.message}
+            action={
+              <Button
+                variant="outline"
+                onClick={() => runProvisioning(workbenchName)}
+              >
+                Try again
+              </Button>
+            }
+          />
+        </PageShell>
+      </div>
     );
   }
 
   if (state.phase === "guidance") {
     return (
-      <PageShell width="full" className="page-fill">
-        <Section
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar
           title="Your workbench is ready"
-          description="We've set up a personal bench for you with a starter channel and the default workflows deployed. Here's what to expect."
-        >
-          <GuidanceCards />
-          <Button asChild>
-            <Link to="/">Meet Myra</Link>
-          </Button>
-        </Section>
-      </PageShell>
+          subtitle="We've set up a personal bench for you with a starter channel and the default workflows deployed. Here's what to expect."
+        />
+        <PageShell width="full" className="page-fill">
+          <div className="flex flex-col gap-3">
+            <GuidanceCards />
+            <Button asChild>
+              <Link to="/">Meet Myra</Link>
+            </Button>
+          </div>
+        </PageShell>
+      </div>
     );
   }
 
@@ -325,16 +338,19 @@ export function OnboardingPage() {
       detail: "confirmed running with your credential",
     }));
     return (
-      <PageShell width="full" className="page-fill">
-        <Section
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar
           title="Your first routines are running"
-          description="Your key checked out, and every default routine on your bench has already fired and answered."
-        >
-          <HorizontalStepper steps={wizardSteps(state.phase)} />
-          <ProgressChecklist steps={checklist} label="Default routines" />
-          <Button onClick={() => navigate("/")}>Meet Myra</Button>
-        </Section>
-      </PageShell>
+          subtitle="Your key checked out, and every default routine on your bench has already fired and answered."
+        />
+        <PageShell width="full" className="page-fill">
+          <div className="flex flex-col gap-3">
+            <HorizontalStepper steps={wizardSteps(state.phase)} />
+            <ProgressChecklist steps={checklist} label="Default routines" />
+            <Button onClick={() => navigate("/")}>Meet Myra</Button>
+          </div>
+        </PageShell>
+      </div>
     );
   }
 
@@ -343,76 +359,79 @@ export function OnboardingPage() {
   const activeProvider = CREDENTIAL_PROVIDERS.find((p) => p.id === provider);
 
   return (
-    <PageShell width="full" className="page-fill">
-      <Section
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar
         title="Add an inference credential"
-        description="Your workbench needs an inference credential before any agent or routine can run. Pick a provider and paste your own key — it's used only for this bench."
-      >
-        <HorizontalStepper steps={wizardSteps(state.phase)} />
-        {preSatisfied && (
-          <EmptyState
-            icon={<CircleCheck />}
-            title="A working key is already in place"
-            description={
-              skipReason ??
-              "An operator-configured credential is set, so agents and routines can run right away. Add your own key below to use it instead, or skip ahead to your channel."
-            }
-            action={
-              <Button
-                variant="outline"
-                onClick={() => setState({ phase: "guidance" })}
-              >
-                Skip — use the default key
-              </Button>
-            }
-          />
-        )}
-        <form
-          onSubmit={handleSubmitCredential}
-          className="onboarding-credential-form"
-        >
-          <ProviderPicker
-            selected={provider}
-            onSelect={setProvider}
-            disabled={submitting}
-          />
-          <label htmlFor="onboarding-api-key">
-            {activeProvider?.label} API key
-          </label>
-          <Input
-            id="onboarding-api-key"
-            type="text"
-            placeholder={`${activeProvider?.keyHint}...`}
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            required
-            disabled={submitting}
-            aria-describedby="onboarding-api-key-help"
-          />
-          <p id="onboarding-api-key-help">
-            <a
-              href={activeProvider?.keyConsoleUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Get a key from the {activeProvider?.label} console
-            </a>{" "}
-            — it starts with <code>{activeProvider?.keyHint}</code>.
-          </p>
-          {error !== null && (
+        subtitle="Your workbench needs an inference credential before any agent or routine can run. Pick a provider and paste your own key — it's used only for this bench."
+      />
+      <PageShell width="full" className="page-fill">
+        <div className="flex flex-col gap-3">
+          <HorizontalStepper steps={wizardSteps(state.phase)} />
+          {preSatisfied && (
             <EmptyState
-              icon={<KeyRound />}
-              title="That key didn't work"
-              description={error}
+              icon={<CircleCheck />}
+              title="A working key is already in place"
+              description={
+                skipReason ??
+                "An operator-configured credential is set, so agents and routines can run right away. Add your own key below to use it instead, or skip ahead to your channel."
+              }
+              action={
+                <Button
+                  variant="outline"
+                  onClick={() => setState({ phase: "guidance" })}
+                >
+                  Skip — use the default key
+                </Button>
+              }
             />
           )}
-          <Button type="submit" disabled={submitting || apiKey.length === 0}>
-            {submitting
-              ? "Testing your key…"
-              : "Test key and run my first routine"}
-          </Button>
-        </form>
-      </Section>
-    </PageShell>
+          <form
+            onSubmit={handleSubmitCredential}
+            className="onboarding-credential-form"
+          >
+            <ProviderPicker
+              selected={provider}
+              onSelect={setProvider}
+              disabled={submitting}
+            />
+            <label htmlFor="onboarding-api-key">
+              {activeProvider?.label} API key
+            </label>
+            <Input
+              id="onboarding-api-key"
+              type="text"
+              placeholder={`${activeProvider?.keyHint}...`}
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              required
+              disabled={submitting}
+              aria-describedby="onboarding-api-key-help"
+            />
+            <p id="onboarding-api-key-help">
+              <a
+                href={activeProvider?.keyConsoleUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Get a key from the {activeProvider?.label} console
+              </a>{" "}
+              — it starts with <code>{activeProvider?.keyHint}</code>.
+            </p>
+            {error !== null && (
+              <EmptyState
+                icon={<KeyRound />}
+                title="That key didn't work"
+                description={error}
+              />
+            )}
+            <Button type="submit" disabled={submitting || apiKey.length === 0}>
+              {submitting
+                ? "Testing your key…"
+                : "Test key and run my first routine"}
+            </Button>
+          </form>
+        </div>
+      </PageShell>
+    </div>
   );
 }

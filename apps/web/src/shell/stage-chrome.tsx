@@ -102,22 +102,26 @@ export function useToggleRegistry(): {
   return { toggleMounted: mountedCount > 0, registerToggle };
 }
 
-/** Floating minimal toggle for stage states that render no top bar (boot
- * screens, signed-out notices, load failures). Same accessible name as the
- * top-bar toggle — it is the same control, shell-owned. */
+/** Minimal toggle row for stage states that render no top bar (boot
+ * screens, signed-out notices, load failures). Reserves the same slim
+ * header row a StageTopBar occupies — never floats over stage content —
+ * with the same accessible name as the top-bar toggle, since it is the
+ * same control, shell-owned. */
 export function StageToggleFallback() {
   const { col2Collapsed, toggleCol2 } = useStageChrome();
   return (
-    <button
-      type="button"
-      className="stage-toggle-fallback"
-      aria-label="Toggle sidebar"
-      title="Toggle sidebar"
-      aria-expanded={!col2Collapsed}
-      aria-controls={COL2_ID}
-      onClick={toggleCol2}
-    >
-      <PanelLeft />
-    </button>
+    <div className="stage-toggle-fallback-bar">
+      <button
+        type="button"
+        className="stage-toggle-fallback"
+        aria-label="Toggle sidebar"
+        title="Toggle sidebar"
+        aria-expanded={!col2Collapsed}
+        aria-controls={COL2_ID}
+        onClick={toggleCol2}
+      >
+        <PanelLeft />
+      </button>
+    </div>
   );
 }
