@@ -7,7 +7,12 @@ import { createAnthropicAdapter } from "./anthropic";
 import { createGoogleGenAIAdapter } from "./google-genai";
 import { createOpenAIAdapter } from "./openai";
 
-export { createAnthropicAdapter, AnthropicQuirks } from "./anthropic";
+export {
+  createAnthropicAdapter,
+  AnthropicQuirks,
+  ADAPTIVE_THINKING_MODELS,
+  ADAPTIVE_THINKING_EFFORT,
+} from "./anthropic";
 export { createGoogleGenAIAdapter, GoogleGenAIQuirks } from "./google-genai";
 export { createOpenAIAdapter, OpenAIQuirks } from "./openai";
 

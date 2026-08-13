@@ -11,16 +11,19 @@ import type { DB } from "@intx/db";
 import {
   createApprovalStore,
   createSignalCorrelationStore,
+  createWorkflowRunDispatchStore,
   createWorkflowRunStore,
 } from "@intx/db";
 import {
   agentSession,
   principal,
   sessionMail,
+  sidecarAllocation,
   workflowRun,
 } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
 import { parseAgentAddress, signalName } from "@intx/types";
+import { SignalDeliverFrame } from "@intx/types/sidecar";
 import {
   deriveWorkflowRunRepoId,
   isWorkflowDerivedAddress,
@@ -29,6 +32,11 @@ import {
 import type { AgentRepoStore } from "./agent-repo";
 import { generateId } from "@intx/hub-common";
 import type { SidecarLookups } from "./ws/sidecar-events";
+import {
+  listAcceptedWorkflowDispatches,
+  listConsumedWorkflowDispatches,
+} from "./workflow-dispatch-settlement";
+import { readCommittedWorkflowRunLifecycle } from "./workflow-run-kind";
 
 const logger = getLogger(["hub", "lookups"]);
 
@@ -45,6 +53,7 @@ export function createHubSessionLookups(
   const signalCorrelationStore = createSignalCorrelationStore(db);
   const approvalStore = createApprovalStore(db);
   const workflowRunStore = createWorkflowRunStore(db);
+  const workflowRunDispatchStore = createWorkflowRunDispatchStore(db);
 
   return {
     async lookupPublicKey(agentAddress) {
@@ -345,34 +354,105 @@ export function createHubSessionLookups(
       return { accepted: true };
     },
 
-    async receiveWorkflowRunPack(repoId, pack, ref, commitSha) {
+    async receiveWorkflowRunPack(repoId, pack, ref, commitSha, source) {
       if (repoId.kind !== "workflow-run") {
         throw new Error(
           `hub-session lookups receiveWorkflowRunPack received unsupported repo kind ${JSON.stringify(repoId.kind)}`,
         );
       }
-      const deploymentId = repoId.id;
+      const workflowRunRepoId = repoId.id;
+      if (deriveWorkflowRunRepoId(source.agentAddress) !== workflowRunRepoId) {
+        logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address does not own the repository`;
+        return { accepted: false, reason: "path_violation" as const };
+      }
+      const [anchor] = await db
+        .select({
+          id: workflowRun.id,
+          address: workflowRun.address,
+          deploymentId: workflowRun.deploymentId,
+        })
+        .from(workflowRun)
+        .where(
+          and(
+            eq(workflowRun.address, source.agentAddress),
+            eq(workflowRun.status, "running"),
+          ),
+        )
+        .limit(1);
+      if (
+        anchor === undefined ||
+        anchor.deploymentId !== anchor.id ||
+        anchor.address === null
+      ) {
+        logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address has no running deployment anchor`;
+        return { accepted: false, reason: "path_violation" as const };
+      }
+      const anchorAddress = anchor.address;
       let newlyTerminalRuns;
       try {
-        newlyTerminalRuns = await agentRepoStore.receiveWorkflowRunPack(
-          { kind: "workflow-run", id: deploymentId },
-          pack,
-          ref,
-          commitSha,
-        );
+        if (source.kind === "allocated") {
+          newlyTerminalRuns = await db.transaction(async (tx) => {
+            const [allocation] = await tx
+              .select()
+              .from(sidecarAllocation)
+              .where(eq(sidecarAllocation.anchorRunId, anchor.id))
+              .limit(1)
+              .for("update");
+            if (
+              allocation === undefined ||
+              allocation.id !== source.allocationId ||
+              allocation.anchorRunId !== source.anchorRunId ||
+              source.anchorRunId !== anchor.id ||
+              allocation.status !== "allocated" ||
+              allocation.generation !== source.generation ||
+              allocation.ensureAcceptedGeneration !== source.generation
+            ) {
+              return null;
+            }
+
+            // Replacement advances this same row. Keep its lock until the
+            // repository ref has advanced so ownership cannot change after
+            // validation but before the old worker's pack becomes
+            // authoritative.
+            return agentRepoStore.receiveWorkflowRunPack(
+              { kind: "workflow-run", id: workflowRunRepoId },
+              pack,
+              ref,
+              commitSha,
+            );
+          });
+          if (newlyTerminalRuns === null) {
+            logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source connection does not own the deployment's current allocation`;
+            return { accepted: false, reason: "path_violation" as const };
+          }
+        } else {
+          const allocation = await db.query.sidecarAllocation.findFirst({
+            where: eq(sidecarAllocation.anchorRunId, anchor.id),
+          });
+          if (allocation !== undefined) {
+            logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source connection does not own the deployment's current allocation`;
+            return { accepted: false, reason: "path_violation" as const };
+          }
+          newlyTerminalRuns = await agentRepoStore.receiveWorkflowRunPack(
+            { kind: "workflow-run", id: workflowRunRepoId },
+            pack,
+            ref,
+            commitSha,
+          );
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.startsWith("path_violation")) {
-          logger.warn`Workflow-run pack rejected for ${deploymentId}: ${msg}`;
+          logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: ${msg}`;
           return { accepted: false, reason: "path_violation" as const };
         }
-        // Mirror the agent-state branch's catch-all: any other failure
-        // from the repo subsystem (filesystem races, kind-handler
-        // diagnostics surfaced as Error messages, etc.) becomes a
-        // structured `corrupt` rejection so the sender can re-push,
-        // and the underlying error is logged so the cause stays
-        // traceable on the hub side.
-        logger.error`Workflow-run pack receive failed for ${deploymentId}: ${msg}`;
+        // Mirror the agent-state branch's catch-all: any other failure from
+        // the fenced receive (transaction failures, filesystem races,
+        // kind-handler diagnostics surfaced as Error messages, etc.) becomes
+        // a structured `corrupt` rejection so the sender can re-push, and the
+        // underlying error is logged so the cause stays traceable on the hub
+        // side.
+        logger.error`Workflow-run pack receive failed for ${workflowRunRepoId}: ${msg}`;
         return { accepted: false, reason: "corrupt" as const };
       }
 
@@ -392,6 +472,15 @@ export function createHubSessionLookups(
       for (const { runId, status } of newlyTerminalRuns) {
         try {
           await db.transaction(async (tx) => {
+            const [ownedRun] = await tx
+              .select({ deploymentId: workflowRun.deploymentId })
+              .from(workflowRun)
+              .where(eq(workflowRun.id, runId))
+              .limit(1);
+            if (ownedRun?.deploymentId !== anchor.id) {
+              logger.error`Ignoring terminal event for run ${runId}: it does not belong to source deployment ${anchor.id}`;
+              return;
+            }
             const won = await workflowRunStore.markTerminal(
               runId,
               status,
@@ -410,7 +499,7 @@ export function createHubSessionLookups(
                 .from(workflowRun)
                 .where(eq(workflowRun.id, runId));
               if (existing === undefined) {
-                logger.error`Terminal event for run ${runId} (deployment ${deploymentId}, target status ${status}) has no workflow_run row; the run terminated before its anchor committed`;
+                logger.error`Terminal event for run ${runId} (deployment ${anchor.id}, target status ${status}) has no workflow_run row; the run terminated before its anchor committed`;
               }
               return;
             }
@@ -445,7 +534,106 @@ export function createHubSessionLookups(
           // the run is stuck "running" in the DB with its principal active, so
           // it carries enough to find and flip the row by hand.
           const msg = err instanceof Error ? err.message : String(err);
-          logger.error`Terminal DB flip failed for run ${runId} (deployment ${deploymentId}, target status ${status}); run left running in the DB: ${msg}`;
+          logger.error`Terminal DB flip failed for run ${runId} (deployment ${anchor.id}, target status ${status}); run left running in the DB: ${msg}`;
+        }
+      }
+
+      // A sidecar-local mail ack is only receipt. The raw trigger remains in
+      // workflow_run_dispatch until the accepted Git tip proves either that
+      // the run recorded it (RunStarted / SignalReceived), or that the
+      // supervisor consumed it with an explicit rejection. Rescan the bounded
+      // retained claim-check index after every accepted pack, and search the
+      // stable run log newest-first only for currently-unsettled ids. Settlement
+      // is idempotent, and a later pack naturally retries a transient database
+      // failure here.
+      let topLevelTerminalSettlementProjected = false;
+      try {
+        const reads = await agentRepoStore.repoStore.openCommittedReads(
+          { kind: "hub" },
+          repoId,
+          ref,
+        );
+        if (reads !== null) {
+          const unsettledDispatches =
+            await workflowRunDispatchStore.listUnsettled(anchor.id);
+          const unsettledByMessageId = new Map(
+            unsettledDispatches.map((dispatch) => [
+              dispatch.messageId,
+              dispatch,
+            ]),
+          );
+          for (const consumed of await listConsumedWorkflowDispatches(reads)) {
+            if (consumed.address !== anchorAddress) continue;
+            const persisted = unsettledByMessageId.get(consumed.messageId);
+            if (persisted?.kind !== "mail") continue;
+            if (consumed.rejection === undefined) {
+              await workflowRunDispatchStore.settle(
+                anchor.id,
+                consumed.messageId,
+                now,
+              );
+            } else {
+              await workflowRunDispatchStore.fail({
+                anchorRunId: anchor.id,
+                messageId: consumed.messageId,
+                code: consumed.rejection.code,
+                message: consumed.rejection.message,
+                now,
+              });
+            }
+            unsettledByMessageId.delete(consumed.messageId);
+          }
+
+          // Mail is recorded on the stable deployment run, while a signal is
+          // recorded on the exact run named by its durable delivery frame.
+          // Group retained dispatches by that Git run before scanning so an
+          // internal run's SignalReceived evidence settles its own dispatch.
+          const messageIdsByRun = new Map<string, Set<string>>();
+          for (const dispatch of unsettledByMessageId.values()) {
+            const runId =
+              dispatch.kind === "mail"
+                ? anchorAddress
+                : SignalDeliverFrame.assert(
+                    JSON.parse(new TextDecoder().decode(dispatch.rawMessage)),
+                  ).runId;
+            const messageIds = messageIdsByRun.get(runId) ?? new Set<string>();
+            messageIds.add(dispatch.messageId);
+            messageIdsByRun.set(runId, messageIds);
+          }
+          for (const [runId, messageIds] of messageIdsByRun) {
+            for (const accepted of await listAcceptedWorkflowDispatches(
+              reads,
+              runId,
+              messageIds,
+            )) {
+              const persisted = unsettledByMessageId.get(accepted.messageId);
+              if (persisted?.kind !== accepted.kind) continue;
+              await workflowRunDispatchStore.settle(
+                anchor.id,
+                accepted.messageId,
+                now,
+              );
+              unsettledByMessageId.delete(accepted.messageId);
+            }
+          }
+          topLevelTerminalSettlementProjected =
+            (await readCommittedWorkflowRunLifecycle(reads, anchorAddress)) ===
+            "terminal";
+        }
+      } catch (error) {
+        logger.error`Workflow dispatch settlement failed for ${anchor.id}; accepted Git state remains authoritative and the retained payload will be retried: ${error instanceof Error ? error.message : String(error)}`;
+      }
+
+      if (topLevelTerminalSettlementProjected) {
+        try {
+          await workflowRunDispatchStore.failUnsettled(
+            anchor.id,
+            "workflow_run_terminal",
+            `Workflow run ${anchorAddress} is terminal and cannot accept this dispatch`,
+            now,
+          );
+        } catch (error) {
+          logger.error`Failed to close unsettled workflow dispatches for terminal run ${anchorAddress}: ${error instanceof Error ? error.message : String(error)}`;
         }
       }
 

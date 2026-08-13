@@ -287,20 +287,18 @@ export class DefaultDirector implements ReactorDirector {
         }
 
         // Conversational agent: send reply via the connector.
-        //
-        // Empty text still goes through `reply("")` rather than `wait()`.
-        // `agent.send` only settles on `connector.reply` / gate / fatal
-        // error; a bare `wait()` after an empty model turn leaves the
-        // send promise hanging until an external timeout aborts it.
-        // Workflow step invokers (and any other send()-driven caller)
-        // need the turn to complete. Channel hosts that observe
-        // connector.reply already filter empty content before posting,
-        // so an empty reply is a no-op on the mailbox side.
         const replyContent = extractTextContent(event.turn);
-        return [
-          capabilities.checkpoint("inference-done"),
-          capabilities.reply(replyContent),
-        ];
+        if (replyContent.length > 0) {
+          return [
+            capabilities.checkpoint("inference-done"),
+            capabilities.reply(replyContent),
+          ];
+        }
+
+        // Empty response (no text, no tool calls) — checkpoint and wait for
+        // the next inbound message. The reactor only shuts down on explicit
+        // stop (abort), never because the model produced an empty turn.
+        return [capabilities.checkpoint("inference-done"), capabilities.wait()];
       }
 
       case "resume.execute_tools": {

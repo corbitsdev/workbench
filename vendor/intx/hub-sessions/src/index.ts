@@ -10,6 +10,8 @@ export {
   type SessionService,
   type DeployWorkflowDefinitionParams,
   type DeployWorkflowDefinitionResult,
+  type DeployPreparedWorkflowDefinitionParams,
+  type PreparedWorkflowDeployer,
 } from "./session-service";
 export type { WorkflowDefinition } from "@intx/workflow/definition";
 export {
@@ -22,6 +24,9 @@ export {
   type SidecarRouterConfig,
   type SidecarAuthIdentity,
   type SidecarAuthenticator,
+  type AllocatedSidecarTarget,
+  type SidecarAllocationRouter,
+  createSidecarCredentialResolver,
   createSidecarTokenAuthenticator,
   type CreateSidecarTokenAuthenticatorDeps,
   type WsHandle,
@@ -34,6 +39,7 @@ export {
   type SidecarMailPersistedPayload,
   type SidecarMailPersistedRow,
   type MailTriggeredRunGrantsResult,
+  type WorkflowRunPackSource,
 } from "./ws";
 export {
   createHubSessionLookups,
@@ -54,7 +60,48 @@ export {
   type HubSessionRouterFacade,
 } from "./hub-session-orchestrator";
 export { pushSourceUpdates, pushSourceUpdatesSubtree } from "./credential-push";
+export {
+  createSidecarPluginRegistry,
+  createSidecarAllocationReconciler,
+  resolveEffectiveSidecarPlacement,
+  type CreateSidecarPluginRegistryOpts,
+  type DestroySidecarRequest,
+  type DestroySidecarResult,
+  type EnsureSidecarRequest,
+  type EnsureSidecarResult,
+  type ResolveEffectiveSidecarPlacementOpts,
+  type SidecarCredentialIdentity,
+  type SidecarCredentialResolver,
+  type SidecarOperationFailure,
+  type SidecarPluginRegistry,
+  type SidecarProvisioner,
+  type SidecarAllocationReconciler,
+  type SidecarAllocationReconcilerDeps,
+} from "./sidecar-allocation";
 export { ensureWorkflowDefinitionForAsset } from "./workflow-definition-ensure";
+export {
+  createWorkflowAllocationService,
+  ExclusiveWorkflowPlacementError,
+  resolveWorkflowSidecarPlacement,
+  type PrepareExclusiveWorkflowDeploymentArgs,
+  type PreparedExclusiveWorkflowDeployment,
+  type WorkflowAllocationService,
+  type WorkflowAllocationServiceDeps,
+} from "./workflow-allocation-service";
+export {
+  createWorkflowDispatchService,
+  type WorkflowDispatchAcknowledgement,
+  type WorkflowDispatchService,
+  type WorkflowDispatchServiceDeps,
+} from "./workflow-dispatch-service";
+export {
+  listAcceptedWorkflowDispatches,
+  listConsumedWorkflowDispatches,
+  listReceivedWorkflowSignals,
+  type AcceptedWorkflowDispatch,
+  type ConsumedWorkflowDispatch,
+  type ReceivedWorkflowSignal,
+} from "./workflow-dispatch-settlement";
 export {
   skillKindHandler,
   skillAuthorize,
@@ -96,6 +143,8 @@ export {
   readProcessingEntry,
   markConsumed,
   readOwnedMessageIds,
+  readCommittedWorkflowRunLifecycle,
+  readWorkflowRunLifecycle,
   replayProcessingToInbox,
   WORKFLOW_RUN_GITIGNORE_PATH,
   WORKFLOW_RUN_RUNS_PREFIX,
@@ -119,6 +168,7 @@ export {
   type ReadProcessingEntryResult,
   type MarkConsumedArgs,
   type MarkConsumedResult,
+  type WorkflowRunLifecycle,
   type ReplayProcessingToInboxOpts,
   type ReplayProcessingToInboxResult,
   type WorkflowRunPrincipal,
@@ -127,6 +177,10 @@ export {
   type WorkflowRunWorkflowProcessPrincipal,
   type WorkflowRunSupervisorPrincipal,
 } from "./workflow-run-kind";
+export {
+  restoreWorkflowRunToAllocation,
+  WORKFLOW_RUN_RESTORE_REFS,
+} from "./workflow-run-restore";
 export {
   createAssetService,
   AssetServiceError,
