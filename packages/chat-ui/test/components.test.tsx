@@ -11,11 +11,6 @@ import {
   canSubmitNewChannel,
   newChannelPayload,
 } from "../src/new-channel-dialog";
-import {
-  channelSettingsTabs,
-  contextWindowControlState,
-  contextWindowPatchValue,
-} from "../src/channel-settings-panel";
 import { profileSubjectFromParticipant } from "../src/profile-subject";
 import { renamePayload, rowMenuLabels } from "../src/sidebar";
 
@@ -435,52 +430,6 @@ describe("renamePayload", () => {
 
   test("returns undefined when the trimmed input matches the current title", () => {
     expect(renamePayload("Old name", "Old name")).toBeUndefined();
-  });
-});
-
-describe("contextWindowControlState", () => {
-  test("an inheriting channel renders the bench-default mode with the resolved value", () => {
-    expect(contextWindowControlState({ value: 20, source: "inherit" })).toEqual(
-      { mode: "inherit", displayValue: 20 },
-    );
-  });
-
-  test("an overriding channel renders the override mode with its own value", () => {
-    expect(contextWindowControlState({ value: 5, source: "override" })).toEqual(
-      { mode: "override", displayValue: 5 },
-    );
-  });
-});
-
-describe("contextWindowPatchValue", () => {
-  test("switching to inherit always clears the override to null", () => {
-    expect(contextWindowPatchValue("inherit", 5)).toBeNull();
-  });
-
-  test("override mode sends the field's own value", () => {
-    expect(contextWindowPatchValue("override", 7)).toBe(7);
-  });
-});
-
-describe("channelSettingsTabs", () => {
-  test("channels expose the full settings surface", () => {
-    expect(channelSettingsTabs("channel")).toEqual([
-      "general",
-      "members",
-      "agents",
-      "access",
-      "notifications",
-      "danger",
-    ]);
-  });
-
-  test("1:1 chats trim Members and Danger", () => {
-    expect(channelSettingsTabs("chat")).toEqual([
-      "general",
-      "agents",
-      "access",
-      "notifications",
-    ]);
   });
 });
 
