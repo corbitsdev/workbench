@@ -29,6 +29,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  toast,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import type { Channel } from "@corbits/chat-ui";
@@ -51,6 +52,8 @@ import {
   listRoutineRuns,
   listRoutines,
   listWorkflowDefinitions,
+  routineCreatedToast,
+  routineRunStartedToast,
   runRoutineNow,
   updateRoutine,
   useTenantQuery,
@@ -1300,6 +1303,7 @@ export function RoutinesRoute({
           throw new Error("No bench to create this in yet");
         await createRoutine(tenantId, input);
         invalidateRoutines();
+        toast(routineCreatedToast(input.name));
       }}
       onDescribe={async (input) => {
         if (tenantId === null) throw new Error("No bench to draft this in yet");
@@ -1328,6 +1332,7 @@ export function RoutinesRoute({
         if (tenantId === null) throw new Error("No bench to run this on yet");
         await runRoutineNow(tenantId, routine.id);
         invalidateRoutines();
+        toast(routineRunStartedToast(routine.name));
       }}
     />
   );

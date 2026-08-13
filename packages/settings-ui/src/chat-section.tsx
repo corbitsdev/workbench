@@ -8,7 +8,13 @@
 
 import { getBenchChatSettings, patchBenchChatSettings } from "@corbits/chat-ui";
 import type { BenchChatSettings } from "@corbits/chat-ui";
-import { EmptyState, Input, SettingsPanel, Skeleton } from "@corbits/react-ui";
+import {
+  EmptyState,
+  Input,
+  SettingsPanel,
+  Skeleton,
+  toast,
+} from "@corbits/react-ui";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -139,6 +145,7 @@ export function ChatSection({
         setState({ kind: "ready", data: updated });
         setContextWindowInput(String(updated.contextWindow));
         setSavedAt(new Date().toLocaleTimeString());
+        toast(SETTINGS_STRINGS.settingsSavedToast);
       })
       .catch(() => setSaveError(SETTINGS_STRINGS.chatSaveError))
       .finally(() => setSaving(false));

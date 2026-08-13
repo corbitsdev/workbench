@@ -25,6 +25,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  toast,
 } from "@corbits/react-ui";
 import { grantEffects, grantOrigins } from "@intx/types";
 import type { GrantEffect, GrantOrigin } from "@intx/types";
@@ -151,6 +152,7 @@ export function GrantsSection({
       .then(() => {
         setCreateOpen(false);
         reload();
+        toast(SETTINGS_STRINGS.grantCreatedToast);
       })
       .catch(() => setCreateError(SETTINGS_STRINGS.grantsCreateError))
       .finally(() => setCreating(false));
@@ -160,7 +162,10 @@ export function GrantsSection({
     if (tenantId === null) return;
     setRowError(null);
     revokeGrant(tenantId, grant.id)
-      .then(reload)
+      .then(() => {
+        reload();
+        toast(SETTINGS_STRINGS.grantRevokedToast);
+      })
       .catch(() => setRowError(SETTINGS_STRINGS.grantsRevokeError));
   }
 

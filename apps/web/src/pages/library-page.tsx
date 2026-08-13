@@ -17,6 +17,7 @@ import {
   ViewToggle,
   artifactKindLabel,
   formatRelativeTime,
+  toast,
 } from "@corbits/react-ui";
 import type { ViewMode } from "@corbits/react-ui";
 import {
@@ -43,6 +44,7 @@ import {
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 import {
+  artifactUploadToast,
   isArtifactsUnavailableMessage,
   mapArtifactListToSummaries,
   uploadArtifactFiles,
@@ -421,6 +423,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
                   await queryClient.invalidateQueries({
                     queryKey: tenantKeys.artifacts(selectedTenantId),
                   });
+                  toast(artifactUploadToast(files.map((file) => file.name)));
                 } catch (err) {
                   setUploadError(
                     err instanceof Error ? err.message : String(err),

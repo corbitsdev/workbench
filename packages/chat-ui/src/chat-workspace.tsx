@@ -12,7 +12,7 @@
 // narrow-port shape `@corbits/chat`'s `routes.ts` uses for `ChatPlatform`.
 
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { Button, EmptyState, Skeleton } from "@corbits/react-ui";
+import { Button, EmptyState, Skeleton, toast } from "@corbits/react-ui";
 import {
   ChevronDown,
   CircleAlert,
@@ -447,6 +447,7 @@ function ChatWorkspaceInner({
       setDialogOpen(false);
       setChannelsRefresh((value) => value + 1);
       setActiveChannelId(created.id);
+      toast(CHAT_STRINGS.channelCreatedToast(created.title));
     } catch (cause) {
       const message =
         cause instanceof ChatApiError && cause.status === 400
