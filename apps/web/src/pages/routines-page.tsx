@@ -1131,13 +1131,6 @@ export function RoutinesListPage({
                 icon={<Clock />}
                 title="No routines yet"
                 description="Create one from a workflow or a prompt."
-                actions={[
-                  {
-                    label: "New routine",
-                    onClick: () => setCreateOpen(true),
-                    variant: "primary",
-                  },
-                ]}
               />
             ) : (
               <EmptyState
