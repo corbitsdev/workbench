@@ -217,9 +217,33 @@ import { ChatWorkspace } from "@corbits/chat-ui";
   currentUser={{ principalId }}
   channelId={channelId}
   onChannelChange={(channelId) => navigate(`/chat/${channelId}`)}
+  onOpenArtifact={(part) => navigate("/library")}
 />;
 ```
 
 `ChatWorkspace` talks to `@corbits/chat`'s HTTP surface directly — a host
 does not hand it a client or re-derive its API calls, only tell it where to
 send them and who is asking.
+
+The timeline adds a day divider between messages from different calendar
+days, and renders a `file` part as a clickable artifact chip once it
+carries a persisted `blobId` — a still-in-flight, `data`-only attachment
+renders the same chip inert, since it has no stable id yet to open. A chip
+click calls the host-supplied `onOpenArtifact`, mirroring `onOpenThread`
+and `onOpenProfile`: `@corbits/chat-ui` owns no router, and today a chat
+blob has no stored link back to a specific Library artifact, so the most a
+host can do is navigate to the Library at large — a real per-artifact deep
+link (and opening in canvas rather than navigating away) is follow-up work.
+
+A typing banner renders between the timeline and the composer, driven by
+the `chat.typing` event `POST /channels/:id/typing` already publishes to
+the live stream (see the HTTP surface table above) — `ChatWorkspace` tracks
+the latest ping with a short expiry and resolves it to the typist's
+participant handle, never a raw principal id.
+
+The pinned/quick-action strip the shell mock shows above the message list
+has no backing store yet — `@corbits/chat` only tracks whether a whole
+channel is pinned in the sidebar, not a per-channel list of pinned
+artifacts — so `ChatWorkspace` renders nothing there rather than fake data.
+Reactions are a separate follow-up: the wire model has no reaction part or
+endpoint yet.
