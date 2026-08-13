@@ -59,6 +59,9 @@ const listProps = {
   onDiscardDraft: () => Promise.resolve(),
   onToggleEnabled: () => {},
   onRunNow: () => Promise.resolve(),
+  onEdit: () => Promise.resolve(),
+  onOpenRuns: () => {},
+  onOpenChannel: (_channelId: string) => {},
 };
 
 describe("RoutinesListPage", () => {
@@ -124,6 +127,47 @@ describe("RoutinesListPage", () => {
     expect(markup).toContain("completed");
     expect(markup).not.toContain("rtn_1");
   });
+
+  test("shows an Edit action and an insights link instead of a local toggle", () => {
+    const markup = renderToStaticMarkup(
+      <RoutinesListPage
+        {...listProps}
+        routines={ready([routine])}
+        selectedId={routine.id}
+        definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+      />,
+    );
+    expect(markup).toContain("Edit");
+    expect(markup).toContain("All runs &amp; traces →");
+    expect(markup).not.toContain("Show three");
+  });
+
+  test("a recent-run row deep-links to the routine's delivery channel", () => {
+    const runHistories = new Map<string, readonly RoutineRun[]>([
+      [
+        routine.id,
+        [
+          {
+            runId: "run_1",
+            triggeredBy: "schedule",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            run: { status: "completed" },
+          },
+        ],
+      ],
+    ]);
+    const markup = renderToStaticMarkup(
+      <RoutinesListPage
+        {...listProps}
+        routines={ready([routine])}
+        runHistories={runHistories}
+        selectedId={routine.id}
+        definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+      />,
+    );
+    expect(markup).toContain("routine-run-row-linked");
+    expect(markup).toContain('role="link"');
+  });
 });
 
 describe("RoutineDetailPage", () => {
@@ -133,6 +177,9 @@ describe("RoutineDetailPage", () => {
         routine={ready(routine)}
         runs={ready<readonly RoutineRun[]>([])}
         onBack={() => {}}
+        onOpenRuns={() => {}}
+        onOpenChannel={(_channelId: string) => {}}
+        onEdit={() => Promise.resolve()}
       />,
     );
     expect(markup).toContain("Morning brief");
@@ -153,6 +200,9 @@ describe("RoutineDetailPage", () => {
         routine={ready(routine)}
         runs={ready<readonly RoutineRun[]>([run])}
         onBack={() => {}}
+        onOpenRuns={() => {}}
+        onOpenChannel={(_channelId: string) => {}}
+        onEdit={() => Promise.resolve()}
       />,
     );
     expect(markup).toContain("manual");
