@@ -1,10 +1,10 @@
 // The guided credential step of first-run: a signed-in user who reached
 // onboarding with no seed model configured picks a provider — Anthropic,
 // OpenAI, or Google — and pastes their own key. The key is proven with
-// a real call before anything is stored (see `@workbench/hub-client`'s
-// `testProviderCredential`, which itself goes through `@intx/inference`'s
-// own adapter for that provider), and only once it's proven does this
-// seed the caller's own personal bench — the same `seedCatalog` +
+// a real, free call before anything is stored (see `@workbench/hub-client`'s
+// `testProviderCredential`, which probes that provider's own list-models
+// endpoint), and only once it's proven does this seed the caller's own
+// personal bench — the same `seedCatalog` +
 // `seedTenant` the first-login hook runs when a hub-owned key is
 // configured, so a self-served key and an operator-configured one land
 // the same bench. Both plant the credential through the hub's native
