@@ -73,6 +73,29 @@ test("listChildChannelTenancies scopes strictly to the requested parent bench", 
   expect(benchBChannels.map((row) => row.channelId)).toEqual(["ins_b1"]);
 });
 
+test("listChannelTenantIds answers which requested ids are channel tenancies", async () => {
+  const tenancy = createInMemoryChannelTenancyStore();
+  const { tenantId: channelTenantId } = await tenancy.createChannelTenant({
+    parentTenantId: "tnt_bench_a",
+    channelId: "ins_general",
+    name: "General",
+    creatorUserId: "usr_alice",
+  });
+
+  const result = await tenancy.listChannelTenantIds([
+    "tnt_bench_a",
+    channelTenantId,
+    "tnt_unrelated",
+  ]);
+
+  expect(result).toEqual(new Set([channelTenantId]));
+});
+
+test("listChannelTenantIds returns an empty set for an empty request", async () => {
+  const tenancy = createInMemoryChannelTenancyStore();
+  expect(await tenancy.listChannelTenantIds([])).toEqual(new Set());
+});
+
 test("moveChannelTenancy re-parents one channel without disturbing others when the caller manages the destination", async () => {
   const tenancy = createInMemoryChannelTenancyStore();
   await tenancy.createChannelTenant({

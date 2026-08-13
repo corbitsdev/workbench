@@ -104,4 +104,18 @@ describe("extension mounting", () => {
       error: { code: "unauthorized", message: "Authentication required" },
     });
   });
+
+  test("the channel-tenancy kind lookup the bench switcher uses is mounted and gated", async () => {
+    const hub = await bootHub();
+
+    const gated = await hub.app.request("/api/channel-tenancies/kinds", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tenantIds: [] }),
+    });
+    expect(gated.status).toBe(401);
+    expect(await gated.json()).toEqual({
+      error: { code: "unauthorized", message: "Authentication required" },
+    });
+  });
 });
