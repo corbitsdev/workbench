@@ -1,21 +1,13 @@
-// A real test call for a credential a person is about to hand the
-// onboarding flow, made before it's ever stored: the request is built
-// by `@intx/inference`'s own provider adapter — the same code path a
-// deployed workflow's inference call goes through — so the wire format
-// under test is Interchange's, never workbench's guess at it, for
-// whichever provider the user picked. Only the transport (one `fetch`,
-// no streaming consumed) and the pass/fail verdict belong to workbench.
+// A real, free test call for a credential a person is about to hand the
+// onboarding flow, made before it's ever stored: each provider's own
+// list-models endpoint, authenticated with the real key. This proves the
+// key the same way a paid completion would — the provider still checks
+// it against its auth layer before the workbench ever sees a response —
+// without spending a token or paying for inference. Only the transport
+// (one `fetch`, GET, no body) and the pass/fail verdict belong to
+// workbench; the endpoints and their auth schemes are each provider's own.
 
-import {
-  createAnthropicAdapter,
-  createGoogleGenAIAdapter,
-  createOpenAIAdapter,
-} from "@intx/inference/providers";
-import {
-  BEARER_CREDENTIAL_SENTINEL,
-  CREDENTIAL_SENTINEL,
-} from "@intx/inference";
-import type { AdapterFactory } from "@intx/inference";
+import { type } from "arktype";
 
 export type SupportedCredentialProvider =
   "anthropic" | "openai" | "google-genai";
@@ -25,7 +17,7 @@ export type CredentialTestResult =
 
 export type FetchLike = (
   url: string,
-  init: { method: "POST"; headers: Headers; body: string },
+  init: { method: "GET"; headers: Headers; signal: AbortSignal },
 ) => Promise<Response>;
 
 export type TestProviderCredentialArgs = {
@@ -34,35 +26,74 @@ export type TestProviderCredentialArgs = {
   readonly fetchImpl?: FetchLike;
 };
 
+const PROBE_TIMEOUT_MS = 5000;
+
+type ProbeRequest = {
+  readonly url: string;
+  readonly headers: Record<string, string>;
+};
+
 type ProviderTestConfig = {
   readonly displayName: string;
-  readonly createAdapter: AdapterFactory;
   readonly baseURL: string;
-  /** A small, broadly-available model — good enough to prove a key works,
-   * never a claim about which model the caller's bench will actually use. */
+  /** A small, broadly-available model — good enough as the bench's default
+   * once the credential is stored, never a claim about how this test
+   * itself validates the key (it never calls this model). */
   readonly probeModel: string;
+  /** Builds the free list-models request that proves the key without
+   * spending a token: same auth layer a completion would hit, no
+   * generation cost. */
+  readonly buildProbeRequest: (apiKey: string) => ProbeRequest;
+  /** Whether this status/body pair means "the provider rejected the key,"
+   * as opposed to a network problem or some other failure — each
+   * provider maps auth failures to its own status code. */
+  readonly isKeyRejected: (status: number, body: string) => boolean;
 };
+
+const ANTHROPIC_VERSION = "2023-06-01";
+
+const GoogleErrorBody = type({ "error?": { "status?": "string" } });
 
 const PROVIDER_TEST_CONFIG: Readonly<
   Record<SupportedCredentialProvider, ProviderTestConfig>
 > = {
   anthropic: {
     displayName: "Anthropic",
-    createAdapter: createAnthropicAdapter,
     baseURL: "https://api.anthropic.com",
     probeModel: "claude-sonnet-5",
+    buildProbeRequest: (apiKey) => ({
+      url: "https://api.anthropic.com/v1/models",
+      headers: { "x-api-key": apiKey, "anthropic-version": ANTHROPIC_VERSION },
+    }),
+    isKeyRejected: (status) => status === 401 || status === 403,
   },
   openai: {
     displayName: "OpenAI",
-    createAdapter: createOpenAIAdapter,
     baseURL: "https://api.openai.com/v1",
     probeModel: "gpt-4o-mini",
+    buildProbeRequest: (apiKey) => ({
+      url: "https://api.openai.com/v1/models",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }),
+    isKeyRejected: (status) => status === 401,
   },
   "google-genai": {
     displayName: "Google",
-    createAdapter: createGoogleGenAIAdapter,
     baseURL: "https://generativelanguage.googleapis.com",
     probeModel: "gemini-2.5-flash",
+    buildProbeRequest: (apiKey) => ({
+      url: `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+      headers: {},
+    }),
+    // Google's list-models endpoint rejects a bad key with 400
+    // INVALID_ARGUMENT, not 401/403 — it's an API-key query param, not a
+    // bearer credential the auth layer inspects first.
+    isKeyRejected: (status, body) => {
+      if (status !== 400) return false;
+      const parsed = GoogleErrorBody(JSON.parse(body));
+      if (parsed instanceof type.errors) return false;
+      return parsed.error?.status === "INVALID_ARGUMENT";
+    },
   },
 };
 
@@ -94,95 +125,45 @@ export function supportedCredentialProviders(): readonly {
   ).map(([id, config]) => ({ id, displayName: config.displayName }));
 }
 
+const ErrorBody = type({ "error?": { "message?": "string" } });
+
 function providerErrorMessage(
   displayName: string,
   status: number,
   body: string,
 ): string {
-  const parsed: unknown = JSON.parse(body);
-  if (
-    typeof parsed === "object" &&
-    parsed !== null &&
-    "error" in parsed &&
-    typeof (parsed as { error: unknown }).error === "object" &&
-    (parsed as { error: unknown }).error !== null &&
-    "message" in (parsed as { error: { message: unknown } }).error &&
-    typeof (parsed as { error: { message: unknown } }).error.message ===
-      "string"
-  ) {
-    return (parsed as { error: { message: string } }).error.message;
+  try {
+    const parsed = ErrorBody(JSON.parse(body));
+    if (!(parsed instanceof type.errors) && parsed.error?.message) {
+      return parsed.error.message;
+    }
+  } catch {
+    // Not JSON, or didn't match the shape — fall through to the
+    // generic message below.
   }
   return `${displayName} rejected the request with status ${status}`;
 }
 
-/** Substitutes the real key into whichever sentinel the adapter's built
- * headers carry, without knowing in advance which header that provider
- * uses — the sentinel values are the adapter's own exported contract for
- * exactly this substitution. */
-function injectCredential(
-  headers: Record<string, string>,
-  apiKey: string,
-): Headers {
-  const result = new Headers();
-  for (const [name, value] of Object.entries(headers)) {
-    if (value === CREDENTIAL_SENTINEL) result.set(name, apiKey);
-    else if (value === BEARER_CREDENTIAL_SENTINEL)
-      result.set(name, `Bearer ${apiKey}`);
-    else result.set(name, value);
-  }
-  return result;
-}
-
-function carriesACredentialSentinel(headers: Record<string, string>): boolean {
-  return Object.values(headers).some(
-    (value) =>
-      value === CREDENTIAL_SENTINEL || value === BEARER_CREDENTIAL_SENTINEL,
-  );
-}
-
 /**
- * Fires the smallest real call a credential can be validated with — a
- * one-token completion — against whichever provider the caller picked,
- * through that provider's own `@intx/inference` adapter. Never stores or
- * logs the key; the caller owns that decision once this says `ok`.
+ * Probes the provider's own list-models endpoint — a free, authenticated
+ * GET that still runs the real key through the provider's auth layer —
+ * to prove a credential works without spending a token or waiting on a
+ * completion. Never stores or logs the key; the caller owns that decision
+ * once this says `ok`.
  */
 export async function testProviderCredential(
   args: TestProviderCredentialArgs,
 ): Promise<CredentialTestResult> {
   const config = PROVIDER_TEST_CONFIG[args.provider];
   const doFetch = args.fetchImpl ?? fetch;
-  const adapter = config.createAdapter({
-    sourceId: "onboarding-credential-test",
-    provider: args.provider,
-    model: config.probeModel,
-  });
-
-  const request = adapter.buildRequest(
-    [
-      {
-        role: "user",
-        content: [{ type: "text", text: "Reply with the word ok." }],
-        timestamp: Date.now(),
-      },
-    ],
-    config.probeModel,
-    { maxTokens: 1 },
-  );
-
-  if (!carriesACredentialSentinel(request.headers)) {
-    return {
-      ok: false,
-      message: `internal error: the ${config.displayName} adapter no longer uses a credential sentinel this test relies on`,
-    };
-  }
-  const headers = injectCredential(request.headers, args.apiKey);
+  const probe = config.buildProbeRequest(args.apiKey);
 
   let response: Response;
   try {
-    response = await doFetch(`${config.baseURL}${request.url}`, {
-      method: "POST",
-      headers,
-      body: request.body,
+    response = await doFetch(probe.url, {
+      method: "GET",
+      headers: new Headers(probe.headers),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
   } catch (cause) {
     return {
@@ -194,11 +175,17 @@ export async function testProviderCredential(
     };
   }
 
-  const body = await response.text();
-
   if (response.ok) return { ok: true };
+
+  const body = await response.text();
+  if (config.isKeyRejected(response.status, body)) {
+    return {
+      ok: false,
+      message: providerErrorMessage(config.displayName, response.status, body),
+    };
+  }
   return {
     ok: false,
-    message: providerErrorMessage(config.displayName, response.status, body),
+    message: `${config.displayName} returned an unexpected error (not a rejected key): ${providerErrorMessage(config.displayName, response.status, body)}`,
   };
 }
