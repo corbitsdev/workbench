@@ -22,6 +22,20 @@ import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
 import { ShellChromeProvider } from "./shell/shell-chrome-provider";
 
+/**
+ * Onboarding renders above the shell entirely — no rail, no col2, no bench
+ * dock, nothing that implies a workbench already exists. A signed-in
+ * account with no completed onboarding must never see "Select a workbench";
+ * the wizard is the only thing on screen until it hands off to `/`.
+ */
+function OnboardingGate({ navigate }: { readonly navigate: Navigate }) {
+  return (
+    <NavigationProvider navigate={navigate}>
+      <OnboardingPage />
+    </NavigationProvider>
+  );
+}
+
 function Brand() {
   return (
     <>
@@ -55,9 +69,7 @@ function Shell({
           <ShellChromeProvider path={path} navigate={navigate}>
             <CommandPaletteProvider path={path} navigate={navigate} />
             <AppShell path={path} user={user} onSignOut={onSignOut}>
-              {path === ONBOARDING_PATH ? (
-                <OnboardingPage />
-              ) : route === undefined ? (
+              {route === undefined ? (
                 <NotFoundPage path={path} />
               ) : (
                 route.render(path, navigate)
@@ -129,6 +141,9 @@ export function App({
         </div>
       );
     case "signed-in":
+      if (path === ONBOARDING_PATH) {
+        return <OnboardingGate navigate={navigate} />;
+      }
       return (
         <Shell
           path={path}

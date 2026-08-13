@@ -1576,6 +1576,245 @@ html {
   white-space: nowrap;
 }
 
+/* Onboarding: full-screen guided wizard, gated above the shell entirely
+   (see app.tsx) so nothing implying an existing workbench — rail, col2,
+   bench dock — is ever on screen while it runs. Same two-column shape as
+   `.auth-shell` for continuity with the sign-in screen, but its own scale:
+   zero border radius, brand-orange accents, generous whitespace, one large
+   question per phase. Deliberately does not reuse `--radius` — this chrome
+   commits to square corners everywhere, the rest of the app does not. */
+.onboarding-shell {
+  display: grid;
+  min-height: 100svh;
+  background: var(--background);
+}
+
+.onboarding-form-col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.onboarding-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.onboarding-brand-chip {
+  display: grid;
+  height: 1.75rem;
+  width: 1.75rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 0;
+  background: var(--shell-accent, #e98428);
+  color: var(--primary-foreground);
+}
+
+.onboarding-brand-mark {
+  height: 1.125rem;
+  width: 1.125rem;
+}
+
+.onboarding-form-slot {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 2rem 4rem;
+}
+
+.onboarding-form {
+  width: 100%;
+  max-width: 30rem;
+}
+
+.onboarding-panel {
+  position: relative;
+  display: none;
+  overflow: hidden;
+  background: var(--foreground);
+}
+
+.dark .onboarding-panel {
+  background: var(--card);
+}
+
+.onboarding-panel-fallback {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+
+.onboarding-panel-dither {
+  position: absolute;
+  inset: 0;
+}
+
+@media (min-width: 64rem) {
+  .onboarding-shell {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .onboarding-panel {
+    display: block;
+  }
+}
+
+/* Restrained progress affordance: an uppercase step label over a thin
+   segmented rail, filled in brand orange as the wizard advances — the
+   direct replacement for the numbered-circle stepper. */
+.onboarding-progress {
+  margin-bottom: 2rem;
+}
+
+.onboarding-progress-label {
+  margin: 0 0 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.onboarding-progress-track {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.onboarding-progress-segment {
+  height: 3px;
+  flex: 1;
+  border-radius: 0;
+  background: var(--border);
+  transition: background-color 0.3s ease;
+}
+
+.onboarding-progress-segment[data-filled="true"] {
+  background: var(--shell-accent, #e98428);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-progress-segment {
+    transition: none;
+  }
+}
+
+/* One focused question per phase, large type, no card chrome around it —
+   the whitespace of the form column does the framing. */
+.onboarding-title {
+  margin: 0 0 0.75rem;
+  font-size: 2rem;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.onboarding-subtitle {
+  margin: 0 0 2rem;
+  max-width: 32rem;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+.onboarding-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Square corners throughout the wizard's own inputs and buttons — the one
+   deliberate departure from the app's default `--radius`. */
+.onboarding-content input,
+.onboarding-content button,
+.onboarding-content [role="radiogroup"] button {
+  border-radius: 0;
+}
+
+.onboarding-name-form,
+.onboarding-credential-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.onboarding-name-form label,
+.onboarding-credential-form label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.onboarding-name-form p,
+.onboarding-credential-form p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.onboarding-name-form button[type="submit"],
+.onboarding-credential-form button[type="submit"] {
+  margin-top: 0.5rem;
+  align-self: flex-start;
+}
+
+.onboarding-provider-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Tasteful motion only: a soft entrance on phase change, no looping or
+   attention-seeking animation, fully off under reduced motion. */
+.onboarding-phase {
+  animation: onboarding-phase-in 0.32s ease both;
+}
+
+@keyframes onboarding-phase-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-phase {
+    animation: none;
+  }
+}
+
+.onboarding-spinner {
+  height: 1.75rem;
+  width: 1.75rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--shell-accent, #e98428);
+  border-radius: 50%;
+  animation: onboarding-spin 0.8s linear infinite;
+}
+
+@keyframes onboarding-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-spinner {
+    animation: none;
+  }
+}
+
 .page-fill {
   height: auto;
   flex: 1;
