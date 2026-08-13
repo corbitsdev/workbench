@@ -93,6 +93,31 @@ Creation helper: `createDmChannelSpec` in `@corbits/bench-ui`.
 Document any product UX that implies "shared channel without dual
 membership" as blocked on the projection gaps below.
 
+### Tenancy kind (bench switcher)
+
+A native tenant row carries no `kind`/`type` field, so `/api/me/principals`
+returns one row per tenant a principal belongs to — workbenches and
+channel child tenancies alike, indistinguishable to the platform. The
+bench switcher needs to show only real workbenches, so workbench owns
+the discriminator:
+
+- `packages/chat`'s `channel_tenancy` link table is the source of truth
+  for "this tenant is a channel". `ChannelTenancyStore.listChannelTenantIds`
+  answers it in bulk; `POST /api/channel-tenancies/kinds` (mounted
+  outside the tenant prefix, alongside `/api/onboarding`) exposes it to
+  the web client for the caller's own tenant ids.
+- `@corbits/bench-ui`'s `classifyBenchMembership` combines that set with
+  `isRawIdentifier` (a tenant with no human-assigned name never renders,
+  regardless of kind) to produce a `TenancyKind`: `"workbench"`,
+  `"channel"`, or `"unknown"`. `filterWorkbenchMemberships` is what the
+  switcher renders from.
+
+This is the extension point for every other tenancy kind the product
+adds (sub-workbenches, DMs, shared channels): each is still a tenant
+underneath, and stays distinguishable only by adding a case to
+`classifyBenchMembership`, never by inventing a parallel field on the
+native tenant row.
+
 ## Interchange gaps (upstream only)
 
 These are real platform holes. File them against Interchange; do not
@@ -128,6 +153,11 @@ fork or shim inside `vendor/intx`.
 8. **Invite is membership-side, not token-link** — native invite is
    "add principal"; copy-link invite tokens are a workbench product
    flow until the platform owns invite URLs.
+
+9. **No tenant kind field** — `/api/me/principals` cannot say whether a
+   tenant is a workbench, a channel's own child tenancy, or anything
+   else; workbench derives it from `channel_tenancy` plus name shape
+   (see "Tenancy kind" above) until the platform exposes one.
 
 ## Roles (mirror only)
 
