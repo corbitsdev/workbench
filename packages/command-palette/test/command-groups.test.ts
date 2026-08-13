@@ -1,0 +1,139 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  buildCommandPaletteGroups,
+  type ScopedPaletteSource,
+  type UnscopedPaletteSource,
+} from "../src/command-groups";
+
+const actions: ScopedPaletteSource = {
+  id: "actions",
+  heading: "Commands",
+  kind: "actions",
+  items: [{ id: "action:theme", title: "Toggle theme" }],
+};
+
+const channels: ScopedPaletteSource = {
+  id: "channels",
+  heading: "Channels",
+  kind: "channels",
+  items: [
+    { id: "ch:eng", title: "Engineering" },
+    { id: "ch:design", title: "Design" },
+  ],
+};
+
+const pages: ScopedPaletteSource = {
+  id: "pages",
+  heading: "Pages",
+  kind: "pages",
+  items: [{ id: "route:/library", title: "Library" }],
+};
+
+const routines: UnscopedPaletteSource = {
+  id: "routines",
+  heading: "Routines",
+  items: [{ id: "rt:1", title: "Weekly digest" }],
+};
+
+const recents = [{ id: "ch:eng", title: "Engineering" }];
+
+describe("buildCommandPaletteGroups", () => {
+  test("empty unscoped query shows recents plus every source", () => {
+    const groups = buildCommandPaletteGroups({
+      query: "",
+      recents,
+      scoped: [actions, channels, pages],
+      unscoped: [routines],
+    });
+    expect(groups.map((g) => g.id)).toEqual([
+      "recents",
+      "actions",
+      "channels",
+      "pages",
+      "routines",
+    ]);
+  });
+
+  test("recents are hidden once the query is non-empty", () => {
+    const groups = buildCommandPaletteGroups({
+      query: "eng",
+      recents,
+      scoped: [channels],
+      unscoped: [],
+    });
+    expect(groups.find((g) => g.id === "recents")).toBeUndefined();
+  });
+
+  test("recents are hidden under an active scope even with an empty query", () => {
+    const groups = buildCommandPaletteGroups({
+      query: "#",
+      recents,
+      scoped: [channels],
+      unscoped: [],
+    });
+    expect(groups.find((g) => g.id === "recents")).toBeUndefined();
+  });
+
+  test("a scope prefix keeps only the matching scoped source", () => {
+    const groups = buildCommandPaletteGroups({
+      query: "#",
+      recents: [],
+      scoped: [actions, channels, pages],
+      unscoped: [routines],
+    });
+    expect(groups.map((g) => g.id)).toEqual(["channels"]);
+  });
+
+  test("unscoped sources vanish once a scope is active", () => {
+    const groups = buildCommandPaletteGroups({
+      query: ">",
+      recents: [],
+      scoped: [actions],
+      unscoped: [routines],
+    });
+    expect(groups.map((g) => g.id)).toEqual(["actions"]);
+  });
+
+  test("query text filters items within a scope", () => {
+    const groups = buildCommandPaletteGroups({
+      query: "#des",
+      recents: [],
+      scoped: [channels],
+      unscoped: [],
+    });
+    expect(groups).toEqual([
+      {
+        id: "channels",
+        heading: "Channels",
+        items: [{ id: "ch:design", title: "Design" }],
+      },
+    ]);
+  });
+
+  test("a group with no matches is omitted entirely", () => {
+    const groups = buildCommandPaletteGroups({
+      query: "zzz",
+      recents: [],
+      scoped: [channels],
+      unscoped: [routines],
+    });
+    expect(groups).toEqual([]);
+  });
+
+  test("an unscoped query with no prefix still filters scoped sources by kind match text", () => {
+    const groups = buildCommandPaletteGroups({
+      query: "weekly",
+      recents: [],
+      scoped: [channels],
+      unscoped: [routines],
+    });
+    expect(groups).toEqual([
+      {
+        id: "routines",
+        heading: "Routines",
+        items: [{ id: "rt:1", title: "Weekly digest" }],
+      },
+    ]);
+  });
+});
