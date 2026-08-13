@@ -453,11 +453,6 @@ function CreateRoutineDialog({
           setOpen(next);
         }}
       >
-        {openProp === undefined ? (
-          <Button size="sm" onClick={() => setOpen(true)}>
-            <Plus /> New routine
-          </Button>
-        ) : null}
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Review draft</DialogTitle>
@@ -578,11 +573,6 @@ function CreateRoutineDialog({
         if (!next) reset();
       }}
     >
-      {openProp === undefined ? (
-        <Button size="sm" onClick={() => setOpen(true)}>
-          <Plus /> New routine
-        </Button>
-      ) : null}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New routine</DialogTitle>
@@ -1131,13 +1121,6 @@ export function RoutinesListPage({
                 icon={<Clock />}
                 title="No routines yet"
                 description="Create one from a workflow or a prompt."
-                actions={[
-                  {
-                    label: "New routine",
-                    onClick: () => setCreateOpen(true),
-                    variant: "primary",
-                  },
-                ]}
               />
             ) : (
               <EmptyState

@@ -283,13 +283,6 @@ export function SkillsPage({
               icon={<Sparkles />}
               title="No skills yet"
               description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent definition can declare and a bench can install. There's no skill registry on the hub yet; drafts you create stay in this session only."
-              actions={[
-                {
-                  label: "Create skill",
-                  onClick: () => setCreateOpen(true),
-                  variant: "primary",
-                },
-              ]}
             />
           </div>
         </PageShell>

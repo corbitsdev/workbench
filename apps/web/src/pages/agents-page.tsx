@@ -361,17 +361,6 @@ export function AgentsPage({
                       icon={<Bot />}
                       title="No agents yet"
                       description="Create your first agent — a name, a system prompt, and optionally a model — and it appears in the sidebar, ready to start a chat or invite into a channel."
-                      actions={
-                        canCreate
-                          ? [
-                              {
-                                label: "Create agent",
-                                onClick: () => setCreateOpen(true),
-                                variant: "primary",
-                              },
-                            ]
-                          : []
-                      }
                     />
                   </div>
                 );

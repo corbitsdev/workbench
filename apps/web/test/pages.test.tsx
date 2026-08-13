@@ -35,10 +35,10 @@ describe("empty states", () => {
     );
   });
 
-  test("skills renders the shell with an honest empty state and Create action", () => {
+  test("skills renders the shell with an honest empty state and a single New skill action", () => {
     const markup = renderToStaticMarkup(<SkillsPage />);
     expect(markup).toContain("No skills yet");
-    expect(markup).toContain("Create skill");
+    expect(markup).toContain("New skill");
     expect(markup).not.toContain("Search skills");
   });
 
