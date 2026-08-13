@@ -10,7 +10,6 @@
 // so a foreign conversation cannot stay loaded under the new workbench.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { PanelLeft } from "lucide-react";
 
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
@@ -35,6 +34,7 @@ import { CanvasAvailabilityProvider } from "./canvas-availability";
 import { CanvasColumn } from "./canvas-column";
 import { ContextualPanel } from "./contextual-panel";
 import { Rail } from "./rail";
+import { StageChromeProvider } from "./stage-top-bar";
 import { useShellLayoutMode } from "./use-shell-layout";
 import type { ProfileSubject } from "@corbits/chat-ui";
 
@@ -58,6 +58,7 @@ export function AppShell({
   const showContextualColumn = contextualPanelVisible(layoutMode);
   const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
   const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
+  const [col2Collapsed, setCol2Collapsed] = useState(false);
   const frameRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   // Tracks the last workbench we applied so a real switch (A→B) can drop
@@ -95,6 +96,20 @@ export function AppShell({
     setCanvasState((state) => clearProfileInCanvas(state));
   };
 
+  // ONE collapse control (the stage top bar's toggle) drives both regimes:
+  // in-flow col2 collapses on wide layouts; the overlay drawer opens on
+  // narrow ones. There are no per-column chevrons.
+  const stageChrome = {
+    col2Collapsed: contextualAsDrawer ? !narrowPanelOpen : col2Collapsed,
+    toggleCol2: () => {
+      if (contextualAsDrawer) {
+        setNarrowPanelOpen((open) => !open);
+        return;
+      }
+      setCol2Collapsed((collapsed) => !collapsed);
+    },
+  };
+
   return (
     <CanvasAvailabilityProvider
       allowed={canvasAllowed}
@@ -108,22 +123,15 @@ export function AppShell({
           onSignOut={onSignOut}
           showLabels={railShowLabels(layoutMode)}
         />
-        {showContextualColumn && (
+        {showContextualColumn && !col2Collapsed && (
           <ContextualPanel path={path} onNavigate={navigate} />
         )}
         <div className="shell-main" ref={mainRef}>
-          {contextualAsDrawer && (
-            <button
-              type="button"
-              className="shell-drawer-trigger"
-              aria-label="Open panel"
-              aria-expanded={narrowPanelOpen}
-              onClick={() => setNarrowPanelOpen(true)}
-            >
-              <PanelLeft />
-            </button>
-          )}
-          <div className="shell-main-content">{children}</div>
+          <div className="shell-main-content">
+            <StageChromeProvider value={stageChrome}>
+              {children}
+            </StageChromeProvider>
+          </div>
         </div>
         {canvasAllowed && (
           <CanvasColumn
