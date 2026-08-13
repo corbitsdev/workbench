@@ -6,7 +6,8 @@
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./kind-filter": "./src/kind-filter.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

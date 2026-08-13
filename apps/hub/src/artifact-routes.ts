@@ -1,7 +1,7 @@
 /**
  * Tenant-scoped Library HTTP surface over the mounted `@corbits/artifacts`
  * engine: list (newest-first, paginated, optional text search), get-by-id,
- * and multipart upload.
+ * multipart upload, and per-kind-segment counts for the Library nav.
  *
  * Authz uses the existing `asset` resource family so Library grants keep
  * working without inventing a parallel vocabulary.
@@ -23,6 +23,11 @@ import {
   type SerializedArtifact,
   type SerializedArtifactListItem,
 } from "@corbits/artifacts";
+import {
+  LIBRARY_KIND_SEGMENTS,
+  artifactMatchesLibraryKindSegment,
+  type LibraryKindSegment,
+} from "@corbits/artifact-ui/kind-filter";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { Hono } from "hono";
 
@@ -31,11 +36,27 @@ const MAX_LIMIT = 100;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_FILE_COUNT = 50;
 const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024;
+// Safety cap on the counts walk: 200 pages of MAX_LIMIT rows each is 20,000
+// artifacts, far past any real tenant today. A tenant that legitimately
+// exceeds it — or a store whose cursor stops advancing — gets an honest
+// "can't count that" instead of a route that hangs or lies with a partial
+// total.
+const MAX_COUNT_PAGES = 200;
+
+/** Thrown when the counts walk cannot finish honestly — capped out or the
+ * store's cursor stopped advancing — rather than ever returning a partial
+ * count as if it were the whole tenant. */
+export class ArtifactCountsIncompleteError extends Error {}
 
 export type ArtifactListPage = {
   readonly data: readonly SerializedArtifactListItem[];
   readonly nextCursor: string | null;
 };
+
+/** Per-kind-segment counts for the Library nav, plus the tenant total. */
+export type ArtifactCounts = {
+  readonly all: number;
+} & { readonly [K in (typeof LIBRARY_KIND_SEGMENTS)[number]]: number };
 
 export type ArtifactUploadInput = {
   readonly filename: string;
@@ -86,6 +107,64 @@ function parseQuery(raw: string | undefined): string | null {
   const trimmed = raw.trim();
   if (trimmed === "") return null;
   return trimmed.slice(0, 200);
+}
+
+/**
+ * Walks every page of a tenant's artifacts (unfiltered, so the same row
+ * never gets double-counted or missed at a page boundary) and buckets each
+ * row by the Library kind nav's segment predicate. Real counts over the
+ * full tenant list, not an estimate from one page.
+ */
+async function countArtifactsByKindSegment(
+  store: Pick<ArtifactRoutesStore, "list">,
+  tenantId: string,
+): Promise<ArtifactCounts> {
+  let all = 0;
+  const bySegment: Record<LibraryKindSegment, number> = {
+    document: 0,
+    sheet: 0,
+    pdf: 0,
+    routine: 0,
+  };
+
+  let cursor: string | null = null;
+  let pages = 0;
+  for (;;) {
+    const page = await store.list(tenantId, {
+      limit: MAX_LIMIT,
+      cursor,
+      query: null,
+    });
+    pages += 1;
+    for (const row of page.data) {
+      all += 1;
+      for (const segment of LIBRARY_KIND_SEGMENTS) {
+        if (artifactMatchesLibraryKindSegment(row, segment)) {
+          bySegment[segment] += 1;
+        }
+      }
+    }
+    if (page.nextCursor === null) break;
+    if (page.nextCursor === cursor) {
+      throw new ArtifactCountsIncompleteError(
+        `Artifact list cursor for tenant ${tenantId} did not advance past page ${pages}`,
+      );
+    }
+    if (pages >= MAX_COUNT_PAGES) {
+      throw new ArtifactCountsIncompleteError(
+        `Artifact list for tenant ${tenantId} exceeds ${MAX_COUNT_PAGES} pages — counts would be incomplete`,
+      );
+    }
+    cursor = page.nextCursor;
+  }
+
+  return {
+    all,
+    document: bySegment.document,
+    sheet: bySegment.sheet,
+    pdf: bySegment.pdf,
+    routine: bySegment.routine,
+  };
 }
 
 /** Prefer the browser-declared type when the upload policy accepts it. */
@@ -251,6 +330,22 @@ export function createArtifactRoutes(
     }
   });
 
+  app.get("/counts", deps.requireGrant("asset:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    try {
+      const counts = await countArtifactsByKindSegment(deps.store, tenant.id);
+      return c.json(counts);
+    } catch (err) {
+      if (err instanceof ArtifactCountsIncompleteError) {
+        return c.json(
+          { error: { code: "counts_unavailable", message: err.message } },
+          503,
+        );
+      }
+      throw err;
+    }
+  });
+
   app.get("/:artifactId", deps.requireGrant("asset:*", "read"), async (c) => {
     const tenant = c.get("tenant");
     const artifactId = c.req.param("artifactId");
@@ -291,6 +386,7 @@ export function createUnavailableArtifactRoutes(
 
   app.get("/", requireGrant("asset:*", "read"), unavailable);
   app.post("/upload", requireGrant("asset:*", "write"), unavailable);
+  app.get("/counts", requireGrant("asset:*", "read"), unavailable);
   app.get("/:artifactId", requireGrant("asset:*", "read"), unavailable);
   return app;
 }

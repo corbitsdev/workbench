@@ -21,7 +21,9 @@ import {
 import type { ViewMode } from "@corbits/react-ui";
 import {
   ArtifactCard,
+  artifactMatchesLibraryKindSegment,
   filterArtifacts,
+  libraryKindSegmentFromPath,
   sortArtifacts,
 } from "@corbits/artifact-ui";
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
@@ -47,10 +49,6 @@ import {
   mapArtifactListToSummaries,
   uploadArtifactFiles,
 } from "../shell/library-artifacts";
-import {
-  artifactMatchesLibraryKindSegment,
-  libraryKindSegmentFromPath,
-} from "../shell/library-filters";
 
 const SORT_LABEL: Record<ArtifactSort, string> = {
   newest: "Newest first",
