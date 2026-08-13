@@ -4,6 +4,7 @@
 // render a full blocking screen for it rather than silently continuing
 // into a shell with zero benches.
 
+import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -13,6 +14,7 @@ import {
   testCredential,
   triggerFirstLoginProvisioning,
 } from "../src/onboarding";
+import { ONBOARDING_PATH } from "../src/routes";
 import type { SessionState } from "../src/session";
 
 const realFetch = globalThis.fetch;
@@ -226,5 +228,54 @@ describe("App with a provisioning error", () => {
       "Could not provision a workbench for this account.",
     );
     expect(markup).not.toContain("shell-frame");
+  });
+});
+
+describe("App at the onboarding path", () => {
+  const renderOnboarding = () =>
+    renderToStaticMarkup(
+      <App
+        path={ONBOARDING_PATH}
+        navigate={noop}
+        session={signedIn}
+        onSignedIn={noop}
+        onSignOut={noop}
+        onRetry={noop}
+      />,
+    );
+
+  test("never renders the shell — no rail, no bench dock, nothing", () => {
+    const markup = renderOnboarding();
+    expect(markup).not.toContain("shell-frame");
+    expect(markup).not.toContain("shell-bench-dock");
+  });
+
+  test("shows the restrained step label and progress rail instead of a stepper", () => {
+    const markup = renderOnboarding();
+    expect(markup).toContain("Step 1 of 3");
+    expect(markup).toContain("Name your workbench");
+    expect(markup).toContain("onboarding-progress-track");
+  });
+});
+
+describe("App once onboarding is behind you", () => {
+  test("mounts the shell for an ordinary route", () => {
+    globalThis.fetch = (async () =>
+      json({ data: [] })) as unknown as typeof fetch;
+
+    const markup = renderToStaticMarkup(
+      <ThemeProvider>
+        <App
+          path="/"
+          navigate={noop}
+          session={signedIn}
+          onSignedIn={noop}
+          onSignOut={noop}
+          onRetry={noop}
+        />
+      </ThemeProvider>,
+    );
+
+    expect(markup).toContain("shell-frame");
   });
 });
