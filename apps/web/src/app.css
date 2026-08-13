@@ -1757,6 +1757,54 @@ html {
   border-radius: 0;
 }
 
+/* The one-click path sits above the key forms: square-cornered like the
+   rest of the wizard, with the shell accent marking it as the primary
+   suggestion rather than button-shouting. */
+.onboarding-connect-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--shell-accent, #e98428);
+  border-radius: 0;
+}
+
+.onboarding-connect-card h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.onboarding-connect-card p {
+  margin: 0;
+  max-width: 28rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.onboarding-connect-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.onboarding-connect-divider::before,
+.onboarding-connect-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+}
+
 .onboarding-name-form,
 .onboarding-credential-form {
   display: flex;

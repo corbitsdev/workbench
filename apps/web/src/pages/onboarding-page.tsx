@@ -28,12 +28,14 @@ import {
   KeyRound,
   MessageSquare,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 
 import { Link, useNavigate } from "../navigation";
 import {
   CREDENTIAL_PROVIDERS,
+  OPENROUTER_CONNECT_START_PATH,
+  readOpenRouterConnectReturn,
   submitCredential,
   triggerFirstLoginProvisioning,
 } from "../onboarding";
@@ -188,9 +190,27 @@ function ProviderPicker({
   );
 }
 
+/** Where the wizard starts: at the top, unless the URL carries an
+ * OpenRouter connect round-trip's outcome — a returning connect lands
+ * directly on its ending (the seeded checklist, or the credential step
+ * with the failure spelled out) instead of asking for a name again. */
+function initialWizardState(): WizardState {
+  if (typeof window === "undefined") return { phase: "naming" };
+  const returned = readOpenRouterConnectReturn(window.location.search);
+  if (returned === null) return { phase: "naming" };
+  if (returned.kind === "seeded") {
+    return {
+      phase: "seeded",
+      tenantSlug: returned.tenantSlug,
+      workflows: returned.workflows,
+    };
+  }
+  return { phase: "credential", error: returned.message };
+}
+
 export function OnboardingPage() {
   const navigate = useNavigate();
-  const [state, setState] = useState<WizardState>({ phase: "naming" });
+  const [state, setState] = useState<WizardState>(initialWizardState);
   const [workbenchName, setWorkbenchName] = useState("");
   const [provider, setProvider] = useState<CredentialProvider>("anthropic");
   const [apiKey, setApiKey] = useState("");
@@ -199,6 +219,15 @@ export function OnboardingPage() {
   // skip option — the credential step stays in place either way.
   const [preSatisfied, setPreSatisfied] = useState(false);
   const [skipReason, setSkipReason] = useState<string | null>(null);
+
+  // A connect round-trip's outcome is consumed into the initial wizard
+  // state above; dropping it from the URL keeps a reload or a shared
+  // link from replaying a stale ending.
+  useEffect(() => {
+    if (readOpenRouterConnectReturn(window.location.search) !== null) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   const runProvisioning = useCallback((name: string) => {
     setState({ phase: "provisioning" });
@@ -365,8 +394,27 @@ export function OnboardingPage() {
     <OnboardingPhase
       phase={state.phase}
       title="Add an inference credential"
-      subtitle="Your workbench needs an inference credential before any agent or routine can run. Pick a provider and paste your own key — it's used only for this bench."
+      subtitle="Your workbench needs an inference credential before any agent or routine can run. Connect OpenRouter in one click, or pick a provider and paste your own key — either way it's used only for this bench."
     >
+      <section
+        className="onboarding-connect-card"
+        aria-label="Connect with OpenRouter"
+      >
+        <div>
+          <h2>Connect with OpenRouter</h2>
+          <p>
+            The easiest path: one click, ~50 models, pay-as-you-go. Approve
+            access on OpenRouter and your bench comes back with a working key —
+            nothing to copy.
+          </p>
+        </div>
+        <Button asChild>
+          <a href={OPENROUTER_CONNECT_START_PATH}>Connect with OpenRouter</a>
+        </Button>
+      </section>
+      <div className="onboarding-connect-divider" role="separator">
+        or paste a provider API key
+      </div>
       {preSatisfied && (
         <EmptyState
           icon={<CircleCheck />}
