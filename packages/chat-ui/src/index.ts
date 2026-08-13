@@ -42,6 +42,9 @@ export type { MentionCandidate, MentionQuery } from "./mentions";
 
 export { CHAT_STRINGS } from "./strings";
 
+export { BlockPartView } from "./blocks/registry";
+export { BlockCard, RiskBadge } from "./blocks/block-card";
+
 export {
   TextPart,
   ReasoningPart,

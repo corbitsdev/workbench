@@ -49,6 +49,18 @@ supports:
 - **attachment / file** — a named blob with a media type, referenced by id
   rather than inlined, so large files are never pulled into memory just to
   render a message list.
+- **block** — a generative UI card: a `{ type, data }` envelope whose data
+  is agent-authored JSON, never markup or code. The typed vocabulary lives
+  in `@corbits/chat`'s `blocks` module — `approve`, `steps`, `metrics`,
+  `poll`, `form`, and `stream` — and `@corbits/chat-ui` renders each type
+  through a closed component registry, parsing the data at the render
+  boundary so an unknown type or malformed payload degrades to a labeled
+  fallback card. An approve block carries only a reference to a platform
+  approval plus the agent's framing (title, risk, body): action labels are
+  fixed by the client and the decision's state lives on the approval
+  record, never in the message. Poll choices carry no agent-authored
+  tallies. Blocks render read-only today; their controls stay disabled
+  until the action round-trip ships.
 
 Parts are encoded onto the platform's own mail-send shape: a message that is
 a single text part rides as bare mail content; anything else — multiple

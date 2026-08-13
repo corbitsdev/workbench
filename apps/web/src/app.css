@@ -105,6 +105,14 @@ html {
   --dialog-content-max-width: 32rem;
   --dialog-content-max-height: min(90dvh, 42rem);
   --dialog-gutter: 1rem;
+  /* Status accents the react-ui theme doesn't define: success and caution. */
+  --ok: #37904a;
+  --warn: #b7791f;
+}
+
+.dark {
+  --ok: #5cb573;
+  --warn: #d9a441;
 }
 
 /* Mock .app[data-canvas="on"] { --col2-w: var(--col2-w-tight) }. */

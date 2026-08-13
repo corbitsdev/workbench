@@ -405,6 +405,316 @@
   color: var(--muted-foreground);
 }
 
+/* Generative UI blocks — mock `.gen`: a bordered card under the sender's
+   text, square-cornered, with a pulse-dot header. Colors come from theme
+   tokens so light and dark both hold. */
+.chat-block {
+  margin: 0.35rem 0 0.35rem 2.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--card, var(--background));
+  overflow: hidden;
+}
+
+.chat-block-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--chat-agent-accent, var(--primary));
+}
+
+.chat-block-pulse {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 0;
+  background: currentColor;
+  animation: chat-block-pulse 1.6s ease infinite;
+}
+
+@keyframes chat-block-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.chat-block-body {
+  padding: 0.9rem 1rem 1rem;
+}
+
+.chat-block-text {
+  margin: 0 0 0.55rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.chat-block-text:last-child {
+  margin-bottom: 0;
+}
+
+.chat-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.chat-block-action {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  padding: 0.3rem 0.7rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--foreground);
+}
+
+.chat-block-action[data-primary="true"] {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.chat-block-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.chat-block-risk {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.chat-block-risk svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.chat-block-risk[data-risk="low"] {
+  color: var(--muted-foreground);
+}
+
+.chat-block-risk[data-risk="medium"] {
+  color: var(--warn, #b7791f);
+}
+
+.chat-block-risk[data-risk="high"] {
+  color: var(--destructive);
+}
+
+.chat-block-risk-note {
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.chat-block-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.chat-block-step {
+  display: grid;
+  grid-template-columns: 1.2rem 1fr auto;
+  gap: 0.45rem;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+
+.chat-block-step-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 0;
+  background: var(--border);
+}
+
+.chat-block-step[data-state="done"] .chat-block-step-dot {
+  background: var(--ok, #37904a);
+}
+
+.chat-block-step[data-state="running"] .chat-block-step-dot {
+  background: var(--chat-agent-accent, var(--primary));
+  animation: chat-block-pulse 1.2s ease infinite;
+}
+
+.chat-block-step[data-state="error"] .chat-block-step-dot {
+  background: var(--destructive);
+}
+
+.chat-block-step-note {
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
+}
+
+.chat-block-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+}
+
+.chat-block-metric {
+  padding: 0.5rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--background);
+}
+
+.chat-block-metric-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.chat-block-metric-value {
+  margin-top: 0.1rem;
+  font-size: 1.05rem;
+  font-weight: 680;
+  color: var(--foreground);
+}
+
+/* Detail text is agent-authored, so it renders neutral unless the block
+   declares a trend — color is a semantic the schema carries, not a default. */
+.chat-block-metric-detail {
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
+}
+
+.chat-block-metric-detail[data-trend="up"] {
+  color: var(--ok, #37904a);
+}
+
+.chat-block-metric-detail[data-trend="down"] {
+  color: var(--destructive);
+}
+
+.chat-block-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.chat-block-bar-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr 2.25rem;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.74rem;
+  color: var(--muted-foreground);
+}
+
+.chat-block-bar {
+  display: block;
+  height: 0.45rem;
+  border-radius: 0;
+  background: var(
+    --muted,
+    color-mix(in srgb, var(--foreground) 8%, transparent)
+  );
+  overflow: hidden;
+}
+
+.chat-block-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--chat-agent-accent, var(--primary));
+}
+
+.chat-block-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.chat-block-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--background);
+  text-align: left;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.chat-block-choice:disabled {
+  cursor: default;
+}
+
+.chat-block-field {
+  margin-bottom: 0.55rem;
+}
+
+.chat-block-field label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.chat-block-field input[type="text"],
+.chat-block-field textarea,
+.chat-block-field select {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.84rem;
+}
+
+.chat-block-required {
+  color: var(--destructive);
+}
+
+.chat-block-stream {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  color: var(--muted-foreground);
+}
+
+.chat-block-cursor {
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.9em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--chat-agent-accent, var(--primary));
+  animation: chat-block-blink 0.9s step-end infinite;
+}
+
+@keyframes chat-block-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 /* Composer chrome — denser, still a single bordered input row. */
 .chat-composer {
   position: relative;

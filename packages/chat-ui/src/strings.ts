@@ -84,6 +84,18 @@ export const CHAT_STRINGS = {
   newChannelCreateError: "Couldn't create that channel — try again.",
   sendFailedMessage: "Couldn't send — retry",
   fallbackPartUnsupported: "Unsupported content",
+  blockUnsupportedTitle: "Unsupported block",
+  blockUnsupportedBody: (type: string) =>
+    `This "${type}" block can't be shown here yet.`,
+  blockApproveAction: "Approve",
+  blockDenyAction: "Deny",
+  blockRiskLabel: (risk: "low" | "medium" | "high") =>
+    risk === "low"
+      ? "Low risk"
+      : risk === "medium"
+        ? "Medium risk"
+        : "High risk",
+  blockFormSubmit: "Submit",
   dayDividerToday: "Today",
   dayDividerYesterday: "Yesterday",
   rowMenuLabel: "Channel actions",

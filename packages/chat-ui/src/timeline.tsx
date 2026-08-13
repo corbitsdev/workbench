@@ -1,6 +1,7 @@
 // Renders a channel's `MessageItem[]` oldest→newest: text parts as chat
-// bubbles, event parts as inline system lines, everything else as a labeled
-// fallback block. `sender` is an optional field on `MessageItem` (see
+// bubbles, event parts as inline system lines, block parts through the
+// generative-UI block registry, everything else as a labeled fallback
+// block. `sender` is an optional field on `MessageItem` (see
 // api.ts) — a bubble never shows a raw address or instance/principal id: the
 // signed-in user's own messages render as "You" (or their name, from
 // `currentUser`), a sender matching a participant record renders by that
@@ -19,6 +20,7 @@ import type {
   ParticipantRecord,
   Part,
 } from "./api";
+import { BlockPartView } from "./blocks/registry";
 import type { ProfileSubject } from "./profile-subject";
 import { profileSubjectFromParticipant } from "./profile-subject";
 import { CHAT_STRINGS } from "./strings";
@@ -366,6 +368,9 @@ function MessageParts({
         }
         if (part.kind === "file") {
           return <FilePartView key={key} part={part} />;
+        }
+        if (part.kind === "block") {
+          return <BlockPartView key={key} block={part.block} />;
         }
         return <FallbackPart key={key} part={part} />;
       })}
