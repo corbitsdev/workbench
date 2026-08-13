@@ -21,6 +21,7 @@ import type {
   Part,
 } from "./api";
 import { ArtifactChip } from "./artifact-chip";
+import type { ApprovalActions } from "./blocks/approval-actions";
 import { BlockPartView } from "./blocks/registry";
 import type { ProfileSubject } from "./profile-subject";
 import { profileSubjectFromParticipant } from "./profile-subject";
@@ -337,6 +338,7 @@ function MessageParts({
   onOpenThread,
   onOpenProfile,
   onOpenArtifact,
+  approvalActions,
 }: {
   readonly item: MessageItem;
   readonly participants: readonly ParticipantRecord[];
@@ -346,6 +348,7 @@ function MessageParts({
   readonly onOpenThread?: (messageId: string) => void;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  readonly approvalActions?: ApprovalActions;
 }) {
   return (
     <>
@@ -385,7 +388,13 @@ function MessageParts({
           );
         }
         if (part.kind === "block") {
-          return <BlockPartView key={key} block={part.block} />;
+          return (
+            <BlockPartView
+              key={key}
+              block={part.block}
+              {...(approvalActions !== undefined ? { approvalActions } : {})}
+            />
+          );
         }
         return <FallbackPart key={key} part={part} />;
       })}
@@ -480,6 +489,7 @@ export function ChannelTimeline({
   onOpenThread,
   onOpenProfile,
   onOpenArtifact,
+  approvalActions,
 }: {
   readonly items: readonly MessageItem[];
   readonly participants?: readonly ParticipantRecord[];
@@ -492,6 +502,10 @@ export function ChannelTimeline({
    * (Library today; canvas is a follow-up). No chat-ui component owns
    * routing, mirroring `onOpenThread` and `onOpenProfile`. */
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  /** The approve block's live round-trip — the host's read/approve/reject
+   * on the platform approval a card references. Undefined renders every
+   * approve card in its pre-round-trip fixed-disabled framing. */
+  readonly approvalActions?: ApprovalActions;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Starts true so a channel's first render always lands pinned to the
@@ -550,6 +564,7 @@ export function ChannelTimeline({
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
             {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
             {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+            {...(approvalActions !== undefined ? { approvalActions } : {})}
           />
         );
       })}

@@ -100,6 +100,25 @@ export const CHAT_STRINGS = {
         ? "Medium risk"
         : "High risk",
   blockFormSubmit: "Submit",
+  blockApproveStatusLoading: "Checking status…",
+  blockApproveStatusApproved: "Approved",
+  blockApproveStatusRejected: "Denied",
+  blockApproveStatusTimeout: "Timed out",
+  blockApproveStatusExpired: "Expired",
+  blockApproveStatusNotFound: "This approval could not be found.",
+  blockApproveStatusLoadError: "Couldn't load this approval's status.",
+  blockApproveSpectatorNote: "Only an approver on this bench can act on this.",
+  blockApproveUndeterminedNote:
+    "Your access to act on this could not be confirmed yet — try Approve or Deny to find out.",
+  blockApproveApproving: "Approving…",
+  blockApproveRejecting: "Denying…",
+  blockApproveActionForbidden: "You do not have permission to act on this.",
+  blockApproveActionError: "Couldn't reach the approval — try again.",
+  blockApprovePlatformRequestedBy: (agentName: string) =>
+    `Requested by ${agentName}`,
+  blockApproveAgentNoteLabel: "Agent's note",
+  blockApproveConflictNote:
+    "Someone else already resolved this while you were deciding.",
   dayDividerToday: "Today",
   dayDividerYesterday: "Yesterday",
   typingIndicator: (label: string) => `${label} is typing`,

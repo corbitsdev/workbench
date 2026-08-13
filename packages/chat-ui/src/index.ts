@@ -44,6 +44,13 @@ export { CHAT_STRINGS } from "./strings";
 
 export { BlockPartView } from "./blocks/registry";
 export { BlockCard, RiskBadge } from "./blocks/block-card";
+export type {
+  ApprovalActions,
+  ApprovalLiveStatus,
+  ApprovalStatusQuery,
+  ApprovalDecisionResult,
+  PlatformApprovalDetail,
+} from "./blocks/approval-actions";
 
 export {
   TextPart,

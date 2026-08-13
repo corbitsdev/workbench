@@ -44,6 +44,8 @@ describeIfDb("needs-you: resolving pending approvals to display labels", () => {
   const definitionId = `def_${generateId("deployment")}`;
   const runId = `run_${generateId("deployment")}`;
   const approvalId = generateId("approval");
+  const resolvedApprovalId = generateId("approval");
+  const otherTenantApprovalId = generateId("approval");
   const approverPrincipalId = generateId("principal");
   const strangerPrincipalId = generateId("principal");
 
@@ -96,12 +98,41 @@ describeIfDb("needs-you: resolving pending approvals to display labels", () => {
       toolArguments: { to: "customer@example.com" },
       status: "pending",
     });
+    await db.db.insert(schema.approval).values({
+      id: resolvedApprovalId,
+      tenantId,
+      deploymentId: runId,
+      runId,
+      agentAddress: `instance_abc123@growth-${tenantId}.localhost`,
+      correlationId: `cor_${generateId("signal")}`,
+      toolDefinition: { name: "send_email" },
+      toolArguments: { to: "customer@example.com" },
+      status: "approved",
+      resolvedAt: new Date(),
+    });
+    await db.db.insert(schema.approval).values({
+      id: otherTenantApprovalId,
+      tenantId: otherTenantId,
+      deploymentId: runId,
+      runId,
+      agentAddress: `instance_abc123@growth-${tenantId}.localhost`,
+      correlationId: `cor_${generateId("signal")}`,
+      toolDefinition: { name: "send_email" },
+      toolArguments: {},
+      status: "pending",
+    });
   });
 
   afterAll(async () => {
     await db.db
       .delete(schema.approval)
       .where(eq(schema.approval.id, approvalId));
+    await db.db
+      .delete(schema.approval)
+      .where(eq(schema.approval.id, resolvedApprovalId));
+    await db.db
+      .delete(schema.approval)
+      .where(eq(schema.approval.id, otherTenantApprovalId));
     await db.db
       .delete(schema.workflowRun)
       .where(eq(schema.workflowRun.id, runId));
@@ -203,5 +234,82 @@ describeIfDb("needs-you: resolving pending approvals to display labels", () => {
     expect(response.status).toBe(403);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe("forbidden");
+  });
+
+  describe("single-approval detail read", () => {
+    function approverApp() {
+      return mountedApp({
+        id: approverPrincipalId,
+        tenantId,
+        kind: "user",
+        refId: "usr_approver",
+        status: "active",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+
+    function strangerApp() {
+      return mountedApp({
+        id: strangerPrincipalId,
+        tenantId,
+        kind: "user",
+        refId: "usr_stranger",
+        status: "active",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+
+    test("an approver reads a pending approval's status", async () => {
+      const response = await approverApp().request(`/${approvalId}`);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { status: string };
+      expect(body).toMatchObject({
+        id: approvalId,
+        status: "pending",
+        agentName: "Outreach Composer",
+        benchName: "Growth Team Bench",
+      });
+    });
+
+    test("a resolved approval is still fetchable, in its terminal status", async () => {
+      const response = await approverApp().request(`/${resolvedApprovalId}`);
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { status: string };
+      expect(body.status).toBe("approved");
+    });
+
+    // The tenant-wide approval:* grant this read checks is deliberately
+    // coarser than the native routes' per-deployment approval:<id> check --
+    // a 403 here means "could not determine," never "cannot resolve." See
+    // `packages/chat-ui/src/blocks/approve-card-state.ts`.
+    test("a principal without the tenant-wide grant is refused, not shown a guessed status", async () => {
+      const response = await strangerApp().request(`/${approvalId}`);
+      expect(response.status).toBe(403);
+      const body = (await response.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("forbidden");
+    });
+
+    // Authorization is checked before the row is loaded (the grant is
+    // tenant-wide, not keyed to the target id), so an unauthorized caller
+    // gets the same 403 whether the id exists or not -- a 404-vs-403 split
+    // here would let a stranger enumerate which ids exist in the tenant.
+    test("an unauthorized principal sees 403 even for an id that doesn't exist, never a leaking 404", async () => {
+      const response = await strangerApp().request("/apv_does_not_exist");
+      expect(response.status).toBe(403);
+      const body = (await response.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("forbidden");
+    });
+
+    test("an unknown approval id 404s", async () => {
+      const response = await approverApp().request("/apv_does_not_exist");
+      expect(response.status).toBe(404);
+    });
+
+    test("cross-tenant existence is masked as 404, not 403", async () => {
+      const response = await approverApp().request(`/${otherTenantApprovalId}`);
+      expect(response.status).toBe(404);
+    });
   });
 });
