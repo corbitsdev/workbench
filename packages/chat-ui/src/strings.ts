@@ -114,6 +114,11 @@ export const CHAT_STRINGS = {
   blockApproveRejecting: "Denying…",
   blockApproveActionForbidden: "You do not have permission to act on this.",
   blockApproveActionError: "Couldn't reach the approval — try again.",
+  blockApprovePlatformRequestedBy: (agentName: string) =>
+    `Requested by ${agentName}`,
+  blockApproveAgentNoteLabel: "Agent's note",
+  blockApproveConflictNote:
+    "Someone else already resolved this while you were deciding.",
   dayDividerToday: "Today",
   dayDividerYesterday: "Yesterday",
   typingIndicator: (label: string) => `${label} is typing`,

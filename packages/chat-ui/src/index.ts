@@ -49,6 +49,7 @@ export type {
   ApprovalLiveStatus,
   ApprovalStatusQuery,
   ApprovalDecisionResult,
+  PlatformApprovalDetail,
 } from "./blocks/approval-actions";
 
 export {

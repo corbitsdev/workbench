@@ -3,8 +3,9 @@
 // for the host's fetch-backed reads/writes, the same way the block never
 // talks to `fetch` itself. Covers: pending+actable, pending+spectator,
 // approve success (through to the invalidation callback the host's real
-// port would run), approve failure (no fake resolution), and an
-// already-resolved render.
+// port would run), approve failure (no fake resolution), an
+// already-resolved render, the platform-truth panel (never agent framing
+// alone next to live buttons), and the read-then-act conflict race.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -14,10 +15,18 @@ import type { Root } from "react-dom/client";
 import type {
   ApprovalActions,
   ApprovalDecisionResult,
+  ApprovalLiveStatus,
   ApprovalStatusQuery,
+  PlatformApprovalDetail,
 } from "../src/blocks/approval-actions";
 import type { MessageItem } from "../src/api";
 import { ChannelTimeline } from "../src/timeline";
+
+const PLATFORM_DETAIL: PlatformApprovalDetail = {
+  agentName: "Payments Bot",
+  headline: "Wire $50,000 to acct_9182",
+  arguments: { destination: "acct_9182", amountUsd: "50000" },
+};
 
 function messageWithApproveBlock(approvalId: string): MessageItem[] {
   return [
@@ -31,9 +40,9 @@ function messageWithApproveBlock(approvalId: string): MessageItem[] {
             type: "approve",
             data: {
               approvalId,
-              title: "Deploy staging",
-              risk: "high",
-              body: "Rolls out the ingest worker.",
+              title: "Refresh cache",
+              risk: "low",
+              body: "Just a routine refresh, nothing to worry about!",
             },
           },
         },
@@ -52,6 +61,36 @@ function fakeActions(overrides: Partial<ApprovalActions>): ApprovalActions {
       ({ kind: "resolved", status: "rejected" }) as ApprovalDecisionResult,
     ...overrides,
   };
+}
+
+/** A stateful fake standing in for the host's read/write round-trip: a
+ * decision actually changes what the next `getStatus` returns, the same
+ * way the real platform's approve/reject + re-read behaves. Lets tests
+ * exercise "the card re-syncs after any decision outcome" honestly instead
+ * of asserting against a decision response the card is no longer supposed
+ * to trust on its own. */
+function fakeBackend(
+  initialStatus: ApprovalLiveStatus,
+  canAct: boolean,
+  detail: PlatformApprovalDetail = PLATFORM_DETAIL,
+) {
+  let status = initialStatus;
+  const approveCalls: string[] = [];
+
+  const actions: ApprovalActions = {
+    getStatus: async () => ({ kind: "ready", status, canAct, detail }),
+    approve: async (id) => {
+      approveCalls.push(id);
+      status = "approved";
+      return { kind: "resolved", status: "approved" };
+    },
+    reject: async () => {
+      status = "rejected";
+      return { kind: "resolved", status: "rejected" };
+    },
+  };
+
+  return { actions, approveCalls };
 }
 
 let container: HTMLDivElement | null = null;
@@ -81,20 +120,8 @@ async function mount(actions: ApprovalActions, approvalId = "apv_1") {
 
 describe("approve card round-trip", () => {
   test("pending + actable: buttons render enabled and call the port", async () => {
-    const calls: string[] = [];
-    const el = await mount(
-      fakeActions({
-        getStatus: async () => ({
-          kind: "ready",
-          status: "pending",
-          canAct: true,
-        }),
-        approve: async (id) => {
-          calls.push(id);
-          return { kind: "resolved", status: "approved" };
-        },
-      }),
-    );
+    const backend = fakeBackend("pending", true);
+    const el = await mount(backend.actions);
 
     const buttons = el.querySelectorAll(".chat-block-action");
     expect(buttons).toHaveLength(2);
@@ -105,42 +132,79 @@ describe("approve card round-trip", () => {
       (buttons[0] as HTMLButtonElement).click();
     });
 
-    expect(calls).toEqual(["apv_1"]);
+    expect(backend.approveCalls).toEqual(["apv_1"]);
     expect(el.textContent).toContain("Approved");
   });
 
-  test("pending + spectator: status shown, no buttons", async () => {
-    const el = await mount(
-      fakeActions({
-        getStatus: async () => ({
-          kind: "ready",
-          status: "pending",
-          canAct: false,
-        }),
-      }),
-    );
+  test("pending + spectator: status and platform detail shown, no buttons", async () => {
+    const el = await mount(fakeBackend("pending", false).actions);
 
     expect(el.querySelectorAll(".chat-block-action")).toHaveLength(0);
     expect(el.textContent).toContain(
       "Only an approver on this bench can act on this.",
     );
+    expect(el.textContent).toContain("Wire $50,000 to acct_9182");
   });
 
-  test("approve success re-renders resolved state from the port's response and invalidates", async () => {
-    let invalidated = false;
+  test("the platform's own headline and arguments render, always ahead of the agent's framing", async () => {
+    const el = await mount(fakeBackend("pending", true).actions);
+
+    expect(el.textContent).toContain("Payments Bot");
+    expect(el.textContent).toContain("Wire $50,000 to acct_9182");
+    expect(el.textContent).toContain("acct_9182");
+    expect(el.textContent).toContain("50000");
+
+    // Both the platform truth and the agent's own (demoted) framing are on
+    // the page, but the platform detail must appear first in document
+    // order — never the agent's framing standing in ahead of it.
+    const platformIndex = el.innerHTML.indexOf("Wire $50,000 to acct_9182");
+    const agentIndex = el.innerHTML.indexOf(
+      "Just a routine refresh, nothing to worry about!",
+    );
+    expect(platformIndex).toBeGreaterThan(-1);
+    expect(agentIndex).toBeGreaterThan(-1);
+    expect(platformIndex).toBeLessThan(agentIndex);
+  });
+
+  test("a forbidden status read renders live buttons with NO description at all — never the agent's framing standing in for the platform's", async () => {
     const el = await mount(
       fakeActions({
-        getStatus: async () => ({
-          kind: "ready",
-          status: "pending",
-          canAct: true,
-        }),
-        approve: async () => {
-          invalidated = true; // stands in for the host's queryClient.invalidateQueries
-          return { kind: "resolved", status: "approved" };
-        },
+        getStatus: async () => ({ kind: "forbidden" }),
+        approve: async () => ({ kind: "forbidden", message: "nope" }),
       }),
     );
+
+    const buttons = el.querySelectorAll(".chat-block-action");
+    expect(buttons).toHaveLength(2);
+    expect((buttons[0] as HTMLButtonElement).disabled).toBe(false);
+
+    // The agent's own body text — the exact confused-deputy risk (an
+    // innocuous "Refresh cache" framing over a real wire transfer) — must
+    // never render as the description sitting next to live buttons.
+    expect(el.textContent).not.toContain(
+      "Just a routine refresh, nothing to worry about!",
+    );
+
+    await act(async () => {
+      (buttons[0] as HTMLButtonElement).click();
+    });
+    expect(el.textContent).toContain(
+      "You do not have permission to act on this.",
+    );
+  });
+
+  test("approve success re-renders resolved state from a re-read and invalidates", async () => {
+    let invalidated = false;
+    const backend = fakeBackend("pending", true);
+    const originalApprove = backend.actions.approve;
+    const actions: ApprovalActions = {
+      ...backend.actions,
+      approve: async (id) => {
+        invalidated = true; // stands in for the host's queryClient.invalidateQueries
+        return originalApprove(id);
+      },
+    };
+    const el = await mount(actions);
 
     const approveButton = el.querySelector(
       ".chat-block-action[data-primary]",
@@ -154,18 +218,16 @@ describe("approve card round-trip", () => {
     expect(el.textContent).toContain("Approved");
   });
 
-  test("approve failure shows an error and never fakes resolution", async () => {
+  test("approve failure re-syncs from a read and never fakes resolution", async () => {
     const el = await mount(
       fakeActions({
         getStatus: async () => ({
           kind: "ready",
           status: "pending",
           canAct: true,
+          detail: PLATFORM_DETAIL,
         }),
-        approve: async () => ({
-          kind: "error",
-          message: "network down",
-        }),
+        approve: async () => ({ kind: "error", message: "network down" }),
       }),
     );
 
@@ -178,45 +240,56 @@ describe("approve card round-trip", () => {
 
     expect(el.textContent).toContain("Couldn't reach the approval");
     expect(el.textContent).not.toContain("Approved");
-    // Buttons remain — the approval is still pending, not silently resolved.
+    // Buttons remain — the re-read still says pending, not silently resolved.
     expect(el.querySelectorAll(".chat-block-action")).toHaveLength(2);
   });
 
-  test("an already-resolved approval renders calmly with no buttons", async () => {
-    const el = await mount(
-      fakeActions({
-        getStatus: async () => ({
-          kind: "ready",
-          status: "rejected",
-          canAct: true,
-        }),
-      }),
+  test("read-then-act race: a conflict re-fetches and renders the resolved state, buttons gone", async () => {
+    let reads = 0;
+    const actions: ApprovalActions = {
+      getStatus: async () => {
+        reads += 1;
+        // First read (initial mount): still pending, actionable. Second
+        // read (after the conflicting decision): someone else got there
+        // first and it's now approved.
+        return reads === 1
+          ? {
+              kind: "ready",
+              status: "pending",
+              canAct: true,
+              detail: PLATFORM_DETAIL,
+            }
+          : {
+              kind: "ready",
+              status: "approved",
+              canAct: false,
+              detail: PLATFORM_DETAIL,
+            };
+      },
+      approve: async () => ({ kind: "conflict", message: "already resolved" }),
+      reject: async () => ({ kind: "resolved", status: "rejected" }),
+    };
+    const el = await mount(actions);
+
+    const approveButton = el.querySelector(
+      ".chat-block-action[data-primary]",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      approveButton.click();
+    });
+
+    expect(reads).toBe(2);
+    expect(el.querySelectorAll(".chat-block-action")).toHaveLength(0);
+    expect(el.textContent).toContain("Approved");
+    expect(el.textContent).toContain(
+      "Someone else already resolved this while you were deciding.",
     );
+  });
+
+  test("an already-resolved approval renders calmly with no buttons", async () => {
+    const el = await mount(fakeBackend("rejected", true).actions);
 
     expect(el.querySelectorAll(".chat-block-action")).toHaveLength(0);
     expect(el.textContent).toContain("Denied");
-  });
-
-  test("a forbidden status read renders buttons anyway and surfaces a 403 inline on click", async () => {
-    const el = await mount(
-      fakeActions({
-        getStatus: async () => ({ kind: "forbidden" }),
-        approve: async () => ({
-          kind: "forbidden",
-          message: "nope",
-        }),
-      }),
-    );
-
-    const buttons = el.querySelectorAll(".chat-block-action");
-    expect(buttons).toHaveLength(2);
-
-    await act(async () => {
-      (buttons[0] as HTMLButtonElement).click();
-    });
-
-    expect(el.textContent).toContain(
-      "You do not have permission to act on this.",
-    );
   });
 });

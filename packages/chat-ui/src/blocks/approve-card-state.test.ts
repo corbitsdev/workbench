@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { deriveApproveCardView, isTerminalStatus } from "./approve-card-state";
+import type { PlatformApprovalDetail } from "./approval-actions";
+
+const DETAIL: PlatformApprovalDetail = {
+  agentName: "Outreach Composer",
+  headline: "send_email",
+  arguments: { to: "customer@example.com" },
+};
 
 describe("isTerminalStatus", () => {
   test("pending is not terminal", () => {
@@ -36,37 +43,96 @@ describe("deriveApproveCardView", () => {
     expect(view).toEqual({ kind: "loading" });
   });
 
-  test("pending + canAct renders actionable with live buttons", () => {
+  test("pending + canAct renders actionable with live buttons and the platform's own detail", () => {
     const view = deriveApproveCardView({
       wired: true,
-      live: { kind: "ready", status: "pending", canAct: true },
+      live: { kind: "ready", status: "pending", canAct: true, detail: DETAIL },
       deciding: null,
       decisionError: null,
     });
-    expect(view).toEqual({ kind: "actionable", deciding: null, error: null });
+    expect(view).toEqual({
+      kind: "actionable",
+      detail: DETAIL,
+      deciding: null,
+      error: null,
+    });
   });
 
-  test("pending + !canAct renders spectator: status shown, no buttons", () => {
+  test("pending + !canAct renders spectator: status and platform detail shown, no buttons", () => {
     const view = deriveApproveCardView({
       wired: true,
-      live: { kind: "ready", status: "pending", canAct: false },
+      live: {
+        kind: "ready",
+        status: "pending",
+        canAct: false,
+        detail: DETAIL,
+      },
       deciding: null,
       decisionError: null,
     });
-    expect(view).toEqual({ kind: "spectator", status: "pending" });
+    expect(view).toEqual({
+      kind: "spectator",
+      status: "pending",
+      detail: DETAIL,
+    });
   });
 
   test("a terminal status always renders resolved, even if canAct were true", () => {
     const view = deriveApproveCardView({
       wired: true,
-      live: { kind: "ready", status: "approved", canAct: true },
+      live: {
+        kind: "ready",
+        status: "approved",
+        canAct: true,
+        detail: DETAIL,
+      },
       deciding: null,
       decisionError: null,
     });
-    expect(view).toEqual({ kind: "resolved", status: "approved" });
+    expect(view).toEqual({
+      kind: "resolved",
+      status: "approved",
+      detail: DETAIL,
+      resolvedElsewhere: false,
+    });
   });
 
-  test("a forbidden read cannot determine actionability: buttons render, error carries through", () => {
+  test("resolvedElsewhere only marks a genuinely resolved render", () => {
+    const stillPending = deriveApproveCardView({
+      wired: true,
+      live: { kind: "ready", status: "pending", canAct: true, detail: DETAIL },
+      deciding: null,
+      decisionError: null,
+      resolvedElsewhere: true,
+    });
+    expect(stillPending).toEqual({
+      kind: "actionable",
+      detail: DETAIL,
+      deciding: null,
+      error: null,
+    });
+
+    const resolved = deriveApproveCardView({
+      wired: true,
+      live: {
+        kind: "ready",
+        status: "rejected",
+        canAct: true,
+        detail: DETAIL,
+      },
+      deciding: null,
+      decisionError: null,
+      resolvedElsewhere: true,
+    });
+    expect(resolved).toEqual({
+      kind: "resolved",
+      status: "rejected",
+      detail: DETAIL,
+      resolvedElsewhere: true,
+    });
+  });
+
+  test("a forbidden read cannot determine actionability or platform detail: buttons render without it, error carries through", () => {
     const view = deriveApproveCardView({
       wired: true,
       live: { kind: "forbidden" },
@@ -78,6 +144,7 @@ describe("deriveApproveCardView", () => {
       deciding: "approve",
       error: "You do not have permission to act on this.",
     });
+    expect(view).not.toHaveProperty("detail");
   });
 
   test("not-found and error reads never fabricate a status", () => {

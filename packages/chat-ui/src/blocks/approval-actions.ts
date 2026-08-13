@@ -14,17 +14,35 @@ export type ApprovalLiveStatus =
   "pending" | "approved" | "rejected" | "timeout" | "expired";
 
 /**
+ * The platform's own account of what is being asked -- who, what tool, with
+ * which arguments. This is the authoritative "what am I approving" a human
+ * decides against; the block's own `title`/`body` is the *agent's* framing
+ * and is never a substitute for it (a confused-deputy card that shows only
+ * agent-authored text next to live buttons is exactly the failure mode this
+ * type exists to close off).
+ */
+export type PlatformApprovalDetail = {
+  readonly agentName: string;
+  readonly headline: string;
+  readonly arguments: Record<string, unknown>;
+};
+
+/**
  * What the host's status read told the card. `canAct` is a fact the host
  * establishes from its own authorization read (e.g. whether the approval
  * showed up in a grant-scoped "needs you" read) -- the card never infers it
- * from the block's own data.
+ * from the block's own data. A `"ready"` result always carries `detail`:
+ * there is no code path where a card may show live buttons without the
+ * platform's own description of the request alongside them.
  *
  * `forbidden` is distinct from `canAct: false`: it means the host's *read*
- * itself was refused, so actionability could not be determined at all. The
- * card's honest answer in that case is to show the Approve/Deny buttons and
- * let the real approve/reject call's own authorization decide, surfacing a
- * 403 inline if it also refuses -- never guessing a spectator verdict from
- * a read that was itself refused.
+ * itself was refused, so actionability -- and the platform detail -- could
+ * not be determined at all. The card's honest answer in that case is to
+ * show the Approve/Deny buttons (never the agent's framing standing in for
+ * a description) and let the real approve/reject call's own authorization
+ * decide, surfacing a 403 inline if it also refuses -- never guessing a
+ * spectator verdict, and never rendering unverified agent text as if it
+ * were the platform's account of the request.
  */
 export type ApprovalStatusQuery =
   | { readonly kind: "loading" }
@@ -32,6 +50,7 @@ export type ApprovalStatusQuery =
       readonly kind: "ready";
       readonly status: ApprovalLiveStatus;
       readonly canAct: boolean;
+      readonly detail: PlatformApprovalDetail;
     }
   | { readonly kind: "forbidden" }
   | { readonly kind: "not-found" }
@@ -40,6 +59,12 @@ export type ApprovalStatusQuery =
 export type ApprovalDecisionResult =
   | { readonly kind: "resolved"; readonly status: "approved" | "rejected" }
   | { readonly kind: "forbidden"; readonly message: string }
+  /** The approval was no longer pending by the time this decision reached
+   * the platform (HTTP 409: already resolved, run no longer running, or
+   * deployment unavailable) -- distinct from a transient `error` because
+   * the right response is never "let the user retry," it's "re-sync and
+   * show what actually happened." */
+  | { readonly kind: "conflict"; readonly message: string }
   | { readonly kind: "error"; readonly message: string };
 
 export type ApprovalActions = {

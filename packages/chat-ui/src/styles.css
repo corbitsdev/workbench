@@ -587,6 +587,61 @@
   margin-bottom: 0;
 }
 
+/* The platform's own account of an approval request -- deliberately the
+   most visually prominent thing in the card, ahead of the agent's own
+   framing, so a human never decides against unverified text alone. */
+.chat-block-approve-platform {
+  margin: 0 0 0.65rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  background: var(--muted, transparent);
+}
+
+.chat-block-approve-platform-requester {
+  margin: 0 0 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--muted-foreground);
+}
+
+.chat-block-approve-platform-headline {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: var(--foreground);
+}
+
+.chat-block-approve-args {
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.chat-block-approve-arg {
+  display: flex;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+}
+
+.chat-block-approve-arg dt {
+  font-weight: 650;
+  color: var(--muted-foreground);
+}
+
+.chat-block-approve-arg dd {
+  margin: 0;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+/* The agent's own framing, demoted -- never the sole description next to
+   live buttons (see `PlatformDetail` above, which always renders first
+   when available). */
+.chat-block-agent-note {
+  font-style: italic;
+}
+
 .chat-block-actions {
   display: flex;
   flex-wrap: wrap;
