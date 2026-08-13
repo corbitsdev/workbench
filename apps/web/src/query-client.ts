@@ -55,6 +55,11 @@ export const tenantKeys = {
   // an upload covers both the list and the kind-nav counts.
   artifactCounts: (tenantId: string) =>
     ["tenant", tenantId, "artifacts", "counts"] as const,
+  /** Settings section-nav gating (People/Roles/Grants/Credentials). Keyed
+   * so col2's nav band and the settings stage — mounted in separate
+   * subtrees — share one cached probe instead of each firing its own. */
+  settingsAccess: (tenantId: string, principalId: string) =>
+    ["tenant", tenantId, "settings-access", principalId] as const,
 };
 
 /**

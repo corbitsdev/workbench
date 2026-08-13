@@ -52,6 +52,7 @@ import {
   type PanelRenderContext,
 } from "./panel-contribution";
 import { RoutinesFeedBand } from "./routines-feed-band";
+import { SettingsNavBand } from "./settings-nav-band";
 
 function pathMatches(prefix: string, path: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`);
@@ -957,6 +958,9 @@ export function ensurePanelContributions(): void {
     id: "settings",
     match: (path) => pathMatches("/settings", path),
     pageBand: defaultBand("Settings", "Bench, members, and preferences"),
+    pageSpecific: (ctx) => (
+      <SettingsNavBand path={ctx.path} onNavigate={ctx.onNavigate} />
+    ),
   });
 
   registerPanelContribution({

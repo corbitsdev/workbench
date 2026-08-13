@@ -77,7 +77,8 @@ export function matchesRoute(routePath: string, path: string): boolean {
     routePath === "/routines" ||
     routePath === "/library" ||
     routePath === "/insights" ||
-    routePath === "/inbox"
+    routePath === "/inbox" ||
+    routePath === SETTINGS_PATH
   ) {
     return path === routePath || path.startsWith(`${routePath}/`);
   }
@@ -147,7 +148,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: SETTINGS_PATH,
     label: "Settings",
     icon: <SlidersHorizontal />,
-    render: () => <SettingsRoute />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <SettingsRoute path={path} navigate={navigate} />
+    ),
   },
 ];
 

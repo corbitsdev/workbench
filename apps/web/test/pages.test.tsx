@@ -229,7 +229,7 @@ describe("settings top bar", () => {
       <TestQueryProvider>
         <NavigationProvider navigate={() => undefined}>
           <BenchProvider>
-            <SettingsRoute />
+            <SettingsRoute path="/settings/agent" navigate={() => undefined} />
           </BenchProvider>
         </NavigationProvider>
       </TestQueryProvider>,
