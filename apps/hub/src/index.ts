@@ -126,6 +126,11 @@ import {
   createSinkRegistry,
 } from "@corbits/notify";
 import { mountMemory } from "./memory-mount";
+import {
+  createUnavailableWorkflowMemoryRoutes,
+  createWorkflowMemoryRoutes,
+  createWorkflowMemoryStore,
+} from "@corbits/memory-hub";
 import { mountArtifacts } from "./artifacts-mount";
 import {
   createCredentialExpirySweep,
@@ -463,6 +468,20 @@ export async function createHub(config: HubConfig) {
   const chatConditionRegistry: ConditionRegistry = {
     time_window: timeWindowEvaluator,
   };
+  // Memory plane (optional): firm-memory HTTP under
+  // `/api/tenants/:tenantId/memory/*`, same `DATABASE_URL` as the control
+  // plane, isolated in its own `memory` schema. Degrades when EMBED_* is
+  // unset — see memory-mount.ts. Captured (not discarded) here, before
+  // `chatOrchestrator`/`createArtifactDeliveryHandler` below, so the
+  // in-process `Memory` handle can be threaded into both: a finalized
+  // turn's persisted artifact and the bounded daily transcript digest
+  // (CL-5852) both write through this same handle, never a second
+  // connection or the plane's own tenant-session-gated HTTP routes.
+  const memoryHandle = await mountMemory({
+    app,
+    grantStore: chatGrantStore,
+    conditionRegistry: chatConditionRegistry,
+  });
   const chatStore = createDrizzleChatStore(db);
   const threadStore = createDrizzleThreadStore(db);
   const blockResponseStore = createDrizzleBlockResponseStore(db);
@@ -512,15 +531,19 @@ export async function createHub(config: HubConfig) {
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
     recordActivity: chatPlatform.recordActivity,
+    ...(memoryHandle !== undefined ? { memory: memoryHandle.memory } : {}),
   });
   // Now that `chatStore`/`chatPlatform` exist, arm the finalized-turn
   // artifact-delivery ref declared beside `eventCollectors` above.
+  // `memory` (absent when the plane isn't mounted) lets this handler
+  // also record a memory entry for each persisted artifact (CL-5852).
   artifactDeliveryHandlerRef.current = createArtifactDeliveryHandler({
     db,
     store: chatStore,
     platform: chatPlatform,
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
+    ...(memoryHandle !== undefined ? { memory: memoryHandle.memory } : {}),
   });
   // The one SSE subscriber registry for this process's channel events
   // (see `@corbits/chat`'s `channel-events.ts`), constructed here in
@@ -884,15 +907,25 @@ export async function createHub(config: HubConfig) {
     },
   });
 
-  // Memory plane (optional): firm-memory HTTP under
-  // `/api/tenants/:tenantId/memory/*`, same `DATABASE_URL` as the control
-  // plane, isolated in its own `memory` schema. Degrades when EMBED_* is
-  // unset — see memory-mount.ts.
-  await mountMemory({
-    app,
-    grantStore: chatGrantStore,
-    conditionRegistry: chatConditionRegistry,
-  });
+  // The sanctioned path for a workflow run to reach the memory plane
+  // (CL-5852), mirroring `/api/workflow-artifacts` immediately above:
+  // mounted OUTSIDE `TENANT_PREFIX` since a workflow-process child has
+  // no browser session, every request authenticates via the same
+  // `WorkflowRunAuthenticator` (sidecar bearer token + run address)
+  // against this hub's own control-plane `db`. Serves through
+  // `memoryHandle.memory` — the SAME in-process plane instance
+  // `mountMemory` mounted above, never a second connection.
+  if (memoryHandle !== undefined) {
+    app.route(
+      "/api/workflow-memory",
+      createWorkflowMemoryRoutes({
+        authenticator: createWorkflowRunAuthenticator({ db }),
+        store: createWorkflowMemoryStore(memoryHandle.memory),
+      }),
+    );
+  } else {
+    app.route("/api/workflow-memory", createUnavailableWorkflowMemoryRoutes());
+  }
 
   // The first-login hook mounts outside the tenant prefix, since the
   // session it serves belongs to no tenant yet. The route is
