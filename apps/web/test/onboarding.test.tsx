@@ -281,6 +281,7 @@ describe("submitCredential", () => {
     const result = await submitCredential("google-genai", "AIza-good");
     expect(result).toEqual({
       kind: "seeded",
+      tenantId: "ten_1",
       tenantSlug: "ada-user1",
       workflows: ["echo", "assistant"],
     });
@@ -346,7 +347,7 @@ describe("App at the onboarding path", () => {
 
   test("shows the restrained step label and progress rail instead of a stepper", () => {
     const markup = renderOnboarding();
-    expect(markup).toContain("Step 1 of 3");
+    expect(markup).toContain("Step 1 of 4");
     expect(markup).toContain("Name your workbench");
     expect(markup).toContain("onboarding-progress-track");
   });
@@ -546,6 +547,73 @@ describe("the OpenRouter connect card", () => {
       );
       expect(container.textContent).toContain("Echo routine");
       expect(container.textContent).toContain("Myra routine");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  test("a seeded response carrying a tenant id lands on the optional Connect your tools step first, and Skip for now reaches the routines ending", async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/complete-setup") {
+        return json({
+          kind: "seeded",
+          tenantId: "ten_ada",
+          tenantSlug: "ada-user1",
+          workflows: ["echo", "assistant"],
+        });
+      }
+      if (url === "/api/tenants/ten_ada/credentials") {
+        return json({ data: [], nextCursor: null });
+      }
+      if (url === "/api/tenants/ten_ada/providers") {
+        return json({ data: [], nextCursor: null });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    window.history.replaceState(
+      null,
+      "",
+      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={noop}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      expect(container.textContent).toContain("Connect your tools");
+      expect(container.textContent).not.toContain(
+        "Your first routines are running",
+      );
+
+      const skipButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Skip for now",
+      );
+      expect(skipButton).toBeDefined();
+      act(() => {
+        skipButton?.click();
+      });
+
+      expect(container.textContent).toContain(
+        "Your first routines are running",
+      );
     } finally {
       act(() => root.unmount());
       container.remove();
