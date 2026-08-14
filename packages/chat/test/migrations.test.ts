@@ -32,8 +32,8 @@ const migrationNames = [
   "0009_channel_threads",
   "0010_block_responses",
   "0011_channel_threads_parent_thread_id",
-  "0012_channel_share",
-  "0013_channel_share_member",
+  "0014_channel_share",
+  "0015_channel_share_member",
 ];
 
 describeIfDb("applyChatMigrations", () => {
