@@ -174,6 +174,37 @@ export const chatMigrations: readonly ChatMigration[] = [
         ON "chat"."channel_threads" ("tenant_id", "parent_thread_id");
     `,
   },
+  {
+    name: "0012_message_reactions",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."message_reactions" (
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "emoji" text NOT NULL,
+        "principal_id" text NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "channel_id", "message_id", "emoji", "principal_id")
+      );
+      CREATE INDEX IF NOT EXISTS "message_reactions_message_idx"
+        ON "chat"."message_reactions" ("tenant_id", "channel_id", "message_id");
+    `,
+  },
+  {
+    name: "0013_pinned_messages",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."pinned_messages" (
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "pinned_by" text NOT NULL,
+        "pinned_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "channel_id", "message_id")
+      );
+      CREATE INDEX IF NOT EXISTS "pinned_messages_channel_idx"
+        ON "chat"."pinned_messages" ("tenant_id", "channel_id");
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named

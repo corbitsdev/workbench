@@ -25,6 +25,8 @@ export {
   Part,
 } from "@corbits/chat/parts";
 export type { ParticipantRecord } from "@corbits/chat/participants";
+export { REACTION_EMOJI } from "@corbits/chat/reaction-emoji";
+export type { ReactionEmoji } from "@corbits/chat/reaction-emoji";
 
 export const ChannelKind = type("'channel' | 'chat'");
 export type ChannelKind = typeof ChannelKind.infer;
@@ -74,11 +76,29 @@ const ChannelsResponse = type({ items: ChannelWire.array() }).pipe(
 export const MessageSender = type({ name: "string | null", address: "string" });
 export type MessageSender = typeof MessageSender.infer;
 
+// `POST .../reactions/toggle`'s response shape, and the per-emoji entry
+// `GET /messages` batches onto every item's `reactions` array — see
+// `packages/chat/src/reactions.ts`'s `ReactionSummary`. `reactedByMe` is
+// this signed-in principal's own membership in the emoji's reactor set,
+// never another principal's.
+const ReactionSummaryWire = type({
+  emoji: "string",
+  count: "number",
+  reactedByMe: "boolean",
+});
+export type ReactionSummary = typeof ReactionSummaryWire.infer;
+
 const MessageItem = type({
   id: "string",
   createdAt: "string",
   parts: Part.array(),
   sender: MessageSender,
+  // Both fields are simply absent from the wire when the host never
+  // injected the corresponding store (see `CreateChatRoutesDeps` in
+  // `packages/chat/src/routes.ts`) — never a fabricated empty array or
+  // `false`, mirroring how `unreadCount` on `Channel` works.
+  "reactions?": ReactionSummaryWire.array(),
+  "pinned?": "boolean",
 });
 export type MessageItem = typeof MessageItem.infer;
 
@@ -273,6 +293,85 @@ export function sendMessage(
     SentMessage,
     { method: "POST", body: JSON.stringify(body) },
   );
+}
+
+/**
+ * Toggles this signed-in principal's reaction with `emoji` on a
+ * message — `POST .../reactions/toggle` (see
+ * `packages/chat/src/routes.ts`). Returns the emoji's fresh summary
+ * (count and whether this principal is now among the reactors); the
+ * caller re-renders from this rather than assuming its own optimistic
+ * guess, the same anti-drift rule `submitPoll`'s live tally follows.
+ */
+export function toggleReaction(
+  tenantId: string,
+  channelId: string,
+  messageId: string,
+  emoji: string,
+): Promise<ReactionSummary> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/messages/${messageId}/reactions/toggle`,
+    ReactionSummaryWire,
+    { method: "POST", body: JSON.stringify({ emoji }) },
+  );
+}
+
+const PinnedWire = type({
+  messageId: "string",
+  pinnedBy: "string",
+  pinnedAt: "string",
+});
+export type Pinned = typeof PinnedWire.infer;
+
+function pinPath(tenantId: string, channelId: string, messageId: string) {
+  return `/api/tenants/${tenantId}/chat/channels/${channelId}/messages/${messageId}/pin`;
+}
+
+export function pinMessage(
+  tenantId: string,
+  channelId: string,
+  messageId: string,
+): Promise<Pinned> {
+  return request(pinPath(tenantId, channelId, messageId), PinnedWire, {
+    method: "POST",
+  });
+}
+
+export async function unpinMessage(
+  tenantId: string,
+  channelId: string,
+  messageId: string,
+): Promise<void> {
+  const response = await fetch(pinPath(tenantId, channelId, messageId), {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new ChatApiError(
+      `The server answered ${response.status} for ${pinPath(tenantId, channelId, messageId)}.`,
+      response.status,
+    );
+  }
+}
+
+// A pinned message's own content, for the pinned strip's preview — the
+// same `MessageItem` shape plus who pinned it and when. See `GET
+// /channels/:id/pins` in `packages/chat/src/routes.ts`.
+const PinnedMessageWire = MessageItem.and({
+  pinnedBy: "string",
+  pinnedAt: "string",
+});
+export type PinnedMessage = typeof PinnedMessageWire.infer;
+
+const PinnedMessagesResponse = type({ items: PinnedMessageWire.array() });
+
+export function listPinnedMessages(
+  tenantId: string,
+  channelId: string,
+): Promise<readonly PinnedMessage[]> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/pins`,
+    PinnedMessagesResponse,
+  ).then((page) => page.items);
 }
 
 // `parentThreadId` is the thread this one hangs directly off: null for the

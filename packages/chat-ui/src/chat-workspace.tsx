@@ -30,11 +30,15 @@ import {
   inviteAgent,
   listChannels,
   listMessages,
+  listPinnedMessages,
   listThreadMessages,
   listThreads,
   patchChannelSettings,
+  pinMessage,
   putReadState,
   sendMessage,
+  toggleReaction,
+  unpinMessage,
   channelStreamUrl,
   isKnownChannelKind,
 } from "./api";
@@ -44,6 +48,7 @@ import type {
   CreateChannelInput,
   MessageItem,
   Part,
+  PinnedMessage,
 } from "./api";
 import { ChannelSettingsSurface } from "./channel-settings";
 import type { ChannelSettingsSectionId } from "./channel-settings";
@@ -53,9 +58,15 @@ import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
 import type { PersonOption } from "./new-channel-dialog";
+import { PinnedStrip } from "./pinned-strip";
 import { CHAT_STRINGS } from "./strings";
-import { AgentBadge, ChannelTimeline } from "./timeline";
-import type { CurrentUser, ThreadAffordanceMeta } from "./timeline";
+import { AgentBadge, ChannelTimeline, messageDomId } from "./timeline";
+import type {
+  CurrentUser,
+  PinActions,
+  ReactionActions,
+  ThreadAffordanceMeta,
+} from "./timeline";
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
 import {
@@ -317,6 +328,14 @@ function ChatWorkspaceInner({
   const [threadMetaByMessageId, setThreadMetaByMessageId] = useState<
     ReadonlyMap<string, ThreadAffordanceMeta>
   >(new Map());
+  // Absent (not `[]`) until the first successful `listPinnedMessages` —
+  // `undefined` means "not wired or not loaded yet", so the pinned strip
+  // renders nothing rather than a fabricated empty state on channel
+  // switch. A 404 (no `pins` store on the host) resolves to `[]` and
+  // stays there — the strip is simply never shown for that deployment.
+  const [pinnedMessages, setPinnedMessages] = useState<
+    readonly PinnedMessage[]
+  >([]);
 
   const unauthorizedRef = useRef(false);
   const composerRef = useRef<ComposerHandle>(null);
@@ -371,6 +390,21 @@ function ChatWorkspaceInner({
         setThreads([]);
         setRootThreadId(null);
         setThreadMetaByMessageId(new Map());
+      }
+    },
+    [tenantId],
+  );
+
+  const loadPins = useCallback(
+    async (channelId: string) => {
+      try {
+        setPinnedMessages(await listPinnedMessages(tenantId, channelId));
+      } catch {
+        // No `pins` store on this host, or a transient read failure —
+        // either way the strip just doesn't show, the same "absent
+        // store, absent surface" contract the wire's own `pinned` field
+        // follows server-side.
+        setPinnedMessages([]);
       }
     },
     [tenantId],
@@ -492,6 +526,7 @@ function ChatWorkspaceInner({
     if (activeChannelId !== null) {
       void loadThreads(activeChannelId);
       void loadMessages(activeChannelId);
+      void loadPins(activeChannelId);
     }
   }, [activeChannelId]); // eslint-disable-line react-hooks/exhaustive-deps -- channel switch resets thread view
 
@@ -519,6 +554,61 @@ function ChatWorkspaceInner({
     }
   };
 
+  const handleToggleReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      if (activeChannelId === null) return;
+      toggleReaction(tenantId, activeChannelId, messageId, emoji)
+        .then(() => loadMessages(activeChannelId, { background: true }))
+        .catch(() => toast(CHAT_STRINGS.reactionToggleError));
+    },
+    [tenantId, activeChannelId, loadMessages],
+  );
+
+  const handlePinMessage = useCallback(
+    (messageId: string) => {
+      if (activeChannelId === null) return;
+      pinMessage(tenantId, activeChannelId, messageId)
+        .then(() =>
+          Promise.all([
+            loadMessages(activeChannelId, { background: true }),
+            loadPins(activeChannelId),
+          ]),
+        )
+        .catch(() => toast(CHAT_STRINGS.pinMessageError));
+    },
+    [tenantId, activeChannelId, loadMessages, loadPins],
+  );
+
+  const handleUnpinMessage = useCallback(
+    (messageId: string) => {
+      if (activeChannelId === null) return;
+      unpinMessage(tenantId, activeChannelId, messageId)
+        .then(() =>
+          Promise.all([
+            loadMessages(activeChannelId, { background: true }),
+            loadPins(activeChannelId),
+          ]),
+        )
+        .catch(() => toast(CHAT_STRINGS.unpinMessageError));
+    },
+    [tenantId, activeChannelId, loadMessages, loadPins],
+  );
+
+  const reactionActions: ReactionActions = useMemo(
+    () => ({ onToggle: handleToggleReaction }),
+    [handleToggleReaction],
+  );
+  const pinActions: PinActions = useMemo(
+    () => ({ onPin: handlePinMessage, onUnpin: handleUnpinMessage }),
+    [handlePinMessage, handleUnpinMessage],
+  );
+
+  function jumpToMessage(messageId: string) {
+    document
+      .getElementById(messageDomId(messageId))
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   const composerMounted =
     !settingsOpen && activeChannelId !== null && messagesState.kind === "ready";
 
@@ -540,6 +630,9 @@ function ChatWorkspaceInner({
     (eventType, data) => {
       handleTypingEvent(eventType, data);
       if (eventType !== "chat.typing") refreshUnlessUnauthorized();
+      if (eventType === "chat.pin" && activeChannelId !== null) {
+        void loadPins(activeChannelId);
+      }
     },
     refreshUnlessUnauthorized,
   );
@@ -1001,6 +1094,12 @@ function ChatWorkspaceInner({
                 />
               ) : (
                 <>
+                  {!inThreadView ? (
+                    <PinnedStrip
+                      items={pinnedMessages}
+                      onJump={jumpToMessage}
+                    />
+                  ) : null}
                   {openThreadParent !== undefined ? (
                     <div className="chat-thread-origin-banner">
                       {CHAT_STRINGS.forkThreadOriginBanner}{" "}
@@ -1038,6 +1137,8 @@ function ChatWorkspaceInner({
                     {...(blockResponses !== undefined
                       ? { blockResponses }
                       : {})}
+                    reactionActions={reactionActions}
+                    pinActions={pinActions}
                   />
                   {typingState !== null ? (
                     <TypingIndicator
