@@ -292,6 +292,164 @@ describe("completeCredentialSetup", () => {
     ]);
   });
 
+  test("a reconnect against an expired Hugging Face credential rotates it and still reports seeded", async () => {
+    const TIMESTAMP = "2026-01-01T00:00:00.000Z";
+    const staleCredentialRow = () => ({
+      id: "cre_old",
+      tenantId: TENANT_ID,
+      providerId: "prv_1",
+      name: "huggingface-default",
+      type: "oauth_token",
+      status: "expired",
+      metadata: { expiresAt: "2026-01-01T00:00:00.000Z" },
+      createdAt: TIMESTAMP,
+      updatedAt: TIMESTAMP,
+    });
+    let patchCalls = 0;
+    let patchBody: unknown;
+
+    const api: ApiCall = async (method, path, body) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`) {
+        return {
+          status: 201,
+          data: {
+            id: "prv_1",
+            tenantId: TENANT_ID,
+            name: "huggingface",
+            plugin: "openai-compatible",
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/credentials`
+      ) {
+        return { status: 409, data: { error: "name taken" }, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/credentials`
+      ) {
+        return {
+          status: 200,
+          data: { data: [staleCredentialRow()], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (
+        method === "PATCH" &&
+        path === `/api/tenants/${TENANT_ID}/credentials/cre_old`
+      ) {
+        patchCalls += 1;
+        patchBody = body;
+        return {
+          status: 200,
+          data: {
+            ...staleCredentialRow(),
+            status: "active",
+            metadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        return {
+          status: 201,
+          data: {
+            id: "mdl_1",
+            tenantId: TENANT_ID,
+            canonicalName: "deepseek-ai/DeepSeek-V4-Flash",
+            disabled: false,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        return {
+          status: 201,
+          data: {
+            id: "cpv_1",
+            tenantId: TENANT_ID,
+            name: "huggingface",
+            plugin: "openai-compatible",
+            baseURL: "https://router.huggingface.co/v1",
+            credentialId: "cre_old",
+            disabled: false,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        return {
+          status: 201,
+          data: {
+            id: "off_1",
+            tenantId: TENANT_ID,
+            modelId: "mdl_1",
+            providerId: "cpv_1",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: [],
+            quirks: null,
+            disabled: false,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await completeCredentialSetup({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "huggingface",
+      apiKey: "hf_freshly_minted_token",
+      credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+      pushWorkflow: noopPush,
+      log: collector().log,
+      testCredential: async () => ({ ok: true }),
+      // The real seedCatalog runs here (not mocked) so the rotation
+      // actually happens through ensureCredential; only the workflow
+      // deploy side is stubbed, since it is not this defect's concern.
+      seedTenantFn: async () => {},
+    });
+
+    expect(result.kind).toBe("seeded");
+    expect(patchCalls).toBe(1);
+    expect(patchBody).toEqual({
+      secret: "hf_freshly_minted_token",
+      status: "active",
+      metadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+    });
+  });
+
   test("a pasted key with no metadata stays an ordinary api_key credential", async () => {
     const seedCatalogCalls: { credentialType?: string }[] = [];
     const api: ApiCall = async (method, path) => {

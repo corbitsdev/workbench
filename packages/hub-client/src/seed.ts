@@ -790,6 +790,44 @@ async function ensureCredential(
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
   }
+
+  // An `oauth_token` credential (Hugging Face today) can reconnect under
+  // its same stable name with a fresh secret and a fresh `expiresAt`
+  // once the stored one has gone stale — reusing the stale row instead
+  // of rotating it would silently strand the reconnect on the old,
+  // already-expired secret, and since the row's `status` is already
+  // non-`active`, the expiry sweep would never see it again to re-notify.
+  // Scoped to exactly that case: an `active` row (the common idempotent
+  // re-seed, including every `api_key` provider) is left untouched, so a
+  // routine re-seed with an unchanged key never turns into a rotation.
+  if (args.type === "oauth_token" && existing.status !== "active") {
+    const rotated = await api(
+      "PATCH",
+      `/api/tenants/${args.tenantId}/credentials/${existing.id}`,
+      {
+        secret: args.secret,
+        status: "active",
+        ...(args.metadata !== undefined ? { metadata: args.metadata } : {}),
+      },
+      cookies,
+    );
+    if (rotated.status !== 200) {
+      throw new CliError(
+        `the hub rejected rotating credential ${args.name} with status ${rotated.status}: ${JSON.stringify(rotated.data)}`,
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    const credential = parseAs(
+      CredentialResponse,
+      rotated.data,
+      "credential response",
+    );
+    log(
+      `rotated credential ${args.name} (reconnect refreshed the stored token)`,
+    );
+    return credential.id;
+  }
+
   log(
     `credential ${args.name} already exists (skipped; its secret is not updated by seeding)`,
   );
