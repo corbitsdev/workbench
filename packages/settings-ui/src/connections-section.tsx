@@ -192,26 +192,34 @@ export function ConnectionsSection({
         </p>
       )}
       <div className="settings-connections-grid">
-        {connectorDescriptors().map((descriptor) => (
-          <ConnectorCard
-            key={descriptor.id}
-            descriptor={descriptor}
-            statusResult={connectorStatus(
-              descriptor.displayName,
-              state.data.credentials,
-              state.data.providers,
-            )}
-            onConnect={() => {
-              setDialogMode("connect");
-              setDialogDescriptor(descriptor);
-            }}
-            onReconnect={() => {
-              setDialogMode("reconnect");
-              setDialogDescriptor(descriptor);
-            }}
-            onDisconnect={handleDisconnect}
-          />
-        ))}
+        {connectorDescriptors()
+          // OAuth connectors (openrouter, huggingface) now live in the
+          // same registry as of CL-6028's OAuth route factory, but this
+          // card still renders only the api-key ones — the OAuth pair
+          // below is its own card until CL-6028's OAuth-cards-honesty
+          // follow-up folds them into this same loop (registry `oauth`
+          // field, "not configured" state, a real Connect action).
+          .filter((descriptor) => descriptor.probe !== undefined)
+          .map((descriptor) => (
+            <ConnectorCard
+              key={descriptor.id}
+              descriptor={descriptor}
+              statusResult={connectorStatus(
+                descriptor.displayName,
+                state.data.credentials,
+                state.data.providers,
+              )}
+              onConnect={() => {
+                setDialogMode("connect");
+                setDialogDescriptor(descriptor);
+              }}
+              onReconnect={() => {
+                setDialogMode("reconnect");
+                setDialogDescriptor(descriptor);
+              }}
+              onDisconnect={handleDisconnect}
+            />
+          ))}
         {OAUTH_CARDS.map((card) => (
           <OAuthConnectorCardView
             key={card.id}
