@@ -85,7 +85,7 @@ export function createWorkflowRunPackClient(
       }
       const principal: WorkflowRunSupervisorPrincipal = {
         kind: "supervisor",
-        deploymentId: repoId.id,
+        anchorRunId: repoId.id,
       };
       // Nothing to ship when the local tip is already the last acked tip:
       // the run's commits landed on a prior push. Return without a wire send

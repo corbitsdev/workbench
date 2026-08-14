@@ -18,7 +18,7 @@ import {
 import type { DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
-import { formatAgentAddress } from "@intx/types";
+import { formatRunAddress } from "@intx/types";
 
 import { renderInputTemplate } from "./mapping";
 import type { WebhookTriggerRow } from "./schema";
@@ -92,8 +92,8 @@ export async function launchWebhookTrigger(
     );
   }
 
-  const instanceId = generateId("instance");
-  const triggerAddress = formatAgentAddress(instanceId, tenantRow.domain);
+  const instanceId = generateId("workflowRun");
+  const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
 
   const launched = await launchFoldedRun(deps, {
     tenantId: trigger.tenantId,

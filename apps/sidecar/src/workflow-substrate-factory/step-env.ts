@@ -10,7 +10,7 @@ import path from "node:path";
 import { createDefaultDirectorRegistry } from "@intx/agent";
 import type { RepoId } from "@intx/hub-sessions/substrate";
 import { createDependencies, type AdapterRegistry } from "@intx/inference";
-import { createIsogitStore } from "@intx/storage-isogit/node";
+import { createIsogitStore } from "@intx/storage-isogit";
 import type { RegistryConfig } from "@intx/tool-packaging";
 import type {
   AuditStore,

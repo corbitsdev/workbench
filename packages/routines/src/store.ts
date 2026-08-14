@@ -219,7 +219,7 @@ export function createDrizzleRoutineStore<
       const [row] = await db
         .insert(routine)
         .values({
-          id: generateId("instance"),
+          id: generateId("workflowRun"),
           tenantId: input.tenantId,
           name: input.name,
           definitionId: input.definitionId,
@@ -444,7 +444,7 @@ export function createDrizzleRoutineStore<
         await tx.insert(routineRun).values({
           tenantId: input.tenantId,
           routineId: input.routineId,
-          runId: generateId("instance"),
+          runId: generateId("workflowRun"),
           triggeredBy: "schedule-failed",
           error: input.reason,
           createdAt: input.failedAt,
@@ -511,7 +511,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
     async createRoutine(input) {
       const now = new Date();
       const row: RoutineRow = {
-        id: generateId("instance"),
+        id: generateId("workflowRun"),
         tenantId: input.tenantId,
         name: input.name,
         definitionId: input.definitionId,
@@ -663,7 +663,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
       runs.push({
         tenantId: input.tenantId,
         routineId: input.routineId,
-        runId: generateId("instance"),
+        runId: generateId("workflowRun"),
         triggeredBy: "schedule-failed",
         error: input.reason,
         createdAt: input.failedAt,

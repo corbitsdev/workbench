@@ -350,7 +350,7 @@ async function answerReadyHandshake(spawns: Spawn[], at: number) {
 describe("workflow deployment lifecycle through the deploy router", () => {
   test("a deploy frame carrying referencedDefinitions materializes each body's workflow.json and sources.json", async () => {
     const { router, spawns, dataDir } = await makeLifecycleFixture();
-    const frame = makeWorkflowFrame("ins_lifecycle-bodies@example.com");
+    const frame = makeWorkflowFrame("run_lifecycle-bodies@example.com");
     if (frame.workflow === undefined) throw new Error("unreachable");
     const bodySources = {
       "body-step": [
@@ -405,7 +405,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
 
   test("a workflow frame is accepted: the child spawns, the address goes live, and a durable record lands", async () => {
     const { router, spawns, dataDir } = await makeLifecycleFixture();
-    const frame = makeWorkflowFrame("ins_lifecycle-accept@example.com");
+    const frame = makeWorkflowFrame("run_lifecycle-accept@example.com");
 
     const deployPromise = router.deploy(frame);
     await answerReadyHandshake(spawns, 0);
@@ -429,7 +429,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
 
   test("shutdownAll drains the child but preserves the deployment record and conversation root", async () => {
     const { router, spawns, dataDir } = await makeLifecycleFixture();
-    const frame = makeWorkflowFrame("ins_lifecycle-drain@example.com");
+    const frame = makeWorkflowFrame("run_lifecycle-drain@example.com");
     const deployPromise = router.deploy(frame);
     const spawn = await answerReadyHandshake(spawns, 0);
     await deployPromise;
@@ -466,7 +466,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
 
   test("undeploy kills the child, reclaims scratch and record, and never deletes the conversation root", async () => {
     const { router, spawns, dataDir } = await makeLifecycleFixture();
-    const frame = makeWorkflowFrame("ins_lifecycle-undeploy@example.com");
+    const frame = makeWorkflowFrame("run_lifecycle-undeploy@example.com");
     const deployPromise = router.deploy(frame);
     const spawn = await answerReadyHandshake(spawns, 0);
     await deployPromise;

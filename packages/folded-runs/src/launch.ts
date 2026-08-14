@@ -135,7 +135,7 @@ export async function deployAtHead(
   await deps.sessionService.deployInstanceAtHead({
     agentAddress: params.triggerAddress,
     agentId: params.instanceId,
-    instanceId: params.instanceId,
+    runId: params.instanceId,
     config: {
       sessionId: params.sessionId,
       agentId: params.instanceId,
@@ -227,14 +227,14 @@ export async function launchFoldedRun(
       updatedAt: now,
     });
 
-    // The folded run IS the launched instance: `deploymentId` is null
-    // (a folded run has no deployment), which is what puts it in the
-    // address family the platform's run-scoped mail surfaces actually
-    // resolve.
+    // The folded run IS the launched instance: `anchorRunId` is null
+    // (a folded run has no deployment anchor), which is what puts it in
+    // the address family the platform's run-scoped mail surfaces
+    // actually resolve.
     await tx.insert(workflowRun).values({
       id: params.instanceId,
       definitionId: params.definitionId,
-      deploymentId: null,
+      anchorRunId: null,
       tenantId: params.tenantId,
       principalId: instancePrincipalId,
       address: params.triggerAddress,

@@ -128,7 +128,7 @@ import { type } from "arktype";
 
 import { getLogger } from "@intx/log";
 import { createConnectorRouter } from "@intx/harness";
-import { createIsogitStore } from "@intx/storage-isogit/node";
+import { createIsogitStore } from "@intx/storage-isogit";
 import type {
   Principal,
   RepoId,

@@ -248,7 +248,7 @@ describe("launchFoldedRun", () => {
     expect(runInsert?.values).toMatchObject({
       id: "ins_channel1",
       definitionId: "wfd_channel1",
-      deploymentId: null,
+      anchorRunId: null,
       tenantId: "ten_1",
       address: "ins_channel1@ten1.workbench.test",
       status: "running",

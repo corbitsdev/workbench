@@ -41,13 +41,11 @@ import { readDeployTree, sanitizeAddress } from "@intx/hub-agent/paths";
 import { getLogger } from "@intx/log";
 import type { LoadedToolFactory, RegistryConfig } from "@intx/tool-packaging";
 import { resolveStepAddress } from "@intx/workflow-deploy";
-import { parseAgentAddress } from "@intx/types";
+import { parseRunAddress } from "@intx/types";
 
 import { materializeToolPackages } from "./tool-materialization";
 
 const logger = getLogger(["sidecar", "workflow-child", "step-tools"]);
-
-const INSTANCE_PREFIX = "ins_";
 
 /**
  * Cache and registry caps the per-step tool loader needs. Resolved at
@@ -132,12 +130,10 @@ function isStepToolMaterialization(
  * The step's mail address is `resolveStepAddress(...)`, the single owner
  * of the head/step collapse: for a single-step deployment the lone step
  * IS the head (the deployment mailbox itself), so the tree is read at the
- * head; for multi-step it is `deriveStepAddress(deploymentId, stepId,
- * deploymentDomain)`. The `deploymentId`/`deploymentDomain` are recovered
- * from the deployment mailbox address the supervisor threaded into the
- * child as `MAILBOX_ADDRESS` (`ins_<deploymentId>@<domain>`): the
- * instance-id local part minus the `ins_` prefix is the deploymentId, and
- * the address domain is the deploymentDomain. `stepCount` is sourced from
+ * head; for multi-step it is the derived `<runId>-<stepId>@<domain>` step
+ * address. The anchor `runId`/`domain` are recovered from the deployment
+ * mailbox address the supervisor threaded into the child as
+ * `MAILBOX_ADDRESS` (`<runId>@<domain>`). `stepCount` is sourced from
  * the host (via `substrateEnv`) so producer and consumer never derive
  * divergent addresses.
  */
@@ -147,22 +143,16 @@ export function stepDeployTreeDir(args: {
   stepId: string;
   stepCount: number;
 }): string {
-  const parsed = parseAgentAddress(args.mailboxAddress);
+  const parsed = parseRunAddress(args.mailboxAddress);
   if (parsed === null) {
     throw new Error(
-      `sidecar workflow-child step tools: deployment mailbox address ${JSON.stringify(args.mailboxAddress)} is not a parseable agent address; cannot locate the step's deploy tree`,
+      `sidecar workflow-child step tools: deployment mailbox address ${JSON.stringify(args.mailboxAddress)} is not a parseable run address; cannot locate the step's deploy tree`,
     );
   }
-  if (!parsed.instanceId.startsWith(INSTANCE_PREFIX)) {
-    throw new Error(
-      `sidecar workflow-child step tools: deployment mailbox instance id ${JSON.stringify(parsed.instanceId)} does not carry the ${JSON.stringify(INSTANCE_PREFIX)} prefix; cannot derive the orchestrator deploymentId`,
-    );
-  }
-  const deploymentId = parsed.instanceId.slice(INSTANCE_PREFIX.length);
   const stepAddress = resolveStepAddress({
-    deploymentId,
+    runId: parsed.runId,
     stepId: args.stepId,
-    deploymentDomain: parsed.domain,
+    domain: parsed.domain,
     stepCount: args.stepCount,
   });
   return path.join(args.dataDir, sanitizeAddress(stepAddress));

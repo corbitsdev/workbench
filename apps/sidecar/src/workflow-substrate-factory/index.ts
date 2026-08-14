@@ -259,7 +259,7 @@ export function createSidecarSubstrateFactory(
     };
     const principal: WorkflowRunWorkflowProcessPrincipal = {
       kind: "workflow-process",
-      deploymentId: env.spawn.deploymentId,
+      anchorRunId: env.spawn.anchorRunId,
     };
 
     // Proxy substrate: writes are forwarded over IPC into the

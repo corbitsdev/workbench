@@ -59,7 +59,7 @@ export async function sendFoldedMail(
   await deps.db.insert(sessionMail).values({
     id: mailId,
     sessionId: params.sessionId,
-    instanceId: null,
+    runId: null,
     tenantId: params.tenantId,
     direction: "inbound",
     status: "delivered",

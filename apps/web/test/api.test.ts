@@ -37,7 +37,7 @@ const json = (body: unknown, status = 200) =>
 const approvalFixture = {
   id: "apr_1",
   tenantId: "tnt_1",
-  deploymentId: "dep_1",
+  anchorRunId: "run_anchor1",
   runId: "run_1",
   agentAddress: "agent://tnt_1/billing-bot",
   correlationId: "corr_1",

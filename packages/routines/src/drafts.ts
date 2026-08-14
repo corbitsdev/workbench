@@ -201,7 +201,7 @@ export function createInMemoryDraftStore(): RoutineDraftStore {
     async createDraft(input) {
       const now = new Date();
       const row: RoutineDraftRow = {
-        id: generateId("instance"),
+        id: generateId("workflowRun"),
         tenantId: input.tenantId,
         prompt: input.prompt,
         status: "draft",
@@ -296,7 +296,7 @@ export function createDrizzleDraftStore<
 >(db: DraftDb<TSchema>): RoutineDraftStore {
   return {
     async createDraft(input) {
-      const id = generateId("instance");
+      const id = generateId("workflowRun");
       const inserted = await db
         .insert(routineDraft)
         .values({

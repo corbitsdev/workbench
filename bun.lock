@@ -833,6 +833,9 @@
     "@corbits/react-ui",
     "@corbits/mailbox",
   ],
+  "patchedDependencies": {
+    "@corbits/mailbox@github:corbitsdev/corbits-mailbox#ab72ee3": "patches/@corbits%2Fmailbox@0.1.0.patch",
+  },
   "overrides": {
     "arktype": "^2.2.0",
   },
