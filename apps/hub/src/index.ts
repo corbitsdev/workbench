@@ -103,6 +103,10 @@ import {
   createWorkflowRunAuthenticator,
 } from "@corbits/artifacts-hub";
 import { createEchoRoutes } from "@workbench/echo";
+import {
+  createPresenceRoomRegistry,
+  createPresenceRoutes,
+} from "@corbits/presence";
 import { createGitWorkflowPusher } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
 import {
@@ -410,6 +414,18 @@ export async function createHub(config: HubConfig) {
   // platform's native tenant middleware, so every extension handler
   // runs with c.get("tenant") / c.get("principal") resolved.
   app.route(`${TENANT_PREFIX}/echo`, createEchoRoutes());
+  // One in-process presence room registry for this process, constructed
+  // here in the composition root — the same pattern `channelSubscribers`
+  // above uses. Presence rooms are ephemeral and process-local by design
+  // (see `@corbits/presence`'s docs/presence.md), so there is only ever
+  // one consumer today (the routes below); the registry is still built
+  // here rather than inside `createPresenceRoutes` itself so a future
+  // second consumer (e.g. a co-editing doc sync path) can share it the
+  // same way `startWorkflowCommand` shares `channelSubscribers`.
+  app.route(
+    `${TENANT_PREFIX}/presence`,
+    createPresenceRoutes({ registry: createPresenceRoomRegistry() }),
+  );
 
   // The "needs you" list: the same `approval:*`/"resolve" grant Interchange's
   // own approve/reject routes require, layered with the agent/bench names
