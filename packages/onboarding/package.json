@@ -17,6 +17,7 @@
     "@intx/crypto": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/types": "workspace:*",
+    "@workbench/access-policy": "workspace:*",
     "@workbench/connections": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",

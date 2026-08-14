@@ -20,7 +20,7 @@ export { AccountSection, AccountSectionView } from "./account-section";
 export { AgentSection } from "./agent-section";
 export { NotificationsSection } from "./notifications-section";
 export { AuditSection } from "./audit-section";
-export { AccessPolicyBlock, AccessPolicyView } from "./access-policy";
+export { AccessPolicyBlock, AccessPolicyEditor } from "./access-policy";
 export {
   PeopleSection,
   PeopleTable,

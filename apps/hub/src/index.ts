@@ -120,12 +120,17 @@ import {
   createPresenceRoomRegistry,
   createPresenceRoutes,
 } from "@corbits/presence";
-import { createGitWorkflowPusher } from "@workbench/hub-client";
+import { createGitWorkflowPusher, createHubAPI } from "@workbench/hub-client";
 import {
   createDrizzlePendingSeedStore,
   createOnboardingRoutes,
 } from "@workbench/onboarding";
 import { createConnectionRoutes } from "@workbench/connections";
+import {
+  applyAccessPolicyMigrations,
+  createAccessPolicyRoutes,
+  createDrizzleAccessPolicyStore,
+} from "@workbench/access-policy";
 import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
@@ -941,6 +946,27 @@ export async function createHub(config: HubConfig) {
     app.route("/api/workflow-memory", createUnavailableWorkflowMemoryRoutes());
   }
 
+  // Closed-by-default access policy: a per-tenant policy row layered
+  // over native tenancy/RBAC (see `@workbench/access-policy`). Migrated
+  // at hub start like insights/preferences/bench-settings; mounted
+  // tenant-scoped for the settings panel, and threaded into the
+  // onboarding hook below so first-login provisioning honors it without
+  // patching any vendor route.
+  await applyAccessPolicyMigrations(config.databaseUrl);
+  const accessPolicyStore = createDrizzleAccessPolicyStore(db);
+  const selfApi = createHubAPI(config.baseUrl);
+  app.route(
+    `${TENANT_PREFIX}/access-policy`,
+    createAccessPolicyRoutes({
+      store: accessPolicyStore,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      api: selfApi,
+    }),
+  );
+
   // The first-login hook mounts outside the tenant prefix, since the
   // session it serves belongs to no tenant yet. The route is
   // `@workbench/onboarding`'s; what it decides is documented in that
@@ -951,6 +977,11 @@ export async function createHub(config: HubConfig) {
     log: (line) => log.info`${line}`,
     credentialCipher,
     pendingSeedStore: createDrizzlePendingSeedStore(db, credentialCipher),
+    accessPolicy: {
+      store: accessPolicyStore,
+      envSignupMode: config.signupMode,
+      envAllowedDomains: config.allowedEmailDomains,
+    },
   };
   if (config.operatorTenantId !== undefined)
     onboardingDeps.operatorTenantId = config.operatorTenantId;

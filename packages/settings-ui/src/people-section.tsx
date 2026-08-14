@@ -172,7 +172,7 @@ export function PeopleSection({
         onReactivate={(p) => handleStatusChange(p, "active")}
         onRemove={handleRemove}
       />
-      <AccessPolicyBlock />
+      <AccessPolicyBlock tenantId={tenantId} />
       <InvitePersonDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}
