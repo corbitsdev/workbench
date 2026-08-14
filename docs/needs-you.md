@@ -47,14 +47,24 @@ principal without that grant gets a `403`, not an empty list dressed up as
 
 ## Where it shows up
 
-The second column's "Approvals" row carries a live count of what's waiting
-on the current bench, read from this same endpoint and rendered through
-`SidebarItemRow`'s `meta` slot as a `Badge` — not a `count` prop, which this
-version of `@corbits/react-ui` doesn't have. The Approvals page itself
-renders each request as "`<agent name>` in `<bench name>`" instead of a raw
-agent address, and still approves or rejects through
-Interchange's native routes directly — this package only ever supplies the
-names.
+There is no "Approvals" nav row and no dedicated Approvals page. Needs-you
+approvals surface through the Activity band (`ActivityBand`,
+`apps/web/src/shell/activity-band.tsx`) — a permanent section of the
+contextual panel shown on every page, the same slot pins uses, not something
+scoped to one route. It reads this same `needs-you` endpoint, renders each
+pending request as "`<agent name>` in `<bench name>`" through
+`ApprovalCard` (never a raw agent address or run id), and posts approve/
+reject straight to Interchange's native
+`/api/tenants/:tenantId/approvals/:id/{approve,reject}` routes — this
+package only ever supplies the names. Approve only offers scope "once" (the
+hub rejects "always" with a 400); reject collects an optional message
+through a confirm dialog.
+
+The band's heading carries a live count as a `Badge` next to "Activity" when
+there is anything pending, and the whole band hides — no hollow empty state
+— once it resolves to zero. It stays mounted while loading, or once items
+arrive, so a pending approval can be resolved without leaving whatever page
+the user is on.
 
 ## What this deliberately does not add
 

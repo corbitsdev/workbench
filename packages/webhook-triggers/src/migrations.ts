@@ -86,11 +86,13 @@ export async function applyWebhookTriggersMigrations(
     for (const migration of webhookTriggersMigrations) {
       if (alreadyApplied.has(migration.name)) continue;
       try {
-        await sql.unsafe(migration.sql);
-        await sql.unsafe(
-          `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
-          [migration.name],
-        );
+        await sql.begin(async (tx) => {
+          await tx.unsafe(migration.sql);
+          await tx.unsafe(
+            `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
+            [migration.name],
+          );
+        });
         applied.push(migration.name);
       } catch (error) {
         throw new Error(
