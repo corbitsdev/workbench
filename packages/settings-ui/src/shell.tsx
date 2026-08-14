@@ -17,6 +17,14 @@ import { SETTINGS_STRINGS } from "./strings";
 export type SettingsContext = {
   readonly tenantId: string | null;
   readonly principalId: string | null;
+  /** Client-side navigation, for a section whose own content routes
+   * elsewhere (e.g. Agents' "Start chat" opening a channel). Sections with
+   * no use for it simply ignore the field. */
+  readonly navigate?: (to: string) => void;
+  /** A sub-selection carried in the host's URL below the section id (e.g.
+   * `/settings/agents/:definitionId`), so a section with its own
+   * master-detail can restore the right selection on a deep link. */
+  readonly entityId?: string | null;
 };
 
 export type SettingsSection = {

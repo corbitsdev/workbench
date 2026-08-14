@@ -3,10 +3,12 @@
 // apart. Settings is a rail footer destination (mock chrome). Channel deep
 // links (`/c/:channelId`) stay routable; Channels on the rail lands Myra via
 // `/`. Approvals has no page — the Activity band owns them. `/` is the Myra
-// land hop (ensure + open channel), not a Home dashboard.
+// land hop (ensure + open channel), not a Home dashboard. Agents and Skills
+// are no longer rail destinations (CL-5990) — they are Settings sections;
+// `/agents` and `/skills` stay routable only as redirects to their new home,
+// so old links and bookmarks still land somewhere real.
 
 import {
-  Bot,
   ChartColumn,
   Inbox,
   Library,
@@ -14,21 +16,22 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
-  Wand2,
   Workflow,
 } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
 import { CHANNEL_PATH_PREFIX, isChannelPath } from "./channel-path";
-import { AgentsRoute } from "./pages/agents-page";
 import { ChatPage } from "./pages/chat-page";
 import { HomeRoute } from "./pages/home-page";
 import { InboxRoute } from "./pages/inbox-page";
 import { InsightsRoute } from "./pages/insights-page";
 import { LibraryRoute } from "./pages/library-page";
+import {
+  LegacyAgentsRedirect,
+  LegacySkillsRedirect,
+} from "./pages/legacy-settings-redirects";
 import { RoutinesRoute } from "./pages/routines-page";
 import { SettingsRoute } from "./pages/settings-page";
-import { SkillsRoute } from "./pages/skills-page";
 
 /** Landing point for a session the first-login hook just provisioned a
  * personal bench for. Not one of `APP_ROUTES`: it has no sidebar entry,
@@ -40,15 +43,14 @@ export const SETTINGS_PATH = "/settings";
 
 /**
  * Mock rail primary stack (top → spacer): Channels, Routines, Library,
- * Agents, Skills, Insights. Inbox sits below the spacer with Search /
- * Settings / theme / avatar (composed in the rail, not this set).
+ * Insights. Inbox sits below the spacer with Search / Settings / theme /
+ * avatar (composed in the rail, not this set). Owner ruling (CL-5990): the
+ * rail is core actions only — Agents and Skills moved into Settings.
  */
 const RAIL_PRIMARY_PATHS = [
   CHANNEL_PATH_PREFIX,
   "/routines",
   "/library",
-  "/agents",
-  "/skills",
   "/insights",
 ] as const;
 
@@ -78,6 +80,8 @@ export function matchesRoute(routePath: string, path: string): boolean {
     routePath === "/library" ||
     routePath === "/insights" ||
     routePath === "/inbox" ||
+    routePath === "/agents" ||
+    routePath === "/skills" ||
     routePath === SETTINGS_PATH
   ) {
     return path === routePath || path.startsWith(`${routePath}/`);
@@ -123,19 +127,23 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <LibraryRoute path={path} />,
   },
   {
+    // Not a rail destination (see RAIL_PRIMARY_PATHS) — Agents is now a
+    // Settings section. This entry only keeps old `/agents` links routable.
     path: "/agents",
     label: "Agents",
-    icon: <Bot />,
+    icon: <SlidersHorizontal />,
     render: (path: string, navigate: (to: string) => void) => (
-      <AgentsRoute path={path} navigate={navigate} />
+      <LegacyAgentsRedirect path={path} navigate={navigate} />
     ),
   },
   {
+    // Not a rail destination — Skills is now a Settings section. This entry
+    // only keeps old `/skills` links routable.
     path: "/skills",
     label: "Skills",
-    icon: <Wand2 />,
+    icon: <SlidersHorizontal />,
     render: (path: string, navigate: (to: string) => void) => (
-      <SkillsRoute path={path} navigate={navigate} />
+      <LegacySkillsRedirect path={path} navigate={navigate} />
     ),
   },
   {

@@ -82,7 +82,7 @@ function profileActions(
         tone: "outline",
         onClick: () => {
           onClose();
-          onNavigate("/agents");
+          onNavigate("/settings/agents");
         },
       },
       {

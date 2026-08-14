@@ -3,9 +3,14 @@
 // pin its ordering and its tenancy gating so the two can never drift.
 
 import { describe, expect, test } from "bun:test";
+import { Bot } from "lucide-react";
 
-import { resolveSettingsSectionGroups } from "../src/section-registry";
+import {
+  insertWorkspaceSections,
+  resolveSettingsSectionGroups,
+} from "../src/section-registry";
 import type { TenancyAccess } from "../src/access";
+import type { SettingsSection } from "../src/shell";
 
 const denied: TenancyAccess = {
   people: "denied",
@@ -72,5 +77,41 @@ describe("resolveSettingsSectionGroups", () => {
         expect(section.icon).toBeDefined();
       }
     }
+  });
+});
+
+describe("insertWorkspaceSections", () => {
+  const extra: readonly SettingsSection[] = [
+    { id: "agents", title: "Agents", icon: Bot, render: () => <div /> },
+    { id: "skills", title: "Skills", icon: Bot, render: () => <div /> },
+  ];
+
+  test("splices host sections into Workspace right after bench", () => {
+    const groups = insertWorkspaceSections(
+      resolveSettingsSectionGroups(denied),
+      extra,
+    );
+    expect(ids(groups)).toEqual([
+      { id: "personal", sections: ["agent", "chat", "account"] },
+      { id: "workspace", sections: ["bench", "agents", "skills", "audit"] },
+    ]);
+  });
+
+  test("leaves Personal untouched", () => {
+    const groups = insertWorkspaceSections(
+      resolveSettingsSectionGroups(allowed),
+      extra,
+    );
+    const personal = groups.find((group) => group.id === "personal");
+    expect(personal?.sections.map((section) => section.id)).toEqual([
+      "agent",
+      "chat",
+      "account",
+    ]);
+  });
+
+  test("is a no-op when there is nothing to insert", () => {
+    const base = resolveSettingsSectionGroups(denied);
+    expect(insertWorkspaceSections(base, [])).toBe(base);
   });
 });

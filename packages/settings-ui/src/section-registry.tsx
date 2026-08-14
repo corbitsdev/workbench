@@ -140,3 +140,34 @@ export function resolveSettingsSectionGroups(
       .map(({ gate: _gate, ...section }) => section),
   }));
 }
+
+/**
+ * Splices host-supplied sections into the Workspace group, right after
+ * "bench" — for domain sections that live outside this package (e.g. a
+ * host app's Agents/Skills directories) but still belong in the same
+ * Workspace nav. A host calling this must pass the same `extra` list to
+ * every consumer (settings stage and its own section nav / col2), the same
+ * discipline `resolveSettingsSectionGroups` itself documents, or the two
+ * surfaces drift.
+ */
+export function insertWorkspaceSections(
+  groups: readonly SettingsSectionGroup[],
+  extra: readonly SettingsSection[],
+): readonly SettingsSectionGroup[] {
+  if (extra.length === 0) return groups;
+  return groups.map((group) => {
+    if (group.id !== "workspace") return group;
+    const benchIndex = group.sections.findIndex(
+      (section) => section.id === "bench",
+    );
+    const insertAt = benchIndex === -1 ? 0 : benchIndex + 1;
+    return {
+      ...group,
+      sections: [
+        ...group.sections.slice(0, insertAt),
+        ...extra,
+        ...group.sections.slice(insertAt),
+      ],
+    };
+  });
+}

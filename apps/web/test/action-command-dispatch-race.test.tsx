@@ -18,8 +18,9 @@ import {
   resetPendingDialogRequests,
   runActionCommand,
 } from "../src/command-palette-actions";
-import { SkillsPage } from "../src/pages/skills-page";
+import { SkillsSettingsSection } from "../src/pages/skills-settings-section";
 import { resetSessionSkills } from "../src/skills-session";
+import { TestQueryProvider } from "./test-query-provider";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -34,10 +35,10 @@ afterEach(() => {
 });
 
 describe("runActionCommand off-route dispatch ordering", () => {
-  test("new-skill fired from another page opens the create dialog once SkillsPage mounts", async () => {
-    // Palette invoked while on /library; SkillsPage is not mounted yet, so
-    // no listener exists for "workbench:skills:create" the instant the
-    // command runs.
+  test("new-skill fired from another page opens the create dialog once the Skills section mounts", async () => {
+    // Palette invoked while on /library; the Skills settings section is not
+    // mounted yet, so no listener exists for "workbench:skills:create" the
+    // instant the command runs.
     const navigated: string[] = [];
     await act(async () => {
       await runActionCommand("new-skill", {
@@ -51,19 +52,23 @@ describe("runActionCommand off-route dispatch ordering", () => {
         toggleCol2: () => undefined,
       });
     });
-    expect(navigated).toEqual(["/skills"]);
+    expect(navigated).toEqual(["/settings/skills"]);
 
     // Only now (mirroring main.tsx's setState-based navigate re-rendering
-    // the route switch on the next tick) does SkillsPage actually mount.
+    // the route switch on the next tick) does the section actually mount.
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(<SkillsPage />);
+      root?.render(
+        <TestQueryProvider>
+          <SkillsSettingsSection />
+        </TestQueryProvider>,
+      );
     });
 
     // The create dialog (Radix, portaled to document.body) should have
-    // opened as a result of the pending flag SkillsPage consumed on mount.
+    // opened as a result of the pending flag the section consumed on mount.
     expect(document.body.textContent).toContain("Create skill");
   });
 });

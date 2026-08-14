@@ -97,14 +97,14 @@ describe("runActionCommand", () => {
   });
 
   test("new-agent dispatches on-route, records a pending flag and navigates off-route", async () => {
-    const onAgents = context({ path: "/agents" });
+    const onAgents = context({ path: "/settings/agents" });
     await runActionCommand("new-agent", onAgents.ctx);
     expect(onAgents.navigated).toEqual([]);
     expect(onAgents.dispatched).toContain("workbench:agents:create");
 
     const elsewhere = context({ path: "/library" });
     await runActionCommand("new-agent", elsewhere.ctx);
-    expect(elsewhere.navigated).toEqual(["/agents"]);
+    expect(elsewhere.navigated).toEqual(["/settings/agents"]);
     expect(elsewhere.dispatched).toEqual([]);
     expect(consumePendingNewAgent()).toBe(true);
   });
@@ -121,7 +121,7 @@ describe("runActionCommand", () => {
     const { ctx, navigated, dispatched } = context({ path: "/library" });
     await runActionCommand("new-skill", ctx);
     expect(dispatched).toEqual([]);
-    expect(navigated).toEqual(["/skills"]);
+    expect(navigated).toEqual(["/settings/skills"]);
     expect(consumePendingNewSkill()).toBe(true);
   });
 
