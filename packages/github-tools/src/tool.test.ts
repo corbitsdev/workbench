@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
+import type { CredentialCapability, MediatedCredential } from "@intx/types";
 
 import { GITHUB_ACTIVITY_TOOL, githubTools } from "./tool";
 import type { GitHubEnv } from "./tool";
@@ -10,8 +11,36 @@ const CALL: ToolCall = {
   arguments: { query: "agent workflows" },
 };
 
-function fakeEnv(githubApiKey: string | undefined): GitHubEnv {
-  return { githubApiKey } as unknown as GitHubEnv;
+/**
+ * A fake `credentials` capability mirroring the platform's own
+ * `createCredentialCapability`/`createHttpCredentialProvider` shape: a
+ * bound `secret` resolves to a mediated `fetch` that injects a bearer
+ * header and delegates to `globalThis.fetch`; an unbound handle throws,
+ * matching the real gate's "no credential is bound to handle" failure.
+ */
+function fakeCredentials(secret: string | undefined): CredentialCapability {
+  return {
+    resolve(handle: string): Promise<MediatedCredential> {
+      if (secret === undefined) {
+        return Promise.reject(
+          new Error(`no credential is bound to handle "${handle}"`),
+        );
+      }
+      return Promise.resolve({
+        kind: "http",
+        fetch: (input, init) => {
+          const headers = new Headers(init?.headers);
+          headers.set("authorization", `Bearer ${secret}`);
+          return fetch(input as string | URL, { ...init, headers });
+        },
+        dispose: () => {},
+      });
+    },
+  };
+}
+
+function fakeEnv(credentials: CredentialCapability | undefined): GitHubEnv {
+  return { credentials } as unknown as GitHubEnv;
 }
 
 function emptyResponsesFetch(): typeof fetch {
@@ -47,7 +76,7 @@ test("rejects a missing query without calling the network", async () => {
   }
 });
 
-test("works with no credential at all (keyless call succeeds)", async () => {
+test("works with no credentials capability at all (keyless call succeeds, not an error)", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = emptyResponsesFetch();
   try {
@@ -58,6 +87,45 @@ test("works with no credential at all (keyless call succeeds)", async () => {
       items: unknown[];
     };
     expect(parsed.items).toEqual([]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("degrades to an unauthenticated call (not an error) when resolve() throws", async () => {
+  const originalFetch = globalThis.fetch;
+  const capturedHeaders: (Headers | undefined)[] = [];
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    capturedHeaders.push(init?.headers as Headers | undefined);
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = githubTools(fakeEnv(fakeCredentials(undefined)));
+    const result = await bundle.run(CALL, new AbortController().signal);
+    expect(result.isError).toBeUndefined();
+    for (const headers of capturedHeaders) {
+      expect(headers?.get?.("authorization")).toBeFalsy();
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("uses the mediated fetch (authenticated) when a credential resolves", async () => {
+  const originalFetch = globalThis.fetch;
+  const capturedHeaders: (Headers | undefined)[] = [];
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    capturedHeaders.push(init?.headers as Headers | undefined);
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = githubTools(fakeEnv(fakeCredentials("ghp_test")));
+    const result = await bundle.run(CALL, new AbortController().signal);
+    expect(result.isError).toBeUndefined();
+    expect(capturedHeaders.length).toBeGreaterThan(0);
+    for (const headers of capturedHeaders) {
+      expect(headers?.get?.("authorization")).toBe("Bearer ghp_test");
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -76,14 +144,41 @@ test("degrades to an error result (never throws) when the underlying call fails"
   }
 });
 
-test("degrades to an error result the same way with a credential set", async () => {
+test("degrades to an error result the same way with a credential resolving", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
     new Response("nope", { status: 500 })) as unknown as typeof fetch;
   try {
-    const bundle = githubTools(fakeEnv("ghp_test"));
+    const bundle = githubTools(fakeEnv(fakeCredentials("ghp_test")));
     const result = await bundle.run(CALL, new AbortController().signal);
     expect(result.isError).toBe(true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a present-but-invalid token still authenticates the call and honestly reports the rejection", async () => {
+  // Distinct from the two "underlying call fails" cases above: this is
+  // GitHub actively rejecting a bound token (bad/expired PAT), not a
+  // transport error or an unauthenticated-by-design call. The header
+  // capture proves the token was actually sent -- a 401 here must never
+  // be silently reinterpreted as "keyless," only as an honest error.
+  const originalFetch = globalThis.fetch;
+  const capturedHeaders: (Headers | undefined)[] = [];
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    capturedHeaders.push(init?.headers as Headers | undefined);
+    return new Response(JSON.stringify({ message: "Bad credentials" }), {
+      status: 401,
+    });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = githubTools(fakeEnv(fakeCredentials("ghp_invalid")));
+    const result = await bundle.run(CALL, new AbortController().signal);
+    expect(result.isError).toBe(true);
+    expect(capturedHeaders.length).toBeGreaterThan(0);
+    for (const headers of capturedHeaders) {
+      expect(headers?.get?.("authorization")).toBe("Bearer ghp_invalid");
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }

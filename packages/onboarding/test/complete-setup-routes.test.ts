@@ -265,11 +265,13 @@ describe("POST /complete-setup", () => {
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
         kind: string;
+        tenantId: string;
         tenantSlug: string;
         workflows: string[];
       };
       expect(body).toEqual({
         kind: "seeded",
+        tenantId: TENANT_ID,
         tenantSlug: TENANT_SLUG,
         workflows: ["echo", "assistant"],
       });

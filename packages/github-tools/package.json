@@ -8,6 +8,13 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "interchange": {
+    "credentials": [
+      {
+        "handle": "github"
+      }
+    ]
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"

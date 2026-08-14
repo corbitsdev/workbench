@@ -29,6 +29,8 @@ const CompleteResult = type({
   status: "'active'",
 });
 
+const OAuthConfiguredResult = type("Record<string, boolean>");
+
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
 async function request<T>(
@@ -97,6 +99,22 @@ export async function testConnectorCredential(
     }
     throw cause;
   }
+}
+
+/**
+ * Which oauth-pkce/oauth-code connectors have a registered OAuth app
+ * (a client id) configured, keyed by connector id — read ahead of
+ * rendering a card's Connect action so an unregistered connector shows
+ * the muted "Not configured" state instead of a button that would
+ * round-trip into the provider's own consent screen and dead-end.
+ */
+export function fetchOAuthConfigured(
+  tenantId: string,
+): Promise<Record<string, boolean>> {
+  return request(
+    `/api/tenants/${tenantId}/connections/oauth-configured`,
+    OAuthConfiguredResult,
+  );
 }
 
 export function completeConnectorCredential(

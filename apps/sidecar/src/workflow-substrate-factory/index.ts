@@ -32,7 +32,10 @@ import {
   builtinCredentialProviders,
   createCredentialProviderRegistry,
 } from "@intx/harness";
-import { createHttpRawAuthorizationCredentialProvider } from "@corbits/credential-providers";
+import {
+  createHttpRawAuthorizationCredentialProvider,
+  createHttpXApiKeyCredentialProvider,
+} from "@corbits/credential-providers";
 import { loadAdapterRegistry } from "@intx/inference/providers";
 import { createSSHSignature } from "@intx/crypto";
 import {
@@ -358,16 +361,20 @@ export function createSidecarSubstrateFactory(
 
     // Credential provider registry: the platform's built-in `http`
     // (Bearer) provider (`@intx/harness`'s `builtinCredentialProviders`)
-    // plus this workbench's own `http-raw-authorization` plugin
-    // (`@corbits/credential-providers`) for a provider row whose API
-    // expects the raw secret in `authorization` with no `Bearer ` prefix
-    // (Linear's convention) rather than forking or reaching around the
-    // vendored plugin. Fixed for the child's lifetime -- unlike the
-    // per-step wiring below, the set of provider plugins is not something
-    // a rotation or `credentials-updated` frame changes.
+    // plus this workbench's own `http-raw-authorization` plugin (for a
+    // provider row whose API expects the raw secret in `authorization`
+    // with no `Bearer ` prefix -- Linear's convention) and
+    // `http-x-api-key` plugin (for a provider row whose API expects the
+    // secret in an `x-api-key` header -- Exa's and ScrapeCreators'
+    // convention), both from `@corbits/credential-providers` rather than
+    // forking or reaching around the vendored plugin. Fixed for the
+    // child's lifetime -- unlike the per-step wiring below, the set of
+    // provider plugins is not something a rotation or
+    // `credentials-updated` frame changes.
     const credentialProviders = createCredentialProviderRegistry([
       ...builtinCredentialProviders(),
       createHttpRawAuthorizationCredentialProvider(),
+      createHttpXApiKeyCredentialProvider(),
     ]);
 
     // The tool-bearing agent factory reads the materialized tool

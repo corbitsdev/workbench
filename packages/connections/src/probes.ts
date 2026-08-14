@@ -1,5 +1,5 @@
-// Real, free credential probes for the four tool connectors this ticket
-// adds — Granola, Exa, ScrapeCreators, and Linear — each hitting the
+// Real, free credential probes for the tool connectors this ticket
+// adds — Granola, Exa, ScrapeCreators, Linear, and GitHub — each hitting the
 // same production endpoint its tool client (`packages/*-tools/src/
 // client.ts`) already calls, authenticated with the real key. This
 // mirrors `@workbench/hub-client/credential-test`'s
@@ -91,6 +91,19 @@ export function testScrapeCreatorsCredential(
       headers: { "x-api-key": apiKey },
     },
   );
+}
+
+export function testGitHubCredential(
+  apiKey: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<CredentialTestResult> {
+  return probe("GitHub", fetchImpl, "https://api.github.com/user", {
+    method: "GET",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      accept: "application/vnd.github+json",
+    },
+  });
 }
 
 export function testLinearCredential(

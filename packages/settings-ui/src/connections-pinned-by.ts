@@ -18,4 +18,5 @@ export const CONNECTOR_PINNED_WORKFLOWS: Readonly<
   linear: ["morning-brief", "collateral-generation"],
   exa: ["last-30-days-research"],
   scrapecreators: ["reddit-opportunity-scanner"],
+  github: [],
 };

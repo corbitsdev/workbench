@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import type { FetchLike } from "@workbench/hub-client/credential-test";
 import {
   testExaCredential,
+  testGitHubCredential,
   testGranolaCredential,
   testLinearCredential,
   testScrapeCreatorsCredential,
@@ -62,6 +63,21 @@ describe("testScrapeCreatorsCredential", () => {
     const result = await testScrapeCreatorsCredential(
       "test-key",
       fakeFetch(200, JSON.stringify({ posts: [] })),
+    );
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("testGitHubCredential", () => {
+  test("rejects a 401", async () => {
+    const result = await testGitHubCredential("test-key", fakeFetch(401));
+    expect(result.ok).toBe(false);
+  });
+
+  test("accepts a 200", async () => {
+    const result = await testGitHubCredential(
+      "test-key",
+      fakeFetch(200, JSON.stringify({ login: "octocat" })),
     );
     expect(result.ok).toBe(true);
   });

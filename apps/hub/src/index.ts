@@ -770,6 +770,10 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
+      // Same env bag `onboardingDeps.huggingfaceClientId` below feeds
+      // the OAuth connect flow itself, so `GET .../oauth-configured`
+      // reports exactly what a Connect click would decide.
+      oauthEnv: { huggingfaceClientId: config.huggingfaceOAuthClientId },
     }),
   );
   // Routines: its own grant store (routines authorize against the

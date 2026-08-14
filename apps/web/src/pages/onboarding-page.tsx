@@ -21,6 +21,12 @@ import {
 } from "@corbits/react-ui";
 import type { ChecklistStep } from "@corbits/react-ui";
 import {
+  ConnectorCardGrid,
+  listCredentials,
+  listProviders,
+} from "@corbits/settings-ui";
+import type { Credential, Provider } from "@corbits/settings-ui";
+import {
   AtSign,
   Bot,
   CircleAlert,
@@ -86,11 +92,121 @@ type WizardState =
   | { readonly phase: "submitting" }
   | { readonly phase: "finishing-setup" }
   | {
+      readonly phase: "connect-tools";
+      readonly tenantId: string;
+      readonly tenantSlug: string;
+      readonly workflows: readonly string[];
+    }
+  | {
       readonly phase: "seeded";
       readonly tenantSlug: string;
       readonly workflows: readonly string[];
     }
   | { readonly phase: "guidance" };
+
+/** A credential outcome lands on the optional "Connect your tools" phase
+ * only when the response carried a tenant id (every current backend
+ * does) — an older response missing it skips straight to the seeded
+ * ending rather than rendering a step that can't fetch anything. */
+function seededOrConnectTools(outcome: {
+  readonly tenantId?: string;
+  readonly tenantSlug: string;
+  readonly workflows: readonly string[];
+}): WizardState {
+  if (outcome.tenantId !== undefined) {
+    return {
+      phase: "connect-tools",
+      tenantId: outcome.tenantId,
+      tenantSlug: outcome.tenantSlug,
+      workflows: outcome.workflows,
+    };
+  }
+  return {
+    phase: "seeded",
+    tenantSlug: outcome.tenantSlug,
+    workflows: outcome.workflows,
+  };
+}
+
+type ConnectToolsLoadState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error"; readonly message: string }
+  | {
+      readonly kind: "ready";
+      readonly credentials: readonly Credential[];
+      readonly providers: readonly Provider[];
+    };
+
+/**
+ * The optional "Connect your tools" step's card grid: fetches this
+ * tenant's credentials/providers directly (the wizard has no other
+ * reason to hold them) and renders `@corbits/settings-ui`'s
+ * `ConnectorCardGrid` — the same component Settings · Connections
+ * uses — filtered to connectors that actually feed a tool package.
+ * Never gates: the "Continue" action below always advances, whether
+ * or not anything got connected here.
+ */
+function ConnectToolsGrid({
+  tenantId,
+  onDone,
+}: {
+  readonly tenantId: string;
+  readonly onDone: () => void;
+}) {
+  const [state, setState] = useState<ConnectToolsLoadState>({
+    kind: "loading",
+  });
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ kind: "loading" });
+    Promise.all([listCredentials(tenantId), listProviders(tenantId)])
+      .then(([credentials, providers]) => {
+        if (!cancelled) setState({ kind: "ready", credentials, providers });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setState({
+            kind: "error",
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, reloadKey]);
+
+  return (
+    <div className="onboarding-connect-tools">
+      {state.kind === "loading" && (
+        <div className="onboarding-spinner" aria-hidden="true" />
+      )}
+      {state.kind === "error" && (
+        <EmptyState
+          icon={<CircleAlert />}
+          title="Couldn't load your connections"
+          description={state.message}
+        />
+      )}
+      {state.kind === "ready" && (
+        <div className="settings-connections-grid">
+          <ConnectorCardGrid
+            tenantId={tenantId}
+            credentials={state.credentials}
+            providers={state.providers}
+            filter={(descriptor) => descriptor.feedsTools.length > 0}
+            onReload={() => setReloadKey((value) => value + 1)}
+          />
+        </div>
+      )}
+      <Button variant="outline" onClick={onDone}>
+        Skip for now
+      </Button>
+    </div>
+  );
+}
 
 function GuidanceCards() {
   return (
@@ -108,9 +224,9 @@ function GuidanceCards() {
   );
 }
 
-const TOTAL_STEPS = 3;
+const TOTAL_STEPS = 4;
 
-/** Which of the three questions a given wizard phase belongs to — the
+/** Which of the four questions a given wizard phase belongs to — the
  * progress rail's only job, decoupled from the phase's own render. */
 function stepFor(phase: WizardState["phase"]): { step: number; label: string } {
   switch (phase) {
@@ -122,9 +238,11 @@ function stepFor(phase: WizardState["phase"]): { step: number; label: string } {
     case "submitting":
     case "finishing-setup":
       return { step: 2, label: "Add a credential" };
+    case "connect-tools":
+      return { step: 3, label: "Connect your tools" };
     case "seeded":
     case "guidance":
-      return { step: 3, label: "Run your first routine" };
+      return { step: 4, label: "Run your first routine" };
   }
 }
 
@@ -307,11 +425,7 @@ export function OnboardingPage() {
     if (state.phase === "finishing-setup") {
       void completeSetup().then((outcome) => {
         if (outcome.kind === "seeded") {
-          setState({
-            phase: "seeded",
-            tenantSlug: outcome.tenantSlug,
-            workflows: outcome.workflows,
-          });
+          setState(seededOrConnectTools(outcome));
         } else if (outcome.kind === "unseeded") {
           setPreSatisfied(false);
           setSkipReason(null);
@@ -386,11 +500,7 @@ export function OnboardingPage() {
       setState({ phase: "submitting" });
       void submitCredential(provider, apiKey).then((outcome) => {
         if (outcome.kind === "seeded") {
-          setState({
-            phase: "seeded",
-            tenantSlug: outcome.tenantSlug,
-            workflows: outcome.workflows,
-          });
+          setState(seededOrConnectTools(outcome));
         } else {
           // preSatisfied is intentionally preserved: a bad own-key
           // submit must not remove the skip path the server seed gave.
@@ -489,6 +599,27 @@ export function OnboardingPage() {
         <Button asChild>
           <Link to="/">Meet Myra</Link>
         </Button>
+      </OnboardingPhase>
+    );
+  }
+
+  if (state.phase === "connect-tools") {
+    return (
+      <OnboardingPhase
+        phase={state.phase}
+        title="Connect your tools"
+        subtitle="Optional — connect Linear, Granola, or another tool so your routines and agents can use it. You can always come back to this in Settings later."
+      >
+        <ConnectToolsGrid
+          tenantId={state.tenantId}
+          onDone={() =>
+            setState({
+              phase: "seeded",
+              tenantSlug: state.tenantSlug,
+              workflows: state.workflows,
+            })
+          }
+        />
       </OnboardingPhase>
     );
   }

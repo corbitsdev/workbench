@@ -31,6 +31,7 @@ import { useEffect, useState } from "react";
 
 import {
   completeConnectorCredential,
+  fetchOAuthConfigured,
   testConnectorCredential,
 } from "./connections-api";
 import { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
@@ -76,7 +77,96 @@ function oauthStartHref(connectorId: string): string {
 type ConnectionsData = {
   readonly credentials: readonly Credential[];
   readonly providers: readonly Provider[];
+  readonly oauthConfigured: Readonly<Record<string, boolean>>;
 };
+
+/**
+ * The api-key connector card grid, on its own: every credentials/providers
+ * fetch, the connect/reconnect dialog, and disconnect all owned here so
+ * a caller only supplies the data it already has and a place to send a
+ * reload/error signal. `ConnectionsSection` composes this with the OAuth
+ * card row and the advanced credentials table for the full settings
+ * page; the onboarding wizard's "Connect your tools" step (CL-6028)
+ * renders this alone, filtered to `feedsTools`-bearing connectors, with
+ * nothing else around it. Renders bare `ConnectorCard`s — not wrapped in
+ * `.settings-connections-grid` itself — so a caller controls the grid
+ * container (and can put other cards, like the OAuth pair, in the same
+ * grid alongside these).
+ */
+export function ConnectorCardGrid({
+  tenantId,
+  credentials,
+  providers,
+  filter,
+  onReload,
+  onError,
+}: {
+  readonly tenantId: string;
+  readonly credentials: readonly Credential[];
+  readonly providers: readonly Provider[];
+  /** Narrows which registry entries render a card. Defaults to every
+   * api-key connector (every entry with a `probe`) — OAuth connectors
+   * are never included here regardless of filter, since this grid has
+   * no OAuth flow of its own. */
+  readonly filter?: (descriptor: ConnectorDescriptor) => boolean;
+  readonly onReload: () => void;
+  readonly onError?: (message: string | null) => void;
+}) {
+  const [dialogDescriptor, setDialogDescriptor] =
+    useState<ConnectorDescriptor | null>(null);
+  const [dialogMode, setDialogMode] = useState<"connect" | "reconnect">(
+    "connect",
+  );
+
+  function handleDisconnect(credential: Credential) {
+    onError?.(null);
+    deleteCredential(tenantId, credential.id)
+      .then(() => {
+        onReload();
+        toast(SETTINGS_STRINGS.credentialRevokedToast);
+      })
+      .catch(() => onError?.(SETTINGS_STRINGS.connectionsDisconnectError));
+  }
+
+  const descriptors = connectorDescriptors()
+    .filter((descriptor) => descriptor.probe !== undefined)
+    .filter(filter ?? (() => true));
+
+  return (
+    <>
+      {descriptors.map((descriptor) => (
+        <ConnectorCard
+          key={descriptor.id}
+          descriptor={descriptor}
+          statusResult={connectorStatus(
+            descriptor.displayName,
+            credentials,
+            providers,
+          )}
+          onConnect={() => {
+            setDialogMode("connect");
+            setDialogDescriptor(descriptor);
+          }}
+          onReconnect={() => {
+            setDialogMode("reconnect");
+            setDialogDescriptor(descriptor);
+          }}
+          onDisconnect={handleDisconnect}
+        />
+      ))}
+      <ConnectorCredentialDialog
+        descriptor={dialogDescriptor}
+        mode={dialogMode}
+        tenantId={tenantId}
+        onClose={() => setDialogDescriptor(null)}
+        onConnected={() => {
+          setDialogDescriptor(null);
+          onReload();
+        }}
+      />
+    </>
+  );
+}
 
 export function ConnectionsSection({
   tenantId,
@@ -87,11 +177,6 @@ export function ConnectionsSection({
     kind: "loading",
   });
   const [reloadKey, setReloadKey] = useState(0);
-  const [dialogDescriptor, setDialogDescriptor] =
-    useState<ConnectorDescriptor | null>(null);
-  const [dialogMode, setDialogMode] = useState<"connect" | "reconnect">(
-    "connect",
-  );
   const [rowError, setRowError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -101,10 +186,17 @@ export function ConnectionsSection({
     if (tenantId === null) return;
     let cancelled = false;
     setState({ kind: "loading" });
-    Promise.all([listCredentials(tenantId), listProviders(tenantId)])
-      .then(([credentials, providers]) => {
+    Promise.all([
+      listCredentials(tenantId),
+      listProviders(tenantId),
+      fetchOAuthConfigured(tenantId),
+    ])
+      .then(([credentials, providers, oauthConfigured]) => {
         if (!cancelled)
-          setState({ kind: "ready", data: { credentials, providers } });
+          setState({
+            kind: "ready",
+            data: { credentials, providers, oauthConfigured },
+          });
       })
       .catch((cause: unknown) => {
         if (!cancelled)
@@ -192,26 +284,13 @@ export function ConnectionsSection({
         </p>
       )}
       <div className="settings-connections-grid">
-        {connectorDescriptors().map((descriptor) => (
-          <ConnectorCard
-            key={descriptor.id}
-            descriptor={descriptor}
-            statusResult={connectorStatus(
-              descriptor.displayName,
-              state.data.credentials,
-              state.data.providers,
-            )}
-            onConnect={() => {
-              setDialogMode("connect");
-              setDialogDescriptor(descriptor);
-            }}
-            onReconnect={() => {
-              setDialogMode("reconnect");
-              setDialogDescriptor(descriptor);
-            }}
-            onDisconnect={handleDisconnect}
-          />
-        ))}
+        <ConnectorCardGrid
+          tenantId={currentTenantId}
+          credentials={state.data.credentials}
+          providers={state.data.providers}
+          onReload={reload}
+          onError={setRowError}
+        />
         {OAUTH_CARDS.map((card) => (
           <OAuthConnectorCardView
             key={card.id}
@@ -221,20 +300,14 @@ export function ConnectionsSection({
               state.data.credentials,
               state.data.providers,
             )}
+            // Absent from the map reads as "not configured" — the
+            // conservative default: never render a live Connect button
+            // on data this section failed to positively confirm.
+            configured={state.data.oauthConfigured[card.id] ?? false}
             onDisconnect={handleDisconnect}
           />
         ))}
       </div>
-      <ConnectorCredentialDialog
-        descriptor={dialogDescriptor}
-        mode={dialogMode}
-        tenantId={currentTenantId}
-        onClose={() => setDialogDescriptor(null)}
-        onConnected={() => {
-          setDialogDescriptor(null);
-          reload();
-        }}
-      />
       <details className="settings-connections-advanced">
         <summary>{SETTINGS_STRINGS.connectionsAdvancedSummary}</summary>
         <div className="settings-connections-advanced-body">
@@ -353,12 +426,38 @@ function ConnectorCard({
 function OAuthConnectorCardView({
   card,
   statusResult,
+  configured,
   onDisconnect,
 }: {
   readonly card: OAuthConnectorCard;
   readonly statusResult: ConnectorStatusResult;
+  /** Whether an operator has registered this connector's OAuth app
+   * (a client id present server-side) — distinct from `statusResult`,
+   * which is about whether *this tenant* has connected, not whether
+   * connecting is even possible yet. */
+  readonly configured: boolean;
   readonly onDisconnect: (credential: Credential) => void;
 }) {
+  // An unconfigured connector never gets a live Connect button, even
+  // when this tenant already holds a (now-orphaned) credential for it —
+  // there is no OAuth app to round-trip through until an operator
+  // registers one, so the muted state wins regardless of `statusResult`.
+  if (!configured) {
+    return (
+      <div className="settings-connection-card settings-connection-card-muted">
+        <span className="settings-connection-card-title">
+          {card.displayName}
+        </span>
+        <Badge tone="neutral">
+          {SETTINGS_STRINGS.connectionsStatusNotConfigured}
+        </Badge>
+        <p className="settings-connection-card-hint">
+          {SETTINGS_STRINGS.connectionsNotConfiguredHint}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="settings-connection-card">
       <span className="settings-connection-card-title">{card.displayName}</span>

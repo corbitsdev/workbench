@@ -20,7 +20,13 @@ export const RedditPost = type({
 export type RedditPost = typeof RedditPost.infer;
 
 export interface RedditClientConfig {
-  readonly apiKey: string;
+  /**
+   * Absent when `fetchImpl` already authenticates its requests (a
+   * mediated credential's `fetch` injects its own `x-api-key` header
+   * per call — see `@intx/harness`'s `createHttpCredentialProvider`).
+   * Supplied directly for tests and any caller holding a raw key.
+   */
+  readonly apiKey?: string;
   /** Override for tests; defaults to ScrapeCreators' real base URL. */
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
@@ -108,7 +114,7 @@ async function fetchPosts(
   }
   const doFetch = config.fetchImpl ?? fetch;
   const response = await doFetch(url.toString(), {
-    headers: { "x-api-key": config.apiKey },
+    headers: config.apiKey !== undefined ? { "x-api-key": config.apiKey } : {},
   });
   if (!response.ok) {
     const body = await response.text().catch(() => "");

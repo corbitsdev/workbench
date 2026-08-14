@@ -27,7 +27,13 @@ export interface WebSearchResult {
 }
 
 export interface WebSearchClientConfig {
-  readonly apiKey: string;
+  /**
+   * Absent when `fetchImpl` already authenticates its requests (a
+   * mediated credential's `fetch` injects its own `x-api-key` header per
+   * call — see `@intx/harness`'s `createHttpCredentialProvider`).
+   * Supplied directly for tests and any caller holding a raw key.
+   */
+  readonly apiKey?: string;
   /** Override for tests; defaults to the real Exa API host. */
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
@@ -79,7 +85,7 @@ export async function searchWeb(
   const response = await doFetch(url, {
     method: "POST",
     headers: {
-      "x-api-key": config.apiKey,
+      ...(config.apiKey !== undefined ? { "x-api-key": config.apiKey } : {}),
       "content-type": "application/json",
     },
     body: JSON.stringify({
