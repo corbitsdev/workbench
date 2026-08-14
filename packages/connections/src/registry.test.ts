@@ -58,4 +58,14 @@ describe("connectorDescriptors", () => {
       Object.keys(CONNECTOR_REGISTRY).length,
     );
   });
+
+  test("linear mediates through the raw-authorization plugin; every other api-key connector uses http", () => {
+    expect(CONNECTOR_REGISTRY["linear"]?.credentialPlugin).toBe(
+      "http-raw-authorization",
+    );
+    for (const [id, descriptor] of Object.entries(CONNECTOR_REGISTRY)) {
+      if (id === "linear") continue;
+      expect(descriptor.credentialPlugin).toBe("http");
+    }
+  });
 });

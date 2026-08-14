@@ -53,6 +53,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
       id,
       displayName: config.displayName,
       authKind: "api-key",
+      credentialPlugin: "http",
       docsUrl: INFERENCE_PROVIDER_DOCS_URL[providerId],
       feedsTools: [],
       probe: (apiKey) =>
@@ -67,6 +68,7 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
     ...inferenceProviderDescriptors(),
     granola: {
       id: "granola",
+      credentialPlugin: "http",
       displayName: "Granola",
       authKind: "api-key",
       docsUrl: "https://www.granola.ai",
@@ -75,6 +77,7 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
     },
     exa: {
       id: "exa",
+      credentialPlugin: "http",
       displayName: "Exa",
       authKind: "api-key",
       docsUrl: "https://exa.ai",
@@ -83,6 +86,7 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
     },
     scrapecreators: {
       id: "scrapecreators",
+      credentialPlugin: "http",
       displayName: "ScrapeCreators",
       authKind: "api-key",
       docsUrl: "https://scrapecreators.com",
@@ -91,6 +95,7 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
     },
     linear: {
       id: "linear",
+      credentialPlugin: "http-raw-authorization",
       displayName: "Linear",
       authKind: "api-key",
       docsUrl: "https://linear.app/settings/api",

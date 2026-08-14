@@ -168,7 +168,7 @@ export function createConnectionRoutes(
           {
             tenantId: tenant.id,
             name: descriptor.id,
-            plugin: descriptor.id,
+            plugin: descriptor.credentialPlugin,
           },
           deps.log,
         );
