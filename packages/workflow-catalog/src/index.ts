@@ -39,6 +39,11 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     displayName: "Channel digest",
     automatable: true,
   },
+  {
+    assetName: "morning-brief",
+    displayName: "Morning brief",
+    automatable: true,
+  },
 ];
 
 const byAssetName = new Map(

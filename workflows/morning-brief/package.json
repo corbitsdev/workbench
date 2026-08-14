@@ -1,0 +1,30 @@
+{
+  "name": "@corbits/morning-brief-workflow",
+  "private": true,
+  "description": "Single-step, mail-triggered workflow that writes a daily brief from the sender's recent activity across connected sources",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "corbits": {
+    "workflow": {
+      "assetName": "morning-brief",
+      "displayName": "Morning brief",
+      "automatable": true
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/workflow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
