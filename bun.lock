@@ -67,6 +67,7 @@
         "workflow-child": "./bin/workflow-child",
       },
       "dependencies": {
+        "@corbits/credential-providers": "workspace:*",
         "@intx/agent": "workspace:*",
         "@intx/authz": "workspace:*",
         "@intx/crypto": "workspace:*",
@@ -351,6 +352,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/credential-providers": {
+      "name": "@corbits/credential-providers",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/harness": "workspace:*",
+        "@intx/types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/echo": {
       "name": "@workbench/echo",
       "version": "0.0.1",
@@ -405,6 +418,7 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
+        "@corbits/credential-providers": "workspace:*",
         "@intx/authz": "workspace:*",
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
@@ -475,8 +489,11 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
+        "@corbits/credential-providers": "workspace:*",
+        "@intx/authz": "workspace:*",
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
+        "@intx/harness": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -1151,6 +1168,8 @@
     "@corbits/commands": ["@corbits/commands@workspace:packages/commands"],
 
     "@corbits/context-menu": ["@corbits/context-menu@workspace:packages/context-menu"],
+
+    "@corbits/credential-providers": ["@corbits/credential-providers@workspace:packages/credential-providers"],
 
     "@corbits/echo-workflow": ["@corbits/echo-workflow@workspace:workflows/echo"],
 

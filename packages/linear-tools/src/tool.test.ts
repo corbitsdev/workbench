@@ -12,11 +12,16 @@ const CALL: ToolCall = {
 };
 
 /**
- * A fake `credentials` capability mirroring the platform's own
- * `createCredentialCapability`/`createHttpCredentialProvider` shape: a
- * bound `secret` resolves to a mediated `fetch` that injects a bearer
- * header and delegates to `globalThis.fetch`; an unbound handle throws,
- * matching the real gate's "no credential is bound to handle" failure.
+ * A fake `credentials` capability mirroring the REAL provider a Linear
+ * binding resolves through in production:
+ * `@corbits/credential-providers`'s `http-raw-authorization` plugin, not
+ * `@intx/harness`'s Bearer-prefixed `http` provider. Linear's API expects
+ * the raw key verbatim in `authorization` (see
+ * `@corbits/credential-providers`'s `createHttpRawAuthorizationCredentialProvider`);
+ * a bound `secret` resolves to a mediated `fetch` that injects it
+ * unprefixed and delegates to `globalThis.fetch`. An unbound handle
+ * throws, matching the real gate's "no credential is bound to handle"
+ * failure.
  */
 function fakeCredentials(secret: string | undefined): CredentialCapability {
   return {
@@ -30,7 +35,7 @@ function fakeCredentials(secret: string | undefined): CredentialCapability {
         kind: "http",
         fetch: (input, init) => {
           const headers = new Headers(init?.headers);
-          headers.set("authorization", `Bearer ${secret}`);
+          headers.set("authorization", secret);
           return fetch(input as string | URL, { ...init, headers });
         },
         dispose: () => {},
@@ -68,7 +73,7 @@ test("returns the issues as JSON content on a successful call", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
     expect((init?.headers as Headers | undefined)?.get("authorization")).toBe(
-      "Bearer key",
+      "key",
     );
     return new Response(
       JSON.stringify({
