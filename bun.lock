@@ -25,6 +25,7 @@
         "@corbits/approvals": "workspace:*",
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
         "@corbits/artifacts-hub": "workspace:*",
+        "@corbits/bench": "workspace:*",
         "@corbits/chat": "workspace:*",
         "@corbits/commands": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
@@ -33,6 +34,7 @@
         "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
         "@corbits/memory": "github:corbitsdev/corbits-memory#a1f8271be85be0a6afa330b4321224bc5a8b9c69",
         "@corbits/notify": "workspace:*",
+        "@corbits/preferences": "workspace:*",
         "@corbits/presence": "workspace:*",
         "@corbits/routines": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
@@ -101,6 +103,7 @@
         "@corbits/command-palette": "workspace:*",
         "@corbits/context-menu": "workspace:*",
         "@corbits/insights": "workspace:*",
+        "@corbits/preferences": "workspace:*",
         "@corbits/presence": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#1c9d9ce4e7224998f2d64883ade95b8d759e74ea",
         "@corbits/routines": "workspace:*",
@@ -224,10 +227,26 @@
         "typescript": "catalog:",
       },
     },
+    "packages/bench": {
+      "name": "@corbits/bench",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/hub-api": "workspace:*",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "^4.11.9",
+        "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/bench-ui": {
       "name": "@corbits/bench-ui",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/bench": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#1c9d9ce4e7224998f2d64883ade95b8d759e74ea",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
@@ -524,6 +543,21 @@
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
         "hono": "^4.11.9",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/preferences": {
+      "name": "@corbits/preferences",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/hub-api": "workspace:*",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "^4.11.9",
+        "postgres": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1155,6 +1189,8 @@
 
     "@corbits/assistant-workflow": ["@corbits/assistant-workflow@workspace:workflows/assistant"],
 
+    "@corbits/bench": ["@corbits/bench@workspace:packages/bench"],
+
     "@corbits/bench-ui": ["@corbits/bench-ui@workspace:packages/bench-ui"],
 
     "@corbits/channel-digest-workflow": ["@corbits/channel-digest-workflow@workspace:workflows/channel-digest"],
@@ -1200,6 +1236,8 @@
     "@corbits/notify": ["@corbits/notify@workspace:packages/notify"],
 
     "@corbits/pain-point-collateral-workflow": ["@corbits/pain-point-collateral-workflow@workspace:workflows/pain-point-collateral"],
+
+    "@corbits/preferences": ["@corbits/preferences@workspace:packages/preferences"],
 
     "@corbits/presence": ["@corbits/presence@workspace:packages/presence"],
 
