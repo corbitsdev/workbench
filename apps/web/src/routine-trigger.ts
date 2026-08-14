@@ -2,62 +2,26 @@
 // in packages/routines/src/trigger.ts) into what the Routines page shows:
 // a plain-language cadence and a best-effort next-run estimate.
 //
-// Daily / weekly / cron may carry an optional IANA `timezone`; hour and
-// minute are wall-clock in that zone (DST-correct). The estimate uses
-// `nextCronFireAfter` from `@corbits/routines/cron` — the exact same
-// minute-by-minute search the hub's scheduler runs against the exact
-// same rendered cron expression — never a second, hand-rolled matcher
-// that could drift from what actually fires. That subpath (not the
-// package's default export) is deliberate: the default export pulls in
-// `drizzle-orm` and `postgres` through `store.ts`, which have no business
-// in a browser bundle; `cron.ts` has zero imports and bundles cleanly.
+// The cadence line itself is `routineCadenceLabel` from
+// `@corbits/routines/trigger` — the same subpath `routines-feed-band.tsx`
+// pulls `routineMatchesModeFilter` from, and for the same reason: a
+// product rule about how a cadence reads belongs with the routines
+// domain, not this app. `nextCronFireAfter` from `@corbits/routines/cron`
+// is the exact same minute-by-minute search the hub's scheduler runs
+// against the exact same rendered cron expression — never a second,
+// hand-rolled matcher that could drift from what actually fires. Neither
+// subpath (not the package's default export) pulls in `drizzle-orm` and
+// `postgres` through `store.ts`, which have no business in a browser
+// bundle.
 //
 // An interval preset fires on a wall-clock-aligned cadence
 // (`*/N * * * *`), not N minutes after whatever moment a viewer happens
 // to load the page — "every 10 minutes" viewed at :07 fires at :10.
 import { nextCronFireAfter } from "@corbits/routines/cron";
+import { routineCadenceLabel } from "@corbits/routines/trigger";
 import type { RoutineTrigger } from "./routines-api";
 
-const WEEKDAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
-
-function pad(value: number): string {
-  return value.toString().padStart(2, "0");
-}
-
-function zoneLabel(timezone: string | undefined): string {
-  return timezone === undefined || timezone === "UTC" ? "UTC" : timezone;
-}
-
-export function cadenceLabel(trigger: RoutineTrigger): string {
-  if (trigger === null) return "Manual";
-  switch (trigger.kind) {
-    case "webhook":
-      return "On webhook";
-    case "interval":
-      return trigger.every === 1
-        ? `Every ${trigger.unit === "minutes" ? "minute" : "hour"}`
-        : `Every ${String(trigger.every)} ${trigger.unit}`;
-    case "daily":
-      return `Daily at ${pad(trigger.hour)}:${pad(trigger.minute)} ${zoneLabel(trigger.timezone)}`;
-    case "weekly":
-      return `Weekly on ${WEEKDAY_NAMES[trigger.dayOfWeek]} at ${pad(trigger.hour)}:${pad(trigger.minute)} ${zoneLabel(trigger.timezone)}`;
-    case "cron": {
-      const zone =
-        trigger.timezone !== undefined && trigger.timezone !== "UTC"
-          ? ` (${trigger.timezone})`
-          : "";
-      return `Cron: ${trigger.expression}${zone}`;
-    }
-  }
-}
+export const cadenceLabel = routineCadenceLabel;
 
 /** Renders the closed-form presets to the same cron shape the scheduler fires against. */
 function cronExpressionForPreset(

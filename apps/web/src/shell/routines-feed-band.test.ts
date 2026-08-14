@@ -70,45 +70,12 @@ describe("nextRoutinePathForFilter", () => {
 });
 
 describe("routineTriggerSummary", () => {
-  test("interval triggers read as a cadence", () => {
+  // The cadence wording itself is `@corbits/routines/trigger`'s
+  // `routineCadenceSummary`, covered there — this only proves the band
+  // re-exports it under its established name.
+  test("re-exports routineCadenceSummary", () => {
     expect(
-      routineTriggerSummary({ kind: "interval", unit: "minutes", every: 15 }),
-    ).toBe("Every 15 minutes");
-    expect(
-      routineTriggerSummary({ kind: "interval", unit: "hours", every: 1 }),
-    ).toBe("Every 1 hour");
-  });
-
-  test("daily triggers read as a zero-padded time", () => {
-    expect(routineTriggerSummary({ kind: "daily", hour: 9, minute: 0 })).toBe(
-      "Daily 09:00",
-    );
-  });
-
-  test("weekly triggers name the day", () => {
-    expect(
-      routineTriggerSummary({
-        kind: "weekly",
-        dayOfWeek: 1,
-        hour: 9,
-        minute: 30,
-      }),
-    ).toBe("Every Monday 09:30");
-  });
-
-  test("cron triggers show the expression", () => {
-    expect(
-      routineTriggerSummary({ kind: "cron", expression: "0 9 * * 1-5" }),
-    ).toBe("Cron 0 9 * * 1-5");
-  });
-
-  test("a null trigger is on demand", () => {
-    expect(routineTriggerSummary(null)).toBe("On demand");
-  });
-
-  test("a webhook trigger reads as on-webhook", () => {
-    expect(
-      routineTriggerSummary({ kind: "webhook", webhookTriggerId: "wht_1" }),
-    ).toBe("On webhook");
+      routineTriggerSummary({ kind: "daily", hour: 9, minute: 0 }),
+    ).toBe("Daily 09:00");
   });
 });

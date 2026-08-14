@@ -5,61 +5,13 @@ import { describe, expect, test } from "bun:test";
 import { approximateNextRun, cadenceLabel } from "../src/routine-trigger";
 
 describe("cadenceLabel", () => {
-  test("null trigger reads as manual", () => {
+  // The wording itself is `@corbits/routines/trigger`'s
+  // `routineCadenceLabel`, covered there — this only proves the app
+  // re-exports it under its established name.
+  test("re-exports routineCadenceLabel", () => {
     expect(cadenceLabel(null)).toBe("Manual");
-  });
-
-  test("interval trigger pluralizes correctly", () => {
-    expect(cadenceLabel({ kind: "interval", unit: "minutes", every: 1 })).toBe(
-      "Every minute",
-    );
-    expect(cadenceLabel({ kind: "interval", unit: "hours", every: 2 })).toBe(
-      "Every 2 hours",
-    );
-  });
-
-  test("daily trigger renders a UTC time by default", () => {
     expect(cadenceLabel({ kind: "daily", hour: 9, minute: 5 })).toBe(
       "Daily at 09:05 UTC",
-    );
-  });
-
-  test("daily trigger names a non-UTC timezone", () => {
-    expect(
-      cadenceLabel({
-        kind: "daily",
-        hour: 9,
-        minute: 0,
-        timezone: "America/Los_Angeles",
-      }),
-    ).toBe("Daily at 09:00 America/Los_Angeles");
-  });
-
-  test("weekly trigger names the weekday", () => {
-    expect(
-      cadenceLabel({ kind: "weekly", dayOfWeek: 1, hour: 7, minute: 30 }),
-    ).toBe("Weekly on Monday at 07:30 UTC");
-  });
-
-  test("cron trigger shows the raw expression", () => {
-    expect(cadenceLabel({ kind: "cron", expression: "*/5 * * * *" })).toBe(
-      "Cron: */5 * * * *",
-    );
-  });
-
-  test("cron trigger appends a non-UTC timezone", () => {
-    expect(
-      cadenceLabel({
-        kind: "cron",
-        expression: "0 9 * * *",
-        timezone: "Europe/London",
-      }),
-    ).toBe("Cron: 0 9 * * * (Europe/London)");
-  });
-
-  test("webhook trigger reads as on-webhook", () => {
-    expect(cadenceLabel({ kind: "webhook", webhookTriggerId: "wht_1" })).toBe(
-      "On webhook",
     );
   });
 });
