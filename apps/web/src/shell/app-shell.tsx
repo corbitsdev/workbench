@@ -13,7 +13,9 @@
 
 import { useRef, type ReactNode } from "react";
 
+import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
+import { usePresenceRoom } from "../presence/use-presence-room";
 import type { SessionUser } from "../session";
 import {
   contextualPanelIsDrawer,
@@ -56,6 +58,14 @@ export function AppShell({
   const canvasProfile = useCanvasColumnProfile();
   const canvasArtifact = useCanvasColumnArtifact();
   const canvasFocus = useCanvasColumnFocus();
+  const tenantId = useBench().selectedTenantId;
+  // Co-viewers of the open artifact, if any — see canvas-column.tsx's own
+  // `PresenceCursor` doc for why this stays plain data across the
+  // package boundary.
+  const artifactPresence = usePresenceRoom(
+    tenantId,
+    canvasArtifact === null ? null : `artifact:${canvasArtifact.id}`,
+  );
   const closeCanvas = useCloseCanvas();
   const toggleCanvasFocus = useToggleCanvasFocus();
   const showContextualColumn = contextualPanelVisible(layoutMode);
@@ -96,6 +106,16 @@ export function AppShell({
           onClose={closeCanvas}
           onToggleFocus={toggleCanvasFocus}
           onNavigate={navigate}
+          presenceCursors={artifactPresence.members
+            .filter((member) => member.cursor !== undefined)
+            .map((member) => ({
+              principalId: member.principalId,
+              displayName: member.displayName,
+              color: member.color,
+              x: member.cursor?.x ?? 0,
+              y: member.cursor?.y ?? 0,
+            }))}
+          onCursorMove={artifactPresence.publishCursor}
         />
       )}
       {contextualAsDrawer && (

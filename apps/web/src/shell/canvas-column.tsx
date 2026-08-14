@@ -6,6 +6,10 @@
 //
 // Read-only phase: the artifact pane has no editing affordances yet — the
 // multiplayer-editing half is CL-5958's substrate to build on top of this.
+// CL-5958 phase 1 does add one thing on top of the read-only renderer: a
+// co-viewer cursor overlay, driven by `@corbits/presence/client` in
+// `chat-page.tsx` and handed down here as plain `PresenceCursor` data —
+// this module never talks to the presence package directly.
 //
 // The collapse/expand motion lives entirely in `shell.css` as a CSS
 // transition on `transform`/`opacity` (plus width, so the main pane
@@ -34,6 +38,21 @@ import { ensureProfileDm, loadSharedChannels } from "../profile-relations";
 import type { CanvasArtifactContent } from "./canvas-column-state";
 import { useInsertIntoComposer } from "./composer-insertion";
 
+/**
+ * One co-viewer's cursor, in the artifact pane's own fractional coordinate
+ * space (`x`/`y` in `[0, 1]` of the pane's content box) so it survives a
+ * pane resize between the moment it was published and the moment it
+ * renders. Plain data — the same reasoning as `PresenceMember` in
+ * `@corbits/chat-ui`: this module never depends on `@corbits/presence`.
+ */
+export interface PresenceCursor {
+  readonly principalId: string;
+  readonly displayName: string;
+  readonly color: string;
+  readonly x: number;
+  readonly y: number;
+}
+
 export function CanvasColumn({
   open,
   profile,
@@ -42,6 +61,8 @@ export function CanvasColumn({
   onClose,
   onToggleFocus,
   onNavigate,
+  presenceCursors,
+  onCursorMove,
 }: {
   readonly open: boolean;
   readonly profile: ProfileSubject | null;
@@ -50,6 +71,12 @@ export function CanvasColumn({
   readonly onClose: () => void;
   readonly onToggleFocus: () => void;
   readonly onNavigate: (path: string) => void;
+  /** Co-viewers currently looking at `artifact`, if any — see `PresenceCursor`. */
+  readonly presenceCursors?: readonly PresenceCursor[];
+  /** Fired with the pointer's fractional position over the artifact body
+   * (see `PresenceCursor`'s own doc) as it moves — the host publishes it
+   * through `@corbits/presence/client`. */
+  readonly onCursorMove?: (x: number, y: number) => void;
 }) {
   // `inert` rather than `aria-hidden`: a collapsed column has to be out of
   // both the accessibility tree and the tab order, and `aria-hidden` alone
@@ -78,6 +105,8 @@ export function CanvasColumn({
             focus={focus}
             onClose={onClose}
             onToggleFocus={onToggleFocus}
+            {...(presenceCursors !== undefined ? { presenceCursors } : {})}
+            {...(onCursorMove !== undefined ? { onCursorMove } : {})}
           />
         ) : (
           <EmptyState
@@ -360,11 +389,15 @@ function ArtifactCanvasPane({
   focus,
   onClose,
   onToggleFocus,
+  presenceCursors = [],
+  onCursorMove,
 }: {
   readonly artifact: CanvasArtifactContent;
   readonly focus: boolean;
   readonly onClose: () => void;
   readonly onToggleFocus: () => void;
+  readonly presenceCursors?: readonly PresenceCursor[];
+  readonly onCursorMove?: (x: number, y: number) => void;
 }) {
   return (
     <div className="shell-artifact-pane">
@@ -374,7 +407,21 @@ function ArtifactCanvasPane({
         onClose={onClose}
         onToggleFocus={onToggleFocus}
       />
-      <div className="shell-artifact-pane-body">
+      <div
+        className="shell-artifact-pane-body"
+        onPointerMove={
+          onCursorMove === undefined
+            ? undefined
+            : (event) => {
+                const bounds = event.currentTarget.getBoundingClientRect();
+                if (bounds.width === 0 || bounds.height === 0) return;
+                onCursorMove(
+                  (event.clientX - bounds.left) / bounds.width,
+                  (event.clientY - bounds.top) / bounds.height,
+                );
+              }
+        }
+      >
         <ArtifactRenderer
           rendererKind={artifact.rendererKind}
           title={artifact.title}
@@ -383,6 +430,26 @@ function ArtifactCanvasPane({
             ? { unavailableReason: artifact.unavailableReason }
             : {})}
         />
+        {presenceCursors.length > 0 ? (
+          <div className="shell-artifact-cursor-layer" aria-hidden="true">
+            {presenceCursors.map((cursor) => (
+              <div
+                key={cursor.principalId}
+                className="shell-artifact-cursor"
+                style={{
+                  left: `${cursor.x * 100}%`,
+                  top: `${cursor.y * 100}%`,
+                  color: cursor.color,
+                }}
+              >
+                <span className="shell-artifact-cursor-dot" />
+                <span className="shell-artifact-cursor-label">
+                  {cursor.displayName}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
