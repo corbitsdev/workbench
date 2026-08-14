@@ -620,21 +620,21 @@ function useDialogConnections(tenantId: string | null, open: boolean) {
   return connections;
 }
 
-function connectorBadgeLabel(connectorId: string): string {
+export function connectorBadgeLabel(connectorId: string): string {
   const entry = CONNECTOR_REGISTRY[connectorId];
   if (entry === undefined) {
     // A catalog entry's requiredConnections should only ever name real
     // connector ids — this means the catalog and the registry have
     // drifted apart. Render the raw id so the card still shows
-    // something, but flag it loudly in dev rather than let a silent
-    // fallback hide the drift until someone notices a wrong-looking badge.
-    if (import.meta.env.DEV) {
-      console.error(
-        `connectorBadgeLabel: "${connectorId}" is not in CONNECTOR_REGISTRY — ` +
-          "a workflow-catalog entry's requiredConnections id is out of sync " +
-          "with the connections registry.",
-      );
-    }
+    // something, but flag it loudly regardless of build mode: this is a
+    // console-only log, not user-visible, so there's no cost to keeping
+    // it always on and every cost to a silent fallback hiding drift in
+    // production until someone notices a wrong-looking badge.
+    console.error(
+      `connectorBadgeLabel: "${connectorId}" is not in CONNECTOR_REGISTRY — ` +
+        "a workflow-catalog entry's requiredConnections id is out of sync " +
+        "with the connections registry.",
+    );
     return connectorId;
   }
   return entry.displayName;

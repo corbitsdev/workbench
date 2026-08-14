@@ -12,6 +12,7 @@ import type { APIQuery } from "../src/api";
 import {
   RoutineDetailPage,
   RoutinesListPage,
+  connectorBadgeLabel,
 } from "../src/pages/routines-page";
 import type { Routine, RoutineRun } from "../src/routines-api";
 import type { WebhookTrigger } from "../src/webhook-triggers-api";
@@ -328,6 +329,22 @@ describe("webhook trigger panel", () => {
     } finally {
       act(() => root.unmount());
       container.remove();
+    }
+  });
+});
+
+describe("connectorBadgeLabel registry-drift logging", () => {
+  test("logs a catalog/registry drift unconditionally, not only in dev builds", () => {
+    const calls: unknown[][] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => calls.push(args);
+    try {
+      const label = connectorBadgeLabel("not-a-real-connector-id");
+      expect(label).toBe("not-a-real-connector-id");
+      expect(calls.length).toBe(1);
+      expect(String(calls[0]?.[0])).toContain("not-a-real-connector-id");
+    } finally {
+      console.error = original;
     }
   });
 });
