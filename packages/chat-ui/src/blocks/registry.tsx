@@ -11,6 +11,7 @@ import type { ReactElement } from "react";
 import { CHAT_STRINGS } from "../strings";
 import { ApproveBlockView } from "./approve-block";
 import type { ApprovalActions } from "./approval-actions";
+import type { BlockResponseActions } from "./block-responses";
 import { FormBlockView } from "./form-block";
 import { MetricsBlockView } from "./metrics-block";
 import { PollBlockView } from "./poll-block";
@@ -19,7 +20,9 @@ import { StreamBlockView } from "./stream-block";
 
 function renderKnownBlock(
   block: Block,
+  messageId: string,
   approvalActions: ApprovalActions | undefined,
+  blockResponses: BlockResponseActions | undefined,
 ): ReactElement {
   switch (block.type) {
     case "approve":
@@ -36,9 +39,21 @@ function renderKnownBlock(
     case "metrics":
       return <MetricsBlockView data={block.data} />;
     case "poll":
-      return <PollBlockView data={block.data} />;
+      return (
+        <PollBlockView
+          data={block.data}
+          messageId={messageId}
+          {...(blockResponses !== undefined ? { actions: blockResponses } : {})}
+        />
+      );
     case "form":
-      return <FormBlockView data={block.data} />;
+      return (
+        <FormBlockView
+          data={block.data}
+          messageId={messageId}
+          {...(blockResponses !== undefined ? { actions: blockResponses } : {})}
+        />
+      );
     case "stream":
       return <StreamBlockView data={block.data} />;
   }
@@ -59,16 +74,30 @@ function UnsupportedBlock({ type }: { readonly type: string }) {
 
 export function BlockPartView({
   block,
+  messageId,
   approvalActions,
+  blockResponses,
 }: {
   readonly block: BlockPart["block"];
+  /** The message this block part lives in -- polls and forms scope every
+   * response to (messageId, blockId), never `blockId` alone (see
+   * `packages/chat/src/block-responses.ts`). */
+  readonly messageId: string;
   /** Host-supplied approve/deny round-trip; only the "approve" block reads
    * it. Absent means the pre-round-trip fixed-disabled framing. */
   readonly approvalActions?: ApprovalActions;
+  /** Host-supplied poll/form round-trip; only "poll" and "form" blocks read
+   * it. Absent means the pre-round-trip fixed-disabled framing. */
+  readonly blockResponses?: BlockResponseActions;
 }) {
   const result = parseBlock(block);
   if (!result.ok) {
     return <UnsupportedBlock type={result.type} />;
   }
-  return renderKnownBlock(result.block, approvalActions);
+  return renderKnownBlock(
+    result.block,
+    messageId,
+    approvalActions,
+    blockResponses,
+  );
 }

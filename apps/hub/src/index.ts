@@ -27,6 +27,7 @@ import {
   createChannelTenancyRoutes,
   createChatOrchestrator,
   createChatRoutes,
+  createDrizzleBlockResponseStore,
   createDrizzleChannelTenancyStore,
   createDrizzleChatStore,
   createDrizzleThreadStore,
@@ -363,6 +364,7 @@ export async function createHub(config: HubConfig) {
   };
   const chatStore = createDrizzleChatStore(db);
   const threadStore = createDrizzleThreadStore(db);
+  const blockResponseStore = createDrizzleBlockResponseStore(db);
   // Mounted outside the tenant prefix — the sidecar reaches it as a
   // plain inference endpoint, never through tenant-scoped auth, the
   // same way it reaches a real provider's API. `config.baseUrl` (not
@@ -449,6 +451,7 @@ export async function createHub(config: HubConfig) {
     platform: chatPlatform,
     tenancy: chatTenancy,
     threads: threadStore,
+    blockResponses: blockResponseStore,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,

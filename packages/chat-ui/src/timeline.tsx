@@ -22,6 +22,7 @@ import type {
 } from "./api";
 import { ArtifactChip } from "./artifact-chip";
 import type { ApprovalActions } from "./blocks/approval-actions";
+import type { BlockResponseActions } from "./blocks/block-responses";
 import { BlockPartView } from "./blocks/registry";
 import type { ProfileSubject } from "./profile-subject";
 import { profileSubjectFromParticipant } from "./profile-subject";
@@ -265,6 +266,12 @@ function friendlyEventText(
       return CHAT_STRINGS.eventMembershipChanged;
     case "channel.settings-changed":
       return CHAT_STRINGS.eventSettingsChanged;
+    case "block.response": {
+      const kind = data !== undefined ? data.kind : undefined;
+      return kind === "poll"
+        ? CHAT_STRINGS.eventBlockResponsePoll
+        : CHAT_STRINGS.eventBlockResponseForm;
+    }
     default:
       return CHAT_STRINGS.eventGeneric(part.event);
   }
@@ -339,6 +346,7 @@ function MessageParts({
   onOpenProfile,
   onOpenArtifact,
   approvalActions,
+  blockResponses,
 }: {
   readonly item: MessageItem;
   readonly participants: readonly ParticipantRecord[];
@@ -349,6 +357,7 @@ function MessageParts({
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly approvalActions?: ApprovalActions;
+  readonly blockResponses?: BlockResponseActions;
 }) {
   return (
     <>
@@ -392,7 +401,9 @@ function MessageParts({
             <BlockPartView
               key={key}
               block={part.block}
+              messageId={item.id}
               {...(approvalActions !== undefined ? { approvalActions } : {})}
+              {...(blockResponses !== undefined ? { blockResponses } : {})}
             />
           );
         }
@@ -490,6 +501,7 @@ export function ChannelTimeline({
   onOpenProfile,
   onOpenArtifact,
   approvalActions,
+  blockResponses,
 }: {
   readonly items: readonly MessageItem[];
   readonly participants?: readonly ParticipantRecord[];
@@ -506,6 +518,10 @@ export function ChannelTimeline({
    * on the platform approval a card references. Undefined renders every
    * approve card in its pre-round-trip fixed-disabled framing. */
   readonly approvalActions?: ApprovalActions;
+  /** The poll/form blocks' live round-trip — the host's read/vote/submit
+   * against `@corbits/chat`'s response routes. Undefined renders every
+   * poll/form card in its pre-round-trip fixed-disabled framing. */
+  readonly blockResponses?: BlockResponseActions;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Starts true so a channel's first render always lands pinned to the
@@ -565,6 +581,7 @@ export function ChannelTimeline({
             {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
             {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
             {...(approvalActions !== undefined ? { approvalActions } : {})}
+            {...(blockResponses !== undefined ? { blockResponses } : {})}
           />
         );
       })}

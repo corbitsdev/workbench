@@ -25,6 +25,11 @@ import { idResource } from "@intx/hub-api";
 
 import { decodeMail, encodeParts, senderOf } from "./codec";
 import { Part, type Part as PartType } from "./parts";
+import {
+  aggregatePollResponses,
+  type BlockResponsePayload,
+  type BlockResponseStore,
+} from "./block-responses";
 import { presetForKind } from "./kinds";
 import { localPartOf } from "./agent-address";
 import {
@@ -129,6 +134,14 @@ export type CreateChatRoutesDeps = {
    */
   threads?: ThreadStore;
   /**
+   * Poll/form response storage — see `./block-responses.ts`. Omitted
+   * entirely, the response routes 404 rather than silently accepting
+   * votes/submissions nothing durable backs; every deployment that wants
+   * the poll/form round-trip injects a real store the same way it injects
+   * `threads`.
+   */
+  blockResponses?: BlockResponseStore;
+  /**
    * The `/name args` and `@name args` command registry — see
    * `@corbits/commands`. Omitted entirely, a message is always posted
    * verbatim regardless of a leading "/" or "@"; every deployment that
@@ -224,6 +237,32 @@ const PutReadStateBody = type({
   lastSeenCreatedAt: "string",
   lastSeenId: "string",
 });
+
+// A poll response must name at least one choice, with no repeats — beyond
+// that, the set of valid choice ids is the agent-authored `PollBlockData`
+// this route never sees, so it isn't re-validated here (chat-ui already
+// pins the vote to real, currently-declared choices before it ever posts).
+const SubmitPollResponseBody = type({
+  kind: "'poll'",
+  choiceIds: "string[]",
+}).narrow((body, ctx) => {
+  if (body.choiceIds.length === 0) {
+    return ctx.reject("choiceIds must include at least one choice");
+  }
+  if (new Set(body.choiceIds).size !== body.choiceIds.length) {
+    return ctx.reject("choiceIds must not repeat a choice");
+  }
+  return true;
+});
+
+const SubmitFormResponseBody = type({
+  kind: "'form'",
+  values: "Record<string, string>",
+});
+
+const SubmitBlockResponseBody = SubmitPollResponseBody.or(
+  SubmitFormResponseBody,
+);
 
 /**
  * Every `/channels/:id/*` handler must resolve the channel inside the
@@ -972,6 +1011,120 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       return c.json({ id: sent.id, createdAt: sent.createdAt }, 201);
+    },
+  );
+
+  app.post(
+    "/channels/:id/messages/:messageId/blocks/:blockId/responses",
+    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    async (c) => {
+      if (deps.blockResponses === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", "block responses not available"),
+          404,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const channelId = c.req.param("id");
+      const messageId = c.req.param("messageId");
+      const blockId = c.req.param("blockId");
+
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      const body = SubmitBlockResponseBody(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `invalid response body: ${body.summary}`,
+          ),
+          400,
+        );
+      }
+
+      const payload: BlockResponsePayload =
+        body.kind === "poll"
+          ? { kind: "poll", choiceIds: body.choiceIds }
+          : { kind: "form", values: body.values };
+
+      const row = await deps.blockResponses.upsertBlockResponse({
+        tenantId: tenant.id,
+        channelId,
+        messageId,
+        blockId,
+        principalId: principal.id,
+        payload,
+      });
+
+      // A machine-readable event into the same channel timeline the
+      // responder is already a member of, so the outcome reaches the
+      // emitting agent in-context on its next turn — the same "the message
+      // is the state" pattern Block Kit's `block_actions` uses, rather than
+      // a side channel only the agent can reach. Every channel member sees
+      // the same event any other message in this channel would show them;
+      // that is the channel's own membership boundary, not a new one — the
+      // GET route below is the boundary that must never let a member read
+      // *another* member's raw response on demand.
+      await deps.platform.sendMail({
+        tenantId: tenant.id,
+        channelId,
+        principalId: principal.id,
+        content: encodeParts([
+          {
+            kind: "event",
+            event: "block.response",
+            data: { messageId, blockId, ...payload },
+          },
+        ]),
+      });
+
+      return c.json({ blockId, updatedAt: row.updatedAt.toISOString() }, 200);
+    },
+  );
+
+  app.get(
+    "/channels/:id/messages/:messageId/blocks/:blockId/responses",
+    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    async (c) => {
+      if (deps.blockResponses === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", "block responses not available"),
+          404,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const channelId = c.req.param("id");
+      const messageId = c.req.param("messageId");
+      const blockId = c.req.param("blockId");
+
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      // Every response on file for this block, read once and filtered down
+      // before any of it reaches the wire: a poll's tally is a count over
+      // every row regardless of whose it is, but `own` is this caller's row
+      // and this caller's alone — no other principal's raw poll choice or
+      // form values is ever assembled into the response body.
+      const rows = await deps.blockResponses.listBlockResponses(
+        tenant.id,
+        channelId,
+        messageId,
+        blockId,
+      );
+      const { tally, total } = aggregatePollResponses(rows);
+      const own =
+        rows.find((row) => row.principalId === principal.id)?.payload ?? null;
+
+      return c.json({ tally, total, own });
     },
   );
 

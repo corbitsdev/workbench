@@ -338,6 +338,87 @@ export function channelStreamUrl(tenantId: string, channelId: string): string {
   return `/api/tenants/${tenantId}/chat/channels/${channelId}/stream`;
 }
 
+// `POST`/`GET .../blocks/:blockId/responses` (see
+// `packages/chat/src/routes.ts`): the poll/form round-trip. `own` is only
+// ever this signed-in principal's own response — a poll's `tally` is the
+// one place another principal's participation shows up at all, and only as
+// an anonymous count, never whose it was.
+const BlockResponsePayloadWire = type({
+  kind: "'poll'",
+  choiceIds: "string[]",
+}).or(type({ kind: "'form'", values: "Record<string, string>" }));
+export type BlockResponsePayload = typeof BlockResponsePayloadWire.infer;
+
+const BlockResponsesWire = type({
+  tally: "Record<string, number>",
+  total: "number",
+  own: BlockResponsePayloadWire.or("null"),
+});
+export type BlockResponses = typeof BlockResponsesWire.infer;
+
+const SubmittedBlockResponse = type({
+  blockId: "string",
+  updatedAt: "string",
+});
+
+function blockResponsesPath(
+  tenantId: string,
+  channelId: string,
+  messageId: string,
+  blockId: string,
+): string {
+  return (
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/messages/` +
+    `${messageId}/blocks/${blockId}/responses`
+  );
+}
+
+export function getBlockResponses(
+  tenantId: string,
+  channelId: string,
+  messageId: string,
+  blockId: string,
+): Promise<BlockResponses> {
+  return request(
+    blockResponsesPath(tenantId, channelId, messageId, blockId),
+    BlockResponsesWire,
+  );
+}
+
+export function submitPollResponse(
+  tenantId: string,
+  channelId: string,
+  messageId: string,
+  blockId: string,
+  choiceIds: readonly string[],
+): Promise<void> {
+  return request(
+    blockResponsesPath(tenantId, channelId, messageId, blockId),
+    SubmittedBlockResponse,
+    {
+      method: "POST",
+      body: JSON.stringify({ kind: "poll", choiceIds }),
+    },
+  ).then(() => undefined);
+}
+
+export function submitFormResponse(
+  tenantId: string,
+  channelId: string,
+  messageId: string,
+  blockId: string,
+  values: Readonly<Record<string, string>>,
+): Promise<void> {
+  return request(
+    blockResponsesPath(tenantId, channelId, messageId, blockId),
+    SubmittedBlockResponse,
+    {
+      method: "POST",
+      body: JSON.stringify({ kind: "form", values }),
+    },
+  ).then(() => undefined);
+}
+
 // `chat/contextWindow`'s two-way "inherit vs override" resolution — see
 // `resolveContextWindow` in `packages/chat/src/channel-settings.ts`, whose
 // server-side output this wire shape mirrors. `source` is what the settings
