@@ -57,6 +57,11 @@ import {
   createPostgresUsageStore,
   createUsageSink,
 } from "@corbits/insights";
+import {
+  applyPreferencesMigrations,
+  createPostgresPreferencesStore,
+  createPreferencesRoutes,
+} from "@corbits/preferences";
 import { generateId } from "@intx/hub-common";
 import {
   createInMemoryMailboxEventBus,
@@ -609,6 +614,21 @@ export async function createHub(config: HubConfig) {
       runTraceReader: createDrizzleRunTraceReader(db),
     }),
   );
+  // Preferences: a single per-(tenant, principal) JSONB bag for small UI
+  // choices a surface wants to remember across reload (col2 collapse,
+  // theme, ...). Package-owned table, migrated at hub start like insights.
+  await applyPreferencesMigrations(config.databaseUrl);
+  const preferences = createPostgresPreferencesStore(config.databaseUrl);
+  app.route(
+    `${TENANT_PREFIX}/preferences`,
+    createPreferencesRoutes({
+      store: preferences.store,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
   {
     const mailboxApp = new Hono<TenantEnv>();
     mountMailbox(mailboxApp, {
@@ -962,6 +982,7 @@ export async function createHub(config: HubConfig) {
       routineScheduler.stop();
       credentialExpirySweep.stop();
       await insightsUsage.close();
+      await preferences.close();
       await closeMailbox();
       await close();
     },

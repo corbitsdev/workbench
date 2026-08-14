@@ -20,6 +20,7 @@
     "@corbits/command-palette": "workspace:*",
     "@corbits/context-menu": "workspace:*",
     "@corbits/insights": "workspace:*",
+    "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",

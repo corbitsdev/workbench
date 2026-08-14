@@ -75,7 +75,11 @@ function Root() {
   }, []);
 
   // Per-user storage when signed in so theme preference follows the account;
-  // signed-out / loading share the anonymous host key.
+  // signed-out / loading share the anonymous host key. Not synced to the
+  // preferences store (CL-5922): @corbits/react-ui's ThemeProvider owns mode
+  // entirely internally (localStorage read/write on setMode/cycleMode) and
+  // exposes no onChange hook or externally-supplied initial value a host
+  // could observe or override without forking the component.
   const themeStorageKey =
     session.kind === "signed-in"
       ? `corbits-theme:${session.user.id}`

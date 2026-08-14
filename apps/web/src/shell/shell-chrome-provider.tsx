@@ -17,12 +17,18 @@ import {
   type ReactNode,
 } from "react";
 
+import { getPreferences, patchPreferences } from "@corbits/preferences/client";
+
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
 import { isMyraChannelId } from "../myra-channel";
 import type { ProfileSubject } from "@corbits/chat-ui";
 import { canvasColumnAllowed, contextualPanelIsDrawer } from "./breakpoints";
 import { CanvasAvailabilityProvider } from "./canvas-availability";
+import {
+  col2CollapsedFromPreferences,
+  COL2_COLLAPSED_PREFERENCE_KEY,
+} from "./col2-preference";
 import {
   clearCanvasForTenantSwitch,
   closeCanvasContent,
@@ -69,6 +75,29 @@ export function ShellChromeProvider({
   useEffect(() => {
     setUserCollapsedCol2(false);
   }, [path]);
+
+  // Hydrate the *general* collapse preference once, on the first tenant
+  // resolve — distinct from the per-navigation reset above, which is about
+  // in-session surface switches, not surviving a reload. Runs once (not on
+  // every tenant switch) so a later bench switch does not reopen col2 out
+  // from under a mid-session collapse.
+  const hydratedFromPreferenceRef = useRef(false);
+  useEffect(() => {
+    if (hydratedFromPreferenceRef.current || selectedTenantId === null) return;
+    hydratedFromPreferenceRef.current = true;
+    let cancelled = false;
+    void getPreferences(selectedTenantId)
+      .then((preferences) => {
+        if (cancelled) return;
+        if (col2CollapsedFromPreferences(preferences)) {
+          setUserCollapsedCol2(true);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTenantId]);
 
   // Workbench switch clears auxiliary canvas content and leaves any channel
   // deep link so the stage does not keep a foreign conversation under the
@@ -129,13 +158,23 @@ export function ShellChromeProvider({
   // while it's open, the shell's edge handle once it's collapsed: in-flow
   // col2 collapses on wide layouts; the overlay drawer opens on narrow
   // ones. There are no per-column chevrons.
+  // The user's own collapse choice PATCHes the preferences store too, fire-
+  // and-forget — the shell's own toggle state (`setUserCollapsedCol2`)
+  // already updated the UI synchronously; a failed PATCH just means the
+  // next reload doesn't remember it, not a broken toggle.
   const toggleCol2 = useCallback(() => {
     if (contextualAsDrawer) {
       setNarrowPanelOpen((open) => !open);
       return;
     }
-    setUserCollapsedCol2((collapsed) => !collapsed);
-  }, [contextualAsDrawer]);
+    const next = !userCollapsedCol2;
+    setUserCollapsedCol2(next);
+    if (selectedTenantId !== null) {
+      void patchPreferences(selectedTenantId, {
+        [COL2_COLLAPSED_PREFERENCE_KEY]: next,
+      }).catch(() => undefined);
+    }
+  }, [contextualAsDrawer, userCollapsedCol2, selectedTenantId]);
 
   const stageChrome = useMemo<StageChrome>(
     () => ({
