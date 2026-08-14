@@ -19,12 +19,13 @@ import { type } from "arktype";
 import { provisionPersonalTenantIfNeeded, ProvisionError } from "./provision";
 
 import { completeCredentialSetup } from "./complete-credential";
+import { createConnectStateStore, generatePKCEPair } from "./pkce";
+import { exchangeCodeForKey, OPENROUTER_AUTH_URL } from "./openrouter-connect";
 import {
-  createConnectStateStore,
-  exchangeCodeForKey,
-  generatePKCEPair,
-  OPENROUTER_AUTH_URL,
-} from "./openrouter-connect";
+  exchangeCodeForToken as exchangeHuggingFaceCodeForToken,
+  HUGGINGFACE_AUTHORIZE_URL,
+  HUGGINGFACE_SCOPE,
+} from "./huggingface-connect";
 
 const PROVIDER_IDS = supportedCredentialProviders().map((p) => p.id) as [
   SupportedCredentialProvider,
@@ -48,6 +49,15 @@ export type CreateOnboardingRoutesDeps = {
   log: (line: string) => void;
   openrouterConnect?: {
     exchange?: typeof exchangeCodeForKey;
+    completeSetup?: typeof completeCredentialSetup;
+  };
+  /** The public OAuth app id from huggingface.co/settings/applications
+   * (see docs/onboarding-huggingface-connect.md). Absent disables the
+   * connect card's routes without disabling anything else — HF stays
+   * available as a paste-a-token provider either way. */
+  huggingfaceClientId?: string;
+  huggingfaceConnect?: {
+    exchange?: typeof exchangeHuggingFaceCodeForToken;
     completeSetup?: typeof completeCredentialSetup;
   };
 };
@@ -364,6 +374,225 @@ export function createOnboardingRoutes(
       );
       return c.redirect(
         wizardRedirectPath({ outcome: "error", code: "setup_failed" }),
+        302,
+      );
+    }
+  });
+
+  // Hugging Face PKCE connect: the same shape as OpenRouter's above, with
+  // two differences the provider forces. First, HF requires a registered
+  // client id (no client secret — a public app), so `/start` 404s the
+  // flow with a `not_configured` outcome when `deps.huggingfaceClientId`
+  // is unset rather than crash. Second, HF's exchange returns a standard,
+  // expiring OAuth access token — `expiresAt` (when HF reports
+  // `expires_in`) is threaded into `completeCredentialSetup` as
+  // credential metadata, never into a URL or a log line, alongside the
+  // token itself.
+  const huggingfaceConnectStates = createConnectStateStore();
+  const exchangeHuggingFace =
+    deps.huggingfaceConnect?.exchange ?? exchangeHuggingFaceCodeForToken;
+  const completeHuggingFaceSetup =
+    deps.huggingfaceConnect?.completeSetup ?? completeCredentialSetup;
+  const HUGGINGFACE_STATE_COOKIE = "workbench_huggingface_connect";
+
+  const huggingfaceWizardRedirectPath = (
+    params: Record<string, string>,
+  ): string => {
+    const query = new URLSearchParams(params);
+    query.set("connect", "huggingface");
+    return `/onboarding?${query.toString()}`;
+  };
+
+  const lastHuggingFaceConnectStartByUser = new Map<string, number>();
+
+  app.get("/oauth/huggingface/start", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return c.redirect(
+        huggingfaceWizardRedirectPath({ outcome: "error", code: "signed_out" }),
+        302,
+      );
+    }
+    if (deps.huggingfaceClientId === undefined) {
+      return c.redirect(
+        huggingfaceWizardRedirectPath({
+          outcome: "error",
+          code: "not_configured",
+        }),
+        302,
+      );
+    }
+
+    const now = Date.now();
+    const lastStart = lastHuggingFaceConnectStartByUser.get(user.id);
+    if (
+      lastStart !== undefined &&
+      now - lastStart < CONNECT_START_RATE_LIMIT_MS
+    ) {
+      return c.redirect(
+        huggingfaceWizardRedirectPath({
+          outcome: "error",
+          code: "rate_limited",
+        }),
+        302,
+      );
+    }
+    lastHuggingFaceConnectStartByUser.set(user.id, now);
+
+    const pkce = await generatePKCEPair();
+    const state = huggingfaceConnectStates.issue({
+      userId: user.id,
+      codeVerifier: pkce.codeVerifier,
+    });
+    setCookie(c, HUGGINGFACE_STATE_COOKIE, state, {
+      httpOnly: true,
+      sameSite: "Lax",
+      secure: secureCookies,
+      path: "/",
+      maxAge: 600,
+    });
+
+    const callbackUrl = new URL(
+      c.req.path.replace(/\/start$/, "/callback"),
+      deps.hubUrl,
+    );
+    const authUrl = new URL(HUGGINGFACE_AUTHORIZE_URL);
+    authUrl.searchParams.set("client_id", deps.huggingfaceClientId);
+    authUrl.searchParams.set("redirect_uri", callbackUrl.toString());
+    authUrl.searchParams.set("scope", HUGGINGFACE_SCOPE);
+    authUrl.searchParams.set("state", state);
+    authUrl.searchParams.set("code_challenge", pkce.codeChallenge);
+    authUrl.searchParams.set("code_challenge_method", "S256");
+    return c.redirect(authUrl.toString(), 302);
+  });
+
+  app.get("/oauth/huggingface/callback", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return c.redirect(
+        huggingfaceWizardRedirectPath({ outcome: "error", code: "signed_out" }),
+        302,
+      );
+    }
+    if (deps.huggingfaceClientId === undefined) {
+      return c.redirect(
+        huggingfaceWizardRedirectPath({
+          outcome: "error",
+          code: "not_configured",
+        }),
+        302,
+      );
+    }
+
+    const cookieState = getCookie(c, HUGGINGFACE_STATE_COOKIE);
+    deleteCookie(c, HUGGINGFACE_STATE_COOKIE, { path: "/" });
+    const code = c.req.query("code");
+    const queryState = c.req.query("state");
+    // Belt and suspenders: HF echoes `state`, so a callback whose query
+    // state disagrees with the cookie it arrived with is rejected before
+    // the state store is even consulted, on top of the store's own
+    // single-use/cross-user checks.
+    if (
+      cookieState === undefined ||
+      queryState === undefined ||
+      queryState !== cookieState ||
+      code === undefined ||
+      code === ""
+    ) {
+      return c.redirect(
+        huggingfaceWizardRedirectPath({
+          outcome: "error",
+          code: "state_expired",
+        }),
+        302,
+      );
+    }
+    const codeVerifier = huggingfaceConnectStates.consume({
+      state: cookieState,
+      userId: user.id,
+    });
+    if (codeVerifier === undefined) {
+      return c.redirect(
+        huggingfaceWizardRedirectPath({
+          outcome: "error",
+          code: "state_expired",
+        }),
+        302,
+      );
+    }
+
+    const callbackUrl = new URL(c.req.path, deps.hubUrl).toString();
+    const exchanged = await exchangeHuggingFace({
+      code,
+      codeVerifier,
+      redirectUri: callbackUrl,
+      clientId: deps.huggingfaceClientId,
+    });
+    if (!exchanged.ok) {
+      deps.log(
+        `huggingface connect for user ${user.id}: code exchange failed: ${exchanged.message}`,
+      );
+      return c.redirect(
+        huggingfaceWizardRedirectPath({
+          outcome: "error",
+          code: "exchange_failed",
+        }),
+        302,
+      );
+    }
+
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
+    try {
+      const result = await completeHuggingFaceSetup({
+        api,
+        cookies,
+        hubUrl: deps.hubUrl,
+        userId: user.id,
+        userEmail: user.email,
+        provider: "huggingface",
+        apiKey: exchanged.accessToken,
+        pushWorkflow: deps.pushWorkflow,
+        log: deps.log,
+        ...(exchanged.expiresAt !== undefined
+          ? { credentialMetadata: { expiresAt: exchanged.expiresAt } }
+          : {}),
+      });
+      if (result.kind === "invalid-credential") {
+        deps.log(
+          `huggingface connect for user ${user.id}: minted token failed its probe: ${result.message}`,
+        );
+        return c.redirect(
+          huggingfaceWizardRedirectPath({
+            outcome: "error",
+            code: "key_rejected",
+          }),
+          302,
+        );
+      }
+      if (result.kind === "no-personal-bench") {
+        return c.redirect(
+          huggingfaceWizardRedirectPath({ outcome: "error", code: "no_bench" }),
+          302,
+        );
+      }
+      return c.redirect(
+        huggingfaceWizardRedirectPath({
+          outcome: "seeded",
+          tenantSlug: result.tenantSlug,
+          workflows: result.workflows.join(","),
+        }),
+        302,
+      );
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      deps.log(
+        `huggingface connect setup failed for user ${user.id}: ${message}`,
+      );
+      return c.redirect(
+        huggingfaceWizardRedirectPath({
+          outcome: "error",
+          code: "setup_failed",
+        }),
         302,
       );
     }

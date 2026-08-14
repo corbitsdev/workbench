@@ -18,6 +18,12 @@
 // screen, leave both unset to leave it off — email/password remains
 // available either way. Setting only one half of a pair is a boot-time
 // error, never a silently-disabled provider.
+//
+// HUGGINGFACE_OAUTH_CLIENT_ID is a single optional value, not a pair —
+// Hugging Face's connect flow uses a public OAuth app with no client
+// secret. Set it to enable the onboarding wizard's Hugging Face connect
+// card; leave it unset and Hugging Face stays available only as a
+// paste-a-token provider card.
 
 import { type } from "arktype";
 
@@ -72,6 +78,9 @@ const HubEnv = type({
   "GITHUB_CLIENT_SECRET?": type("string > 0").describe(
     "GitHub OAuth client secret; set together with GITHUB_CLIENT_ID to enable GitHub sign-in",
   ),
+  "HUGGINGFACE_OAUTH_CLIENT_ID?": type("string > 0").describe(
+    "Hugging Face public OAuth app client id (huggingface.co/settings/applications, no secret — see docs/onboarding-huggingface-connect.md); optional, enables the onboarding wizard's Hugging Face connect card",
+  ),
 });
 
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
@@ -115,6 +124,7 @@ export type HubConfig = {
   readonly socialProviders: Readonly<
     Partial<Record<SocialProviderId, SocialProviderCredential>>
   >;
+  readonly huggingfaceOAuthClientId?: string;
 };
 
 type ParsedHubEnv = typeof HubEnv.infer;
@@ -232,5 +242,7 @@ export function readHubConfig(
     hubConfig.operatorTenantId = parsed.OPERATOR_TENANT_ID;
   if (parsed.PORT !== undefined) hubConfig.listenPort = Number(parsed.PORT);
   if (seedModel !== undefined) hubConfig.seedModel = seedModel;
+  if (parsed.HUGGINGFACE_OAUTH_CLIENT_ID !== undefined)
+    hubConfig.huggingfaceOAuthClientId = parsed.HUGGINGFACE_OAUTH_CLIENT_ID;
   return hubConfig;
 }

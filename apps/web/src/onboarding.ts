@@ -100,15 +100,18 @@ export type CredentialProvider =
   | "opencode-zen"
   | "groq"
   | "deepseek"
-  | "mistral";
+  | "mistral"
+  | "huggingface";
 
-// The one-click path: a plain navigation to the hub's connect route,
-// which round-trips through OpenRouter's consent page and lands back on
-// /onboarding with the outcome in the query string.
+// The one-click paths: a plain navigation to the hub's connect route,
+// which round-trips through the provider's consent page and lands back
+// on /onboarding with the outcome in the query string.
 export const OPENROUTER_CONNECT_START_PATH =
   "/api/onboarding/oauth/openrouter/start";
+export const HUGGINGFACE_CONNECT_START_PATH =
+  "/api/onboarding/oauth/huggingface/start";
 
-export type OpenRouterConnectReturn =
+export type ConnectReturn =
   | {
       readonly kind: "seeded";
       readonly tenantSlug: string;
@@ -116,7 +119,9 @@ export type OpenRouterConnectReturn =
     }
   | { readonly kind: "error"; readonly message: string };
 
-const CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
+export type OpenRouterConnectReturn = ConnectReturn;
+
+const OPENROUTER_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
   state_expired:
     "The OpenRouter connection took too long or was already used. Start it again.",
   exchange_failed:
@@ -133,18 +138,40 @@ const CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
     "You started several OpenRouter connections in a row. Wait a moment and try again.",
 };
 
+const HUGGINGFACE_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
+  state_expired:
+    "The Hugging Face connection took too long or was already used. Start it again.",
+  exchange_failed:
+    "Hugging Face did not hand back a token for that connection. Try connecting again.",
+  key_rejected:
+    "Hugging Face minted a token, but its test call failed. Try connecting again.",
+  no_bench:
+    "No personal bench was found for this account yet. Reload and try again.",
+  setup_failed:
+    "Your Hugging Face token checked out, but setting up your bench failed. Try again in a moment.",
+  signed_out:
+    "Your session ended during the Hugging Face connection. Sign in and try again.",
+  rate_limited:
+    "You started several Hugging Face connections in a row. Wait a moment and try again.",
+  not_configured:
+    "Hugging Face connect isn't set up on this workbench yet. Paste a token instead.",
+};
+
 /**
- * Reads the OpenRouter connect round-trip's outcome out of the wizard's
- * query string. The parameters are hub-written but arrive through a
- * redirect the browser (or anyone) can replay, so they are treated as
- * untrusted: anything malformed collapses to an honest error, never a
- * fabricated success.
+ * Reads a connect round-trip's outcome out of the wizard's query string,
+ * for the `connect=providerId` this provider's callback writes. The
+ * parameters are hub-written but arrive through a redirect the browser
+ * (or anyone) can replay, so they are treated as untrusted: anything
+ * malformed collapses to an honest error, never a fabricated success.
  */
-export function readOpenRouterConnectReturn(
+function readConnectReturn(
   search: string,
-): OpenRouterConnectReturn | null {
+  providerId: string,
+  providerLabel: string,
+  errorCopy: Readonly<Record<string, string>>,
+): ConnectReturn | null {
   const params = new URLSearchParams(search);
-  if (params.get("connect") !== "openrouter") return null;
+  if (params.get("connect") !== providerId) return null;
   const outcome = params.get("outcome");
   if (outcome === "seeded") {
     const tenantSlug = params.get("tenantSlug");
@@ -154,8 +181,7 @@ export function readOpenRouterConnectReturn(
     if (tenantSlug === null || tenantSlug === "" || workflows.length === 0) {
       return {
         kind: "error",
-        message:
-          "The OpenRouter connection finished but its result was incomplete. Try connecting again.",
+        message: `The ${providerLabel} connection finished but its result was incomplete. Try connecting again.`,
       };
     }
     return { kind: "seeded", tenantSlug, workflows };
@@ -164,9 +190,31 @@ export function readOpenRouterConnectReturn(
   return {
     kind: "error",
     message:
-      (code !== null ? CONNECT_ERROR_COPY[code] : undefined) ??
-      "The OpenRouter connection did not finish. Try connecting again.",
+      (code !== null ? errorCopy[code] : undefined) ??
+      `The ${providerLabel} connection did not finish. Try connecting again.`,
   };
+}
+
+export function readOpenRouterConnectReturn(
+  search: string,
+): ConnectReturn | null {
+  return readConnectReturn(
+    search,
+    "openrouter",
+    "OpenRouter",
+    OPENROUTER_CONNECT_ERROR_COPY,
+  );
+}
+
+export function readHuggingFaceConnectReturn(
+  search: string,
+): ConnectReturn | null {
+  return readConnectReturn(
+    search,
+    "huggingface",
+    "Hugging Face",
+    HUGGINGFACE_CONNECT_ERROR_COPY,
+  );
 }
 
 export const CREDENTIAL_PROVIDERS: readonly {
@@ -233,6 +281,14 @@ export const CREDENTIAL_PROVIDERS: readonly {
     description: "Mistral's own models, direct from Mistral.",
     keyConsoleUrl: "https://console.mistral.ai/api-keys",
     keyHint: "",
+  },
+  {
+    id: "huggingface",
+    label: "Hugging Face",
+    description:
+      "Pay-as-you-go across Groq, Together, Fireworks & more, billed to your HF account. A fine-grained access token (permission: Make calls to Inference Providers) never expires — the one-click connect above mints a token that does.",
+    keyConsoleUrl: "https://huggingface.co/settings/tokens/new",
+    keyHint: "hf_",
   },
 ];
 

@@ -146,6 +146,18 @@ describe("readHubConfig", () => {
     });
   });
 
+  test("huggingfaceOAuthClientId is absent by default", () => {
+    expect(readHubConfig(validEnv).huggingfaceOAuthClientId).toBeUndefined();
+  });
+
+  test("HUGGINGFACE_OAUTH_CLIENT_ID enables the connect card's client id", () => {
+    const config = readHubConfig({
+      ...validEnv,
+      HUGGINGFACE_OAUTH_CLIENT_ID: "hf-client-1",
+    });
+    expect(config.huggingfaceOAuthClientId).toBe("hf-client-1");
+  });
+
   test("accepts postgresql:// and https:// URL forms", () => {
     const config = readHubConfig({
       ...validEnv,

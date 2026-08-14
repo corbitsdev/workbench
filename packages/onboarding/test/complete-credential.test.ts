@@ -247,4 +247,82 @@ describe("completeCredentialSetup", () => {
     expect(seedTenantCalls).toHaveLength(1);
     expect(seedTenantCalls[0]?.model.provider).toBe("openai-compatible");
   });
+
+  test("a Hugging Face connect token stores its expiry as oauth_token credential metadata", async () => {
+    const seedCatalogCalls: {
+      provider?: string;
+      credentialType?: string;
+      credentialMetadata?: Record<string, unknown>;
+    }[] = [];
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await completeCredentialSetup({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "huggingface",
+      apiKey: "hf_oauth_minted",
+      credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+      pushWorkflow: noopPush,
+      log: collector().log,
+      testCredential: async () => ({ ok: true }),
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args as never);
+      },
+      seedTenantFn: async () => {},
+    });
+
+    expect(result.kind).toBe("seeded");
+    expect(seedCatalogCalls).toEqual([
+      expect.objectContaining({
+        provider: "huggingface",
+        credentialType: "oauth_token",
+        credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+      }),
+    ]);
+  });
+
+  test("a pasted key with no metadata stays an ordinary api_key credential", async () => {
+    const seedCatalogCalls: { credentialType?: string }[] = [];
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    await completeCredentialSetup({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "huggingface",
+      apiKey: "hf_pasted_pat",
+      pushWorkflow: noopPush,
+      log: collector().log,
+      testCredential: async () => ({ ok: true }),
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args as never);
+      },
+      seedTenantFn: async () => {},
+    });
+
+    expect(seedCatalogCalls).toEqual([
+      expect.objectContaining({ credentialType: "api_key" }),
+    ]);
+  });
 });

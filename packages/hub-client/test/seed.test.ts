@@ -870,6 +870,72 @@ describe("seedCatalog", () => {
     expect(output).toContain("catalog ready: anthropic/claude-sonnet-5");
   });
 
+  test("an oauth_token credential with metadata posts both through to the credential row", async () => {
+    const { log } = collector();
+    let credentialBody: unknown;
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "huggingface") };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/credentials`
+      ) {
+        credentialBody = body;
+        return {
+          status: 201,
+          data: credentialRow("cre_1", "prv_1", "huggingface-default"),
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "deepseek-ai/DeepSeek-V4-Flash"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "huggingface",
+            "cre_1",
+            "openai-compatible",
+            "https://router.huggingface.co/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "huggingface",
+      apiKey: "hf_oauth_minted",
+      credentialType: "oauth_token",
+      credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+      log,
+    });
+
+    expect(credentialBody).toMatchObject({
+      type: "oauth_token",
+      metadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+    });
+  });
+
   test("re-run finds every step already seeded and creates nothing twice", async () => {
     const { lines, log } = collector();
     let providerPosts = 0;

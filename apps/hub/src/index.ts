@@ -669,6 +669,8 @@ export async function createHub(config: HubConfig) {
     onboardingDeps.operatorTenantId = config.operatorTenantId;
   if (config.seedModel !== undefined)
     onboardingDeps.seedModel = config.seedModel;
+  if (config.huggingfaceOAuthClientId !== undefined)
+    onboardingDeps.huggingfaceClientId = config.huggingfaceOAuthClientId;
 
   app.route("/api/onboarding", createOnboardingRoutes(onboardingDeps));
 

@@ -48,6 +48,13 @@ export type CompleteCredentialArgs = {
   apiKey: string;
   pushWorkflow: WorkflowPusher;
   log: (line: string) => void;
+  /**
+   * Free-form data stored on the credential's `metadata` field — the
+   * extension point an OAuth connect flow's token expiry lives in (see
+   * `huggingface-connect.ts`'s `exchangeCodeForToken`). Absent for a
+   * pasted key or a durable-key connect flow (OpenRouter).
+   */
+  credentialMetadata?: Record<string, unknown>;
   testCredential?: (
     args: TestProviderCredentialArgs,
   ) => ReturnType<typeof testProviderCredential>;
@@ -123,6 +130,11 @@ export async function completeCredentialSetup(
     provider: args.provider,
     apiKey: args.apiKey,
     log: args.log,
+    credentialType:
+      args.credentialMetadata !== undefined ? "oauth_token" : "api_key",
+    ...(args.credentialMetadata !== undefined
+      ? { credentialMetadata: args.credentialMetadata }
+      : {}),
   });
 
   const modelSource = providerModelSource(args.provider);

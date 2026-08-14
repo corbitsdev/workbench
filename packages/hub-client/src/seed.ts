@@ -734,7 +734,14 @@ async function ensureProvider(
 async function ensureCredential(
   api: ApiCall,
   cookies: string[],
-  args: { tenantId: string; providerId: string; name: string; secret: string },
+  args: {
+    tenantId: string;
+    providerId: string;
+    name: string;
+    secret: string;
+    type: "api_key" | "oauth_token";
+    metadata?: Record<string, unknown>;
+  },
   log: (line: string) => void,
 ): Promise<string> {
   const created = await api(
@@ -743,8 +750,9 @@ async function ensureCredential(
     {
       providerId: args.providerId,
       name: args.name,
-      type: "api_key",
+      type: args.type,
       secret: args.secret,
+      ...(args.metadata !== undefined ? { metadata: args.metadata } : {}),
     },
     cookies,
   );
@@ -958,6 +966,19 @@ export type SeedCatalogArgs = {
    * bootstrap, the e2e harness) pass it.
    */
   placeholderCredential?: boolean;
+  /**
+   * The credential type the seeded row is stored as. Defaults to
+   * `"api_key"` for a pasted secret; a connect flow that mints an
+   * expiring OAuth access token (Hugging Face) passes `"oauth_token"`
+   * so the row is honestly typed.
+   */
+  credentialType?: "api_key" | "oauth_token";
+  /**
+   * Free-form data attached to the seeded credential's `metadata`
+   * field — the extension point a token's expiry timestamp lives in
+   * (see `complete-credential.ts`), never interpreted by this function.
+   */
+  credentialMetadata?: Record<string, unknown>;
 };
 
 /**
@@ -1013,6 +1034,10 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
       providerId,
       name: inferenceCredentialName(seed.provider.name),
       secret: credentialSecret,
+      type: args.credentialType ?? "api_key",
+      ...(args.credentialMetadata !== undefined
+        ? { metadata: args.credentialMetadata }
+        : {}),
     },
     log,
   );
