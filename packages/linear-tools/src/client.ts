@@ -15,7 +15,13 @@ export const LinearIssue = type({
 export type LinearIssue = typeof LinearIssue.infer;
 
 export interface LinearClientConfig {
-  readonly apiKey: string;
+  /**
+   * Absent when `fetchImpl` already authenticates its requests (a
+   * mediated credential's `fetch` injects its own bearer header per
+   * call — see `@intx/harness`'s `createHttpCredentialProvider`).
+   * Supplied directly for tests and any caller holding a raw key.
+   */
+  readonly apiKey?: string;
   /** Override for tests; defaults to Linear's real GraphQL endpoint. */
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
@@ -76,7 +82,7 @@ export async function listRecentLinearIssues(
   const response = await doFetch(config.baseUrl ?? DEFAULT_BASE_URL, {
     method: "POST",
     headers: {
-      authorization: config.apiKey,
+      ...(config.apiKey !== undefined ? { authorization: config.apiKey } : {}),
       "content-type": "application/json",
     },
     body: JSON.stringify({

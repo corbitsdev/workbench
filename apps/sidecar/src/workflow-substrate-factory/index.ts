@@ -28,6 +28,11 @@ import { type } from "arktype";
 
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
+import {
+  builtinCredentialProviders,
+  createCredentialProviderRegistry,
+} from "@intx/harness";
+import { createHttpRawAuthorizationCredentialProvider } from "@corbits/credential-providers";
 import { loadAdapterRegistry } from "@intx/inference/providers";
 import { createSSHSignature } from "@intx/crypto";
 import {
@@ -351,16 +356,35 @@ export function createSidecarSubstrateFactory(
       ...(durableConversation !== undefined ? { durableConversation } : {}),
     });
 
+    // Credential provider registry: the platform's built-in `http`
+    // (Bearer) provider (`@intx/harness`'s `builtinCredentialProviders`)
+    // plus this workbench's own `http-raw-authorization` plugin
+    // (`@corbits/credential-providers`) for a provider row whose API
+    // expects the raw secret in `authorization` with no `Bearer ` prefix
+    // (Linear's convention) rather than forking or reaching around the
+    // vendored plugin. Fixed for the child's lifetime -- unlike the
+    // per-step wiring below, the set of provider plugins is not something
+    // a rotation or `credentials-updated` frame changes.
+    const credentialProviders = createCredentialProviderRegistry([
+      ...builtinCredentialProviders(),
+      createHttpRawAuthorizationCredentialProvider(),
+    ]);
+
     // The tool-bearing agent factory reads the materialized tool
     // runtime off the per-step env (set by `buildStepEnv` via
     // `attachStepTools`), attaches the loaded tool factories to the
     // step's `AgentDefinition`, builds the plugin chain on
     // `env.plugins`, and wraps `agent.close()` so every plugin (the LSP
     // subprocess included) and tool bundle is torn down with the agent
-    // on every exit path. The factory is stateless across steps, so it
-    // is pinned once here and shared by every per-step invoker built
-    // below.
-    const stepAgentFactory = createToolBearingAgentFactory();
+    // on every exit path. It also shapes a consumer-scoped `credentials`
+    // capability for any tool package that declares one, reading the
+    // per-step `CredentialWiring` `buildStepEnv` attached to the env
+    // (see `attachStepCredentials`). The factory is stateless across
+    // steps, so it is pinned once here and shared by every per-step
+    // invoker built below.
+    const stepAgentFactory = createToolBearingAgentFactory({
+      providers: credentialProviders,
+    });
 
     // Child-runtime step invoker. The in-process `runChild` (see
     // `createSidecarRunChild` below) runs a separate WorkflowDefinition
@@ -481,10 +505,12 @@ export function createSidecarSubstrateFactory(
       authorize,
       warmCache,
       sourcesRef,
+      credentialWiring,
     ) =>
       createWorkflowStepInvoker({
         workflowAuthorize: authorize,
-        buildEnv: (buildReq) => buildStepEnv(buildReq, sourcesRef),
+        buildEnv: (buildReq) =>
+          buildStepEnv(buildReq, sourcesRef, credentialWiring),
         agentFactory: stepAgentFactory,
         onEvent,
         sourcesRef,

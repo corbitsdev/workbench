@@ -21,12 +21,14 @@ import type { StepInvokeRequest } from "@intx/workflow";
 import {
   createSupervisorBackedTransport,
   type ChildOutboundMailBridge,
+  type CredentialWiring,
   type SourcesSnapshotRef,
   type StepEnvBase,
 } from "@intx/workflow-host";
 
 import type { DurableConversationRegistry } from "../conversation-state";
 import {
+  attachStepCredentials,
   attachStepTools,
   materializeStepTools,
   type StepToolCacheConfig,
@@ -148,10 +150,12 @@ export function createSidecarStepBuildEnv(
 ): (
   req: StepInvokeRequest,
   sourcesRef: SourcesSnapshotRef,
+  credentialWiring?: CredentialWiring,
 ) => Promise<StepEnvBase> {
   return async (
     req: StepInvokeRequest,
     sourcesRef: SourcesSnapshotRef,
+    credentialWiring?: CredentialWiring,
   ): Promise<StepEnvBase> => {
     // Resolve against the live table each build so a source rotation that
     // wrote `sourcesRef.current` before this build is reflected in the
@@ -312,6 +316,15 @@ export function createSidecarStepBuildEnv(
     // handing it to `agentFactory`; object spread preserves own
     // symbol-keyed properties, so the slot survives the spread.
     attachStepTools(env, materialization);
+    // Carry this step's live credential wiring the same way, so the
+    // tool-bearing `agentFactory` can shape a consumer-scoped
+    // `credentials` capability for any tool package that declares one.
+    // Omitted for a toolless body step's cold env builder (`toolless:
+    // true` callers pass no `credentialWiring`) -- a body agent is
+    // guaranteed toolless, so it has no tool to hand a credential to.
+    if (credentialWiring !== undefined) {
+      attachStepCredentials(env, { wiring: credentialWiring, stepId });
+    }
     return env;
   };
 }
