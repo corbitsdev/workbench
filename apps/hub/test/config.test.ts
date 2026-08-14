@@ -158,6 +158,27 @@ describe("readHubConfig", () => {
     expect(config.huggingfaceOAuthClientId).toBe("hf-client-1");
   });
 
+  test("CREDENTIAL_ENCRYPTION_KEY absent by default", () => {
+    expect(readHubConfig(validEnv).credentialEncryptionKeyHex).toBeUndefined();
+  });
+
+  test("CREDENTIAL_ENCRYPTION_KEY accepts a 64-char hex key", () => {
+    const key = "a".repeat(64);
+    const config = readHubConfig({
+      ...validEnv,
+      CREDENTIAL_ENCRYPTION_KEY: key,
+    });
+    expect(config.credentialEncryptionKeyHex).toBe(key);
+  });
+
+  test("CREDENTIAL_ENCRYPTION_KEY rejects a key of the wrong length or shape", () => {
+    const message = readExpectingError({
+      ...validEnv,
+      CREDENTIAL_ENCRYPTION_KEY: "not-hex-and-too-short",
+    });
+    expect(message).toContain("CREDENTIAL_ENCRYPTION_KEY");
+  });
+
   test("accepts postgresql:// and https:// URL forms", () => {
     const config = readHubConfig({
       ...validEnv,

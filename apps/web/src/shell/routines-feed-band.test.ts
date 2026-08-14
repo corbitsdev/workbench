@@ -28,6 +28,10 @@ function routine(id: string, trigger: Routine["trigger"]): Routine {
 
 const scheduled = routine("rtn_daily", { kind: "daily", hour: 9, minute: 0 });
 const manual = routine("rtn_manual", null);
+const webhook = routine("rtn_webhook", {
+  kind: "webhook",
+  webhookTriggerId: "wht_1",
+});
 
 describe("nextRoutinePathForFilter", () => {
   test("keeps the current selection when it still matches the filter", () => {
@@ -46,6 +50,12 @@ describe("nextRoutinePathForFilter", () => {
     expect(nextRoutinePathForFilter([scheduled], "trigger", "rtn_daily")).toBe(
       "/routines",
     );
+  });
+
+  test("the Triggers chip matches a webhook-bound routine", () => {
+    expect(
+      nextRoutinePathForFilter([scheduled, webhook], "trigger", "rtn_daily"),
+    ).toBe("/routines/rtn_webhook");
   });
 
   test("with no current selection, picks the first match under the filter", () => {
@@ -94,5 +104,11 @@ describe("routineTriggerSummary", () => {
 
   test("a null trigger is on demand", () => {
     expect(routineTriggerSummary(null)).toBe("On demand");
+  });
+
+  test("a webhook trigger reads as on-webhook", () => {
+    expect(
+      routineTriggerSummary({ kind: "webhook", webhookTriggerId: "wht_1" }),
+    ).toBe("On webhook");
   });
 });

@@ -3,22 +3,21 @@
 // wire is untrusted until its signature verifies against the
 // trigger's own secret.
 //
-// Security-model note (v1, deliberate, not a hack): the secret is
-// generated server-side with `crypto.randomBytes` and shown to the
-// caller exactly once, at creation or rotation — but it is then
-// stored in plaintext in `webhook_trigger.secret` so this module can
-// recompute the same HMAC to verify later deliveries. That is
-// acceptable for v1 (mirrors how most webhook providers, e.g.
-// Stripe/GitHub, keep the verifying side able to recompute the MAC)
-// but it does mean a database compromise discloses every trigger's
-// signing secret. A hash-only-at-rest design (verify by recomputing
-// against a caller-supplied secret you never store) does not fit HMAC
-// verification, which needs the raw secret on the verifying side;
-// closing this gap for real means either an HSM/KMS-backed secret
-// store or moving to asymmetric signing (caller signs with a private
-// key, this package verifies with a stored public key) — both platform
-// capabilities, not something to bolt on here. Flagged, not silently
-// accepted.
+// Security-model note: the secret is generated server-side with
+// `crypto.randomBytes` and shown to the caller exactly once, at
+// creation or rotation. `store.ts` now encrypts it at rest through
+// Interchange's `CredentialCipher` seam (`@intx/types`), closing the
+// "database dump discloses every signing secret" half of this
+// tradeoff — but this function still needs the *raw* secret in process
+// memory to recompute the HMAC, and `store.ts` decrypts it back to
+// plaintext for exactly that purpose on every `get`/`getById`. That
+// half of the tradeoff is inherent to HMAC verification (unlike a
+// hashed password, the verifying side must be able to reproduce the
+// MAC, not just compare against it) and is not something
+// `CredentialCipher` — an at-rest seam — removes; closing it for real
+// means moving to asymmetric signing (caller signs with a private key,
+// this package verifies with a stored public key), a bigger v2 change.
+// Flagged, not silently accepted.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 export const WEBHOOK_SIGNATURE_HEADER = "x-webhook-signature";

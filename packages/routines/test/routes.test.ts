@@ -157,6 +157,112 @@ describe("createRoutineRoutes", () => {
     expect(body["trigger"]).toBeNull();
   });
 
+  test("accepts a webhook trigger when no checker is wired (always-allow)", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { response, body } = await createRoutine(app, {
+      ...VALID_BODY,
+      trigger: { kind: "webhook", webhookTriggerId: "wht_1" },
+    });
+
+    expect(response.status).toBe(201);
+    expect(body["trigger"]).toEqual({
+      kind: "webhook",
+      webhookTriggerId: "wht_1",
+    });
+  });
+
+  test("rejects a webhook trigger whose referenced row fails the checker", async () => {
+    const deps = buildDeps();
+    deps.webhookTriggerInTenant = async () => false;
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { response, body } = await createRoutine(app, {
+      ...VALID_BODY,
+      trigger: { kind: "webhook", webhookTriggerId: "wht_1" },
+    });
+
+    expect(response.status).toBe(404);
+    expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+      "not_found",
+    );
+  });
+
+  test("passes the routine's tenant, webhookTriggerId, and definitionId to the checker", async () => {
+    const deps = buildDeps();
+    const calls: [string, string, string][] = [];
+    deps.webhookTriggerInTenant = async (
+      tenantId,
+      webhookTriggerId,
+      definitionId,
+    ) => {
+      calls.push([tenantId, webhookTriggerId, definitionId]);
+      return true;
+    };
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    await createRoutine(app, {
+      ...VALID_BODY,
+      trigger: { kind: "webhook", webhookTriggerId: "wht_1" },
+    });
+
+    expect(calls).toEqual([[TENANT.id, "wht_1", VALID_BODY.definitionId]]);
+  });
+
+  test("never invokes the webhook checker for a non-webhook trigger", async () => {
+    const deps = buildDeps();
+    let called = false;
+    deps.webhookTriggerInTenant = async () => {
+      called = true;
+      return true;
+    };
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    await createRoutine(app, VALID_BODY);
+    expect(called).toBe(false);
+  });
+
+  test("PATCH rejects switching to a webhook trigger the checker rejects", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body: created } = await createRoutine(app, VALID_BODY);
+
+    deps.webhookTriggerInTenant = async () => false;
+    const response = await app.request(`/routines/${created["id"]}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trigger: { kind: "webhook", webhookTriggerId: "wht_1" },
+      }),
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  test("PATCH accepts switching to a webhook trigger the checker allows, using the routine's own definitionId", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body: created } = await createRoutine(app, VALID_BODY);
+
+    let seenDefinitionId: string | undefined;
+    deps.webhookTriggerInTenant = async (_tenantId, _id, definitionId) => {
+      seenDefinitionId = definitionId;
+      return true;
+    };
+    const response = await app.request(`/routines/${created["id"]}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trigger: { kind: "webhook", webhookTriggerId: "wht_1" },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(seenDefinitionId).toBe(VALID_BODY.definitionId);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body["trigger"]).toEqual({
+      kind: "webhook",
+      webhookTriggerId: "wht_1",
+    });
+  });
+
   test("lists only routines for the calling tenant", async () => {
     const deps = buildDeps();
     const app = mountAs(createRoutineRoutes(deps), "user_1");

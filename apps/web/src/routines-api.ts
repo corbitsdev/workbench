@@ -41,6 +41,7 @@ export const RoutineTrigger = type({
     "timezone?": "string",
   })
   .or({ kind: "'cron'", expression: "string", "timezone?": "string" })
+  .or({ kind: "'webhook'", webhookTriggerId: "string" })
   .or("null");
 export type RoutineTrigger = typeof RoutineTrigger.infer;
 

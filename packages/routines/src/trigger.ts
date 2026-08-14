@@ -77,15 +77,34 @@ const CronTrigger = type({
 });
 
 /**
- * A routine's trigger: one of the three presets, a raw cron escape
- * hatch, or `null` for a manual, run-now-only routine. Every branch is
- * validated eagerly (arktype at the trust boundary) — an invalid cron
- * string, an impossible schedule, or a bad timezone is rejected at save
- * time with a specific error, never at the next scheduled fire.
+ * An event-driven trigger: the routine fires when a verified delivery
+ * lands on a `@corbits/webhook-triggers` row, not on any clock. The
+ * only field is a reference to that row's id — `webhookTriggerId` — the
+ * URL, secret, and delivery history live on the webhook-triggers side;
+ * this is the pointer that makes a routine "own" that binding. The
+ * referenced row's `workflowDefinitionId` must equal the routine's own
+ * `definitionId` (enforced where a routine is created/updated, not
+ * here — this schema has no database access), since a webhook trigger
+ * and the routine it fires are two views of one binding, not two
+ * independent things that happen to agree.
+ */
+const WebhookTrigger = type({
+  kind: "'webhook'",
+  webhookTriggerId: "string",
+});
+
+/**
+ * A routine's trigger: one of the three cadence presets, a raw cron
+ * escape hatch, an event-driven webhook binding, or `null` for a
+ * manual, run-now-only routine. Every branch is validated eagerly
+ * (arktype at the trust boundary) — an invalid cron string, an
+ * impossible schedule, or a bad timezone is rejected at save time with
+ * a specific error, never at the next scheduled fire.
  */
 export const RoutineTrigger = IntervalTrigger.or(DailyTrigger)
   .or(WeeklyTrigger)
   .or(CronTrigger)
+  .or(WebhookTrigger)
   .or("null");
 
 export type RoutineTriggerT = typeof RoutineTrigger.infer;
@@ -98,7 +117,7 @@ export type RoutineTriggerT = typeof RoutineTrigger.infer;
  * `computeNextFireAt`).
  */
 export function cronExpressionForTrigger(
-  trigger: Exclude<RoutineTriggerT, null>,
+  trigger: Exclude<RoutineTriggerT, null | { kind: "webhook" }>,
 ): string {
   switch (trigger.kind) {
     case "interval":
@@ -114,26 +133,30 @@ export function cronExpressionForTrigger(
   }
 }
 
-/** Timezone the trigger's wall-clock fields are interpreted in. */
+/** Timezone the trigger's wall-clock fields are interpreted in. Only
+ * meaningful for a cadence trigger — webhook and manual triggers have no
+ * wall-clock fields, so this returns "UTC" for them as a harmless default. */
 export function timezoneForTrigger(trigger: RoutineTriggerT): string {
   if (trigger === null || trigger.kind === "interval") return "UTC";
+  if (trigger.kind === "webhook") return "UTC";
   return trigger.timezone ?? "UTC";
 }
 
 /**
  * The mode filter ids the Routines panel offers: "all" plus the three
- * cadence buckets. "trigger" (webhook/event-driven) has no representation
- * in `RoutineTrigger` yet — the id exists so the filter chip can render,
- * but no routine matches it until that trigger kind ships.
+ * cadence/trigger buckets.
  */
 export type RoutineModeFilter = "all" | "schedule" | "trigger" | "demand";
 
-/** Where a trigger's cadence sits for filtering: a manual (`null`) trigger
- * is on-demand only; every preset and raw cron fires on its own schedule. */
+/** Where a trigger sits for filtering: a manual (`null`) trigger is
+ * on-demand only, a webhook trigger is event-driven ("trigger"), and every
+ * cadence preset or raw cron fires on its own schedule. */
 export function routineTriggerCategory(
   trigger: RoutineTriggerT,
-): Exclude<RoutineModeFilter, "all" | "trigger"> {
-  return trigger === null ? "demand" : "schedule";
+): Exclude<RoutineModeFilter, "all"> {
+  if (trigger === null) return "demand";
+  if (trigger.kind === "webhook") return "trigger";
+  return "schedule";
 }
 
 /** Whether a routine's trigger belongs under a mode filter chip. */
@@ -142,17 +165,17 @@ export function routineMatchesModeFilter(
   filter: RoutineModeFilter,
 ): boolean {
   if (filter === "all") return true;
-  if (filter === "trigger") return false;
   return routineTriggerCategory(trigger) === filter;
 }
 
 /**
  * When a routine with this trigger next fires, strictly after `after` —
- * `null` for a manual routine, which never auto-fires. Persisted as a
- * routine's `nextFireAt` on every create, trigger/enabled change, and
- * fire, so a schedule due while the hub is down is still due (not
- * skipped) on restart: the scheduler's readiness test is `nextFireAt <=
- * now`, not "does this exact instant match."
+ * `null` for a manual routine (which never auto-fires) or a webhook
+ * routine (which fires only on a verified delivery, never on a clock).
+ * Persisted as a routine's `nextFireAt` on every create, trigger/enabled
+ * change, and fire, so a schedule due while the hub is down is still due
+ * (not skipped) on restart: the scheduler's readiness test is
+ * `nextFireAt <= now`, not "does this exact instant match."
  *
  * Daily / weekly / cron with a timezone match wall-clock in that zone
  * (DST-correct via `Intl`); the returned Date is always a UTC instant.
@@ -161,7 +184,7 @@ export function computeNextFireAt(
   trigger: RoutineTriggerT,
   after: Date,
 ): Date | null {
-  if (trigger === null) return null;
+  if (trigger === null || trigger.kind === "webhook") return null;
   return nextCronFireAfter(
     cronExpressionForTrigger(trigger),
     after,

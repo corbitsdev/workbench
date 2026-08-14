@@ -56,11 +56,26 @@ describe("cadenceLabel", () => {
       }),
     ).toBe("Cron: 0 9 * * * (Europe/London)");
   });
+
+  test("webhook trigger reads as on-webhook", () => {
+    expect(cadenceLabel({ kind: "webhook", webhookTriggerId: "wht_1" })).toBe(
+      "On webhook",
+    );
+  });
 });
 
 describe("approximateNextRun", () => {
   test("manual triggers have no estimate", () => {
     expect(approximateNextRun(null, new Date())).toBeNull();
+  });
+
+  test("webhook triggers have no estimate — they fire on delivery, never a clock", () => {
+    expect(
+      approximateNextRun(
+        { kind: "webhook", webhookTriggerId: "wht_1" },
+        new Date(),
+      ),
+    ).toBeNull();
   });
 
   test("raw cron is estimated through the same package the hub uses", () => {

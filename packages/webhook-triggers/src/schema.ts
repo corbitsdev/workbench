@@ -4,10 +4,10 @@
 // vendor/intx/db; this table holds only this package's own state,
 // keyed by tenant.
 //
-// The signing secret is stored in plaintext for v1 (see
-// `./signature.ts` for the security-model note this trades off) —
-// flagged here rather than hidden, since it is the one property of
-// this table a security review needs to know first.
+// The signing secret is encrypted at rest via Interchange's
+// `CredentialCipher` seam — see `./store.ts` for the encrypt/decrypt
+// wiring and `./signature.ts` for the security-model note on what that
+// does and does not close.
 import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 export const webhookTrigger = pgTable("webhook_trigger", {
@@ -25,9 +25,9 @@ export const webhookTrigger = pgTable("webhook_trigger", {
   inputTemplate: text("input_template").notNull(),
   /**
    * The HMAC-SHA256 secret verified against the inbound signature
-   * header. Plaintext at rest for v1 — see the module doc on
-   * `./signature.ts` — never returned by any route after creation
-   * except a rotate response.
+   * header, stored as a `CredentialCipher`-encrypted blob (see
+   * `./store.ts`) — never returned by any route after creation except
+   * a rotate response, and never in this encrypted form even then.
    */
   secret: text("secret").notNull(),
   enabled: boolean("enabled").notNull().default(true),

@@ -34,8 +34,8 @@ import {
 import type { BadgeTone } from "@corbits/react-ui";
 import type { Channel, DialogStepperStep } from "@corbits/chat-ui";
 import { DialogStepper, listChannels } from "@corbits/chat-ui";
-import { Clock, Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Clock, Copy, Plus, RotateCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -72,6 +72,15 @@ import type {
   UpdateRoutineInput,
   WorkflowDefinitionSummary,
 } from "../routines-api";
+import {
+  createWebhookTrigger,
+  DEFAULT_WEBHOOK_INPUT_TEMPLATE,
+  getWebhookTrigger,
+  rotateWebhookTriggerSecret,
+  sampleWebhookPayload,
+  webhookTriggerUrl,
+} from "../webhook-triggers-api";
+import type { WebhookTrigger } from "../webhook-triggers-api";
 
 const ROUTINES_PATH_PREFIX = "/routines";
 
@@ -120,7 +129,201 @@ function draftedStepsFromInput(
   return steps;
 }
 
-type TriggerKind = "manual" | "interval" | "daily" | "weekly" | "cron";
+/** Copies `value` to the clipboard, showing "Copied" for 1.5s — the same
+ * pattern `agents-settings-section.tsx`'s `CopyAddressButton` uses. */
+function CopyButton({
+  value,
+  label,
+}: {
+  readonly value: string;
+  readonly label: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current !== null) clearTimeout(resetTimer.current);
+    };
+  }, []);
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      title={label}
+      aria-label={label}
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true);
+          if (resetTimer.current !== null) clearTimeout(resetTimer.current);
+          resetTimer.current = setTimeout(() => {
+            resetTimer.current = null;
+            setCopied(false);
+          }, 1500);
+        });
+      }}
+    >
+      <Copy /> {copied ? "Copied" : "Copy"}
+    </Button>
+  );
+}
+
+/**
+ * The generated hook URL, a freshly-issued secret, and a sample payload —
+ * shown right after create or rotate, per the shell mock's `.rt-webhook` /
+ * `.rt-payload` blocks. The secret shown here is never fetched back later:
+ * the hub returns it exactly once (create/rotate response), so this panel
+ * only ever renders from a value the caller just received.
+ */
+function WebhookSecretPanel({
+  url,
+  secret,
+}: {
+  readonly url: string;
+  readonly secret: string;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
+        This secret is shown once — copy it now. It signs every delivery to this
+        URL; losing it means rotating for a new one.
+      </p>
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Hook URL</span>
+        <div className="flex items-center gap-1.5 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-1.5">
+          <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--ui-fg)]">
+            {url}
+          </code>
+          <CopyButton value={url} label="Copy hook URL" />
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Signing secret</span>
+        <div className="flex items-center gap-1.5 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-1.5">
+          <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--ui-fg)]">
+            {secret}
+          </code>
+          <CopyButton value={secret} label="Copy signing secret" />
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Example payload</span>
+        <pre className="overflow-x-auto rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-2 font-mono text-xs whitespace-pre-wrap text-[var(--ui-fg-muted)]">
+          {sampleWebhookPayload()}
+        </pre>
+        <p className="text-xs text-[var(--ui-fg-muted)]">
+          Any valid JSON body with a matching{" "}
+          <code className="font-mono">X-Webhook-Signature</code> header starts a
+          run.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The routine detail view's webhook section: hook URL (built from the
+ * trigger id, matching `POST /api/webhooks/:triggerId`), status, and a
+ * "Rotate secret" action. Secret text only ever appears here right after
+ * a rotate — `GET .../webhook-triggers/:id` never returns it, so between
+ * rotates the panel shows the URL and payload sample with the secret row
+ * masked, exactly like a freshly-loaded page that has never seen it.
+ */
+function WebhookTriggerPanel({
+  webhookTrigger,
+  onRotate,
+}: {
+  readonly webhookTrigger: APIQuery<WebhookTrigger>;
+  readonly onRotate: () => Promise<{ secret: string }>;
+}) {
+  const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
+  const [rotating, setRotating] = useState(false);
+  const [rotateError, setRotateError] = useState<string | null>(null);
+
+  const triggerId =
+    webhookTrigger.kind === "ready" ? webhookTrigger.data.id : null;
+  useEffect(() => {
+    setRotatedSecret(null);
+    setRotateError(null);
+  }, [triggerId]);
+
+  return (
+    <section aria-label="Webhook trigger">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
+          Webhook
+        </h3>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={rotating || triggerId === null}
+          onClick={() => {
+            setRotating(true);
+            setRotateError(null);
+            void onRotate()
+              .then(({ secret }) => setRotatedSecret(secret))
+              .catch((cause: unknown) => {
+                setRotateError(
+                  cause instanceof Error ? cause.message : String(cause),
+                );
+              })
+              .finally(() => setRotating(false));
+          }}
+        >
+          <RotateCw /> {rotating ? "Rotating…" : "Rotate secret"}
+        </Button>
+      </div>
+      {rotateError !== null ? (
+        <p className="mb-2 text-xs text-[var(--ui-danger)]" role="alert">
+          {rotateError}
+        </p>
+      ) : null}
+      {webhookTrigger.kind !== "ready" || triggerId === null ? (
+        <p className="text-sm text-[var(--ui-fg-muted)]">
+          Loading webhook details…
+        </p>
+      ) : rotatedSecret !== null ? (
+        <WebhookSecretPanel
+          url={webhookTriggerUrl(triggerId)}
+          secret={rotatedSecret}
+        />
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium">Hook URL</span>
+            <div className="flex items-center gap-1.5 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-1.5">
+              <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--ui-fg)]">
+                {webhookTriggerUrl(triggerId)}
+              </code>
+              <CopyButton
+                value={webhookTriggerUrl(triggerId)}
+                label="Copy hook URL"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium">Signing secret</span>
+            <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
+              Hidden — shown only once, right after creation or a rotate. Rotate
+              to issue (and reveal) a new one; the old secret stops verifying
+              immediately.
+            </p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium">Example payload</span>
+            <pre className="overflow-x-auto rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-2 font-mono text-xs whitespace-pre-wrap text-[var(--ui-fg-muted)]">
+              {sampleWebhookPayload()}
+            </pre>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+type TriggerKind =
+  "manual" | "interval" | "daily" | "weekly" | "cron" | "webhook";
 
 function TriggerPicker({
   value,
@@ -131,7 +334,7 @@ function TriggerPicker({
 }) {
   const kind: TriggerKind = value === null ? "manual" : value.kind;
 
-  const setKind = (next: TriggerKind) => {
+  const setKind = (next: Exclude<TriggerKind, "webhook">) => {
     switch (next) {
       case "manual":
         onChange(null);
@@ -149,6 +352,23 @@ function TriggerPicker({
         onChange({ kind: "cron", expression: "0 9 * * *" });
     }
   };
+
+  // A webhook-bound routine has no cadence to edit here — the binding
+  // (hook URL, secret, rotate) lives on the routine's detail page, not
+  // this picker. Recreating the routine is the only way to leave webhook
+  // mode, the same way catalog vs. describe-to-agent is a create-time,
+  // not edit-time, choice.
+  if (kind === "webhook") {
+    return (
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-medium">Cadence</span>
+        <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
+          On webhook — manage the hook URL and secret from this routine's detail
+          page.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -352,14 +572,16 @@ export function autonomyReviewLines(
  * raw identifiers, matching `routineDetailSentence`'s tone for a routine
  * that does not exist yet. */
 export function catalogConfirmSentence(
-  runMode: "once" | "schedule",
+  runMode: "once" | "schedule" | "webhook",
   trigger: RoutineTrigger,
   channelTitle: string | null,
 ): string {
   const when =
     runMode === "once"
       ? "Runs once, right after you create it"
-      : cadenceLabel(trigger);
+      : runMode === "webhook"
+        ? "Fires on webhook delivery"
+        : cadenceLabel(trigger);
   if (channelTitle === null) return `${when}.`;
   return `${when}, delivers to ${channelTitle}.`;
 }
@@ -368,6 +590,7 @@ function CreateRoutineDialog({
   definitions,
   channels,
   onCreate,
+  onCreateWebhookBinding,
   onDescribe,
   onApproveDraft,
   onDiscardDraft,
@@ -377,6 +600,10 @@ function CreateRoutineDialog({
   readonly definitions: readonly WorkflowDefinitionSummary[];
   readonly channels: readonly Channel[];
   readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
+  readonly onCreateWebhookBinding: (input: {
+    name: string;
+    definitionId: string;
+  }) => Promise<{ id: string; secret: string }>;
   readonly onDescribe: (input: CreateDraftInput) => Promise<RoutineDraft>;
   readonly onApproveDraft: (draftId: string) => Promise<void>;
   readonly onDiscardDraft: (draftId: string) => Promise<void>;
@@ -390,7 +617,9 @@ function CreateRoutineDialog({
   const [path, setPath] = useState<CreatePath>("catalog");
   const [name, setName] = useState("");
   const [definitionId, setDefinitionId] = useState("");
-  const [runMode, setRunMode] = useState<"once" | "schedule">("once");
+  const [runMode, setRunMode] = useState<"once" | "schedule" | "webhook">(
+    "once",
+  );
   const [trigger, setTrigger] = useState<RoutineTrigger>(null);
   const [prompt, setPrompt] = useState("");
   const [deliveryChannelId, setDeliveryChannelId] = useState(
@@ -399,6 +628,10 @@ function CreateRoutineDialog({
   const [pendingDraft, setPendingDraft] = useState<RoutineDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [webhookRevealed, setWebhookRevealed] = useState<{
+    url: string;
+    secret: string;
+  } | null>(null);
 
   useEffect(() => {
     if (deliveryChannelId === "" && channels[0] !== undefined) {
@@ -420,6 +653,7 @@ function CreateRoutineDialog({
     setDeliveryChannelId(channels[0]?.id ?? "");
     setPendingDraft(null);
     setError(null);
+    setWebhookRevealed(null);
   };
 
   const closeDialog = () => {
@@ -474,8 +708,38 @@ function CreateRoutineDialog({
     if (selectedDefinition === null || deliveryChannelId === "") return;
     setBusy(true);
     setError(null);
+    const routineName =
+      name.trim().length > 0 ? name.trim() : selectedDefinition.name;
+
+    if (runMode === "webhook") {
+      void onCreateWebhookBinding({ name: routineName, definitionId })
+        .then((binding) =>
+          onCreate({
+            name: routineName,
+            definitionId,
+            scope: "bench",
+            deliveryChannelId,
+            trigger: { kind: "webhook", webhookTriggerId: binding.id },
+            runOnceNow: false,
+          }).then(() => {
+            // Stay open: the secret is shown exactly once, right now —
+            // closing immediately (the non-webhook path's behavior)
+            // would lose it before the operator can copy it.
+            setWebhookRevealed({
+              url: webhookTriggerUrl(binding.id),
+              secret: binding.secret,
+            });
+          }),
+        )
+        .catch((cause: unknown) => {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        })
+        .finally(() => setBusy(false));
+      return;
+    }
+
     void onCreate({
-      name: name.trim().length > 0 ? name.trim() : selectedDefinition.name,
+      name: routineName,
       definitionId,
       scope: "bench",
       deliveryChannelId,
@@ -703,6 +967,7 @@ function CreateRoutineDialog({
                     [
                       ["once", "Run once now"],
                       ["schedule", "On a schedule"],
+                      ["webhook", "On webhook"],
                     ] as const
                   ).map(([value, label]) => (
                     <button
@@ -723,6 +988,15 @@ function CreateRoutineDialog({
                 </div>
                 {runMode === "schedule" ? (
                   <TriggerPicker value={trigger} onChange={setTrigger} />
+                ) : null}
+                {runMode === "webhook" ? (
+                  <p
+                    className="text-xs text-[var(--ui-fg-muted)]"
+                    role="status"
+                  >
+                    A hook URL and signing secret are generated when you create
+                    this routine — shown once, on the next step.
+                  </p>
                 ) : null}
               </div>
               <div className="flex flex-col gap-1.5">
@@ -811,23 +1085,30 @@ function CreateRoutineDialog({
           ) : null}
 
           {step === 3 && path === "catalog" ? (
-            <>
-              <p className="text-sm text-[var(--ui-fg)]">
-                {catalogConfirmSentence(runMode, trigger, channelTitle)}
-              </p>
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="routine-name" className="text-xs font-medium">
-                  Name (optional)
-                </label>
-                <Input
-                  id="routine-name"
-                  value={name}
-                  placeholder={selectedDefinition?.name ?? "Morning brief"}
-                  disabled={busy}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </div>
-            </>
+            webhookRevealed !== null ? (
+              <WebhookSecretPanel
+                url={webhookRevealed.url}
+                secret={webhookRevealed.secret}
+              />
+            ) : (
+              <>
+                <p className="text-sm text-[var(--ui-fg)]">
+                  {catalogConfirmSentence(runMode, trigger, channelTitle)}
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="routine-name" className="text-xs font-medium">
+                    Name (optional)
+                  </label>
+                  <Input
+                    id="routine-name"
+                    value={name}
+                    placeholder={selectedDefinition?.name ?? "Morning brief"}
+                    disabled={busy}
+                    onChange={(event) => setName(event.target.value)}
+                  />
+                </div>
+              </>
+            )
           ) : null}
 
           {step === 3 && path === "describe" ? (
@@ -853,29 +1134,37 @@ function CreateRoutineDialog({
           ) : null}
 
           <DialogFooter>
-            {showBack ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={goBack}
-              >
-                Back
+            {webhookRevealed !== null ? (
+              <Button type="button" size="sm" onClick={closeDialog}>
+                Done
               </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={handleCancel}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" size="sm" disabled={primaryDisabled}>
-              {primaryLabel}
-            </Button>
+            ) : (
+              <>
+                {showBack ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={goBack}
+                  >
+                    Back
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={handleCancel}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={primaryDisabled}>
+                  {primaryLabel}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>
@@ -1068,6 +1357,9 @@ export function RoutinesListPage({
   selectedId,
   onSelect: _onSelect,
   onCreate,
+  onCreateWebhookBinding,
+  webhookTrigger,
+  onRotateWebhookSecret,
 
   onDescribe,
   onApproveDraft,
@@ -1087,6 +1379,12 @@ export function RoutinesListPage({
   readonly selectedId: string | null;
   readonly onSelect: (routineId: string | null) => void;
   readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
+  readonly onCreateWebhookBinding: (input: {
+    name: string;
+    definitionId: string;
+  }) => Promise<{ id: string; secret: string }>;
+  readonly webhookTrigger: APIQuery<WebhookTrigger> | null;
+  readonly onRotateWebhookSecret: () => Promise<{ secret: string }>;
   readonly onDescribe: (input: CreateDraftInput) => Promise<RoutineDraft>;
   readonly onApproveDraft: (draftId: string) => Promise<void>;
   readonly onDiscardDraft: (draftId: string) => Promise<void>;
@@ -1182,6 +1480,7 @@ export function RoutinesListPage({
         definitions={definitions}
         channels={channels}
         onCreate={onCreate}
+        onCreateWebhookBinding={onCreateWebhookBinding}
         onDescribe={onDescribe}
         onApproveDraft={onApproveDraft}
         onDiscardDraft={onDiscardDraft}
@@ -1247,6 +1546,16 @@ export function RoutinesListPage({
               )}
             </section>
 
+            {selected.trigger !== null &&
+            selected.trigger.kind === "webhook" ? (
+              <section className="border-b border-[var(--ui-border)] px-4 py-3">
+                <WebhookTriggerPanel
+                  webhookTrigger={webhookTrigger ?? { kind: "loading" }}
+                  onRotate={onRotateWebhookSecret}
+                />
+              </section>
+            ) : null}
+
             <section className="px-4 py-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
@@ -1283,6 +1592,8 @@ export function RoutineDetailPage({
   onBack,
   now = Date.now(),
   definitions = [],
+  webhookTrigger = null,
+  onRotateWebhookSecret,
   onOpenRuns,
   onOpenChannel,
   onEdit,
@@ -1292,6 +1603,8 @@ export function RoutineDetailPage({
   readonly onBack: () => void;
   readonly now?: number;
   readonly definitions?: readonly WorkflowDefinitionSummary[];
+  readonly webhookTrigger?: APIQuery<WebhookTrigger> | null;
+  readonly onRotateWebhookSecret?: () => Promise<{ secret: string }>;
   readonly onOpenRuns: () => void;
   readonly onOpenChannel: (channelId: string) => void;
   readonly onEdit: (
@@ -1379,6 +1692,14 @@ export function RoutineDetailPage({
                     </ol>
                   )}
                 </section>
+                {data.trigger !== null &&
+                data.trigger.kind === "webhook" &&
+                onRotateWebhookSecret !== undefined ? (
+                  <WebhookTriggerPanel
+                    webhookTrigger={webhookTrigger ?? { kind: "loading" }}
+                    onRotate={onRotateWebhookSecret}
+                  />
+                ) : null}
               </div>
             );
           }}
@@ -1543,12 +1864,72 @@ export function RoutinesRoute({
     () => listRoutineRuns(tenantId ?? "", openRoutineId ?? ""),
   );
 
+  // Fetched once per selected routine, not per render of the webhook panel:
+  // `GET .../webhook-triggers/:id` never returns the secret (see
+  // webhook-triggers-api.ts), so this only ever supplies the URL/status
+  // side of the panel — the secret comes from create/rotate responses,
+  // held in the panel's own local state.
+  const selectedWebhookTriggerId =
+    detailRoutine.kind === "ready" &&
+    detailRoutine.data.trigger !== null &&
+    detailRoutine.data.trigger.kind === "webhook"
+      ? detailRoutine.data.trigger.webhookTriggerId
+      : null;
+  const webhookTriggerQuery = useTenantQuery<WebhookTrigger>(
+    tenantId === null || selectedWebhookTriggerId === null
+      ? (["tenant", "none", "webhook-trigger", "none"] as const)
+      : ([
+          "tenant",
+          tenantId,
+          "webhook-trigger",
+          selectedWebhookTriggerId,
+        ] as const),
+    tenantId !== null && selectedWebhookTriggerId !== null,
+    () => getWebhookTrigger(tenantId ?? "", selectedWebhookTriggerId ?? ""),
+  );
+
+  const onCreateWebhookBinding = async (input: {
+    name: string;
+    definitionId: string;
+  }) => {
+    if (tenantId === null) throw new Error("No bench to create this in yet");
+    const created = await createWebhookTrigger(tenantId, {
+      name: input.name,
+      workflowDefinitionId: input.definitionId,
+      inputTemplate: DEFAULT_WEBHOOK_INPUT_TEMPLATE,
+    });
+    return { id: created.id, secret: created.secret };
+  };
+
+  const onRotateWebhookSecret = async () => {
+    if (tenantId === null || selectedWebhookTriggerId === null) {
+      throw new Error("No webhook trigger to rotate");
+    }
+    const rotated = await rotateWebhookTriggerSecret(
+      tenantId,
+      selectedWebhookTriggerId,
+    );
+    void queryClient.invalidateQueries({
+      queryKey: [
+        "tenant",
+        tenantId,
+        "webhook-trigger",
+        selectedWebhookTriggerId,
+      ],
+    });
+    return { secret: rotated.secret };
+  };
+
   if (openRoutineId !== null && isNarrow) {
     return (
       <RoutineDetailPage
         routine={detailRoutine}
         runs={detailRuns}
         definitions={definitions}
+        webhookTrigger={
+          selectedWebhookTriggerId !== null ? webhookTriggerQuery : null
+        }
+        onRotateWebhookSecret={onRotateWebhookSecret}
         onBack={() => navigate(ROUTINES_PATH_PREFIX)}
         onOpenRuns={() => navigate("/insights/runs")}
         onOpenChannel={(channelId) => navigate(channelPath(channelId))}
@@ -1588,6 +1969,11 @@ export function RoutinesRoute({
         invalidateRoutines();
         toast(routineCreatedToast(input.name));
       }}
+      onCreateWebhookBinding={onCreateWebhookBinding}
+      webhookTrigger={
+        selectedWebhookTriggerId !== null ? webhookTriggerQuery : null
+      }
+      onRotateWebhookSecret={onRotateWebhookSecret}
       onDescribe={async (input) => {
         if (tenantId === null) throw new Error("No bench to draft this in yet");
         return createRoutineDraft(tenantId, input);

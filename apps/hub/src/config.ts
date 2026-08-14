@@ -81,6 +81,9 @@ const HubEnv = type({
   "HUGGINGFACE_OAUTH_CLIENT_ID?": type("string > 0").describe(
     "Hugging Face public OAuth app client id (huggingface.co/settings/applications, no secret — see docs/onboarding-huggingface-connect.md); optional, enables the onboarding wizard's Hugging Face connect card",
   ),
+  "CREDENTIAL_ENCRYPTION_KEY?": type(/^[0-9a-fA-F]{64}$/).describe(
+    "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) encrypting secrets at rest through Interchange's CredentialCipher seam — currently webhook-trigger signing secrets; optional in dev/test (secrets fall back to an unencrypted no-op cipher with a boot warning) but should be set for any real deployment",
+  ),
 });
 
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
@@ -125,6 +128,7 @@ export type HubConfig = {
     Partial<Record<SocialProviderId, SocialProviderCredential>>
   >;
   readonly huggingfaceOAuthClientId?: string;
+  readonly credentialEncryptionKeyHex?: string;
 };
 
 type ParsedHubEnv = typeof HubEnv.infer;
@@ -244,5 +248,7 @@ export function readHubConfig(
   if (seedModel !== undefined) hubConfig.seedModel = seedModel;
   if (parsed.HUGGINGFACE_OAUTH_CLIENT_ID !== undefined)
     hubConfig.huggingfaceOAuthClientId = parsed.HUGGINGFACE_OAUTH_CLIENT_ID;
+  if (parsed.CREDENTIAL_ENCRYPTION_KEY !== undefined)
+    hubConfig.credentialEncryptionKeyHex = parsed.CREDENTIAL_ENCRYPTION_KEY;
   return hubConfig;
 }
