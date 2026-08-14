@@ -10,7 +10,7 @@ import {
 
 import type { APIQuery } from "../src/api";
 import { BenchProvider } from "../src/bench-context";
-import { type ToolCall } from "../src/insights-api";
+import { type RunTrace, type ToolCall } from "../src/insights-api";
 import { NavigationProvider } from "../src/navigation";
 import { InsightsPage, InsightsRunDetail } from "../src/pages/insights-page";
 import type { Routine } from "../src/routines-api";
@@ -202,5 +202,67 @@ describe("InsightsPage run-detail stat strip", () => {
       />,
     );
     expect(markup).not.toContain(">…<");
+  });
+});
+
+describe("InsightsPage trace timeline honesty", () => {
+  const measuredSpan = {
+    id: "turn_1",
+    label: "Turn 1",
+    kind: "turn",
+    start: 0,
+    end: 5000,
+    durationMs: 5000,
+    tokens: null,
+    phase: "ok",
+    error: null,
+    timingSource: "measured",
+  } as const;
+
+  const ordinalSpanWithNoDuration = {
+    id: "part_1",
+    label: "echo",
+    kind: "tool",
+    start: 1200,
+    end: 1200,
+    durationMs: null,
+    tokens: null,
+    phase: "ok",
+    error: null,
+    timingSource: "ordinal",
+  } as const;
+
+  function traceQuery(spans: RunTrace["spans"]): APIQuery<RunTrace> {
+    return {
+      kind: "ready",
+      data: { runId: "run_1", spans } as RunTrace,
+    };
+  }
+
+  test("a tool span positioned only by event order never gets a fabricated duration", () => {
+    const markup = renderToStaticMarkup(
+      <InsightsRunDetail
+        runId="run_1"
+        run={purposeRun}
+        trace={traceQuery([measuredSpan, ordinalSpanWithNoDuration])}
+        onBack={() => undefined}
+      />,
+    );
+    // The ordinal span's own duration cell reads as an honest dash, never a
+    // computed 0ms/instant duration derived from its equal start/end.
+    expect(markup).toContain(">—<");
+    expect(markup).not.toContain("0ms");
+  });
+
+  test("a turn span with real measured timing still renders its actual duration", () => {
+    const markup = renderToStaticMarkup(
+      <InsightsRunDetail
+        runId="run_1"
+        run={purposeRun}
+        trace={traceQuery([measuredSpan])}
+        onBack={() => undefined}
+      />,
+    );
+    expect(markup).toContain("5.0s");
   });
 });
