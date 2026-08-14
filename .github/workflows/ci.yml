@@ -36,6 +36,7 @@ jobs:
       - run: bun run check:licenses
       - run: bun run check:no-product-tenancy
       - run: bun run check:web-utilities
+      - run: bun run check:ui-vocabulary
 
   walking-skeleton:
     runs-on: ubuntu-latest
