@@ -10,3 +10,12 @@ export {
   libraryKindSegmentFromPath,
 } from "./kind-filter";
 export type { LibraryKindSegment } from "./kind-filter";
+export {
+  ARTIFACT_RENDERER_KINDS,
+  isTextDecodableMediaType,
+  resolveArtifactRendererKind,
+  resolveRendererKindFromMediaType,
+} from "./renderer-kind";
+export type { ArtifactRendererKind } from "./renderer-kind";
+export { ArtifactRenderer } from "./artifact-renderer";
+export type { ArtifactRenderProps } from "./artifact-renderer";

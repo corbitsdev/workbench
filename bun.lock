@@ -191,6 +191,7 @@
       "dependencies": {
         "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
         "arktype": "catalog:",
+        "lucide-react": "^1.27.0",
         "react": "^19.2.0",
       },
       "devDependencies": {
