@@ -203,16 +203,34 @@ function createStaticHandler(staticDir: string) {
  * secrets, and `@workbench/onboarding`'s in-flight OAuth connect state
  * (the PKCE verifier parked between `/start` and `/callback`, sealed
  * into the state itself so it survives a restart between the two). A
- * real key (`CREDENTIAL_ENCRYPTION_KEY`) builds an AES-256-GCM cipher;
- * an unset key falls back to the identity no-op cipher with a boot
- * warning — fine for dev/test, never for a real deployment.
+ * real key (`CREDENTIAL_ENCRYPTION_KEY`) builds an AES-256-GCM cipher.
+ * An unset key hard-fails boot — a self-hosting operator who forgets
+ * this variable must not silently end up storing those secrets in the
+ * clear — unless `ALLOW_PLAINTEXT_SECRETS` opts into the identity
+ * no-op cipher with a boot warning, for dev/test only.
  */
-function credentialCipherFrom(
+export function credentialCipherFrom(
   config: HubConfig,
   log: ReturnType<typeof getLogger>,
 ): CredentialCipher {
   if (config.credentialEncryptionKeyHex === undefined) {
-    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets, onboarding OAuth connect state) will NOT be encrypted at rest. Expected in dev/test only — set CREDENTIAL_ENCRYPTION_KEY for any real deployment.`;
+    if (!config.allowPlaintextSecrets) {
+      throw new Error(
+        [
+          "CREDENTIAL_ENCRYPTION_KEY is not set.",
+          "It encrypts secrets at rest — webhook-trigger signing secrets and",
+          "onboarding's OAuth PKCE connect state — so the hub refuses to boot",
+          "without it. Generate one and add it to .env:",
+          "",
+          "  openssl rand -hex 32",
+          "",
+          "For local dev/test only, set ALLOW_PLAINTEXT_SECRETS=1 instead to",
+          "boot with those secrets stored unencrypted; never do this for a",
+          "real deployment.",
+        ].join("\n"),
+      );
+    }
+    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets, onboarding OAuth connect state) will NOT be encrypted at rest. ALLOW_PLAINTEXT_SECRETS is set — expected in dev/test only, never for a real deployment.`;
     return createNoopCredentialCipher();
   }
   return createEnvKeyCredentialCipher(
