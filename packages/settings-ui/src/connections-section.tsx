@@ -22,6 +22,7 @@ import {
   toast,
 } from "@corbits/react-ui";
 import {
+  CONNECTOR_REGISTRY,
   connectorDescriptors,
   type ConnectorDescriptor,
 } from "@workbench/connections/registry";
@@ -52,6 +53,7 @@ import {
   CreateCredentialDialog,
   CredentialsTable,
 } from "./credentials-section";
+import { GranolaWebhookCard } from "./granola-webhook-card";
 import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 
@@ -313,6 +315,16 @@ export function ConnectionsSection({
             onDisconnect={handleDisconnect}
           />
         ))}
+        {(() => {
+          const granolaWebhookDescriptor =
+            CONNECTOR_REGISTRY["granola-webhook"];
+          return granolaWebhookDescriptor === undefined ? null : (
+            <GranolaWebhookCard
+              tenantId={currentTenantId}
+              descriptor={granolaWebhookDescriptor}
+            />
+          );
+        })()}
       </div>
       <details className="settings-connections-advanced">
         <summary>{SETTINGS_STRINGS.connectionsAdvancedSummary}</summary>

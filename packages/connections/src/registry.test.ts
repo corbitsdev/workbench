@@ -85,6 +85,17 @@ describe("CONNECTOR_REGISTRY", () => {
   });
 });
 
+describe("granola-webhook", () => {
+  test("is a webhook-secret connector with no probe, no oauth, and no feedsTools", () => {
+    const descriptor = CONNECTOR_REGISTRY["granola-webhook"];
+    expect(descriptor?.authKind).toBe("webhook-secret");
+    expect(descriptor?.probe).toBeUndefined();
+    expect(descriptor?.oauth).toBeUndefined();
+    expect(descriptor?.feedsTools).toEqual([]);
+    expect(descriptor?.credentialPlugin).toBe("http");
+  });
+});
+
 describe("connectorDescriptors", () => {
   test("returns every registry entry", () => {
     expect(connectorDescriptors().length).toBe(
