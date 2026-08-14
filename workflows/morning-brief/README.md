@@ -48,8 +48,9 @@ Every source call degrades gracefully, never fails the run:
   content.
 
 Adding a source later (Attio, Vercel, or a new one) means: build its
-tool package, pin it on the deployment, and add one line to the
-prompt's source list — never restructuring the brief.
+tool package, add it to `MORNING_BRIEF_TOOL_PACKAGE_PINS` in this
+definition, and add one line to the prompt's source list — never
+restructuring the brief.
 
 ## Usage
 
@@ -68,11 +69,14 @@ const definition = buildMorningBriefWorkflow({
 const json = serializeMorningBriefWorkflow(definition);
 ```
 
-Pin `@corbits/granola-tools` and `@corbits/linear-tools` on the
-deployment for the agent to reach real data — without a pin, every
-tool call is simply absent and the brief honestly reports both
-sources as not connected (see each package's README for its
-credential requirement).
+`buildMorningBriefWorkflow` bakes `@corbits/granola-tools` and
+`@corbits/linear-tools` into the definition's `toolPackagePins`
+(`MORNING_BRIEF_TOOL_PACKAGE_PINS` in `src/index.ts`) — there is no
+separate operator step to pin them on the deployment. What still
+depends on the deployer is credentials: without a real Granola or
+Linear credential for the connecting tenant, each source's tool call
+errors and the brief honestly reports that source as not connected
+(see each package's README for its credential requirement).
 
 ## Scheduling and delivery
 

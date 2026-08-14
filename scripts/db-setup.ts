@@ -42,7 +42,10 @@ const HUB_DIR = path.join(repoRoot, "apps", "hub");
  * Installed packages that ship their own product-table migrations,
  * applied after the platform's. Explicit and literal on purpose: no
  * discovery magic, no globbing for migrations. @corbits/chat is the
- * first installed package to need this seam.
+ * first installed package to need this seam. See
+ * docs/package-migrations.md for the convention each package's
+ * migration runner follows (literal SQL, package-owned ledger,
+ * transactional apply) and which shape to pick for a new package.
  */
 const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   name: string;

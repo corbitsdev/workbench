@@ -20,7 +20,10 @@ Thanks for your interest in Corbits Workbench.
 4. Never commit secrets. `.env.example` is the only tracked env file.
 5. Never vendor code without a ledger row and kill date in
    [VENDORED.md](VENDORED.md).
-6. Security issues go through [SECURITY.md](SECURITY.md), never a public
+6. A package that owns its own product tables follows
+   [docs/package-migrations.md](docs/package-migrations.md): literal SQL,
+   a package-owned ledger table, applied transactionally.
+7. Security issues go through [SECURITY.md](SECURITY.md), never a public
    issue.
 
 This document will grow as the project does.
