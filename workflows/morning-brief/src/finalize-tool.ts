@@ -40,6 +40,15 @@ export const MORNING_BRIEF_FINALIZE_DESCRIPTION =
   "Finalizes the daily brief, pending human approval, and persists it as a Library artifact.";
 
 const FinalizeArgs = type({
+  /**
+   * Which of the two shapes this call is: `"brief"` for a real, populated
+   * brief; `"status-note"` for the no-data path's teaching payload. This
+   * is what fixes the persisted artifact's `kind` — the model names the
+   * outcome, but never supplies `kind` directly, so a run can never
+   * accidentally (or by prompt drift) mislabel a teaching payload as a
+   * real brief or vice versa.
+   */
+  outcome: "'brief'|'status-note'",
   /** Short, human-facing title. Doubles as the inbox/approve-card headline. */
   title: "string > 0",
   /** The finished brief's markdown body — a real brief, or an honest teaching payload on the no-data path. */
@@ -50,19 +59,20 @@ export type FinalizeArgs = typeof FinalizeArgs.infer;
 
 export type ArtifactPayload = {
   title: string;
-  kind: "text";
+  kind: "text" | "status-note";
   content: string;
 };
 
 /**
  * The payload `createWorkflowArtifact` persists (`{ title, kind,
  * content }`). Built here so the persist call is a straight pass-through
- * of this object, not a payload assembled at the call site.
+ * of this object, not a payload assembled at the call site. `kind` comes
+ * from `args.outcome`, never from free-text the model could drift on.
  */
 export function buildArtifactPayload(args: FinalizeArgs): ArtifactPayload {
   return {
     title: args.title,
-    kind: "text",
+    kind: args.outcome === "status-note" ? "status-note" : "text",
     content: args.content,
   };
 }
@@ -100,10 +110,11 @@ export const MORNING_BRIEF_FINALIZE_TOOL = defineTool<WorkflowArtifactEnv>({
         inputSchema: {
           type: "object",
           properties: {
+            outcome: { type: "string", enum: ["brief", "status-note"] },
             title: { type: "string" },
             content: { type: "string" },
           },
-          required: ["title", "content"],
+          required: ["outcome", "title", "content"],
         },
       },
     ],
