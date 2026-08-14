@@ -100,6 +100,7 @@ export function ConnectorCardGrid({
   filter,
   onReload,
   onError,
+  onConnected,
 }: {
   readonly tenantId: string;
   readonly credentials: readonly Credential[];
@@ -111,6 +112,10 @@ export function ConnectorCardGrid({
   readonly filter?: (descriptor: ConnectorDescriptor) => boolean;
   readonly onReload: () => void;
   readonly onError?: (message: string | null) => void;
+  /** Fires only on a successful connect — never on disconnect/revoke —
+   * for callers that need to distinguish "something got connected this
+   * session" from "the list changed." */
+  readonly onConnected?: () => void;
 }) {
   const [dialogDescriptor, setDialogDescriptor] =
     useState<ConnectorDescriptor | null>(null);
@@ -162,6 +167,7 @@ export function ConnectorCardGrid({
         onConnected={() => {
           setDialogDescriptor(null);
           onReload();
+          onConnected?.();
         }}
       />
     </>

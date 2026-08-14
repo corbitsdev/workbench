@@ -143,10 +143,12 @@ type ConnectToolsLoadState =
  * reason to hold them) and renders `@corbits/settings-ui`'s
  * `ConnectorCardGrid` — the same component Settings · Connections
  * uses — filtered to connectors that actually feed a tool package.
- * Never gates: the "Continue" action below always advances, whether
- * or not anything got connected here.
+ * Never gates: the advance button below always advances, whether or
+ * not anything got connected here — its label just switches from "Skip
+ * for now" to "Continue" once a connector actually connects, so it stops
+ * reading as an escape hatch the moment there's something to continue with.
  */
-function ConnectToolsGrid({
+export function ConnectToolsGrid({
   tenantId,
   onDone,
 }: {
@@ -157,6 +159,7 @@ function ConnectToolsGrid({
     kind: "loading",
   });
   const [reloadKey, setReloadKey] = useState(0);
+  const [connectedThisSession, setConnectedThisSession] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,7 +184,12 @@ function ConnectToolsGrid({
   return (
     <div className="onboarding-connect-tools">
       {state.kind === "loading" && (
-        <div className="onboarding-spinner" aria-hidden="true" />
+        <div
+          className="onboarding-connect-tools-loading"
+          aria-hidden="true"
+        >
+          <div className="onboarding-spinner" />
+        </div>
       )}
       {state.kind === "error" && (
         <EmptyState
@@ -198,11 +206,12 @@ function ConnectToolsGrid({
             providers={state.providers}
             filter={(descriptor) => descriptor.feedsTools.length > 0}
             onReload={() => setReloadKey((value) => value + 1)}
+            onConnected={() => setConnectedThisSession(true)}
           />
         </div>
       )}
       <Button variant="outline" onClick={onDone}>
-        Skip for now
+        {connectedThisSession ? "Continue" : "Skip for now"}
       </Button>
     </div>
   );
@@ -225,6 +234,9 @@ function GuidanceCards() {
 }
 
 const TOTAL_STEPS = 4;
+/** "Connect your tools" is the only step the wizard lets you skip — see
+ * ConnectToolsGrid's doc comment. */
+const OPTIONAL_STEP = 3;
 
 /** Which of the four questions a given wizard phase belongs to — the
  * progress rail's only job, decoupled from the phase's own render. */
@@ -270,6 +282,7 @@ function OnboardingPhase({
           step={step}
           totalSteps={TOTAL_STEPS}
           label={label}
+          optionalStep={OPTIONAL_STEP}
         />
         <h1 className="onboarding-title">{title}</h1>
         {subtitle !== undefined && (

@@ -1810,6 +1810,28 @@ html {
   background: var(--shell-accent, #e98428);
 }
 
+/* The one step that never gates progress gets a dashed rail regardless of
+   fill state — visually honest that it's skippable, not just labeled so. */
+.onboarding-progress-segment[data-optional="true"] {
+  background: repeating-linear-gradient(
+    to right,
+    var(--border) 0,
+    var(--border) 3px,
+    transparent 3px,
+    transparent 6px
+  );
+}
+
+.onboarding-progress-segment[data-optional="true"][data-filled="true"] {
+  background: repeating-linear-gradient(
+    to right,
+    var(--shell-accent, #e98428) 0,
+    var(--shell-accent, #e98428) 3px,
+    transparent 3px,
+    transparent 6px
+  );
+}
+
 @media (prefers-reduced-motion: reduce) {
   .onboarding-progress-segment {
     transition: none;
@@ -2003,6 +2025,15 @@ html {
   border-top-color: var(--shell-accent, #e98428);
   border-radius: 50%;
   animation: onboarding-spin 0.8s linear infinite;
+}
+
+/* Reserves the ready grid's rough footprint so the "Skip for now" /
+   "Continue" button doesn't jump down once the connectors finish loading. */
+.onboarding-connect-tools-loading {
+  display: flex;
+  min-height: 14rem;
+  align-items: center;
+  justify-content: center;
 }
 
 @keyframes onboarding-spin {

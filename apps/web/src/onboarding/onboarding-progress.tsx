@@ -9,15 +9,22 @@ export function OnboardingProgress({
   step,
   totalSteps,
   label,
+  optionalStep,
 }: {
   readonly step: number;
   readonly totalSteps: number;
   readonly label: string;
+  /** The one step in the sequence that never gates progress — flagged on
+   * the rail regardless of which step is current, and appended to the
+   * label whenever it is the current step, so the wizard never implies a
+   * skippable step is required. */
+  readonly optionalStep?: number;
 }) {
+  const displayLabel = step === optionalStep ? `${label} · optional` : label;
   return (
     <div className="onboarding-progress">
       <p className="onboarding-progress-label">
-        Step {step} of {totalSteps} · {label}
+        Step {step} of {totalSteps} · {displayLabel}
       </p>
       <div
         className="onboarding-progress-track"
@@ -25,13 +32,14 @@ export function OnboardingProgress({
         aria-valuenow={step}
         aria-valuemin={1}
         aria-valuemax={totalSteps}
-        aria-label={label}
+        aria-label={displayLabel}
       >
         {Array.from({ length: totalSteps }, (_, index) => (
           <span
             key={index}
             className="onboarding-progress-segment"
             data-filled={index < step}
+            data-optional={index + 1 === optionalStep ? "true" : undefined}
           />
         ))}
       </div>
