@@ -1,4 +1,5 @@
 import { describe, expect, test, beforeEach, mock } from "bun:test";
+import type { UnresolvedReason } from "corbits-tag/interchange";
 
 // createAutoProvisionPrincipalResolver's whole job is a policy decision on
 // top of a read-only base resolver: which non-ok findings get a second
@@ -19,7 +20,7 @@ type StubResolution =
     }
   | {
       ok: false;
-      reason: string;
+      reason: UnresolvedReason;
       tenantId: string | undefined;
       email: string | undefined;
     };
@@ -65,9 +66,8 @@ beforeEach(() => {
 });
 
 async function resolver(roleNames: readonly string[] = ["member"]) {
-  const { createAutoProvisionPrincipalResolver } = await import(
-    "./principal-resolver"
-  );
+  const { createAutoProvisionPrincipalResolver } =
+    await import("./principal-resolver");
   return createAutoProvisionPrincipalResolver(fakeDb, "acme", roleNames);
 }
 
@@ -139,12 +139,13 @@ describe("createAutoProvisionPrincipalResolver", () => {
     if (!result.ok) expect(result.reason).toBe("restricted_author");
   });
 
-  for (const reason of [
+  const declinedReasons: UnresolvedReason[] = [
     "lookup_failed",
     "not_a_member",
     "principal_inactive",
     "tenant_not_found",
-  ]) {
+  ];
+  for (const reason of declinedReasons) {
     test(`declines "${reason}" without provisioning`, async () => {
       nextResolution = {
         ok: false,
