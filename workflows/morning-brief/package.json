@@ -21,9 +21,11 @@
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*"
   },
   "devDependencies": {
+    "@corbits/folded-runs": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

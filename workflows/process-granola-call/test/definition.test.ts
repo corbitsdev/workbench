@@ -9,6 +9,7 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 import {
   PROCESS_GRANOLA_CALL_STEP_ID,
   PROCESS_GRANOLA_CALL_SYSTEM_PROMPT,
+  PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS,
   PROCESS_GRANOLA_CALL_WORKFLOW_ID,
   buildProcessGranolaCallWorkflow,
   serializeProcessGranolaCallWorkflow,
@@ -63,6 +64,16 @@ test("the agent instructs the five-section extraction, carries the preferences, 
   ]) {
     expect(PROCESS_GRANOLA_CALL_SYSTEM_PROMPT).toContain(section);
   }
+});
+
+test("the agent pins @corbits/granola-tools by name and version", () => {
+  const agent = processStep(buildProcessGranolaCallWorkflow(INPUT)).agent;
+  expect(agent.toolPackagePins).toEqual([
+    ...PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS,
+  ]);
+  expect(PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS).toEqual([
+    { name: "@corbits/granola-tools", version: "0.0.1" },
+  ]);
 });
 
 test("the system prompt commits to an honest failure instead of a fabricated document", () => {
