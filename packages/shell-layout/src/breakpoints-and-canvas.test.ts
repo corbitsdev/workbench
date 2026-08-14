@@ -5,12 +5,12 @@ import {
   contextualPanelVisible,
   shellLayoutModeForWidth,
   shellLayoutModeFromMatches,
-} from "../src/shell/breakpoints";
+} from "./breakpoints";
 import {
   initialCanvasColumnState,
   openProfileInCanvas,
   resolveCanvasVisibility,
-} from "../src/shell/canvas-column-state";
+} from "./canvas-column-state";
 
 const sampleProfile = {
   kind: "member" as const,
