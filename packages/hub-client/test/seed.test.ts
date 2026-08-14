@@ -706,6 +706,73 @@ describe("seedTenant", () => {
       "confirmed workflow channel-digest: run run_1 started",
     );
   });
+
+  test("confirmDeployments: false deploys every default workflow without triggering or confirming any of them", async () => {
+    // The onboarding connect flow's seam: the key was already proven
+    // with a free probe, so seeding must never spend the connecting
+    // user's own balance on a real inference call. Any POST to a
+    // workflow's mail-trigger endpoint here is exactly the bug this
+    // flag exists to prevent, so the fake handler fails the test the
+    // moment one arrives instead of quietly answering it.
+    const { lines, log } = collector();
+    const { pushes, push } = recordingPusher();
+    const handler: FakeHandler = (method, path, body) => {
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
+        const name = (body as { name: string }).name;
+        return { status: 201, data: assetRow(`ast_${name}`, name) };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return { status: 201, data: deploymentRow("dep_x", "ast_x", "active") };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/`) &&
+        path.endsWith("/runs")
+      ) {
+        throw new Error(
+          `unexpected run-listing call with confirmDeployments: false — ${method} ${path}`,
+        );
+      }
+      if (
+        method === "POST" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/`) &&
+        path.endsWith("/mail")
+      ) {
+        throw new Error(
+          `unexpected workflow trigger call with confirmDeployments: false — ${method} ${path}`,
+        );
+      }
+      return undefined;
+    };
+
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        confirmDeployments: false,
+      }),
+    );
+
+    expect(pushes).toHaveLength(DEFAULT_WORKFLOWS.length);
+    const output = lines.join("\n");
+    for (const workflow of DEFAULT_WORKFLOWS) {
+      expect(output).not.toContain(`confirmed workflow ${workflow.assetName}`);
+    }
+    expect(output).toContain(
+      `seed complete: ${DEFAULT_WORKFLOWS.length} workflow(s) deployed`,
+    );
+    expect(output).not.toContain("deployed and confirmed");
+  });
 });
 
 const TIMESTAMP = "2026-01-01T00:00:00.000Z";

@@ -2,6 +2,17 @@ import { describe, expect, test } from "bun:test";
 import type { ApiCall, WorkflowPusher } from "@workbench/hub-client";
 import { completeCredentialSetup } from "../src/complete-credential";
 
+// A key that clears the free probe never needs to prove itself again
+// with a billed call: seedTenant must run with confirmDeployments:
+// false so a valid, credit-less account is not turned into a false
+// "setup failed" by a workflow trigger it never asked for.
+function expectNoConfirmation(
+  seedTenantCalls: { confirmDeployments?: boolean }[],
+) {
+  expect(seedTenantCalls).toHaveLength(1);
+  expect(seedTenantCalls[0]?.confirmDeployments).toBe(false);
+}
+
 const TENANT_ID = "ten_personal";
 const PRINCIPAL_ID = "prn_personal";
 const TENANT_SLUG = "alice-user1";
@@ -117,8 +128,10 @@ describe("completeCredentialSetup", () => {
 
   test("a valid Anthropic key seeds the catalog, the tenant, and reports what ran", async () => {
     const seedCatalogCalls: unknown[] = [];
-    const seedTenantCalls: { model: { provider: string; model: string } }[] =
-      [];
+    const seedTenantCalls: {
+      model: { provider: string; model: string };
+      confirmDeployments?: boolean;
+    }[] = [];
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === "/api/me/principals") {
         return principalsResponse();
@@ -155,8 +168,8 @@ describe("completeCredentialSetup", () => {
       workflows: ["echo", "assistant", "channel-digest"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
-    expect(seedTenantCalls).toHaveLength(1);
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
+    expectNoConfirmation(seedTenantCalls);
   });
 
   test("a valid OpenAI key seeds its own catalog and routines", async () => {
@@ -448,6 +461,127 @@ describe("completeCredentialSetup", () => {
       status: "active",
       metadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
     });
+  });
+
+  test("a valid key seeds every default workflow without any deploy-confirmation trigger call", async () => {
+    // No `seedTenantFn` override here: the real `seedTenant` runs, so
+    // this is the actual code path a connect callback drives end to
+    // end (only `seedCatalogFn` is stubbed — the catalog side is
+    // unrelated to this defect and already covered above). A fake
+    // `api` that throws on any workflow run-listing or mail-trigger
+    // call proves `completeCredentialSetup` never asks seedTenant to
+    // confirm a deployment by triggering real inference — the fix for
+    // the false "setup failed" a credit-less but valid key used to get.
+    const TIMESTAMP = "2026-01-01T00:00:00.000Z";
+    const api: ApiCall = async (method, path, body) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
+        const name = (body as { name: string }).name;
+        return {
+          status: 201,
+          data: {
+            id: `ast_${name}`,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name,
+            displayName: name,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/git-tokens`
+      ) {
+        return {
+          status: 201,
+          data: { id: "tok_1", secret: "s3cret" },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return { status: 200, data: [], cookies: [] };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        const assetId = (body as { assetId: string }).assetId;
+        return {
+          status: 201,
+          data: {
+            id: `dep_${assetId}`,
+            tenantId: TENANT_ID,
+            definitionAssetId: assetId,
+            status: "active",
+            createdAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path.includes("/workflows/") &&
+        path.endsWith("/runs")
+      ) {
+        throw new Error(
+          `unexpected run-listing call for a probe-verified key: ${method} ${path}`,
+        );
+      }
+      if (
+        method === "POST" &&
+        path.includes("/workflows/") &&
+        path.endsWith("/mail")
+      ) {
+        throw new Error(
+          `unexpected workflow trigger call for a probe-verified key: ${method} ${path}`,
+        );
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await completeCredentialSetup({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "anthropic",
+      apiKey: "sk-ant-good",
+      pushWorkflow: noopPush,
+      log: collector().log,
+      testCredential: async () => ({ ok: true }),
+      seedCatalogFn: async () => {},
+    });
+
+    expect(result.kind).toBe("seeded");
+    if (result.kind === "seeded") {
+      expect(result.workflows).toEqual(["echo", "assistant", "channel-digest"]);
+    }
   });
 
   test("a pasted key with no metadata stays an ordinary api_key credential", async () => {
