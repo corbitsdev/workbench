@@ -1,8 +1,11 @@
-# The Agents page
+# Settings · Agents
 
-The Agents page (`apps/web/src/pages/agents-page.tsx`) is a bench's one
-surface for its agents: the definitions a person can launch from, and the
-instances currently running from them.
+Settings · Agents (`apps/web/src/pages/agents-settings-section.tsx`) is a
+bench's one surface for its agents: the definitions a person can launch
+from, and the instances currently running from them. It is a Settings
+section, not a rail destination (CL-5990) — agent definitions are the only
+thing this surface manages; talking to an agent is a chat (Start chat), and
+looping one into a conversation is a channel mention.
 
 ## Definitions and instances
 

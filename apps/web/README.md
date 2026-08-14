@@ -54,9 +54,11 @@ in a real `@corbits/routines` listing later touches nothing else.
 | `/c`         | Channel deep-link surface. On wide layouts the conversation opens in the right canvas; on compact layouts it fills the main pane. Legacy `/chat` links still resolve here. |
 | `/workflows` | Workflow runs executing across your benches.                                                                                                                               |
 | `/library`   | The artifact gallery. See "Library" below.                                                                                                                                 |
-| `/agents`    | Agent definitions you can invite into a channel, and each channel's participants.                                                                                          |
-| `/skills`    | A stub: skills have no registry in the hub yet, so this describes what's coming.                                                                                           |
-| `/settings`  | Account and bench membership settings.                                                                                                                                     |
+| `/settings`  | Account, bench membership, and (CL-5990) Agents/Skills. See "Agents" and "Skills" below.                                                                                   |
+
+Agents and Skills are Settings sections, not rail destinations — old
+`/agents[/:id]` and `/skills[/:id]` links still resolve, redirecting to
+`/settings/agents[/:id]` and `/settings/skills[/:id]`.
 
 Approvals are not a page: pending permission requests land as actionable
 cards in the contextual panel's Notifications band (and, when a channel is
@@ -82,14 +84,15 @@ a `/api/.../artifacts` endpoint lands, only `LibraryRoute` needs to change;
 
 ## Agents
 
-`/agents` (`src/pages/agents-page.tsx`) lists the signed-in account's
-channels and each one's participants (by mention handle — raw addresses are
-tooltip-only, never printed on screen). "Invite agent" on a channel opens
-`@corbits/chat-ui`'s `InviteAgentDialog`, the same invitable-definitions list
-and invite call the chat surface's own invite flow uses.
+Settings · Agents (`src/pages/agents-settings-section.tsx`, registered via
+`src/settings-workspace-sections.tsx`) is definitions only — a bench's
+directory of agent definitions and their deployed instances, with Start
+chat / Open in channel as its only reach into chat. Talking to an agent is a
+chat; looping one into a conversation is a channel mention — neither lives
+here. See `docs/AGENTS-PAGE.md`.
 
 ## Skills
 
-`/skills` (`src/pages/skills-page.tsx`) is an honest stub: there is no skill
-registry in the hub yet, so the page states what a skill will be instead of
-rendering invented rows.
+Settings · Skills (`src/pages/skills-settings-section.tsx`) is an honest
+stub: there is no skill registry in the hub yet, so the section states what
+a skill will be instead of rendering invented rows.
