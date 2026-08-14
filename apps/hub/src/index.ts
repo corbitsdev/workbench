@@ -785,7 +785,7 @@ export async function createHub(config: HubConfig) {
 
   // Memory plane (optional): firm-memory HTTP under
   // `/api/tenants/:tenantId/memory/*`, same `DATABASE_URL` as the control
-  // plane, isolated in its own `knowledge` schema. Degrades when EMBED_* is
+  // plane, isolated in its own `memory` schema. Degrades when EMBED_* is
   // unset — see memory-mount.ts.
   await mountMemory({
     app,
