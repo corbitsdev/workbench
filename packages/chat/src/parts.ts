@@ -36,16 +36,34 @@ export type BlockPart = typeof BlockPart.infer;
 
 // A file rides either as a reference into platform blob storage (`blobId`,
 // for content already persisted) or as inline base64 bytes (`data`, for
-// content the codec is encoding fresh). Exactly one must be present.
+// content the codec is encoding fresh). Exactly one of those two must be
+// present. `artifactId` is an orthogonal, optional link back to a Library
+// artifact (see `@corbits/artifacts`) — set when this file is also a
+// persisted Library row (e.g. a workflow finalize tool's output, CL-6000),
+// independent of whether the bytes themselves also live in chat's own blob
+// store.
 export const FilePart = type({
   kind: "'file'",
   name: "string",
   mediaType: "string",
   "blobId?": "string",
   "data?": "string",
+  "artifactId?": "string",
 }).narrow((part, ctx) => {
   const hasBlobId = part.blobId !== undefined;
   const hasData = part.data !== undefined;
+  // An artifact-backed file needs neither: its bytes live in the Library
+  // artifact row `artifactId` names, not in chat's own blob store, so
+  // `blobId`/`data` stay optional (but still mutually exclusive) once
+  // `artifactId` is set.
+  if (part.artifactId !== undefined) {
+    if (hasBlobId && hasData) {
+      return ctx.reject(
+        "`blobId` and `data` cannot both be set on a FilePart",
+      );
+    }
+    return true;
+  }
   if (hasBlobId === hasData) {
     return ctx.reject(
       "exactly one of `blobId` or `data` must be set on a FilePart",

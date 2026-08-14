@@ -140,8 +140,17 @@ export type {
   HubChatPlatform,
 } from "./platform-adapter";
 
-export { createChatOrchestrator } from "./chat-orchestrator";
+export {
+  createArtifactDeliveryHandler,
+  createChatOrchestrator,
+} from "./chat-orchestrator";
 export type {
   ChatOrchestrator,
   ChatOrchestratorDeps,
 } from "./chat-orchestrator";
+
+export {
+  artifactPartsForFinalizedTurn,
+  artifactPartsForToolCall,
+} from "./artifact-delivery";
+export type { FinalizedTurnToolCall } from "./artifact-delivery";
