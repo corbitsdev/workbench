@@ -21,6 +21,7 @@ export {
   PLACEHOLDER_CATALOG_API_KEY,
   seedCatalog,
   seedTenant,
+  isLiveDeploymentStatus,
 } from "./seed";
 export {
   CATALOG_SEEDS,

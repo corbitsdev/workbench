@@ -111,6 +111,16 @@ export type ModelSource = {
   readonly apiKey: string;
 };
 
+/**
+ * Whether a deployments-API row counts as live. The wire vocabulary is
+ * "deployed" / "pending" / failure states (vendor hub-api
+ * formatAllocationStatus) — there is no "active". This is the ONE
+ * definition of "already deployed"; every seeded/skip check imports it.
+ */
+export function isLiveDeploymentStatus(status: string): boolean {
+  return status === "deployed" || status === "pending";
+}
+
 export type PushOutcome = "pushed" | "unchanged";
 
 export type WorkflowPusher = (args: {
@@ -438,10 +448,7 @@ async function ensureDeployment(
   );
   const active = deployments.find(
     (d) =>
-      d.definitionAssetId === args.assetId &&
-      // Wire statuses are "deployed" / "pending" (never "active") — both
-      // mean a live deployment exists and re-deploying would duplicate it.
-      (d.status === "deployed" || d.status === "pending"),
+      d.definitionAssetId === args.assetId && isLiveDeploymentStatus(d.status),
   );
   if (active) {
     log(

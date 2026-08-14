@@ -21,6 +21,7 @@ import {
   type ApiCall,
   type ModelSource,
   type WorkflowPusher,
+  isLiveDeploymentStatus,
 } from "@workbench/hub-client";
 
 export type ProvisionResult =
@@ -162,11 +163,7 @@ async function isFullySeeded(
     if (!asset) return false;
     return deployments.some(
       (d) =>
-        d.definitionAssetId === asset.id &&
-        // The deployments wire vocabulary is "deployed" / "pending" /
-        // failure states (vendor hub-api formatAllocationStatus) — there
-        // is no "active". Both live states count as seeded.
-        (d.status === "deployed" || d.status === "pending"),
+        d.definitionAssetId === asset.id && isLiveDeploymentStatus(d.status),
     );
   });
 }
