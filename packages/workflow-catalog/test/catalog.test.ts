@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+
 import {
   isAutomatableWorkflowName,
   workflowDisplayName,
@@ -93,5 +95,62 @@ describe("workflow catalog", () => {
       expect(entry.displayName.trim().length).toBeGreaterThan(0);
       expect(entry.assetName).toMatch(/^[a-z0-9-]+$/);
     }
+  });
+
+  test("every catalog entry carries honest demo-card copy", () => {
+    for (const entry of WORKFLOW_CATALOG) {
+      expect(entry.whatItDoes.trim().length).toBeGreaterThan(0);
+      expect(entry.exampleOutput.trim().length).toBeGreaterThan(0);
+      expect(entry.typicalDuration.trim().length).toBeGreaterThan(0);
+      // No fake precision or invented metrics dressed up as facts.
+      expect(entry.whatItDoes).not.toMatch(/%|\$\d/);
+    }
+  });
+
+  test("every requiredConnections id names a real connector in the registry", () => {
+    const knownConnectorIds = new Set(Object.keys(CONNECTOR_REGISTRY));
+    for (const entry of WORKFLOW_CATALOG) {
+      for (const connectorId of entry.requiredConnections) {
+        expect(knownConnectorIds.has(connectorId)).toBe(true);
+      }
+    }
+  });
+
+  test("pins the GTM ports to the connectors their tool packages actually need", () => {
+    const byAssetName = new Map(
+      WORKFLOW_CATALOG.map((entry) => [entry.assetName, entry]),
+    );
+    expect(byAssetName.get("granola-call")?.requiredConnections).toEqual([
+      "granola",
+    ]);
+    expect(
+      byAssetName.get("process-granola-call")?.requiredConnections,
+    ).toEqual(["granola"]);
+    expect(byAssetName.get("morning-brief")?.requiredConnections).toEqual([
+      "granola",
+      "linear",
+    ]);
+    expect(
+      byAssetName.get("pain-point-collateral")?.requiredConnections,
+    ).toEqual(["granola"]);
+    expect(
+      byAssetName.get("collateral-generation")?.requiredConnections,
+    ).toEqual(["granola", "linear"]);
+    expect(
+      byAssetName.get("reddit-opportunity-scanner")?.requiredConnections,
+    ).toEqual(["scrapecreators"]);
+    expect(
+      byAssetName.get("last-30-days-research")?.requiredConnections,
+    ).toEqual(["exa"]);
+  });
+
+  test("workflows with no external connector requirement declare an empty list", () => {
+    const byAssetName = new Map(
+      WORKFLOW_CATALOG.map((entry) => [entry.assetName, entry]),
+    );
+    expect(byAssetName.get("echo")?.requiredConnections).toEqual([]);
+    expect(byAssetName.get("assistant")?.requiredConnections).toEqual([]);
+    expect(byAssetName.get("heartbeat")?.requiredConnections).toEqual([]);
+    expect(byAssetName.get("channel-digest")?.requiredConnections).toEqual([]);
   });
 });
