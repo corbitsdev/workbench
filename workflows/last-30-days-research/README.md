@@ -66,18 +66,61 @@ integration on its own, matching the `morning-brief`/`pain-point-
 collateral`/`collateral-generation` convention already established in
 this catalog.
 
+6. **Finalizing**: call `last_30_days_research_finalize` exactly once,
+   with a short title and the report body. This call requires a human's
+   approval before it completes.
+
+## Finalizing and persistence
+
+The agent's last act is always one call to
+`last_30_days_research_finalize` (`src/finalize-tool.ts`), gated behind
+a single human approval (`approval: "ask"`, the platform's native
+tool-approval gate — see that file's header for the full suspend/resume
+account). On approval, the call persists the report as a Library
+artifact via `createWorkflowArtifact` (`src/artifact-client.ts`,
+duplicated from `@corbits/artifact-tools`' client per this package's
+"installable data, `@intx/*` and `arktype` only" import boundary — see
+`test/boundary.test.ts`) and returns `{ id, version, title, kind,
+persisted: true }`, the shape `packages/chat/src/artifact-delivery.ts`
+recognizes and turns into a Library-linked chip in the thread. A failed
+persist surfaces as an honest tool error, never a fabricated success.
+
+This closes the gap this README used to document here: pain-point-
+collateral and collateral-generation (CL-6000) already proved a workflow
+tool package can reach the Library engine via `createWorkflowArtifact`;
+that gap was stale, not a real platform limit, and this definition now
+uses the same path.
+
+This runs on both paths, not just the happy one:
+
+- **Real report**: any wired source that returned relevant results
+  feeds a normal report, finalized with a real title and the full
+  markdown body.
+- **No-data path**: when no wired source returns anything for the
+  topic, the agent still calls `last_30_days_research_finalize` — with
+  a teaching title (e.g. "Last 30 days: `<topic>` — no results yet")
+  and content that honestly explains what it searched for, names the
+  missing or unreachable connectors by id (`exa` for web search;
+  `scrapecreators` would back a future Reddit source — see
+  `packages/connections/src/registry.ts` for the live id list), and
+  says what to do next. A run never ends in silence or a bare markdown
+  reply — it always ends in a persisted, chip-visible artifact.
+
 ## Current limits (read before deploying)
 
-Same category of gap `@corbits/collateral-generation-workflow`'s README
-documents (CL-6000): no workflow tool package in this repo can reach the
-Library engine yet, so this definition does not attempt to persist the
-report as a Library artifact. The finished report still reaches the
-human as the delivered chat reply — persisting it as a Library row is a
-follow-up once CL-6000 closes, not a redesign of this definition.
-
-No tool-package pin either (CL-5999): this definition ships with
+No tool-package pin yet (CL-5999): this definition ships with
 `tools: []`, same as every other workflow in this catalog, until a
 production workflow builder can thread `toolPackagePins` onto a built
+definition. Without a pin, `web_search` and `github_activity` are
+simply absent at runtime and the report (or the no-data teaching
+payload) honestly reports both as unreachable — the same degradation
+path as a missing credential.
+
+The `topic`/`focus` trigger fields have no create-time UI collection
+point yet: today they only reach this workflow via a raw mail body (see
+"Usage" below for the field contract), never through a routines-picker
+form field. Building that collection point is a `routines-page.tsx`
+stepper change owned outside this package, not a gap in this
 definition.
 
 ## Usage
@@ -102,6 +145,25 @@ key) and `@corbits/github-tools` (works keylessly, or with a
 `githubApiKey` for a higher rate limit) on the deployment for the agent
 to reach real data — without a pin, every tool call is simply absent and
 the report honestly reports both as unreachable.
+
+### Trigger fields (`topic`, `focus`)
+
+Every run is triggered by mail to the deployment's address
+(`triggerAddress` above); the agent reads two fields off that trigger
+per its system prompt:
+
+- `topic` (required) — the free-text subject to research. Missing or
+  empty `topic` gets an honest one-sentence "no topic" reply — the
+  workflow never invents one.
+- `focus` (optional) — narrows which angle of `topic` to chase across
+  every source (e.g. `topic: "agentic coding tools"`, `focus:
+  "pricing changes"`).
+
+Today the only way to set these is the raw body of the triggering mail
+— there is no create-time UI field for them yet. Wiring a `topic`/
+`focus` input into the routines-picker's create-time stepper
+(`apps/web/src/pages/routines-page.tsx`) is a follow-up owned outside
+this package, not a gap in this definition.
 
 ## Registration
 
