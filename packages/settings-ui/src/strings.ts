@@ -236,12 +236,14 @@ export const SETTINGS_STRINGS = {
   connectionsDisconnectAction: "Disconnect",
   connectionsDisconnectConfirm: "Disconnect for good?",
   connectionsDisconnectError: "Couldn't disconnect — try again.",
-  connectionsPinnedByPrefix: "Pinned by ",
-  connectionsPinnedByNone: "Not used by anything yet",
+  connectionsPinnedByPrefix: "Used by workflows: ",
+  connectionsPinnedByNone: "Available to any workflow",
+  connectionsPinnedByApproximationNote:
+    "Based on each workflow's declared tool-package pins, not a live query against deployed definitions — may lag a workflow's actual tool usage.",
   connectionsDialogConnectTitle: (name: string) => `Connect ${name}`,
   connectionsDialogReconnectTitle: (name: string) => `Reconnect ${name}`,
   connectionsDialogDescription:
-    "Paste the key, test it, then save. The key is never shown again after save.",
+    "Sealed on save — this key is never shown again after create. Paste it and test it first.",
   connectionsKeyLabel: "API key",
   connectionsTestAction: "Test connection",
   connectionsTesting: "Testing…",
@@ -252,7 +254,8 @@ export const SETTINGS_STRINGS = {
   connectionsCancel: "Cancel",
   connectionsConnectedToast: (name: string) => `${name} connected`,
   connectionsSaveError: "Couldn't save that connection — try again.",
-  connectionsAdvancedSummary: "Advanced — manage raw credentials",
+  connectionsAdvancedSummary:
+    "All credentials — including certificates and other types",
 
   auditSectionTitle: "Audit",
   auditSectionDescription: "Who changed what, when — orientation only.",

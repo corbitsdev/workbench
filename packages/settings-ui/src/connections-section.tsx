@@ -399,7 +399,14 @@ function ConnectorCard({
         </span>
       )}
       {descriptor.feedsTools.length > 0 && (
-        <span className="settings-connection-card-pinned">
+        <span
+          className="settings-connection-card-pinned"
+          title={
+            (CONNECTOR_PINNED_WORKFLOWS[descriptor.id]?.length ?? 0) > 0
+              ? SETTINGS_STRINGS.connectionsPinnedByApproximationNote
+              : undefined
+          }
+        >
           {pinnedByLine(descriptor.id)}
         </span>
       )}

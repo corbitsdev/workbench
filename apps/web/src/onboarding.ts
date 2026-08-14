@@ -141,7 +141,7 @@ const OPENROUTER_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
   signed_out:
     "Your session ended during the OpenRouter connection. Sign in and try again.",
   rate_limited:
-    "OpenRouter limits how often it can mint a new key. Wait a minute, then try connecting again.",
+    "OpenRouter limits how often it can create a new key. Wait a minute, then try connecting again.",
 };
 
 const HUGGINGFACE_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
@@ -158,7 +158,7 @@ const HUGGINGFACE_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
   signed_out:
     "Your session ended during the Hugging Face connection. Sign in and try again.",
   rate_limited:
-    "Hugging Face limits how often it can mint a new token. Wait a minute, then try connecting again.",
+    "Hugging Face limits how often it can create a new token. Wait a minute, then try connecting again.",
   not_configured:
     "Hugging Face connect isn't set up on this workbench yet. Paste a token instead.",
 };

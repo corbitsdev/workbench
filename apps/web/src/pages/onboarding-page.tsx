@@ -621,7 +621,7 @@ export function OnboardingPage() {
       <OnboardingPhase
         phase={state.phase}
         title="Connect your tools"
-        subtitle="Optional — connect Linear, Granola, or another tool so your routines and agents can use it. You can always come back to this in Settings later."
+        subtitle="Connect Linear or Granola and your routines can read real work — meetings, issues, docs — instead of asking you to paste them. Optional, and you can always come back to this in Settings later."
       >
         <ConnectToolsGrid
           tenantId={state.tenantId}

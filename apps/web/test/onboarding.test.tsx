@@ -414,7 +414,7 @@ describe("readOpenRouterConnectReturn", () => {
     );
     expect(result?.kind).toBe("error");
     if (result?.kind === "error") {
-      expect(result.message).toContain("limits how often it can mint");
+      expect(result.message).toContain("limits how often it can create");
       expect(result.message).toContain("Wait a minute");
     }
   });
