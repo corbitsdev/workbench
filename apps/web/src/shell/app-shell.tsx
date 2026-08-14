@@ -23,10 +23,13 @@ import {
 import { useShellFocusRescue } from "./focus-rescue";
 import { useScrollReset } from "./use-scroll-reset";
 import {
+  useCanvasColumnArtifact,
   useCanvasColumnAvailable,
+  useCanvasColumnFocus,
   useCanvasColumnOpen,
   useCanvasColumnProfile,
   useCloseCanvas,
+  useToggleCanvasFocus,
 } from "./canvas-availability";
 import { CanvasColumn } from "./canvas-column";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
@@ -51,7 +54,10 @@ export function AppShell({
   const canvasAllowed = useCanvasColumnAvailable();
   const canvasOpen = useCanvasColumnOpen();
   const canvasProfile = useCanvasColumnProfile();
-  const closeProfile = useCloseCanvas();
+  const canvasArtifact = useCanvasColumnArtifact();
+  const canvasFocus = useCanvasColumnFocus();
+  const closeCanvas = useCloseCanvas();
+  const toggleCanvasFocus = useToggleCanvasFocus();
   const showContextualColumn = contextualPanelVisible(layoutMode);
   const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
   const { col2Collapsed, col2Width, toggleCol2 } = useStageChrome();
@@ -86,7 +92,10 @@ export function AppShell({
         <CanvasColumn
           open={canvasOpen}
           profile={canvasProfile}
-          onCloseProfile={closeProfile}
+          artifact={canvasArtifact}
+          focus={canvasFocus}
+          onClose={closeCanvas}
+          onToggleFocus={toggleCanvasFocus}
           onNavigate={navigate}
         />
       )}

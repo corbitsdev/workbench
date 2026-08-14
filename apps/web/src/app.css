@@ -708,6 +708,14 @@ html {
   width: var(--shell-canvas-width);
 }
 
+/* Focus mode (mock's `data-canvas="focus"`): canvas is the only
+   stage-width changer, so widening it here — on top of col2 already
+   collapsing (`stage-chrome.ts`'s `deriveCol2Width`) — is what reads as
+   "canvas dominant, chat as slim context" without a grid rewrite. */
+.shell-canvas-column[data-open="true"][data-focus="true"] {
+  width: min(64rem, 68vw);
+}
+
 .shell-canvas-column:not([data-open="true"]) {
   border-left-color: transparent;
 }
@@ -722,7 +730,12 @@ html {
   transform: translateX(0.75rem);
   transition:
     opacity 160ms ease,
-    transform 200ms ease;
+    transform 200ms ease,
+    width 200ms ease;
+}
+
+.shell-canvas-column[data-open="true"][data-focus="true"] .shell-canvas-inner {
+  width: min(64rem, 68vw);
 }
 
 .shell-canvas-column[data-open="true"] .shell-canvas-inner {
@@ -730,7 +743,8 @@ html {
   transform: translateX(0);
 }
 
-.shell-profile-pane {
+.shell-profile-pane,
+.shell-artifact-pane {
   display: flex;
   height: 100%;
   flex-direction: column;
@@ -740,15 +754,41 @@ html {
   justify-content: flex-start;
 }
 
-.shell-profile-pane-header {
+/* Shared by every canvas pane (profile, artifact): the focus-cycle and
+   close controls, plus an optional title for content that has one. */
+.shell-canvas-pane-header {
   display: flex;
-  justify-content: flex-end;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.shell-canvas-pane-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.shell-canvas-pane-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.25rem;
 }
 
 .shell-profile-pane-hint {
   margin: 0;
   font-size: 0.75rem;
   color: var(--muted-foreground);
+}
+
+.shell-artifact-pane-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
 }
 
 /* Reduced motion needs no rule here: the component library collapses every
