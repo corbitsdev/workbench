@@ -22,6 +22,7 @@ import { useState } from "react";
 import type { CatalogModel } from "../agents-api";
 import { AgentDirectoryError, createAgentDefinition } from "../agents-api";
 import type { AgentDefinition } from "../agents-api";
+import { AgentSkillsPicker } from "./agent-skills-picker";
 
 const HANDLE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -38,6 +39,7 @@ type FormValues = {
   readonly description: string;
   readonly systemPrompt: string;
   readonly model: string;
+  readonly skills: readonly string[];
 };
 
 const EMPTY_VALUES: FormValues = {
@@ -46,6 +48,7 @@ const EMPTY_VALUES: FormValues = {
   description: "",
   systemPrompt: "",
   model: "",
+  skills: [],
 };
 
 function fieldsFor(models: readonly CatalogModel[]): readonly IntakeField[] {
@@ -164,8 +167,13 @@ export function CreateAgentDialog({
       systemPrompt:
         typeof next.systemPrompt === "string" ? next.systemPrompt : "",
       model: typeof next.model === "string" ? next.model : "",
+      skills: values.skills,
     });
     if (handleEdited) setHandleTouched(true);
+  }
+
+  function handleSkillsChange(next: readonly string[]) {
+    setValues((prev) => ({ ...prev, skills: next }));
   }
 
   const issues = validationIssues(values);
@@ -187,6 +195,7 @@ export function CreateAgentDialog({
           ? { description: values.description.trim() }
           : {}),
         ...(values.model.trim() !== "" ? { model: values.model.trim() } : {}),
+        ...(values.skills.length > 0 ? { skills: values.skills } : {}),
       });
       reset();
       onOpenChange(false);
@@ -241,6 +250,15 @@ export function CreateAgentDialog({
             idPrefix="create-agent"
             disabled={submitting}
           />
+          <div className="mt-4 flex flex-col gap-1.5">
+            <span className="text-sm font-medium">Skills</span>
+            <AgentSkillsPicker
+              selected={values.skills}
+              onChange={handleSkillsChange}
+              idPrefix="create-agent"
+              disabled={submitting}
+            />
+          </div>
         </DialogBody>
         <DialogFooter>
           <Button

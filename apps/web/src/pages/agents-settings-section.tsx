@@ -23,8 +23,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createChannel } from "@corbits/chat-ui";
 
 import {
+  updateAgentSkills,
   useAgentDirectory,
   type AgentDefinition,
+  type AgentDirectoryData,
   type AgentInstance,
 } from "../agents-api";
 import {
@@ -38,7 +40,23 @@ import { channelPath } from "../channel-path";
 import { consumePendingNewAgent } from "../command-palette-actions";
 import { tenantKeys } from "../query-client";
 import { ListSkeleton } from "../query-view";
+import { AgentSkillsPicker } from "./agent-skills-picker";
 import { CreateAgentDialog } from "./create-agent-dialog";
+
+/** A row of skill chips, or nothing at all when a definition carries none —
+ * this never renders an empty "Skills" label for the common case. */
+function SkillChips({ skills }: { readonly skills: readonly string[] }) {
+  if (skills.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {skills.map((skill) => (
+        <Badge key={skill} tone="neutral">
+          {skill}
+        </Badge>
+      ))}
+    </div>
+  );
+}
 
 const DEFINITION_STATUS_TONE: Record<AgentDefinition["status"], BadgeTone> = {
   deployed: "success",
@@ -117,12 +135,114 @@ function InstanceCard({
   );
 }
 
+/** The definition's attached skills: a chip row, and an "Edit" toggle that
+ * swaps in the same checkbox picker the create dialog uses. Saving PUTs the
+ * full replacement set and hands the result back to the parent so the list
+ * and detail panel stay in sync without a full directory refetch. */
+function AgentSkillsSection({
+  tenantId,
+  definitionId,
+  skills,
+  onSkillsUpdated,
+}: {
+  readonly tenantId: string;
+  readonly definitionId: string;
+  readonly skills: readonly string[];
+  readonly onSkillsUpdated: (next: readonly string[]) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<readonly string[]>(skills);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function startEditing() {
+    setDraft(skills);
+    setError(null);
+    setEditing(true);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = await updateAgentSkills(tenantId, definitionId, draft);
+      onSkillsUpdated(saved);
+      setEditing(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="flex flex-col gap-3 p-5">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-medium text-muted-foreground">Skills</h3>
+        {!editing && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={startEditing}
+          >
+            Edit skills
+          </Button>
+        )}
+      </div>
+      {editing ? (
+        <>
+          <AgentSkillsPicker
+            selected={draft}
+            onChange={setDraft}
+            idPrefix={`agent-${definitionId}`}
+            disabled={saving}
+          />
+          {error !== null && (
+            <p className="text-sm text-danger-foreground" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={saving}
+              onClick={() => void handleSave()}
+            >
+              {saving ? "Saving…" : "Save skills"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={saving}
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </>
+      ) : skills.length === 0 ? (
+        <span className="text-sm text-muted-foreground">
+          No skills attached.
+        </span>
+      ) : (
+        <SkillChips skills={skills} />
+      )}
+    </Card>
+  );
+}
+
 /** The agent detail: full description, lifecycle status, version, the
  * definition's deployed instances, and the two launch actions — Start chat
  * and Open in channel — the only ways this section reaches into chat. */
 function AgentDetailPanel({
   definition,
   instances,
+  skills,
+  onSkillsUpdated,
   tenantId,
   now,
   navigate,
@@ -131,6 +251,8 @@ function AgentDetailPanel({
   readonly instances: readonly (AgentInstance & {
     readonly orphaned: boolean;
   })[];
+  readonly skills: readonly string[];
+  readonly onSkillsUpdated: (next: readonly string[]) => void;
   readonly tenantId: string;
   readonly now: number;
   readonly navigate: ((to: string) => void) | undefined;
@@ -211,6 +333,13 @@ function AgentDetailPanel({
           </p>
         )}
       </Card>
+
+      <AgentSkillsSection
+        tenantId={tenantId}
+        definitionId={definition.id}
+        skills={skills}
+        onSkillsUpdated={onSkillsUpdated}
+      />
 
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-medium text-muted-foreground">
@@ -375,6 +504,26 @@ export function AgentsSettingsSection({
     );
   }
 
+  const directoryQueryKey = tenantKeys.agentDirectory(directory.data.tenantId);
+  function handleSkillsUpdated(
+    definitionId: string,
+    skills: readonly string[],
+  ) {
+    queryClient.setQueryData(
+      directoryQueryKey,
+      (previous: AgentDirectoryData | undefined) =>
+        previous === undefined
+          ? previous
+          : {
+              ...previous,
+              definitionSkills: {
+                ...previous.definitionSkills,
+                [definitionId]: skills,
+              },
+            },
+    );
+  }
+
   if (selected !== null) {
     return (
       <div className="flex flex-col gap-4">
@@ -386,6 +535,8 @@ export function AgentsSettingsSection({
         <AgentDetailPanel
           definition={selected}
           instances={instancesByDefinition.get(selected.id) ?? []}
+          skills={directory.data.definitionSkills[selected.id] ?? []}
+          onSkillsUpdated={(skills) => handleSkillsUpdated(selected.id, skills)}
           tenantId={directory.data.tenantId}
           now={now}
           navigate={navigate}
@@ -429,6 +580,11 @@ export function AgentsSettingsSection({
                 <span className="panel-row-copy">
                   <strong>{definition.name}</strong>
                   <span>v{definition.currentVersion}</span>
+                  <SkillChips
+                    skills={
+                      directory.data.definitionSkills[definition.id] ?? []
+                    }
+                  />
                 </span>
               }
               meta={
