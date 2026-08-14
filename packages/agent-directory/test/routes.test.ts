@@ -14,7 +14,21 @@ import { AssetServiceError } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 
+import {
+  buildAgentDefinitionWorkflow,
+  serializeAgentDefinitionWorkflow,
+} from "../src/agent-workflow";
 import { createAgentDefinitionRoutes } from "../src/routes";
+import type { PinnedSkillIndexResolver } from "../src/routes";
+
+/** Resolves every pinned name to a one-line description, so a route test
+ * can assert on the stanza without standing up the registry. */
+const fakeSkillIndex: PinnedSkillIndexResolver = {
+  resolve: (_tenantId, _principalId, names) =>
+    Promise.resolve(
+      names.map((name) => ({ name, description: `What ${name} does.` })),
+    ),
+};
 
 const TENANT = {
   id: "tnt_1",
@@ -51,6 +65,33 @@ function fakeAssetService(overrides: Partial<AssetService> = {}): AssetService {
     },
     ...overrides,
   };
+}
+
+/** The serialized definition a stored `workflow.json` carries, so the
+ * PUT path has something real to re-index. */
+function storedDefinitionBytes(
+  systemPrompt = "You are a careful research assistant.",
+): Uint8Array {
+  return new TextEncoder().encode(
+    serializeAgentDefinitionWorkflow(
+      buildAgentDefinitionWorkflow({
+        handle: "research-buddy",
+        tenantDomain: TENANT.domain,
+        description: "",
+        systemPrompt,
+      }),
+    ),
+  );
+}
+
+/** The one step agent's system prompt inside a serialized definition. */
+function promptFrom(workflowJson: string): string {
+  const parsed = JSON.parse(workflowJson) as {
+    steps: Record<string, { agent: { systemPrompt: string } }>;
+  };
+  const step = Object.values(parsed.steps)[0];
+  if (step === undefined) throw new Error("definition carries no steps");
+  return step.agent.systemPrompt;
 }
 
 // The duplicate-asset recovery path queries `db` directly (looking up the
@@ -134,6 +175,7 @@ function buildApp(
   const routes = createAgentDefinitionRoutes({
     db,
     assetService,
+    skillIndex: fakeSkillIndex,
     requireGrant: () => async (_c, next) => {
       await next();
     },
@@ -429,6 +471,7 @@ test("PUT /:definitionId/skills replaces the skill set with a single skills.json
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const app = buildApp(
     fakeAssetService({
+      readAssetBlob: () => Promise.resolve(storedDefinitionBytes()),
       populateAsset: (params) => {
         writtenFiles = params.tree.files;
         return Promise.resolve({ commitSha: "deadbeef" });
@@ -440,7 +483,10 @@ test("PUT /:definitionId/skills replaces the skill set with a single skills.json
     skills: ["long-form-write"],
   });
   expect(response.status).toBe(200);
-  expect(Object.keys(writtenFiles ?? {})).toEqual(["skills.json"]);
+  expect(Object.keys(writtenFiles ?? {}).sort()).toEqual([
+    "skills.json",
+    "workflow.json",
+  ]);
   expect(JSON.parse(writtenFiles?.["skills.json"] as string)).toEqual({
     skills: ["long-form-write"],
   });
@@ -452,6 +498,55 @@ test("PUT /:definitionId/skills 404s for an unknown definition", async () => {
   const app = buildApp(fakeAssetService(), fakeSkillsDb(undefined));
   const response = await put(app, "/def_missing/skills", { skills: [] });
   expect(response.status).toBe(404);
+});
+
+test("PUT /:definitionId/skills re-indexes the system prompt to exactly the new pins", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () =>
+        Promise.resolve(
+          storedDefinitionBytes(
+            "You are a careful research assistant.\n\n" +
+              "<available_skills>\n- stale: gone now.\n</available_skills>",
+          ),
+        ),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
+  );
+  await put(app, "/def_1/skills", { skills: ["long-form-write"] });
+  const prompt = promptFrom(writtenFiles?.["workflow.json"] as string);
+  expect(prompt).toContain("- long-form-write: What long-form-write does.");
+  expect(prompt).not.toContain("stale");
+  expect(prompt.split("<available_skills>")).toHaveLength(2);
+});
+
+test("PUT /:definitionId/skills with no pins strips the index from the prompt", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () =>
+        Promise.resolve(
+          storedDefinitionBytes(
+            "You are a careful research assistant.\n\n" +
+              "<available_skills>\n- stale: gone now.\n</available_skills>",
+          ),
+        ),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
+  );
+  await put(app, "/def_1/skills", { skills: [] });
+  expect(promptFrom(writtenFiles?.["workflow.json"] as string)).toBe(
+    "You are a careful research assistant.",
+  );
 });
 
 test("PUT /:definitionId/skills rejects a duplicate skill name with a 400", async () => {
@@ -472,4 +567,70 @@ test("PUT /:definitionId/skills rejects a blank skill name with a 400", async ()
   );
   const response = await put(app, "/def_1/skills", { skills: ["   "] });
   expect(response.status).toBe(400);
+});
+
+test("a create request indexes its pinned skills into the stored system prompt", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      createAsset: () =>
+        Promise.resolve({
+          id: "ast_1",
+          tenantId: TENANT.id,
+          kind: "workflow" as const,
+          name: "research-buddy",
+          displayName: "Research Buddy",
+          creatorPrincipalId: PRINCIPAL.id,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeCreateDb(),
+  );
+  await post(app, {
+    name: "Research Buddy",
+    handle: "research-buddy",
+    systemPrompt: "You are a careful research assistant.",
+    skills: ["web-research"],
+  });
+  const prompt = promptFrom(writtenFiles?.["workflow.json"] as string);
+  expect(prompt.startsWith("You are a careful research assistant.")).toBe(true);
+  expect(prompt).toContain("- web-research: What web-research does.");
+  expect(prompt).toContain("load_skill");
+});
+
+test("a create request with no pinned skills stores the author's prompt verbatim", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      createAsset: () =>
+        Promise.resolve({
+          id: "ast_1",
+          tenantId: TENANT.id,
+          kind: "workflow" as const,
+          name: "research-buddy",
+          displayName: "Research Buddy",
+          creatorPrincipalId: PRINCIPAL.id,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeCreateDb(),
+  );
+  await post(app, {
+    name: "Research Buddy",
+    handle: "research-buddy",
+    systemPrompt: "You are a careful research assistant.",
+  });
+  expect(promptFrom(writtenFiles?.["workflow.json"] as string)).toBe(
+    "You are a careful research assistant.",
+  );
 });
