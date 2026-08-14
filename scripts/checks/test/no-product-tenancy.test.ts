@@ -50,27 +50,27 @@ test("allowlisted product schema files pass at their max count", () => {
     {
       relPath: "packages/chat/src/schema.ts",
       contents: [
-        `export const a = pgTable("channel_settings", {});`,
-        `export const bench = pgTable("chat_bench_settings", {});`,
-        `export const b = pgTable("channel_read_state", {});`,
-        `export const c = pgTable("channel_launch", {});`,
-        `export const d = pgTable("channel_tenancy", {});`,
+        `export const a = chatSchema.table("channel_settings", {});`,
+        `export const bench = chatSchema.table("chat_bench_settings", {});`,
+        `export const b = chatSchema.table("channel_read_state", {});`,
+        `export const c = chatSchema.table("channel_launch", {});`,
+        `export const d = chatSchema.table("channel_tenancy", {});`,
       ].join("\n"),
     },
     {
       relPath: "packages/routines/src/schema.ts",
       contents: [
-        `export const routine = pgTable("routine", {});`,
-        `export const routineRun = pgTable("routine_run", {});`,
+        `export const routine = routinesSchema.table("routine", {});`,
+        `export const routineRun = routinesSchema.table("routine_run", {});`,
       ].join("\n"),
     },
     {
       relPath: "packages/webhook-triggers/src/schema.ts",
-      contents: `export const webhookTrigger = pgTable("webhook_trigger", {});`,
+      contents: `export const webhookTrigger = webhookTriggersSchema.table("webhook_trigger", {});`,
     },
     {
       relPath: "packages/notify/src/schema.ts",
-      contents: `export const notifyDispatch = pgTable("notify_dispatch", {});`,
+      contents: `export const notifyDispatch = notifySchema.table("notify_dispatch", {});`,
     },
   ]);
   expect(report.violations).toEqual([]);
@@ -84,14 +84,25 @@ test("allowlisted files fail when they grow past their max", () => {
     {
       relPath: "packages/routines/src/schema.ts",
       contents: [
-        `export const routine = pgTable("routine", {});`,
-        `export const routineRun = pgTable("routine_run", {});`,
-        `export const routineDraft = pgTable("routine_draft", {});`,
-        `export const extra = pgTable("routine_extra", {});`,
+        `export const routine = routinesSchema.table("routine", {});`,
+        `export const routineRun = routinesSchema.table("routine_run", {});`,
+        `export const routineDraft = routinesSchema.table("routine_draft", {});`,
+        `export const extra = routinesSchema.table("routine_extra", {});`,
       ].join("\n"),
     },
   ]);
   expect(report.violations).toHaveLength(1);
   expect(report.violations[0]).toContain("packages/routines/src/schema.ts");
   expect(report.violations[0]).toContain("4 pgTable");
+});
+
+test("a `xyzSchema.table(...)` call is a violation naming the file, same as pgTable", () => {
+  const report = auditProductTenancy([
+    {
+      relPath: "apps/hub/src/widget.ts",
+      contents: `export const t = widgetSchema.table("widget", {});`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("apps/hub/src/widget.ts");
 });

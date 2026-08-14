@@ -155,7 +155,7 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
     try {
       const notifyDispatch = await sql.unsafe(
         `SELECT 1 FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name = 'notify_dispatch'`,
+         WHERE table_schema = 'notify' AND table_name = 'notify_dispatch'`,
       );
       expect(notifyDispatch).toHaveLength(1);
 
