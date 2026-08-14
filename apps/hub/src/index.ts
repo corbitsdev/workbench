@@ -52,6 +52,7 @@ import {
 } from "@corbits/inbox";
 import {
   applyInsightsMigrations,
+  createDrizzleRunTraceReader,
   createInsightsRoutes,
   createPostgresUsageStore,
   createUsageSink,
@@ -580,7 +581,10 @@ export async function createHub(config: HubConfig) {
   // Insights usage sink + read API. Package-owned tables are migrated
   // at hub start (idempotent ledger); the store is Postgres-backed so
   // numbers survive restarts. Absent rates / pre-sink history stay null.
-  // runTraceReader is intentionally unmounted until a real reader exists.
+  // runTraceReader reads the platform's own workflow_run /
+  // workflow_run_execution / inference_turn / turn_part tables directly
+  // (see @corbits/insights' createDrizzleRunTraceReader) — no new storage,
+  // same `db` handle every other platform-table reader in this file uses.
   await applyInsightsMigrations(config.databaseUrl);
   const insightsUsage = createPostgresUsageStore(config.databaseUrl);
   // Sink constructed so the store path is live for reads, but left
@@ -602,6 +606,7 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+      runTraceReader: createDrizzleRunTraceReader(db),
     }),
   );
   {
