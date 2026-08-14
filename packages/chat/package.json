@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@corbits/agent-lifecycle": "workspace:*",
+    "@corbits/approvals": "workspace:*",
     "@corbits/commands": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
     "@intx/agent": "workspace:*",

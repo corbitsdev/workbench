@@ -7,7 +7,7 @@
 
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { createDB, createGrantStore } from "@intx/db";
+import { createApprovalStore, createDB, createGrantStore } from "@intx/db";
 import { workflowDefinition } from "@intx/db/schema";
 import { and, eq } from "drizzle-orm";
 import { generateKeyPair } from "@intx/crypto";
@@ -374,19 +374,23 @@ export async function createHub(config: HubConfig) {
     lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
   });
   // Built once, beside the platform, for the process's lifetime: turns
-  // an invited agent's `connector.reply` events into channel messages
-  // by subscribing to the sidecar's own event stream, replacing the
-  // old per-agent reply-bridge machinery armed (and re-armed) from
+  // an invited agent's `connector.reply` events into channel messages,
+  // and a gate-blocked run's approval park into an in-chat approve
+  // block, by subscribing to the sidecar's own event stream, replacing
+  // the old per-agent reply-bridge machinery armed (and re-armed) from
   // inside the routes. `chatPlatform.recordActivity` is the same
   // idle-sleep lifecycle `chatPlatform` itself drives — wiring it here
   // too is what keeps a replying agent's activity clock current even
   // though the reply never goes through `chatPlatform.sendMail`'s own
-  // `recordActivity` call.
+  // `recordActivity` call. `approvals` is the same `ApprovalStore` the
+  // platform's own approve/reject routes read and write — this
+  // orchestrator only ever reads it.
   const chatOrchestrator = createChatOrchestrator({
     db,
     store: chatStore,
     platform: chatPlatform,
     events: sidecarRouter.events,
+    approvals: createApprovalStore(db),
     recordActivity: chatPlatform.recordActivity,
   });
   // The "/name args" and "@name args" command registry: every tenant's
