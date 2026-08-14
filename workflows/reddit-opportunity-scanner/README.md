@@ -25,8 +25,14 @@ The system prompt commits it to:
 - **Searching**: `reddit_subreddit_search` (or `reddit_search` for a
   keyword with no specific subreddit) per approved pair, via
   `@corbits/reddit-tools`. A failed search is reported plainly and
-  skipped, never fabricated; if nothing is reachable or nothing is
-  found, the run says so and stops.
+  skipped, never fabricated. If nothing is reachable, or nothing is
+  found, the run does not just reply and stop: it calls
+  `reddit_opportunity_scanner_report_no_results`
+  (`./src/finalize-tool.ts`) once, persisting one honest teaching
+  artifact — what was searched (or that nothing was reachable), which
+  connector is missing if that's why, and what the sender should do
+  next — then delivers the same account as its reply. This call needs
+  no approval: nothing was selected, so there is nothing to confirm.
 - **Ranking**: scores every result 1 (weak fit) to 5 (explicit buying
   signal or urgent pain), with a short engagement brief per opportunity.
 - **Opportunity selection**: presents the ranked opportunities and asks
@@ -61,20 +67,42 @@ conversational turn rather than at the gate.
 
 ## Approval mechanics
 
-Identical to `@corbits/pain-point-collateral-workflow`'s and
-`@corbits/collateral-generation-workflow`'s finalize tools:
 `reddit_opportunity_scanner_finalize` is declared `approval: "ask"`
 (`@intx/agent`'s `ToolDeclaration`), the platform's native tool-approval
-gate. Calling it suspends the run; a human approves or rejects it from
-the inbox; on approval the tool actually runs, on rejection it never
-runs and the model gets a synthetic "denied by approver" error, which
-the system prompt turns into a calm terminal reply. See
-`pain-point-collateral`'s README for the full suspend/resume account,
-which applies unchanged here.
+gate — identical mechanics to `@corbits/pain-point-collateral-workflow`'s
+and `@corbits/collateral-generation-workflow`'s finalize tools. Calling
+it suspends the run; a human approves or rejects it from the inbox; on
+approval the tool actually runs, on rejection it never runs and the
+model gets a synthetic "denied by approver" error, which the system
+prompt turns into a calm terminal reply. See `pain-point-collateral`'s
+README for the full suspend/resume account, which applies unchanged
+here.
+
+`reddit_opportunity_scanner_report_no_results` (the no-data teaching
+artifact, see "What it does" above) carries no approval mark and runs
+immediately: a no-data run has nothing the sender selected to confirm,
+only an honest account of what the run attempted.
+
+## Library persistence
+
+Both tools persist through the sanctioned workflow-artifacts HTTP
+surface (`@corbits/artifacts-hub`'s `createWorkflowArtifactRoutes`,
+CL-6000) via `createWorkflowArtifact` (`./src/artifact-client.ts`,
+duplicated rather than imported from `@corbits/artifact-tools` — see
+that file's header for why this installable-data package never imports
+another `@corbits/*` package). `reddit_opportunity_scanner_finalize`
+persists each selected opportunity sequentially and, on a partial
+failure, honestly names how many already persisted rather than losing
+or silently claiming the whole batch failed.
+`reddit_opportunity_scanner_report_no_results` persists exactly one
+artifact. A successful call returns the persisted artifact's id/version
+so the delivery pipeline attaches it to the reply as a Library file-part
+chip (`packages/chat/src/artifact-delivery.ts`); a failed call surfaces
+as an honest `isError: true` result, never a fabricated success.
 
 ## Current limits (read before deploying)
 
-Three real gaps stand between this definition and a fully live deploy:
+Two real gaps stand between this definition and a fully live deploy:
 
 1. **No Firecrawl tool package.** CL-5994's dependency survey found no
    corbits/Interchange integration for site scraping. Building one is a
@@ -85,16 +113,13 @@ Three real gaps stand between this definition and a fully live deploy:
    this repo threads a caller-supplied `toolPackagePins` onto a built
    definition yet. Until it lands, this definition ships with
    `tools: []`; `@corbits/reddit-tools` exists, is tested, and is ready
-   to wire in the moment pinning is built.
-3. **No Library-write path from a workflow tool** (CL-6000).
-   `finalize-tool.ts`'s `run` builds the exact `{ title, kind, content }`
-   payload each selected opportunity needs and returns them, `persisted:
-false`, rather than fabricating Library rows. The finalized
-   opportunities still reach the human in the delivered chat reply —
-   they are just not yet Library artifacts with file-part chips.
+   to wire in the moment pinning is built. In practice this means every
+   search is unreachable on a real deploy today, so the no-data teaching
+   artifact (naming `scrapecreators`, the connector `@corbits/reddit-tools`
+   needs) is the path most real runs will hit until pinning lands.
 
-None of the three gaps are specific to this workflow; all are
-pre-existing platform limits this port surfaces rather than works around.
+Neither gap is specific to this workflow; both are pre-existing platform
+limits this port surfaces rather than works around.
 
 ## Usage
 
@@ -119,16 +144,8 @@ absent and the run honestly reports Reddit as not reachable (see that
 package's README for its credential requirement).
 
 Registered in `@corbits/workflow-catalog` as `reddit-opportunity-scanner`
-with `automatable: true`. **Read this before deploying**: every other
-approval-gated single-step definition in this catalog
-(`pain-point-collateral`, `collateral-generation`) is registered
-`automatable: false`, on the reasoning that a run with a mid-run approval
-gate is a poor fit for unattended scheduling — the CL-5994 ticket's own
-outcome checklist recommends the same for this workflow. This port sets
-`automatable: true` on explicit direction from the workflow's owner, on
-the theory that a routine can still fire this on a schedule and simply
-leave each run parked at the approval gate for a human to pick up — the
-same way a scheduled run can wait on any inbox item. Confirm this is the
-intended tradeoff before wiring it into the Routines picker; flipping it
-back to `false` is a one-line change here and in
-`packages/workflow-catalog/src/index.ts`.
+with `automatable: false`, the same as every other approval-gated
+single-step definition in this catalog (`pain-point-collateral`,
+`collateral-generation`): a run with a mid-run approval gate is a poor
+fit for unattended scheduling, the same reasoning the CL-5994 ticket's
+own outcome checklist recommends for this workflow.
