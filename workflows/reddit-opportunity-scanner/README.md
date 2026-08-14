@@ -152,9 +152,7 @@ real Reddit search results — without a pin, every search call is simply
 absent and the run honestly reports Reddit as not reachable (see that
 package's README for its credential requirement).
 
-Registered in `@corbits/workflow-catalog` as `reddit-opportunity-scanner`
-with `automatable: false`, the same as every other approval-gated
-single-step definition in this catalog (`pain-point-collateral`,
-`collateral-generation`): a run with a mid-run approval gate is a poor
-fit for unattended scheduling, the same reasoning the CL-5994 ticket's
-own outcome checklist recommends for this workflow.
+See [`workflows/README.md`](../README.md#status-note) for what
+registration/automatable/seeded mean — this one is `automatable: false`
+because its mid-run approval gate is a poor fit for unattended
+scheduling, per CL-5994's own outcome checklist.

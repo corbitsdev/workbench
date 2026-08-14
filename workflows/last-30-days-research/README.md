@@ -177,7 +177,6 @@ this package, not a gap in this definition.
 
 ## Registration
 
-Registered in `@corbits/workflow-catalog` as `last-30-days-research`
-(`automatable: false` — on-demand only, gated behind a human-supplied
-topic per run; not seeded by default, same as `pain-point-collateral`
-and `collateral-generation`).
+See [`workflows/README.md`](../README.md#status-note) for what
+registration/automatable/seeded mean — this one is `automatable: false`,
+gated behind a human-supplied topic per run, and not seeded by default.

@@ -142,8 +142,7 @@ repo's delivery invariant, `DeliveryThreadPort` in
 there. This workflow does not need its own persist/notify steps for
 that — it only needs to reply with one clean markdown brief.
 
-Not seeded by default (`DEFAULT_WORKFLOWS` in
-`packages/hub-client/src/seed.ts`): unlike `channel-digest`, this
-workflow needs real Granola/Linear credentials to be useful, so it is
-a Routines-picker candidate (`corbits.workflow.automatable: true`)
-rather than an every-signup default.
+See [`workflows/README.md`](../README.md#status-note) for what
+registration/automatable/seeded mean — this one is `automatable: true`
+but not seeded, since it needs real Granola/Linear credentials to be
+useful, unlike `channel-digest`.

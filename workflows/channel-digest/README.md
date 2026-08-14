@@ -51,5 +51,6 @@ const definition = buildChannelDigestWorkflow({
 const json = serializeChannelDigestWorkflow(definition);
 ```
 
-Seeded by default for every tenant — see `DEFAULT_WORKFLOWS` in
-`packages/hub-client/src/seed.ts`.
+See [`workflows/README.md`](../README.md#status-note) for what
+registration/automatable/seeded mean — this one is seeded by default for
+every tenant.

@@ -143,6 +143,7 @@ const definition = buildPainPointCollateralWorkflow({
 const json = serializePainPointCollateralWorkflow(definition);
 ```
 
-Registered in `@corbits/workflow-catalog` as `pain-point-collateral`
-(`automatable: false` — the approval gate makes it a poor fit for
-unattended scheduling, so it never appears in the Routines picker).
+See [`workflows/README.md`](../README.md#status-note) for what
+registration/automatable/seeded mean — this one is `automatable: false`
+for the same reason as `collateral-generation`: its approval gate is a
+poor fit for unattended scheduling.

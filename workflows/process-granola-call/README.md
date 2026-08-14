@@ -82,5 +82,6 @@ A transcript-plus-extraction-plus-verification pass over a long call
 needs more headroom than the catalog's shortest steps — size
 `turnTimeoutMs` accordingly (the example above gives it five minutes).
 
-Registered in `@corbits/workflow-catalog` as `process-granola-call`
-(`automatable: false`), so it never appears in the Routines picker.
+See [`workflows/README.md`](../README.md#status-note) for what
+registration/automatable/seeded mean — this one is spawned only by
+`granola-call`, so it's `automatable: false` and never seeded on its own.

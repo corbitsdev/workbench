@@ -118,7 +118,7 @@ const definition = buildCollateralGenerationWorkflow({
 const json = serializeCollateralGenerationWorkflow(definition);
 ```
 
-Registered in `@corbits/workflow-catalog` as `collateral-generation`
-(`automatable: false` — on-demand only, and the approval gate makes it a
-poor fit for unattended scheduling, so it never appears in the Routines
-picker).
+See [`workflows/README.md`](../README.md#status-note) for what
+registration/automatable/seeded mean — this one is `automatable: false`,
+on-demand only, since its approval gate is a poor fit for unattended
+scheduling.

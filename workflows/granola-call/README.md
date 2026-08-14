@@ -98,8 +98,6 @@ const definition = buildGranolaCallWorkflow({
 const json = serializeGranolaCallWorkflow(definition);
 ```
 
-Registered in `@corbits/workflow-catalog` as `granola-call`
-(`automatable: true`), so it is offered by the Routines picker. Not
-seeded into `DEFAULT_WORKFLOWS` — Granola is not connected for every
-tenant, so this is opt-in per workspace rather than provisioned on
-every signup.
+See [`workflows/README.md`](../README.md#status-note) for what
+registration/automatable/seeded mean — this one is `automatable: true`
+but not seeded, since Granola isn't connected for every tenant.
