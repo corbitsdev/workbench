@@ -22,11 +22,15 @@ export {
   seedCatalog,
   seedTenant,
 } from "./seed";
-export { CATALOG_SEEDS } from "./catalog-seed-data";
+export {
+  CATALOG_SEEDS,
+  deriveChannelHostInferencePreferences,
+} from "./catalog-seed-data";
 export type {
   CatalogModelSpec,
   CatalogProviderSeed,
   CatalogProviderSpec,
+  ChannelHostInferencePreference,
 } from "./catalog-seed-data";
 export { createGitWorkflowPusher } from "./workflow-push";
 export {

@@ -145,3 +145,9 @@ export type {
   ChatOrchestrator,
   ChatOrchestratorDeps,
 } from "./chat-orchestrator";
+
+export {
+  createChannelHostInferencePreferencesResolver,
+  listConnectedProviders,
+} from "./inference-preferences";
+export type { ConnectedProviderLister } from "./inference-preferences";
