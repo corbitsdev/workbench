@@ -9,9 +9,16 @@ import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import type { CreateOnboardingRoutesDeps } from "../src/routes";
 import { s256Challenge } from "../src/openrouter-connect";
+
+// Stands in for a stable `CREDENTIAL_ENCRYPTION_KEY`: a fresh cipher
+// built from these same bytes is indistinguishable, to the state store,
+// from the cipher a still-running process already had — which is
+// exactly what a restart needs to be true.
+const RESTART_STABLE_KEY = Buffer.alloc(32, 3);
 
 // The signed-in user is read per request from a mutable session, so a
 // test can swap identities mid-flow — the cross-user callback guarantee
@@ -47,6 +54,8 @@ function connectRoutes(
   };
   if (overrides.openrouterConnect !== undefined)
     deps.openrouterConnect = overrides.openrouterConnect;
+  if (overrides.credentialCipher !== undefined)
+    deps.credentialCipher = overrides.credentialCipher;
   return mountAuthenticated(createOnboardingRoutes(deps), session);
 }
 
@@ -280,6 +289,52 @@ describe("GET /oauth/openrouter/callback", () => {
     expect(
       new URL(
         second.headers.get("location") ?? "",
+        "https://x",
+      ).searchParams.get("code"),
+    ).toBe("state_expired");
+  });
+
+  test("survives a hub restart between /start and /callback, and still enforces single-use after it", async () => {
+    // /start runs against the pre-restart app; a fresh app (a new
+    // `createOnboardingRoutes` call, a fresh in-memory state store, the
+    // works) stands in for the process that comes back up after a
+    // restart. The only thing they share is the cipher key — exactly
+    // what a stable `CREDENTIAL_ENCRYPTION_KEY` gives a real restart.
+    const beforeRestart = connectRoutes({
+      credentialCipher: createEnvKeyCredentialCipher(RESTART_STABLE_KEY),
+    });
+    const { response: started } = await startConnect(beforeRestart);
+    const cookie = stateCookie(started);
+
+    const afterRestart = connectRoutes({
+      credentialCipher: createEnvKeyCredentialCipher(RESTART_STABLE_KEY),
+      openrouterConnect: {
+        exchange: async () => ({ ok: true, key: "sk-or-v1-minted" }),
+        completeSetup: async () => ({
+          kind: "seeded",
+          tenantId: "ten_1",
+          tenantSlug: "alice-user1",
+          workflows: ["echo"],
+        }),
+      },
+    });
+    const path = "/api/onboarding/oauth/openrouter/callback?code=auth_code_1";
+
+    const first = await afterRestart.request(path, { headers: { cookie } });
+    expect(
+      new URL(
+        first.headers.get("location") ?? "",
+        "https://x",
+      ).searchParams.get("outcome"),
+    ).toBe("seeded");
+
+    // Replaying the same cookie against the post-restart app — no new
+    // /start, same state — must fail even though nothing here remembers
+    // the pre-restart process at all.
+    const replay = await afterRestart.request(path, { headers: { cookie } });
+    expect(
+      new URL(
+        replay.headers.get("location") ?? "",
         "https://x",
       ).searchParams.get("code"),
     ).toBe("state_expired");
