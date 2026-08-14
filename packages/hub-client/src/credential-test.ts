@@ -76,7 +76,7 @@ type ProbeRequest = {
   readonly body?: string;
 };
 
-type ProviderTestConfig = {
+export type ProviderTestConfig = {
   readonly displayName: string;
   readonly baseURL: string;
   readonly adapterPlugin: AdapterPluginId;
@@ -109,7 +109,7 @@ const GoogleErrorBody = type({ "error?": { "status?": "string" } });
 // instead of matching the shared `ErrorBody` shape below.
 const XaiErrorBody = type({ "code?": "string" });
 
-const PROVIDER_TEST_CONFIG: Readonly<
+export const PROVIDER_TEST_CONFIG: Readonly<
   Record<SupportedCredentialProvider, ProviderTestConfig>
 > = {
   anthropic: {

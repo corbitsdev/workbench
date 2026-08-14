@@ -713,10 +713,16 @@ function inferenceCredentialName(providerName: string): string {
   return `${providerName}-default`;
 }
 
-async function ensureProvider(
+export type EnsureProviderArgs = {
+  tenantId: string;
+  name: string;
+  plugin: string;
+};
+
+export async function ensureProvider(
   api: ApiCall,
   cookies: string[],
-  args: { tenantId: string; name: string; plugin: string },
+  args: EnsureProviderArgs,
   log: (line: string) => void,
 ): Promise<string> {
   const created = await api(
@@ -763,17 +769,19 @@ async function ensureProvider(
   return existing.id;
 }
 
-async function ensureCredential(
+export type EnsureCredentialArgs = {
+  tenantId: string;
+  providerId: string;
+  name: string;
+  secret: string;
+  type: "api_key" | "oauth_token";
+  metadata?: Record<string, unknown>;
+};
+
+export async function ensureCredential(
   api: ApiCall,
   cookies: string[],
-  args: {
-    tenantId: string;
-    providerId: string;
-    name: string;
-    secret: string;
-    type: "api_key" | "oauth_token";
-    metadata?: Record<string, unknown>;
-  },
+  args: EnsureCredentialArgs,
   log: (line: string) => void,
 ): Promise<string> {
   const created = await api(

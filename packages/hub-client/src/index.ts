@@ -8,6 +8,8 @@ export { authenticate, createHubAPI, parseAs } from "./hub";
 export { CliError, isCliError } from "./errors";
 export type {
   DefaultWorkflow,
+  EnsureCredentialArgs,
+  EnsureProviderArgs,
   ModelSource,
   PushOutcome,
   SeedCatalogArgs,
@@ -19,6 +21,8 @@ export {
   CATALOG_TEST_WORKFLOWS,
   DEFAULT_WORKFLOWS,
   PLACEHOLDER_CATALOG_API_KEY,
+  ensureCredential,
+  ensureProvider,
   seedCatalog,
   seedTenant,
   isLiveDeploymentStatus,
@@ -43,6 +47,7 @@ export type {
   AdapterPluginId,
   CredentialTestResult,
   ProviderModelSource,
+  ProviderTestConfig,
   SupportedCredentialProvider,
   TestProviderCredentialArgs,
 } from "./credential-test";
