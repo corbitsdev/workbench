@@ -7,16 +7,19 @@
 // `@corbits/granola-tools`.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
+import type { CredentialCapability } from "@intx/types";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 
 import { searchWeb } from "./client";
 
 export const WEB_SEARCH_TOOL = "web_search";
 
-/** Env this bundle needs beyond `BaseEnv`: the caller's Exa credential. */
+/** The handle this package declares in `interchange.credentials`. */
+const EXA_CREDENTIAL_HANDLE = "exa";
+
+/** Env this bundle needs beyond `BaseEnv`: the mediated-credential capability. */
 export interface WebSearchEnv extends BaseEnv {
-  /** Absent or empty means "not connected" — never a thrown error. */
-  readonly webSearchApiKey?: string;
+  readonly credentials?: CredentialCapability;
 }
 
 function notConnectedResult(callId: string): ToolResult {
@@ -27,11 +30,30 @@ function notConnectedResult(callId: string): ToolResult {
   };
 }
 
+/**
+ * Resolve this bundle's mediated Exa credential, or `null` when it is
+ * not connected -- an absent `env.credentials`, an unbound handle, or a
+ * denied grant all collapse to the same "not connected" signal, never a
+ * thrown error out of the tool.
+ */
+async function resolveWebSearchCredential(
+  env: WebSearchEnv,
+): Promise<{ fetchImpl: typeof fetch } | null> {
+  if (env.credentials === undefined) return null;
+  try {
+    const mediated = await env.credentials.resolve(EXA_CREDENTIAL_HANDLE);
+    return { fetchImpl: mediated.fetch as unknown as typeof fetch };
+  } catch {
+    return null;
+  }
+}
+
 async function runWebSearch(
   env: WebSearchEnv,
   call: ToolCall,
 ): Promise<ToolResult> {
-  if (env.webSearchApiKey === undefined || env.webSearchApiKey === "") {
+  const credential = await resolveWebSearchCredential(env);
+  if (credential === null) {
     return notConnectedResult(call.id);
   }
   const query = call.arguments["query"];
@@ -45,7 +67,7 @@ async function runWebSearch(
   const numResults = call.arguments["numResults"];
   try {
     const results = await searchWeb(
-      { apiKey: env.webSearchApiKey },
+      { fetchImpl: credential.fetchImpl },
       {
         query,
         ...(typeof numResults === "number" ? { numResults } : {}),
@@ -62,14 +84,15 @@ async function runWebSearch(
 }
 
 /**
- * The `@corbits/web-search-tools` bundle factory: one tool, one env key
- * (`webSearchApiKey`). Pin this package on any agent that needs current
- * web results for a topic — backed by Exa, the same provider the OG
- * gtm-workbench's last30days-research workflow used for this source.
+ * The `@corbits/web-search-tools` bundle factory: one tool, one mediated
+ * credential (handle "exa"). Pin this package on any agent that needs
+ * current web results for a topic — backed by Exa, the same provider
+ * the OG gtm-workbench's last30days-research workflow used for this
+ * source.
  */
 export const webSearchTools = defineTool<WebSearchEnv>({
   id: "@corbits/web-search-tools/web-search",
-  requires: ["webSearchApiKey"],
+  requires: ["credentials"],
   definitions: [{ name: WEB_SEARCH_TOOL }],
   factory: (env) => ({
     definitions: [
