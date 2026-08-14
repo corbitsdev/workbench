@@ -53,7 +53,16 @@ export type PendingSeed = {
   readonly apiKey: string;
 };
 
-const PENDING_SEED_AAD = JSON.stringify(["onboarding-pending-seed"]);
+/** Domain separation on top of the AEAD tag, mirroring `pkce.ts`'s
+ * `connectStateAad`: a token sealed for one provider's connect flow
+ * cannot decrypt under another's. Unlike the PKCE state store (one
+ * store per provider, so the provider is known at open time too),
+ * `openPendingSeed` has to discover which provider a token was sealed
+ * for — it tries every supported provider's AAD in turn; only the one
+ * the token was actually sealed under ever successfully decrypts. */
+function pendingSeedAad(provider: SupportedCredentialProvider): string {
+  return JSON.stringify(["onboarding-pending-seed", provider]);
+}
 
 export function sealPendingSeed(
   cipher: CredentialCipher,
@@ -63,7 +72,7 @@ export function sealPendingSeed(
   const now = args.now ?? Date.now;
   const ttlMs = args.ttlMs ?? PENDING_SEED_TTL_MS;
   const payload = { ...seed, expiresAt: now() + ttlMs };
-  return cipher.encrypt(JSON.stringify(payload), PENDING_SEED_AAD);
+  return cipher.encrypt(JSON.stringify(payload), pendingSeedAad(seed.provider));
 }
 
 /**
@@ -83,20 +92,30 @@ export async function openPendingSeed(
   },
 ): Promise<PendingSeed | undefined> {
   const now = args.now ?? Date.now;
-  let payload: typeof PendingSeedPayload.infer;
-  try {
-    const plaintext = await cipher.decrypt(token, PENDING_SEED_AAD);
-    const parsed = PendingSeedPayload(JSON.parse(plaintext));
-    if (parsed instanceof type.errors) return undefined;
-    payload = parsed;
-  } catch {
-    return undefined;
+
+  for (const provider of PROVIDER_IDS) {
+    let payload: typeof PendingSeedPayload.infer;
+    try {
+      const plaintext = await cipher.decrypt(token, pendingSeedAad(provider));
+      const parsed = PendingSeedPayload(JSON.parse(plaintext));
+      if (parsed instanceof type.errors) continue;
+      payload = parsed;
+    } catch {
+      continue;
+    }
+
+    // The AAD this decrypted under is `provider` by construction — the
+    // payload's own field should always agree (it was sealed from the
+    // same value), checked here anyway as defense in depth against a
+    // hand-crafted token rather than a real seal/open round trip.
+    if (payload.provider !== provider) return undefined;
+    if (payload.expiresAt <= now()) return undefined;
+    if (payload.userId !== args.userId) return undefined;
+    if (payload.tenantId !== args.tenantId) return undefined;
+
+    const { expiresAt: _expiresAt, ...seed } = payload;
+    return seed;
   }
 
-  if (payload.expiresAt <= now()) return undefined;
-  if (payload.userId !== args.userId) return undefined;
-  if (payload.tenantId !== args.tenantId) return undefined;
-
-  const { expiresAt: _expiresAt, ...seed } = payload;
-  return seed;
+  return undefined;
 }

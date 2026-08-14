@@ -939,6 +939,11 @@ export function createOnboardingRoutes(
 
       const fullySeeded = await isFullySeeded(api, cookies, tenant.tenantId);
       if (fullySeeded) {
+        // A pending token has done its job once the bench reads as
+        // seeded — whether it was this very call's ensureSeeded run or
+        // a concurrent one that beat it there — so it must not sit in
+        // the browser, sealed key and all, for the rest of its TTL.
+        deleteCookie(c, PENDING_SEED_COOKIE, { path: "/" });
         return c.json(
           {
             kind: "seeded",
@@ -958,6 +963,13 @@ export function createOnboardingRoutes(
               tenantId: tenant.tenantId,
             });
       if (pending === undefined) {
+        // A token was present but didn't open (expired, wrong
+        // user/tenant, corrupt) — it is dead weight either way, so it
+        // is cleared rather than left to linger out its TTL unused. A
+        // genuinely absent cookie makes this a harmless no-op.
+        if (pendingToken !== undefined) {
+          deleteCookie(c, PENDING_SEED_COOKIE, { path: "/" });
+        }
         return c.json({ kind: "unseeded" }, 200);
       }
 
@@ -972,6 +984,7 @@ export function createOnboardingRoutes(
         provider: pending.provider,
         apiKey: pending.apiKey,
       });
+      deleteCookie(c, PENDING_SEED_COOKIE, { path: "/" });
       return c.json(
         {
           kind: "seeded",
