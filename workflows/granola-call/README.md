@@ -30,6 +30,14 @@ One step, one agent. The system prompt commits it to:
   CL-6000), the same sanctioned workflow-artifacts surface
   `process-granola-call`'s finalize tool uses.
 
+**Teaching-artifact kind**: `buildStatusArtifactPayload` always persists
+with `kind: "status-note"` — this tool only ever produces a status
+report, never a real deliverable, so there is no competing shape to
+confuse it with, but the value still matches the one teaching-artifact
+kind shared by every workflow in this catalog, so the Library's kind
+badge always reads "Status note" here too, not a bare "Text" that would
+look identical to a real deliverable elsewhere.
+
 ## Sensible defaults
 
 - **Schedule:** attach an hourly or daily Routine. A tighter schedule

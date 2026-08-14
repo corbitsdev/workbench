@@ -106,6 +106,16 @@ This runs on both paths, not just the happy one:
   says what to do next. A run never ends in silence or a bare markdown
   reply — it always ends in a persisted, chip-visible artifact.
 
+**Teaching-artifact kind**: `outcome` (`"report"` | `"status-note"`) is a
+required, structural argument to `last_30_days_research_finalize` — the
+model names which shape it is calling with, but never supplies `kind`
+directly, so the tool (not the prompt) decides the persisted artifact's
+`kind`: `"text"` for a real report, `"status-note"` for the no-data
+teaching payload. `"status-note"` is the one teaching-artifact kind
+shared by every workflow in this catalog, so the Library's kind badge
+always reads "Status note" for a no-data run, regardless of which
+workflow made it — never the same `"text"` kind a real report uses.
+
 ## Current limits (read before deploying)
 
 No tool-package pin yet (CL-5999): this definition ships with

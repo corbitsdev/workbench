@@ -81,6 +81,16 @@ This runs on both paths, not just the happy one:
   connect them. A run never ends in silence or a bare markdown reply —
   it always ends in a persisted, chip-visible artifact.
 
+**Teaching-artifact kind**: `outcome` (`"brief"` | `"status-note"`) is a
+required, structural argument to `morning_brief_finalize` — the model
+names which shape it is calling with, but never supplies `kind`
+directly, so the tool (not the prompt) decides the persisted artifact's
+`kind`: `"text"` for a real brief, `"status-note"` for the no-data
+teaching payload. `"status-note"` is the one teaching-artifact kind
+shared by every workflow in this catalog, so the Library's kind badge
+always reads "Status note" for a no-data run, regardless of which
+workflow made it — never the same `"text"` kind a real brief uses.
+
 ## Usage
 
 ```ts

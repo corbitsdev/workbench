@@ -40,6 +40,17 @@ The system prompt commits it to:
 - **Calm denial**: one plain sentence when the collateral is not
   approved — never presented as an error.
 
+**Teaching-artifact kind**: `outcome` (`"collateral"` | `"status-note"`)
+is a required, structural argument to `pain_point_collateral_finalize`
+— the model names which shape it is calling with, but never supplies
+`kind` directly, so the tool (not the prompt) decides the persisted
+artifact's `kind`: `"text"` for real collateral, `"status-note"` for the
+no-data teaching payload above. `"status-note"` is the one
+teaching-artifact kind shared by every workflow in this catalog, so the
+Library's kind badge always reads "Status note" for a no-data run,
+regardless of which workflow made it — never the same `"text"` kind
+real collateral uses.
+
 ## Intake validation
 
 `pain_point_collateral_intake` (`./src/intake-tool.ts`) is the one

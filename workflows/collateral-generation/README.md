@@ -35,6 +35,13 @@ system prompt commits it to:
   (`./src/finalize-tool.ts`) with every approved piece, gated behind a
   single human approval.
 
+**Teaching-artifact kind**: each piece's `kind` is `piece.contentType`,
+one of the seven real content-type ids for a normal draft, or
+`"status-note"` for the no-data teaching piece above. `"status-note"` is
+the one teaching-artifact kind shared by every workflow in this catalog,
+so the Library's kind badge always reads "Status note" for a no-data
+run, regardless of which workflow made it.
+
 ## Gate consolidation
 
 `gtm-workbench`'s original implementation suspended for a human **four**

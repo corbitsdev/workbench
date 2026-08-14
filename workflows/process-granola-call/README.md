@@ -40,6 +40,15 @@ becomes a chip through `packages/chat/src/artifact-delivery.ts`. A
 denied call gets a calm, plain reply that nothing was published, never
 an error.
 
+**Teaching-artifact kind**: `status` (`"notes"` | `"no-data"`), already
+the structural argument that picks which of the two content shapes to
+build, also picks the persisted artifact's `kind`: `"text"` for real
+call notes, `"status-note"` for the no-data teaching payload — decided
+by `buildArtifactPayload` from `args.status`, never left to free text.
+`"status-note"` is the one teaching-artifact kind shared by every
+workflow in this catalog, so the Library's kind badge always reads
+"Status note" for a no-data run, regardless of which workflow made it.
+
 ## Current limits (read before deploying)
 
 One platform-level gap remains, shared with the parent

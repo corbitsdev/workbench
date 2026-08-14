@@ -100,6 +100,15 @@ so the delivery pipeline attaches it to the reply as a Library file-part
 chip (`packages/chat/src/artifact-delivery.ts`); a failed call surfaces
 as an honest `isError: true` result, never a fabricated success.
 
+**Teaching-artifact kind**: a persisted opportunity's `kind` is fixed at
+`"reddit-opportunity-scan"` (`ARTIFACT_KIND`); the no-results teaching
+artifact's `kind` is fixed at `"status-note"` (`NO_RESULTS_ARTIFACT_KIND`)
+— each is a tool-owned constant, not something the model supplies.
+`"status-note"` is the one teaching-artifact kind shared by every
+workflow in this catalog, so the Library's kind badge always reads
+"Status note" for a no-data run, regardless of which workflow made it —
+never the same kind a real opportunity uses.
+
 ## Current limits (read before deploying)
 
 Two real gaps stand between this definition and a fully live deploy:
