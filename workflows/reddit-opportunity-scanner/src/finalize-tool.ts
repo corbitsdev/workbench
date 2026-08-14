@@ -71,7 +71,11 @@ export const REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_DESCRIPTION =
   "Persists one honest teaching artifact for a run that found no opportunities: what was searched, which connector (if any) is missing, and what the sender should do next. Not approval-gated — nothing was selected, so there is nothing for a human to confirm.";
 
 const ARTIFACT_KIND = "reddit-opportunity-scan";
-const NO_RESULTS_ARTIFACT_KIND = "reddit-opportunity-scan-no-results";
+// "status-note" is the one teaching-artifact kind shared by every
+// workflow in this catalog (see each workflow's README, "Teaching-
+// artifact kind" section) — a run's Library kind badge always reads
+// "Status note" for a no-data run, regardless of which workflow made it.
+const NO_RESULTS_ARTIFACT_KIND = "status-note";
 
 const RedditOpportunity = type({
   /** Short, human-facing title for the opportunity. */
