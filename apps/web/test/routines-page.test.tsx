@@ -3,6 +3,9 @@
 // List rows live in shell col2; this page owns create + detail only.
 
 import { describe, expect, test } from "bun:test";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { APIQuery } from "../src/api";
@@ -11,6 +14,7 @@ import {
   RoutinesListPage,
 } from "../src/pages/routines-page";
 import type { Routine, RoutineRun } from "../src/routines-api";
+import type { WebhookTrigger } from "../src/webhook-triggers-api";
 
 function ready<T>(data: T): APIQuery<T> {
   return { kind: "ready", data };
@@ -39,6 +43,10 @@ const listProps = {
   selectedId: null as string | null,
   onSelect: (_id: string | null) => {},
   onCreate: () => Promise.resolve(),
+  onCreateWebhookBinding: () =>
+    Promise.resolve({ id: "wht_1", secret: "test-secret" }),
+  webhookTrigger: null,
+  onRotateWebhookSecret: () => Promise.resolve({ secret: "rotated-secret" }),
   onDescribe: () =>
     Promise.resolve({
       id: "draft_test",
@@ -207,5 +215,111 @@ describe("RoutineDetailPage", () => {
     );
     expect(markup).toContain("manual");
     expect(markup).toContain("completed");
+  });
+});
+
+const webhookRoutine: Routine = {
+  ...routine,
+  id: "rtn_webhook",
+  name: "Support digest",
+  trigger: { kind: "webhook", webhookTriggerId: "wht_1" },
+};
+
+const webhookTriggerFixture: WebhookTrigger = {
+  id: "wht_1",
+  tenantId: "tnt_1",
+  name: "Support digest",
+  workflowDefinitionId: "wfd_1",
+  inputTemplate: "New webhook delivery.",
+  enabled: true,
+  createdBy: "usr_1",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  lastFiredAt: null,
+};
+
+describe("webhook trigger panel", () => {
+  test("RoutinesListPage detail shows the hook URL and a masked-secret note for a webhook routine", () => {
+    const markup = renderToStaticMarkup(
+      <RoutinesListPage
+        {...listProps}
+        routines={ready([webhookRoutine])}
+        selectedId={webhookRoutine.id}
+        webhookTrigger={ready(webhookTriggerFixture)}
+        definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+      />,
+    );
+    expect(markup).toContain("/api/webhooks/wht_1");
+    expect(markup).toContain("Rotate secret");
+    expect(markup).toContain("Hidden");
+  });
+
+  test("RoutinesListPage detail omits the webhook section for a scheduled routine", () => {
+    const markup = renderToStaticMarkup(
+      <RoutinesListPage
+        {...listProps}
+        routines={ready([routine])}
+        selectedId={routine.id}
+        definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+      />,
+    );
+    expect(markup).not.toContain("Rotate secret");
+  });
+
+  test("RoutineDetailPage shows the hook URL for a webhook routine", () => {
+    const markup = renderToStaticMarkup(
+      <RoutineDetailPage
+        routine={ready(webhookRoutine)}
+        runs={ready<readonly RoutineRun[]>([])}
+        webhookTrigger={ready(webhookTriggerFixture)}
+        onRotateWebhookSecret={() =>
+          Promise.resolve({ secret: "rotated-secret" })
+        }
+        onBack={() => {}}
+        onOpenRuns={() => {}}
+        onOpenChannel={(_channelId: string) => {}}
+        onEdit={() => Promise.resolve()}
+      />,
+    );
+    expect(markup).toContain("/api/webhooks/wht_1");
+    expect(markup).toContain("Rotate secret");
+  });
+
+  test("clicking Rotate secret reveals the newly rotated secret", async () => {
+    let rotateCalls = 0;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(RoutinesListPage, {
+          ...listProps,
+          routines: ready([webhookRoutine]),
+          selectedId: webhookRoutine.id,
+          webhookTrigger: ready(webhookTriggerFixture),
+          definitions: [
+            { id: "wfd_1", name: "Researcher", status: "deployed" },
+          ],
+          onRotateWebhookSecret: () => {
+            rotateCalls += 1;
+            return Promise.resolve({ secret: "freshly-rotated" });
+          },
+        }),
+      );
+    });
+    try {
+      const rotateButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("Rotate secret"),
+      );
+      expect(rotateButton).not.toBeUndefined();
+      await act(async () => {
+        rotateButton?.click();
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      expect(rotateCalls).toBe(1);
+      expect(container.textContent).toContain("freshly-rotated");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
   });
 });

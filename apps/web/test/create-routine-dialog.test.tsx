@@ -105,6 +105,10 @@ function baseProps(overrides: {
     selectedId: null,
     onSelect: () => {},
     onCreate: overrides.onCreate ?? (() => Promise.resolve()),
+    onCreateWebhookBinding: () =>
+      Promise.resolve({ id: "wht_1", secret: "test-secret" }),
+    webhookTrigger: null,
+    onRotateWebhookSecret: () => Promise.resolve({ secret: "rotated-secret" }),
     onDescribe:
       overrides.onDescribe ??
       (() =>
@@ -313,5 +317,85 @@ describe("CreateRoutineDialog stepper", () => {
     await settle();
 
     expect(approvedId as string | null).toBe("draft_9");
+  });
+});
+
+describe("CreateRoutineDialog webhook mode", () => {
+  test("creates the webhook binding, then the routine referencing it, and reveals the secret once", async () => {
+    let boundName: string | null = null;
+    let boundDefinitionId: string | null = null;
+    let created: CreateRoutineInput | null = null;
+    // baseProps doesn't let onCreateWebhookBinding be overridden directly —
+    // spread its result and override that one field instead.
+    const props = {
+      ...baseProps({
+        onCreate: (input) => {
+          created = input;
+          return Promise.resolve();
+        },
+      }),
+      onCreateWebhookBinding: (input: {
+        name: string;
+        definitionId: string;
+      }) => {
+        boundName = input.name;
+        boundDefinitionId = input.definitionId;
+        return Promise.resolve({ id: "wht_new", secret: "s3cr3t-value" });
+      },
+    };
+    mount(props);
+    await settle();
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+
+    act(() => {
+      cardWithTitle("Researcher")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    act(() => {
+      buttonWithText("On webhook")?.click();
+    });
+    await settle();
+    expect(document.body.textContent).toContain(
+      "A hook URL and signing secret are generated",
+    );
+
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    expect(document.body.textContent).toContain("Fires on webhook delivery");
+
+    const createButton = buttonWithText("Create routine");
+    expect(createButton).not.toBeUndefined();
+    act(() => {
+      createButton?.click();
+    });
+    await settle();
+
+    expect(boundName as string | null).toBe("Researcher");
+    expect(boundDefinitionId as string | null).toBe("wfd_1");
+    expect((created as CreateRoutineInput | null)?.trigger).toEqual({
+      kind: "webhook",
+      webhookTriggerId: "wht_new",
+    });
+    expect((created as CreateRoutineInput | null)?.runOnceNow).toBe(false);
+
+    // The secret is shown exactly once, right after creation — the
+    // dialog stays open on a reveal panel instead of closing immediately.
+    expect(document.body.textContent).toContain("s3cr3t-value");
+    expect(document.body.textContent).toContain("shown once");
+
+    act(() => {
+      buttonWithText("Done")?.click();
+    });
+    await settle();
+    expect(document.body.textContent).not.toContain("s3cr3t-value");
   });
 });
