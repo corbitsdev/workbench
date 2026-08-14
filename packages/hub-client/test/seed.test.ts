@@ -92,7 +92,7 @@ describe("seedTenant", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
-        return { status: 201, data: deploymentRow("dep_1", "ast_1", "active") };
+        return { status: 201, data: deploymentRow("dep_1", "ast_1", "deployed") };
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
@@ -168,7 +168,7 @@ describe("seedTenant", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
-        return { status: 201, data: deploymentRow("dep_2", "ast_2", "active") };
+        return { status: 201, data: deploymentRow("dep_2", "ast_2", "deployed") };
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_2/runs`
@@ -257,7 +257,7 @@ describe("seedTenant", () => {
       )
         return {
           status: 200,
-          data: [deploymentRow("dep_1", "ast_1", "active")],
+          data: [deploymentRow("dep_1", "ast_1", "deployed")],
         };
       if (
         method === "GET" &&
@@ -320,7 +320,7 @@ describe("seedTenant", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
-        return { status: 201, data: deploymentRow("dep_1", "ast_1", "active") };
+        return { status: 201, data: deploymentRow("dep_1", "ast_1", "deployed") };
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
@@ -363,7 +363,7 @@ describe("seedTenant", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
-        return { status: 201, data: deploymentRow("dep_1", "ast_1", "active") };
+        return { status: 201, data: deploymentRow("dep_1", "ast_1", "deployed") };
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
@@ -531,7 +531,7 @@ describe("seedTenant", () => {
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         deployedSources = body;
-        return { status: 201, data: deploymentRow("dep_3", "ast_3", "active") };
+        return { status: 201, data: deploymentRow("dep_3", "ast_3", "deployed") };
       }
       if (
         method === "GET" &&
@@ -645,7 +645,7 @@ describe("seedTenant", () => {
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         deployedSources = body;
-        return { status: 201, data: deploymentRow("dep_4", "ast_4", "active") };
+        return { status: 201, data: deploymentRow("dep_4", "ast_4", "deployed") };
       }
       if (
         method === "GET" &&
@@ -732,7 +732,7 @@ describe("seedTenant", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       )
-        return { status: 201, data: deploymentRow("dep_x", "ast_x", "active") };
+        return { status: 201, data: deploymentRow("dep_x", "ast_x", "deployed") };
       if (
         method === "GET" &&
         path.startsWith(`/api/tenants/${TENANT_ID}/workflows/`) &&

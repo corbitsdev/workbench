@@ -437,7 +437,11 @@ async function ensureDeployment(
     "deployments response",
   );
   const active = deployments.find(
-    (d) => d.definitionAssetId === args.assetId && d.status === "active",
+    (d) =>
+      d.definitionAssetId === args.assetId &&
+      // Wire statuses are "deployed" / "pending" (never "active") — both
+      // mean a live deployment exists and re-deploying would duplicate it.
+      (d.status === "deployed" || d.status === "pending"),
   );
   if (active) {
     log(
