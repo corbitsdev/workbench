@@ -64,6 +64,11 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     displayName: "Collateral generation",
     automatable: false,
   },
+  {
+    assetName: "last-30-days-research",
+    displayName: "Last 30 days research report",
+    automatable: false,
+  },
 ];
 
 const byAssetName = new Map(

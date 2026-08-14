@@ -1,0 +1,30 @@
+{
+  "name": "@corbits/last-30-days-research-workflow",
+  "private": true,
+  "description": "Single-step, mail-triggered workflow that researches a topic across a handful of source platforms and writes a long-form, cited report",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "corbits": {
+    "workflow": {
+      "assetName": "last-30-days-research",
+      "displayName": "Last 30 days research report",
+      "automatable": false
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/workflow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -371,6 +371,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/github-tools": {
+      "name": "@corbits/github-tools",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/granola-tools": {
       "name": "@corbits/granola-tools",
       "version": "0.0.1",
@@ -513,6 +526,19 @@
         "@types/bun": "catalog:",
         "@types/react": "^19.2.2",
         "@types/react-dom": "^19.2.1",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/web-search-tools": {
+      "name": "@corbits/web-search-tools",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -892,6 +918,18 @@
         "typescript": "catalog:",
       },
     },
+    "workflows/last-30-days-research": {
+      "name": "@corbits/last-30-days-research-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/morning-brief": {
       "name": "@corbits/morning-brief-workflow",
       "version": "0.0.1",
@@ -1049,6 +1087,8 @@
 
     "@corbits/folded-runs": ["@corbits/folded-runs@workspace:packages/folded-runs"],
 
+    "@corbits/github-tools": ["@corbits/github-tools@workspace:packages/github-tools"],
+
     "@corbits/granola-call-workflow": ["@corbits/granola-call-workflow@workspace:workflows/granola-call"],
 
     "@corbits/granola-tools": ["@corbits/granola-tools@workspace:packages/granola-tools"],
@@ -1058,6 +1098,8 @@
     "@corbits/inbox": ["@corbits/inbox@workspace:packages/inbox"],
 
     "@corbits/insights": ["@corbits/insights@workspace:packages/insights"],
+
+    "@corbits/last-30-days-research-workflow": ["@corbits/last-30-days-research-workflow@workspace:workflows/last-30-days-research"],
 
     "@corbits/linear-tools": ["@corbits/linear-tools@workspace:packages/linear-tools"],
 
@@ -1078,6 +1120,8 @@
     "@corbits/routines": ["@corbits/routines@workspace:packages/routines"],
 
     "@corbits/settings-ui": ["@corbits/settings-ui@workspace:packages/settings-ui"],
+
+    "@corbits/web-search-tools": ["@corbits/web-search-tools@workspace:packages/web-search-tools"],
 
     "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
 
