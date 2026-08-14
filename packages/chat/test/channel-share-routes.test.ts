@@ -319,4 +319,76 @@ describe("shared channel projection", () => {
       await shares.isShareMember(TENANT_C.id, channel.id, "prn_carol"),
     ).toBe(true);
   });
+
+  test("revoking a share member's row is live on the real SSE stream: the next published event never reaches them", async () => {
+    const trust = createInMemoryFederationTrustStore();
+    trust.registerTenant(TENANT.id, TENANT.name);
+    trust.registerTenant(TENANT_B.id, TENANT_B.name);
+    const shares = createInMemoryChannelShareStore({ trust });
+    const channelSubscribers = createChannelSubscriberRegistry();
+    const deps = buildDeps({ shares, trust, channelSubscribers });
+    const routes = createChatRoutes(deps);
+    const owner = mountAsTenant(routes, TENANT, "prn_alice");
+    const memberSide = mountAsTenant(routes, TENANT_B, "prn_bob");
+
+    const { body: channel } = await createChannel(owner, { kind: "channel" });
+    await trust.establishBilateralTrust(TENANT.id, TENANT_B.id);
+    await owner.request(`/channels/${channel.id}/shares`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectedTenantId: TENANT_B.id }),
+    });
+    await memberSide.request(`/channels/${channel.id}/share-members`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ principalId: "prn_bob" }),
+    });
+
+    const streamResponse = await memberSide.request(
+      `/channels/${channel.id}/stream`,
+    );
+    expect(streamResponse.status).toBe(200);
+    const body = streamResponse.body;
+    if (body === null) throw new Error("stream has no body");
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+
+    async function readChunk(timeoutMs: number): Promise<string | undefined> {
+      return Promise.race([
+        reader
+          .read()
+          .then((result) =>
+            result.done ? undefined : decoder.decode(result.value),
+          ),
+        new Promise<undefined>((resolve) =>
+          setTimeout(() => resolve(undefined), timeoutMs),
+        ),
+      ]);
+    }
+
+    channelSubscribers.publish(channel.id, {
+      type: "chat.typing",
+      data: { principalId: "prn_alice" },
+    });
+    const beforeRevocation = await readChunk(2_000);
+    expect(beforeRevocation).toContain("chat.typing");
+
+    const revoked = await memberSide.request(
+      `/channels/${channel.id}/share-members/prn_bob`,
+      { method: "DELETE" },
+    );
+    expect(revoked.status).toBe(204);
+    expect(await shares.isShareMember(TENANT_B.id, channel.id, "prn_bob")).toBe(
+      false,
+    );
+
+    channelSubscribers.publish(channel.id, {
+      type: "chat.typing",
+      data: { principalId: "prn_alice" },
+    });
+    const afterRevocation = await readChunk(300);
+    expect(afterRevocation).toBeUndefined();
+
+    await reader.cancel().catch(() => undefined);
+  });
 });
