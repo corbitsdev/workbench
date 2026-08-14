@@ -8,6 +8,7 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
   REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME,
+  REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME,
   REDDIT_OPPORTUNITY_SCANNER_STEP_ID,
   REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT,
   REDDIT_OPPORTUNITY_SCANNER_WORKFLOW_ID,
@@ -86,6 +87,18 @@ test("the system prompt commits to an honest no-scrape failure, not fabricated s
 test("the system prompt requires the search plan to be reviewed before any search runs", () => {
   expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toMatch(
     /never search reddit before this is approved/i,
+  );
+});
+
+test("the system prompt names the honest no-data teaching-artifact tool and its missing connector", () => {
+  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain(
+    REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME,
+  );
+  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain(
+    "scrapecreators",
+  );
+  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toMatch(
+    /needs no approval/i,
   );
 });
 
