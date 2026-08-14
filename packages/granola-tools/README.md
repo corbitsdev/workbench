@@ -1,15 +1,18 @@
 # @corbits/granola-tools
 
-A minimal Granola integration: one client call, one `@intx/agent` tool
-bundle. Built for the morning-brief workflow (CL-5993) but not specific
-to it — any agent that needs a user's recent Granola call notes pins
-this package.
+A minimal Granola integration: two client calls, one `@intx/agent` tool
+bundle. Built for the morning-brief workflow (CL-5993); `granola_get_note`
+was added by the pain-point-collateral workflow (CL-5995) — neither is
+specific to its origin workflow, so both stay in this one package rather
+than forking a second Granola client.
 
-## Tool
+## Tools
 
-`granola_list_recent_notes` — lists the caller's recent call notes
-(`id`, `title`, `summary`, `createdAt`), optionally filtered to notes
-created after a given ISO 8601 timestamp.
+- `granola_list_recent_notes` — lists the caller's recent call notes
+  (`id`, `title`, `summary`, `createdAt`), optionally filtered to notes
+  created after a given ISO 8601 timestamp.
+- `granola_get_note` — fetches one call note by id, including its
+  transcript (`speaker`/`text` lines).
 
 ## Credential
 

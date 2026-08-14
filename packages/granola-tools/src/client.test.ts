@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { listRecentGranolaNotes } from "./client";
+import { getGranolaNote, listRecentGranolaNotes } from "./client";
 
 const NOTE = {
   id: "note_1",
@@ -63,5 +63,57 @@ test("throws when the response body does not match the expected shape", async ()
 
   await expect(
     listRecentGranolaNotes({ apiKey: "test-key", fetchImpl }),
+  ).rejects.toThrow(/did not match the expected shape/);
+});
+
+test("getGranolaNote fetches one note by id with its transcript", async () => {
+  const captured: { url: string; auth: string | null } = {
+    url: "",
+    auth: null,
+  };
+  const noteWithTranscript = {
+    ...NOTE,
+    transcript: [
+      { speaker: "Rep", text: "How's your current setup?" },
+      { speaker: "Prospect", text: "It's slow and hard to configure." },
+    ],
+  };
+  const fetchImpl = (async (input: URL | string, init?: RequestInit) => {
+    captured.url = String(input);
+    captured.auth =
+      (init?.headers as Record<string, string> | undefined)?.[
+        "authorization"
+      ] ?? null;
+    return new Response(JSON.stringify(noteWithTranscript), { status: 200 });
+  }) as unknown as typeof fetch;
+
+  const note = await getGranolaNote(
+    { apiKey: "test-key", fetchImpl },
+    { noteId: "note_1" },
+  );
+  expect(captured.url).toBe(
+    "https://api.granola.ai/v1/notes/note_1?include=transcript",
+  );
+  expect(captured.auth).toBe("Bearer test-key");
+  expect(note).toEqual(noteWithTranscript);
+});
+
+test("getGranolaNote throws on a non-ok HTTP response", async () => {
+  const fetchImpl = (async () =>
+    new Response("not found", { status: 404 })) as unknown as typeof fetch;
+
+  await expect(
+    getGranolaNote({ apiKey: "test-key", fetchImpl }, { noteId: "missing" }),
+  ).rejects.toThrow(/404/);
+});
+
+test("getGranolaNote throws when the response body does not match the expected shape", async () => {
+  const fetchImpl = (async () =>
+    new Response(JSON.stringify({ id: "note_1" }), {
+      status: 200,
+    })) as unknown as typeof fetch;
+
+  await expect(
+    getGranolaNote({ apiKey: "test-key", fetchImpl }, { noteId: "note_1" }),
   ).rejects.toThrow(/did not match the expected shape/);
 });

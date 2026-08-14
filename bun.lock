@@ -358,6 +358,19 @@
         "typescript": "catalog:",
       },
     },
+    "packages/granola-tools": {
+      "name": "@corbits/granola-tools",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/hub-client": {
       "name": "@workbench/hub-client",
       "version": "0.0.1",
@@ -403,6 +416,19 @@
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
         "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/linear-tools": {
+      "name": "@corbits/linear-tools",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -831,8 +857,32 @@
         "typescript": "catalog:",
       },
     },
+    "workflows/granola-call": {
+      "name": "@corbits/granola-call-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "workflows/heartbeat": {
       "name": "@corbits/heartbeat-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/morning-brief": {
+      "name": "@corbits/morning-brief-workflow",
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
@@ -850,6 +900,18 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/process-granola-call": {
+      "name": "@corbits/process-granola-call-workflow",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -972,19 +1034,29 @@
 
     "@corbits/folded-runs": ["@corbits/folded-runs@workspace:packages/folded-runs"],
 
+    "@corbits/granola-call-workflow": ["@corbits/granola-call-workflow@workspace:workflows/granola-call"],
+
+    "@corbits/granola-tools": ["@corbits/granola-tools@workspace:packages/granola-tools"],
+
     "@corbits/heartbeat-workflow": ["@corbits/heartbeat-workflow@workspace:workflows/heartbeat"],
 
     "@corbits/inbox": ["@corbits/inbox@workspace:packages/inbox"],
 
     "@corbits/insights": ["@corbits/insights@workspace:packages/insights"],
 
+    "@corbits/linear-tools": ["@corbits/linear-tools@workspace:packages/linear-tools"],
+
     "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#ab72ee3", { "dependencies": { "@hono/standard-validator": "0.2.3", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "@intx/mime": "^0.2.2", "@intx/types": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-ab72ee3", "sha512-KM0YH5rJifmOH55WtwNcqRJa64Kq4ej2iTBn+0t8rb+8sLKqFR8uxecrfVnah4mC0NpIVfnG+8pt0rFnbEciDA=="],
 
     "@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#8003402", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-8003402", "sha512-F1ypnvRuJLKScrm8sgknPyh4f87xeo/v5Nnm2/JyIckWiez7HZi80crTSK8S+udGBcCkr5v8F8NhB9GdwKlX7g=="],
 
+    "@corbits/morning-brief-workflow": ["@corbits/morning-brief-workflow@workspace:workflows/morning-brief"],
+
     "@corbits/notify": ["@corbits/notify@workspace:packages/notify"],
 
     "@corbits/pain-point-collateral-workflow": ["@corbits/pain-point-collateral-workflow@workspace:workflows/pain-point-collateral"],
+
+    "@corbits/process-granola-call-workflow": ["@corbits/process-granola-call-workflow@workspace:workflows/process-granola-call"],
 
     "@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#2e039d2", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-2e039d2", "sha512-V4rA8V9+3BIQdmWNekAAPL+aVtaW7XJnsh97YJa26f0R7Oosmq7xc5Ax52KrE20I1XlD+YWQ7UpY9HX+S0+6XA=="],
 

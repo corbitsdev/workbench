@@ -13,7 +13,10 @@
 // workflow-local tool (`./finalize-tool.ts`), not a separate tool
 // package: none of it is a reusable integration on its own. The one
 // genuinely reusable piece, fetching a Granola note by id, is
-// `@corbits/tools-granola`.
+// `granola_get_note` from `@corbits/granola-tools` — the same package
+// the morning-brief workflow (CL-5993) pins for its own
+// `granola_list_recent_notes` call; both tools share that one bundle
+// rather than forking a second Granola client.
 //
 // Approval mechanics: see `finalize-tool.ts`'s header comment for the
 // exact suspend/resume path. In short — `pain_point_collateral_finalize`
@@ -24,14 +27,15 @@
 //
 // Known platform gap (see `finalize-tool.ts`'s header for the full
 // account, and this package's README for the reader-facing version): no
-// production workflow builder in this repo threads tool-package pins
-// onto a definition yet, the same gap `@corbits/granola-call-workflow`
-// (CL-5998) documents for its own Granola dependency. Until that lands,
-// this definition's step ships with `tools: []`, matching every other
-// definition in this catalog — its system prompt commits it to saying
-// plainly when it has no way to reach Granola or finalize a piece,
-// rather than inventing a transcript, pain points, or an approval that
-// never happened.
+// production workflow builder in this repo threads a caller-supplied
+// `toolPackagePins` onto a built definition yet (`docs/AGENTS-PAGE.md`),
+// the same gap `@corbits/morning-brief-workflow` (CL-5993) and
+// `@corbits/granola-call-workflow` (CL-5998) document for their own
+// Granola dependencies. Until that lands, this definition's step ships
+// with `tools: []`, matching every other definition in this catalog —
+// its system prompt commits it to saying plainly when it has no way to
+// reach Granola or finalize a piece, rather than inventing a
+// transcript, pain points, or an approval that never happened.
 //
 // This package is installable data. It imports only published platform
 // packages, and nothing imports it statically: a host publishes the

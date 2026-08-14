@@ -5,7 +5,7 @@
 // reusable integration, so it stays folded into the definition per the
 // workflow-catalog's "workflow-specific logic lives in the definition"
 // convention (only genuinely reusable integrations, like
-// `@corbits/tools-granola`, live outside it).
+// `@corbits/granola-tools`, live outside it).
 //
 // Approval mechanics: `defineTool`'s `definitions` array marks this
 // tool's one definition `approval: "ask"` (see
@@ -19,8 +19,9 @@
 // On approval the parked call is re-dispatched and `run` below executes
 // for real, exactly once. On rejection `run` never executes at all — the
 // model instead sees a synthetic `isError: true` result ("denied by
-// approver"), which this workflow's system prompt (see `prompts.ts`)
-// turns into a calm, plain terminal reply rather than an error.
+// approver"), which this workflow's system prompt (see `./index.ts`'s
+// `PAIN_POINT_COLLATERAL_SYSTEM_PROMPT`) turns into a calm, plain
+// terminal reply rather than an error.
 //
 // Known platform gap (read before wiring this into a live deploy): no
 // workflow tool package in this repo can reach the hub's database or
