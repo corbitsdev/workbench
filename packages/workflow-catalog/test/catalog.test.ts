@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import { describe, expect, test } from "bun:test";
 
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
@@ -5,6 +6,8 @@ import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import {
   isAutomatableWorkflowName,
   workflowDisplayName,
+  workflowCatalogEntry,
+  WorkflowTriggerField,
   WORKFLOW_CATALOG,
 } from "../src/index";
 
@@ -162,5 +165,71 @@ describe("workflow catalog", () => {
     expect(byAssetName.get("assistant")?.requiredConnections).toEqual([]);
     expect(byAssetName.get("heartbeat")?.requiredConnections).toEqual([]);
     expect(byAssetName.get("channel-digest")?.requiredConnections).toEqual([]);
+  });
+
+  describe("triggerFields", () => {
+    test("every declared triggerFields entry matches the WorkflowTriggerField shape", () => {
+      for (const entry of WORKFLOW_CATALOG) {
+        if (entry.triggerFields === undefined) continue;
+        const parsed = WorkflowTriggerField.array()(entry.triggerFields);
+        expect(parsed instanceof type.errors).toBe(false);
+      }
+    });
+
+    test("every triggerFields key is unique within its entry and non-blank labeled", () => {
+      for (const entry of WORKFLOW_CATALOG) {
+        if (entry.triggerFields === undefined) continue;
+        const keys = entry.triggerFields.map((field) => field.key);
+        expect(new Set(keys).size).toBe(keys.length);
+        for (const field of entry.triggerFields) {
+          expect(field.label.trim().length).toBeGreaterThan(0);
+        }
+      }
+    });
+
+    test("last-30-days-research declares a required topic and an optional focus", () => {
+      const entry = workflowCatalogEntry("last-30-days-research");
+      expect(entry?.triggerFields).toEqual([
+        {
+          key: "topic",
+          label: "Topic",
+          placeholder: "AI coding agents",
+          required: true,
+          help: "What to research over the last 30 days.",
+        },
+        {
+          key: "focus",
+          label: "Focus",
+          placeholder: "Competing launches",
+          required: false,
+          help: "Optional — narrows which angle of the topic to chase.",
+        },
+      ]);
+    });
+
+    test("pain-point-collateral declares its either/or transcript and noteId as optional", () => {
+      // Neither field is required on its own — the workflow's intake tool
+      // accepts either one (or neither, and teaches what to send next); see
+      // workflows/pain-point-collateral/src/intake-tool.ts's IntakeArgs.
+      const entry = workflowCatalogEntry("pain-point-collateral");
+      expect(entry?.triggerFields?.map((f) => f.key)).toEqual([
+        "transcript",
+        "noteId",
+      ]);
+      for (const field of entry?.triggerFields ?? []) {
+        expect(field.required).toBe(false);
+      }
+    });
+
+    test("workflows with no named trigger inputs declare no triggerFields", () => {
+      // Heartbeat and channel-digest take no human-supplied content at
+      // create time — heartbeat ignores its trigger entirely, and
+      // channel-digest's content is computed server-side by the scheduler,
+      // not typed in by a person.
+      expect(workflowCatalogEntry("heartbeat")?.triggerFields).toBeUndefined();
+      expect(
+        workflowCatalogEntry("channel-digest")?.triggerFields,
+      ).toBeUndefined();
+    });
   });
 });

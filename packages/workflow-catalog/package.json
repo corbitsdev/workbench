@@ -12,6 +12,9 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
+  "dependencies": {
+    "arktype": "catalog:"
+  },
   "devDependencies": {
     "@types/bun": "catalog:",
     "@workbench/connections": "workspace:*",

@@ -44,6 +44,7 @@ const researcherDefinition = {
   requiredConnections: [] as const,
   exampleOutput: "Research summary, three sources cited.",
   typicalDuration: "a few minutes",
+  triggerFields: [] as const,
 };
 
 const listProps = {

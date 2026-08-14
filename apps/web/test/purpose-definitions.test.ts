@@ -42,4 +42,19 @@ describe("withCatalogFields", () => {
       withCatalogFields([{ id: "1", name: "not-a-workflow" }]),
     ).toThrow();
   });
+
+  test("attaches a workflow's declared triggerFields", () => {
+    const [enriched] = withCatalogFields([
+      { id: "1", name: "last-30-days-research" },
+    ]);
+    expect(enriched?.triggerFields.map((f) => f.key)).toEqual([
+      "topic",
+      "focus",
+    ]);
+  });
+
+  test("defaults triggerFields to an empty array for workflows with none declared", () => {
+    const [enriched] = withCatalogFields([{ id: "1", name: "heartbeat" }]);
+    expect(enriched?.triggerFields).toEqual([]);
+  });
 });

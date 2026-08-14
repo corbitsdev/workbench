@@ -38,14 +38,22 @@ function principal(id: string) {
   };
 }
 
-function fakeLauncher(): RoutineLauncher & { calls: number } {
+function fakeLauncher(): RoutineLauncher & {
+  calls: number;
+  lastInput: Record<string, unknown> | undefined;
+} {
   let calls = 0;
+  let lastInput: Record<string, unknown> | undefined;
   return {
     get calls() {
       return calls;
     },
-    async launchRoutineRun() {
+    get lastInput() {
+      return lastInput;
+    },
+    async launchRoutineRun(input) {
       calls += 1;
+      lastInput = input.input;
       return { runId: `run_${calls}` };
     },
   };
@@ -155,6 +163,40 @@ describe("createRoutineRoutes", () => {
 
     expect(response.status).toBe(201);
     expect(body["trigger"]).toBeNull();
+  });
+
+  test("persists a create request's input record on the routine row", async () => {
+    // The seam a create-time UI (e.g. the routines picker's declared
+    // triggerFields) writes into: whatever named fields a person filled
+    // in land here, verbatim.
+    const deps = buildDeps();
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { response, body } = await createRoutine(app, {
+      ...VALID_BODY,
+      input: { topic: "AI coding agents", focus: "Competing launches" },
+    });
+
+    expect(response.status).toBe(201);
+    expect(body["input"]).toEqual({
+      topic: "AI coding agents",
+      focus: "Competing launches",
+    });
+  });
+
+  test("a runOnceNow create forwards the same input record to the launcher", async () => {
+    const launcher = fakeLauncher();
+    const deps = buildDeps({ launcher });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { response } = await createRoutine(app, {
+      ...VALID_BODY,
+      trigger: null,
+      input: { topic: "AI coding agents" },
+      runOnceNow: true,
+    });
+
+    expect(response.status).toBe(201);
+    expect(launcher.calls).toBe(1);
+    expect(launcher.lastInput).toEqual({ topic: "AI coding agents" });
   });
 
   test("accepts a webhook trigger when no checker is wired (always-allow)", async () => {

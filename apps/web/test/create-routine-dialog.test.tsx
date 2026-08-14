@@ -30,6 +30,22 @@ if (textareaValueSetter === undefined) {
   throw new Error("HTMLTextAreaElement.prototype.value has no native setter");
 }
 
+const maybeInputValueSetter = Object.getOwnPropertyDescriptor(
+  window.HTMLInputElement.prototype,
+  "value",
+)?.set;
+if (maybeInputValueSetter === undefined) {
+  throw new Error("HTMLInputElement.prototype.value has no native setter");
+}
+const inputValueSetter = maybeInputValueSetter;
+
+function typeInto(input: HTMLInputElement | null, value: string) {
+  act(() => {
+    inputValueSetter.call(input, value);
+    input?.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
@@ -81,6 +97,7 @@ const definitions = [
     requiredConnections: [],
     exampleOutput: "Research summary, three sources cited.",
     typicalDuration: "a few minutes",
+    triggerFields: [],
   },
   {
     id: "wfd_2",
@@ -90,6 +107,32 @@ const definitions = [
     requiredConnections: [],
     exampleOutput: "A three-paragraph summary of the source document.",
     typicalDuration: "under a minute",
+    triggerFields: [],
+  },
+  {
+    id: "wfd_3",
+    name: "Last 30 days research report",
+    status: "deployed",
+    whatItDoes: "Researches a topic over the last 30 days.",
+    requiredConnections: [],
+    exampleOutput: "Cited report: 3 new competing launches this month",
+    typicalDuration: "1-2 minutes",
+    triggerFields: [
+      {
+        key: "topic",
+        label: "Topic",
+        placeholder: "AI coding agents",
+        required: true,
+        help: "What to research over the last 30 days.",
+      },
+      {
+        key: "focus",
+        label: "Focus",
+        placeholder: "Competing launches",
+        required: false,
+        help: "Optional — narrows which angle of the topic to chase.",
+      },
+    ],
   },
 ] as const;
 
@@ -360,6 +403,156 @@ describe("CreateRoutineDialog stepper", () => {
     await settle();
 
     expect(approvedId as string | null).toBe("draft_9");
+  });
+});
+
+describe("CreateRoutineDialog trigger fields", () => {
+  test("Configure shows no trigger-inputs section for a workflow with none declared", async () => {
+    await openDialog();
+
+    act(() => {
+      cardWithTitle("Researcher")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    expect(document.body.textContent).not.toContain("Trigger inputs");
+  });
+
+  test("Configure renders a declared triggerFields step: required field blocks Next until filled", async () => {
+    await openDialog();
+
+    act(() => {
+      cardWithTitle("Last 30 days research report")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain("Trigger inputs");
+    expect(document.body.textContent).toContain("Topic");
+    expect(document.body.textContent).toContain("Focus (optional)");
+
+    const nextButton = buttonWithText("Next");
+    expect(nextButton?.hasAttribute("disabled")).toBe(true);
+
+    const topicInput = document.body.querySelector(
+      "#routine-trigger-field-topic",
+    ) as HTMLInputElement | null;
+    expect(topicInput).not.toBeNull();
+    typeInto(topicInput, "AI coding agents");
+
+    expect(buttonWithText("Next")?.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("filled trigger field values thread into the fired routine's input, keyed by field key", async () => {
+    let created: CreateRoutineInput | null = null;
+    mount(
+      baseProps({
+        onCreate: (input) => {
+          created = input;
+          return Promise.resolve();
+        },
+      }),
+    );
+    await settle();
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+
+    act(() => {
+      cardWithTitle("Last 30 days research report")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    typeInto(
+      document.body.querySelector(
+        "#routine-trigger-field-topic",
+      ) as HTMLInputElement | null,
+      "AI coding agents",
+    );
+    typeInto(
+      document.body.querySelector(
+        "#routine-trigger-field-focus",
+      ) as HTMLInputElement | null,
+      "Competing launches",
+    );
+
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    const createButton = buttonWithText("Create & run now");
+    act(() => {
+      createButton?.click();
+    });
+    await settle();
+
+    expect((created as CreateRoutineInput | null)?.input).toEqual({
+      topic: "AI coding agents",
+      focus: "Competing launches",
+    });
+  });
+
+  test("an unfilled optional trigger field is omitted from the fired input, not sent blank", async () => {
+    let created: CreateRoutineInput | null = null;
+    mount(
+      baseProps({
+        onCreate: (input) => {
+          created = input;
+          return Promise.resolve();
+        },
+      }),
+    );
+    await settle();
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+
+    act(() => {
+      cardWithTitle("Last 30 days research report")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    typeInto(
+      document.body.querySelector(
+        "#routine-trigger-field-topic",
+      ) as HTMLInputElement | null,
+      "AI coding agents",
+    );
+
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Create & run now")?.click();
+    });
+    await settle();
+
+    expect((created as CreateRoutineInput | null)?.input).toEqual({
+      topic: "AI coding agents",
+    });
   });
 });
 
