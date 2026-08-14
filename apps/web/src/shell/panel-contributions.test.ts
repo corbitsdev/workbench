@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import type { Channel } from "@corbits/chat-ui";
 
+import { channelPath } from "../channel-path";
 import { resetPendingLibraryUpload } from "../library-upload";
 import { resolvePanelContribution } from "./panel-contribution";
 import {
@@ -119,6 +120,30 @@ describe("library panel contribution", () => {
         label: action.label,
       })),
     ).toEqual([{ id: "upload-artifact", label: "Upload" }]);
+  });
+
+  test("/library pageBand exposes a Channels/Routines quick-action strip", () => {
+    ensurePanelContributions();
+    const contribution = resolvePanelContribution("/library");
+    if (!contribution) {
+      throw new Error("expected library panel contribution");
+    }
+    const navigated: string[] = [];
+    const band = contribution.pageBand({
+      path: "/library",
+      onNavigate: (to) => {
+        navigated.push(to);
+      },
+    });
+    expect(
+      band.actions?.map((action) => ({ id: action.id, label: action.label })),
+    ).toEqual([
+      { id: "library-qa-channels", label: "Channels" },
+      { id: "library-qa-routines", label: "Routines" },
+    ]);
+    band.actions?.[0]?.onSelect();
+    band.actions?.[1]?.onSelect();
+    expect(navigated).toEqual([channelPath(null), "/routines"]);
   });
 
   test("Upload off /library navigates without requiring a live listener", () => {
