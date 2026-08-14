@@ -6,39 +6,36 @@
 // and say so honestly, never to have the run itself fail because one
 // source is unreachable.
 //
-// CL-6028: this package declares its "linear" credential handle in
-// `package.json` (`interchange.credentials`) and a consuming workflow
-// definition binds it via `credentialBindings`, so `buildCredentialDelivery`
-// (`vendor/intx/db/src/credential-resolution.ts`) resolves a tenant-owned
-// credential for the handle at launch — proven directly in
-// `test/credential-delivery.drizzle.test.ts`. This module still reads
-// `linearApiKey` off a plain env field rather than the harness's
-// credentials capability (`vendor/intx/harness/src/credential-capability.ts`)
-// because that capability is never wired into a running tool's env in this
-// codebase: `BaseEnv` (`vendor/intx/agent/src/env.ts`) carries no
-// `credentials` field, `createCredentialCapability` has zero callers anywhere
-// under `vendor/intx`, and the one place a `CredentialWiring` reaches a step
-// invoker (`ChildStepInvoker`'s 6th parameter, `vendor/intx/workflow-host/src/
-// child/run-child.ts:287-293`) is a parameter the production sidecar binding
-// (`apps/sidecar/src/workflow-substrate-factory/index.ts`'s `invokeStep`,
-// typed with only 5 params) never accepts, so it is dropped before reaching
-// `createWorkflowStepInvoker`/`attachStepTools`
-// (`apps/sidecar/src/step-agent-tools.ts`) — neither of which mentions
-// "credential" at all. Until that seam is built, `linearApiKey` stays the
-// honest surface: nothing populates it today, so this tool correctly reports
-// "not connected" rather than silently never receiving a bound credential.
+// CL-6028 declared this package's "linear" credential handle in
+// `package.json` (`interchange.credentials`); CL-6032 wires the runtime
+// half. `env.credentials` is the harness's consumer-gated capability
+// (`vendor/intx/harness/src/credential-capability.ts`,
+// `createCredentialCapability`): the sidecar's step-invoker binding
+// (`apps/sidecar/src/step-agent-tools.ts`) shapes one scoped to this
+// package's consumer identity from the step's `CredentialWiring`
+// (`ChildStepInvoker`'s 6th parameter, threaded through
+// `apps/sidecar/src/workflow-substrate-factory/index.ts`'s `invokeStep`)
+// and hands it to this bundle's factory. `credentials.resolve("linear")`
+// throws when the handle has no bound credential (a workflow that never
+// declared `credentialBindings` for this package) or the run's grants
+// don't authorize this consumer to use it; both, like a network failure,
+// degrade to the same honest "not connected" `ToolResult` rather than
+// throwing out of the tool.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
+import type { CredentialCapability } from "@intx/types";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 
 import { listRecentLinearIssues } from "./client";
 
 export const LINEAR_LIST_RECENT_ISSUES_TOOL = "linear_list_recent_issues";
 
-/** Env this bundle needs beyond `BaseEnv`: the caller's Linear credential. */
+/** The handle this package declares in `interchange.credentials`. */
+const LINEAR_CREDENTIAL_HANDLE = "linear";
+
+/** Env this bundle needs beyond `BaseEnv`: the mediated-credential capability. */
 export interface LinearEnv extends BaseEnv {
-  /** Absent or empty means "not connected" — never a thrown error. */
-  readonly linearApiKey?: string;
+  readonly credentials?: CredentialCapability;
 }
 
 function notConnectedResult(callId: string): ToolResult {
@@ -49,17 +46,36 @@ function notConnectedResult(callId: string): ToolResult {
   };
 }
 
+/**
+ * Resolve this bundle's mediated Linear credential, or `null` when it is
+ * not connected -- an absent `env.credentials`, an unbound handle, or a
+ * denied grant all collapse to the same "not connected" signal, never a
+ * thrown error out of the tool.
+ */
+async function resolveLinearCredential(
+  env: LinearEnv,
+): Promise<{ fetchImpl: typeof fetch } | null> {
+  if (env.credentials === undefined) return null;
+  try {
+    const mediated = await env.credentials.resolve(LINEAR_CREDENTIAL_HANDLE);
+    return { fetchImpl: mediated.fetch as unknown as typeof fetch };
+  } catch {
+    return null;
+  }
+}
+
 async function runLinearListRecentIssues(
   env: LinearEnv,
   call: ToolCall,
 ): Promise<ToolResult> {
-  if (env.linearApiKey === undefined || env.linearApiKey === "") {
+  const credential = await resolveLinearCredential(env);
+  if (credential === null) {
     return notConnectedResult(call.id);
   }
   const since = call.arguments["since"];
   try {
     const issues = await listRecentLinearIssues(
-      { apiKey: env.linearApiKey },
+      { fetchImpl: credential.fetchImpl },
       typeof since === "string" ? { since } : {},
     );
     return { callId: call.id, content: JSON.stringify({ issues }) };
@@ -73,13 +89,13 @@ async function runLinearListRecentIssues(
 }
 
 /**
- * The `@corbits/linear-tools` bundle factory: one tool, one env key.
- * Pin this package's `linear` bundle on any agent that needs the
- * caller's recently updated Linear issues.
+ * The `@corbits/linear-tools` bundle factory: one tool, one mediated
+ * credential. Pin this package's `linear` bundle on any agent that
+ * needs the caller's recently updated Linear issues.
  */
 export const linearTools = defineTool<LinearEnv>({
   id: "@corbits/linear-tools/linear",
-  requires: ["linearApiKey"],
+  requires: ["credentials"],
   definitions: [{ name: LINEAR_LIST_RECENT_ISSUES_TOOL }],
   factory: (env) => ({
     definitions: [

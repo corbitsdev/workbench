@@ -37,11 +37,19 @@ import {
   type BaseEnv,
   type ToolBundle,
 } from "@intx/agent";
+import { toolConsumer, type GrantRule } from "@intx/authz";
+import {
+  createCredentialCapability,
+  type CredentialProviderRegistry,
+  type HostCredentialCapability,
+  type ResolvedCredentialBinding,
+} from "@intx/harness";
 import { readDeployTree, sanitizeAddress } from "@intx/hub-agent/paths";
 import { getLogger } from "@intx/log";
 import type { LoadedToolFactory, RegistryConfig } from "@intx/tool-packaging";
 import { resolveStepAddress } from "@intx/workflow-deploy";
 import { parseRunAddress } from "@intx/types";
+import type { CredentialWiring } from "@intx/workflow-host";
 
 import { materializeToolPackages } from "./tool-materialization";
 
@@ -114,6 +122,81 @@ function isStepToolMaterialization(
     Array.isArray(value.factories) &&
     Array.isArray(value.pluginFactories)
   );
+}
+
+/**
+ * The per-step credential inputs `buildEnv` carries to the tool-bearing
+ * `agentFactory` via a second symbol-keyed slot, mirroring `STEP_TOOLS`:
+ * the live `CredentialWiring` the child's runtime built (materialRef +
+ * grant resolver) plus this invocation's `stepId`, which
+ * `resolveStepGrants` is keyed on. `attachStepCredentials` is called from
+ * `createSidecarStepBuildEnv` for a tool-bearing step; a toolless step
+ * (an onTrigger body) never calls it, so the slot is absent there and no
+ * tool ever asks for a credential.
+ */
+export interface StepCredentialContext {
+  readonly wiring: CredentialWiring;
+  readonly stepId: string;
+}
+
+const STEP_CREDENTIALS = Symbol("intx.sidecar.step-credentials");
+
+function isStepCredentialContext(
+  value: unknown,
+): value is StepCredentialContext {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "wiring" in value &&
+    "stepId" in value
+  );
+}
+
+/**
+ * Attach this step's credential wiring to the per-step env so the
+ * tool-bearing `agentFactory` can shape a consumer-scoped `credentials`
+ * capability for each tool package that declares one. Called by
+ * `buildEnv` once the `CredentialWiring` the child's runtime carries is
+ * known.
+ */
+export function attachStepCredentials(
+  env: object,
+  context: StepCredentialContext,
+): void {
+  Reflect.set(env, STEP_CREDENTIALS, context);
+}
+
+function getStepCredentialContext(
+  env: object,
+): StepCredentialContext | undefined {
+  const value: unknown = Reflect.get(env, STEP_CREDENTIALS);
+  if (value === undefined) return undefined;
+  if (!isStepCredentialContext(value)) {
+    throw new Error(
+      "sidecar workflow-child step tools: the per-step env's credentials slot is not a StepCredentialContext; the slot is private to this module and must only be set by attachStepCredentials",
+    );
+  }
+  return value;
+}
+
+/**
+ * The package portion of a package-namespaced tool id
+ * (`@vendor/pkg/name` or `pkg/name`), i.e. the id with its trailing
+ * `/name` segment removed. This is the same string a tool package's
+ * `package.json` `name` field carries, which is what launch-time
+ * credential binding (`toolConsumer`, `vendor/intx/db/src/
+ * credential-resolution.ts`) keys the consumer identity on -- so a tool
+ * factory's `id` and its declared credential handles resolve to the
+ * same consumer here without a second source of truth.
+ */
+function packageFromToolId(id: string): string {
+  const lastSlash = id.lastIndexOf("/");
+  if (lastSlash <= 0) {
+    throw new Error(
+      `sidecar workflow-child step tools: tool id ${JSON.stringify(id)} is not package-namespaced`,
+    );
+  }
+  return id.slice(0, lastSlash);
 }
 
 /**
@@ -257,8 +340,17 @@ export function attachStepTools(
  * When the env carries no materialized tools (the `buildEnv` did not
  * run materialization, e.g. a unit test using the bare factory), the
  * factory falls back to `createAgent(def, env)` unchanged.
+ *
+ * `deps.providers` is the fixed `CredentialProviderRegistry` the child
+ * builds once at boot (`builtinCredentialProviders()`, composed via
+ * `@intx/harness`'s `createCredentialProviderRegistry`). It is the only
+ * credential dependency that is NOT per-step: the wiring (materials +
+ * grants) varies per step and rides the env's credential slot instead
+ * (see `attachStepCredentials`).
  */
-export function createToolBearingAgentFactory(): <EnvReq extends BaseEnv>(
+export function createToolBearingAgentFactory(deps: {
+  providers: CredentialProviderRegistry;
+}): <EnvReq extends BaseEnv>(
   def: AgentDefinition<EnvReq>,
   env: EnvReq,
 ) => Promise<Agent> {
@@ -271,6 +363,48 @@ export function createToolBearingAgentFactory(): <EnvReq extends BaseEnv>(
       return createAgent(def, env);
     }
 
+    // Consumer-scoped `credentials` capabilities for this step's tool
+    // packages, built lazily (only for a tool factory that actually
+    // declares `requires: ["credentials"]`) and memoized by consumer so
+    // two bundles from the same package share one capability -- and one
+    // `dispose()` -- rather than shaping the same handle twice.
+    //
+    // Always returns a capability, never `undefined`: `requires:
+    // ["credentials"]` makes the runtime's presence-only `validateEnv`
+    // demand a non-nullish `env.credentials` at agent construction, so
+    // the "not connected" signal has to live in `resolve()` throwing,
+    // not in the field's presence. A step with no credential wiring at
+    // all (`getStepCredentialContext` returns `undefined` -- a toolless
+    // body step never calls `attachStepCredentials`) or a consumer with
+    // no bound handle both yield a capability with an empty binding map,
+    // so every `resolve(handle)` call throws "no credential is bound"
+    // and the tool reports the same honest not-connected result either
+    // way.
+    const credentialContext = getStepCredentialContext(env);
+    const credentialCapabilities = new Map<string, HostCredentialCapability>();
+    function credentialCapabilityFor(
+      consumer: string,
+    ): HostCredentialCapability {
+      const existing = credentialCapabilities.get(consumer);
+      if (existing !== undefined) return existing;
+      const bindings = consumerBindings(credentialContext, consumer);
+      const capability = createCredentialCapability({
+        consumer,
+        bindings,
+        providers: deps.providers,
+        grants:
+          bindings.size === 0 || credentialContext === undefined
+            ? []
+            : [
+                ...(credentialContext.wiring.resolveStepGrants(
+                  credentialContext.stepId,
+                ) as readonly GrantRule[]),
+              ],
+      });
+      credentialCapabilities.set(consumer, capability);
+      return capability;
+    }
+
     // Wrap each loaded tool factory so its bundle's `dispose` (when
     // present) is captured. Dedupe by closure identity: a factory whose
     // bundle returns the same `dispose` on every invocation must not be
@@ -279,20 +413,30 @@ export function createToolBearingAgentFactory(): <EnvReq extends BaseEnv>(
     // `id`/`requires` so the resulting factory is a real
     // `AnnotatedToolFactory<BaseEnv>`, not a hand-shaped lookalike.
     const capturedDisposers = new Set<() => unknown>();
-    const factoriesWithCapture = materialization.factories.map((annotated) =>
-      defineTool({
+    const factoriesWithCapture = materialization.factories.map((annotated) => {
+      const consumer = toolConsumer(packageFromToolId(annotated.id));
+      return defineTool({
         id: annotated.id,
         requires: annotated.requires,
         definitions: annotated.definitions,
         factory: (factoryEnv: BaseEnv): ToolBundle => {
-          const bundle = annotated(factoryEnv);
+          const credentials = annotated.requires.includes("credentials")
+            ? credentialCapabilityFor(consumer)
+            : undefined;
+          const scopedEnv: BaseEnv & {
+            credentials?: HostCredentialCapability;
+          } =
+            credentials !== undefined
+              ? { ...factoryEnv, credentials }
+              : factoryEnv;
+          const bundle = annotated(scopedEnv);
           if (bundle.dispose !== undefined) {
             capturedDisposers.add(bundle.dispose);
           }
           return bundle;
         },
-      }),
-    );
+      });
+    });
 
     // Rebuild the def with the materialized tool factories. The
     // serialized `def.toolFactories` carry only `{ id, requires }`
@@ -337,6 +481,7 @@ export function createToolBearingAgentFactory(): <EnvReq extends BaseEnv>(
       }
     } catch (err) {
       await disposeAll(pluginInstances, "plugin construction rollback");
+      await disposeCredentialCapabilities(credentialCapabilities);
       throw err;
     }
 
@@ -345,10 +490,12 @@ export function createToolBearingAgentFactory(): <EnvReq extends BaseEnv>(
       agent = await createAgent(toolDef, chainEnv);
     } catch (err) {
       // `createAgent` disposes the tool bundles it constructed on its
-      // own failure path, but the plugin instances are this module's
-      // to own -- tear them down so a failed agent build does not leak
-      // the LSP subprocess.
+      // own failure path, but the plugin instances and credential
+      // capabilities are this module's to own -- tear them down so a
+      // failed agent build does not leak the LSP subprocess or a
+      // shaped credential handle.
       await disposeAll(pluginInstances, "agent construction failure");
+      await disposeCredentialCapabilities(credentialCapabilities);
       throw err;
     }
 
@@ -368,8 +515,80 @@ export function createToolBearingAgentFactory(): <EnvReq extends BaseEnv>(
         }
       }
       await disposeAll(pluginInstances, "step teardown");
+      await disposeCredentialCapabilities(credentialCapabilities);
     });
   };
+}
+
+/**
+ * Release every consumer-scoped credential capability this step shaped.
+ * Mirrors `disposeAll`'s best-effort policy: one capability's disposal
+ * failure is logged and swallowed rather than blocking the others or the
+ * step's own teardown.
+ */
+async function disposeCredentialCapabilities(
+  capabilities: ReadonlyMap<string, HostCredentialCapability>,
+): Promise<void> {
+  for (const capability of capabilities.values()) {
+    try {
+      await capability.dispose();
+    } catch (cause) {
+      logger.warn`step credential capability dispose failed: ${cause instanceof Error ? cause.message : String(cause)}`;
+    }
+  }
+}
+
+/**
+ * Resolve one consumer's bound credential handles from the step's live
+ * `CredentialDelivery` snapshot. Reads `materialRef.current` fresh (not
+ * captured at closure-build time) so a `credentials-updated` control
+ * frame that lands before this step's tools resolve their first handle
+ * is reflected. `readCurrentMaterial` on each binding likewise re-reads
+ * the ref per call -- the rotation indirection `createCredentialCapability`
+ * documents.
+ *
+ * A binding whose `credentialId` has no matching `materials` entry is a
+ * delivery-payload integrity fault (`buildCredentialDelivery` always
+ * pairs a binding with its material) and throws rather than silently
+ * dropping the handle.
+ */
+export function consumerBindings(
+  context: StepCredentialContext | undefined,
+  consumer: string,
+): ReadonlyMap<string, ResolvedCredentialBinding> {
+  const bindings = new Map<string, ResolvedCredentialBinding>();
+  if (context === undefined) return bindings;
+  const delivery = context.wiring.materialRef.current;
+  if (delivery === null) return bindings;
+  for (const binding of delivery.bindings) {
+    if (binding.consumer !== consumer) continue;
+    const material = delivery.materials.find(
+      (entry) => entry.credentialId === binding.credentialId,
+    );
+    if (material === undefined) {
+      throw new Error(
+        `sidecar workflow-child step tools: credential delivery binds handle ${JSON.stringify(binding.handle)} to credential ${binding.credentialId} with no matching material entry`,
+      );
+    }
+    bindings.set(binding.handle, {
+      credentialId: binding.credentialId,
+      providerKey: material.providerKey,
+      origin: material.origin,
+      readCurrentMaterial: () => {
+        const current = context.wiring.materialRef.current;
+        const currentMaterial = current?.materials.find(
+          (entry) => entry.credentialId === binding.credentialId,
+        );
+        if (currentMaterial === undefined) {
+          throw new Error(
+            `sidecar workflow-child step tools: credential ${binding.credentialId} material is no longer available (rotated or revoked mid-step)`,
+          );
+        }
+        return { secret: currentMaterial.secret };
+      },
+    });
+  }
+  return bindings;
 }
 
 /**

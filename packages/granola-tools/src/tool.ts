@@ -6,29 +6,24 @@
 // and say so honestly, never to have the run itself fail because one
 // source is unreachable.
 //
-// CL-6028: this package declares its "granola" credential handle in
-// `package.json` (`interchange.credentials`) and a consuming workflow
-// definition binds it via `credentialBindings`, so `buildCredentialDelivery`
-// (`vendor/intx/db/src/credential-resolution.ts`) resolves a tenant-owned
-// credential for the handle at launch — proven directly in
-// `test/credential-delivery.drizzle.test.ts`. This module still reads
-// `granolaApiKey` off a plain env field rather than the harness's
-// credentials capability (`vendor/intx/harness/src/credential-capability.ts`)
-// because that capability is never wired into a running tool's env in this
-// codebase: `BaseEnv` (`vendor/intx/agent/src/env.ts`) carries no
-// `credentials` field, `createCredentialCapability` has zero callers anywhere
-// under `vendor/intx`, and the one place a `CredentialWiring` reaches a step
-// invoker (`ChildStepInvoker`'s 6th parameter, `vendor/intx/workflow-host/src/
-// child/run-child.ts:287-293`) is a parameter the production sidecar binding
-// (`apps/sidecar/src/workflow-substrate-factory/index.ts`'s `invokeStep`,
-// typed with only 5 params) never accepts, so it is dropped before reaching
-// `createWorkflowStepInvoker`/`attachStepTools`
-// (`apps/sidecar/src/step-agent-tools.ts`) — neither of which mentions
-// "credential" at all. Until that seam is built, `granolaApiKey` stays the
-// honest surface: nothing populates it today, so this tool correctly reports
-// "not connected" rather than silently never receiving a bound credential.
+// CL-6028 declared this package's "granola" credential handle in
+// `package.json` (`interchange.credentials`); CL-6032 wires the runtime
+// half. `env.credentials` is the harness's consumer-gated capability
+// (`vendor/intx/harness/src/credential-capability.ts`,
+// `createCredentialCapability`): the sidecar's step-invoker binding
+// (`apps/sidecar/src/step-agent-tools.ts`) shapes one scoped to this
+// package's consumer identity from the step's `CredentialWiring`
+// (`ChildStepInvoker`'s 6th parameter, threaded through
+// `apps/sidecar/src/workflow-substrate-factory/index.ts`'s `invokeStep`)
+// and hands it to this bundle's factory. `credentials.resolve("granola")`
+// throws when the handle has no bound credential (a workflow that never
+// declared `credentialBindings` for this package) or the run's grants
+// don't authorize this consumer to use it; both, like a network failure,
+// degrade to the same honest "not connected" `ToolResult` rather than
+// throwing out of the tool.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
+import type { CredentialCapability } from "@intx/types";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 
 import { getGranolaNote, listRecentGranolaNotes } from "./client";
@@ -36,10 +31,12 @@ import { getGranolaNote, listRecentGranolaNotes } from "./client";
 export const GRANOLA_LIST_RECENT_NOTES_TOOL = "granola_list_recent_notes";
 export const GRANOLA_GET_NOTE_TOOL = "granola_get_note";
 
-/** Env this bundle needs beyond `BaseEnv`: the caller's Granola credential. */
+/** The handle this package declares in `interchange.credentials`. */
+const GRANOLA_CREDENTIAL_HANDLE = "granola";
+
+/** Env this bundle needs beyond `BaseEnv`: the mediated-credential capability. */
 export interface GranolaEnv extends BaseEnv {
-  /** Absent or empty means "not connected" — never a thrown error. */
-  readonly granolaApiKey?: string;
+  readonly credentials?: CredentialCapability;
 }
 
 function notConnectedResult(callId: string): ToolResult {
@@ -50,17 +47,36 @@ function notConnectedResult(callId: string): ToolResult {
   };
 }
 
+/**
+ * Resolve this bundle's mediated Granola credential, or `null` when it
+ * is not connected -- an absent `env.credentials`, an unbound handle, or
+ * a denied grant all collapse to the same "not connected" signal, never
+ * a thrown error out of the tool.
+ */
+async function resolveGranolaCredential(
+  env: GranolaEnv,
+): Promise<{ fetchImpl: typeof fetch } | null> {
+  if (env.credentials === undefined) return null;
+  try {
+    const mediated = await env.credentials.resolve(GRANOLA_CREDENTIAL_HANDLE);
+    return { fetchImpl: mediated.fetch as unknown as typeof fetch };
+  } catch {
+    return null;
+  }
+}
+
 async function runGranolaListRecentNotes(
   env: GranolaEnv,
   call: ToolCall,
 ): Promise<ToolResult> {
-  if (env.granolaApiKey === undefined || env.granolaApiKey === "") {
+  const credential = await resolveGranolaCredential(env);
+  if (credential === null) {
     return notConnectedResult(call.id);
   }
   const since = call.arguments["since"];
   try {
     const notes = await listRecentGranolaNotes(
-      { apiKey: env.granolaApiKey },
+      { fetchImpl: credential.fetchImpl },
       typeof since === "string" ? { since } : {},
     );
     return { callId: call.id, content: JSON.stringify({ notes }) };
@@ -77,7 +93,8 @@ async function runGranolaGetNote(
   env: GranolaEnv,
   call: ToolCall,
 ): Promise<ToolResult> {
-  if (env.granolaApiKey === undefined || env.granolaApiKey === "") {
+  const credential = await resolveGranolaCredential(env);
+  if (credential === null) {
     return notConnectedResult(call.id);
   }
   const noteId = call.arguments["noteId"];
@@ -90,7 +107,7 @@ async function runGranolaGetNote(
   }
   try {
     const note = await getGranolaNote(
-      { apiKey: env.granolaApiKey },
+      { fetchImpl: credential.fetchImpl },
       { noteId },
     );
     return { callId: call.id, content: JSON.stringify({ note }) };
@@ -105,13 +122,13 @@ async function runGranolaGetNote(
 
 /**
  * The `@corbits/granola-tools` bundle factory: two tools sharing one
- * env key (`granolaApiKey`). Pin this package's `granola` bundle on
- * any agent that needs a user's recent Granola call notes, or the full
- * transcript of one note by id.
+ * mediated credential. Pin this package's `granola` bundle on any agent
+ * that needs a user's recent Granola call notes, or the full transcript
+ * of one note by id.
  */
 export const granolaTools = defineTool<GranolaEnv>({
   id: "@corbits/granola-tools/granola",
-  requires: ["granolaApiKey"],
+  requires: ["credentials"],
   definitions: [
     { name: GRANOLA_LIST_RECENT_NOTES_TOOL },
     { name: GRANOLA_GET_NOTE_TOOL },

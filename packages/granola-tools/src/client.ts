@@ -23,10 +23,24 @@ export type GranolaNote = typeof GranolaNote.infer;
 const GranolaListNotesResponse = type({ notes: GranolaNote.array() });
 
 export interface GranolaClientConfig {
-  readonly apiKey: string;
+  /**
+   * Absent when `fetchImpl` already authenticates its requests (a
+   * mediated credential's `fetch` injects its own bearer header per
+   * call — see `@intx/harness`'s `createHttpCredentialProvider`).
+   * Supplied directly for tests and any caller holding a raw key.
+   */
+  readonly apiKey?: string;
   /** Override for tests; defaults to the real Granola API host. */
   readonly baseUrl?: string;
   readonly fetchImpl?: typeof fetch;
+}
+
+function authHeaders(
+  apiKey: string | undefined,
+): Record<string, string> | undefined {
+  return apiKey === undefined
+    ? undefined
+    : { authorization: `Bearer ${apiKey}` };
 }
 
 const DEFAULT_BASE_URL = "https://api.granola.ai";
@@ -47,7 +61,7 @@ export async function listRecentGranolaNotes(
     url.searchParams.set("since", params.since);
   }
   const response = await doFetch(url, {
-    headers: { authorization: `Bearer ${config.apiKey}` },
+    headers: authHeaders(config.apiKey),
   });
   if (!response.ok) {
     throw new Error(
@@ -81,7 +95,7 @@ export async function getGranolaNote(
   );
   url.searchParams.set("include", "transcript");
   const response = await doFetch(url, {
-    headers: { authorization: `Bearer ${config.apiKey}` },
+    headers: authHeaders(config.apiKey),
   });
   if (!response.ok) {
     throw new Error(
