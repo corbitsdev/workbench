@@ -58,7 +58,7 @@ test("buildArtifactPayload formats a teaching artifact for the no-data case", ()
     nextSteps:
       "Check the granola connector's status in Settings > Connections and reconnect if needed.",
   });
-  expect(payload.kind).toBe("text");
+  expect(payload.kind).toBe("status-note");
   expect(payload.content).toContain("call_456");
   expect(payload.content).toContain(
     "The Granola connection returned no transcript for this call id.",
@@ -157,7 +157,7 @@ test("run persists a teaching artifact for the no-data case, still chip-visible"
       id: "art_2",
       version: 1,
       title: "Call call_456 could not be processed",
-      kind: "text",
+      kind: "status-note",
       persisted: true,
     });
   } finally {
