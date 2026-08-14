@@ -5,6 +5,28 @@
 // workflow) is to read that as "Linear is not available right now"
 // and say so honestly, never to have the run itself fail because one
 // source is unreachable.
+//
+// CL-6028: this package declares its "linear" credential handle in
+// `package.json` (`interchange.credentials`) and a consuming workflow
+// definition binds it via `credentialBindings`, so `buildCredentialDelivery`
+// (`vendor/intx/db/src/credential-resolution.ts`) resolves a tenant-owned
+// credential for the handle at launch — proven directly in
+// `test/credential-delivery.drizzle.test.ts`. This module still reads
+// `linearApiKey` off a plain env field rather than the harness's
+// credentials capability (`vendor/intx/harness/src/credential-capability.ts`)
+// because that capability is never wired into a running tool's env in this
+// codebase: `BaseEnv` (`vendor/intx/agent/src/env.ts`) carries no
+// `credentials` field, `createCredentialCapability` has zero callers anywhere
+// under `vendor/intx`, and the one place a `CredentialWiring` reaches a step
+// invoker (`ChildStepInvoker`'s 6th parameter, `vendor/intx/workflow-host/src/
+// child/run-child.ts:287-293`) is a parameter the production sidecar binding
+// (`apps/sidecar/src/workflow-substrate-factory/index.ts`'s `invokeStep`,
+// typed with only 5 params) never accepts, so it is dropped before reaching
+// `createWorkflowStepInvoker`/`attachStepTools`
+// (`apps/sidecar/src/step-agent-tools.ts`) — neither of which mentions
+// "credential" at all. Until that seam is built, `linearApiKey` stays the
+// honest surface: nothing populates it today, so this tool correctly reports
+// "not connected" rather than silently never receiving a bound credential.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";

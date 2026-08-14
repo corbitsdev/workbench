@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
+  PAIN_POINT_COLLATERAL_CREDENTIAL_BINDINGS,
   PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
   PAIN_POINT_COLLATERAL_STEP_ID,
   PAIN_POINT_COLLATERAL_SYSTEM_PROMPT,
@@ -88,6 +89,21 @@ test("the system prompt commits to a calm terminal reply on denial, not an error
   expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toMatch(
     /never present a denial as an error/i,
   );
+});
+
+test("the definition binds @corbits/granola-tools' declared handle to a tenant-owned granola credential", () => {
+  const definition = buildPainPointCollateralWorkflow(INPUT);
+  expect(definition.credentialBindings).toEqual([
+    ...PAIN_POINT_COLLATERAL_CREDENTIAL_BINDINGS,
+  ]);
+  expect(PAIN_POINT_COLLATERAL_CREDENTIAL_BINDINGS).toEqual([
+    {
+      package: "@corbits/granola-tools",
+      handle: "granola",
+      provider: "granola",
+      locator: "tenant",
+    },
+  ]);
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
