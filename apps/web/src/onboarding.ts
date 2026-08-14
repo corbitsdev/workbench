@@ -96,6 +96,7 @@ export type CredentialProvider =
   | "anthropic"
   | "openai"
   | "google-genai"
+  | "xai"
   | "openrouter"
   | "opencode-zen"
   | "groq"
@@ -169,7 +170,7 @@ export function readOpenRouterConnectReturn(
   };
 }
 
-export const CREDENTIAL_PROVIDERS: readonly {
+export type CredentialProviderCard = {
   readonly id: CredentialProvider;
   readonly label: string;
   /** One honest line of what picking this provider gets you — shown next
@@ -177,14 +178,11 @@ export const CREDENTIAL_PROVIDERS: readonly {
   readonly description: string;
   readonly keyConsoleUrl: string;
   readonly keyHint: string;
-}[] = [
-  {
-    id: "anthropic",
-    label: "Anthropic",
-    description: "Claude models, direct from Anthropic.",
-    keyConsoleUrl: "https://console.anthropic.com/settings/keys",
-    keyHint: "sk-ant-",
-  },
+};
+
+/** The six the wizard leads with — the providers most people reach for
+ * first. Order is deliberate and matches the card row left to right. */
+export const PRIMARY_CREDENTIAL_PROVIDERS: readonly CredentialProviderCard[] = [
   {
     id: "openai",
     label: "OpenAI",
@@ -193,11 +191,25 @@ export const CREDENTIAL_PROVIDERS: readonly {
     keyHint: "sk-",
   },
   {
+    id: "anthropic",
+    label: "Anthropic",
+    description: "Claude models, direct from Anthropic.",
+    keyConsoleUrl: "https://console.anthropic.com/settings/keys",
+    keyHint: "sk-ant-",
+  },
+  {
     id: "google-genai",
     label: "Google",
     description: "Gemini models, direct from Google.",
     keyConsoleUrl: "https://aistudio.google.com/apikey",
     keyHint: "AIza",
+  },
+  {
+    id: "xai",
+    label: "xAI",
+    description: "Grok models, direct from xAI.",
+    keyConsoleUrl: "https://console.x.ai/team/default/api-keys",
+    keyHint: "xai-",
   },
   {
     id: "openrouter",
@@ -213,27 +225,41 @@ export const CREDENTIAL_PROVIDERS: readonly {
     keyConsoleUrl: "https://opencode.ai/auth",
     keyHint: "",
   },
-  {
-    id: "groq",
-    label: "Groq",
-    description: "Open models served at very high inference speed.",
-    keyConsoleUrl: "https://console.groq.com/keys",
-    keyHint: "gsk_",
-  },
-  {
-    id: "deepseek",
-    label: "DeepSeek",
-    description: "DeepSeek's own models, direct from DeepSeek.",
-    keyConsoleUrl: "https://platform.deepseek.com/api_keys",
-    keyHint: "sk-",
-  },
-  {
-    id: "mistral",
-    label: "Mistral",
-    description: "Mistral's own models, direct from Mistral.",
-    keyConsoleUrl: "https://console.mistral.ai/api-keys",
-    keyHint: "",
-  },
+];
+
+/** The rest — still fully supported, just tucked behind the "More
+ * providers" expander so the primary row stays to six cards. */
+export const SECONDARY_CREDENTIAL_PROVIDERS: readonly CredentialProviderCard[] =
+  [
+    {
+      id: "groq",
+      label: "Groq",
+      description: "Open models served at very high inference speed.",
+      keyConsoleUrl: "https://console.groq.com/keys",
+      keyHint: "gsk_",
+    },
+    {
+      id: "deepseek",
+      label: "DeepSeek",
+      description: "DeepSeek's own models, direct from DeepSeek.",
+      keyConsoleUrl: "https://platform.deepseek.com/api_keys",
+      keyHint: "sk-",
+    },
+    {
+      id: "mistral",
+      label: "Mistral",
+      description: "Mistral's own models, direct from Mistral.",
+      keyConsoleUrl: "https://console.mistral.ai/api-keys",
+      keyHint: "",
+    },
+  ];
+
+/** Every provider card, primary row first — the flat list a lookup by id
+ * (e.g. the active provider's description) reads from regardless of which
+ * group renders it. */
+export const CREDENTIAL_PROVIDERS: readonly CredentialProviderCard[] = [
+  ...PRIMARY_CREDENTIAL_PROVIDERS,
+  ...SECONDARY_CREDENTIAL_PROVIDERS,
 ];
 
 const CredentialSeeded = type({

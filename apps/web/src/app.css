@@ -1843,6 +1843,45 @@ html {
   color: var(--muted-foreground);
 }
 
+/* The secondary three providers, tucked behind a subtle expander so the
+   primary six-card row is what a person sees first — same square-cornered
+   chrome as the rest of the wizard, not a popover. Full-width so it reads
+   as part of the picker rather than a separate control. */
+.onboarding-provider-more {
+  width: 100%;
+  margin-top: 0.25rem;
+  border-radius: 0;
+}
+
+.onboarding-provider-more-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  list-style: none;
+}
+
+.onboarding-provider-more-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.onboarding-provider-more-trigger:hover {
+  color: var(--foreground);
+}
+
+.onboarding-provider-more-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
 /* Tasteful motion only: a soft entrance on phase change, no looping or
    attention-seeking animation, fully off under reduced motion. */
 .onboarding-phase {

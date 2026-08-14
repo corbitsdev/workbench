@@ -66,6 +66,18 @@ export const CATALOG_SEEDS: Readonly<
       { canonicalName: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash" },
     ],
   },
+  xai: {
+    provider: {
+      name: "xai",
+      plugin: "openai-compatible",
+      baseURL: "https://api.x.ai/v1",
+    },
+    models: [
+      { canonicalName: "grok-4.6", displayName: "Grok 4.6" },
+      { canonicalName: "grok-4.5", displayName: "Grok 4.5" },
+      { canonicalName: "grok-code-fast-1", displayName: "Grok Code Fast 1" },
+    ],
+  },
   openrouter: {
     provider: {
       name: "openrouter",
