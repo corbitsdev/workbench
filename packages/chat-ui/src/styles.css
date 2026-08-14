@@ -1030,31 +1030,63 @@
    Library, square-cornered like every other new surface in this pass. */
 .chat-artifact-chip {
   display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
+  align-items: stretch;
   margin: 0.15rem 0;
   max-width: 100%;
   min-width: 16rem;
-  padding: 0.5rem 0.7rem;
   border: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border));
   border-radius: 0;
   background: color-mix(in srgb, var(--primary) 8%, transparent);
   color: var(--foreground);
   font-size: 0.8125rem;
-  text-align: left;
   transition: background 120ms ease;
 }
 
-.chat-artifact-chip:not(:disabled) {
+.chat-artifact-chip-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.chat-artifact-chip-open:not(:disabled) {
   cursor: pointer;
 }
 
-.chat-artifact-chip:not(:disabled):hover {
+.chat-artifact-chip-open:not(:disabled):hover {
   background: color-mix(in srgb, var(--primary) 14%, transparent);
 }
 
-.chat-artifact-chip:disabled {
+.chat-artifact-chip-open:disabled {
   opacity: 0.8;
+}
+
+.chat-artifact-chip-library {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.1rem;
+  border: none;
+  border-left: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border));
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.chat-artifact-chip-library:hover {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.chat-artifact-chip-library svg {
+  width: 0.9rem;
+  height: 0.9rem;
 }
 
 .chat-artifact-chip-icon {

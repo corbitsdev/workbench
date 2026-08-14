@@ -201,6 +201,7 @@ function ChatWorkspaceInner({
   settingsOpen = false,
   onSettingsOpenChange,
   onOpenArtifact,
+  onOpenArtifactInLibrary,
   approvalActions,
   blockResponses,
   headerLeading,
@@ -220,6 +221,7 @@ function ChatWorkspaceInner({
   readonly settingsOpen?: boolean;
   readonly onSettingsOpenChange?: (open: boolean) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   readonly approvalActions?: ApprovalActions;
   readonly blockResponses?: BlockResponseActions;
   readonly headerLeading?: ReactNode;
@@ -958,6 +960,9 @@ function ChatWorkspaceInner({
                     {...(onOpenArtifact !== undefined
                       ? { onOpenArtifact }
                       : {})}
+                    {...(onOpenArtifactInLibrary !== undefined
+                      ? { onOpenArtifactInLibrary }
+                      : {})}
                     {...(approvalActions !== undefined
                       ? { approvalActions }
                       : {})}
@@ -1033,6 +1038,7 @@ export function ChatWorkspace({
   settingsOpen,
   onSettingsOpenChange,
   onOpenArtifact,
+  onOpenArtifactInLibrary,
   approvalActions,
   blockResponses,
   headerLeading,
@@ -1062,6 +1068,9 @@ export function ChatWorkspace({
   readonly onSettingsOpenChange?: (open: boolean) => void;
   /** Open a message's artifact chip — see `ChannelTimeline`'s `onOpenArtifact`. */
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  /** The chip's "Open in Library" affordance — see `ChannelTimeline`'s
+   * `onOpenArtifactInLibrary`. */
+  readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   /** The approve block's live round-trip — see `ChannelTimeline`'s
    * `approvalActions`. */
   readonly approvalActions?: ApprovalActions;
@@ -1104,6 +1113,9 @@ export function ChatWorkspace({
           {...(approvalActions !== undefined ? { approvalActions } : {})}
           {...(blockResponses !== undefined ? { blockResponses } : {})}
           {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+          {...(onOpenArtifactInLibrary !== undefined
+            ? { onOpenArtifactInLibrary }
+            : {})}
           {...(headerLeading !== undefined ? { headerLeading } : {})}
           {...(listMembers !== undefined ? { listMembers } : {})}
           {...(registerComposerInsert !== undefined

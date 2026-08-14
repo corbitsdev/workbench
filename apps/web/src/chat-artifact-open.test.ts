@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
+import type { ArtifactDetail } from "./api";
 import {
   artifactContentFromBlob,
   artifactContentFromBlobError,
+  artifactContentFromDetail,
+  artifactContentFromDetailError,
 } from "./chat-artifact-open";
 
 describe("artifactContentFromBlob", () => {
@@ -51,6 +54,56 @@ describe("artifactContentFromBlobError", () => {
     );
     expect(content.rendererKind).toBe("unsupported");
     expect(content.title).toBe("report.pdf");
+    expect(content.unavailableReason).toContain("The hub answered 404.");
+  });
+});
+
+function artifactDetail(overrides: Partial<ArtifactDetail>): ArtifactDetail {
+  return {
+    id: "art_1",
+    kind: "document",
+    title: "Q3 report",
+    source: { origin: "workflow", runId: "run_1" },
+    version: 1,
+    ownerPrincipalId: null,
+    ownerName: null,
+    archivedAt: null,
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+    content: "# Q3\nGrowth is up.",
+    ...overrides,
+  };
+}
+
+describe("artifactContentFromDetail", () => {
+  test("resolves the renderer kind the same way Library detail does", () => {
+    const content = artifactContentFromDetail(artifactDetail({}));
+    expect(content).toEqual({
+      id: "art_1",
+      title: "Q3 report",
+      rendererKind: "doc",
+      content: "# Q3\nGrowth is up.",
+    });
+  });
+
+  test("never falls back to blob bytes — it reads the artifact's own content", () => {
+    const content = artifactContentFromDetail(
+      artifactDetail({ kind: "csv-export", title: "Signups", content: "a,b" }),
+    );
+    expect(content.rendererKind).toBe("sheet");
+    expect(content.content).toBe("a,b");
+  });
+});
+
+describe("artifactContentFromDetailError", () => {
+  test("renders unsupported with the failure reason", () => {
+    const content = artifactContentFromDetailError(
+      { name: "Q3 report" },
+      "art_1",
+      "The hub answered 404.",
+    );
+    expect(content.rendererKind).toBe("unsupported");
+    expect(content.title).toBe("Q3 report");
     expect(content.unavailableReason).toContain("The hub answered 404.");
   });
 });
