@@ -12,4 +12,5 @@ export const CONNECTOR_PINNED_WORKFLOWS: Readonly<
   linear: [],
   exa: [],
   scrapecreators: [],
+  github: [],
 };
