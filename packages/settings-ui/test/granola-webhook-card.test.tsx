@@ -232,4 +232,98 @@ describe("GranolaWebhookCard", () => {
       container.remove();
     }
   });
+
+  test("rotate flow warns before the click, reveals the new secret once, and clears on close", async () => {
+    let rotateCalls = 0;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url === "/api/tenants/ten_1/routines") {
+        return json(200, {
+          items: [
+            {
+              id: "rt_1",
+              name: "Granola calls",
+              definitionId: "def_1",
+              trigger: { kind: "webhook", webhookTriggerId: "wht_1" },
+              scope: "bench",
+              input: {},
+              enabled: true,
+              deliveryChannelId: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        });
+      }
+      if (url.startsWith("/api/tenants/ten_1/workflows/definitions")) {
+        return definitionsResponse([{ id: "def_1", name: "granola-call" }]);
+      }
+      if (
+        url === "/api/tenants/ten_1/webhook-triggers/wht_1/rotate-secret" &&
+        init?.method === "POST"
+      ) {
+        rotateCalls += 1;
+        return json(200, {
+          id: "wht_1",
+          name: "Granola calls webhook",
+          workflowDefinitionId: "def_1",
+          enabled: true,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          lastFiredAt: null,
+          secret: "sec_rotated",
+        });
+      }
+      if (url === "/api/tenants/ten_1/webhook-triggers") {
+        return json(200, {
+          items: [
+            {
+              id: "wht_1",
+              name: "Granola calls webhook",
+              workflowDefinitionId: "def_1",
+              enabled: true,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              lastFiredAt: null,
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected fetch: ${url} ${init?.method ?? "GET"}`);
+    }) as unknown as typeof fetch;
+
+    const { container, root } = mount();
+    try {
+      await settle();
+      const manageButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Manage",
+      );
+      act(() => manageButton?.click());
+      await settle();
+
+      // The invalidation warning must be visible before the destructive
+      // click, not only after — this is the regression the review flagged.
+      expect(document.body.textContent?.toLowerCase()).toContain(
+        "stops verifying immediately",
+      );
+
+      const rotateButton = [...document.body.querySelectorAll("button")].find(
+        (button) => button.textContent === "Rotate secret",
+      );
+      expect(rotateButton).not.toBeUndefined();
+      act(() => rotateButton?.click());
+      await settle();
+
+      expect(rotateCalls).toBe(1);
+      expect(document.body.textContent).toContain("sec_rotated");
+      expect(document.body.textContent).toContain("shown once");
+
+      const cancelButton = [...document.body.querySelectorAll("button")].find(
+        (button) => button.textContent === "Cancel",
+      );
+      act(() => cancelButton?.click());
+      await settle();
+      expect(document.body.textContent).not.toContain("sec_rotated");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
 });
