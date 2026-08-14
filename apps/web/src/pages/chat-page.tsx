@@ -3,7 +3,7 @@
 // Canvas stays auxiliary (profiles and similar) and opens on demand from
 // this workspace.
 
-import { ChatWorkspace } from "@corbits/chat-ui";
+import { ChatWorkspace, fetchChannelBlob, type Part } from "@corbits/chat-ui";
 import { listPrincipals } from "@corbits/settings-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
@@ -11,6 +11,10 @@ import { useCallback, useEffect, useMemo } from "react";
 import { createChatApprovalActions } from "../approval-actions";
 import { createChatBlockResponseActions } from "../block-response-actions";
 import { useBench } from "../bench-context";
+import {
+  artifactContentFromBlob,
+  artifactContentFromBlobError,
+} from "../chat-artifact-open";
 import {
   channelIdFromPath,
   channelPath,
@@ -21,7 +25,10 @@ import {
   consumePendingNewChannel,
   NEW_CHANNEL_EVENT,
 } from "../command-palette-actions";
-import { useOpenProfileInCanvas } from "../shell/canvas-availability";
+import {
+  useOpenArtifactInCanvas,
+  useOpenProfileInCanvas,
+} from "../shell/canvas-availability";
 import { useRegisterComposerInsert } from "../shell/composer-insertion";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
 
@@ -37,6 +44,7 @@ export function ChatPage({
   const settingsOpen = isChannelSettingsPath(path);
   const openProfile = useOpenProfileInCanvas();
   const registerComposerInsert = useRegisterComposerInsert();
+  const openArtifactInCanvas = useOpenArtifactInCanvas();
   const tenant = tenantResolutionFromBench(bench);
   const principalId = bench.selectedPrincipalId ?? undefined;
   const queryClient = useQueryClient();
@@ -71,12 +79,40 @@ export function ChatPage({
   }, []);
 
   // A chat file part only carries a blob id today — Library artifacts have
-  // no stored link back to it, so the chip can only send the reader to the
-  // Library at large. A real per-artifact deep link (and opening in canvas
-  // rather than navigating away) is follow-up work once that link exists.
-  function openArtifact() {
-    navigate("/library");
-  }
+  // no stored link back to it (see `artifact-chip.tsx`), so this can't
+  // resolve through the Library artifacts read surface. It opens the
+  // canvas straight from the blob instead: read the bytes off the chat
+  // platform's own blob route and render them through the same typed
+  // renderers Library and the canvas already share. A real per-artifact
+  // deep link is follow-up work once that stored link exists.
+  const openArtifact = useCallback(
+    (part: Part & { kind: "file" }) => {
+      if (
+        part.blobId === undefined ||
+        tenantId === null ||
+        channelId === null
+      ) {
+        return;
+      }
+      const blobId = part.blobId;
+      void fetchChannelBlob(tenantId, channelId, blobId)
+        .then((contentBase64) => {
+          openArtifactInCanvas(
+            artifactContentFromBlob(part, blobId, contentBase64),
+          );
+        })
+        .catch((err) => {
+          openArtifactInCanvas(
+            artifactContentFromBlobError(
+              part,
+              blobId,
+              err instanceof Error ? err.message : String(err),
+            ),
+          );
+        });
+    },
+    [tenantId, channelId, openArtifactInCanvas],
+  );
 
   // The command palette may have requested "New channel" from another
   // page, before ChatWorkspace's own listener existed to catch the

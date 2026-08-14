@@ -25,11 +25,14 @@ import { canvasColumnAllowed, contextualPanelIsDrawer } from "./breakpoints";
 import { CanvasAvailabilityProvider } from "./canvas-availability";
 import {
   clearCanvasForTenantSwitch,
-  clearProfileInCanvas,
+  closeCanvasContent,
   initialCanvasColumnState,
+  openArtifactInCanvas,
   openProfileInCanvas,
   resolveCanvasFocus,
   resolveCanvasVisibility,
+  toggleCanvasFocus,
+  type CanvasArtifactContent,
 } from "./canvas-column-state";
 import {
   deriveCol2Width,
@@ -91,14 +94,22 @@ export function ShellChromeProvider({
     setCanvasState((state) => openProfileInCanvas(state, subject));
   }, []);
 
-  const closeProfile = useCallback(() => {
-    setCanvasState((state) => clearProfileInCanvas(state));
+  const openArtifact = useCallback((artifact: CanvasArtifactContent) => {
+    setCanvasState((state) => openArtifactInCanvas(state, artifact));
+  }, []);
+
+  const closeCanvas = useCallback(() => {
+    setCanvasState((state) => closeCanvasContent(state));
+  }, []);
+
+  const toggleFocus = useCallback(() => {
+    setCanvasState((state) => toggleCanvasFocus(state));
   }, []);
 
   // Canvas-dominant focus collapses col2 outright — there is no room for a
-  // third column while the canvas is reading full-screen. No trigger sets
-  // `canvasState.focus` yet (that is a future canvas-focus control's job);
-  // this just makes col2 obey the moment one exists.
+  // third column while the canvas is reading full-screen. `toggleFocus`
+  // (the mock's `data-action="canvas-focus"` control, rendered in the
+  // canvas pane header) is what sets `canvasState.focus` now.
   const canvasFocused = resolveCanvasFocus(canvasState, canvasAllowed);
   // Wide is route-derived: col2 widens for the Talk-to-Myra context, the
   // moment the open channel is the one "Talk to Myra" last landed us on.
@@ -142,8 +153,12 @@ export function ShellChromeProvider({
       allowed={canvasAllowed}
       open={canvasOpen}
       profile={canvasState.profile}
+      artifact={canvasState.artifact}
+      focus={canvasFocused}
       openProfile={openProfile}
-      closeProfile={closeProfile}
+      openArtifact={openArtifact}
+      toggleFocus={toggleFocus}
+      close={closeCanvas}
     >
       <StageChromeProvider value={stageChrome}>{children}</StageChromeProvider>
     </CanvasAvailabilityProvider>

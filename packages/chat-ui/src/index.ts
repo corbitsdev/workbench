@@ -80,6 +80,7 @@ export {
   createChannel,
   listMessages,
   sendMessage,
+  fetchChannelBlob,
   listThreads,
   listThreadMessages,
   putReadState,

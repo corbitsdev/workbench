@@ -22,9 +22,11 @@ import {
 import type { ViewMode } from "@corbits/react-ui";
 import {
   ArtifactCard,
+  ArtifactRenderer,
   artifactMatchesLibraryKindSegment,
   filterArtifacts,
   libraryKindSegmentFromPath,
+  resolveArtifactRendererKind,
   sortArtifacts,
 } from "@corbits/artifact-ui";
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
@@ -151,9 +153,11 @@ function PreviewPane({
           </p>
         ) : null}
         {!loading && error === null && detail !== null ? (
-          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">
-            {detail.content === "" ? "(empty content)" : detail.content}
-          </pre>
+          <ArtifactRenderer
+            rendererKind={resolveArtifactRendererKind(detail)}
+            title={detail.title}
+            content={detail.content}
+          />
         ) : null}
       </div>
     </aside>

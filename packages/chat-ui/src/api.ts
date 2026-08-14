@@ -229,6 +229,25 @@ export function listMessages(
   );
 }
 
+const BlobResponse = type({ contentBase64: "string" });
+
+/**
+ * A `FilePart`'s bytes, base64-encoded (`GET /channels/:id/blobs/:blobId`).
+ * There is no stored link from a chat blob to a Library artifact today —
+ * this is the fallback read path a host uses to open a chat attachment
+ * without one (see `chat-artifact-open.ts` in the web app).
+ */
+export function fetchChannelBlob(
+  tenantId: string,
+  channelId: string,
+  blobId: string,
+): Promise<string> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/blobs/${encodeURIComponent(blobId)}`,
+    BlobResponse,
+  ).then((body) => body.contentBase64);
+}
+
 export type SendMessageOptions = {
   readonly threadId?: string;
   readonly inReplyToMessageId?: string;

@@ -14,6 +14,7 @@ import {
   listInvitableDefinitions,
   listMessages,
   sendMessage,
+  fetchChannelBlob,
   getChannelSettings,
   patchChannelSettings,
   getBenchChatSettings,
@@ -263,6 +264,24 @@ describe("listMessages", () => {
     await expect(listMessages("tenant_1", "chan_1")).rejects.toBeInstanceOf(
       ChatApiError,
     );
+  });
+});
+
+describe("fetchChannelBlob", () => {
+  test("requests the channel's blob route and returns the base64 body", async () => {
+    const calls = stubFetch(() => json({ contentBase64: "aGVsbG8=" }));
+    const content = await fetchChannelBlob("tenant_1", "chan_1", "blob_m1_1");
+    expect(content).toBe("aGVsbG8=");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/channels/chan_1/blobs/blob_m1_1",
+    );
+  });
+
+  test("throws a ChatApiError on a non-2xx response", async () => {
+    stubFetch(() => json({ error: { code: "not_found" } }, 404));
+    await expect(
+      fetchChannelBlob("tenant_1", "chan_1", "blob_missing"),
+    ).rejects.toBeInstanceOf(ChatApiError);
   });
 });
 

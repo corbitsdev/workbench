@@ -553,6 +553,55 @@ describe("messages", () => {
   });
 });
 
+describe("GET /channels/:id/blobs/:blobId", () => {
+  test("returns the platform's blob bytes base64-encoded", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        fetchBlob: async () => "hello attachment",
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(
+      `/channels/${channel.id}/blobs/blob_mail1_1`,
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { contentBase64: string };
+    expect(Buffer.from(body.contentBase64, "base64").toString("utf-8")).toBe(
+      "hello attachment",
+    );
+  });
+
+  test("404s for a channel outside the tenant", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/channels/no-such-channel/blobs/x");
+
+    expect(response.status).toBe(404);
+  });
+
+  test("404s when the platform can't resolve the blob", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        fetchBlob: async () => {
+          throw new Error("no such blob");
+        },
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(
+      `/channels/${channel.id}/blobs/blob_missing_1`,
+    );
+
+    expect(response.status).toBe(404);
+  });
+});
+
 describe("threads — root feed vs reply membership (4a)", () => {
   test("root-thread messages exclude reply-thread posts; open reply still works", async () => {
     const deps = buildDeps({ threads: createInMemoryThreadStore() });
