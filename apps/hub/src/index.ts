@@ -109,6 +109,7 @@ import {
 } from "@corbits/presence";
 import { createGitWorkflowPusher } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
+import { createConnectionRoutes } from "@workbench/connections";
 import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
@@ -709,6 +710,21 @@ export async function createHub(config: HubConfig) {
           trigger,
           payload,
         ),
+    }),
+  );
+  // Connections: the settings surface's tenant-scoped credential
+  // test-and-store, mounted under the same tenant prefix and reusing
+  // the same grant store/condition registry every other credential-
+  // adjacent extension route does.
+  app.route(
+    `${TENANT_PREFIX}/connections`,
+    createConnectionRoutes({
+      hubUrl: config.baseUrl,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      log: (line) => log.info`${line}`,
     }),
   );
   // Routines: its own grant store (routines authorize against the

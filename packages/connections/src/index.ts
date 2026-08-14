@@ -11,3 +11,15 @@ export {
   type ConnectStateStore,
   type PKCEPair,
 } from "./pkce";
+export type { ConnectorAuthKind, ConnectorDescriptor } from "./descriptor";
+export { CONNECTOR_REGISTRY, connectorDescriptors } from "./registry";
+export {
+  testExaCredential,
+  testGranolaCredential,
+  testLinearCredential,
+  testScrapeCreatorsCredential,
+} from "./probes";
+export {
+  createConnectionRoutes,
+  type CreateConnectionRoutesDeps,
+} from "./routes";
