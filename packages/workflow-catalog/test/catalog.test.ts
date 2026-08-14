@@ -43,6 +43,13 @@ describe("workflow catalog", () => {
     );
   });
 
+  test("marks reddit-opportunity-scanner automatable — schedulable, parking each run at its approval gate", () => {
+    expect(isAutomatableWorkflowName("reddit-opportunity-scanner")).toBe(true);
+    expect(workflowDisplayName("reddit-opportunity-scanner")).toBe(
+      "Reddit opportunity scanner",
+    );
+  });
+
   test("rejects agent handles and channel-host names as automatable", () => {
     expect(isAutomatableWorkflowName("my-researcher")).toBe(false);
     expect(isAutomatableWorkflowName("channel-host-abc")).toBe(false);
