@@ -281,7 +281,7 @@ export function CommandPaletteProvider({
             subtitle:
               routine.scope === "personal"
                 ? "Personal routine"
-                : "Bench routine",
+                : "Workbench routine",
           }))
         : [],
     [routinesQuery],
