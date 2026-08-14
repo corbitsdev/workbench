@@ -156,3 +156,30 @@ test("degrades to an error result the same way with a credential resolving", asy
     globalThis.fetch = originalFetch;
   }
 });
+
+test("a present-but-invalid token still authenticates the call and honestly reports the rejection", async () => {
+  // Distinct from the two "underlying call fails" cases above: this is
+  // GitHub actively rejecting a bound token (bad/expired PAT), not a
+  // transport error or an unauthenticated-by-design call. The header
+  // capture proves the token was actually sent -- a 401 here must never
+  // be silently reinterpreted as "keyless," only as an honest error.
+  const originalFetch = globalThis.fetch;
+  const capturedHeaders: (Headers | undefined)[] = [];
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    capturedHeaders.push(init?.headers as Headers | undefined);
+    return new Response(JSON.stringify({ message: "Bad credentials" }), {
+      status: 401,
+    });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = githubTools(fakeEnv(fakeCredentials("ghp_invalid")));
+    const result = await bundle.run(CALL, new AbortController().signal);
+    expect(result.isError).toBe(true);
+    expect(capturedHeaders.length).toBeGreaterThan(0);
+    for (const headers of capturedHeaders) {
+      expect(headers?.get?.("authorization")).toBe("Bearer ghp_invalid");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

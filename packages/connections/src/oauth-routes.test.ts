@@ -11,9 +11,29 @@ import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { createNoopCredentialCipher } from "@intx/crypto";
-import { createOAuthConnectRoutes } from "./oauth-routes";
+import {
+  createOAuthConnectRoutes,
+  DEFAULT_RETURN_PATH_ALLOWLIST,
+  sanitizeReturnPath,
+} from "./oauth-routes";
 import type { CreateOAuthConnectRoutesDeps } from "./oauth-routes";
 import type { ConnectorDescriptor } from "./descriptor";
+
+/** The exact payloads a live reviewer reproduced an open redirect with,
+ * plus one that should keep working. Shared between the unit tests
+ * below and the route-level regression tests, so the two never drift
+ * out of sync with each other. */
+const MALICIOUS_RETURN_PATHS: readonly { name: string; value: string }[] = [
+  { name: "absolute off-origin URL", value: "https://evil.com" },
+  { name: "protocol-relative", value: "//evil.com" },
+  {
+    name: "backslash smuggling a protocol-relative target",
+    value: "/\\evil.com",
+  },
+  { name: "double-encoded protocol-relative", value: "%2F%2Fevil.com" },
+  { name: "CR/LF injection", value: "/onboarding\r\nSet-Cookie: pwned=1" },
+  { name: "off-allowlist same-origin path", value: "/admin" },
+];
 
 function fakeDescriptor(
   overrides: Partial<ConnectorDescriptor["oauth"]> = {},
@@ -120,6 +140,47 @@ async function startConnect(app: Hono<AppEnv>, query = "") {
   return { response, location };
 }
 
+describe("sanitizeReturnPath", () => {
+  const defaultReturnPath = "/onboarding";
+  const allowlist = DEFAULT_RETURN_PATH_ALLOWLIST;
+
+  test("falls back to the default when no value was given", () => {
+    expect(sanitizeReturnPath(undefined, defaultReturnPath, allowlist)).toBe(
+      defaultReturnPath,
+    );
+    expect(sanitizeReturnPath("", defaultReturnPath, allowlist)).toBe(
+      defaultReturnPath,
+    );
+  });
+
+  test("passes through a legitimate, allowlisted path", () => {
+    expect(
+      sanitizeReturnPath("/settings/connections", defaultReturnPath, allowlist),
+    ).toBe("/settings/connections");
+    expect(
+      sanitizeReturnPath("/onboarding", defaultReturnPath, allowlist),
+    ).toBe("/onboarding");
+  });
+
+  for (const { name, value } of MALICIOUS_RETURN_PATHS) {
+    test(`falls back to the default on ${name} (${JSON.stringify(value)})`, () => {
+      expect(sanitizeReturnPath(value, defaultReturnPath, allowlist)).toBe(
+        defaultReturnPath,
+      );
+    });
+  }
+
+  test("a value that only matches the allowlist after decoding is still honored", () => {
+    expect(
+      sanitizeReturnPath(
+        "%2Fsettings%2Fconnections",
+        defaultReturnPath,
+        allowlist,
+      ),
+    ).toBe("/settings/connections");
+  });
+});
+
 describe("GET /:connectorId/start", () => {
   test("404s an unknown connector", async () => {
     const app = connectRoutes();
@@ -205,6 +266,105 @@ describe("GET /:connectorId/start", () => {
     const second = await app.request("/api/connections/oauth/widget/start");
     const location = new URL(second.headers.get("location") ?? "", "https://x");
     expect(location.searchParams.get("code")).toBe("rate_limited");
+  });
+
+  describe("open-redirect regression: every early exit sanitizes ?return= before building a Location", () => {
+    function maliciousQuery(value: string): string {
+      return `?${new URLSearchParams({ return: value }).toString()}`;
+    }
+
+    for (const { name, value } of MALICIOUS_RETURN_PATHS) {
+      test(`signed_out never redirects off-origin (${name})`, async () => {
+        const app = new Hono<AppEnv>();
+        app.route(
+          "/api/connections/oauth",
+          createOAuthConnectRoutes({
+            hubUrl: "https://bench.example.com",
+            log: () => undefined,
+            credentialCipher: createNoopCredentialCipher(),
+            registry: { widget: fakeDescriptor() },
+            connectCredential: async () => ({
+              kind: "connected",
+              tenantId: "t",
+              tenantSlug: "t",
+              principalId: "p",
+              tenantDomain: "t.local",
+            }),
+          }),
+        );
+
+        const response = await app.request(
+          `/api/connections/oauth/widget/start${maliciousQuery(value)}`,
+        );
+        expect(response.status).toBe(302);
+        const location = response.headers.get("location") ?? "";
+        expect(location.startsWith("/onboarding?")).toBe(true);
+        const parsed = new URL(location, "https://bench.example.com");
+        expect(parsed.origin).toBe("https://bench.example.com");
+        expect(parsed.searchParams.get("code")).toBe("signed_out");
+      });
+
+      test(`not_configured never redirects off-origin (${name})`, async () => {
+        const app = connectRoutes(
+          {},
+          {
+            widget: fakeDescriptor({
+              clientId: (env) => env["widgetClientId"],
+            }),
+          },
+        );
+
+        const response = await app.request(
+          `/api/connections/oauth/widget/start${maliciousQuery(value)}`,
+        );
+        expect(response.status).toBe(302);
+        const location = response.headers.get("location") ?? "";
+        expect(location.startsWith("/onboarding?")).toBe(true);
+        const parsed = new URL(location, "https://bench.example.com");
+        expect(parsed.origin).toBe("https://bench.example.com");
+        expect(parsed.searchParams.get("code")).toBe("not_configured");
+      });
+
+      test(`rate_limited never redirects off-origin (${name})`, async () => {
+        const app = connectRoutes();
+        await startConnect(app);
+        const response = await app.request(
+          `/api/connections/oauth/widget/start${maliciousQuery(value)}`,
+        );
+        expect(response.status).toBe(302);
+        const location = response.headers.get("location") ?? "";
+        expect(location.startsWith("/onboarding?")).toBe(true);
+        const parsed = new URL(location, "https://bench.example.com");
+        expect(parsed.origin).toBe("https://bench.example.com");
+        expect(parsed.searchParams.get("code")).toBe("rate_limited");
+      });
+    }
+
+    test("a legitimate, allowlisted ?return= still round-trips through the same early-exit path", async () => {
+      const app = new Hono<AppEnv>();
+      app.route(
+        "/api/connections/oauth",
+        createOAuthConnectRoutes({
+          hubUrl: "https://bench.example.com",
+          log: () => undefined,
+          credentialCipher: createNoopCredentialCipher(),
+          registry: { widget: fakeDescriptor() },
+          connectCredential: async () => ({
+            kind: "connected",
+            tenantId: "t",
+            tenantSlug: "t",
+            principalId: "p",
+            tenantDomain: "t.local",
+          }),
+        }),
+      );
+
+      const response = await app.request(
+        `/api/connections/oauth/widget/start${maliciousQuery("/settings/connections")}`,
+      );
+      const location = response.headers.get("location") ?? "";
+      expect(location.startsWith("/settings/connections?")).toBe(true);
+    });
   });
 });
 
@@ -538,5 +698,68 @@ describe("GET /:connectorId/callback", () => {
     );
     expect(redirect.searchParams.get("code")).toBe("setup_failed");
     expect(lines.join("\n")).not.toContain("key-for-abc123");
+  });
+
+  describe("open-redirect regression: the return cookie is never trusted either", () => {
+    function stateCookieOnly(startResponse: Response): string {
+      const match = /workbench_widget_connect=([^;]+)/.exec(
+        startResponse.headers.getSetCookie().join("; "),
+      );
+      if (!match?.[1]) throw new Error("no state cookie in start response");
+      return `workbench_widget_connect=${match[1]}`;
+    }
+
+    for (const { name, value } of MALICIOUS_RETURN_PATHS) {
+      test(`a forged return cookie with no state cookie falls back to the default (${name})`, async () => {
+        const app = connectRoutes();
+        const forgedCookie = `workbench_widget_connect_return=${encodeURIComponent(value)}`;
+
+        const response = await app.request(
+          "/api/connections/oauth/widget/callback?code=abc123",
+          { headers: { cookie: forgedCookie } },
+        );
+
+        expect(response.status).toBe(302);
+        const location = response.headers.get("location") ?? "";
+        expect(location.startsWith("/onboarding?")).toBe(true);
+        const parsed = new URL(location, "https://bench.example.com");
+        expect(parsed.origin).toBe("https://bench.example.com");
+        expect(parsed.searchParams.get("code")).toBe("state_expired");
+      });
+
+      test(`a tampered return cookie on an otherwise-successful connect still lands on the default, not the forged target (${name})`, async () => {
+        const app = connectRoutes({
+          connectCredential: async () => ({
+            kind: "connected",
+            tenantId: "ten_1",
+            tenantSlug: "widget-tenant",
+            principalId: "prn_1",
+            tenantDomain: "widget-tenant.bench.local",
+          }),
+        });
+        const { response: started } = await startConnect(
+          app,
+          "?return=%2Fsettings%2Fconnections",
+        );
+        // The state cookie is untouched (a real, valid connect in
+        // progress); only the return cookie is swapped for the forged
+        // value, simulating an attacker who can write cookies on this
+        // origin (e.g. a related subdomain) but doesn't otherwise
+        // control the OAuth round trip.
+        const forgedCookie = `${stateCookieOnly(started)}; workbench_widget_connect_return=${encodeURIComponent(value)}`;
+
+        const response = await app.request(
+          "/api/connections/oauth/widget/callback?code=abc123",
+          { headers: { cookie: forgedCookie } },
+        );
+
+        expect(response.status).toBe(302);
+        const location = response.headers.get("location") ?? "";
+        expect(location.startsWith("/onboarding?")).toBe(true);
+        const parsed = new URL(location, "https://bench.example.com");
+        expect(parsed.origin).toBe("https://bench.example.com");
+        expect(parsed.searchParams.get("outcome")).toBe("connected");
+      });
+    }
   });
 });
