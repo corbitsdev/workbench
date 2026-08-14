@@ -20,6 +20,8 @@
     "hono": "catalog:"
   },
   "devDependencies": {
+    "@intx/db": "workspace:*",
+    "@intx/hub-common": "workspace:*",
     "@types/bun": "catalog:",
     "postgres": "catalog:",
     "typescript": "catalog:"
