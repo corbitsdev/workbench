@@ -3,7 +3,11 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { listCatalogModels, loadAgentDirectory } from "../src/agents-api";
+import {
+  listCatalogModels,
+  loadAgentDirectory,
+  updateAgentSkills,
+} from "../src/agents-api";
 
 const realFetch = globalThis.fetch;
 
@@ -11,18 +15,19 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-type RecordedCall = { readonly path: string };
+type RecordedCall = { readonly path: string; readonly method: string };
 
 function stubFetch(respond: (path: string) => Response): RecordedCall[] {
   const calls: RecordedCall[] = [];
-  globalThis.fetch = ((input: RequestInfo | URL) => {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const full =
       typeof input === "string"
         ? input
         : `${new URL(String(input)).pathname}${new URL(String(input)).search}`;
-    calls.push({ path: typeof input === "string" ? input : full });
+    const path = typeof input === "string" ? input : full;
+    calls.push({ path, method: init?.method ?? "GET" });
     // Matchers key on the path-with-query the client builds.
-    return Promise.resolve(respond(typeof input === "string" ? input : full));
+    return Promise.resolve(respond(path));
   }) as typeof fetch;
   return calls;
 }
@@ -158,5 +163,61 @@ describe("loadAgentDirectory", () => {
     const directory = await loadAgentDirectory("tnt_1");
     expect(directory.models).toEqual([modelFixture]);
     expect(directory.modelsError).toBeUndefined();
+  });
+
+  test("carries each definition's attached skills", async () => {
+    stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [definitionFixture], nextCursor: null });
+      }
+      if (path.includes("/workflows/runs")) {
+        return json({ data: [instanceFixture], nextCursor: null });
+      }
+      if (path.includes("/catalog/models")) {
+        return json({ data: [modelFixture], nextCursor: null });
+      }
+      if (path.includes("/agent-definitions/skills")) {
+        return json({ skills: { wfd_1: ["web-research"] } });
+      }
+      return json({ error: { message: "unexpected" } }, 500);
+    });
+
+    const directory = await loadAgentDirectory("tnt_1");
+    expect(directory.definitionSkills).toEqual({ wfd_1: ["web-research"] });
+  });
+
+  test("a broken skills endpoint degrades to no attachments rather than blanking the page", async () => {
+    stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [definitionFixture], nextCursor: null });
+      }
+      if (path.includes("/workflows/runs")) {
+        return json({ data: [instanceFixture], nextCursor: null });
+      }
+      if (path.includes("/catalog/models")) {
+        return json({ data: [modelFixture], nextCursor: null });
+      }
+      if (path.includes("/agent-definitions/skills")) {
+        return json({ error: { message: "down" } }, 500);
+      }
+      return json({ error: { message: "unexpected" } }, 500);
+    });
+
+    const directory = await loadAgentDirectory("tnt_1");
+    expect(directory.definitionSkills).toEqual({});
+  });
+});
+
+describe("updateAgentSkills", () => {
+  test("PUTs the full replacement skill set and returns it back", async () => {
+    const calls = stubFetch((path) => {
+      expect(path).toBe("/api/tenants/tnt_1/agent-definitions/wfd_1/skills");
+      return json({ skills: ["web-research"] });
+    });
+
+    const skills = await updateAgentSkills("tnt_1", "wfd_1", ["web-research"]);
+    expect(calls.length).toBe(1);
+    expect(calls[0]?.method).toBe("PUT");
+    expect(skills).toEqual(["web-research"]);
   });
 });
