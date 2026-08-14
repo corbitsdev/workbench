@@ -16,8 +16,19 @@ One step, one agent. The system prompt commits it to:
   artifact (idempotent — a quiet run starts nothing),
 - skipping a call whose transcript is missing or unreadable rather than
   failing the whole run,
-- saying plainly, in one sentence, when it has no way to reach Granola
-  at all — never inventing call counts or notes.
+- when a run starts no `process-granola-call` children — no way to
+  reach Granola at all, or Granola connected but nothing new to
+  process — calling `granola_call_report_status`
+  (`./src/finalize-tool.ts`) once to persist a real, chip-visible
+  status artifact: why nothing started, how many calls were actually
+  examined, and what to check next (starting with the `granola`
+  connector's connection status,
+  `packages/connections/src/registry.ts`). Never inventing call counts
+  or notes. That tool is not approval-gated — a status report has
+  nothing for a human to confirm, only what actually happened — and
+  persists via `createWorkflowArtifact` (`./src/artifact-client.ts`,
+  CL-6000), the same sanctioned workflow-artifacts surface
+  `process-granola-call`'s finalize tool uses.
 
 ## Sensible defaults
 
@@ -50,11 +61,17 @@ platform-level, not specific to Granola:
    `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` wiring).
 
 Until both land, a deployment of this definition is an honest
-placeholder: until an operator publishes the pin, every run replies that
-Granola is not connected rather than fabricating a call list. That is
-deliberate — see the "no fallbacks" and "parse at every trust boundary"
-rules in `AGENTS.md`; a workflow that quietly returns fake data on a
-broken dependency is worse than one that says so.
+placeholder: until an operator publishes the pin, every run persists a
+status artifact saying Granola is not connected rather than fabricating
+a call list. That is deliberate — see the "no fallbacks" and "parse at
+every trust boundary" rules in `AGENTS.md`; a workflow that quietly
+returns fake data on a broken dependency is worse than one that says so.
+
+Persisting that honest status as a real Library artifact (CL-6029) does
+not depend on either gap above: it is this workflow's own finalize step,
+independent of spawning children or reaching Granola. Only the
+pipeline's actual fan-out — starting real `process-granola-call`
+children — waits on gap #1.
 
 ## Usage
 
