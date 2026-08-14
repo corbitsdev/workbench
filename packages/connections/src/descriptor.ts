@@ -16,12 +16,13 @@ export interface ConnectorDescriptor {
   readonly docsUrl: string;
   /**
    * Which credential-provider plugin mediates this connector's secret at
-   * run time — the sidecar registers `"http"` (Bearer) and
-   * `"http-raw-authorization"` (raw `authorization` header, e.g. Linear).
-   * Provider rows are seeded with this key; an unknown key means no
-   * mediated fetch resolves at capability time.
+   * run time — the sidecar registers `"http"` (Bearer), `"http-raw-authorization"`
+   * (raw `authorization` header, e.g. Linear), and `"http-x-api-key"`
+   * (`x-api-key` header, e.g. Exa, ScrapeCreators). Provider rows are
+   * seeded with this key; an unknown key means no mediated fetch resolves
+   * at capability time.
    */
-  readonly credentialPlugin: "http" | "http-raw-authorization";
+  readonly credentialPlugin: "http" | "http-raw-authorization" | "http-x-api-key";
   /** Tool packages this connector's credential feeds — the settings card's
    * "Pinned by" line. Empty for inference-provider connectors, which feed
    * workflow deployments, not a specific tool package. */

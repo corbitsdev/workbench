@@ -23,6 +23,7 @@ export type { ConnectorAuthKind, ConnectorDescriptor } from "./descriptor";
 import type { ConnectorDescriptor } from "./descriptor";
 import {
   testExaCredential,
+  testGitHubCredential,
   testGranolaCredential,
   testLinearCredential,
   testScrapeCreatorsCredential,
@@ -77,7 +78,10 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
     },
     exa: {
       id: "exa",
-      credentialPlugin: "http",
+      // Exa authenticates via an `x-api-key` header, not `authorization` —
+      // the `http` (Bearer) plugin doesn't fit; see the `http-x-api-key`
+      // provider in `@corbits/credential-providers`.
+      credentialPlugin: "http-x-api-key",
       displayName: "Exa",
       authKind: "api-key",
       docsUrl: "https://exa.ai",
@@ -86,7 +90,8 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
     },
     scrapecreators: {
       id: "scrapecreators",
-      credentialPlugin: "http",
+      // ScrapeCreators, same as Exa, authenticates via `x-api-key`.
+      credentialPlugin: "http-x-api-key",
       displayName: "ScrapeCreators",
       authKind: "api-key",
       docsUrl: "https://scrapecreators.com",
@@ -101,6 +106,18 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       docsUrl: "https://linear.app/settings/api",
       feedsTools: ["@corbits/linear-tools"],
       probe: (apiKey) => testLinearCredential(apiKey),
+    },
+    github: {
+      id: "github",
+      // GitHub's REST API accepts a fine-grained PAT as a Bearer token.
+      // Absent entirely, github-tools degrades to a lower unauthenticated
+      // rate limit rather than "not connected" — see its tool.ts.
+      credentialPlugin: "http",
+      displayName: "GitHub",
+      authKind: "api-key",
+      docsUrl: "https://github.com/settings/tokens",
+      feedsTools: ["@corbits/github-tools"],
+      probe: (apiKey) => testGitHubCredential(apiKey),
     },
   };
 
