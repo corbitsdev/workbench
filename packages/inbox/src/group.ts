@@ -12,8 +12,9 @@ export function isInboxGroup(value: string): value is InboxGroup {
 /**
  * Map a message's classification + refs onto one of the three product groups.
  * Order is deliberate: an explicit classification wins; otherwise an approval
- * ref means "needs a decision", a thread ref means "someone mentioned you",
- * and everything else is a delivery (routine output, run failure, …).
+ * or credential ref means "needs a decision" (approve a tool call, reconnect
+ * an expired credential), a thread ref means "someone mentioned you", and
+ * everything else is a delivery (routine output, run failure, …).
  */
 export function inboxGroupOf(message: {
   classification?: string | undefined;
@@ -27,7 +28,7 @@ export function inboxGroupOf(message: {
     return message.classification;
   }
   const kinds = new Set((message.refs ?? []).map((ref) => ref.kind));
-  if (kinds.has("approval")) return "action";
+  if (kinds.has("approval") || kinds.has("credential")) return "action";
   if (kinds.has("thread")) return "mention";
   return "delivery";
 }
