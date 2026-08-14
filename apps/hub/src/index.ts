@@ -779,9 +779,10 @@ export async function createHub(config: HubConfig) {
   });
 
   // Memory plane (optional): firm-memory HTTP under
-  // `/api/tenants/:tenantId/memory/*`. Degrades when
-  // KNOWLEDGE_DATABASE_URL / EMBED_* are unset — see memory-mount.ts.
-  mountMemory({
+  // `/api/tenants/:tenantId/memory/*`, same `DATABASE_URL` as the control
+  // plane, isolated in its own `knowledge` schema. Degrades when EMBED_* is
+  // unset — see memory-mount.ts.
+  await mountMemory({
     app,
     grantStore: chatGrantStore,
     conditionRegistry: chatConditionRegistry,
@@ -808,11 +809,11 @@ export async function createHub(config: HubConfig) {
   // Artifacts engine: mounts `@corbits/artifacts` against the same
   // Postgres cluster as this hub's control plane (its
   // `artifact`/`artifact_version` tables FK into `public.tenant` /
-  // `public.principal`). Resolves URL as ARTIFACTS_DATABASE_URL →
-  // DATABASE_URL so local `bun run dev` mounts Library without a second
-  // env var. When neither is set (or mount fails), degrades to 503
-  // routes. When mounted, tenant-scoped list + get + upload routes serve
-  // Library under `/artifacts`.
+  // `public.principal`). Uses DATABASE_URL — the same URL as everything
+  // else — so local `bun run dev` mounts Library with no extra env var.
+  // When it's unset (or mount fails), degrades to 503 routes. When
+  // mounted, tenant-scoped list + get + upload routes serve Library
+  // under `/artifacts`.
   //
   // The mount runs migrations against the configured DB; if the URL is
   // present but points at an unreachable/invalid cluster the migration
