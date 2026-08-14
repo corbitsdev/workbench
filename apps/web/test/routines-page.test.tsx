@@ -35,6 +35,16 @@ const routine: Routine = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
+const researcherDefinition = {
+  id: "wfd_1",
+  name: "Researcher",
+  status: "deployed",
+  whatItDoes: "Pulls research from connected sources.",
+  requiredConnections: [] as const,
+  exampleOutput: "Research summary, three sources cited.",
+  typicalDuration: "a few minutes",
+};
+
 const listProps = {
   runHistories: new Map<string, readonly RoutineRun[]>(),
   liveRuns: ready([]),
@@ -87,7 +97,7 @@ describe("RoutinesListPage", () => {
       <RoutinesListPage
         {...listProps}
         routines={ready([routine])}
-        definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+        definitions={[researcherDefinition]}
       />,
     );
     expect(markup).toContain("Select a routine");
@@ -116,7 +126,7 @@ describe("RoutinesListPage", () => {
         routines={ready([routine])}
         runHistories={runHistories}
         selectedId={routine.id}
-        definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+        definitions={[researcherDefinition]}
         channels={[
           {
             id: "ch_1",
@@ -142,7 +152,7 @@ describe("RoutinesListPage", () => {
         {...listProps}
         routines={ready([routine])}
         selectedId={routine.id}
-        definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+        definitions={[researcherDefinition]}
       />,
     );
     expect(markup).toContain("Edit");
@@ -170,7 +180,7 @@ describe("RoutinesListPage", () => {
         routines={ready([routine])}
         runHistories={runHistories}
         selectedId={routine.id}
-        definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+        definitions={[researcherDefinition]}
       />,
     );
     expect(markup).toContain("routine-run-row-linked");
@@ -245,7 +255,7 @@ describe("webhook trigger panel", () => {
         routines={ready([webhookRoutine])}
         selectedId={webhookRoutine.id}
         webhookTrigger={ready(webhookTriggerFixture)}
-        definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+        definitions={[researcherDefinition]}
       />,
     );
     expect(markup).toContain("/api/webhooks/wht_1");
@@ -259,7 +269,7 @@ describe("webhook trigger panel", () => {
         {...listProps}
         routines={ready([routine])}
         selectedId={routine.id}
-        definitions={[{ id: "wfd_1", name: "Researcher", status: "deployed" }]}
+        definitions={[researcherDefinition]}
       />,
     );
     expect(markup).not.toContain("Rotate secret");
@@ -296,9 +306,7 @@ describe("webhook trigger panel", () => {
           routines: ready([webhookRoutine]),
           selectedId: webhookRoutine.id,
           webhookTrigger: ready(webhookTriggerFixture),
-          definitions: [
-            { id: "wfd_1", name: "Researcher", status: "deployed" },
-          ],
+          definitions: [researcherDefinition],
           onRotateWebhookSecret: () => {
             rotateCalls += 1;
             return Promise.resolve({ secret: "freshly-rotated" });

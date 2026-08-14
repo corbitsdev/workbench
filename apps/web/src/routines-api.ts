@@ -20,7 +20,8 @@ import { workflowDisplayName } from "@corbits/workflow-catalog";
 import type { APIQuery } from "./api";
 import { toAPIQuery } from "./api";
 import { UnauthenticatedError } from "./query-client";
-import { purposeDefinitions } from "./purpose-definitions";
+import { purposeDefinitions, withCatalogFields } from "./purpose-definitions";
+import type { CatalogFields } from "./purpose-definitions";
 
 export const RoutineTrigger = type({
   kind: "'interval'",
@@ -71,16 +72,22 @@ export type RoutineRun = typeof RoutineRun.infer;
 
 const RoutineRunsResponse = type({ items: RoutineRun.array() });
 
-export const WorkflowDefinitionSummary = type({
+const WorkflowDefinitionRecord = type({
   id: "string",
   name: "string",
   status: "string",
   "description?": "string | null",
 });
-export type WorkflowDefinitionSummary = typeof WorkflowDefinitionSummary.infer;
+type WorkflowDefinitionRecord = typeof WorkflowDefinitionRecord.infer;
+
+/** An automatable workflow definition, enriched with its catalog
+ * demo-card fields (see `withCatalogFields`) — the shape the Routines
+ * create picker renders a card from. */
+export type WorkflowDefinitionSummary = WorkflowDefinitionRecord &
+  CatalogFields;
 
 const DefinitionsPage = type({
-  data: WorkflowDefinitionSummary.array(),
+  data: WorkflowDefinitionRecord.array(),
   "nextCursor?": "string | null",
 });
 
@@ -295,7 +302,7 @@ export function discardRoutineDraft(
 export async function listWorkflowDefinitions(
   tenantId: string,
 ): Promise<readonly WorkflowDefinitionSummary[]> {
-  const collected: WorkflowDefinitionSummary[] = [];
+  const collected: WorkflowDefinitionRecord[] = [];
   let cursor: string | null = null;
   for (;;) {
     const query = new URLSearchParams({ limit: String(PAGE_LIMIT) });
@@ -308,7 +315,7 @@ export async function listWorkflowDefinitions(
     if (page.nextCursor === undefined || page.nextCursor === null) break;
     cursor = page.nextCursor;
   }
-  return purposeDefinitions(collected).map((definition) => ({
+  return withCatalogFields(purposeDefinitions(collected)).map((definition) => ({
     ...definition,
     name: workflowDisplayName(definition.name, definition.description),
   }));

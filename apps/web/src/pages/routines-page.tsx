@@ -34,6 +34,13 @@ import {
 import type { BadgeTone } from "@corbits/react-ui";
 import type { Channel, DialogStepperStep } from "@corbits/chat-ui";
 import { DialogStepper, listChannels } from "@corbits/chat-ui";
+import {
+  connectorStatus,
+  listCredentials,
+  listProviders,
+} from "@corbits/settings-ui";
+import type { Credential, Provider } from "@corbits/settings-ui";
+import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import { Clock, Copy, Plus, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
@@ -586,7 +593,39 @@ export function catalogConfirmSentence(
   return `${when}, delivers to ${channelTitle}.`;
 }
 
+/** Pulls the tenant's real credentials + providers once the dialog opens,
+ * so catalog cards show actual connection state — never a fabricated
+ * guess. Mirrors `ConnectionsSection`'s own fetch-on-mount pattern. */
+function useDialogConnections(tenantId: string | null, open: boolean) {
+  const [connections, setConnections] = useState<{
+    readonly credentials: readonly Credential[];
+    readonly providers: readonly Provider[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!open || tenantId === null) return;
+    let cancelled = false;
+    Promise.all([listCredentials(tenantId), listProviders(tenantId)])
+      .then(([credentials, providers]) => {
+        if (!cancelled) setConnections({ credentials, providers });
+      })
+      .catch(() => {
+        if (!cancelled) setConnections({ credentials: [], providers: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, open]);
+
+  return connections;
+}
+
+function connectorBadgeLabel(connectorId: string): string {
+  return CONNECTOR_REGISTRY[connectorId]?.displayName ?? connectorId;
+}
+
 function CreateRoutineDialog({
+  tenantId,
   definitions,
   channels,
   onCreate,
@@ -597,6 +636,7 @@ function CreateRoutineDialog({
   open: openProp,
   onOpenChange,
 }: {
+  readonly tenantId?: string | null;
   readonly definitions: readonly WorkflowDefinitionSummary[];
   readonly channels: readonly Channel[];
   readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
@@ -613,6 +653,7 @@ function CreateRoutineDialog({
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = openProp ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
+  const connections = useDialogConnections(tenantId ?? null, open);
   const [step, setStep] = useState<CreateStep>(1);
   const [path, setPath] = useState<CreatePath>("catalog");
   const [name, setName] = useState("");
@@ -888,7 +929,7 @@ function CreateRoutineDialog({
                         setDefinitionId(definition.id);
                       }}
                       className={[
-                        "flex flex-col gap-0.5 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
+                        "flex flex-col gap-1 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
                         path === "catalog" && definitionId === definition.id
                           ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
                           : "border-[var(--ui-border)]",
@@ -897,10 +938,44 @@ function CreateRoutineDialog({
                       <span className="font-medium text-[var(--ui-fg)]">
                         {definition.name}
                       </span>
-                      {definition.description !== undefined &&
-                      definition.description !== null ? (
+                      {definition.whatItDoes !== "" ? (
                         <span className="text-[var(--ui-fg-muted)]">
-                          {definition.description}
+                          {definition.whatItDoes}
+                        </span>
+                      ) : null}
+                      <span className="inline-flex items-center gap-1 text-[var(--ui-fg-muted)]">
+                        <Clock className="size-3" />
+                        {definition.typicalDuration}
+                      </span>
+                      {definition.requiredConnections.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {definition.requiredConnections.map((connectorId) => {
+                            const result =
+                              connections === null
+                                ? { status: "not_connected" as const }
+                                : connectorStatus(
+                                    connectorBadgeLabel(connectorId),
+                                    connections.credentials,
+                                    connections.providers,
+                                  );
+                            return (
+                              <Badge
+                                key={connectorId}
+                                tone={
+                                  result.status === "connected"
+                                    ? "success"
+                                    : "neutral"
+                                }
+                              >
+                                {connectorBadgeLabel(connectorId)}
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      {definition.exampleOutput !== "" ? (
+                        <span className="whitespace-pre-line text-[10px] text-[var(--ui-fg-muted)]">
+                          {definition.exampleOutput}
                         </span>
                       ) : null}
                     </button>
@@ -1348,6 +1423,7 @@ function RunsTable({
 }
 
 export function RoutinesListPage({
+  tenantId = null,
   routines,
   runHistories,
   liveRuns: _liveRuns,
@@ -1370,6 +1446,7 @@ export function RoutinesListPage({
   onOpenRuns,
   onOpenChannel,
 }: {
+  readonly tenantId?: string | null;
   readonly routines: APIQuery<readonly Routine[]>;
   readonly runHistories: ReadonlyMap<string, readonly RoutineRun[]>;
   readonly liveRuns: APIQuery<readonly WorkflowRun[]>;
@@ -1477,6 +1554,7 @@ export function RoutinesListPage({
         }
       />
       <CreateRoutineDialog
+        tenantId={tenantId}
         definitions={definitions}
         channels={channels}
         onCreate={onCreate}
@@ -1954,6 +2032,7 @@ export function RoutinesRoute({
 
   return (
     <RoutinesListPage
+      tenantId={tenantId}
       routines={
         routines.kind === "ready"
           ? { kind: "ready", data: routines.data }
