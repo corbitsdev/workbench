@@ -18,34 +18,35 @@ import {
 } from "react";
 
 import { getPreferences, patchPreferences } from "@corbits/preferences/client";
-
-import { useBench } from "../bench-context";
-import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
-import { isMyraChannelId } from "../myra-channel";
 import type { ProfileSubject } from "@corbits/chat-ui";
-import { canvasColumnAllowed, contextualPanelIsDrawer } from "./breakpoints";
-import { CanvasAvailabilityProvider } from "./canvas-availability";
 import {
-  col2CollapsedFromPreferences,
-  COL2_COLLAPSED_PREFERENCE_KEY,
-} from "./col2-preference";
-import {
+  canvasColumnAllowed,
   clearCanvasForTenantSwitch,
   closeCanvasContent,
+  contextualPanelIsDrawer,
+  deriveCol2Width,
   initialCanvasColumnState,
   openArtifactInCanvas,
   openProfileInCanvas,
   resolveCanvasFocus,
   resolveCanvasVisibility,
   toggleCanvasFocus,
-  type CanvasArtifactContent,
-} from "./canvas-column-state";
-import {
-  deriveCol2Width,
   StageChromeProvider,
+  useShellLayoutMode,
   type StageChrome,
-} from "./stage-chrome";
-import { useShellLayoutMode } from "./use-shell-layout";
+} from "@corbits/shell-layout";
+import { useBench } from "../bench-context";
+import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
+import { isMyraChannelId } from "../myra-channel";
+import {
+  col2CollapsedFromPreferences,
+  COL2_COLLAPSED_PREFERENCE_KEY,
+} from "./col2-preference";
+import {
+  CanvasAvailabilityProvider,
+  type AppCanvasColumnState,
+  type CanvasArtifactContent,
+} from "./canvas-availability";
 
 export function ShellChromeProvider({
   path,
@@ -61,7 +62,9 @@ export function ShellChromeProvider({
   const canvasAllowed = canvasColumnAllowed(layoutMode);
   const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
 
-  const [canvasState, setCanvasState] = useState(initialCanvasColumnState);
+  const [canvasState, setCanvasState] = useState<AppCanvasColumnState>(
+    initialCanvasColumnState<ProfileSubject, CanvasArtifactContent>,
+  );
   const [userCollapsedCol2, setUserCollapsedCol2] = useState(false);
   const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
 

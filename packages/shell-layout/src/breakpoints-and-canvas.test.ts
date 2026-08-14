@@ -12,13 +12,14 @@ import {
   resolveCanvasVisibility,
 } from "./canvas-column-state";
 
-const sampleProfile = {
-  kind: "member" as const,
-  address: "u1@example.com",
-  handle: "ada",
-  displayName: "Ada",
-  initials: "AD",
-};
+type TestProfile = { readonly id: string };
+type TestArtifact = { readonly id: string };
+
+const sampleProfile: TestProfile = { id: "profile-1" };
+
+function initial() {
+  return initialCanvasColumnState<TestProfile, TestArtifact>();
+}
 
 describe("shellLayoutModeForWidth", () => {
   test("wide desktop widths are expanded", () => {
@@ -67,12 +68,12 @@ describe("canvasColumnAllowed", () => {
 
 describe("canvas column state", () => {
   test("starts closed", () => {
-    expect(initialCanvasColumnState().open).toBe(false);
+    expect(initial().open).toBe(false);
   });
 
   test("visibility requires both demand-driven open and the viewport", () => {
-    const open = openProfileInCanvas(initialCanvasColumnState(), sampleProfile);
-    const closed = initialCanvasColumnState();
+    const open = openProfileInCanvas(initial(), sampleProfile);
+    const closed = initial();
     expect(resolveCanvasVisibility(open, true)).toBe(true);
     expect(resolveCanvasVisibility(open, false)).toBe(false);
     expect(resolveCanvasVisibility(closed, true)).toBe(false);

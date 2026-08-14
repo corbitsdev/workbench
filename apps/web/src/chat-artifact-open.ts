@@ -13,7 +13,7 @@ import {
   resolveRendererKindFromMediaType,
 } from "@corbits/artifact-ui";
 import type { ArtifactDetail } from "./api";
-import type { CanvasArtifactContent } from "./shell/canvas-column-state";
+import type { CanvasArtifactContent } from "./shell/canvas-availability";
 
 /** Decodes a Library artifact detail into the canvas's typed content — the
  * same renderer-kind resolution `LibraryPage`'s preview pane uses, so a

@@ -44,7 +44,7 @@ import type * as Y from "yjs";
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
 import { ensureProfileDm, loadSharedChannels } from "../profile-relations";
-import type { CanvasArtifactContent } from "./canvas-column-state";
+import type { CanvasArtifactContent } from "./canvas-availability";
 import { useInsertIntoComposer } from "./composer-insertion";
 
 /**

@@ -36,13 +36,17 @@ export type { ShellLayoutMode } from "./breakpoints";
 export { useShellLayoutMode } from "./use-shell-layout";
 
 export {
+  clearArtifactInCanvas,
   clearCanvasForTenantSwitch,
   clearProfileInCanvas,
+  closeCanvasContent,
   focusCanvas,
   initialCanvasColumnState,
+  openArtifactInCanvas,
   openProfileInCanvas,
   resolveCanvasFocus,
   resolveCanvasVisibility,
+  toggleCanvasFocus,
   unfocusCanvas,
 } from "./canvas-column-state";
 export type { CanvasColumnState } from "./canvas-column-state";
