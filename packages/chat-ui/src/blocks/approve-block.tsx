@@ -143,7 +143,7 @@ export function ApproveBlockView({
       .then((result) => {
         if (result.kind === "resolved") {
           setResolvedElsewhere(false);
-          toast.success(
+          toast(
             kind === "approve"
               ? CHAT_STRINGS.blockApproveStatusApproved
               : CHAT_STRINGS.blockApproveStatusRejected,

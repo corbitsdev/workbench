@@ -22,7 +22,7 @@ import {
   SunMoon,
   UserRound,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@corbits/react-ui";
 
 import { channelPath } from "../../channel-path";
 import { requestChannelRename } from "../../channel-rename-events";
@@ -42,9 +42,9 @@ async function copyLink(path: string, label: string): Promise<void> {
   const url = `${window.location.origin}${path}`;
   try {
     await navigator.clipboard.writeText(url);
-    toast.success(`${label} link copied`);
+    toast(`${label} link copied`);
   } catch {
-    toast.error("Couldn't copy the link");
+    toast("Couldn't copy the link");
   }
 }
 
@@ -72,10 +72,10 @@ function channelMenu(
             "chat/pinned": !target.pinned,
           }).then(
             () =>
-              toast.success(
+              toast(
                 target.pinned ? "Channel unpinned" : "Channel pinned",
               ),
-            () => toast.error("Couldn't update the channel"),
+            () => toast("Couldn't update the channel"),
           );
         },
       }),
@@ -136,8 +136,8 @@ function routineMenu(
         icon: <PlayCircle />,
         onSelect: () => {
           void runRoutineNow(tenantId, target.id).then(
-            () => toast.success(`${target.name} started`),
-            () => toast.error("Couldn't start the routine"),
+            () => toast(`${target.name} started`),
+            () => toast("Couldn't start the routine"),
           );
         },
       }),
