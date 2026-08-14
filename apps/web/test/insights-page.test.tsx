@@ -70,7 +70,11 @@ describe("InsightsPage usage honesty", () => {
 
   test("summary API error surfaces load failure instead of zeros", () => {
     const markup = renderLanding({
-      summary: { kind: "error", message: "usage endpoint failed" },
+      summary: {
+        kind: "error",
+        message: "usage endpoint failed",
+        retry: () => undefined,
+      },
       activity: { kind: "ready", data: [] },
       byTool: { kind: "ready", data: [] },
     });
@@ -82,7 +86,11 @@ describe("InsightsPage usage honesty", () => {
   test("activity API error surfaces load failure", () => {
     const markup = renderLanding({
       summary: { kind: "ready", data: EMPTY_OVERALL_USAGE },
-      activity: { kind: "error", message: "activity schema mismatch" },
+      activity: {
+        kind: "error",
+        message: "activity schema mismatch",
+        retry: () => undefined,
+      },
       byTool: { kind: "ready", data: [] },
     });
     expect(markup).toContain("load insights");
@@ -93,7 +101,11 @@ describe("InsightsPage usage honesty", () => {
     const markup = renderLanding({
       summary: { kind: "ready", data: EMPTY_OVERALL_USAGE },
       activity: { kind: "ready", data: [] },
-      byTool: { kind: "error", message: "tools route 500" },
+      byTool: {
+        kind: "error",
+        message: "tools route 500",
+        retry: () => undefined,
+      },
     });
     expect(markup).toContain("load insights");
     expect(markup).toContain("tools route 500");
