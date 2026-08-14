@@ -304,7 +304,7 @@ async function postFinalizedTurnMemoryEntries(
 /**
  * Bounded daily-channel-digest transcript ingestion (CL-5852 M3b): at
  * most one firm-memory entry per channel per UTC day, recording that
- * day's most recent reply as an honest, lightweight digest of channel
+ * day's first reply as an honest, lightweight digest of channel
  * activity — never a fabricated summary. Chosen over an "on thread
  * completion" trigger because this repo's single-step conversational
  * workflows (`workflows/assistant`) keep one warm agent address across
