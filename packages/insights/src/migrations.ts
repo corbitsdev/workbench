@@ -48,23 +48,6 @@ export const insightsMigrations: readonly InsightsMigration[] = [
       );
     `,
   },
-  {
-    name: "0003_move_tables_to_insights_schema",
-    sql: `
-      DO $$
-      DECLARE
-        table_name text;
-      BEGIN
-        FOREACH table_name IN ARRAY ARRAY['usage_turn', 'model_price']
-        LOOP
-          IF to_regclass('public.' || table_name) IS NOT NULL
-             AND to_regclass('insights.' || table_name) IS NULL THEN
-            EXECUTE format('ALTER TABLE public.%I SET SCHEMA insights', table_name);
-          END IF;
-        END LOOP;
-      END $$;
-    `,
-  },
 ];
 
 const LEDGER_TABLE = "insights_migrations";
@@ -88,17 +71,6 @@ export async function applyInsightsMigrations(
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
     await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
-
-    // Pre-existing dev DBs from before this package had its own schema
-    // carry the ledger in `public` — move it in place so its history
-    // (which migrations already ran) comes with it. A fresh install
-    // never has a `public` ledger, so this is a no-op there.
-    await sql.unsafe(
-      `DO $$ BEGIN IF to_regclass('public.${LEDGER_TABLE}') IS NOT NULL ` +
-        `AND to_regclass('${SCHEMA}.${LEDGER_TABLE}') IS NULL THEN ` +
-        `ALTER TABLE "public".${quoteIdentifier(LEDGER_TABLE)} SET SCHEMA ${quoteIdentifier(SCHEMA)}; ` +
-        `END IF; END $$;`,
-    );
 
     await sql.unsafe(
       `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +

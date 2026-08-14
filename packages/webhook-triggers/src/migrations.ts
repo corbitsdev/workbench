@@ -45,18 +45,6 @@ export const webhookTriggersMigrations: readonly WebhookTriggersMigration[] = [
         ON "webhook_triggers"."webhook_trigger" ("tenant_id");
     `,
   },
-  {
-    name: "0003_move_tables_to_webhook_triggers_schema",
-    sql: `
-      DO $$
-      BEGIN
-        IF to_regclass('public.webhook_trigger') IS NOT NULL
-           AND to_regclass('webhook_triggers.webhook_trigger') IS NULL THEN
-          ALTER TABLE public.webhook_trigger SET SCHEMA webhook_triggers;
-        END IF;
-      END $$;
-    `,
-  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named
@@ -93,17 +81,6 @@ export async function applyWebhookTriggersMigrations(
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
     await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
-
-    // Pre-existing dev DBs from before this package had its own schema
-    // carry the ledger in `public` — move it in place so its history
-    // (which migrations already ran) comes with it. A fresh install
-    // never has a `public` ledger, so this is a no-op there.
-    await sql.unsafe(
-      `DO $$ BEGIN IF to_regclass('public.${LEDGER_TABLE}') IS NOT NULL ` +
-        `AND to_regclass('${SCHEMA}.${LEDGER_TABLE}') IS NULL THEN ` +
-        `ALTER TABLE "public".${quoteIdentifier(LEDGER_TABLE)} SET SCHEMA ${quoteIdentifier(SCHEMA)}; ` +
-        `END IF; END $$;`,
-    );
 
     await sql.unsafe(
       `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
