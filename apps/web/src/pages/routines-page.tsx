@@ -32,8 +32,8 @@ import {
   toast,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import type { Channel } from "@corbits/chat-ui";
-import { listChannels } from "@corbits/chat-ui";
+import type { Channel, DialogStepperStep } from "@corbits/chat-ui";
+import { DialogStepper, listChannels } from "@corbits/chat-ui";
 import { Clock, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
@@ -327,7 +327,7 @@ function DeliveryChannelPicker({
 }
 
 type CreatePath = "catalog" | "describe";
-type CreateStage = "compose" | "review";
+type CreateStep = 1 | 2 | 3;
 
 /** Readable autonomy lines for the draft review panel (pure for tests). */
 export function autonomyReviewLines(
@@ -346,6 +346,22 @@ export function autonomyReviewLines(
     }
   }
   return lines;
+}
+
+/** The routine's summary sentence at the confirm step — one calm line, no
+ * raw identifiers, matching `routineDetailSentence`'s tone for a routine
+ * that does not exist yet. */
+export function catalogConfirmSentence(
+  runMode: "once" | "schedule",
+  trigger: RoutineTrigger,
+  channelTitle: string | null,
+): string {
+  const when =
+    runMode === "once"
+      ? "Runs once, right after you create it"
+      : cadenceLabel(trigger);
+  if (channelTitle === null) return `${when}.`;
+  return `${when}, delivers to ${channelTitle}.`;
 }
 
 function CreateRoutineDialog({
@@ -370,10 +386,10 @@ function CreateRoutineDialog({
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = openProp ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
+  const [step, setStep] = useState<CreateStep>(1);
   const [path, setPath] = useState<CreatePath>("catalog");
-  const [stage, setStage] = useState<CreateStage>("compose");
   const [name, setName] = useState("");
-  const [definitionId, setDefinitionId] = useState(definitions[0]?.id ?? "");
+  const [definitionId, setDefinitionId] = useState("");
   const [runMode, setRunMode] = useState<"once" | "schedule">("once");
   const [trigger, setTrigger] = useState<RoutineTrigger>(null);
   const [prompt, setPrompt] = useState("");
@@ -390,22 +406,14 @@ function CreateRoutineDialog({
     }
   }, [channels, deliveryChannelId]);
 
-  useEffect(() => {
-    if (definitionId === "" && definitions[0] !== undefined) {
-      setDefinitionId(definitions[0].id);
-    }
-  }, [definitions, definitionId]);
-
-  const catalogComplete =
-    name.trim().length > 0 && definitionId !== "" && deliveryChannelId !== "";
-  const describeComplete = prompt.trim().length > 0 && deliveryChannelId !== "";
-  const complete = path === "catalog" ? catalogComplete : describeComplete;
+  const selectedDefinition =
+    definitions.find((d) => d.id === definitionId) ?? null;
 
   const reset = () => {
+    setStep(1);
     setPath("catalog");
-    setStage("compose");
     setName("");
-    setDefinitionId(definitions[0]?.id ?? "");
+    setDefinitionId("");
     setRunMode("once");
     setTrigger(null);
     setPrompt("");
@@ -419,294 +427,275 @@ function CreateRoutineDialog({
     reset();
   };
 
-  const cancelReview = () => {
+  const discardPendingDraft = () => {
     const draft = pendingDraft;
-    setBusy(true);
-    setError(null);
-    const work = draft !== null ? onDiscardDraft(draft.id) : Promise.resolve();
-    void work
-      .catch(() => {
-        // Discard best-effort; still leave the compose/review flow.
-      })
-      .finally(() => {
-        setBusy(false);
-        closeDialog();
-      });
+    if (draft === null) return;
+    setPendingDraft(null);
+    void onDiscardDraft(draft.id).catch(() => {
+      // Discard best-effort; the draft simply stays orphaned server-side.
+    });
   };
 
-  if (stage === "review" && pendingDraft !== null) {
-    const draft = pendingDraft;
-    const draftName =
-      draft.proposedName !== null && draft.proposedName !== ""
-        ? draft.proposedName
-        : draft.prompt.slice(0, 80);
-    const autonomyLines = autonomyReviewLines(draft.autonomy);
+  const handleCancel = () => {
+    discardPendingDraft();
+    closeDialog();
+  };
 
-    return (
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          if (!next) {
-            cancelReview();
-            return;
-          }
-          setOpen(next);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Review draft</DialogTitle>
-            <DialogDescription>
-              Check the proposed steps, then approve to create the routine.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                Name
-              </span>
-              <p className="text-sm font-medium text-[var(--ui-fg)]">
-                {draftName}
-              </p>
-            </div>
+  const goBack = () => {
+    setError(null);
+    if (step === 3) {
+      setStep(2);
+      return;
+    }
+    if (path === "describe") discardPendingDraft();
+    setStep(1);
+  };
 
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                Proposed steps
-              </span>
-              {draft.proposedSteps.length === 0 ? (
-                <p className="text-sm text-[var(--ui-fg-muted)]" role="status">
-                  No steps proposed yet.
-                </p>
-              ) : (
-                <ol className="list-decimal space-y-1.5 pl-5 text-sm">
-                  {draft.proposedSteps.map((step, index) => (
-                    <li key={`${step.title}-${String(index)}`}>
-                      <span className="font-medium">{step.title}</span>
-                      {step.detail !== undefined ? (
-                        <span className="text-[var(--ui-fg-muted)]">
-                          {" — "}
-                          {step.detail}
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
+  const canAdvanceFromSource =
+    path === "catalog" ? definitionId !== "" : prompt.trim().length > 0;
 
-            {draft.proposedTrigger !== null ? (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                  Schedule
-                </span>
-                <p className="text-sm">{cadenceLabel(draft.proposedTrigger)}</p>
-              </div>
-            ) : null}
+  const draftAndAdvance = () => {
+    if (deliveryChannelId === "" || prompt.trim().length === 0) return;
+    setBusy(true);
+    setError(null);
+    void onDescribe({
+      prompt: prompt.trim(),
+      deliveryChannelId,
+      scope: "bench",
+    })
+      .then((draft) => setPendingDraft(draft))
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => setBusy(false));
+  };
 
-            {autonomyLines.length > 0 ? (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                  Autonomy
-                </span>
-                <ul className="list-disc space-y-0.5 pl-5 text-sm text-[var(--ui-fg-muted)]">
-                  {autonomyLines.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
+  const createCatalogRoutine = () => {
+    if (selectedDefinition === null || deliveryChannelId === "") return;
+    setBusy(true);
+    setError(null);
+    void onCreate({
+      name: name.trim().length > 0 ? name.trim() : selectedDefinition.name,
+      definitionId,
+      scope: "bench",
+      deliveryChannelId,
+      trigger: runMode === "once" ? null : trigger,
+      runOnceNow: runMode === "once",
+    })
+      .then(() => closeDialog())
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => setBusy(false));
+  };
 
-            <p className="text-xs text-[var(--ui-fg-muted)]">
-              From: {draft.prompt}
-            </p>
+  const approveDraft = () => {
+    if (pendingDraft === null) return;
+    setBusy(true);
+    setError(null);
+    void onApproveDraft(pendingDraft.id)
+      .then(() => closeDialog())
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => setBusy(false));
+  };
 
-            {error !== null ? (
-              <p className="text-xs text-[var(--ui-danger)]" role="alert">
-                {error}
-              </p>
-            ) : null}
+  const stepperSteps: readonly DialogStepperStep[] = [
+    {
+      label: "Source",
+      guidance: "Pick a known workflow, or describe what you want automated.",
+    },
+    {
+      label: "Configure",
+      guidance:
+        path === "catalog"
+          ? "Choose when it runs and where results land."
+          : pendingDraft === null
+            ? "Choose where results land — an agent drafts the steps next."
+            : "Review what the agent proposes before creating it.",
+    },
+    {
+      label: "Confirm",
+      guidance:
+        path === "catalog"
+          ? "Give it a name if you like, then create it."
+          : "Check the proposed steps, then approve to create the routine.",
+    },
+  ];
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => cancelReview()}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy}
-                onClick={() => {
-                  setBusy(true);
-                  setError(null);
-                  void onApproveDraft(draft.id)
-                    .then(() => {
-                      closeDialog();
-                    })
-                    .catch((cause: unknown) => {
-                      setError(
-                        cause instanceof Error ? cause.message : String(cause),
-                      );
-                    })
-                    .finally(() => setBusy(false));
-                }}
-              >
-                {busy ? "Approving…" : "Approve"}
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
+  const showBack = step > 1;
+
+  let primaryLabel = "Next";
+  let primaryDisabled = busy;
+  let primaryOnClick = () => setStep(2);
+
+  if (step === 1) {
+    primaryDisabled = busy || !canAdvanceFromSource;
+    primaryOnClick = () => setStep(2);
+  } else if (step === 2 && path === "catalog") {
+    primaryLabel = "Next";
+    primaryDisabled = busy || deliveryChannelId === "";
+    primaryOnClick = () => setStep(3);
+  } else if (step === 2 && path === "describe" && pendingDraft === null) {
+    primaryLabel = busy ? "Drafting…" : "Draft with agent";
+    primaryDisabled = busy || deliveryChannelId === "";
+    primaryOnClick = draftAndAdvance;
+  } else if (step === 2 && path === "describe" && pendingDraft !== null) {
+    primaryLabel = "Next";
+    primaryDisabled = busy;
+    primaryOnClick = () => setStep(3);
+  } else if (step === 3 && path === "catalog") {
+    primaryLabel = busy
+      ? "Creating…"
+      : runMode === "once"
+        ? "Create & run now"
+        : "Create routine";
+    primaryDisabled =
+      busy || selectedDefinition === null || deliveryChannelId === "";
+    primaryOnClick = createCatalogRoutine;
+  } else if (step === 3 && path === "describe") {
+    primaryLabel = busy ? "Approving…" : "Approve";
+    primaryDisabled = busy || pendingDraft === null;
+    primaryOnClick = approveDraft;
   }
+
+  const draft = pendingDraft;
+  const draftName =
+    draft !== null
+      ? draft.proposedName !== null && draft.proposedName !== ""
+        ? draft.proposedName
+        : draft.prompt.slice(0, 80)
+      : null;
+  const autonomyLines =
+    draft !== null ? autonomyReviewLines(draft.autonomy) : [];
+  const channelTitle =
+    channels.find((c) => c.id === deliveryChannelId)?.title ?? null;
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
+        if (!next) {
+          handleCancel();
+          return;
+        }
         setOpen(next);
-        if (!next) reset();
       }}
     >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New routine</DialogTitle>
           <DialogDescription>
-            From the catalog for something known, or describe it to an agent.
+            A guided setup — from the catalog for something known, or describe
+            it to an agent.
           </DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!complete) return;
-            setBusy(true);
-            setError(null);
-            if (path === "catalog") {
-              void onCreate({
-                name: name.trim(),
-                definitionId,
-                scope: "bench",
-                deliveryChannelId,
-                trigger: runMode === "once" ? null : trigger,
-                runOnceNow: runMode === "once",
-              })
-                .then(() => {
-                  closeDialog();
-                })
-                .catch((cause: unknown) => {
-                  setError(
-                    cause instanceof Error ? cause.message : String(cause),
-                  );
-                })
-                .finally(() => setBusy(false));
-              return;
-            }
-            void onDescribe({
-              prompt: prompt.trim(),
-              deliveryChannelId,
-              scope: "bench",
-            })
-              .then((draft) => {
-                setPendingDraft(draft);
-                setStage("review");
-              })
-              .catch((cause: unknown) => {
-                setError(
-                  cause instanceof Error ? cause.message : String(cause),
-                );
-              })
-              .finally(() => setBusy(false));
+            if (!primaryDisabled) primaryOnClick();
           }}
         >
-          <div className="flex gap-1 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] p-0.5">
-            {(
-              [
-                ["catalog", "From catalog"],
-                ["describe", "Describe to agent"],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                disabled={busy}
-                onClick={() => setPath(value)}
-                className={[
-                  "flex-1 rounded-[var(--ui-radius-sm)] px-2 py-1.5 text-xs font-medium transition-colors",
-                  path === value
-                    ? "bg-[var(--ui-accent)] text-[var(--ui-accent-fg)]"
-                    : "text-[var(--ui-fg-muted)] hover:bg-[var(--ui-bg-muted)]",
-                ].join(" ")}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <DialogStepper step={step} steps={stepperSteps} />
 
-          {path === "catalog" ? (
+          {step === 1 ? (
             <>
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="routine-name" className="text-xs font-medium">
-                  Name
-                </label>
-                <Input
-                  id="routine-name"
-                  value={name}
-                  placeholder="Morning brief"
-                  required
-                  disabled={busy}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <span
-                  id="routine-definition-label"
-                  className="text-xs font-medium"
-                >
+                <span id="routine-source-label" className="text-xs font-medium">
                   Workflow
                 </span>
+                <div
+                  role="group"
+                  aria-labelledby="routine-source-label"
+                  className="grid grid-cols-2 gap-2"
+                >
+                  {definitions.map((definition) => (
+                    <button
+                      key={definition.id}
+                      type="button"
+                      disabled={busy}
+                      aria-pressed={
+                        path === "catalog" && definitionId === definition.id
+                      }
+                      onClick={() => {
+                        setPath("catalog");
+                        setDefinitionId(definition.id);
+                      }}
+                      className={[
+                        "flex flex-col gap-0.5 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
+                        path === "catalog" && definitionId === definition.id
+                          ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
+                          : "border-[var(--ui-border)]",
+                      ].join(" ")}
+                    >
+                      <span className="font-medium text-[var(--ui-fg)]">
+                        {definition.name}
+                      </span>
+                      {definition.description !== undefined &&
+                      definition.description !== null ? (
+                        <span className="text-[var(--ui-fg-muted)]">
+                          {definition.description}
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-pressed={path === "describe"}
+                    onClick={() => setPath("describe")}
+                    className={[
+                      "flex flex-col gap-0.5 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
+                      path === "describe"
+                        ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
+                        : "border-[var(--ui-border)]",
+                    ].join(" ")}
+                  >
+                    <span className="font-medium text-[var(--ui-fg)]">
+                      Describe it to an agent
+                    </span>
+                    <span className="text-[var(--ui-fg-muted)]">
+                      An agent drafts the steps for you to review.
+                    </span>
+                  </button>
+                </div>
                 {definitions.length === 0 ? (
                   <p
                     className="text-xs text-[var(--ui-fg-muted)]"
                     role="status"
                   >
-                    No automatable workflows on this bench yet.
+                    No automatable workflows on this bench yet — describe it
+                    instead.
                   </p>
-                ) : (
-                  <Menu>
-                    <MenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        id="routine-definition"
-                        aria-labelledby="routine-definition-label"
-                        disabled={busy}
-                      >
-                        {definitions.find((d) => d.id === definitionId)?.name ??
-                          "Choose workflow"}
-                      </Button>
-                    </MenuTrigger>
-                    <MenuContent>
-                      {definitions.map((definition) => (
-                        <MenuItem
-                          key={definition.id}
-                          onSelect={() => setDefinitionId(definition.id)}
-                        >
-                          {definition.name}
-                        </MenuItem>
-                      ))}
-                    </MenuContent>
-                  </Menu>
-                )}
+                ) : null}
               </div>
 
+              {path === "describe" ? (
+                <div className="flex flex-col gap-1.5">
+                  <label
+                    htmlFor="routine-prompt"
+                    className="text-xs font-medium"
+                  >
+                    Describe the routine
+                  </label>
+                  <textarea
+                    id="routine-prompt"
+                    value={prompt}
+                    disabled={busy}
+                    rows={4}
+                    placeholder="Every weekday at 9am, pull the signups export and post a summary to #ops."
+                    onChange={(event) => setPrompt(event.target.value)}
+                    className="w-full resize-y rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg)] px-2.5 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-ring)]"
+                  />
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {step === 2 && path === "catalog" ? (
+            <>
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs font-medium">When</span>
                 <div className="flex gap-1">
@@ -736,39 +725,126 @@ function CreateRoutineDialog({
                   <TriggerPicker value={trigger} onChange={setTrigger} />
                 ) : null}
               </div>
+              <div className="flex flex-col gap-1.5">
+                <span
+                  id="routine-delivery-label"
+                  className="text-xs font-medium"
+                >
+                  Deliver results to
+                </span>
+                <DeliveryChannelPicker
+                  channels={channels}
+                  value={deliveryChannelId}
+                  onChange={setDeliveryChannelId}
+                  disabled={busy}
+                />
+              </div>
             </>
-          ) : (
+          ) : null}
+
+          {step === 2 && path === "describe" && pendingDraft === null ? (
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="routine-prompt" className="text-xs font-medium">
-                Describe the routine
-              </label>
-              <textarea
-                id="routine-prompt"
-                value={prompt}
+              <span id="routine-delivery-label" className="text-xs font-medium">
+                Deliver results to
+              </span>
+              <DeliveryChannelPicker
+                channels={channels}
+                value={deliveryChannelId}
+                onChange={setDeliveryChannelId}
                 disabled={busy}
-                rows={4}
-                placeholder="Every weekday at 9am, pull the signups export and post a summary to #ops."
-                onChange={(event) => setPrompt(event.target.value)}
-                className="w-full resize-y rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg)] px-2.5 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-ring)]"
               />
+            </div>
+          ) : null}
+
+          {step === 2 && path === "describe" && draft !== null ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                  Proposed steps
+                </span>
+                {draft.proposedSteps.length === 0 ? (
+                  <p
+                    className="text-sm text-[var(--ui-fg-muted)]"
+                    role="status"
+                  >
+                    No steps proposed yet.
+                  </p>
+                ) : (
+                  <ol className="list-decimal space-y-1.5 pl-5 text-sm">
+                    {draft.proposedSteps.map((draftStep, index) => (
+                      <li key={`${draftStep.title}-${String(index)}`}>
+                        <span className="font-medium">{draftStep.title}</span>
+                        {draftStep.detail !== undefined ? (
+                          <span className="text-[var(--ui-fg-muted)]">
+                            {" — "}
+                            {draftStep.detail}
+                          </span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+              {draft.proposedTrigger !== null ? (
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                    Schedule
+                  </span>
+                  <p className="text-sm">
+                    {cadenceLabel(draft.proposedTrigger)}
+                  </p>
+                </div>
+              ) : null}
+              {autonomyLines.length > 0 ? (
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                    Autonomy
+                  </span>
+                  <ul className="list-disc space-y-0.5 pl-5 text-sm text-[var(--ui-fg-muted)]">
+                    {autonomyLines.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {step === 3 && path === "catalog" ? (
+            <>
+              <p className="text-sm text-[var(--ui-fg)]">
+                {catalogConfirmSentence(runMode, trigger, channelTitle)}
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="routine-name" className="text-xs font-medium">
+                  Name (optional)
+                </label>
+                <Input
+                  id="routine-name"
+                  value={name}
+                  placeholder={selectedDefinition?.name ?? "Morning brief"}
+                  disabled={busy}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </div>
+            </>
+          ) : null}
+
+          {step === 3 && path === "describe" ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                  Name
+                </span>
+                <p className="text-sm font-medium text-[var(--ui-fg)]">
+                  {draftName}
+                </p>
+              </div>
               <p className="text-xs text-[var(--ui-fg-muted)]">
-                An agent drafts the steps; you review and approve before it
-                runs.
+                From: {draft?.prompt}
               </p>
             </div>
-          )}
-
-          <div className="flex flex-col gap-1.5">
-            <span id="routine-delivery-label" className="text-xs font-medium">
-              Deliver results to
-            </span>
-            <DeliveryChannelPicker
-              channels={channels}
-              value={deliveryChannelId}
-              onChange={setDeliveryChannelId}
-              disabled={busy}
-            />
-          </div>
+          ) : null}
 
           {error !== null ? (
             <p className="text-xs text-[var(--ui-danger)]" role="alert">
@@ -777,19 +853,28 @@ function CreateRoutineDialog({
           ) : null}
 
           <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="ghost" size="sm" disabled={busy}>
-                Cancel
+            {showBack ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={goBack}
+              >
+                Back
               </Button>
-            </DialogClose>
-            <Button type="submit" size="sm" disabled={busy || !complete}>
-              {busy
-                ? path === "catalog"
-                  ? "Creating…"
-                  : "Drafting…"
-                : path === "catalog"
-                  ? "Create routine"
-                  : "Draft with agent"}
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={handleCancel}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={primaryDisabled}>
+              {primaryLabel}
             </Button>
           </DialogFooter>
         </form>
