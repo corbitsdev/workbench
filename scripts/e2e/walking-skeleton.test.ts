@@ -321,7 +321,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       // per-trigger correlation handle is the response's messageId, which
       // this suite does not follow up on (run-completion needs a real
       // inference credential).
-      expect(address).toBe(`ins_${deploymentId}@${slug}.localhost`);
+      expect(address).toBe(`${deploymentId}@${slug}.localhost`);
     });
 
     console.log(
