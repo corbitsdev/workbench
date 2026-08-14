@@ -107,7 +107,7 @@ export function ActivityBand() {
           </Badge>
         ) : null}
       </h3>
-      <QueryView query={rows} label="approvals">
+      <QueryView query={rows} label="approvals" skeleton="rows">
         {(items) => (
           <div className="activity-list">
             {items.map((approval) => {

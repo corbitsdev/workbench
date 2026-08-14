@@ -428,7 +428,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   }
 
   return (
-    <QueryView query={page} label="library artifacts">
+    <QueryView query={page} label="library artifacts" skeleton="rows">
       {(rows) => {
         const artifacts = mapArtifactListToSummaries(rows.data).filter((row) =>
           artifactMatchesLibraryKindSegment(row, kindSegment),

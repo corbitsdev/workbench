@@ -392,7 +392,7 @@ export function InboxPage({
       <TriagePane
         className="min-h-0 flex-1 border-t-0"
         list={
-          <QueryView query={listQuery} label="your inbox">
+          <QueryView query={listQuery} label="your inbox" skeleton="rows">
             {(page) => (
               <InboxList
                 items={page.items}

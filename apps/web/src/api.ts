@@ -135,11 +135,27 @@ export type RunsPage = Paginated<WorkflowRun>;
 export type APIQuery<T> =
   | { readonly kind: "loading" }
   | { readonly kind: "unauthenticated" }
-  | { readonly kind: "error"; readonly message: string }
+  | {
+      readonly kind: "error";
+      readonly message: string;
+      readonly retry: () => void;
+    }
   | { readonly kind: "ready"; readonly data: T };
 
 /** An arktype schema, seen as the validating call every `Type` provides. */
 type Validator<T> = (data: unknown) => T | ArkErrors;
+
+/**
+ * Human copy for a failed query, kept plain and actionable — the technical
+ * detail (status codes, hub URLs, schema mismatches) stays in `console` /
+ * devtools for debugging, never in the primary line a person reads.
+ */
+export function describeQueryError(error: unknown): string {
+  if (error instanceof TypeError) {
+    return "Can't reach the server. Check your connection.";
+  }
+  return "Something went wrong. Try again.";
+}
 
 /**
  * Map a TanStack Query result onto the APIQuery discriminant pages already
@@ -153,6 +169,7 @@ export function toAPIQuery<T>(result: {
   readonly data: T | undefined;
   readonly isPending: boolean;
   readonly fetchStatus: "fetching" | "paused" | "idle";
+  readonly refetch: () => void;
 }): APIQuery<T> {
   if (result.isLoading) return { kind: "loading" };
   if (result.isError) {
@@ -161,10 +178,8 @@ export function toAPIQuery<T>(result: {
     }
     return {
       kind: "error",
-      message:
-        result.error instanceof Error
-          ? result.error.message
-          : String(result.error),
+      message: describeQueryError(result.error),
+      retry: result.refetch,
     };
   }
   if (result.data !== undefined) return { kind: "ready", data: result.data };
