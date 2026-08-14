@@ -32,6 +32,7 @@ describe("readHubConfig", () => {
       signupMode: "closed",
       allowedEmailDomains: [],
       signupRateLimit: { windowSeconds: 60, max: 5 },
+      allowPlaintextSecrets: false,
     });
   });
 
@@ -177,6 +178,29 @@ describe("readHubConfig", () => {
       CREDENTIAL_ENCRYPTION_KEY: "not-hex-and-too-short",
     });
     expect(message).toContain("CREDENTIAL_ENCRYPTION_KEY");
+  });
+
+  test("allowPlaintextSecrets is false by default", () => {
+    expect(readHubConfig(validEnv).allowPlaintextSecrets).toBe(false);
+  });
+
+  test("ALLOW_PLAINTEXT_SECRETS='1' or 'true' opts in", () => {
+    expect(
+      readHubConfig({ ...validEnv, ALLOW_PLAINTEXT_SECRETS: "1" })
+        .allowPlaintextSecrets,
+    ).toBe(true);
+    expect(
+      readHubConfig({ ...validEnv, ALLOW_PLAINTEXT_SECRETS: "true" })
+        .allowPlaintextSecrets,
+    ).toBe(true);
+  });
+
+  test("ALLOW_PLAINTEXT_SECRETS rejects any other value", () => {
+    const message = readExpectingError({
+      ...validEnv,
+      ALLOW_PLAINTEXT_SECRETS: "yes",
+    });
+    expect(message).toContain("ALLOW_PLAINTEXT_SECRETS");
   });
 
   test("accepts postgresql:// and https:// URL forms", () => {
