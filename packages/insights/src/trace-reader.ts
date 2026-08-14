@@ -7,6 +7,10 @@
 // writer anywhere in the platform today, so it is not read here: reading
 // it would render every run's trace empty forever, the same silent gap
 // this reader replaces.
+//
+// turn_part has no index on turn_id today, so this reader's per-run query
+// load depends on that index existing upstream. Tracked as an upstream ask
+// and explicitly out of scope here — no migration added in this package.
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { inferenceTurn, turnPart, workflowRun } from "@intx/db/schema";

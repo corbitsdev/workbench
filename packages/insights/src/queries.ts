@@ -185,6 +185,12 @@ export type RunTraceSpan = {
    * `null` for now, an honest absence rather than a fabricated verdict.
    * The field exists so CL-5927 (Settings · Audit) can consume tool-call
    * rows from this same reader once that read path is wired.
+   * Only ever populated for `kind: "tool"` spans (other kinds never carry
+   * a verdict); `undefined` and `null` are not interchangeable here —
+   * optional (`authz?:`) only because most call sites never set it, while
+   * the reader always sets `null` explicitly for tool spans as an honest
+   * "not reachable yet" rather than an unset "no opinion on whether this
+   * exists".
    */
   readonly authz?: AuditAuthz | null;
   /**
