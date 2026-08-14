@@ -109,9 +109,7 @@ test("also mediates a Request input, preserving its own headers", async () => {
     readCurrentMaterial: () => ({ secret: "exa_real_key" }),
   });
 
-  await mediated.fetch(
-    new Request(`${ORIGIN}/search`, { method: "POST" }),
-  );
+  await mediated.fetch(new Request(`${ORIGIN}/search`, { method: "POST" }));
 
   expect(captured.apiKey).toBe("exa_real_key");
 });
