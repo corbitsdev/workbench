@@ -6,7 +6,8 @@
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./credential-test": "./src/credential-test.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

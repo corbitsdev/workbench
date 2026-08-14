@@ -8,6 +8,12 @@
 // for inference. Only the transport (one `fetch`, pass/fail verdict)
 // belongs to workbench; the endpoints and their auth schemes are each
 // provider's own.
+//
+// Imported by the browser (the onboarding wizard's provider list) through
+// the package's `./credential-test` subpath, not its default export — the
+// default export pulls in the seed workflows and their `@intx/inference`
+// dependency, which have no business in a browser bundle. This module has
+// zero imports beyond arktype and bundles cleanly.
 
 import { type } from "arktype";
 

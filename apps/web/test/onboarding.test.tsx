@@ -7,6 +7,7 @@
 import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { supportedCredentialProviders } from "@workbench/hub-client/credential-test";
 
 import { App } from "../src/app";
 import {
@@ -44,21 +45,18 @@ const signedIn: SessionState = {
 describe("CREDENTIAL_PROVIDERS", () => {
   // ProviderPicker (onboarding-page.tsx) renders one card per entry here —
   // this is the data the cards are built from, so covering it covers what
-  // actually shows up: nine cards, one per SupportedCredentialProvider,
-  // each with a distinct honest one-liner and a real key-console link.
-  test("has one card for every OpenAI-compatible relay plus the direct providers", () => {
-    expect(CREDENTIAL_PROVIDERS.map((p) => p.id).sort()).toEqual([
-      "anthropic",
-      "deepseek",
-      "google-genai",
-      "groq",
-      "huggingface",
-      "mistral",
-      "openai",
-      "opencode-zen",
-      "openrouter",
-      "xai",
-    ]);
+  // actually shows up: one card per `@workbench/hub-client` provider the
+  // hub can actually test a credential against, each with a distinct
+  // honest one-liner and a real key-console link. Compared against
+  // `supportedCredentialProviders()` directly, not a second hand-copied
+  // list, so a provider added or removed there is caught here rather than
+  // drifting silently.
+  test("has one card for every provider the hub can test a credential against", () => {
+    expect(CREDENTIAL_PROVIDERS.map((p) => p.id).sort()).toEqual(
+      supportedCredentialProviders()
+        .map((p) => p.id)
+        .sort(),
+    );
   });
 
   test("every card has a non-empty label, description, and key console link", () => {
