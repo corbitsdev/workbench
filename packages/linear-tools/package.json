@@ -18,6 +18,8 @@
     "arktype": "catalog:"
   },
   "devDependencies": {
+    "@intx/crypto": "workspace:*",
+    "@intx/db": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

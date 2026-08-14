@@ -8,6 +8,7 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
   COLLATERAL_CONTENT_TYPES,
+  COLLATERAL_GENERATION_CREDENTIAL_BINDINGS,
   COLLATERAL_GENERATION_FINALIZE_TOOL_NAME,
   COLLATERAL_GENERATION_PENDING_SOURCES,
   COLLATERAL_GENERATION_STEP_ID,
@@ -128,6 +129,27 @@ test("the system prompt commits to a calm terminal reply on denial, not an error
   expect(COLLATERAL_GENERATION_SYSTEM_PROMPT).toMatch(
     /never present a denial as an error/i,
   );
+});
+
+test("the definition binds @corbits/granola-tools' and @corbits/linear-tools' declared handles to their tenant-owned credentials", () => {
+  const definition = buildCollateralGenerationWorkflow(INPUT);
+  expect(definition.credentialBindings).toEqual([
+    ...COLLATERAL_GENERATION_CREDENTIAL_BINDINGS,
+  ]);
+  expect(COLLATERAL_GENERATION_CREDENTIAL_BINDINGS).toEqual([
+    {
+      package: "@corbits/granola-tools",
+      handle: "granola",
+      provider: "granola",
+      locator: "tenant",
+    },
+    {
+      package: "@corbits/linear-tools",
+      handle: "linear",
+      provider: "linear",
+      locator: "tenant",
+    },
+  ]);
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {

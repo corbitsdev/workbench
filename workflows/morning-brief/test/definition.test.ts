@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
+  MORNING_BRIEF_CREDENTIAL_BINDINGS,
   MORNING_BRIEF_PENDING_SOURCES,
   MORNING_BRIEF_SECTIONS,
   MORNING_BRIEF_STEP_ID,
@@ -100,6 +101,27 @@ test("the prompt requires an honest failure state when nothing is connected", ()
   expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(
     /no connected sources to report from today/,
   );
+});
+
+test("the definition binds @corbits/granola-tools' and @corbits/linear-tools' declared handles to their tenant-owned credentials", () => {
+  const definition = buildMorningBriefWorkflow(INPUT);
+  expect(definition.credentialBindings).toEqual([
+    ...MORNING_BRIEF_CREDENTIAL_BINDINGS,
+  ]);
+  expect(MORNING_BRIEF_CREDENTIAL_BINDINGS).toEqual([
+    {
+      package: "@corbits/granola-tools",
+      handle: "granola",
+      provider: "granola",
+      locator: "tenant",
+    },
+    {
+      package: "@corbits/linear-tools",
+      handle: "linear",
+      provider: "linear",
+      locator: "tenant",
+    },
+  ]);
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
