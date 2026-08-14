@@ -130,15 +130,15 @@ function toTraceSpans(trace: RunTrace): TraceSpan[] {
   const end = Math.max(...trace.spans.map((s) => s.end), origin + 1);
   const span = Math.max(1, end - origin);
   return trace.spans.map((s) => {
-    const durationMs = s.durationMs ?? Math.max(0, s.end - s.start);
     const base = {
       id: s.id,
       label: s.label,
       kind: s.kind,
       start: (s.start - origin) / span,
       end: (s.end - origin) / span,
-      durationLabel: durationLabel(durationMs),
+      durationLabel: s.durationMs === null ? null : durationLabel(s.durationMs),
       phase: s.phase,
+      timingSource: s.timingSource,
     };
     const tok = tokensLabel(s.tokens);
     if (s.error !== null && tok !== undefined) {
