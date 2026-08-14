@@ -486,9 +486,76 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         },
       );
 
+      await hop(
+        "the run's insights trace reads real spans once the run settles (CL-5910)",
+        async () => {
+          // The webhook-fired run turns inference against the noop source
+          // asynchronously (see the sidecar dial-in above). The run itself
+          // (`workflow_run`) is a long-lived folded run that stays
+          // "running" indefinitely, the same way a chat channel does —
+          // it is the per-turn `inference_turn` row (written by
+          // @intx/hub-sessions' event-collector) that records the turn.
+          // Poll straight out of the database (no route reads a
+          // non-anchored run's turns by bare id, per the file header)
+          // until one exists — the reader must surface it regardless of
+          // whether the turn has settled yet, rendering a still-running
+          // turn as `awaiting` rather than waiting it out — then assert
+          // the mounted RunTraceReader (apps/hub/src/index.ts) surfaces a
+          // non-empty, honestly-timed trace through the real HTTP route —
+          // never the "run_trace_reader_not_mounted" absent-shape this
+          // route used to return unconditionally.
+          const sql = await connectE2eDb(url);
+          const deadline = Date.now() + 60_000;
+          try {
+            for (;;) {
+              const rows = await sql.unsafe(
+                `SELECT "status" FROM "inference_turn" WHERE "instance_id" = $1`,
+                [instanceId],
+              );
+              if (rows.length > 0) break;
+              if (Date.now() > deadline) {
+                throw new Error(
+                  `run ${instanceId} recorded no inference_turn within the deadline`,
+                );
+              }
+              await Bun.sleep(500);
+            }
+          } finally {
+            await sql.end();
+          }
+
+          const traceRes = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenantId}/insights/runs/${instanceId}/trace`,
+            undefined,
+            cookies,
+          );
+          expectStatus("get run trace", traceRes, 200);
+          const trace = traceRes.data as {
+            runId: string;
+            spans: { id: string; kind: string; phase: string }[];
+          };
+          expect(trace.runId).toBe(instanceId);
+          if (trace.spans.length === 0) {
+            throw new Error(
+              `run trace came back empty for a run with a recorded turn: ${JSON.stringify(trace)}`,
+            );
+          }
+          const turnSpan = trace.spans.find((span) => span.kind === "turn");
+          if (turnSpan === undefined) {
+            throw new Error(
+              `run trace had no "turn" span: ${JSON.stringify(trace)}`,
+            );
+          }
+          expect(["ok", "awaiting", "failed"]).toContain(turnSpan.phase);
+        },
+      );
+
       console.log(
         "smoke-webhook: a signed delivery to the public ingress route " +
-          "launched a real run row for a routine bound to a webhook trigger.",
+          "launched a real run row for a routine bound to a webhook trigger, " +
+          "and its insights trace reads back real spans (CL-5910).",
       );
     } finally {
       await sidecar.stop();
