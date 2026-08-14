@@ -1,0 +1,33 @@
+{
+  "name": "@corbits/slack-tag",
+  "private": true,
+  "description": "Slack mount composition for workbench's channel/tenancy machinery: binds a Slack channel to a workbench channel, auto-provisions Interchange principals for Slack authors, and routes mentions/thread messages through the existing chat platform.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts",
+    "./manifest": "./src/manifest.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@chat-adapter/state-memory": "^4.35.0",
+    "@corbits/chat": "workspace:*",
+    "@intx/db": "workspace:*",
+    "@intx/log": "workspace:*",
+    "arktype": "catalog:",
+    "chat": "^4.34.0",
+    "corbits-tag": "github:corbitsdev/corbits-tag#92eabf4f7bf0a9663799c07db6c3f72a4275f894",
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
