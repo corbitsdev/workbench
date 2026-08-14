@@ -34,7 +34,7 @@ test("buildStatusArtifactPayload names the reason, examined count, and next step
     nextSteps:
       "Connect Granola in Settings > Connections, then re-run this Routine.",
   });
-  expect(payload.kind).toBe("text");
+  expect(payload.kind).toBe("status-note");
   expect(payload.content).toContain(
     "No Granola connection is configured for this workspace.",
   );
