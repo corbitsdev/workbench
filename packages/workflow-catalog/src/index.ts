@@ -49,6 +49,11 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     displayName: "Process Granola call",
     automatable: false,
   },
+  {
+    assetName: "morning-brief",
+    displayName: "Morning brief",
+    automatable: true,
+  },
 ];
 
 const byAssetName = new Map(

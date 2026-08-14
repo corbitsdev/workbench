@@ -7,9 +7,10 @@ import {
 } from "../src/index";
 
 describe("workflow catalog", () => {
-  test("marks channel-digest and heartbeat automatable, not echo or assistant", () => {
+  test("marks channel-digest, heartbeat, and morning-brief automatable, not echo or assistant", () => {
     expect(isAutomatableWorkflowName("channel-digest")).toBe(true);
     expect(isAutomatableWorkflowName("heartbeat")).toBe(true);
+    expect(isAutomatableWorkflowName("morning-brief")).toBe(true);
     expect(isAutomatableWorkflowName("echo")).toBe(false);
     expect(isAutomatableWorkflowName("assistant")).toBe(false);
   });
@@ -37,6 +38,7 @@ describe("workflow catalog", () => {
   test("prefers catalog display names over raw asset names", () => {
     expect(workflowDisplayName("channel-digest")).toBe("Channel digest");
     expect(workflowDisplayName("heartbeat")).toBe("Heartbeat");
+    expect(workflowDisplayName("morning-brief")).toBe("Morning brief");
     expect(workflowDisplayName("echo")).toBe("Echo");
     expect(workflowDisplayName("assistant")).toBe("Myra");
   });
