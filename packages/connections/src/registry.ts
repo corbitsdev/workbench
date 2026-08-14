@@ -218,6 +218,25 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       feedsTools: ["@corbits/github-tools"],
       probe: (apiKey) => testGitHubCredential(apiKey),
     },
+    "granola-webhook": {
+      id: "granola-webhook",
+      // No credential-provider plugin mediates this connector's secret —
+      // it is minted and encrypted entirely inside
+      // `@corbits/webhook-triggers` (see `management-routes.ts`), never
+      // stored as a Credential row. `credentialPlugin` still has to name
+      // something (`ConnectorDescriptor` requires it uniformly); `http`
+      // is inert here, kept only so registry-wide invariants (every
+      // non-bearer connector reads `http`) hold without a special case.
+      credentialPlugin: "http",
+      displayName: "Granola inbound webhook",
+      authKind: "webhook-secret",
+      docsUrl: "https://www.granola.ai",
+      // The direction is inverted from the `granola` api-key connector
+      // above: this issues a signed inbound address for Granola to call,
+      // feeding nothing — a routine's webhook trigger binding, not a
+      // tool package's credential handle.
+      feedsTools: [],
+    },
   };
 
 export function connectorDescriptors(): readonly ConnectorDescriptor[] {

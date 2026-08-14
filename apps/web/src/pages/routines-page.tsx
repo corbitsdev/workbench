@@ -36,13 +36,15 @@ import type { Channel, DialogStepperStep } from "@corbits/chat-ui";
 import { DialogStepper, listChannels } from "@corbits/chat-ui";
 import {
   connectorStatus,
+  CopyButton,
   listCredentials,
   listProviders,
+  WebhookSecretPanel,
 } from "@corbits/settings-ui";
 import type { Credential, Provider } from "@corbits/settings-ui";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
-import { Clock, Copy, Plus, RotateCw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Clock, Plus, RotateCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -136,98 +138,6 @@ function draftedStepsFromInput(
   return steps;
 }
 
-/** Copies `value` to the clipboard, showing "Copied" for 1.5s — the same
- * pattern `agents-settings-section.tsx`'s `CopyAddressButton` uses. */
-function CopyButton({
-  value,
-  label,
-}: {
-  readonly value: string;
-  readonly label: string;
-}) {
-  const [copied, setCopied] = useState(false);
-  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (resetTimer.current !== null) clearTimeout(resetTimer.current);
-    };
-  }, []);
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      title={label}
-      aria-label={label}
-      onClick={() => {
-        void navigator.clipboard.writeText(value).then(() => {
-          setCopied(true);
-          if (resetTimer.current !== null) clearTimeout(resetTimer.current);
-          resetTimer.current = setTimeout(() => {
-            resetTimer.current = null;
-            setCopied(false);
-          }, 1500);
-        });
-      }}
-    >
-      <Copy /> {copied ? "Copied" : "Copy"}
-    </Button>
-  );
-}
-
-/**
- * The generated hook URL, a freshly-issued secret, and a sample payload —
- * shown right after create or rotate, per the shell mock's `.rt-webhook` /
- * `.rt-payload` blocks. The secret shown here is never fetched back later:
- * the hub returns it exactly once (create/rotate response), so this panel
- * only ever renders from a value the caller just received.
- */
-function WebhookSecretPanel({
-  url,
-  secret,
-}: {
-  readonly url: string;
-  readonly secret: string;
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-        This secret is shown once — copy it now. It signs every delivery to this
-        URL; losing it means rotating for a new one.
-      </p>
-      <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium">Hook URL</span>
-        <div className="flex items-center gap-1.5 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-1.5">
-          <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--ui-fg)]">
-            {url}
-          </code>
-          <CopyButton value={url} label="Copy hook URL" />
-        </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium">Signing secret</span>
-        <div className="flex items-center gap-1.5 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-1.5">
-          <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--ui-fg)]">
-            {secret}
-          </code>
-          <CopyButton value={secret} label="Copy signing secret" />
-        </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium">Example payload</span>
-        <pre className="overflow-x-auto rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-2 font-mono text-xs whitespace-pre-wrap text-[var(--ui-fg-muted)]">
-          {sampleWebhookPayload()}
-        </pre>
-        <p className="text-xs text-[var(--ui-fg-muted)]">
-          Any valid JSON body with a matching{" "}
-          <code className="font-mono">X-Webhook-Signature</code> header starts a
-          run.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 /**
  * The routine detail view's webhook section: hook URL (built from the
  * trigger id, matching `POST /api/webhooks/:triggerId`), status, and a
@@ -294,6 +204,7 @@ function WebhookTriggerPanel({
         <WebhookSecretPanel
           url={webhookTriggerUrl(triggerId)}
           secret={rotatedSecret}
+          samplePayload={sampleWebhookPayload()}
         />
       ) : (
         <div className="flex flex-col gap-3">
@@ -1189,6 +1100,7 @@ function CreateRoutineDialog({
               <WebhookSecretPanel
                 url={webhookRevealed.url}
                 secret={webhookRevealed.secret}
+                samplePayload={sampleWebhookPayload()}
               />
             ) : (
               <>

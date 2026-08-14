@@ -388,6 +388,21 @@
   color: var(--muted-foreground);
 }
 
+.settings-webhook-routine-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.settings-webhook-routine-row-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .settings-connections-advanced {
   border-top: 1px solid var(--border);
   padding-top: 0.75rem;

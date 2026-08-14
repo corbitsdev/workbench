@@ -256,6 +256,24 @@ export const SETTINGS_STRINGS = {
   connectionsSaveError: "Couldn't save that connection — try again.",
   connectionsAdvancedSummary:
     "All credentials — including certificates and other types",
+  connectionsWebhookLoadError: "Couldn't load the Granola webhook",
+  connectionsWebhookNotSetUp: "Not set up",
+  connectionsWebhookSetUpAction: "Set up",
+  connectionsWebhookManageAction: "Manage",
+  connectionsWebhookTriggerCount: (count: number) =>
+    `${count} webhook${count === 1 ? "" : "s"} wired`,
+  connectionsWebhookLastDelivery: (when: string) => `Last delivery ${when}`,
+  connectionsWebhookNoDeliveries: "No deliveries yet",
+  connectionsWebhookDirectionNote:
+    "Workbench gives you a signed webhook address Granola calls.",
+  connectionsWebhookDialogTitle: "Granola inbound webhook",
+  connectionsWebhookDialogDescription:
+    "This address is yours to give to Granola — nothing to paste from Granola's side. The signing secret proves a delivery really came from Granola; it's shown once, right after you create or rotate it.",
+  connectionsWebhookNoRoutine:
+    "No Granola call-notes routine yet. Create one from Routines, then come back here to wire its inbound webhook.",
+  connectionsWebhookCreateAction: "Create",
+  connectionsWebhookRotateAction: "Rotate secret",
+  connectionsWebhookRotating: "Rotating…",
 
   auditSectionTitle: "Audit",
   auditSectionDescription: "Who changed what, when — orientation only.",
