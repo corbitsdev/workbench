@@ -75,14 +75,17 @@ export type FinalizeArgs = typeof FinalizeArgs.infer;
 
 export type ArtifactPayload = {
   title: string;
-  kind: "text";
+  kind: "text" | "status-note";
   content: string;
 };
 
 /**
  * The payload `createWorkflowArtifact` persists (`{ title, kind,
  * content }`). Built here so the persist call is a straight pass-through
- * of this object, not a payload assembled at the call site.
+ * of this object, not a payload assembled at the call site. `kind`
+ * comes from `args.status` — the same structural discriminator that
+ * already picks which of the two content shapes to build — never from
+ * free-text the model could drift on.
  */
 export function buildArtifactPayload(args: FinalizeArgs): ArtifactPayload {
   if (args.status === "notes") {
@@ -100,7 +103,7 @@ export function buildArtifactPayload(args: FinalizeArgs): ArtifactPayload {
   }
   return {
     title: args.title,
-    kind: "text",
+    kind: "status-note",
     content:
       `Call: ${args.callId}\n\n` +
       "This call could not be processed.\n\n" +
