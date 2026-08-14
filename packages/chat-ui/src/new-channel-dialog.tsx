@@ -1,10 +1,13 @@
 // The "new channel"/"new chat" affordance, behind a small centered dialog
-// triggered from the sidebar. A channel is name-only; a chat additionally
-// requires picking exactly one counterpart — an agent (a radio list of the
-// tenant's invitable definitions, by name only — the definition id stays
-// internal) or a bench member (a radio list of the bench's people, sourced
-// the same way Settings → People is) — since a chat's counterpart is fixed
-// at creation and can never be invited into afterward.
+// triggered from the sidebar, walked as a two-step guided flow: pick a kind,
+// then fill in that kind's (few) details. A channel is name-only; a chat
+// additionally requires picking exactly one counterpart — an agent (a radio
+// list of the tenant's invitable definitions, by name only — the definition
+// id stays internal) or a bench member (a radio list of the bench's people,
+// sourced the same way Settings → People is) — since a chat's counterpart is
+// fixed at creation and can never be invited into afterward. A caller that
+// already knows the kind (`initialKind`) skips the kind step entirely and
+// opens straight on details.
 
 import {
   Button,
@@ -29,7 +32,11 @@ import type {
   InvitableDefinition,
 } from "./api";
 import { listInvitableDefinitions } from "./api";
+import { DialogStepper } from "./dialog-stepper";
+import type { DialogStepperStep } from "./dialog-stepper";
 import { CHAT_STRINGS } from "./strings";
+
+type NewChannelStep = 1 | 2;
 
 // The invitable-definitions listing is fetched per-channel in the invite
 // flow, but the underlying tenant-wide listing does not actually key off
@@ -135,7 +142,7 @@ export function NewChannelDialog({
   tenantId,
   submitting,
   error = null,
-  initialKind = "channel",
+  initialKind,
   listMembers,
   currentUserPrincipalId,
 }: {
@@ -145,7 +152,12 @@ export function NewChannelDialog({
   readonly tenantId: string;
   readonly submitting: boolean;
   readonly error?: string | null;
-  /** Which kind the radio starts on — a bench with only chats, say, could open this straight to "chat". */
+  /**
+   * The kind the dialog already knows, e.g. a "New chat" affordance that
+   * only ever creates chats. When given, the guided flow skips its own
+   * kind-picking step and opens straight on that kind's details — omit it
+   * for a general "New channel" entry point that should ask first.
+   */
   readonly initialKind?: ChannelKind;
   /**
    * The bench's people, sourced the same way Settings → People is —
@@ -159,9 +171,16 @@ export function NewChannelDialog({
    * is refused by the server (409), so this dialog never offers it. */
   readonly currentUserPrincipalId?: string;
 }) {
+  // A caller that already knows the kind opens straight on the details
+  // step — `initialKind` is only ever passed by a caller in that position,
+  // so its mere presence (not its value) is the "skip the kind step" signal.
+  const startStep: NewChannelStep = initialKind === undefined ? 1 : 2;
+  const resolvedInitialKind = initialKind ?? "channel";
+
+  const [step, setStep] = useState<NewChannelStep>(startStep);
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
-  const [kind, setKind] = useState<ChannelKind>(initialKind);
+  const [kind, setKind] = useState<ChannelKind>(resolvedInitialKind);
   const [counterpartTab, setCounterpartTab] = useState<CounterpartTab>("agent");
   const [definitionId, setDefinitionId] = useState<string | null>(null);
   const [personId, setPersonId] = useState<string | null>(null);
@@ -173,9 +192,10 @@ export function NewChannelDialog({
   });
 
   function reset() {
+    setStep(startStep);
     setName("");
     setPurpose("");
-    setKind(initialKind);
+    setKind(resolvedInitialKind);
     setCounterpartTab("agent");
     setDefinitionId(null);
     setPersonId(null);
@@ -266,6 +286,20 @@ export function NewChannelDialog({
     if (payload !== null) onCreate(payload);
   }
 
+  const stepperSteps: readonly DialogStepperStep[] = [
+    {
+      label: CHAT_STRINGS.newChannelStepKindLabel,
+      guidance: CHAT_STRINGS.newChannelStepKindGuidance,
+    },
+    {
+      label: CHAT_STRINGS.newChannelStepDetailsLabel,
+      guidance:
+        kind === "chat"
+          ? CHAT_STRINGS.newChannelStepChatGuidance
+          : CHAT_STRINGS.newChannelStepChannelGuidance,
+    },
+  ];
+
   return (
     <Dialog
       open={open}
@@ -288,132 +322,144 @@ export function NewChannelDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
+          <DialogStepper step={step} steps={stepperSteps} />
           <form
             id="new-channel-form"
             className="chat-new-channel-form"
             onSubmit={(event) => {
               event.preventDefault();
+              if (step === 1) {
+                setStep(2);
+                return;
+              }
               handleSubmit();
             }}
           >
-            <div className="chat-form-field">
-              <span className="chat-field-label">
-                {CHAT_STRINGS.newChannelKindLabel}
-              </span>
-              <div
-                role="group"
-                aria-label={CHAT_STRINGS.newChannelKindLabel}
-                className="chat-kind-grid"
-              >
-                <button
-                  type="button"
-                  className="chat-kind-card"
-                  aria-pressed={kind === "channel"}
-                  onClick={() => setKind("channel")}
+            {step === 1 ? (
+              <div className="chat-form-field">
+                <span className="chat-field-label">
+                  {CHAT_STRINGS.newChannelKindLabel}
+                </span>
+                <div
+                  role="group"
+                  aria-label={CHAT_STRINGS.newChannelKindLabel}
+                  className="chat-kind-grid"
                 >
-                  <span className="chat-kind-card-title">
-                    {CHAT_STRINGS.newChannelKindChannel}
-                  </span>
-                  <span className="chat-kind-card-desc">
-                    {CHAT_STRINGS.newChannelKindChannelDesc}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="chat-kind-card"
-                  aria-pressed={kind === "chat"}
-                  onClick={() => setKind("chat")}
-                >
-                  <span className="chat-kind-card-title">
-                    {CHAT_STRINGS.newChannelKindChat}
-                  </span>
-                  <span className="chat-kind-card-desc">
-                    {CHAT_STRINGS.newChannelKindChatDesc}
-                  </span>
-                </button>
-              </div>
-            </div>
-            {kind === "chat" ? (
-              <div
-                className="chat-form-field"
-                data-testid="new-chat-counterpart-picker"
-              >
-                {listMembers !== undefined ? (
-                  <Tabs<CounterpartTab>
-                    tabs={[
-                      {
-                        id: "agent",
-                        label: CHAT_STRINGS.newChatCounterpartTabAgent,
-                      },
-                      {
-                        id: "person",
-                        label: CHAT_STRINGS.newChatCounterpartTabPerson,
-                      },
-                    ]}
-                    active={counterpartTab}
-                    onChange={setCounterpartTab}
-                    label={CHAT_STRINGS.newChatDialogTitle}
-                    variant="enclosed"
+                  <button
+                    type="button"
+                    className="chat-kind-card"
+                    aria-pressed={kind === "channel"}
+                    onClick={() => setKind("channel")}
                   >
-                    {(active) =>
-                      active === "agent" ? (
+                    <span className="chat-kind-card-title">
+                      {CHAT_STRINGS.newChannelKindChannel}
+                    </span>
+                    <span className="chat-kind-card-desc">
+                      {CHAT_STRINGS.newChannelKindChannelDesc}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-kind-card"
+                    aria-pressed={kind === "chat"}
+                    onClick={() => setKind("chat")}
+                  >
+                    <span className="chat-kind-card-title">
+                      {CHAT_STRINGS.newChannelKindChat}
+                    </span>
+                    <span className="chat-kind-card-desc">
+                      {CHAT_STRINGS.newChannelKindChatDesc}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {kind === "chat" ? (
+                  <div
+                    className="chat-form-field"
+                    data-testid="new-chat-counterpart-picker"
+                  >
+                    {listMembers !== undefined ? (
+                      <Tabs<CounterpartTab>
+                        tabs={[
+                          {
+                            id: "agent",
+                            label: CHAT_STRINGS.newChatCounterpartTabAgent,
+                          },
+                          {
+                            id: "person",
+                            label: CHAT_STRINGS.newChatCounterpartTabPerson,
+                          },
+                        ]}
+                        active={counterpartTab}
+                        onChange={setCounterpartTab}
+                        label={CHAT_STRINGS.newChatDialogTitle}
+                        variant="enclosed"
+                      >
+                        {(active) =>
+                          active === "agent" ? (
+                            <AgentPicker
+                              state={agentState}
+                              selectedId={definitionId}
+                              onSelect={setDefinitionId}
+                            />
+                          ) : (
+                            <PersonPicker
+                              state={personState}
+                              selectedId={personId}
+                              onSelect={setPersonId}
+                            />
+                          )
+                        }
+                      </Tabs>
+                    ) : (
+                      <fieldset data-testid="new-chat-agent-picker">
+                        <legend className="chat-field-label">
+                          {CHAT_STRINGS.newChatAgentLabel}
+                        </legend>
                         <AgentPicker
                           state={agentState}
                           selectedId={definitionId}
                           onSelect={setDefinitionId}
                         />
-                      ) : (
-                        <PersonPicker
-                          state={personState}
-                          selectedId={personId}
-                          onSelect={setPersonId}
-                        />
-                      )
+                      </fieldset>
+                    )}
+                  </div>
+                ) : null}
+                <label className="chat-form-field">
+                  <span className="chat-field-label">
+                    {kind === "chat"
+                      ? CHAT_STRINGS.newChatNameLabel
+                      : CHAT_STRINGS.newChannelNameLabel}
+                  </span>
+                  <Input
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder={
+                      kind === "chat"
+                        ? CHAT_STRINGS.newChatNamePlaceholder
+                        : CHAT_STRINGS.newChannelNamePlaceholder
                     }
-                  </Tabs>
-                ) : (
-                  <fieldset data-testid="new-chat-agent-picker">
-                    <legend className="chat-field-label">
-                      {CHAT_STRINGS.newChatAgentLabel}
-                    </legend>
-                    <AgentPicker
-                      state={agentState}
-                      selectedId={definitionId}
-                      onSelect={setDefinitionId}
+                    autoFocus={kind === "channel"}
+                  />
+                </label>
+                {kind === "channel" ? (
+                  <label className="chat-form-field">
+                    <span className="chat-field-label">
+                      {CHAT_STRINGS.newChannelPurposeLabel}
+                    </span>
+                    <textarea
+                      className="chat-textarea"
+                      value={purpose}
+                      onChange={(event) => setPurpose(event.target.value)}
+                      placeholder={CHAT_STRINGS.newChannelPurposePlaceholder}
+                      rows={2}
                     />
-                  </fieldset>
-                )}
-              </div>
-            ) : null}
-            <label className="chat-form-field">
-              <span className="chat-field-label">
-                {kind === "chat"
-                  ? CHAT_STRINGS.newChatNameLabel
-                  : CHAT_STRINGS.newChannelNameLabel}
-              </span>
-              <Input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={
-                  kind === "chat"
-                    ? CHAT_STRINGS.newChatNamePlaceholder
-                    : CHAT_STRINGS.newChannelNamePlaceholder
-                }
-                autoFocus={kind === "channel"}
-              />
-            </label>
-            <label className="chat-form-field">
-              <span className="chat-field-label">
-                {CHAT_STRINGS.newChannelPurposeLabel}
-              </span>
-              <textarea
-                className="chat-textarea"
-                value={purpose}
-                onChange={(event) => setPurpose(event.target.value)}
-                placeholder={CHAT_STRINGS.newChannelPurposePlaceholder}
-                rows={2}
-              />
-            </label>
+                  </label>
+                ) : null}
+              </>
+            )}
             {error !== null && (
               <p className="chat-dialog-error" role="alert">
                 {error}
@@ -422,6 +468,16 @@ export function NewChannelDialog({
           </form>
         </DialogBody>
         <DialogFooter>
+          {step === 2 && startStep === 1 ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setStep(1)}
+              disabled={submitting}
+            >
+              {CHAT_STRINGS.newChannelBack}
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -429,14 +485,20 @@ export function NewChannelDialog({
           >
             {CHAT_STRINGS.newChannelCancel}
           </Button>
-          <Button
-            type="submit"
-            form="new-channel-form"
-            variant="primary"
-            disabled={!canSubmit || submitting}
-          >
-            {CHAT_STRINGS.newChannelSubmit}
-          </Button>
+          {step === 1 ? (
+            <Button type="submit" form="new-channel-form" variant="primary">
+              {CHAT_STRINGS.newChannelNext}
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              form="new-channel-form"
+              variant="primary"
+              disabled={!canSubmit || submitting}
+            >
+              {CHAT_STRINGS.newChannelSubmit}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

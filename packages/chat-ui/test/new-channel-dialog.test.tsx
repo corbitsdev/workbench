@@ -55,6 +55,138 @@ afterEach(() => {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const settle = () => act(() => sleep(10));
 
+describe("NewChannelDialog guided stepper", () => {
+  test("opens on the kind step and shows stepper chrome when no initial kind is given", async () => {
+    stubInvitableDefinitions([]);
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+    });
+    await settle();
+
+    expect(document.body.querySelector(".dialog-stepper")).not.toBeNull();
+    expect(document.body.textContent).toContain("Step 1 of 2");
+    expect(document.body.textContent).toContain("Kind");
+    expect(
+      document.body.querySelector(
+        '[data-testid="new-chat-counterpart-picker"]',
+      ),
+    ).toBeNull();
+  });
+
+  test("Next advances from the kind step to the details step for a channel", async () => {
+    stubInvitableDefinitions([]);
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+    });
+    await settle();
+
+    const nextButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Next",
+    );
+    act(() => {
+      nextButton?.click();
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain("Step 2 of 2");
+    expect(document.body.textContent).toContain("Name");
+    expect(document.body.textContent).toContain("Purpose");
+  });
+
+  test("a channel created with zero typing beyond the kind pick stays disabled until named", async () => {
+    stubInvitableDefinitions([]);
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+    });
+    await settle();
+
+    const nextButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Next",
+    );
+    act(() => {
+      nextButton?.click();
+    });
+    await settle();
+
+    const createButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Create",
+    );
+    expect(createButton?.hasAttribute("disabled")).toBe(true);
+  });
+
+  test("Back returns to the kind step without losing the chosen kind", async () => {
+    stubInvitableDefinitions([]);
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+    });
+    await settle();
+
+    const chatCard = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Chat"),
+    );
+    act(() => {
+      chatCard?.click();
+    });
+    const nextButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Next",
+    );
+    act(() => {
+      nextButton?.click();
+    });
+    await settle();
+    expect(document.body.textContent).toContain("Step 2 of 2");
+
+    const backButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Back",
+    );
+    act(() => {
+      backButton?.click();
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain("Step 1 of 2");
+    const chatCardAfterBack = [
+      ...document.body.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Chat"));
+    expect(chatCardAfterBack?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("an initial kind skips the kind step and opens straight on details, with no Back", async () => {
+    stubInvitableDefinitions([{ id: "wfd_echo", name: "Echo" }]);
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "channel",
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain("Step 2 of 2");
+    const backButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Back",
+    );
+    expect(backButton).toBeUndefined();
+  });
+});
+
 describe("NewChannelDialog counterpart picker", () => {
   test("with listMembers injected, a chat offers both an Agents and a People tab", async () => {
     stubInvitableDefinitions([{ id: "wfd_echo", name: "Echo" }]);

@@ -22,6 +22,15 @@ export const CHAT_STRINGS = {
   newChannelPurposePlaceholder: "What is this channel for?",
   newChannelSubmit: "Create",
   newChannelCancel: "Cancel",
+  newChannelBack: "Back",
+  newChannelNext: "Next",
+  newChannelStepKindLabel: "Kind",
+  newChannelStepKindGuidance:
+    "Choose a pinned channel for the whole bench, or a direct chat.",
+  newChannelStepDetailsLabel: "Details",
+  newChannelStepChannelGuidance: "Name it and add an optional purpose.",
+  newChannelStepChatGuidance:
+    "Pick who to talk to — the chat's name defaults to theirs.",
   newChatDialogTitle: "New chat",
   newChatDialogDescription: "Pick who you want to talk to.",
   newChatNameLabel: "Name (optional)",
