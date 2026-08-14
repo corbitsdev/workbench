@@ -214,6 +214,8 @@ function ChatWorkspaceInner({
   onOpenProfile,
   settingsOpen = false,
   onSettingsOpenChange,
+  settingsSection = "general",
+  onSettingsSectionChange,
   onOpenArtifact,
   onOpenArtifactInLibrary,
   approvalActions,
@@ -234,7 +236,22 @@ function ChatWorkspaceInner({
    * dialog). Host-controlled the same way `channelId` is: driven from the
    * URL (`/c/:id/settings`). */
   readonly settingsOpen?: boolean;
-  readonly onSettingsOpenChange?: (open: boolean) => void;
+  /** Fired when the settings surface should open or close. `section` is
+   * only passed on open — the section the opener meant to land on (the
+   * gear button's General, or the composer's `/agents` shortcut) — so the
+   * host can navigate straight to that URL without a second, separate
+   * navigation for the section. */
+  readonly onSettingsOpenChange?: (
+    open: boolean,
+    section?: ChannelSettingsSectionId,
+  ) => void;
+  /** Which channel settings tab is active while the surface is open —
+   * host-controlled the same way `settingsOpen` is, driven from the URL
+   * (`/c/:id/settings/:section`). */
+  readonly settingsSection?: ChannelSettingsSectionId;
+  /** Fired when the user switches tabs while the settings surface is
+   * already open, so the host can reflect it in the URL. */
+  readonly onSettingsSectionChange?: (section: ChannelSettingsSectionId) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   readonly approvalActions?: ApprovalActions;
@@ -283,8 +300,6 @@ function ChatWorkspaceInner({
     null,
   );
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const [settingsSection, setSettingsSection] =
-    useState<ChannelSettingsSectionId>("general");
   // null = channel root feed. A concrete id opens that thread in the same
   // geometry (timeline + composer). pendingParentMessageId is set when the
   // user opens a reply on a message that has no thread yet.
@@ -550,8 +565,7 @@ function ChatWorkspaceInner({
    * the composer's `/agents` command both go through this so the section
    * that lands is always the one the caller meant to open. */
   function openChannelSettings(section: ChannelSettingsSectionId = "general") {
-    setSettingsSection(section);
-    onSettingsOpenChange?.(true);
+    onSettingsOpenChange?.(true, section);
   }
 
   async function handleInvite(definitionId: string) {
@@ -732,7 +746,8 @@ function ChatWorkspaceInner({
             tenantId={tenantId}
             channelId={activeChannelId}
             channelTitle={activeChannel.title || CHAT_STRINGS.unnamedChannel}
-            initialSection={settingsSection}
+            section={settingsSection}
+            onSectionChange={(next) => onSettingsSectionChange?.(next)}
             onBack={() => onSettingsOpenChange?.(false)}
             onInviteParticipant={() => {
               onSettingsOpenChange?.(false);
@@ -1069,6 +1084,8 @@ export function ChatWorkspace({
   onOpenProfile,
   settingsOpen,
   onSettingsOpenChange,
+  settingsSection,
+  onSettingsSectionChange,
   onOpenArtifact,
   onOpenArtifactInLibrary,
   approvalActions,
@@ -1097,8 +1114,18 @@ export function ChatWorkspace({
    * conversation stage — host-controlled from the URL (`/c/:id/settings`). */
   readonly settingsOpen?: boolean;
   /** Fired when the settings surface should open or close, so the host can
-   * reflect it in the URL. */
-  readonly onSettingsOpenChange?: (open: boolean) => void;
+   * reflect it in the URL — see `ChatWorkspaceInner`'s prop of the same
+   * name for the `section` argument's contract. */
+  readonly onSettingsOpenChange?: (
+    open: boolean,
+    section?: ChannelSettingsSectionId,
+  ) => void;
+  /** Which channel settings tab is active — host-controlled from the URL
+   * (`/c/:id/settings/:section`). */
+  readonly settingsSection?: ChannelSettingsSectionId;
+  /** Fired when the user switches tabs while the settings surface is
+   * already open, so the host can reflect it in the URL. */
+  readonly onSettingsSectionChange?: (section: ChannelSettingsSectionId) => void;
   /** Open a message's artifact chip — see `ChannelTimeline`'s `onOpenArtifact`. */
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   /** The chip's "Open in Library" affordance — see `ChannelTimeline`'s
@@ -1149,6 +1176,10 @@ export function ChatWorkspace({
           {...(settingsOpen !== undefined ? { settingsOpen } : {})}
           {...(onSettingsOpenChange !== undefined
             ? { onSettingsOpenChange }
+            : {})}
+          {...(settingsSection !== undefined ? { settingsSection } : {})}
+          {...(onSettingsSectionChange !== undefined
+            ? { onSettingsSectionChange }
             : {})}
           {...(approvalActions !== undefined ? { approvalActions } : {})}
           {...(blockResponses !== undefined ? { blockResponses } : {})}

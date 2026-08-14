@@ -23,6 +23,7 @@ import {
   channelIdFromPath,
   channelPath,
   channelSettingsPath,
+  channelSettingsSectionFromPath,
   isChannelSettingsPath,
 } from "../channel-path";
 import {
@@ -48,6 +49,7 @@ export function ChatPage({
   const bench = useBench();
   const channelId = channelIdFromPath(path);
   const settingsOpen = isChannelSettingsPath(path);
+  const settingsSection = channelSettingsSectionFromPath(path) ?? "general";
   const openProfile = useOpenProfileInCanvas();
   const registerComposerInsert = useRegisterComposerInsert();
   const openArtifactInCanvas = useOpenArtifactInCanvas();
@@ -171,11 +173,18 @@ export function ChatPage({
       onOpenProfile={openProfile}
       registerComposerInsert={registerComposerInsert}
       settingsOpen={settingsOpen}
-      onSettingsOpenChange={(open) => {
+      onSettingsOpenChange={(open, section) => {
         if (channelId === null) return;
         navigate(
-          open ? channelSettingsPath(channelId) : channelPath(channelId),
+          open
+            ? channelSettingsPath(channelId, section ?? settingsSection)
+            : channelPath(channelId),
         );
+      }}
+      settingsSection={settingsSection}
+      onSettingsSectionChange={(section) => {
+        if (channelId === null) return;
+        navigate(channelSettingsPath(channelId, section));
       }}
       onOpenArtifact={openArtifact}
       onOpenArtifactInLibrary={openArtifactInLibrary}

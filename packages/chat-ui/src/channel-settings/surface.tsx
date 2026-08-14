@@ -64,7 +64,8 @@ export function ChannelSettingsSurface({
   onBack,
   onInviteParticipant,
   onSaved,
-  initialSection = "general",
+  section = "general",
+  onSectionChange,
 }: {
   readonly tenantId: string;
   readonly channelId: string;
@@ -72,13 +73,17 @@ export function ChannelSettingsSurface({
   readonly onBack: () => void;
   readonly onInviteParticipant: () => void;
   readonly onSaved?: (settings: ChannelSettings) => void;
-  /** Which section to land on — `/agents` opens straight to Agents rather
-   * than the default General. */
-  readonly initialSection?: ChannelSettingsSectionId;
+  /** Which section is active — host-controlled the same way `settingsOpen`
+   * is on `ChatWorkspace`: `/agents` opens straight to Agents rather than
+   * the default General, and a deep link (`/c/:id/settings/:section`)
+   * lands directly on it. */
+  readonly section?: ChannelSettingsSectionId;
+  /** Fired when the user picks a different tab, so the host can reflect it
+   * in the URL. Omitted, tab clicks have no effect — same contract as
+   * `onSettingsOpenChange` being omitted on `ChatWorkspace`. */
+  readonly onSectionChange?: (section: ChannelSettingsSectionId) => void;
 }) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
-  const [section, setSection] =
-    useState<ChannelSettingsSectionId>(initialSection);
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [pinned, setPinned] = useState(false);
@@ -246,7 +251,7 @@ export function ChannelSettingsSurface({
                       aria-current={
                         s.id === activeSection.id ? "page" : undefined
                       }
-                      onClick={() => setSection(s.id)}
+                      onClick={() => onSectionChange?.(s.id)}
                     >
                       {s.label}
                     </button>
