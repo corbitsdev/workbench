@@ -45,7 +45,7 @@ import type { Credential, Provider } from "@corbits/settings-ui";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import type { WorkflowTriggerField } from "@corbits/workflow-catalog";
 import { Clock, Plus, RotateCw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
