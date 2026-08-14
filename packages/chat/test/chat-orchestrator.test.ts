@@ -54,13 +54,33 @@ function approvalRow(overrides?: {
 // returns the configured run regardless of which address was queried
 // — the same convention `platform-adapter.test.ts`'s own fake `db`
 // uses.
-function createFakeDb(run?: { id: string; tenantId: string }) {
+function createFakeDb(run?: {
+  id: string;
+  tenantId: string;
+  principalId?: string | null;
+}) {
   return {
     query: {
       workflowRun: {
-        findFirst: async () => run,
+        findFirst: async () =>
+          run === undefined
+            ? undefined
+            : { ...run, principalId: run.principalId ?? null },
       },
     },
+  };
+}
+
+function fakeMemory() {
+  const added: unknown[] = [];
+  return {
+    memory: {
+      async add(params: unknown) {
+        added.push(params);
+        return { documentId: "doc_1", versionId: "ver_1" };
+      },
+    },
+    added,
   };
 }
 
@@ -491,5 +511,234 @@ describe("createArtifactDeliveryHandler", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(sentMail).toHaveLength(0);
+  });
+
+  test("records a memory entry for a persisted artifact, attributed to the run's own tenant + principal — never a model-supplied value", async () => {
+    const { memory, added } = fakeMemory();
+    const handler = createArtifactDeliveryHandler({
+      approvals: { findByCorrelationId: async () => null },
+      db: createFakeDb({
+        id: "run_1",
+        tenantId: "ten_1",
+        principalId: "prn_1",
+      }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async () => ({
+          id: "mail_1",
+          createdAt: new Date().toISOString(),
+        }),
+      },
+      events: createSidecarEmitter(),
+      memory,
+    });
+
+    handler("run_1@ten1.workbench.test", {
+      toolCalls: [
+        {
+          isError: false,
+          // A model-supplied tenantId/principalId in the tool result must
+          // never override the run's own authenticated identity — the
+          // recognized shape doesn't even carry those fields, so there is
+          // nothing to override with.
+          result: JSON.stringify({
+            id: "art_1",
+            version: 1,
+            title: "Notes",
+            kind: "text",
+            persisted: true,
+          }),
+        },
+      ],
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(added).toEqual([
+      {
+        tenantId: "ten_1",
+        principalId: "prn_1",
+        kind: "artifact",
+        content: {
+          title: "Notes",
+          text: 'Library artifact "Notes" (text) was created.',
+        },
+        attributes: { artifactId: "art_1" },
+      },
+    ]);
+  });
+
+  test("records nothing when the memory plane is not mounted", async () => {
+    const handler = createArtifactDeliveryHandler({
+      approvals: { findByCorrelationId: async () => null },
+      db: createFakeDb({
+        id: "run_1",
+        tenantId: "ten_1",
+        principalId: "prn_1",
+      }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async () => ({
+          id: "mail_1",
+          createdAt: new Date().toISOString(),
+        }),
+      },
+      events: createSidecarEmitter(),
+    });
+
+    // No throw, no memory dependency touched — `deps.memory` is absent.
+    handler("run_1@ten1.workbench.test", {
+      toolCalls: [
+        {
+          isError: false,
+          result: JSON.stringify({
+            id: "art_1",
+            version: 1,
+            title: "Notes",
+            kind: "text",
+            persisted: true,
+          }),
+        },
+      ],
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  test("records nothing when the run has no principal to attribute the entry to", async () => {
+    const { memory, added } = fakeMemory();
+    const handler = createArtifactDeliveryHandler({
+      approvals: { findByCorrelationId: async () => null },
+      db: createFakeDb({
+        id: "run_1",
+        tenantId: "ten_1",
+        principalId: null,
+      }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async () => ({
+          id: "mail_1",
+          createdAt: new Date().toISOString(),
+        }),
+      },
+      events: createSidecarEmitter(),
+      memory,
+    });
+
+    handler("run_1@ten1.workbench.test", {
+      toolCalls: [
+        {
+          isError: false,
+          result: JSON.stringify({
+            id: "art_1",
+            version: 1,
+            title: "Notes",
+            kind: "text",
+            persisted: true,
+          }),
+        },
+      ],
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(added).toHaveLength(0);
+  });
+});
+
+describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
+  test("records at most one memory entry per channel per day for a connector.reply", async () => {
+    const { memory, added } = fakeMemory();
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({
+        id: "ins_echo1",
+        tenantId: "ten_1",
+        principalId: "prn_1",
+      }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async () => ({
+          id: "mail_1",
+          createdAt: new Date().toISOString(),
+        }),
+      },
+      events,
+      approvals: { findByCorrelationId: async () => null },
+      memory,
+    });
+
+    const emitReply = (content: string) =>
+      events.emit("agent.event", {
+        agentAddress: "ins_echo1@ten1.workbench.test",
+        sessionId: "ses_1",
+        event: { type: "connector.reply", data: { content } },
+      });
+
+    emitReply("first reply of the day");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    emitReply("second reply of the day");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({
+      tenantId: "ten_1",
+      principalId: "prn_1",
+      kind: "transcript-digest",
+      content: { text: "first reply of the day" },
+      attributes: { channelId: "ins_channel1" },
+    });
+
+    orchestrator.dispose();
+  });
+
+  test("records nothing when the memory plane is not mounted", async () => {
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({
+        id: "ins_echo1",
+        tenantId: "ten_1",
+        principalId: "prn_1",
+      }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async () => ({
+          id: "mail_1",
+          createdAt: new Date().toISOString(),
+        }),
+      },
+      events,
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "connector.reply", data: { content: "hi" } },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    orchestrator.dispose();
   });
 });
