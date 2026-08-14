@@ -180,11 +180,13 @@ async function postApproveBlock(
   const approval = await deps.approvals.findByCorrelationId(correlationId);
   if (approval === null || approval.status !== "pending") return;
   if (postedApprovalIds.has(approval.id)) return;
+  // Marked before the awaits below: two redelivered events racing this
+  // function must not both pass the guard while the first resolves
+  // channels.
+  postedApprovalIds.add(approval.id);
 
   const resolved = await resolveMemberChannels(deps, agentAddress);
   if (resolved === undefined) return;
-
-  postedApprovalIds.add(approval.id);
 
   const data: ApproveBlockData = {
     approvalId: approval.id,

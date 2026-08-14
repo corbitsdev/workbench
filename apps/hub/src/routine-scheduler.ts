@@ -101,6 +101,10 @@ export function createRoutineScheduler(deps: RoutineSchedulerDeps) {
     tickInFlight = true;
     try {
       await tickRoutineScheduler(deps, now());
+    } catch (error) {
+      log.error`routine scheduler tick failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
     } finally {
       tickInFlight = false;
     }

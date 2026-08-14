@@ -623,15 +623,22 @@ export function createHubChatPlatform(
       let cancelled = false;
       let unsubscribeAgent: (() => void) | undefined;
 
-      void findFoldedRunById(deps.db, channelId).then((run) => {
-        if (cancelled || run === undefined || run.address === null) return;
-        unsubscribeAgent = deps.sidecarRouter.subscribeAgent(
-          run.address,
-          (event) => {
-            onEvent({ type: "chat.agent", data: event });
-          },
-        );
-      });
+      void findFoldedRunById(deps.db, channelId)
+        .then((run) => {
+          if (cancelled || run === undefined || run.address === null) return;
+          unsubscribeAgent = deps.sidecarRouter.subscribeAgent(
+            run.address,
+            (event) => {
+              onEvent({ type: "chat.agent", data: event });
+            },
+          );
+        })
+        .catch((cause: unknown) => {
+          getLogger(["chat", "platform-adapter"])
+            .error`subscribeToChannel: failed to resolve folded run for ${channelId}: ${
+            cause instanceof Error ? cause.message : String(cause)
+          }`;
+        });
 
       return () => {
         cancelled = true;
