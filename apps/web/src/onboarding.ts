@@ -92,31 +92,80 @@ export async function triggerFirstLoginProvisioning(
   }
 }
 
-export type CredentialProvider = "anthropic" | "openai" | "google-genai";
+export type CredentialProvider =
+  | "anthropic"
+  | "openai"
+  | "google-genai"
+  | "openrouter"
+  | "opencode-zen"
+  | "groq"
+  | "deepseek"
+  | "mistral";
 
 export const CREDENTIAL_PROVIDERS: readonly {
   readonly id: CredentialProvider;
   readonly label: string;
+  /** One honest line of what picking this provider gets you — shown next
+   * to the key field once it's selected, never a marketing pitch. */
+  readonly description: string;
   readonly keyConsoleUrl: string;
   readonly keyHint: string;
 }[] = [
   {
     id: "anthropic",
     label: "Anthropic",
+    description: "Claude models, direct from Anthropic.",
     keyConsoleUrl: "https://console.anthropic.com/settings/keys",
     keyHint: "sk-ant-",
   },
   {
     id: "openai",
     label: "OpenAI",
+    description: "GPT models, direct from OpenAI.",
     keyConsoleUrl: "https://platform.openai.com/api-keys",
     keyHint: "sk-",
   },
   {
     id: "google-genai",
     label: "Google",
+    description: "Gemini models, direct from Google.",
     keyConsoleUrl: "https://aistudio.google.com/apikey",
     keyHint: "AIza",
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    description: "One key, many models — hundreds of models, one bill.",
+    keyConsoleUrl: "https://openrouter.ai/keys",
+    keyHint: "sk-or-",
+  },
+  {
+    id: "opencode-zen",
+    label: "Opencode Zen",
+    description: "OpenCode's curated gateway of coding-agent-tested models.",
+    keyConsoleUrl: "https://opencode.ai/auth",
+    keyHint: "",
+  },
+  {
+    id: "groq",
+    label: "Groq",
+    description: "Open models served at very high inference speed.",
+    keyConsoleUrl: "https://console.groq.com/keys",
+    keyHint: "gsk_",
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    description: "DeepSeek's own models, direct from DeepSeek.",
+    keyConsoleUrl: "https://platform.deepseek.com/api_keys",
+    keyHint: "sk-",
+  },
+  {
+    id: "mistral",
+    label: "Mistral",
+    description: "Mistral's own models, direct from Mistral.",
+    keyConsoleUrl: "https://console.mistral.ai/api-keys",
+    keyHint: "",
   },
 ];
 

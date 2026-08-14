@@ -22,10 +22,11 @@ export {
   seedCatalog,
   seedTenant,
 } from "./seed";
-export {
-  catalogModel,
-  catalogOffering,
-  catalogProvider,
+export { CATALOG_SEEDS } from "./catalog-seed-data";
+export type {
+  CatalogModelSpec,
+  CatalogProviderSeed,
+  CatalogProviderSpec,
 } from "./catalog-seed-data";
 export { createGitWorkflowPusher } from "./workflow-push";
 export {
@@ -34,6 +35,7 @@ export {
   testProviderCredential,
 } from "./credential-test";
 export type {
+  AdapterPluginId,
   CredentialTestResult,
   ProviderModelSource,
   SupportedCredentialProvider,

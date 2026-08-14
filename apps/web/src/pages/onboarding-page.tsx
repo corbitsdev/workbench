@@ -174,6 +174,7 @@ function ProviderPicker({
           key={provider.id}
           type="button"
           role="radio"
+          title={provider.description}
           aria-checked={provider.id === selected}
           variant={provider.id === selected ? "primary" : "outline"}
           disabled={disabled}
@@ -393,13 +394,22 @@ export function OnboardingPage() {
           onSelect={setProvider}
           disabled={submitting}
         />
+        {activeProvider !== undefined && (
+          <p className="onboarding-provider-description">
+            {activeProvider.description}
+          </p>
+        )}
         <label htmlFor="onboarding-api-key">
           {activeProvider?.label} API key
         </label>
         <Input
           id="onboarding-api-key"
           type="text"
-          placeholder={`${activeProvider?.keyHint}...`}
+          placeholder={
+            activeProvider?.keyHint
+              ? `${activeProvider.keyHint}...`
+              : "Paste your key"
+          }
           value={apiKey}
           onChange={(event) => setApiKey(event.target.value)}
           required
@@ -413,8 +423,15 @@ export function OnboardingPage() {
             rel="noreferrer"
           >
             Get a key from the {activeProvider?.label} console
-          </a>{" "}
-          — it starts with <code>{activeProvider?.keyHint}</code>.
+          </a>
+          {activeProvider?.keyHint ? (
+            <>
+              {" "}
+              — it starts with <code>{activeProvider.keyHint}</code>.
+            </>
+          ) : (
+            "."
+          )}
         </p>
         {error !== null && (
           <EmptyState
