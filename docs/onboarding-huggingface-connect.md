@@ -71,10 +71,16 @@ expiring token.
    `huggingface`: the free `testProviderCredential` probe
    (`GET https://huggingface.co/api/whoami-v2`, HF's own documented
    account endpoint — the router's model list is a public catalog and
-   proves nothing), then the curated Hugging Face seed from
-   `CATALOG_SEEDS` (three router models on one provider row, plugin
-   `openai-compatible`, base URL `https://router.huggingface.co/v1`),
-   then the default routines deployed against that endpoint. When the
+   proves nothing) is the only proof the token gets — a rejected probe
+   is the sole way this ends in `key_rejected`. Once it passes, the
+   curated Hugging Face seed from `CATALOG_SEEDS` (three router models
+   on one provider row, plugin `openai-compatible`, base URL
+   `https://router.huggingface.co/v1`) is planted, then the default
+   routines are deployed against that endpoint — deployed, not also
+   confirmed by triggering one: `seedTenant` runs with
+   `confirmDeployments: false` here, so a valid but credit-less HF
+   account still lands on `outcome=seeded` instead of paying for (and
+   then failing) a real inference call it never asked for. When the
    exchange reported an expiry, it is stored on the credential's
    `metadata.expiresAt` field and the credential is typed `oauth_token`
    rather than `api_key` — a plain HTTP field on the credential row,
@@ -82,8 +88,8 @@ expiring token.
 5. **Back to the wizard.** Every ending 302s to
    `/onboarding?connect=huggingface&...`, parsed by
    `readHuggingFaceConnectReturn` exactly as `readOpenRouterConnectReturn`
-   parses OpenRouter's: `outcome=seeded` with the bench slug and
-   confirmed routine names, or `outcome=error` with a short machine
+   parses OpenRouter's: `outcome=seeded` with the bench slug and the
+   deployed routine names, or `outcome=error` with a short machine
    code (`state_expired`, `exchange_failed`, `key_rejected`, `no_bench`,
    `setup_failed`, `signed_out`, `rate_limited`, plus HF's own
    `not_configured`).

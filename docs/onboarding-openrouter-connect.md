@@ -47,16 +47,22 @@ at `/api/onboarding`); the wizard only navigates.
    generalized path every key-paste card takes: the free
    `testProviderCredential` probe (`GET /api/v1/key`, the auth-gated
    key-status endpoint; OpenRouter's `/api/v1/models` is public and
-   proves nothing), then the curated OpenRouter seed from
-   `CATALOG_SEEDS` (`catalog-seed-data.ts`: a small hand-picked model
-   set on one provider row with plugin `openai-compatible`), then the
-   default routines deployed against OpenRouter's OpenAI-compatible
-   endpoint. The key is stored by the catalog seed through the hub's
-   native `POST /api/tenants/:id/credentials` — the onboarding package
-   never stores a secret itself.
+   proves nothing) is the only proof the key gets — a rejected probe is
+   the sole way this ends in `key_rejected`. Once it passes, the curated
+   OpenRouter seed from `CATALOG_SEEDS` (`catalog-seed-data.ts`: a small
+   hand-picked model set on one provider row with plugin
+   `openai-compatible`) is planted, then the default routines are
+   deployed against OpenRouter's OpenAI-compatible endpoint —
+   deployed, not also confirmed by triggering one: `seedTenant` runs
+   with `confirmDeployments: false` here, so a valid but credit-less
+   OpenRouter account still lands on `outcome=seeded` instead of paying
+   for (and then failing) a real inference call it never asked for. The
+   key is stored by the catalog seed through the hub's native
+   `POST /api/tenants/:id/credentials` — the onboarding package never
+   stores a secret itself.
 5. **Back to the wizard.** Every ending 302s to
    `/onboarding?connect=openrouter&...`: `outcome=seeded` with the
-   bench slug and confirmed routine names, or `outcome=error` with a
+   bench slug and the deployed routine names, or `outcome=error` with a
    short machine code (`state_expired`, `exchange_failed`,
    `key_rejected`, `no_bench`, `setup_failed`, `signed_out`,
    `rate_limited`). The web
