@@ -4,6 +4,7 @@
 // calling `connectPresence` itself, so there is exactly one connect/
 // disconnect lifecycle to reason about per (tenant, surface) pair.
 import { useCallback, useEffect, useRef, useState } from "react";
+import type * as Y from "yjs";
 import { connectPresence, type PresenceHandle } from "@corbits/presence/client";
 
 export interface PresenceRoomMember {
@@ -28,6 +29,19 @@ export interface PresenceRoom {
   readonly publishTyping: (typing: boolean) => void;
 }
 
+export interface UsePresenceRoomOptions {
+  /**
+   * A shared `Y.Doc` to keep in sync over this room — see
+   * `@corbits/presence/client`'s own `doc` option. Only artifact rooms
+   * (CL-5958 phase 2 co-editing) pass this; the channel who's-here stack
+   * never does, since it has no doc content. Reconnects when the `Y.Doc`
+   * instance itself changes (a different artifact), not on every render.
+   */
+  readonly doc?: Y.Doc;
+  /** Called for every confirmed server-side snapshot — see `formatSaveStateLine` in `@corbits/artifact-ui`. */
+  readonly onSaved?: (info: { version: number; savedAt: number }) => void;
+}
+
 /**
  * Connects to a presence room for as long as `tenantId`/`surface` are both
  * present, tearing down and reconnecting whenever either changes (channel
@@ -39,9 +53,18 @@ export function usePresenceRoom(
   tenantId: string | null,
   surface: string | null,
   displayName?: string,
+  options?: UsePresenceRoomOptions,
 ): PresenceRoom {
   const [members, setMembers] = useState<readonly PresenceRoomMember[]>([]);
   const handleRef = useRef<PresenceHandle | null>(null);
+  // `onSaved` is read through a ref, not a `connectPresence` dependency:
+  // a caller re-rendering with a fresh inline callback must never tear
+  // down and reconnect the stream (it would re-fetch the whole doc state
+  // for no reason) — only the `Y.Doc` identity changing means a genuinely
+  // different room to sync.
+  const onSavedRef = useRef(options?.onSaved);
+  onSavedRef.current = options?.onSaved;
+  const doc = options?.doc;
 
   useEffect(() => {
     setMembers([]);
@@ -52,6 +75,8 @@ export function usePresenceRoom(
     const handle = connectPresence({
       roomUrl: `/api/tenants/${tenantId}/presence/rooms/${surface}`,
       ...(displayName !== undefined ? { displayName } : {}),
+      ...(doc !== undefined ? { doc } : {}),
+      onSaved: (info) => onSavedRef.current?.(info),
     });
     handleRef.current = handle;
     const unsubscribe = handle.subscribe((snapshot) =>
@@ -64,7 +89,7 @@ export function usePresenceRoom(
     };
     // `displayName` deliberately isn't a dependency: a later rename
     // shouldn't tear down and reconnect an otherwise-unaffected stream.
-  }, [tenantId, surface]);
+  }, [tenantId, surface, doc]);
 
   const publishCursor = useCallback(
     (x: number, y: number, surfaceVersion = 1) => {

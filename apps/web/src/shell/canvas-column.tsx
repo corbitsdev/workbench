@@ -4,12 +4,16 @@
 // from a chat artifact chip or the Library page. Primary channel
 // conversation lives in the main stage, not here.
 //
-// Read-only phase: the artifact pane has no editing affordances yet — the
-// multiplayer-editing half is CL-5958's substrate to build on top of this.
-// CL-5958 phase 1 does add one thing on top of the read-only renderer: a
-// co-viewer cursor overlay, driven by `@corbits/presence/client` in
-// `chat-page.tsx` and handed down here as plain `PresenceCursor` data —
-// this module never talks to the presence package directly.
+// CL-5958 phase 1 added a co-viewer cursor overlay on top of the
+// read-only renderer, driven by `@corbits/presence/client` in
+// `app-shell.tsx` and handed down here as plain `PresenceCursor` data.
+// Phase 2 adds real co-editing for text-kind artifacts: when the host
+// hands down a `doc` (a `Y.Doc` already synced over presence) alongside
+// `artifact.canEdit`, the pane renders `@corbits/artifact-ui`'s
+// `ArtifactTextEditor` instead of the read-only `ArtifactRenderer`. Every
+// other kind, and every artifact without a `doc`, stays exactly as
+// read-only as phase 1 left it — this module still never imports
+// `@corbits/presence` itself, only plain data and a `Y.Doc` handle.
 //
 // The collapse/expand motion lives entirely in `shell.css` as a CSS
 // transition on `transform`/`opacity` (plus width, so the main pane
@@ -27,10 +31,15 @@ import {
   type ProfileCardAction,
   type ProfileCardChannel,
 } from "@corbits/react-ui";
-import { ArtifactRenderer } from "@corbits/artifact-ui";
+import {
+  ArtifactRenderer,
+  ArtifactTextEditor,
+  type ArtifactSaveState,
+} from "@corbits/artifact-ui";
 import type { ProfileSubject, SharedChannelSummary } from "@corbits/chat-ui";
 import { Maximize2, Minimize2, UserRound, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import type * as Y from "yjs";
 
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
@@ -63,6 +72,9 @@ export function CanvasColumn({
   onNavigate,
   presenceCursors,
   onCursorMove,
+  artifactDoc,
+  artifactSaveState,
+  onArtifactTyping,
 }: {
   readonly open: boolean;
   readonly profile: ProfileSubject | null;
@@ -77,6 +89,18 @@ export function CanvasColumn({
    * (see `PresenceCursor`'s own doc) as it moves — the host publishes it
    * through `@corbits/presence/client`. */
   readonly onCursorMove?: (x: number, y: number) => void;
+  /** The shared `Y.Doc` for a "doc"-kind `artifact`, already synced over
+   * presence. Its presence alone decides whether the pane shows the
+   * live-updating `ArtifactTextEditor` at all (vs. the static
+   * `ArtifactRenderer`) — `artifact.canEdit` separately decides whether
+   * that editor accepts keystrokes or is itself read-only. Absent for
+   * every other renderer kind, and briefly absent for a "doc" artifact
+   * whose presence connection hasn't handed over a doc yet. */
+  readonly artifactDoc?: Y.Doc;
+  /** The honest save-state line for `artifactDoc` — see `ArtifactSaveState`. */
+  readonly artifactSaveState?: ArtifactSaveState;
+  /** Fired on local typing start/stop in the text editor, for the host to publish through presence's `typing` awareness field. */
+  readonly onArtifactTyping?: (typing: boolean) => void;
 }) {
   // `inert` rather than `aria-hidden`: a collapsed column has to be out of
   // both the accessibility tree and the tab order, and `aria-hidden` alone
@@ -107,6 +131,9 @@ export function CanvasColumn({
             onToggleFocus={onToggleFocus}
             {...(presenceCursors !== undefined ? { presenceCursors } : {})}
             {...(onCursorMove !== undefined ? { onCursorMove } : {})}
+            {...(artifactDoc !== undefined ? { artifactDoc } : {})}
+            {...(artifactSaveState !== undefined ? { artifactSaveState } : {})}
+            {...(onArtifactTyping !== undefined ? { onArtifactTyping } : {})}
           />
         ) : (
           <EmptyState
@@ -384,6 +411,25 @@ function ProfileCanvasPane({
   );
 }
 
+/**
+ * Whether this render shows `ArtifactTextEditor` instead of the static
+ * `ArtifactRenderer`: the artifact has to be a text kind AND have an
+ * actual synced `Y.Doc` — before the presence connection hands one over,
+ * even a `canEdit` artifact renders through the static (but honestly
+ * inert) renderer rather than an editor bound to nothing. Whether the
+ * resulting pane is interactive is `artifact.canEdit`, checked
+ * separately: a viewer without write access still gets the live-updating
+ * `ArtifactTextEditor` in its own `readOnly` mode (requirement: read-only
+ * viewers see live updates too, not just a stale fetch), just with
+ * keystrokes ignored.
+ */
+function showsTextEditor(
+  artifact: CanvasArtifactContent,
+  doc: Y.Doc | undefined,
+): doc is Y.Doc {
+  return artifact.rendererKind === "doc" && doc !== undefined;
+}
+
 function ArtifactCanvasPane({
   artifact,
   focus,
@@ -391,6 +437,9 @@ function ArtifactCanvasPane({
   onToggleFocus,
   presenceCursors = [],
   onCursorMove,
+  artifactDoc,
+  artifactSaveState = { kind: "read-only" },
+  onArtifactTyping,
 }: {
   readonly artifact: CanvasArtifactContent;
   readonly focus: boolean;
@@ -398,7 +447,11 @@ function ArtifactCanvasPane({
   readonly onToggleFocus: () => void;
   readonly presenceCursors?: readonly PresenceCursor[];
   readonly onCursorMove?: (x: number, y: number) => void;
+  readonly artifactDoc?: Y.Doc;
+  readonly artifactSaveState?: ArtifactSaveState;
+  readonly onArtifactTyping?: (typing: boolean) => void;
 }) {
+  const showEditor = showsTextEditor(artifact, artifactDoc);
   return (
     <div className="shell-artifact-pane">
       <CanvasPaneHeader
@@ -422,14 +475,26 @@ function ArtifactCanvasPane({
               }
         }
       >
-        <ArtifactRenderer
-          rendererKind={artifact.rendererKind}
-          title={artifact.title}
-          content={artifact.content}
-          {...(artifact.unavailableReason !== undefined
-            ? { unavailableReason: artifact.unavailableReason }
-            : {})}
-        />
+        {showEditor ? (
+          <ArtifactTextEditor
+            doc={artifactDoc}
+            title={artifact.title}
+            readOnly={!artifact.canEdit}
+            saveState={artifactSaveState}
+            {...(onArtifactTyping !== undefined
+              ? { onLocalTyping: onArtifactTyping }
+              : {})}
+          />
+        ) : (
+          <ArtifactRenderer
+            rendererKind={artifact.rendererKind}
+            title={artifact.title}
+            content={artifact.content}
+            {...(artifact.unavailableReason !== undefined
+              ? { unavailableReason: artifact.unavailableReason }
+              : {})}
+          />
+        )}
         {presenceCursors.length > 0 ? (
           <div className="shell-artifact-cursor-layer" aria-hidden="true">
             {presenceCursors.map((cursor) => (
