@@ -24,12 +24,25 @@
 // serialized definition as a workflow asset and deploys it through the
 // platform's deploy machinery; the execution host materializes it at
 // runtime from the deploy alone.
+//
+// Approval mechanics and persistence: see `finalize-tool.ts`'s header
+// comment for the exact suspend/resume path and how a finalize call
+// persists the brief as a Library artifact. In short —
+// `morning_brief_finalize` is declared `approval: "ask"`, the platform's
+// native tool-approval gate, so calling it suspends the run, creates a
+// real `approval` row (visible in the inbox via `@corbits/approvals`),
+// and only executes once a human approves it. This closes the gap the
+// OG's plain markdown reply left open: every run now ends in a
+// persisted, chip-visible artifact — a real brief, or (on the no-data
+// path) an honest teaching payload — never silence.
 
 import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { CredentialBinding } from "@intx/types";
+
+import { MORNING_BRIEF_FINALIZE_TOOL_NAME } from "./finalize-tool";
 
 export const MORNING_BRIEF_WORKFLOW_ID = "wf_morning_brief";
 export const MORNING_BRIEF_STEP_ID = "morning-brief";
@@ -115,6 +128,26 @@ export const MORNING_BRIEF_SYSTEM_PROMPT = [
   "If every source is not connected, say that plainly at the top " +
     '("no connected sources to report from today") instead of ' +
     "presenting empty or padded sections as if there were real content.",
+  `Finalizing: once you have written the brief, call ` +
+    `\`${MORNING_BRIEF_FINALIZE_TOOL_NAME}\` exactly once with a short ` +
+    `title (e.g. "Morning brief — <today's date>") and the full ` +
+    "markdown brief as content. This call requires a human's approval " +
+    "before it completes. Always finalize, even when every source is " +
+    "not connected: in that case, still call " +
+    `\`${MORNING_BRIEF_FINALIZE_TOOL_NAME}\` once with a teaching ` +
+    'title (e.g. "Morning brief — no connected sources yet") and ' +
+    "content that honestly explains what the brief would have looked " +
+    "for (recent Granola call notes, recently updated Linear issues), " +
+    "names the missing connectors by id (`granola`, `linear`), and " +
+    "tells the reader how to connect them. Never end a run without " +
+    "finalizing — a plain reply with no artifact is not an acceptable " +
+    "outcome, even on the no-data path.",
+  "If the finalize call succeeds, present the finalized brief as your " +
+    "reply exactly as written, with no commentary about the approval " +
+    "mechanism itself. If the call is denied, reply with one calm, " +
+    "plain sentence that the brief was not approved and no action was " +
+    "taken; never present a denial as an error, and never apologize as " +
+    "if something broke.",
 ].join("\n\n");
 
 /**
@@ -231,3 +264,11 @@ function assertJsonPortable(value: unknown, path: string): void {
     assertJsonPortable(entry, `${path}.${key}`);
   }
 }
+
+export {
+  MORNING_BRIEF_FINALIZE_TOOL,
+  MORNING_BRIEF_FINALIZE_TOOL_NAME,
+  MORNING_BRIEF_FINALIZE_DESCRIPTION,
+  buildArtifactPayload,
+} from "./finalize-tool";
+export type { ArtifactPayload, FinalizeArgs } from "./finalize-tool";
