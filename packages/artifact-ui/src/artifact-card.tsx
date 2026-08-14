@@ -2,7 +2,7 @@
 // line (owner · source · size · updated). Pure presentational — the page
 // owns selection and preview.
 
-import { Badge, formatRelativeTime } from "@corbits/react-ui";
+import { Badge, artifactKindLabel, formatRelativeTime } from "@corbits/react-ui";
 import type { ReactNode } from "react";
 
 import type { ArtifactSummary } from "./types";
@@ -69,11 +69,8 @@ export function ArtifactCard({
       ].join(" ")}
     >
       <div className="flex items-start justify-between gap-2">
-        <Badge
-          tone="access"
-          className="font-mono text-[0.65rem] uppercase tracking-wide"
-        >
-          {artifact.kind}
+        <Badge tone="access" className="text-[0.65rem] tracking-wide">
+          {artifactKindLabel(artifact.kind)}
         </Badge>
         {trailing}
       </div>
