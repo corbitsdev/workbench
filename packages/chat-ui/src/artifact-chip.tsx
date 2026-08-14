@@ -1,15 +1,15 @@
 // A message's `file` part is the wire shape for an artifact reference: it
 // always carries a name and media type, and carries `blobId` once the
-// platform has persisted the bytes (see `packages/chat/src/parts.ts`). Only
-// a persisted file has a stable id anything could open, so the chip below
-// is clickable exactly when `blobId` is set — a still-in-flight `data`-only
-// attachment renders the same chip, inert.
+// platform has persisted the bytes, or `artifactId` when it also links back
+// to a Library row (`packages/chat/src/parts.ts`, CL-6000). Either one gives
+// the host a stable id to open — a still-in-flight `data`-only attachment
+// with neither renders the same chip, inert.
 //
 // Opening a chip is a callback the host supplies (mirrors `onOpenProfile`
-// and `onOpenThread` in `timeline.tsx`): this package owns no router. Today
-// there is no stored link from a chat blob to a Library artifact id, so the
-// host can only navigate to the Library at large — a real per-artifact deep
-// link, and opening in canvas rather than navigating, are follow-up work.
+// and `onOpenThread` in `timeline.tsx`): this package owns no router. A
+// host that only understands blob ids can still open an artifact-only chip
+// by falling back to the Library at large; a per-artifact deep link is the
+// host's call to make.
 
 import { FileText } from "lucide-react";
 
@@ -23,14 +23,16 @@ export function ArtifactChip({
   readonly part: Part & { kind: "file" };
   readonly onOpen?: (part: Part & { kind: "file" }) => void;
 }) {
-  const openable = part.blobId !== undefined && onOpen !== undefined;
+  const openable =
+    (part.blobId !== undefined || part.artifactId !== undefined) &&
+    onOpen !== undefined;
 
   return (
     <button
       type="button"
       className="chat-artifact-chip"
       disabled={!openable}
-      {...(part.blobId !== undefined && onOpen !== undefined
+      {...(openable && onOpen !== undefined
         ? { onClick: () => onOpen(part) }
         : {})}
     >
