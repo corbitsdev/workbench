@@ -84,6 +84,20 @@ export type CreateRoutineRoutesDeps = {
     definitionId: string,
   ) => Promise<boolean>;
   /**
+   * When provided, a `{kind: "webhook"}` trigger is rejected with 404
+   * unless the referenced `@corbits/webhook-triggers` row exists in the
+   * request tenant *and* points at the same `definitionId` the routine
+   * itself is being created/updated with — a webhook trigger and the
+   * routine it fires are two views of one binding, so the two ids
+   * disagreeing is corruption, not a valid state. Tests may omit
+   * (always-allow).
+   */
+  webhookTriggerInTenant?: (
+    tenantId: string,
+    webhookTriggerId: string,
+    definitionId: string,
+  ) => Promise<boolean>;
+  /**
    * Delivery-thread creation for the delivery invariant. When set,
    * every fire with a `deliveryChannelId` opens (or reuses) a delivery
    * thread before launch.
@@ -240,6 +254,27 @@ async function launchAndCorrelate(
   };
 }
 
+/**
+ * `true` when `trigger` is not a webhook binding (nothing to check), or
+ * when it is and the referenced webhook-triggers row checks out for this
+ * tenant and definition. See `webhookTriggerInTenant`'s doc comment on
+ * why the definition id must match.
+ */
+async function webhookTriggerValid(
+  deps: Pick<CreateRoutineRoutesDeps, "webhookTriggerInTenant">,
+  tenantId: string,
+  trigger: RoutineTriggerT,
+  definitionId: string,
+): Promise<boolean> {
+  if (trigger === null || trigger.kind !== "webhook") return true;
+  if (deps.webhookTriggerInTenant === undefined) return true;
+  return deps.webhookTriggerInTenant(
+    tenantId,
+    trigger.webhookTriggerId,
+    definitionId,
+  );
+}
+
 export function createRoutineRoutes(
   deps: CreateRoutineRoutesDeps,
 ): Hono<TenantEnv> {
@@ -271,6 +306,20 @@ export function createRoutineRoutes(
             404,
           );
         }
+      }
+
+      if (
+        !(await webhookTriggerValid(
+          deps,
+          tenant.id,
+          body.trigger as RoutineTriggerT,
+          body.definitionId,
+        ))
+      ) {
+        return c.json(
+          ErrorEnvelope("not_found", "webhook trigger not found"),
+          404,
+        );
       }
 
       const row = await deps.store.createRoutine({
@@ -351,6 +400,21 @@ export function createRoutineRoutes(
       const existing = await deps.store.getRoutine(tenant.id, routineId);
       if (existing === undefined) {
         return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
+      }
+
+      if (
+        body.trigger !== undefined &&
+        !(await webhookTriggerValid(
+          deps,
+          tenant.id,
+          body.trigger as RoutineTriggerT,
+          existing.definitionId,
+        ))
+      ) {
+        return c.json(
+          ErrorEnvelope("not_found", "webhook trigger not found"),
+          404,
+        );
       }
 
       const row = await deps.store.updateRoutine(tenant.id, routineId, {
