@@ -199,18 +199,20 @@ function createStaticHandler(staticDir: string) {
 
 /**
  * The `CredentialCipher` (see `@intx/types`) every secret-at-rest seam
- * in this composition root shares — currently just
- * `webhookTriggerStore`'s signing secrets. A real key
- * (`CREDENTIAL_ENCRYPTION_KEY`) builds an AES-256-GCM cipher; an unset
- * key falls back to the identity no-op cipher with a boot warning —
- * fine for dev/test, never for a real deployment.
+ * in this composition root shares — `webhookTriggerStore`'s signing
+ * secrets, and `@workbench/onboarding`'s in-flight OAuth connect state
+ * (the PKCE verifier parked between `/start` and `/callback`, sealed
+ * into the state itself so it survives a restart between the two). A
+ * real key (`CREDENTIAL_ENCRYPTION_KEY`) builds an AES-256-GCM cipher;
+ * an unset key falls back to the identity no-op cipher with a boot
+ * warning — fine for dev/test, never for a real deployment.
  */
 function credentialCipherFrom(
   config: HubConfig,
   log: ReturnType<typeof getLogger>,
 ): CredentialCipher {
   if (config.credentialEncryptionKeyHex === undefined) {
-    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets) will NOT be encrypted at rest. Expected in dev/test only — set CREDENTIAL_ENCRYPTION_KEY for any real deployment.`;
+    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets, onboarding OAuth connect state) will NOT be encrypted at rest. Expected in dev/test only — set CREDENTIAL_ENCRYPTION_KEY for any real deployment.`;
     return createNoopCredentialCipher();
   }
   return createEnvKeyCredentialCipher(
@@ -234,6 +236,9 @@ export async function createHub(config: HubConfig) {
     bus: mailboxBus,
   });
   const log = getLogger(["hub", "auth"]);
+  // Built once and shared by every secret-at-rest seam in this
+  // composition root — see `credentialCipherFrom`'s own doc comment.
+  const credentialCipher = credentialCipherFrom(config, log);
 
   const auth = betterAuth({
     baseURL: config.baseUrl,
@@ -628,7 +633,7 @@ export async function createHub(config: HubConfig) {
   // `createWebhookIngressRoutes` itself.
   const webhookTriggerStore = createDrizzleWebhookTriggerStore(
     db,
-    credentialCipherFrom(config, log),
+    credentialCipher,
   );
   const webhookCryptoProviders = createCryptoProviderCache();
   app.route(
@@ -795,6 +800,7 @@ export async function createHub(config: HubConfig) {
     hubUrl: config.baseUrl,
     pushWorkflow: createGitWorkflowPusher(),
     log: (line) => log.info`${line}`,
+    credentialCipher,
   };
   if (config.operatorTenantId !== undefined)
     onboardingDeps.operatorTenantId = config.operatorTenantId;

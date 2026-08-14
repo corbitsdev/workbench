@@ -5,6 +5,25 @@
 // user who started the flow. Each connect module owns its own TTL and
 // endpoints — only the cryptographic and bookkeeping primitives live
 // here, so a third connect flow never re-derives them.
+//
+// The state itself carries no server-side bookkeeping: `issue` seals
+// `{ userId, codeVerifier, nonce, expiresAt }` into a single
+// AEAD-encrypted token through the caller's `CredentialCipher` (the same
+// seam `CREDENTIAL_ENCRYPTION_KEY` backs everywhere else a secret is
+// encrypted at rest — see `apps/hub`'s `credentialCipherFrom`) and hands
+// that token back as the "state". `consume` decrypts it, never a map
+// lookup, so a state minted moments before a hub restart (dev watch
+// reload, a deploy) is exactly as redeemable after the restart as
+// before it — the payload survives in the client's cookie, not in this
+// process's memory. A per-store, in-memory set of already-consumed
+// nonces still blocks a replay within one process's uptime (the normal
+// case: a browser presents the same state cookie twice). It resets on
+// restart, but that residual window is bounded by the same things that
+// already bounded it before this change: the provider's own
+// authorization `code` is itself single-use, and the state's short TTL
+// plus session binding.
+import { type } from "arktype";
+import type { CredentialCipher } from "@intx/types";
 
 function base64url(bytes: Uint8Array): string {
   let binary = "";
@@ -40,45 +59,85 @@ export async function s256Challenge(codeVerifier: string): Promise<string> {
   return base64url(new Uint8Array(digest));
 }
 
+const ConnectStatePayload = type({
+  userId: "string > 0",
+  codeVerifier: "string > 0",
+  nonce: "string > 0",
+  expiresAt: "number",
+});
+
+/** Binds a sealed state to the one connect flow it was minted for, so a
+ * state minted for OpenRouter's callback cannot decrypt at Hugging
+ * Face's (or a future provider's) — domain separation on top of the
+ * AEAD tag, not instead of it. */
+function connectStateAad(provider: string): string {
+  return JSON.stringify(["onboarding-connect-state", provider]);
+}
+
 export type ConnectStateStore = {
-  issue(args: { userId: string; codeVerifier: string }): string;
+  issue(args: { userId: string; codeVerifier: string }): Promise<string>;
   /** Returns the verifier exactly once; a second consume, a wrong user,
-   * or an expired state all come back undefined. */
-  consume(args: { state: string; userId: string }): string | undefined;
+   * an expired state, or a state sealed for a different provider all
+   * come back undefined. */
+  consume(args: { state: string; userId: string }): Promise<string | undefined>;
 };
 
-export function createConnectStateStore(args?: {
+export function createConnectStateStore(args: {
+  cipher: CredentialCipher;
+  provider: string;
   ttlMs?: number;
   now?: () => number;
 }): ConnectStateStore {
-  const ttlMs = args?.ttlMs ?? 10 * 60 * 1000;
-  const now = args?.now ?? Date.now;
-  const pending = new Map<
-    string,
-    { userId: string; codeVerifier: string; expiresAt: number }
-  >();
+  const { cipher, provider } = args;
+  const ttlMs = args.ttlMs ?? 10 * 60 * 1000;
+  const now = args.now ?? Date.now;
+  const aad = connectStateAad(provider);
 
+  // Same-process replay guard (see module comment for why this doesn't
+  // need to survive a restart). Swept by the nonce's own `expiresAt`,
+  // so it never grows past the TTL window's worth of consumed states.
+  const consumedNonces = new Map<string, number>();
   function sweep(): void {
     const cutoff = now();
-    for (const [state, entry] of pending) {
-      if (entry.expiresAt <= cutoff) pending.delete(state);
+    for (const [nonce, expiresAt] of consumedNonces) {
+      if (expiresAt <= cutoff) consumedNonces.delete(nonce);
     }
   }
 
   return {
-    issue({ userId, codeVerifier }) {
-      sweep();
-      const state = randomToken();
-      pending.set(state, { userId, codeVerifier, expiresAt: now() + ttlMs });
-      return state;
+    async issue({ userId, codeVerifier }) {
+      const payload = {
+        userId,
+        codeVerifier,
+        nonce: randomToken(),
+        expiresAt: now() + ttlMs,
+      };
+      return cipher.encrypt(JSON.stringify(payload), aad);
     },
-    consume({ state, userId }) {
+
+    async consume({ state, userId }) {
       sweep();
-      const entry = pending.get(state);
-      if (entry === undefined) return undefined;
-      pending.delete(state);
-      if (entry.userId !== userId) return undefined;
-      return entry.codeVerifier;
+
+      let payload: typeof ConnectStatePayload.infer;
+      try {
+        const plaintext = await cipher.decrypt(state, aad);
+        const parsed = ConnectStatePayload(JSON.parse(plaintext));
+        if (parsed instanceof type.errors) return undefined;
+        payload = parsed;
+      } catch {
+        return undefined;
+      }
+
+      if (payload.expiresAt <= now()) return undefined;
+
+      // Consumed by the attempt regardless of outcome — a wrong-user
+      // redeem burns the state exactly like the rightful user's would,
+      // so a stolen state cookie is worthless to everyone after one try.
+      if (consumedNonces.has(payload.nonce)) return undefined;
+      consumedNonces.set(payload.nonce, payload.expiresAt);
+
+      if (payload.userId !== userId) return undefined;
+      return payload.codeVerifier;
     },
   };
 }
