@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
   EmptyState,
+  InfoTooltip,
   Input,
   SettingsPanel,
   Skeleton,
@@ -411,15 +412,16 @@ function ConnectorCard({
         </span>
       )}
       {descriptor.feedsTools.length > 0 && (
-        <span
-          className="settings-connection-card-pinned"
-          title={
-            (CONNECTOR_PINNED_WORKFLOWS[descriptor.id]?.length ?? 0) > 0
-              ? SETTINGS_STRINGS.connectionsPinnedByApproximationNote
-              : undefined
-          }
-        >
-          {pinnedByLine(descriptor.id)}
+        <span className="settings-connection-card-pinned-row">
+          <span className="settings-connection-card-pinned">
+            {pinnedByLine(descriptor.id)}
+          </span>
+          {(CONNECTOR_PINNED_WORKFLOWS[descriptor.id]?.length ?? 0) > 0 && (
+            <InfoTooltip
+              label={SETTINGS_STRINGS.connectionsPinnedByApproximationNote}
+              triggerLabel={`How "${pinnedByLine(descriptor.id)}" is determined`}
+            />
+          )}
         </span>
       )}
       <div className="settings-connection-card-actions">

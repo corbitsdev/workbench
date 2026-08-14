@@ -364,6 +364,12 @@
   color: var(--muted-foreground);
 }
 
+.settings-connection-card-pinned-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .settings-connection-card-pinned {
   font-size: 0.75rem;
   line-height: 1.4;
