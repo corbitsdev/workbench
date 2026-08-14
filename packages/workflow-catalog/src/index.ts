@@ -6,6 +6,28 @@
 // source of truth for package authors; this list is what runtime code
 // reads.
 
+import { type } from "arktype";
+
+/**
+ * One named field a mail trigger reads by name — the create-time UI's only
+ * source of truth for what a workflow's trigger actually expects (see each
+ * workflow's own system prompt / intake tool for the underlying contract
+ * this mirrors, e.g. `workflows/last-30-days-research/src/index.ts`'s
+ * "the trigger carries a `topic` and an optional `focus`", or
+ * `workflows/pain-point-collateral/src/intake-tool.ts`'s `IntakeArgs`).
+ * `key` is the exact field name a trigger payload carries — never
+ * relabeled or humanized before it reaches the workflow.
+ */
+export const WorkflowTriggerField = type({
+  key: "/^[a-zA-Z][a-zA-Z0-9]*$/",
+  label: "string > 0",
+  "placeholder?": "string",
+  required: "boolean",
+  "default?": "string",
+  "help?": "string",
+});
+export type WorkflowTriggerField = typeof WorkflowTriggerField.infer;
+
 export type WorkflowCatalogEntry = {
   readonly assetName: string;
   readonly displayName: string;
@@ -24,6 +46,13 @@ export type WorkflowCatalogEntry = {
   readonly exampleOutput: string;
   /** A short, honestly-hedged hint — never fabricated precision. */
   readonly typicalDuration: string;
+  /**
+   * Named trigger inputs a person can fill in at create time (the routine
+   * create stepper) or on a manual run — omitted entirely for workflows
+   * whose trigger carries no human-supplied content (see each entry's own
+   * comment for why). Order is display order.
+   */
+  readonly triggerFields?: readonly WorkflowTriggerField[];
 };
 
 /**
@@ -113,6 +142,29 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     requiredConnections: ["granola"],
     exampleOutput: "Drafted a one-pager on the onboarding-speed pain point",
     typicalDuration: "a few minutes, plus the time to approve",
+    // Neither field is required on its own: the workflow's intake tool
+    // (workflows/pain-point-collateral/src/intake-tool.ts) accepts a
+    // pasted transcript OR a Granola note id — transcript wins if both are
+    // given, and neither given is a valid "teach me what to send" path,
+    // not an error. Both are worth collecting at create/run time even
+    // though neither is required: a manual run with no input at all would
+    // just re-teach the same instructions the workflow already gives.
+    triggerFields: [
+      {
+        key: "transcript",
+        label: "Transcript",
+        placeholder: "Paste the call transcript",
+        required: false,
+        help: "Or leave blank and give a Granola note id below.",
+      },
+      {
+        key: "noteId",
+        label: "Granola note ID",
+        placeholder: "note_abc123",
+        required: false,
+        help: "Used only if no transcript is pasted above.",
+      },
+    ],
   },
   {
     assetName: "collateral-generation",
@@ -144,8 +196,39 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     requiredConnections: ["exa"],
     exampleOutput: "Cited report: 3 new competing launches this month",
     typicalDuration: "1-2 minutes",
+    // Mirrors workflows/last-30-days-research/src/index.ts's system prompt
+    // exactly: "the trigger carries a `topic` and an optional `focus`" —
+    // topic is required (the prompt refuses to invent one), focus narrows
+    // which angle to chase and is skippable.
+    triggerFields: [
+      {
+        key: "topic",
+        label: "Topic",
+        placeholder: "AI coding agents",
+        required: true,
+        help: "What to research over the last 30 days.",
+      },
+      {
+        key: "focus",
+        label: "Focus",
+        placeholder: "Competing launches",
+        required: false,
+        help: "Optional — narrows which angle of the topic to chase.",
+      },
+    ],
   },
 ];
+
+for (const entry of WORKFLOW_CATALOG) {
+  if (entry.triggerFields === undefined) continue;
+  const parsed = WorkflowTriggerField.array()(entry.triggerFields);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `workflow-catalog entry "${entry.assetName}" has an invalid ` +
+        `triggerFields shape: ${parsed.summary}`,
+    );
+  }
+}
 
 const byAssetName = new Map(
   WORKFLOW_CATALOG.map((entry) => [entry.assetName, entry]),

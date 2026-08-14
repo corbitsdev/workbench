@@ -9,6 +9,7 @@ import {
   isAutomatableWorkflowName,
   workflowCatalogEntry,
 } from "@corbits/workflow-catalog";
+import type { WorkflowTriggerField } from "@corbits/workflow-catalog";
 
 export function purposeDefinitions<T extends { readonly name: string }>(
   definitions: readonly T[],
@@ -25,6 +26,7 @@ export type CatalogFields = {
   readonly requiredConnections: readonly string[];
   readonly exampleOutput: string;
   readonly typicalDuration: string;
+  readonly triggerFields: readonly WorkflowTriggerField[];
 };
 
 /**
@@ -49,6 +51,7 @@ export function withCatalogFields<T extends { readonly name: string }>(
       requiredConnections: entry.requiredConnections,
       exampleOutput: entry.exampleOutput,
       typicalDuration: entry.typicalDuration,
+      triggerFields: entry.triggerFields ?? [],
     };
   });
 }

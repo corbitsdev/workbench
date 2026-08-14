@@ -41,6 +41,7 @@ import {
 } from "@corbits/settings-ui";
 import type { Credential, Provider } from "@corbits/settings-ui";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+import type { WorkflowTriggerField } from "@corbits/workflow-catalog";
 import { Clock, Copy, Plus, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
@@ -556,6 +557,45 @@ function DeliveryChannelPicker({
 type CreatePath = "catalog" | "describe";
 type CreateStep = 1 | 2 | 3;
 
+/**
+ * Whether every required triggerFields entry has a non-blank value —
+ * gates advancing past Configure the same way an empty delivery channel
+ * already does.
+ */
+export function triggerFieldsSatisfied(
+  fields: readonly WorkflowTriggerField[],
+  values: Readonly<Record<string, string>>,
+): boolean {
+  return fields.every(
+    (field) => !field.required || (values[field.key] ?? "").trim() !== "",
+  );
+}
+
+/**
+ * Builds the `input` record a catalog routine fires with, from a
+ * workflow's declared triggerFields and whatever a person typed into the
+ * Configure step. A field left blank is omitted entirely (falling back to
+ * its `default` when one is declared) rather than sent as an empty
+ * string — the same "blank counts as absent" contract
+ * `workflows/pain-point-collateral/src/intake-tool.ts`'s `resolveIntake`
+ * already applies on the receiving end.
+ */
+export function triggerFieldsInput(
+  fields: readonly WorkflowTriggerField[],
+  values: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const input: Record<string, string> = {};
+  for (const field of fields) {
+    const typed = (values[field.key] ?? "").trim();
+    if (typed !== "") {
+      input[field.key] = typed;
+    } else if (field.default !== undefined) {
+      input[field.key] = field.default;
+    }
+  }
+  return input;
+}
+
 /** Readable autonomy lines for the draft review panel (pure for tests). */
 export function autonomyReviewLines(
   autonomy: Record<string, unknown> | null,
@@ -678,6 +718,9 @@ function CreateRoutineDialog({
     "once",
   );
   const [trigger, setTrigger] = useState<RoutineTrigger>(null);
+  const [triggerFieldValues, setTriggerFieldValues] = useState<
+    Record<string, string>
+  >({});
   const [prompt, setPrompt] = useState("");
   const [deliveryChannelId, setDeliveryChannelId] = useState(
     channels[0]?.id ?? "",
@@ -706,6 +749,7 @@ function CreateRoutineDialog({
     setDefinitionId("");
     setRunMode("once");
     setTrigger(null);
+    setTriggerFieldValues({});
     setPrompt("");
     setDeliveryChannelId(channels[0]?.id ?? "");
     setPendingDraft(null);
@@ -767,6 +811,17 @@ function CreateRoutineDialog({
     setError(null);
     const routineName =
       name.trim().length > 0 ? name.trim() : selectedDefinition.name;
+    // Threads the same field values a manual "Run once now" collects into
+    // the stored routine.input record — the one seam the fire path
+    // (packages/routines' POST /routines -> RoutineLauncher.launchRoutineRun)
+    // actually reads from a create request.
+    const triggerInput =
+      selectedDefinition.triggerFields.length > 0
+        ? triggerFieldsInput(
+            selectedDefinition.triggerFields,
+            triggerFieldValues,
+          )
+        : undefined;
 
     if (runMode === "webhook") {
       void onCreateWebhookBinding({ name: routineName, definitionId })
@@ -778,6 +833,7 @@ function CreateRoutineDialog({
             deliveryChannelId,
             trigger: { kind: "webhook", webhookTriggerId: binding.id },
             runOnceNow: false,
+            ...(triggerInput !== undefined ? { input: triggerInput } : {}),
           }).then(() => {
             // Stay open: the secret is shown exactly once, right now —
             // closing immediately (the non-webhook path's behavior)
@@ -802,6 +858,7 @@ function CreateRoutineDialog({
       deliveryChannelId,
       trigger: runMode === "once" ? null : trigger,
       runOnceNow: runMode === "once",
+      ...(triggerInput !== undefined ? { input: triggerInput } : {}),
     })
       .then(() => closeDialog())
       .catch((cause: unknown) => {
@@ -856,7 +913,13 @@ function CreateRoutineDialog({
     primaryOnClick = () => setStep(2);
   } else if (step === 2 && path === "catalog") {
     primaryLabel = "Next";
-    primaryDisabled = busy || deliveryChannelId === "";
+    primaryDisabled =
+      busy ||
+      deliveryChannelId === "" ||
+      !triggerFieldsSatisfied(
+        selectedDefinition?.triggerFields ?? [],
+        triggerFieldValues,
+      );
     primaryOnClick = () => setStep(3);
   } else if (step === 2 && path === "describe" && pendingDraft === null) {
     primaryLabel = busy ? "Drafting…" : "Draft with agent";
@@ -873,7 +936,13 @@ function CreateRoutineDialog({
         ? "Create & run now"
         : "Create routine";
     primaryDisabled =
-      busy || selectedDefinition === null || deliveryChannelId === "";
+      busy ||
+      selectedDefinition === null ||
+      deliveryChannelId === "" ||
+      !triggerFieldsSatisfied(
+        selectedDefinition?.triggerFields ?? [],
+        triggerFieldValues,
+      );
     primaryOnClick = createCatalogRoutine;
   } else if (step === 3 && path === "describe") {
     primaryLabel = busy ? "Approving…" : "Approve";
@@ -943,6 +1012,7 @@ function CreateRoutineDialog({
                       onClick={() => {
                         setPath("catalog");
                         setDefinitionId(definition.id);
+                        setTriggerFieldValues({});
                       }}
                       className={[
                         "flex flex-col gap-1 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
@@ -1099,6 +1169,42 @@ function CreateRoutineDialog({
                   </p>
                 ) : null}
               </div>
+              {selectedDefinition !== null &&
+              selectedDefinition.triggerFields.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
+                    Trigger inputs
+                  </h3>
+                  {selectedDefinition.triggerFields.map((field) => (
+                    <div key={field.key} className="flex flex-col gap-1.5">
+                      <label
+                        htmlFor={`routine-trigger-field-${field.key}`}
+                        className="text-xs font-medium"
+                      >
+                        {field.label}
+                        {field.required ? "" : " (optional)"}
+                      </label>
+                      <Input
+                        id={`routine-trigger-field-${field.key}`}
+                        value={triggerFieldValues[field.key] ?? ""}
+                        placeholder={field.placeholder}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setTriggerFieldValues((values) => ({
+                            ...values,
+                            [field.key]: event.target.value,
+                          }))
+                        }
+                      />
+                      {field.help !== undefined ? (
+                        <p className="text-xs text-[var(--ui-fg-muted)]">
+                          {field.help}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <div className="flex flex-col gap-1.5">
                 <span
                   id="routine-delivery-label"
