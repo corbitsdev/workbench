@@ -47,10 +47,10 @@ describe("artifactContentFromBlobError", () => {
     const content = artifactContentFromBlobError(
       { name: "report.pdf" },
       "blob_m1_4",
-      "The hub answered 404.",
+      "The server answered 404.",
     );
     expect(content.rendererKind).toBe("unsupported");
     expect(content.title).toBe("report.pdf");
-    expect(content.unavailableReason).toContain("The hub answered 404.");
+    expect(content.unavailableReason).toContain("The server answered 404.");
   });
 });
