@@ -163,4 +163,27 @@ export const CATALOG_SEEDS: Readonly<
       { canonicalName: "codestral-2508", displayName: "Codestral" },
     ],
   },
+  huggingface: {
+    provider: {
+      name: "huggingface",
+      plugin: "openai-compatible",
+      baseURL: "https://router.huggingface.co/v1",
+    },
+    // Curated against the router's live catalog (router.huggingface.co/v1/models):
+    // one fast/cheap default, one broadly-known instruct model, one coding model.
+    models: [
+      {
+        canonicalName: "deepseek-ai/DeepSeek-V4-Flash",
+        displayName: "DeepSeek V4 Flash (HF Router)",
+      },
+      {
+        canonicalName: "meta-llama/Llama-3.3-70B-Instruct",
+        displayName: "Llama 3.3 70B (HF Router)",
+      },
+      {
+        canonicalName: "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        displayName: "Qwen3 Coder 30B (HF Router)",
+      },
+    ],
+  },
 };

@@ -20,6 +20,10 @@ describe("inboxGroupOf", () => {
     expect(inboxGroupOf({ refs: [{ kind: "approval" }] })).toBe("action");
   });
 
+  test("derives action from a credential ref", () => {
+    expect(inboxGroupOf({ refs: [{ kind: "credential" }] })).toBe("action");
+  });
+
   test("derives mention from a thread ref", () => {
     expect(inboxGroupOf({ refs: [{ kind: "thread" }] })).toBe("mention");
   });

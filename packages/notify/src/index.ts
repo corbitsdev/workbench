@@ -6,6 +6,7 @@ export {
 } from "./approval-bridge";
 export {
   ApprovalNotification,
+  CredentialExpiredNotification,
   InvalidNotificationEventError,
   MentionNotification,
   NotificationEvent,
@@ -13,6 +14,11 @@ export {
   RunFailureNotification,
   parseNotificationEvent,
 } from "./events";
+export {
+  findDueCredentialExpiries,
+  type DueCredentialExpiry,
+  type ExpiringCredential,
+} from "./credential-expiry";
 export {
   applyNotifyMigrations,
   notifyMigrations,
@@ -42,6 +48,7 @@ export {
 export {
   NOTIFY_MAIL_SOURCE,
   deliverApprovalMail,
+  deliverCredentialMail,
   deliverMentionMail,
   deliverNotification,
   deliverRunFailureMail,

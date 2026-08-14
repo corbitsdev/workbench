@@ -23,6 +23,7 @@
     "@corbits/insights": "workspace:*",
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#ab72ee3ec8d386d3143734399ea21cf6ba4be446",
     "@corbits/memory": "github:corbitsdev/corbits-memory#800340252dc60393f017fa933c59a1c9e67e7264",
+    "@corbits/notify": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@intx/authz": "workspace:*",

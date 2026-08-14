@@ -20,14 +20,15 @@ export type SupportedCredentialProvider =
   | "opencode-zen"
   | "groq"
   | "deepseek"
-  | "mistral";
+  | "mistral"
+  | "huggingface";
 
 /**
  * The inference adapter (`@intx/inference`'s runtime provider registry,
  * mirrored by `@intx/types`' `ModelProviderPlugin`) that actually serves a
  * credential's requests. Deliberately narrower than
  * `SupportedCredentialProvider`: OpenRouter, Opencode Zen, Groq, DeepSeek,
- * and Mistral each get their own credential-test probe and onboarding
+ * Mistral, and Hugging Face each get their own credential-test probe and onboarding
  * card, but at deploy time they all ride the same OpenAI-compatible wire
  * shape, so their `ModelSource.provider` and catalog `plugin` value must be
  * `"openai-compatible"` — the registry key `byProvider.get(source.provider)`
@@ -236,6 +237,22 @@ const PROVIDER_TEST_CONFIG: Readonly<
     probeModel: "mistral-small-2603",
     buildProbeRequest: (apiKey) => ({
       url: "https://api.mistral.ai/v1/models",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }),
+    isKeyRejected: (status) => status === 401,
+  },
+  huggingface: {
+    displayName: "Hugging Face",
+    baseURL: "https://router.huggingface.co/v1",
+    adapterPlugin: "openai-compatible",
+    probeModel: "deepseek-ai/DeepSeek-V4-Flash",
+    // HF's own account endpoint, not the router: `whoami-v2` is the
+    // documented way to prove a token (huggingface.co/docs/hub/oauth's
+    // token-exchange example uses it the same way) and answers a plain
+    // 401 for a missing, invalid, or expired token — confirmed live
+    // against both `whoami-v2` and the router's own endpoints.
+    buildProbeRequest: (apiKey) => ({
+      url: "https://huggingface.co/api/whoami-v2",
       headers: { Authorization: `Bearer ${apiKey}` },
     }),
     isKeyRejected: (status) => status === 401,

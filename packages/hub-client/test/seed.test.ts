@@ -870,6 +870,265 @@ describe("seedCatalog", () => {
     expect(output).toContain("catalog ready: anthropic/claude-sonnet-5");
   });
 
+  test("an oauth_token credential with metadata posts both through to the credential row", async () => {
+    const { log } = collector();
+    let credentialBody: unknown;
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "huggingface") };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/credentials`
+      ) {
+        credentialBody = body;
+        return {
+          status: 201,
+          data: credentialRow("cre_1", "prv_1", "huggingface-default"),
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "deepseek-ai/DeepSeek-V4-Flash"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "huggingface",
+            "cre_1",
+            "openai-compatible",
+            "https://router.huggingface.co/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "huggingface",
+      apiKey: "hf_oauth_minted",
+      credentialType: "oauth_token",
+      credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+      log,
+    });
+
+    expect(credentialBody).toMatchObject({
+      type: "oauth_token",
+      metadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+    });
+  });
+
+  // A reconnect after the expiry sweep has already flipped the stored
+  // row to `expired`: the credential name conflicts (409) because the
+  // stale row is still there, so this only succeeds if the fresh token
+  // and its new expiry are rotated onto that row rather than discarded
+  // in favor of reusing the stale one.
+  test("a name conflict on an expired oauth_token reconnect rotates the stale row", async () => {
+    const { lines, log } = collector();
+    let patchCalls = 0;
+    let postCredentialCalls = 0;
+    let patchBody: unknown;
+
+    const staleCredentialRow = () => ({
+      id: "cre_old",
+      tenantId: TENANT_ID,
+      providerId: "prv_1",
+      name: "huggingface-default",
+      type: "oauth_token",
+      status: "expired",
+      metadata: { expiresAt: "2026-01-01T00:00:00.000Z" },
+      createdAt: TIMESTAMP,
+      updatedAt: TIMESTAMP,
+    });
+
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "huggingface") };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/credentials`
+      ) {
+        postCredentialCalls += 1;
+        // The credential name "huggingface-default" already exists (the
+        // expired row from before this reconnect), so creation conflicts.
+        return { status: 409, data: { error: "name taken" } };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 200,
+          data: { data: [staleCredentialRow()], nextCursor: null },
+        };
+      if (
+        method === "PATCH" &&
+        path === `/api/tenants/${TENANT_ID}/credentials/cre_old`
+      ) {
+        patchCalls += 1;
+        patchBody = body;
+        return {
+          status: 200,
+          data: {
+            ...staleCredentialRow(),
+            status: "active",
+            metadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+          },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "deepseek-ai/DeepSeek-V4-Flash"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "huggingface",
+            "cre_old",
+            "openai-compatible",
+            "https://router.huggingface.co/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "huggingface",
+      apiKey: "hf_freshly_minted_token",
+      credentialType: "oauth_token",
+      credentialMetadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+      log,
+    });
+
+    expect(postCredentialCalls).toBe(1);
+    // The fix: the name conflict is followed by a PATCH that carries the
+    // freshly minted token, its new expiry, and restores `active` status
+    // — never a silent reuse of the stale, already-expired row.
+    expect(patchCalls).toBe(1);
+    expect(patchBody).toEqual({
+      secret: "hf_freshly_minted_token",
+      status: "active",
+      metadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+    });
+    expect(lines.some((line) => line.includes("rotated credential"))).toBe(
+      true,
+    );
+  });
+
+  test("a name conflict on an already-active oauth_token credential is left untouched", async () => {
+    const { log } = collector();
+    let patchCalls = 0;
+
+    const activeCredentialRow = () => ({
+      id: "cre_active",
+      tenantId: TENANT_ID,
+      providerId: "prv_1",
+      name: "huggingface-default",
+      type: "oauth_token",
+      status: "active",
+      metadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+      createdAt: TIMESTAMP,
+      updatedAt: TIMESTAMP,
+    });
+
+    const handler: FakeHandler = (method, path) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "huggingface") };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return { status: 409, data: { error: "name taken" } };
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 200,
+          data: { data: [activeCredentialRow()], nextCursor: null },
+        };
+      if (method === "PATCH") {
+        patchCalls += 1;
+        return { status: 200, data: activeCredentialRow() };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "deepseek-ai/DeepSeek-V4-Flash"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "huggingface",
+            "cre_active",
+            "openai-compatible",
+            "https://router.huggingface.co/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "huggingface",
+      apiKey: "hf_same_token_again",
+      credentialType: "oauth_token",
+      credentialMetadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+      log,
+    });
+
+    // A plain idempotent re-seed of a still-active connection never
+    // rotates — only a genuinely stale (non-active) row does.
+    expect(patchCalls).toBe(0);
+  });
+
   test("re-run finds every step already seeded and creates nothing twice", async () => {
     const { lines, log } = collector();
     let providerPosts = 0;

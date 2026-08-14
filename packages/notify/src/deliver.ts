@@ -9,6 +9,7 @@
 import {
   parseNotificationEvent,
   type ApprovalNotification,
+  type CredentialExpiredNotification,
   type MentionNotification,
   type NotificationEvent,
   type RunFailureNotification,
@@ -119,6 +120,14 @@ export function deliverRunFailureMail(
 export function deliverMentionMail(
   deps: NotifyDeliveryDeps,
   event: MentionNotification,
+): Promise<NotifyDeliveryReport> {
+  return deliverNotification(deps, event);
+}
+
+/** A stored credential's token expired, mailed to whoever can reconnect it. */
+export function deliverCredentialMail(
+  deps: NotifyDeliveryDeps,
+  event: CredentialExpiredNotification,
 ): Promise<NotifyDeliveryReport> {
   return deliverNotification(deps, event);
 }

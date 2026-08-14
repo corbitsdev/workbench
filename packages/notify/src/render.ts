@@ -56,6 +56,17 @@ export function renderNotification(
       refs: [{ kind: "run", id: event.runId }],
     };
   }
+  if (event.kind === "credential-expired") {
+    return {
+      subject: `Reconnect ${event.providerLabel} — your token expired`,
+      body: [
+        `Your ${event.providerLabel} connection expired, so agents and routines using it can no longer run inference through it. Anything else on your bench keeps working.`,
+        `Reconnect from the same connect card in Settings or onboarding to pick up right where you left off.`,
+        `For a connection that doesn't expire, use a fine-grained personal access token instead of reconnecting — see ${event.providerLabel}'s token settings.`,
+      ].join("\n\n"),
+      refs: [{ kind: "credential", id: event.credentialId }],
+    };
+  }
   return {
     subject: `${event.mentionedBy} mentioned you in “${event.threadLabel}”`,
     body: [
@@ -76,5 +87,6 @@ export function renderNotification(
 export function notificationExternalId(event: NotificationEvent): string {
   if (event.kind === "approval") return event.approvalId;
   if (event.kind === "run-failure") return `${event.runId}:${event.createdAt}`;
+  if (event.kind === "credential-expired") return event.credentialId;
   return `${event.threadId}:${event.createdAt}`;
 }

@@ -12,6 +12,7 @@ import { App } from "../src/app";
 import {
   CREDENTIAL_PROVIDERS,
   PRIMARY_CREDENTIAL_PROVIDERS,
+  readHuggingFaceConnectReturn,
   readOpenRouterConnectReturn,
   SECONDARY_CREDENTIAL_PROVIDERS,
   submitCredential,
@@ -51,6 +52,7 @@ describe("CREDENTIAL_PROVIDERS", () => {
       "deepseek",
       "google-genai",
       "groq",
+      "huggingface",
       "mistral",
       "openai",
       "opencode-zen",
@@ -398,6 +400,36 @@ describe("readOpenRouterConnectReturn", () => {
   });
 });
 
+describe("readHuggingFaceConnectReturn", () => {
+  test("an unrelated query string, including an OpenRouter one, is nobody's outcome", () => {
+    expect(readHuggingFaceConnectReturn("")).toBeNull();
+    expect(
+      readHuggingFaceConnectReturn("?connect=openrouter&outcome=seeded"),
+    ).toBeNull();
+  });
+
+  test("a seeded return carries the bench and its confirmed routines", () => {
+    expect(
+      readHuggingFaceConnectReturn(
+        "?connect=huggingface&outcome=seeded&tenantSlug=ada-user1&workflows=echo,assistant",
+      ),
+    ).toEqual({
+      kind: "seeded",
+      tenantSlug: "ada-user1",
+      workflows: ["echo", "assistant"],
+    });
+  });
+
+  test("the not_configured code maps to its own copy", () => {
+    const result = readHuggingFaceConnectReturn(
+      "?connect=huggingface&outcome=error&code=not_configured",
+    );
+    expect(result?.kind).toBe("error");
+    if (result?.kind === "error")
+      expect(result.message).toContain("Paste a token instead");
+  });
+});
+
 describe("the OpenRouter connect card", () => {
   const renderOnboardingAt = (url: string) => {
     window.history.replaceState(null, "", url);
@@ -506,5 +538,51 @@ describe("the provider picker's primary row and secondary expander", () => {
     const markup = renderCredentialPhase();
     expect(markup).toContain('class="onboarding-provider-more"');
     expect(markup).not.toMatch(/class="onboarding-provider-more" open/);
+  });
+});
+
+describe("the Hugging Face connect card", () => {
+  const renderOnboardingAt = (url: string) => {
+    window.history.replaceState(null, "", url);
+    try {
+      return renderToStaticMarkup(
+        <App
+          path={ONBOARDING_PATH}
+          navigate={noop}
+          session={signedIn}
+          onSignedIn={noop}
+          onSignOut={noop}
+          onRetry={noop}
+        />,
+      );
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  };
+
+  test("sits below the OpenRouter card, above the key form", () => {
+    const markup = renderOnboardingAt(
+      "/onboarding?connect=huggingface&outcome=error&code=not_configured",
+    );
+
+    expect(markup).toContain("Sign in with Hugging Face");
+    expect(markup).toContain("/api/onboarding/oauth/huggingface/start");
+    expect(markup.indexOf("Connect with OpenRouter")).toBeLessThan(
+      markup.indexOf("Sign in with Hugging Face"),
+    );
+    expect(markup.indexOf("Sign in with Hugging Face")).toBeLessThan(
+      markup.indexOf("onboarding-credential-form"),
+    );
+    expect(markup).toContain("Paste a token instead");
+  });
+
+  test("a seeded connect return lands on the running-routines ending", () => {
+    const markup = renderOnboardingAt(
+      "/onboarding?connect=huggingface&outcome=seeded&tenantSlug=ada-user1&workflows=echo,assistant",
+    );
+
+    expect(markup).toContain("Your first routines are running");
+    expect(markup).toContain("Echo routine");
+    expect(markup).toContain("Myra routine");
   });
 });

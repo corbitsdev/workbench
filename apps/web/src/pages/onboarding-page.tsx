@@ -34,8 +34,10 @@ import type { FormEvent, ReactNode } from "react";
 import { Link, useNavigate } from "../navigation";
 import {
   CREDENTIAL_PROVIDERS,
+  HUGGINGFACE_CONNECT_START_PATH,
   OPENROUTER_CONNECT_START_PATH,
   PRIMARY_CREDENTIAL_PROVIDERS,
+  readHuggingFaceConnectReturn,
   readOpenRouterConnectReturn,
   SECONDARY_CREDENTIAL_PROVIDERS,
   submitCredential,
@@ -240,13 +242,16 @@ function ProviderPicker({
   );
 }
 
-/** Where the wizard starts: at the top, unless the URL carries an
- * OpenRouter connect round-trip's outcome — a returning connect lands
- * directly on its ending (the seeded checklist, or the credential step
- * with the failure spelled out) instead of asking for a name again. */
+/** Where the wizard starts: at the top, unless the URL carries a connect
+ * round-trip's outcome (OpenRouter or Hugging Face) — a returning
+ * connect lands directly on its ending (the seeded checklist, or the
+ * credential step with the failure spelled out) instead of asking for a
+ * name again. */
 function initialWizardState(): WizardState {
   if (typeof window === "undefined") return { phase: "naming" };
-  const returned = readOpenRouterConnectReturn(window.location.search);
+  const returned =
+    readOpenRouterConnectReturn(window.location.search) ??
+    readHuggingFaceConnectReturn(window.location.search);
   if (returned === null) return { phase: "naming" };
   if (returned.kind === "seeded") {
     return {
@@ -274,7 +279,10 @@ export function OnboardingPage() {
   // state above; dropping it from the URL keeps a reload or a shared
   // link from replaying a stale ending.
   useEffect(() => {
-    if (readOpenRouterConnectReturn(window.location.search) !== null) {
+    if (
+      readOpenRouterConnectReturn(window.location.search) !== null ||
+      readHuggingFaceConnectReturn(window.location.search) !== null
+    ) {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }, []);
@@ -460,6 +468,22 @@ export function OnboardingPage() {
         </div>
         <Button asChild>
           <a href={OPENROUTER_CONNECT_START_PATH}>Connect with OpenRouter</a>
+        </Button>
+      </section>
+      <section
+        className="onboarding-connect-card"
+        aria-label="Sign in with Hugging Face"
+      >
+        <div>
+          <h2>Sign in with Hugging Face</h2>
+          <p>
+            Pay-as-you-go across Groq, Together, Fireworks &amp; more, billed to
+            your HF account — approve access and your bench comes back with a
+            working connection.
+          </p>
+        </div>
+        <Button asChild>
+          <a href={HUGGINGFACE_CONNECT_START_PATH}>Sign in with Hugging Face</a>
         </Button>
       </section>
       <div className="onboarding-connect-divider" role="separator">

@@ -4,6 +4,7 @@ import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
   deliverApprovalMail,
+  deliverCredentialMail,
   deliverMentionMail,
   deliverNotification,
   deliverRunFailureMail,
@@ -179,5 +180,74 @@ describe("deliverNotification", () => {
     for (const item of written) {
       expect(item.subject).not.toContain("_");
     }
+  });
+
+  test("a credential-expired event mails a reconnect nudge naming the durable PAT alternative", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverCredentialMail(deps, {
+      kind: "credential-expired",
+      tenantId: "tnt_1",
+      credentialId: "cred_hf_1",
+      providerId: "huggingface",
+      providerLabel: "Hugging Face",
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-13T09:00:00.000Z",
+    });
+
+    expect(written[0]?.subject).toBe(
+      "Reconnect Hugging Face — your token expired",
+    );
+    expect(written[0]?.body).toContain("personal access token");
+    expect(written[0]?.externalId).toBe("cred_hf_1");
+    expect(written[0]?.refs).toContainEqual({
+      kind: "credential",
+      id: "cred_hf_1",
+    });
+  });
+
+  test("re-notifying the same still-expired credential dedupes on the credential, not the tick", async () => {
+    const dispatch = createInMemoryNotifyDispatchStore();
+    const sinks = createSinkRegistry();
+    const seen = new Set<string>();
+    const mail: MailboxDelivery = async (items, opts) =>
+      items.map((item) => {
+        if (seen.has(item.externalId)) {
+          return { messageKey: item.externalId, id: null };
+        }
+        seen.add(item.externalId);
+        const id = `mail-${item.externalId}`;
+        opts?.enqueue?.({ id, item });
+        return { messageKey: item.externalId, id };
+      });
+
+    const first = await deliverCredentialMail(
+      { mail, addressing, dispatch, sinks },
+      {
+        kind: "credential-expired",
+        tenantId: "tnt_1",
+        credentialId: "cred_hf_1",
+        providerId: "huggingface",
+        providerLabel: "Hugging Face",
+        recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+        createdAt: "2026-08-13T09:00:00.000Z",
+      },
+    );
+    const second = await deliverCredentialMail(
+      { mail, addressing, dispatch, sinks },
+      {
+        kind: "credential-expired",
+        tenantId: "tnt_1",
+        credentialId: "cred_hf_1",
+        providerId: "huggingface",
+        providerLabel: "Hugging Face",
+        // A later sweep tick, same still-unfixed credential.
+        recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+        createdAt: "2026-08-13T09:30:00.000Z",
+      },
+    );
+
+    expect(first.deliveredMailboxRowIds).toEqual(["mail-cred_hf_1"]);
+    expect(second.deliveredMailboxRowIds).toEqual([]);
   });
 });

@@ -24,6 +24,7 @@ describe("supportedCredentialProviders", () => {
       "deepseek",
       "google-genai",
       "groq",
+      "huggingface",
       "mistral",
       "openai",
       "opencode-zen",
@@ -42,6 +43,7 @@ describe("providerModelSource", () => {
       "groq",
       "deepseek",
       "mistral",
+      "huggingface",
     ] as const) {
       expect(providerModelSource(provider).provider).toBe("openai-compatible");
     }
@@ -66,6 +68,7 @@ describe("testProviderCredential", () => {
     "groq",
     "deepseek",
     "mistral",
+    "huggingface",
   ];
 
   // Google's list-models endpoint rejects a bad key with 400
@@ -195,10 +198,13 @@ describe("testProviderCredential", () => {
 
       expect(seenMethod).toBe("GET");
       // OpenRouter's probe is /api/v1/key (its list-models route answers
-      // 200 to any key, so it can't prove a credential) — every other GET
-      // probe is the provider's list-models endpoint.
+      // 200 to any key, so it can't prove a credential); Hugging Face's is
+      // its own whoami-v2 account endpoint, not the router's model list.
+      // Every other GET probe is the provider's list-models endpoint.
       if (provider === "openrouter") {
         expect(seenUrl).toContain("/key");
+      } else if (provider === "huggingface") {
+        expect(seenUrl).toContain("whoami-v2");
       } else {
         expect(seenUrl).toContain("models");
       }
