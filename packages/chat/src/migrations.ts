@@ -175,7 +175,7 @@ export const chatMigrations: readonly ChatMigration[] = [
     `,
   },
   {
-    name: "0012_channel_share",
+    name: "0014_channel_share",
     sql: `
       CREATE TABLE IF NOT EXISTS "chat"."channel_share" (
         "owning_tenant_id" text NOT NULL,
@@ -190,7 +190,7 @@ export const chatMigrations: readonly ChatMigration[] = [
     `,
   },
   {
-    name: "0013_channel_share_member",
+    name: "0015_channel_share_member",
     sql: `
       CREATE TABLE IF NOT EXISTS "chat"."channel_share_member" (
         "projected_tenant_id" text NOT NULL,
