@@ -344,6 +344,47 @@ export function expectStatus(
   }
 }
 
+// --- keyless-by-construction guard -------------------------------------
+
+/**
+ * Real inference provider hosts the e2e suite must never reach. The
+ * suite runs against a real hub process, but every inference source it
+ * configures must resolve to the hub's own noop-inference endpoint or
+ * an unreachable placeholder host — never a live provider. `startHub`
+ * only forwards an explicit env allowlist (see `osEnv`), so a real
+ * ANTHROPIC_API_KEY sitting in a developer's shell never reaches the
+ * spawned hub either; this guard is the second, explicit line of
+ * defense for any baseURL/apiKey string a test constructs by hand.
+ */
+const REAL_PROVIDER_HOSTS = [
+  "api.anthropic.com",
+  "api.openai.com",
+  "openrouter.ai",
+  "api-inference.huggingface.co",
+  "huggingface.co",
+];
+
+/**
+ * Fails loudly if `value` (a baseURL, apiKey, or any other string a
+ * test is about to hand the hub as an inference source) names a real
+ * provider host. Call this at every point a smoke test builds a
+ * catalog/credential/deployment source, so an accidental live-provider
+ * reference fails the test immediately instead of silently attempting
+ * a real network call.
+ */
+export function assertNeverRealProvider(value: string, what: string): void {
+  const lower = value.toLowerCase();
+  const hit = REAL_PROVIDER_HOSTS.find((host) => lower.includes(host));
+  if (hit !== undefined) {
+    throw new Error(
+      `${what} references a real inference provider host ("${hit}"); ` +
+        "the e2e suite must never reach a live provider — use the hub's " +
+        "own noop-inference endpoint or an unreachable placeholder host " +
+        "instead.",
+    );
+  }
+}
+
 export type RunEvent = { seq: number; type: string; body: unknown };
 
 function runEvents(data: unknown): RunEvent[] {

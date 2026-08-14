@@ -131,10 +131,52 @@ documented separately in [docs/CHAT.md](docs/CHAT.md).
 
 - `bun run check` — the full gate: typecheck, lint, test
 - `bun run test` — workspace tests
+- `bun run test:e2e` — end-to-end smoke tests (see below)
 - `bun run format` — prettier write
 
 Conventions and agent guidance: [AGENTS.md](AGENTS.md). Contributions:
 [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### End-to-end smoke tests
+
+`bun run test:e2e` runs `scripts/e2e/*.test.ts`: each file spawns a real hub
+process (some also spawn a real sidecar) against a scratch database and
+drives it entirely through its own HTTP API — no mocking inside the
+process under test. `scripts/e2e/smoke-*.test.ts` are the CL-6004 smoke
+suite, one scenario per file, each independent and safe to run alone or
+in any order:
+
+| File                       | Proves                                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `smoke-auth.test.ts`       | Email sign-up mints a session cookie that authorizes a session-gated route                                          |
+| `smoke-onboarding.test.ts` | `POST /api/onboarding/provision` mints a personal bench and reports it unseeded when no seed model is configured    |
+| `smoke-chat.test.ts`       | A channel is created, a message posts and reads back intact, and the invited-agent listing has its documented shape |
+| `smoke-library.test.ts`    | An artifact uploads through the multipart route and round-trips through list and get-by-id                          |
+| `smoke-webhook.test.ts`    | A signed delivery to the public webhook ingress route launches a real run for a routine bound to that trigger       |
+
+**Needs:** a reachable Postgres named by `DATABASE_URL` in `.env` (see
+[Running locally](#running-locally)). Each suite reuses a sibling
+`<database>_e2e` database that it owns outright — drops and rebuilds its
+own schema on every run — so it can never touch your working database.
+Without `DATABASE_URL` the suite skips with a warning; CI sets
+`E2E_REQUIRED=1` so that skip fails loudly there instead of silently
+passing.
+
+**Needs zero real credentials.** The whole suite — smoke and non-smoke
+files alike — runs with no API keys, no paid credentials, and no network
+call to a real inference provider: `startHub` only forwards an explicit
+env allowlist, so a real `ANTHROPIC_API_KEY` sitting in your shell never
+reaches the spawned hub, and every inference source a test configures
+points at the hub's own `noop-inference` endpoint or an unreachable
+placeholder host. `scripts/e2e/harness.ts` exports
+`assertNeverRealProvider` for any test that builds a baseURL/apiKey by
+hand, so an accidental live-provider reference fails loudly instead of
+attempting a real network call. Never document "set a key to run this" —
+if a scenario would need one, stop at the keyless contract it can still
+prove (see `smoke-onboarding.test.ts`) or don't write that scenario.
+
+Run one file directly with `bun test scripts/e2e/smoke-auth.test.ts`
+(`DATABASE_URL` still required).
 
 ## License
 
