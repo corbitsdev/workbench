@@ -80,6 +80,94 @@ type ConnectionsData = {
   readonly oauthConfigured: Readonly<Record<string, boolean>>;
 };
 
+/**
+ * The api-key connector card grid, on its own: every credentials/providers
+ * fetch, the connect/reconnect dialog, and disconnect all owned here so
+ * a caller only supplies the data it already has and a place to send a
+ * reload/error signal. `ConnectionsSection` composes this with the OAuth
+ * card row and the advanced credentials table for the full settings
+ * page; the onboarding wizard's "Connect your tools" step (CL-6028)
+ * renders this alone, filtered to `feedsTools`-bearing connectors, with
+ * nothing else around it. Renders bare `ConnectorCard`s — not wrapped in
+ * `.settings-connections-grid` itself — so a caller controls the grid
+ * container (and can put other cards, like the OAuth pair, in the same
+ * grid alongside these).
+ */
+export function ConnectorCardGrid({
+  tenantId,
+  credentials,
+  providers,
+  filter,
+  onReload,
+  onError,
+}: {
+  readonly tenantId: string;
+  readonly credentials: readonly Credential[];
+  readonly providers: readonly Provider[];
+  /** Narrows which registry entries render a card. Defaults to every
+   * api-key connector (every entry with a `probe`) — OAuth connectors
+   * are never included here regardless of filter, since this grid has
+   * no OAuth flow of its own. */
+  readonly filter?: (descriptor: ConnectorDescriptor) => boolean;
+  readonly onReload: () => void;
+  readonly onError?: (message: string | null) => void;
+}) {
+  const [dialogDescriptor, setDialogDescriptor] =
+    useState<ConnectorDescriptor | null>(null);
+  const [dialogMode, setDialogMode] = useState<"connect" | "reconnect">(
+    "connect",
+  );
+
+  function handleDisconnect(credential: Credential) {
+    onError?.(null);
+    deleteCredential(tenantId, credential.id)
+      .then(() => {
+        onReload();
+        toast(SETTINGS_STRINGS.credentialRevokedToast);
+      })
+      .catch(() => onError?.(SETTINGS_STRINGS.connectionsDisconnectError));
+  }
+
+  const descriptors = connectorDescriptors()
+    .filter((descriptor) => descriptor.probe !== undefined)
+    .filter(filter ?? (() => true));
+
+  return (
+    <>
+      {descriptors.map((descriptor) => (
+        <ConnectorCard
+          key={descriptor.id}
+          descriptor={descriptor}
+          statusResult={connectorStatus(
+            descriptor.displayName,
+            credentials,
+            providers,
+          )}
+          onConnect={() => {
+            setDialogMode("connect");
+            setDialogDescriptor(descriptor);
+          }}
+          onReconnect={() => {
+            setDialogMode("reconnect");
+            setDialogDescriptor(descriptor);
+          }}
+          onDisconnect={handleDisconnect}
+        />
+      ))}
+      <ConnectorCredentialDialog
+        descriptor={dialogDescriptor}
+        mode={dialogMode}
+        tenantId={tenantId}
+        onClose={() => setDialogDescriptor(null)}
+        onConnected={() => {
+          setDialogDescriptor(null);
+          onReload();
+        }}
+      />
+    </>
+  );
+}
+
 export function ConnectionsSection({
   tenantId,
 }: {
@@ -89,11 +177,6 @@ export function ConnectionsSection({
     kind: "loading",
   });
   const [reloadKey, setReloadKey] = useState(0);
-  const [dialogDescriptor, setDialogDescriptor] =
-    useState<ConnectorDescriptor | null>(null);
-  const [dialogMode, setDialogMode] = useState<"connect" | "reconnect">(
-    "connect",
-  );
   const [rowError, setRowError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -201,34 +284,13 @@ export function ConnectionsSection({
         </p>
       )}
       <div className="settings-connections-grid">
-        {connectorDescriptors()
-          // OAuth connectors (openrouter, huggingface) now live in the
-          // same registry as of CL-6028's OAuth route factory, but this
-          // card still renders only the api-key ones — the OAuth pair
-          // below is its own card until CL-6028's OAuth-cards-honesty
-          // follow-up folds them into this same loop (registry `oauth`
-          // field, "not configured" state, a real Connect action).
-          .filter((descriptor) => descriptor.probe !== undefined)
-          .map((descriptor) => (
-            <ConnectorCard
-              key={descriptor.id}
-              descriptor={descriptor}
-              statusResult={connectorStatus(
-                descriptor.displayName,
-                state.data.credentials,
-                state.data.providers,
-              )}
-              onConnect={() => {
-                setDialogMode("connect");
-                setDialogDescriptor(descriptor);
-              }}
-              onReconnect={() => {
-                setDialogMode("reconnect");
-                setDialogDescriptor(descriptor);
-              }}
-              onDisconnect={handleDisconnect}
-            />
-          ))}
+        <ConnectorCardGrid
+          tenantId={currentTenantId}
+          credentials={state.data.credentials}
+          providers={state.data.providers}
+          onReload={reload}
+          onError={setRowError}
+        />
         {OAUTH_CARDS.map((card) => (
           <OAuthConnectorCardView
             key={card.id}
@@ -246,16 +308,6 @@ export function ConnectionsSection({
           />
         ))}
       </div>
-      <ConnectorCredentialDialog
-        descriptor={dialogDescriptor}
-        mode={dialogMode}
-        tenantId={currentTenantId}
-        onClose={() => setDialogDescriptor(null)}
-        onConnected={() => {
-          setDialogDescriptor(null);
-          reload();
-        }}
-      />
       <details className="settings-connections-advanced">
         <summary>{SETTINGS_STRINGS.connectionsAdvancedSummary}</summary>
         <div className="settings-connections-advanced-body">

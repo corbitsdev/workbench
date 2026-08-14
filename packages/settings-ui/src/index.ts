@@ -44,6 +44,7 @@ export {
 } from "./credentials-section";
 export {
   ConnectionsSection,
+  ConnectorCardGrid,
   ConnectorCredentialDialog,
 } from "./connections-section";
 
