@@ -14,10 +14,13 @@ after a given ISO 8601 timestamp.
 
 ## Credential
 
-The bundle's env requires `linearApiKey`. When it is absent or empty,
-the tool never throws — it returns a completed result with
-`isError: true` and content naming the source "not connected", so a
-calling agent can degrade gracefully instead of failing its turn.
+The bundle's env carries `credentials`, the harness's consumer-gated
+`CredentialCapability` (`vendor/intx/harness/src/credential-capability.ts`).
+When it is absent, or `credentials.resolve("linear")` throws — no bound
+handle, or a grant that doesn't authorize this consumer — the tool never
+throws itself: it returns a completed result with `isError: true` and
+content naming the source "not connected", so a calling agent can
+degrade gracefully instead of failing its turn.
 
 This package declares one credential handle, `linear`, in its
 `package.json`'s `interchange.credentials` field (CL-6028). Connect
@@ -26,12 +29,12 @@ Linear once, in Settings · Connections, and every workflow that pins
 `morning-brief` — resolves the same tenant-owned credential at launch;
 no per-workflow reconnection.
 
-That launch-time resolution (`buildCredentialDelivery`) is proven in
-`test/credential-delivery.drizzle.test.ts`. Delivering the resolved
-credential into this bundle's `run()` at call time is a separate,
-still-open seam — see `src/tool.ts`'s header comment for exactly which
-file is missing the wiring — so until that lands, `linearApiKey` stays
-unset in production and the tool correctly reports "not connected."
+Launch-time resolution (`buildCredentialDelivery`) is proven in
+`test/credential-delivery.drizzle.test.ts`. This package has no
+DB-gated wiring end-to-end test of its own (see
+`@corbits/granola-tools`'s `test/credential-wiring-e2e.drizzle.test.ts`,
+CL-6032, for the pattern) — the substrate-side composition it depends on
+is shared and covered there plus in `apps/sidecar/src/step-agent-tools.test.ts`.
 
 ## Usage
 
