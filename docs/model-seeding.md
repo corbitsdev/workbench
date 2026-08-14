@@ -13,26 +13,29 @@ Everything about "which providers and models a bench knows about" is
 curated, hand-authored data, planted through the hub's native catalog HTTP
 API — never discovered at runtime:
 
-- **`packages/hub-client/src/catalog-seed-data.ts`** — a single hardcoded
-  triple: provider `anthropic`, model `claude-sonnet-5`,
-  offering linking them. This is the entire dev catalog `workbench seed`
-  plants.
-- **`packages/hub-client/src/seed.ts` (`seedCatalog`)** — walks that triple
+- **`packages/hub-client/src/catalog-seed-data.ts` (`CATALOG_SEEDS`)** — one
+  curated seed per supported credential provider: a provider row (its
+  adapter plugin and base URL) and a small hand-picked model set. This is
+  what `workbench seed` plants for the operator's anthropic key and what
+  onboarding plants for whichever provider a person connects — including
+  the OpenRouter PKCE connect
+  (see [onboarding-openrouter-connect.md](onboarding-openrouter-connect.md)).
+- **`packages/hub-client/src/seed.ts` (`seedCatalog`)** — walks one
+  provider's seed
   through `POST /api/tenants/:id/catalog/{model,providers,credentials,offerings}`,
   idempotently. The offering's `capabilities` field (see
   `vendor/intx/types/src/catalog.ts` and
   `vendor/intx/db/src/schema/catalog.ts`) is never set — every offering
   workbench seeds gets `capabilities: []` from the hub's own default.
 - **`packages/hub-client/src/credential-test.ts` (`PROVIDER_TEST_CONFIG`)** —
-  a second, independent hardcoded table: one probe model per provider
-  (`claude-sonnet-5` / `gpt-4o-mini` / `gemini-2.5-flash`) used to prove a
-  freshly-entered API key works during onboarding, and to pick the model a
-  newly added credential deploys workflows against
-  (`providerModelSource`).
-- **`packages/onboarding/src/complete-credential.ts`** — only plants a
-  browsable catalog entry for Anthropic; OpenAI and Google credentials work
-  (routines deploy and run) but get no catalog row, by explicit design
-  ("only Anthropic is catalogued today").
+  a second, independent hardcoded table: each provider's free auth-gated
+  probe endpoint, used to prove a freshly-entered key works during
+  onboarding, and its default model — the one a newly added credential
+  deploys workflows against (`providerModelSource`).
+- **`packages/onboarding/src/complete-credential.ts`** — plants the
+  browsable catalog for whichever provider was connected, key paste and
+  OpenRouter PKCE connect alike, via that provider's `CATALOG_SEEDS`
+  entry.
 
 None of this reads any kind of external or upstream model registry. Every
 model/provider name in the codebase is a literal string someone typed in.

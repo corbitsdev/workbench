@@ -14,10 +14,17 @@ import {
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { Hono } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { type } from "arktype";
 import { provisionPersonalTenantIfNeeded, ProvisionError } from "./provision";
 
 import { completeCredentialSetup } from "./complete-credential";
+import {
+  createConnectStateStore,
+  exchangeCodeForKey,
+  generatePKCEPair,
+  OPENROUTER_AUTH_URL,
+} from "./openrouter-connect";
 
 const PROVIDER_IDS = supportedCredentialProviders().map((p) => p.id) as [
   SupportedCredentialProvider,
@@ -39,6 +46,10 @@ export type CreateOnboardingRoutesDeps = {
   seedModel?: ModelSource;
   pushWorkflow: WorkflowPusher;
   log: (line: string) => void;
+  openrouterConnect?: {
+    exchange?: typeof exchangeCodeForKey;
+    completeSetup?: typeof completeCredentialSetup;
+  };
 };
 
 function cookiesFromHeader(header: string | undefined): string[] {
@@ -190,6 +201,170 @@ export function createOnboardingRoutes(
           },
         },
         503,
+      );
+    }
+  });
+
+  // OpenRouter PKCE connect: /start parks a fresh verifier server-side
+  // under a single-use state carried in an HttpOnly cookie, then sends
+  // the browser to OpenRouter's consent page; /callback consumes that
+  // state, trades the returned code for the user-scoped API key, and
+  // finishes through the same test-then-seed path a pasted key takes.
+  // Every outcome — success or failure — lands back in the wizard's
+  // credential phase as query parameters; the key itself never appears
+  // in a URL or a log line.
+  const connectStates = createConnectStateStore();
+  const exchange = deps.openrouterConnect?.exchange ?? exchangeCodeForKey;
+  const completeConnectedSetup =
+    deps.openrouterConnect?.completeSetup ?? completeCredentialSetup;
+  const CONNECT_STATE_COOKIE = "workbench_openrouter_connect";
+  const secureCookies = deps.hubUrl.startsWith("https:");
+
+  const wizardRedirectPath = (params: Record<string, string>): string => {
+    const query = new URLSearchParams(params);
+    query.set("connect", "openrouter");
+    return `/onboarding?${query.toString()}`;
+  };
+
+  // The same in-process per-user limiter `/provision` uses, for the same
+  // reason: every start parks a pending state, so a client stuck in a
+  // redirect loop (or a runaway script) can grow the state map without
+  // ever finishing a flow. One in-flight or recent start per user is
+  // enough; a real consent round trip takes longer than the window.
+  const CONNECT_START_RATE_LIMIT_MS = 10_000;
+  const lastConnectStartByUser = new Map<string, number>();
+
+  app.get("/oauth/openrouter/start", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return c.redirect(
+        wizardRedirectPath({ outcome: "error", code: "signed_out" }),
+        302,
+      );
+    }
+
+    const now = Date.now();
+    const lastStart = lastConnectStartByUser.get(user.id);
+    if (
+      lastStart !== undefined &&
+      now - lastStart < CONNECT_START_RATE_LIMIT_MS
+    ) {
+      return c.redirect(
+        wizardRedirectPath({ outcome: "error", code: "rate_limited" }),
+        302,
+      );
+    }
+    lastConnectStartByUser.set(user.id, now);
+
+    const pkce = await generatePKCEPair();
+    const state = connectStates.issue({
+      userId: user.id,
+      codeVerifier: pkce.codeVerifier,
+    });
+    setCookie(c, CONNECT_STATE_COOKIE, state, {
+      httpOnly: true,
+      sameSite: "Lax",
+      secure: secureCookies,
+      path: "/",
+      maxAge: 600,
+    });
+
+    // Origin from configuration (the hub's public BASE_URL — the origin
+    // OpenRouter must send the browser back to, whatever host header
+    // this request arrived under), path from the request so the mount
+    // prefix is never guessed at.
+    const callbackUrl = new URL(
+      c.req.path.replace(/\/start$/, "/callback"),
+      deps.hubUrl,
+    );
+    const authUrl = new URL(OPENROUTER_AUTH_URL);
+    authUrl.searchParams.set("callback_url", callbackUrl.toString());
+    authUrl.searchParams.set("code_challenge", pkce.codeChallenge);
+    authUrl.searchParams.set("code_challenge_method", "S256");
+    return c.redirect(authUrl.toString(), 302);
+  });
+
+  app.get("/oauth/openrouter/callback", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return c.redirect(
+        wizardRedirectPath({ outcome: "error", code: "signed_out" }),
+        302,
+      );
+    }
+
+    const state = getCookie(c, CONNECT_STATE_COOKIE);
+    deleteCookie(c, CONNECT_STATE_COOKIE, { path: "/" });
+    const code = c.req.query("code");
+    if (state === undefined || code === undefined || code === "") {
+      return c.redirect(
+        wizardRedirectPath({ outcome: "error", code: "state_expired" }),
+        302,
+      );
+    }
+    const codeVerifier = connectStates.consume({ state, userId: user.id });
+    if (codeVerifier === undefined) {
+      return c.redirect(
+        wizardRedirectPath({ outcome: "error", code: "state_expired" }),
+        302,
+      );
+    }
+
+    const exchanged = await exchange({ code, codeVerifier });
+    if (!exchanged.ok) {
+      deps.log(
+        `openrouter connect for user ${user.id}: code exchange failed: ${exchanged.message}`,
+      );
+      return c.redirect(
+        wizardRedirectPath({ outcome: "error", code: "exchange_failed" }),
+        302,
+      );
+    }
+
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
+    try {
+      const result = await completeConnectedSetup({
+        api,
+        cookies,
+        hubUrl: deps.hubUrl,
+        userId: user.id,
+        userEmail: user.email,
+        provider: "openrouter",
+        apiKey: exchanged.key,
+        pushWorkflow: deps.pushWorkflow,
+        log: deps.log,
+      });
+      if (result.kind === "invalid-credential") {
+        deps.log(
+          `openrouter connect for user ${user.id}: minted key failed its probe: ${result.message}`,
+        );
+        return c.redirect(
+          wizardRedirectPath({ outcome: "error", code: "key_rejected" }),
+          302,
+        );
+      }
+      if (result.kind === "no-personal-bench") {
+        return c.redirect(
+          wizardRedirectPath({ outcome: "error", code: "no_bench" }),
+          302,
+        );
+      }
+      return c.redirect(
+        wizardRedirectPath({
+          outcome: "seeded",
+          tenantSlug: result.tenantSlug,
+          workflows: result.workflows.join(","),
+        }),
+        302,
+      );
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      deps.log(
+        `openrouter connect setup failed for user ${user.id}: ${message}`,
+      );
+      return c.redirect(
+        wizardRedirectPath({ outcome: "error", code: "setup_failed" }),
+        302,
       );
     }
   });

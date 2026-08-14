@@ -102,6 +102,73 @@ export type CredentialProvider =
   | "deepseek"
   | "mistral";
 
+// The one-click path: a plain navigation to the hub's connect route,
+// which round-trips through OpenRouter's consent page and lands back on
+// /onboarding with the outcome in the query string.
+export const OPENROUTER_CONNECT_START_PATH =
+  "/api/onboarding/oauth/openrouter/start";
+
+export type OpenRouterConnectReturn =
+  | {
+      readonly kind: "seeded";
+      readonly tenantSlug: string;
+      readonly workflows: string[];
+    }
+  | { readonly kind: "error"; readonly message: string };
+
+const CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
+  state_expired:
+    "The OpenRouter connection took too long or was already used. Start it again.",
+  exchange_failed:
+    "OpenRouter did not hand back a key for that connection. Try connecting again.",
+  key_rejected:
+    "OpenRouter minted a key, but its test call failed. Try connecting again.",
+  no_bench:
+    "No personal bench was found for this account yet. Reload and try again.",
+  setup_failed:
+    "Your OpenRouter key checked out, but setting up your bench failed. Try again in a moment.",
+  signed_out:
+    "Your session ended during the OpenRouter connection. Sign in and try again.",
+  rate_limited:
+    "You started several OpenRouter connections in a row. Wait a moment and try again.",
+};
+
+/**
+ * Reads the OpenRouter connect round-trip's outcome out of the wizard's
+ * query string. The parameters are hub-written but arrive through a
+ * redirect the browser (or anyone) can replay, so they are treated as
+ * untrusted: anything malformed collapses to an honest error, never a
+ * fabricated success.
+ */
+export function readOpenRouterConnectReturn(
+  search: string,
+): OpenRouterConnectReturn | null {
+  const params = new URLSearchParams(search);
+  if (params.get("connect") !== "openrouter") return null;
+  const outcome = params.get("outcome");
+  if (outcome === "seeded") {
+    const tenantSlug = params.get("tenantSlug");
+    const workflows = (params.get("workflows") ?? "")
+      .split(",")
+      .filter((name) => name.length > 0);
+    if (tenantSlug === null || tenantSlug === "" || workflows.length === 0) {
+      return {
+        kind: "error",
+        message:
+          "The OpenRouter connection finished but its result was incomplete. Try connecting again.",
+      };
+    }
+    return { kind: "seeded", tenantSlug, workflows };
+  }
+  const code = params.get("code");
+  return {
+    kind: "error",
+    message:
+      (code !== null ? CONNECT_ERROR_COPY[code] : undefined) ??
+      "The OpenRouter connection did not finish. Try connecting again.",
+  };
+}
+
 export const CREDENTIAL_PROVIDERS: readonly {
   readonly id: CredentialProvider;
   readonly label: string;
