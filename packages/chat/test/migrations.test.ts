@@ -66,6 +66,8 @@ describeIfDb("applyChatMigrations", () => {
     "0007_chat_bench_settings",
     "0008_channel_context_window_explicit_inherit",
     "0009_channel_threads",
+    "0010_block_responses",
+    "0011_channel_threads_parent_thread_id",
   ];
 
   test("applies every table and is idempotent on a second run", async () => {
