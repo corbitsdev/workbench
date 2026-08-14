@@ -421,7 +421,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
         <RichEmptyState
           icon={<FileStack />}
           title="Library not configured"
-          description="This hub has no artifacts plane mounted yet. Set ARTIFACTS_DATABASE_URL and restart the hub to enable Library."
+          description="This hub has no artifacts plane mounted yet. Set DATABASE_URL and restart the hub to enable Library."
         />
       </PageShell>
     );

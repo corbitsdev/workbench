@@ -24,7 +24,7 @@ mock.module("@corbits/artifacts", () => ({
 
 const { mountArtifacts } = await import("./artifacts-mount");
 
-const KEYS = ["ARTIFACTS_DATABASE_URL", "DATABASE_URL"] as const;
+const KEYS = ["DATABASE_URL"] as const;
 type EnvKey = (typeof KEYS)[number];
 const saved: Partial<Record<EnvKey, string | undefined>> = {};
 
@@ -58,7 +58,7 @@ describe("mountArtifacts URL resolution", () => {
     expect(createArtifactDbCalls).toEqual([]);
   });
 
-  test("falls back to DATABASE_URL when ARTIFACTS_DATABASE_URL is unset", async () => {
+  test("mounts against DATABASE_URL", async () => {
     stashEnv();
     process.env["DATABASE_URL"] = "postgres://localhost:5432/workbench_control";
     const handle = await mountArtifacts();
@@ -68,23 +68,9 @@ describe("mountArtifacts URL resolution", () => {
     ]);
   });
 
-  test("prefers ARTIFACTS_DATABASE_URL over DATABASE_URL", async () => {
+  test("explicit options.databaseUrl wins over DATABASE_URL", async () => {
     stashEnv();
     process.env["DATABASE_URL"] = "postgres://localhost:5432/control";
-    process.env["ARTIFACTS_DATABASE_URL"] =
-      "postgres://localhost:5432/artifacts_pin";
-    const handle = await mountArtifacts();
-    expect(handle).toBeDefined();
-    expect(createArtifactDbCalls).toEqual([
-      "postgres://localhost:5432/artifacts_pin",
-    ]);
-  });
-
-  test("explicit options.databaseUrl wins over both env vars", async () => {
-    stashEnv();
-    process.env["DATABASE_URL"] = "postgres://localhost:5432/control";
-    process.env["ARTIFACTS_DATABASE_URL"] =
-      "postgres://localhost:5432/artifacts_pin";
     const handle = await mountArtifacts({
       databaseUrl: "postgres://localhost:5432/explicit",
     });
