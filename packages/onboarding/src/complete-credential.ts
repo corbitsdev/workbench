@@ -18,12 +18,24 @@
 // a fully valid key to fail on, surfacing as a false "setup failed".
 // Deployment itself still runs (it is configuration, not inference), so
 // the bench's default workflows are genuinely usable once this returns.
+//
+// The workflows deploy against the connected provider's own default
+// model — read straight out of `CATALOG_SEEDS` (`catalog-seed-data.ts`),
+// the one place a provider's curated model list is declared, rather than
+// a second, hand-maintained model choice living here. This is also what
+// recovers a bench the hub's own sign-in hook
+// (`provisionPersonalTenantIfNeeded`) could only mark `bench_unseeded`
+// (no hub-owned `ANTHROPIC_API_KEY` to seed with): the first working
+// credential a user connects — through this function, whichever
+// onboarding path reaches it — finishes seeding with that credential's
+// own provider, so an OAuth-only or bring-your-own-key user is never
+// stuck waiting on an operator-configured key.
 
 import { PrincipalSummary, TenantResponse, paginatedSchema } from "@intx/types";
 import {
+  CATALOG_SEEDS,
   DEFAULT_WORKFLOWS,
   parseAs,
-  providerModelSource,
   seedCatalog,
   seedTenant,
   testProviderCredential,
@@ -145,7 +157,13 @@ export async function completeCredentialSetup(
       : {}),
   });
 
-  const modelSource = providerModelSource(args.provider);
+  const catalogSeed = CATALOG_SEEDS[args.provider];
+  const defaultModel = catalogSeed.models[0];
+  if (defaultModel === undefined) {
+    throw new Error(
+      `catalog seed for provider ${args.provider} has no default model`,
+    );
+  }
   await runSeedTenant({
     api: args.api,
     cookies: args.cookies,
@@ -156,9 +174,9 @@ export async function completeCredentialSetup(
       domain: tenant.domain,
     },
     model: {
-      provider: modelSource.provider,
-      model: modelSource.model,
-      baseURL: modelSource.baseURL,
+      provider: catalogSeed.provider.plugin,
+      model: defaultModel.canonicalName,
+      baseURL: catalogSeed.provider.baseURL,
       apiKey: args.apiKey,
     },
     pushWorkflow: args.pushWorkflow,

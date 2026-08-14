@@ -274,6 +274,11 @@ export function OnboardingPage() {
   // skip option — the credential step stays in place either way.
   const [preSatisfied, setPreSatisfied] = useState(false);
   const [skipReason, setSkipReason] = useState<string | null>(null);
+  // True for a returning user whose workbench already exists but is
+  // still missing a working credential (`existing-member` with
+  // `seeded: false`) — the copy below tells them connecting one now
+  // finishes setup, instead of the first-run pitch.
+  const [resumingUnseeded, setResumingUnseeded] = useState(false);
 
   // A connect round-trip's outcome is consumed into the initial wizard
   // state above; dropping it from the URL keeps a reload or a shared
@@ -293,16 +298,25 @@ export function OnboardingPage() {
       if (result.kind === "error") {
         setState({ phase: "provisioning-error", message: result.message });
       } else if (result.kind === "existing-member") {
-        setPreSatisfied(true);
+        // `seeded === false` is the bench_unseeded condition: this
+        // account's own workbench exists but never got a working
+        // credential (no operator key configured, and none connected
+        // yet). Everything else — `true`, or `undefined` for membership
+        // on some other tenant — reads as already set up.
+        const unseeded = result.seeded === false;
+        setPreSatisfied(!unseeded);
         setSkipReason(null);
+        setResumingUnseeded(unseeded);
         setState({ phase: "credential", error: null });
       } else if (result.kind === "provisioned" && result.seeded) {
         setPreSatisfied(true);
         setSkipReason(result.seedSkipReason ?? null);
+        setResumingUnseeded(false);
         setState({ phase: "credential", error: null });
       } else if (result.kind === "provisioned") {
         setPreSatisfied(false);
         setSkipReason(null);
+        setResumingUnseeded(false);
         setState({ phase: "credential", error: null });
       } else {
         // needs-onboarding after an explicit name should not happen; treat
@@ -451,8 +465,16 @@ export function OnboardingPage() {
   return (
     <OnboardingPhase
       phase={state.phase}
-      title="Add an inference credential"
-      subtitle="Your workbench needs an inference credential before any agent or routine can run. Connect OpenRouter in one click, or pick a provider and paste your own key — either way it's used only for this bench."
+      title={
+        resumingUnseeded
+          ? "Finish setting up your workbench"
+          : "Add an inference credential"
+      }
+      subtitle={
+        resumingUnseeded
+          ? "Your workbench is ready, but it still needs a working inference credential before any agent or routine can run. Connect one below to finish setup."
+          : "Your workbench needs an inference credential before any agent or routine can run. Connect OpenRouter in one click, or pick a provider and paste your own key — either way it's used only for this bench."
+      }
     >
       <section
         className="onboarding-connect-card"

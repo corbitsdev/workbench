@@ -21,7 +21,17 @@ const ErrorEnvelope = type({
 });
 
 export type ProvisionOutcome =
-  | { readonly kind: "existing-member" }
+  | {
+      readonly kind: "existing-member";
+      /**
+       * Present only for the caller's own personal bench: `false` means
+       * it still has no working inference credential (`bench_unseeded`)
+       * and the credential step should stay open rather than read as
+       * finished. Absent when membership is on some other tenant, whose
+       * seed state this account has no say over.
+       */
+      readonly seeded?: boolean;
+    }
   | { readonly kind: "needs-onboarding" }
   | {
       readonly kind: "provisioned";
@@ -63,7 +73,12 @@ export async function triggerFirstLoginProvisioning(
         message: `Unexpected provisioning response shape: ${parsed.summary}`,
       };
     }
-    if (parsed.kind === "existing-member") return { kind: "existing-member" };
+    if (parsed.kind === "existing-member") {
+      return {
+        kind: "existing-member",
+        ...(parsed.seeded !== undefined ? { seeded: parsed.seeded } : {}),
+      };
+    }
     if (parsed.kind === "needs-onboarding") return { kind: "needs-onboarding" };
     if (
       parsed.tenantId === undefined ||

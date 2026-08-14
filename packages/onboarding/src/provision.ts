@@ -24,7 +24,20 @@ import {
 } from "@workbench/hub-client";
 
 export type ProvisionResult =
-  | { readonly kind: "existing-member"; readonly seeded?: true }
+  | {
+      readonly kind: "existing-member";
+      /**
+       * Present only when the caller owns the personal bench this hook
+       * itself provisions: `true` once every default workflow is
+       * deployed, `false` when it is still waiting on a working
+       * credential (the `bench_unseeded` condition the onboarding UI
+       * reads to keep the credential step open instead of declaring
+       * setup finished). Absent when membership belongs to some other
+       * tenant this hook does not own — its seed state is none of this
+       * hook's business.
+       */
+      readonly seeded?: boolean;
+    }
   | { readonly kind: "needs-onboarding" }
   | {
       readonly kind: "provisioned";
@@ -183,19 +196,21 @@ export async function provisionPersonalTenantIfNeeded(
       args.cookies,
       own.tenantId,
     );
-    if (fullySeeded) return { kind: "existing-member" };
+    if (fullySeeded) return { kind: "existing-member", seeded: true };
 
-    // Own bench exists but is not fully seeded. With a seed model we can
-    // re-seed to recover. Without one there is nothing this hook can do
-    // to complete seeding, so we exit as an existing-member rather than
-    // throwing — membership is real even if seeding is incomplete. The
-    // routes layer surfaces this as a typed `bench_unseeded` condition so
-    // the caller can act on it (e.g. prompt credential setup).
+    // Own bench exists but is not fully seeded. With a hub-owned seed
+    // model we can re-seed right here to recover. Without one there is
+    // nothing this hook can do — completing seeding from the caller's
+    // own credential is `completeCredentialSetup`'s job (the onboarding
+    // credential step), not this sign-in hook's — so we exit as an
+    // existing-member with `seeded: false`, the typed `bench_unseeded`
+    // condition the onboarding UI reads to keep the credential step open
+    // rather than declaring setup finished.
     if (!args.seedModel) {
       args.log(
         `personal bench ${own.tenantId} exists but is not fully seeded, and no seed model is configured; returning as existing-member without re-seeding`,
       );
-      return { kind: "existing-member" };
+      return { kind: "existing-member", seeded: false };
     }
 
     const tenantResponse = await args.api(

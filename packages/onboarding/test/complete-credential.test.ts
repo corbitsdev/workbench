@@ -584,6 +584,399 @@ describe("completeCredentialSetup", () => {
     }
   });
 
+  test("a second credential save for the same account is idempotent — no duplicate assets, deployments, grants, or catalog rows", async () => {
+    // Two credential saves racing (or a person resubmitting the same
+    // provider) must not double-seed: seedCatalog and seedTenant's
+    // ensure-then-create helpers already tolerate a 409 on the second
+    // create by listing the existing row instead, and this proves that
+    // tolerance holds end to end through `completeCredentialSetup`,
+    // called twice, with the real (non-mocked) seedCatalog and
+    // seedTenant driving a stateful fake hub.
+    const TIMESTAMP = "2026-01-01T00:00:00.000Z";
+    type Row = { name: string; id: string };
+    const grants: { resource: string; action: string }[] = [];
+    const assets: Row[] = [];
+    const deployments: { definitionAssetId: string; id: string }[] = [];
+    const catalogModels: Row[] = [];
+    const catalogProviders: Row[] = [];
+    const catalogOfferings: { modelId: string; providerId: string }[] = [];
+    const providers: Row[] = [];
+    const credentials: Row[] = [];
+    let assetCreatePosts = 0;
+    let deploymentCreatePosts = 0;
+    let catalogModelCreatePosts = 0;
+    let catalogProviderCreatePosts = 0;
+    let catalogOfferingCreatePosts = 0;
+    let credentialCreatePosts = 0;
+
+    const api: ApiCall = async (method, path, body) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: grants.map((g, index) => ({
+              id: `grt_${index}`,
+              tenantId: TENANT_ID,
+              resource: g.resource,
+              action: g.action,
+              effect: "allow",
+              principalId: PRINCIPAL_ID,
+              origin: "creator",
+              createdAt: TIMESTAMP,
+              updatedAt: TIMESTAMP,
+            })),
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        const g = body as { resource: string; action: string };
+        grants.push({ resource: g.resource, action: g.action });
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
+        const name = (body as { name: string }).name;
+        const existing = assets.find((a) => a.name === name);
+        if (existing) return { status: 409, data: {}, cookies: [] };
+        assetCreatePosts += 1;
+        const id = `ast_${name}`;
+        assets.push({ name, id });
+        return {
+          status: 201,
+          data: {
+            id,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name,
+            displayName: name,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return {
+          status: 200,
+          data: assets.map((a) => ({
+            id: a.id,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: a.name,
+            displayName: a.name,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+            origin: { tenantId: TENANT_ID, direct: true },
+          })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/git-tokens`
+      ) {
+        return {
+          status: 201,
+          data: { id: "tok_1", secret: "s3cret" },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return {
+          status: 200,
+          data: deployments.map((d) => ({
+            id: d.id,
+            tenantId: TENANT_ID,
+            definitionAssetId: d.definitionAssetId,
+            status: "active",
+            createdAt: TIMESTAMP,
+          })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        deploymentCreatePosts += 1;
+        const assetId = (body as { assetId: string }).assetId;
+        const id = `dep_${assetId}`;
+        deployments.push({ definitionAssetId: assetId, id });
+        return {
+          status: 201,
+          data: {
+            id,
+            tenantId: TENANT_ID,
+            definitionAssetId: assetId,
+            status: "active",
+            createdAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`) {
+        const name = (body as { name: string }).name;
+        const existing = providers.find((p) => p.name === name);
+        if (existing) return { status: 409, data: {}, cookies: [] };
+        const id = `prv_${name}`;
+        providers.push({ name, id });
+        return {
+          status: 201,
+          data: {
+            id,
+            tenantId: TENANT_ID,
+            name,
+            plugin: "anthropic",
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: providers.map((p) => ({
+              id: p.id,
+              tenantId: TENANT_ID,
+              name: p.name,
+              plugin: "anthropic",
+              createdAt: TIMESTAMP,
+              updatedAt: TIMESTAMP,
+            })),
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/credentials`
+      ) {
+        const name = (body as { name: string }).name;
+        const existing = credentials.find((c) => c.name === name);
+        if (existing) return { status: 409, data: {}, cookies: [] };
+        credentialCreatePosts += 1;
+        const id = `cre_${name}`;
+        credentials.push({ name, id });
+        return {
+          status: 201,
+          data: {
+            id,
+            tenantId: TENANT_ID,
+            providerId: "prv_anthropic",
+            name,
+            type: "api_key",
+            status: "active",
+            metadata: null,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/credentials`
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: credentials.map((c) => ({
+              id: c.id,
+              tenantId: TENANT_ID,
+              providerId: "prv_anthropic",
+              name: c.name,
+              type: "api_key",
+              status: "active",
+              metadata: null,
+              createdAt: TIMESTAMP,
+              updatedAt: TIMESTAMP,
+            })),
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        const canonicalName = (body as { canonicalName: string }).canonicalName;
+        const existing = catalogModels.find((m) => m.name === canonicalName);
+        if (existing) return { status: 409, data: {}, cookies: [] };
+        catalogModelCreatePosts += 1;
+        const id = `mdl_${canonicalName}`;
+        catalogModels.push({ name: canonicalName, id });
+        return {
+          status: 201,
+          data: {
+            id,
+            tenantId: TENANT_ID,
+            canonicalName,
+            disabled: false,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: catalogModels.map((m) => ({
+              id: m.id,
+              tenantId: TENANT_ID,
+              canonicalName: m.name,
+              disabled: false,
+              createdAt: TIMESTAMP,
+              updatedAt: TIMESTAMP,
+            })),
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        const name = (body as { name: string }).name;
+        const existing = catalogProviders.find((p) => p.name === name);
+        if (existing) return { status: 409, data: {}, cookies: [] };
+        catalogProviderCreatePosts += 1;
+        const id = `cpv_${name}`;
+        catalogProviders.push({ name, id });
+        return {
+          status: 201,
+          data: {
+            id,
+            tenantId: TENANT_ID,
+            name,
+            plugin: "anthropic",
+            baseURL: "https://api.anthropic.com",
+            credentialId: "cre_anthropic-default",
+            disabled: false,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: catalogProviders.map((p) => ({
+              id: p.id,
+              tenantId: TENANT_ID,
+              name: p.name,
+              plugin: "anthropic",
+              baseURL: "https://api.anthropic.com",
+              credentialId: "cre_anthropic-default",
+              disabled: false,
+              createdAt: TIMESTAMP,
+              updatedAt: TIMESTAMP,
+            })),
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        const b = body as { modelId: string; providerId: string };
+        const existing = catalogOfferings.find(
+          (o) => o.modelId === b.modelId && o.providerId === b.providerId,
+        );
+        if (existing) return { status: 409, data: {}, cookies: [] };
+        catalogOfferingCreatePosts += 1;
+        catalogOfferings.push({ modelId: b.modelId, providerId: b.providerId });
+        return {
+          status: 201,
+          data: {
+            id: `off_${catalogOfferings.length}`,
+            tenantId: TENANT_ID,
+            modelId: b.modelId,
+            providerId: b.providerId,
+            priority: 0,
+            deploymentTags: [],
+            capabilities: [],
+            quirks: null,
+            disabled: false,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const submitCredential = () =>
+      completeCredentialSetup({
+        api,
+        cookies: ["session=abc"],
+        hubUrl: "http://localhost:3000",
+        userId: "user_1",
+        userEmail: "alice@example.com",
+        provider: "anthropic",
+        apiKey: "sk-ant-good",
+        pushWorkflow: noopPush,
+        log: collector().log,
+        testCredential: async () => ({ ok: true }),
+      });
+
+    const first = await submitCredential();
+    expect(first.kind).toBe("seeded");
+    const second = await submitCredential();
+    expect(second.kind).toBe("seeded");
+
+    // Every ensure-then-create helper hit its 409 branch on the second
+    // pass and listed the row it already created on the first — nothing
+    // was ever created twice.
+    expect(assetCreatePosts).toBe(3);
+    expect(deploymentCreatePosts).toBe(3);
+    expect(catalogModelCreatePosts).toBe(1);
+    expect(catalogProviderCreatePosts).toBe(1);
+    expect(catalogOfferingCreatePosts).toBe(1);
+    expect(credentialCreatePosts).toBe(1);
+    expect(assets.length).toBe(3);
+    expect(deployments.length).toBe(3);
+  });
+
   test("a pasted key with no metadata stays an ordinary api_key credential", async () => {
     const seedCatalogCalls: { credentialType?: string }[] = [];
     const api: ApiCall = async (method, path) => {

@@ -6,10 +6,14 @@
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { supportedCredentialProviders } from "@workbench/hub-client/credential-test";
 
 import { App } from "../src/app";
+import { NavigationProvider } from "../src/navigation";
 import {
   CREDENTIAL_PROVIDERS,
   PRIMARY_CREDENTIAL_PROVIDERS,
@@ -20,6 +24,7 @@ import {
   testCredential,
   triggerFirstLoginProvisioning,
 } from "../src/onboarding";
+import { OnboardingPage } from "../src/pages/onboarding-page";
 import { ONBOARDING_PATH } from "../src/routes";
 import type { SessionState } from "../src/session";
 
@@ -198,6 +203,29 @@ describe("triggerFirstLoginProvisioning", () => {
     // The credential step stays in the flow precisely because seeded is
     // reported faithfully, not folded away.
     if (result.kind === "provisioned") expect(result.seeded).toBe(true);
+  });
+
+  test("an existing member whose bench is not fully seeded reports seeded: false, not silently dropped", async () => {
+    // Regression guard for the bench_unseeded defect: a returning user
+    // with a real membership but no working credential yet must not read
+    // as an ordinary, fully-set-up existing member. Before this fix the
+    // client discarded `seeded` entirely for `existing-member`.
+    globalThis.fetch = (async () =>
+      json({
+        kind: "existing-member",
+        seeded: false,
+      })) as unknown as typeof fetch;
+
+    const result = await triggerFirstLoginProvisioning();
+    expect(result).toEqual({ kind: "existing-member", seeded: false });
+  });
+
+  test("an existing member on someone else's tenant carries no seeded field", async () => {
+    globalThis.fetch = (async () =>
+      json({ kind: "existing-member" })) as unknown as typeof fetch;
+
+    const result = await triggerFirstLoginProvisioning();
+    expect(result).toEqual({ kind: "existing-member" });
   });
 });
 
@@ -588,5 +616,76 @@ describe("the Hugging Face connect card", () => {
     expect(markup).toContain("Your first routines are running");
     expect(markup).toContain("Echo routine");
     expect(markup).toContain("Myra routine");
+  });
+});
+
+describe("OnboardingPage resuming a bench_unseeded account", () => {
+  const nameInputValueSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  if (nameInputValueSetter === undefined) {
+    throw new Error("HTMLInputElement.prototype.value has no native setter");
+  }
+
+  const noop = () => undefined;
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+  let container: HTMLDivElement | null = null;
+  let root: Root | null = null;
+
+  afterEach(() => {
+    if (root !== null) act(() => root?.unmount());
+    container?.remove();
+    container = null;
+    root = null;
+  });
+
+  test("an existing member with seeded: false lands on the credential step reading as unfinished, not pre-satisfied", async () => {
+    globalThis.fetch = (async () =>
+      json({
+        kind: "existing-member",
+        seeded: false,
+      })) as unknown as typeof fetch;
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        createElement(NavigationProvider, {
+          navigate: noop,
+          children: createElement(OnboardingPage),
+        }),
+      );
+    });
+
+    const nameInput = container.querySelector(
+      "#onboarding-workbench-name",
+    ) as HTMLInputElement | null;
+    expect(nameInput).not.toBeNull();
+    act(() => {
+      nameInputValueSetter.call(nameInput, "Ada's workbench");
+      nameInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const form = container.querySelector(".onboarding-name-form");
+    expect(form).not.toBeNull();
+    act(() => {
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+    });
+    await settle();
+
+    // The wizard reads this account as still needing a working
+    // credential — never "a working key is already in place", the copy
+    // a fully seeded existing member gets.
+    expect(container.textContent).toContain("Finish setting up your workbench");
+    expect(container.textContent).not.toContain(
+      "A working key is already in place",
+    );
   });
 });

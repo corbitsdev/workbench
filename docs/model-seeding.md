@@ -29,13 +29,21 @@ API — never discovered at runtime:
   workbench seeds gets `capabilities: []` from the hub's own default.
 - **`packages/hub-client/src/credential-test.ts` (`PROVIDER_TEST_CONFIG`)** —
   a second, independent hardcoded table: each provider's free auth-gated
-  probe endpoint, used to prove a freshly-entered key works during
-  onboarding, and its default model — the one a newly added credential
-  deploys workflows against (`providerModelSource`).
+  probe endpoint, used to prove a freshly-entered key works before it is
+  ever stored. Its own `probeModel`/`baseURL` fields exist only to build
+  that probe request — nothing downstream of the probe reads them.
 - **`packages/onboarding/src/complete-credential.ts`** — plants the
   browsable catalog for whichever provider was connected, key paste and
-  OpenRouter PKCE connect alike, via that provider's `CATALOG_SEEDS`
-  entry.
+  OpenRouter/Hugging Face connect alike, via that provider's
+  `CATALOG_SEEDS` entry, and deploys the default workflow set against that
+  same entry's first model (`CATALOG_SEEDS[provider].models[0]`) — the
+  one place a provider's default model is named, so the deploy target and
+  the catalog it is chosen from can never drift apart. This is also how a
+  bench the hub's own sign-in hook could only mark `bench_unseeded` (no
+  hub-owned `ANTHROPIC_API_KEY` configured) finishes seeding: the first
+  working credential a user connects, through whichever onboarding path
+  reaches this function, seeds the bench with that credential's own
+  provider.
 
 None of this reads any kind of external or upstream model registry. Every
 model/provider name in the codebase is a literal string someone typed in.
