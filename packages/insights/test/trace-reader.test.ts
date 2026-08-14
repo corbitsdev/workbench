@@ -318,7 +318,7 @@ describeIfDb("createDrizzleRunTraceReader", () => {
         id: principalId,
         tenantId,
         kind: "agent",
-        refId: "not-a-real-agent-instance",
+        refId: "not-a-real-agent-instance-batching",
         status: "active",
       });
       await db.insert(schema.agentSession).values({
