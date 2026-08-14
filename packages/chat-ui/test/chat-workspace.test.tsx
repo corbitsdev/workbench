@@ -612,4 +612,3 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 });
-

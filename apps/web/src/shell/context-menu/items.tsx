@@ -71,10 +71,7 @@ function channelMenu(
           void patchChannelSettings(tenantId, target.id, {
             "chat/pinned": !target.pinned,
           }).then(
-            () =>
-              toast(
-                target.pinned ? "Channel unpinned" : "Channel pinned",
-              ),
+            () => toast(target.pinned ? "Channel unpinned" : "Channel pinned"),
             () => toast("Couldn't update the channel"),
           );
         },

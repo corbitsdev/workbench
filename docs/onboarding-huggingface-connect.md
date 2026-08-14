@@ -114,8 +114,8 @@ documentation that doesn't exist for this shape. So this connect ships
   `tenantId`, `credentialId`, `providerId`, `providerLabel`, and
   recipients; `deliverCredentialMail` (`deliver.ts`) sends it through
   the same mailbox/inbox/bell pipeline the other three notification
-  kinds use. The rendered copy: *"Reconnect Hugging Face — your token
-  expired"*, explaining that reconnecting is the same connect card in
+  kinds use. The rendered copy: _"Reconnect Hugging Face — your token
+  expired"_, explaining that reconnecting is the same connect card in
   Settings/onboarding, and naming the fine-grained personal access
   token (permission: "Make calls to Inference Providers") as the
   durable alternative for anyone who'd rather not re-click periodically.
