@@ -67,9 +67,9 @@ describe("ContextualPanel", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (container.innerHTML.includes("No bench selected")) break;
+      if (container.innerHTML.includes("No workbench selected")) break;
     }
-    expect(container.innerHTML).toContain("No bench selected");
+    expect(container.innerHTML).toContain("No workbench selected");
     root.unmount();
     container.remove();
   });

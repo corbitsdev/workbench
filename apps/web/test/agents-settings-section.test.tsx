@@ -102,7 +102,7 @@ describe("AgentsSettingsSection", () => {
         </TestQueryProvider>,
       );
     });
-    expect(el.textContent).toContain("No bench selected");
+    expect(el.textContent).toContain("No workbench selected");
     act(() => r.unmount());
     el.remove();
   });
@@ -117,7 +117,7 @@ describe("AgentsSettingsSection", () => {
     const el = await mount(directoryData, { entityId: "wfd_1" });
     expect(el.textContent).toContain("Researcher");
     expect(el.textContent).toContain("Answers research questions");
-    expect(el.textContent).toContain("Instances (1)");
+    expect(el.textContent).toContain("Active agents (1)");
     expect(el.textContent).toContain("Start chat");
     expect(el.textContent).toContain("Open in channel");
     expect(el.innerHTML).not.toContain("ins_1@acme.localhost");
