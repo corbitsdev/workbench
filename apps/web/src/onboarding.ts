@@ -120,9 +120,8 @@ export const HUGGINGFACE_CONNECT_START_PATH =
 
 export type ConnectReturn =
   | {
-      readonly kind: "seeded";
+      readonly kind: "connected";
       readonly tenantSlug: string;
-      readonly workflows: string[];
     }
   | { readonly kind: "error"; readonly message: string };
 
@@ -142,7 +141,7 @@ const OPENROUTER_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
   signed_out:
     "Your session ended during the OpenRouter connection. Sign in and try again.",
   rate_limited:
-    "You started several OpenRouter connections in a row. Wait a moment and try again.",
+    "OpenRouter limits how often it can mint a new key. Wait a minute, then try connecting again.",
 };
 
 const HUGGINGFACE_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
@@ -159,7 +158,7 @@ const HUGGINGFACE_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
   signed_out:
     "Your session ended during the Hugging Face connection. Sign in and try again.",
   rate_limited:
-    "You started several Hugging Face connections in a row. Wait a moment and try again.",
+    "Hugging Face limits how often it can mint a new token. Wait a minute, then try connecting again.",
   not_configured:
     "Hugging Face connect isn't set up on this workbench yet. Paste a token instead.",
 };
@@ -180,18 +179,15 @@ function readConnectReturn(
   const params = new URLSearchParams(search);
   if (params.get("connect") !== providerId) return null;
   const outcome = params.get("outcome");
-  if (outcome === "seeded") {
+  if (outcome === "connected") {
     const tenantSlug = params.get("tenantSlug");
-    const workflows = (params.get("workflows") ?? "")
-      .split(",")
-      .filter((name) => name.length > 0);
-    if (tenantSlug === null || tenantSlug === "" || workflows.length === 0) {
+    if (tenantSlug === null || tenantSlug === "") {
       return {
         kind: "error",
         message: `The ${providerLabel} connection finished but its result was incomplete. Try connecting again.`,
       };
     }
-    return { kind: "seeded", tenantSlug, workflows };
+    return { kind: "connected", tenantSlug };
   }
   const code = params.get("code");
   return {
@@ -432,6 +428,74 @@ export async function submitCredential(
       return {
         kind: "error",
         message: `Unexpected credential response shape: ${parsed.summary}`,
+      };
+    }
+    return {
+      kind: "seeded",
+      tenantSlug: parsed.tenantSlug,
+      workflows: parsed.workflows,
+    };
+  } catch (cause) {
+    return {
+      kind: "error",
+      message: cause instanceof Error ? cause.message : String(cause),
+    };
+  }
+}
+
+const CompleteSetupResult = type({
+  kind: "'seeded' | 'unseeded'",
+  "tenantSlug?": "string",
+  "workflows?": "string[]",
+});
+
+export type CompleteSetupOutcome =
+  | {
+      readonly kind: "seeded";
+      readonly tenantSlug: string;
+      readonly workflows: string[];
+    }
+  | { readonly kind: "unseeded" }
+  | { readonly kind: "error"; readonly message: string };
+
+/**
+ * The follow-up call the wizard makes once it lands back from a
+ * one-click connect: the OAuth callback itself only proved and stored
+ * the key (fast, so the browser is never left waiting on a redirect),
+ * and this is what actually deploys the default routines against it.
+ * `"unseeded"` is not a failure — it means the workbench genuinely has
+ * nothing to finish setting up with yet, and the wizard falls back to
+ * the ordinary credential step rather than treating it as broken.
+ */
+export async function completeSetup(): Promise<CompleteSetupOutcome> {
+  try {
+    const response = await fetch("/api/onboarding/complete-setup", {
+      method: "POST",
+    });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      return {
+        kind: "error",
+        message: readErrorEnvelope(
+          response.status,
+          body,
+          "finishing your workbench setup",
+        ),
+      };
+    }
+    const parsed = CompleteSetupResult(body);
+    if (parsed instanceof type.errors) {
+      return {
+        kind: "error",
+        message: `Unexpected setup response shape: ${parsed.summary}`,
+      };
+    }
+    if (parsed.kind === "unseeded") return { kind: "unseeded" };
+    if (parsed.tenantSlug === undefined || parsed.workflows === undefined) {
+      return {
+        kind: "error",
+        message:
+          "Unexpected setup response: a finished workbench is missing its details.",
       };
     }
     return {

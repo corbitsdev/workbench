@@ -66,8 +66,8 @@ expiring token.
    arktype at the trust boundary; a 200 without an `access_token` is a
    failure, never a crash or a fabricated success. When the response
    carries `expires_in`, it is converted to an ISO `expiresAt` instant.
-4. **Same ending as a pasted key, plus expiry metadata.** The minted
-   token goes through `completeCredentialSetup` with provider
+4. **Only the fast half runs inline, plus expiry metadata.** The minted
+   token goes through `testAndPersistCredential` with provider
    `huggingface`: the free `testProviderCredential` probe
    (`GET https://huggingface.co/api/whoami-v2`, HF's own documented
    account endpoint — the router's model list is a public catalog and
@@ -75,24 +75,31 @@ expiring token.
    is the sole way this ends in `key_rejected`. Once it passes, the
    curated Hugging Face seed from `CATALOG_SEEDS` (three router models
    on one provider row, plugin `openai-compatible`, base URL
-   `https://router.huggingface.co/v1`) is planted, then the default
-   routines are deployed against that endpoint — deployed, not also
-   confirmed by triggering one: `seedTenant` runs with
-   `confirmDeployments: false` here, so a valid but credit-less HF
-   account still lands on `outcome=seeded` instead of paying for (and
-   then failing) a real inference call it never asked for. When the
-   exchange reported an expiry, it is stored on the credential's
-   `metadata.expiresAt` field and the credential is typed `oauth_token`
-   rather than `api_key` — a plain HTTP field on the credential row,
-   never baked into a URL or a log line, alongside the token itself.
-5. **Back to the wizard.** Every ending 302s to
+   `https://router.huggingface.co/v1`) is planted and the token is
+   stored, typed `oauth_token` rather than `api_key`, with the reported
+   expiry (when present) on the credential's `metadata.expiresAt` field
+   — a plain HTTP field on the credential row, never baked into a URL or
+   a log line, alongside the token itself. **Deploying the default
+   routines against that token never happens here** — see
+   `docs/onboarding-openrouter-connect.md`'s step 4 for why (the same
+   duplicate-callback defect and fast/slow split apply here unchanged).
+5. **The plaintext token rides forward in a sealed cookie**, the same
+   `workbench_pending_seed` mechanism OpenRouter's flow uses (step 5 in
+   `docs/onboarding-openrouter-connect.md`) — carrying `provider:
+"huggingface"` and the minted access token, never the expiry
+   metadata (that's already stored on the credential row by this point).
+6. **Back to the wizard.** Every ending 302s to
    `/onboarding?connect=huggingface&...`, parsed by
    `readHuggingFaceConnectReturn` exactly as `readOpenRouterConnectReturn`
-   parses OpenRouter's: `outcome=seeded` with the bench slug and the
-   deployed routine names, or `outcome=error` with a short machine
-   code (`state_expired`, `exchange_failed`, `key_rejected`, `no_bench`,
-   `setup_failed`, `signed_out`, `rate_limited`, plus HF's own
-   `not_configured`).
+   parses OpenRouter's: `outcome=connected` with the bench slug, or
+   `outcome=error` with a short machine code (`state_expired`,
+   `exchange_failed`, `key_rejected`, `no_bench`, `setup_failed`,
+   `signed_out`, `rate_limited`, plus HF's own `not_configured`). The
+   same duplicate-callback recovery OpenRouter's flow runs (step 6
+   there) applies here too, keyed on an active `huggingface` credential
+   instead.
+7. **The wizard finishes the job** exactly as it does for OpenRouter —
+   see step 7 in `docs/onboarding-openrouter-connect.md`.
 
 ## Why the token expires, and why that's fine (notify-to-reconnect)
 

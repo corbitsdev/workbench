@@ -129,7 +129,7 @@ const WorkflowDeploymentStatus = type({
  * the same asset-then-deployment lookup `seedTenant` itself performs
  * before deciding to skip a step.
  */
-async function isFullySeeded(
+export async function isFullySeeded(
   api: ApiCall,
   cookies: string[],
   tenantId: string,

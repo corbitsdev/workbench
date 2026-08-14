@@ -42,34 +42,58 @@ at `/api/onboarding`); the wizard only navigates.
    to `https://openrouter.ai/api/v1/auth/keys`. The response is parsed
    with arktype at the trust boundary; a 200 without a key is a
    failure, never a crash or a fabricated success.
-4. **Same ending as a pasted key.** The minted key goes through
-   `completeCredentialSetup` with provider `openrouter` — exactly the
-   generalized path every key-paste card takes: the free
+4. **Only the fast half runs inline.** The minted key goes through
+   `testAndPersistCredential` with provider `openrouter` — the same free
    `testProviderCredential` probe (`GET /api/v1/key`, the auth-gated
    key-status endpoint; OpenRouter's `/api/v1/models` is public and
-   proves nothing) is the only proof the key gets — a rejected probe is
-   the sole way this ends in `key_rejected`. Once it passes, the curated
-   OpenRouter seed from `CATALOG_SEEDS` (`catalog-seed-data.ts`: a small
-   hand-picked model set on one provider row with plugin
-   `openai-compatible`) is planted, then the default routines are
-   deployed against OpenRouter's OpenAI-compatible endpoint —
-   deployed, not also confirmed by triggering one: `seedTenant` runs
-   with `confirmDeployments: false` here, so a valid but credit-less
-   OpenRouter account still lands on `outcome=seeded` instead of paying
-   for (and then failing) a real inference call it never asked for. The
-   key is stored by the catalog seed through the hub's native
-   `POST /api/tenants/:id/credentials` — the onboarding package never
-   stores a secret itself.
-5. **Back to the wizard.** Every ending 302s to
-   `/onboarding?connect=openrouter&...`: `outcome=seeded` with the
-   bench slug and the deployed routine names, or `outcome=error` with a
-   short machine code (`state_expired`, `exchange_failed`,
-   `key_rejected`, `no_bench`, `setup_failed`, `signed_out`,
-   `rate_limited`). The web
-   wizard parses these as untrusted input, maps codes to copy, renders
-   the same seeded/error phases a pasted key produces, and strips the
+   proves nothing) is the only proof the key gets, and a rejected probe
+   is the sole way this ends in `key_rejected`. Once it passes, the
+   curated OpenRouter seed from `CATALOG_SEEDS` (`catalog-seed-data.ts`:
+   a small hand-picked model set on one provider row with plugin
+   `openai-compatible`) is planted and the key is stored through the
+   hub's native `POST /api/tenants/:id/credentials` — the onboarding
+   package never stores a secret itself. **Deploying the default
+   routines against that key never happens here.** That used to run
+   inline too (`seedTenant`, several seconds of deploy calls per
+   workflow), which made this request the slow, non-idempotent one: a
+   browser that fired the callback twice with the same code burned the
+   single-use state on its first arrival and saw `state_expired` on the
+   second, for a connection that had actually succeeded. The callback
+   now returns as soon as the key is proven and stored — see
+   `complete-credential.ts`'s module comment for the fast/slow split,
+   and `ensureSeeded` for the deploy step's new home.
+5. **The plaintext key rides forward in a sealed cookie, not a query
+   string.** Credential secrets are write-only through the hub's own
+   API, so nothing can re-fetch the key once this request ends. It is
+   instead sealed (AEAD, the same `CredentialCipher` the state above
+   uses) into an HttpOnly `workbench_pending_seed` cookie
+   (`pending-seed.ts`) with a ten-minute TTL — long enough for the
+   wizard's own follow-up call, never a URL, browser history, or log
+   line.
+6. **Back to the wizard.** Every ending 302s to
+   `/onboarding?connect=openrouter&...`: `outcome=connected` with the
+   bench slug (no routine list yet — that comes from step 7), or
+   `outcome=error` with a short machine code (`state_expired`,
+   `exchange_failed`, `key_rejected`, `no_bench`, `setup_failed`,
+   `signed_out`, `rate_limited`). Before reporting `state_expired` for a
+   single-use state that came back already consumed, the callback checks
+   whether this exact session's user already has an active OpenRouter
+   credential created within the state's own TTL — the twin of a
+   duplicate callback that already succeeded on its first arrival. Only
+   a genuinely expired or wrong-session state still errors. The wizard
+   parses these as untrusted input, maps codes to copy, and strips the
    parameters from the URL. The key itself never appears in a URL, a
    redirect, or a log line.
+7. **The wizard finishes the job.** Landing on `outcome=connected`, the
+   wizard shows a brief "setting up your workbench" state and calls
+   `POST /api/onboarding/complete-setup`. That route reads the pending
+   token, runs `ensureSeeded` (`seedTenant` with
+   `confirmDeployments: false`, same as before), and answers `seeded`
+   with the deployed routine names once done. It answers `unseeded`
+   (never an error) if there is nothing to seed with yet, and two
+   overlapping calls never double-deploy — every step `ensureSeeded`
+   drives is itself ensure-then-create (a 409 falls back to a list),
+   the same tolerance `seedTenant` has always had.
 
 ## CSRF model
 

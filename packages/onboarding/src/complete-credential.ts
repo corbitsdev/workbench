@@ -11,7 +11,17 @@
 // `POST /api/tenants/:id/credentials` route (see `seedCatalog`'s
 // `ensureCredential`) — this module never stores a secret itself.
 //
-// `seedTenant` runs with `confirmDeployments: false`: the probe above
+// Two halves, on purpose. `testAndPersistCredential` — the fast half —
+// proves the key and plants the credential and its catalog; it is the
+// only half an OAuth callback route runs before redirecting, because
+// nothing in it ever deploys a workflow. `ensureSeeded` — the slow half
+// — is the workflow-deploy step that used to run inline in the same
+// request: minutes of deploy calls a browser had no business waiting on
+// mid-redirect. A pasted-key submission (`/complete`, a plain fetch, not
+// a redirect the browser can double-fire) still runs both halves
+// synchronously through `completeCredentialSetup` below, unchanged.
+//
+// `ensureSeeded` runs with `confirmDeployments: false`: the probe
 // already proved the key is valid, so there is nothing left to confirm
 // by triggering a real, billed inference call against the account the
 // user just connected — only insufficient credit or a busy sidecar for
@@ -26,7 +36,7 @@
 // recovers a bench the hub's own sign-in hook
 // (`provisionPersonalTenantIfNeeded`) could only mark `bench_unseeded`
 // (no hub-owned `ANTHROPIC_API_KEY` to seed with): the first working
-// credential a user connects — through this function, whichever
+// credential a user connects — through this module, whichever
 // onboarding path reaches it — finishes seeding with that credential's
 // own provider, so an OAuth-only or bring-your-own-key user is never
 // stuck waiting on an operator-configured key.
@@ -40,6 +50,7 @@ import {
   seedTenant,
   testProviderCredential,
   type ApiCall,
+  type ModelSource,
   type SeedCatalogArgs,
   type SeedTenantArgs,
   type SupportedCredentialProvider,
@@ -47,6 +58,23 @@ import {
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { personalTenantSlug } from "./provision";
+
+export type PersonalTenant = {
+  readonly tenantId: string;
+  readonly tenantSlug: string;
+  readonly principalId: string;
+  readonly tenantDomain: string;
+};
+
+export type TestAndPersistCredentialResult =
+  | { readonly kind: "invalid-credential"; readonly message: string }
+  | { readonly kind: "no-personal-bench" }
+  | ({ readonly kind: "connected" } & PersonalTenant);
+
+export type EnsureSeededResult = {
+  readonly kind: "seeded";
+  readonly workflows: string[];
+};
 
 export type CompleteCredentialResult =
   | { readonly kind: "invalid-credential"; readonly message: string }
@@ -58,16 +86,19 @@ export type CompleteCredentialResult =
       readonly workflows: string[];
     };
 
-export type CompleteCredentialArgs = {
+type CommonArgs = {
   api: ApiCall;
   cookies: string[];
   hubUrl: string;
+  pushWorkflow: WorkflowPusher;
+  log: (line: string) => void;
+};
+
+export type TestAndPersistCredentialArgs = CommonArgs & {
   userId: string;
   userEmail: string;
   provider: SupportedCredentialProvider;
   apiKey: string;
-  pushWorkflow: WorkflowPusher;
-  log: (line: string) => void;
   /**
    * Free-form data stored on the credential's `metadata` field — the
    * extension point an OAuth connect flow's token expiry lives in (see
@@ -79,47 +110,99 @@ export type CompleteCredentialArgs = {
     args: TestProviderCredentialArgs,
   ) => ReturnType<typeof testProviderCredential>;
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
+};
+
+export type EnsureSeededArgs = CommonArgs & {
+  tenant: PersonalTenant;
+  provider: SupportedCredentialProvider;
+  apiKey: string;
   seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
 };
 
-async function findPersonalTenant(
+export type CompleteCredentialArgs = CommonArgs & {
+  userId: string;
+  userEmail: string;
+  provider: SupportedCredentialProvider;
+  apiKey: string;
+  credentialMetadata?: Record<string, unknown>;
+  testCredential?: (
+    args: TestProviderCredentialArgs,
+  ) => ReturnType<typeof testProviderCredential>;
+  seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
+  seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
+};
+
+export async function findPersonalTenant(
   api: ApiCall,
   cookies: string[],
   expectedSlug: string,
-): Promise<
-  { tenantId: string; tenantSlug: string; principalId: string } | undefined
-> {
+): Promise<PersonalTenant | undefined> {
   const response = await api("GET", "/api/me/principals", undefined, cookies);
   const summary = parseAs(
     paginatedSchema(PrincipalSummary),
     response.data,
     "principals response",
   );
-  return summary.data
-    .map((p) => ({
-      tenantId: p.tenantId,
-      tenantSlug: p.tenantSlug,
-      principalId: p.principalId,
-    }))
-    .find((p) => p.tenantSlug === expectedSlug);
+  const own = summary.data.find((p) => p.tenantSlug === expectedSlug);
+  if (!own) return undefined;
+
+  const tenantResponse = await api(
+    "GET",
+    `/api/tenants/${own.tenantId}`,
+    undefined,
+    cookies,
+  );
+  const tenant = parseAs(
+    TenantResponse,
+    tenantResponse.data,
+    "tenant response",
+  );
+  return {
+    tenantId: own.tenantId,
+    tenantSlug: own.tenantSlug,
+    principalId: own.principalId,
+    tenantDomain: tenant.domain,
+  };
+}
+
+/** The `ModelSource` `ensureSeeded` deploys every default workflow
+ * against: the connected provider's own curated default model
+ * (`CATALOG_SEEDS`), paired with the plaintext key that proved itself
+ * against that same provider. */
+export function modelSourceFor(
+  provider: SupportedCredentialProvider,
+  apiKey: string,
+): ModelSource {
+  const catalogSeed = CATALOG_SEEDS[provider];
+  const defaultModel = catalogSeed.models[0];
+  if (defaultModel === undefined) {
+    throw new Error(
+      `catalog seed for provider ${provider} has no default model`,
+    );
+  }
+  return {
+    provider: catalogSeed.provider.plugin,
+    model: defaultModel.canonicalName,
+    baseURL: catalogSeed.provider.baseURL,
+    apiKey,
+  };
 }
 
 /**
- * Proves an onboarding user's key with a real call against the provider
- * they picked, then seeds their own personal bench with it. A bad key
- * never reaches the tenant at all — the credential test runs first and
- * short-circuits everything else. The tenant's model catalog (the
- * browsable list a channel picks a model from) is planted for whichever
- * provider was connected, via that provider's curated seed in
- * `CATALOG_SEEDS` — every supported provider gets one, not just
- * Anthropic.
+ * The fast half: proves an onboarding user's key with a real call
+ * against the provider they picked, then plants it as a credential on
+ * their own personal bench, alongside that provider's curated model
+ * catalog. A bad key never reaches the tenant at all — the credential
+ * test runs first and short-circuits everything else. Never deploys a
+ * workflow — that is `ensureSeeded`'s job, deliberately kept out of this
+ * half so an OAuth callback route can run only this and redirect
+ * immediately.
  */
-export async function completeCredentialSetup(
-  args: CompleteCredentialArgs,
-): Promise<CompleteCredentialResult> {
+export async function testAndPersistCredential(
+  args: TestAndPersistCredentialArgs,
+): Promise<TestAndPersistCredentialResult> {
   const testCredential = args.testCredential ?? testProviderCredential;
   const runSeedCatalog = args.seedCatalogFn ?? seedCatalog;
-  const runSeedTenant = args.seedTenantFn ?? seedTenant;
 
   const test = await testCredential({
     provider: args.provider,
@@ -128,25 +211,13 @@ export async function completeCredentialSetup(
   if (!test.ok) return { kind: "invalid-credential", message: test.message };
 
   const expectedSlug = personalTenantSlug(args.userEmail, args.userId);
-  const own = await findPersonalTenant(args.api, args.cookies, expectedSlug);
-  if (!own) return { kind: "no-personal-bench" };
-
-  const tenantResponse = await args.api(
-    "GET",
-    `/api/tenants/${own.tenantId}`,
-    undefined,
-    args.cookies,
-  );
-  const tenant = parseAs(
-    TenantResponse,
-    tenantResponse.data,
-    "tenant response",
-  );
+  const tenant = await findPersonalTenant(args.api, args.cookies, expectedSlug);
+  if (!tenant) return { kind: "no-personal-bench" };
 
   await runSeedCatalog({
     api: args.api,
     cookies: args.cookies,
-    tenantId: own.tenantId,
+    tenantId: tenant.tenantId,
     provider: args.provider,
     apiKey: args.apiKey,
     log: args.log,
@@ -157,28 +228,32 @@ export async function completeCredentialSetup(
       : {}),
   });
 
-  const catalogSeed = CATALOG_SEEDS[args.provider];
-  const defaultModel = catalogSeed.models[0];
-  if (defaultModel === undefined) {
-    throw new Error(
-      `catalog seed for provider ${args.provider} has no default model`,
-    );
-  }
+  return { kind: "connected", ...tenant };
+}
+
+/**
+ * The slow half: deploys and — never confirms, see the module comment —
+ * every default workflow against the tenant's already-persisted
+ * credential. Safe to call more than once for the same tenant: every
+ * step it drives (`seedTenant`'s asset and deployment creation) is
+ * itself ensure-then-create, so two overlapping calls (a duplicate
+ * "finish setup" request, a retried one) never double-deploy.
+ */
+export async function ensureSeeded(
+  args: EnsureSeededArgs,
+): Promise<EnsureSeededResult> {
+  const runSeedTenant = args.seedTenantFn ?? seedTenant;
+
   await runSeedTenant({
     api: args.api,
     cookies: args.cookies,
     hubUrl: args.hubUrl,
     tenant: {
-      tenantId: own.tenantId,
-      principalId: own.principalId,
-      domain: tenant.domain,
+      tenantId: args.tenant.tenantId,
+      principalId: args.tenant.principalId,
+      domain: args.tenant.tenantDomain,
     },
-    model: {
-      provider: catalogSeed.provider.plugin,
-      model: defaultModel.canonicalName,
-      baseURL: catalogSeed.provider.baseURL,
-      apiKey: args.apiKey,
-    },
+    model: modelSourceFor(args.provider, args.apiKey),
     pushWorkflow: args.pushWorkflow,
     log: args.log,
     workflows: DEFAULT_WORKFLOWS,
@@ -187,8 +262,41 @@ export async function completeCredentialSetup(
 
   return {
     kind: "seeded",
-    tenantId: own.tenantId,
-    tenantSlug: own.tenantSlug,
     workflows: DEFAULT_WORKFLOWS.map((workflow) => workflow.assetName),
+  };
+}
+
+/**
+ * The synchronous, single-request path a pasted-key submission
+ * (`POST /complete`) still takes: fast half then slow half, back to
+ * back. Unlike an OAuth callback's redirect, a `/complete` fetch is a
+ * single explicit submit the browser does not double-fire, so there is
+ * no double-request hazard to split around here.
+ */
+export async function completeCredentialSetup(
+  args: CompleteCredentialArgs,
+): Promise<CompleteCredentialResult> {
+  const persisted = await testAndPersistCredential(args);
+  if (persisted.kind !== "connected") return persisted;
+
+  const seeded = await ensureSeeded({
+    api: args.api,
+    cookies: args.cookies,
+    hubUrl: args.hubUrl,
+    pushWorkflow: args.pushWorkflow,
+    log: args.log,
+    tenant: persisted,
+    provider: args.provider,
+    apiKey: args.apiKey,
+    ...(args.seedTenantFn !== undefined
+      ? { seedTenantFn: args.seedTenantFn }
+      : {}),
+  });
+
+  return {
+    kind: "seeded",
+    tenantId: persisted.tenantId,
+    tenantSlug: persisted.tenantSlug,
+    workflows: seeded.workflows,
   };
 }
