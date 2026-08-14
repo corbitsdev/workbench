@@ -19,6 +19,7 @@ import {
   testProviderCredential,
   type SupportedCredentialProvider,
 } from "@workbench/hub-client/credential-test";
+export type { ConnectorAuthKind, ConnectorDescriptor } from "./descriptor";
 import type { ConnectorDescriptor } from "./descriptor";
 import {
   testExaCredential,

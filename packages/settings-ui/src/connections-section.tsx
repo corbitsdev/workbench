@@ -21,9 +21,12 @@ import {
   Skeleton,
   toast,
 } from "@corbits/react-ui";
-import { connectorDescriptors } from "@workbench/connections/registry";
+import {
+  connectorDescriptors,
+  type ConnectorDescriptor,
+} from "@workbench/connections/registry";
 import { workflowDisplayName } from "@corbits/workflow-catalog";
-import { CircleAlert, Plug } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
@@ -52,11 +55,7 @@ import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 
 // `@workbench/connections/registry` is the only subpath this browser
-// bundle may import (its main export pulls in server-only hono routing);
-// the descriptor type isn't re-exported from that subpath, so it's
-// derived structurally from the one function that returns it rather than
-// reaching into an internal module path.
-type ConnectorDescriptor = ReturnType<typeof connectorDescriptors>[number];
+// bundle may import — its main export pulls in server-only hono routing.
 
 type OAuthConnectorCard = {
   readonly id: "openrouter" | "huggingface";
