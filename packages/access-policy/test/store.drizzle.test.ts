@@ -142,11 +142,39 @@ describeIfDb("createDrizzleAccessPolicyStore", () => {
       );
       expect(match?.id).toBe(invite.id);
 
-      await store.consumePendingInvite(invite.id);
+      const won = await store.consumePendingInvite(invite.id);
+      expect(won).toBe(true);
       const afterConsume = await store.findMatchingPendingInvite(
         "person@acme.example",
       );
       expect(afterConsume).toBeUndefined();
+    } finally {
+      await sql.end();
+    }
+  });
+
+  test("consumePendingInvite is atomic: two concurrent consumers of the same row, exactly one wins", async () => {
+    const sql = postgres(scratchUrl, { max: 5 });
+    try {
+      const store = createDrizzleAccessPolicyStore(drizzle(sql));
+      const invite = await store.createPendingInvite("tnt_race", {
+        matchType: "email",
+        value: "racer@acme.example",
+      });
+
+      const results = await Promise.all([
+        store.consumePendingInvite(invite.id),
+        store.consumePendingInvite(invite.id),
+        store.consumePendingInvite(invite.id),
+      ]);
+
+      expect(results.filter((won) => won)).toHaveLength(1);
+      expect(results.filter((won) => !won)).toHaveLength(2);
+
+      const rows =
+        await sql`select consumed_at from access_policy.pending_invite where id = ${invite.id}`;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.["consumed_at"]).not.toBeNull();
     } finally {
       await sql.end();
     }

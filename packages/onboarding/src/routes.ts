@@ -103,6 +103,7 @@ export type CreateOnboardingRoutesDeps = {
     store: AccessPolicyStore;
     envSignupMode: "open" | "closed";
     envAllowedDomains: readonly string[];
+    allowUnverifiedEmails: boolean;
   };
   /** Seals the OAuth connect state (PKCE verifier included) parked
    * between `/start` and `/callback`, so a hub restart in between
@@ -286,6 +287,7 @@ export function createOnboardingRoutes(
         hubUrl: deps.hubUrl,
         userId: user.id,
         userEmail: user.email,
+        userEmailVerified: user.emailVerified,
         pushWorkflow: deps.pushWorkflow,
         log: deps.log,
       };

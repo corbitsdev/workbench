@@ -51,6 +51,32 @@ via the native invite/membership path, shares a **copy-link invite**
 a whole domain) as a **pending invite** — see below — before that person
 ever logs in.
 
+**Email must be verified.** better-auth is configured without
+`requireEmailVerification`, so a freshly-registered address is not
+proof of ownership on its own. Every email-trust decision
+`@workbench/access-policy` makes — an allowed-domains match, an open-
+policy pass, a pending-invite redemption — requires
+`user.emailVerified === true`; an unverified email is denied, fail-
+closed, regardless of what the policy or env otherwise allow.
+`ALLOW_UNVERIFIED_EMAILS=1` opts out for local dev/test only, mirroring
+`ALLOW_PLAINTEXT_SECRETS` — never set it for a real deployment.
+
+**A policy row and the env switch can disagree**, and that disagreement
+is not resolved automatically: `WORKBENCH_SIGNUP` also gates the
+underlying better-auth `/sign-up/email` route directly (see
+`apps/hub/src/index.ts`'s `authHandler`), independent of anything
+`@workbench/access-policy` decides. Setting a bench's own policy to
+`selfSignup: "allowed-domains"` or `"open"` while the operator's env
+still has `WORKBENCH_SIGNUP=closed` does not open the sign-up form —
+people still cannot create a password account at all, even though the
+policy would otherwise let them join once they had one. The "Who can
+join" settings panel surfaces this with an inline notice whenever the
+policy would allow signup but the env switch is still closed, rather
+than leaving it silently broken. There is no plan to make the policy
+row flip the env switch automatically — the env switch is an operator
+deployment fact, the policy row is a per-bench product setting, and the
+mismatch is meant to be visible, not auto-resolved.
+
 ### Pending invites (the not-yet-registered-user bridge)
 
 The native invite route (`POST /tenants/:id/members/invite`) requires an
@@ -73,16 +99,29 @@ and avatar badges. See `WorkbenchIcon` in `@corbits/bench-ui`.
 
 ### Sub-workbench creation
 
-`@workbench/access-policy`'s `POST /api/tenants/:tenantId/access-policy/
-child-tenants` is the gated surface `@corbits/bench-ui`'s `createBench`
-calls whenever a `parentId` is given (a bare top-level bench still hits
-`POST /api/tenants` directly). Before ever calling the native route, it:
+**[Intx gap] CL-6041**: `POST /api/tenants` itself is ungated at the
+platform level — any authenticated caller can hit it directly with an
+arbitrary `parentId` and become owner of a child under any tenant,
+bypassing the wrapper below entirely. Filed upstream; until it lands,
+`apps/hub/src/tenant-create-guard.ts` wraps the whole hub app in a guard
+registered in front of the native route (Hono composes handlers in
+registration order, so this has to be an outer wrap, not a middleware
+added after the route already exists) — see that file's module comment.
+Every `POST /api/tenants` call, whoever originates it, is decided the
+same way:
 
-1. Reads the parent tenant's own `tenancyCreation` policy —
-   `"owners"` (default), `"owners-admins"`, or `"none"`.
-2. Reads the caller's native roles back through the native principal-
-   detail route and checks them against that mode.
-3. Only then calls `POST /api/tenants` with `parentId` set.
+- No `parentId`, or `parentId` equal to the operator tenant: the
+  signup gate (same decision as above) — this is the self-service
+  landing zone.
+- Any other `parentId`: the caller must already be a member of that
+  exact tenant, with a role its own `tenancyCreation` policy accepts —
+  `"owners"` (default), `"owners-admins"`, or `"none"`.
+
+`@workbench/access-policy`'s `POST /api/tenants/:tenantId/access-policy/
+child-tenants` is the polished UI-facing wrapper `@corbits/bench-ui`'s
+`createBench` calls whenever a `parentId` is given — it makes the same
+decision and gives a clean pre-flight 403, but the guard above is what
+actually closes the gap; the wrapper alone would not.
 
 Interchange currently does **not** validate `parentId` on POST and has
 **no** cycle constraint — see gaps below.
@@ -188,6 +227,15 @@ fork or shim inside `vendor/intx`.
    tenant is a workbench, a channel's own child tenancy, or anything
    else; workbench derives it from `channel_tenancy` plus name shape
    (see "Tenancy kind" above) until the platform exposes one.
+
+10. **[Intx gap] CL-6041 — `POST /api/tenants` has no grant/policy
+    check of its own** — any authenticated user may call it directly
+    with an arbitrary `parentId` and become owner of a freshly-minted
+    child under any tenant. Workbench closes this with an outer guard
+    in `apps/hub/src/tenant-create-guard.ts` (see "Sub-workbench
+    creation" above) rather than waiting on an upstream fix; the
+    platform should reject the request unless the caller already holds
+    a create-child grant on `parentId`.
 
 ## Roles (mirror only)
 

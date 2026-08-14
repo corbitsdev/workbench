@@ -73,6 +73,7 @@ describe("resolveAccessPolicy", () => {
 
 describe("evaluateSignupGate", () => {
   const email = "person@acme.example";
+  const verified = { emailVerified: true, allowUnverifiedEmails: false };
 
   test("rejects an unparseable email regardless of policy", () => {
     const result = evaluateSignupGate({
@@ -80,6 +81,7 @@ describe("evaluateSignupGate", () => {
       envSignupMode: "open",
       envAllowedDomains: [],
       email: "not-an-email",
+      ...verified,
     });
     expect(result).toEqual({ allowed: false, reason: "invalid_email" });
   });
@@ -90,6 +92,7 @@ describe("evaluateSignupGate", () => {
       envSignupMode: "closed",
       envAllowedDomains: [],
       email,
+      ...verified,
     });
     expect(result).toEqual({ allowed: false, reason: "signup_closed" });
   });
@@ -100,6 +103,7 @@ describe("evaluateSignupGate", () => {
       envSignupMode: "open",
       envAllowedDomains: [],
       email,
+      ...verified,
     });
     expect(result).toEqual({ allowed: true, reason: "env_open" });
   });
@@ -110,6 +114,7 @@ describe("evaluateSignupGate", () => {
       envSignupMode: "open",
       envAllowedDomains: ["other.example"],
       email,
+      ...verified,
     });
     expect(result).toEqual({ allowed: false, reason: "domain_not_allowed" });
   });
@@ -125,6 +130,7 @@ describe("evaluateSignupGate", () => {
       envSignupMode: "open",
       envAllowedDomains: [],
       email,
+      ...verified,
     });
     expect(result).toEqual({ allowed: false, reason: "signup_closed" });
   });
@@ -140,6 +146,7 @@ describe("evaluateSignupGate", () => {
       envSignupMode: "closed",
       envAllowedDomains: [],
       email,
+      ...verified,
     });
     expect(result).toEqual({ allowed: true, reason: "policy_open" });
   });
@@ -155,6 +162,7 @@ describe("evaluateSignupGate", () => {
       envSignupMode: "closed",
       envAllowedDomains: [],
       email,
+      ...verified,
     });
     expect(result).toEqual({ allowed: true, reason: "policy_domain_match" });
   });
@@ -170,8 +178,84 @@ describe("evaluateSignupGate", () => {
       envSignupMode: "open",
       envAllowedDomains: [],
       email,
+      ...verified,
     });
     expect(result).toEqual({ allowed: false, reason: "domain_not_allowed" });
+  });
+
+  test("exploit: an unverified email cannot pass an allowed-domains policy match", () => {
+    const policy: AccessPolicy = {
+      selfSignup: "allowed-domains",
+      allowedDomains: ["acme.example"],
+      tenancyCreation: "owners",
+    };
+    const result = evaluateSignupGate({
+      policy,
+      envSignupMode: "closed",
+      envAllowedDomains: [],
+      email,
+      emailVerified: false,
+      allowUnverifiedEmails: false,
+    });
+    expect(result).toEqual({ allowed: false, reason: "email_unverified" });
+  });
+
+  test("exploit: an unverified email cannot pass a fully open policy", () => {
+    const policy: AccessPolicy = {
+      selfSignup: "open",
+      allowedDomains: [],
+      tenancyCreation: "owners",
+    };
+    const result = evaluateSignupGate({
+      policy,
+      envSignupMode: "closed",
+      envAllowedDomains: [],
+      email,
+      emailVerified: false,
+      allowUnverifiedEmails: false,
+    });
+    expect(result).toEqual({ allowed: false, reason: "email_unverified" });
+  });
+
+  test("exploit: an unverified email cannot pass the env bootstrap", () => {
+    const result = evaluateSignupGate({
+      policy: undefined,
+      envSignupMode: "open",
+      envAllowedDomains: [],
+      email,
+      emailVerified: false,
+      allowUnverifiedEmails: false,
+    });
+    expect(result).toEqual({ allowed: false, reason: "email_unverified" });
+  });
+
+  test("the ALLOW_UNVERIFIED_EMAILS dev escape hatch restores the normal decision", () => {
+    const policy: AccessPolicy = {
+      selfSignup: "open",
+      allowedDomains: [],
+      tenancyCreation: "owners",
+    };
+    const result = evaluateSignupGate({
+      policy,
+      envSignupMode: "closed",
+      envAllowedDomains: [],
+      email,
+      emailVerified: false,
+      allowUnverifiedEmails: true,
+    });
+    expect(result).toEqual({ allowed: true, reason: "policy_open" });
+  });
+
+  test("email-verification is checked before policy, so it also fails closed for selfSignup off", () => {
+    const result = evaluateSignupGate({
+      policy: { ...DEFAULT_ACCESS_POLICY, selfSignup: "off" },
+      envSignupMode: "closed",
+      envAllowedDomains: [],
+      email,
+      emailVerified: false,
+      allowUnverifiedEmails: false,
+    });
+    expect(result).toEqual({ allowed: false, reason: "email_unverified" });
   });
 });
 

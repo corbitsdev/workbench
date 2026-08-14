@@ -53,7 +53,16 @@ export interface AccessPolicyStore {
    * standing rule and are never marked consumed by a match; only an
    * exact-email row is single-use. */
   findMatchingPendingInvite(email: string): Promise<PendingInvite | undefined>;
-  consumePendingInvite(id: string): Promise<void>;
+  /** Atomically marks an unconsumed row consumed — `UPDATE ... WHERE id
+   * = $1 AND consumed_at IS NULL RETURNING id` for the Postgres store,
+   * a single synchronous check-and-set for the in-memory one, so two
+   * concurrent redemptions of the same invite can never both win.
+   * Returns `true` for whichever caller's update actually flipped the
+   * row (this call won the race); `false` means the row was already
+   * consumed — by a concurrent caller or an earlier call — and the
+   * caller must treat that exactly like "no invite" rather than
+   * proceeding to redeem it again. */
+  consumePendingInvite(id: string): Promise<boolean>;
 }
 
 type PendingInviteDbRow = typeof pendingInvite.$inferSelect;
@@ -211,10 +220,17 @@ export function createDrizzleAccessPolicyStore<
     },
 
     async consumePendingInvite(id) {
-      await db
+      // A single statement: Postgres row-locking during the UPDATE
+      // serializes concurrent attempts on the same row, so exactly one
+      // concurrent call sees `consumed_at IS NULL` still true and gets
+      // a row back; every other one — whether racing in true parallel
+      // or arriving after — matches zero rows and gets `false`.
+      const [updated] = await db
         .update(pendingInvite)
         .set({ consumedAt: new Date() })
-        .where(eq(pendingInvite.id, id));
+        .where(and(eq(pendingInvite.id, id), isNull(pendingInvite.consumedAt)))
+        .returning({ id: pendingInvite.id });
+      return updated !== undefined;
     },
   };
 }
@@ -297,10 +313,17 @@ export function createInMemoryAccessPolicyStore(): AccessPolicyStore {
     },
 
     async consumePendingInvite(id) {
+      // No `await` between the read and the write below: this function
+      // runs to completion synchronously once started, so two calls
+      // made "concurrently" (e.g. via Promise.all) never interleave —
+      // the same atomicity the real store gets from a single UPDATE
+      // statement and Postgres row locking.
       const invite = invites.get(id);
-      if (invite !== undefined) {
-        invites.set(id, { ...invite, consumedAt: new Date() });
+      if (invite === undefined || invite.consumedAt !== undefined) {
+        return false;
       }
+      invites.set(id, { ...invite, consumedAt: new Date() });
+      return true;
     },
   };
 }

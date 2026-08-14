@@ -131,6 +131,7 @@ import {
   createAccessPolicyRoutes,
   createDrizzleAccessPolicyStore,
 } from "@workbench/access-policy";
+import { guardedHubApp, resolveCallerRoleNames } from "./tenant-create-guard";
 import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
@@ -981,6 +982,7 @@ export async function createHub(config: HubConfig) {
       store: accessPolicyStore,
       envSignupMode: config.signupMode,
       envAllowedDomains: config.allowedEmailDomains,
+      allowUnverifiedEmails: config.allowUnverifiedEmails,
     },
   };
   if (config.operatorTenantId !== undefined)
@@ -1077,8 +1079,38 @@ export async function createHub(config: HubConfig) {
   );
 
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
+
+  // [Intx gap] CL-6041: the native POST /api/tenants route is ungated —
+  // wrap the fully-built app in a guard that enforces
+  // @workbench/access-policy in front of it. See
+  // ./tenant-create-guard.ts's module comment for why this has to be an
+  // outer wrap rather than an `app.use()` added here: the native route
+  // is already registered by the time `createApp()` returns above, and
+  // Hono composes handlers in registration order.
+  const guardedApp = guardedHubApp(app, {
+    store: accessPolicyStore,
+    resolveCallerRoleNames: (tenantId, userId) =>
+      resolveCallerRoleNames(db, tenantId, userId),
+    envSignupMode: config.signupMode,
+    envAllowedDomains: config.allowedEmailDomains,
+    allowUnverifiedEmails: config.allowUnverifiedEmails,
+    getSessionUser: async (headers) => {
+      const result = await auth.api.getSession({ headers });
+      return result
+        ? {
+            id: result.user.id,
+            email: result.user.email,
+            emailVerified: result.user.emailVerified,
+          }
+        : undefined;
+    },
+    ...(config.operatorTenantId !== undefined
+      ? { operatorTenantId: config.operatorTenantId }
+      : {}),
+  });
+
   return {
-    app,
+    app: guardedApp,
     db,
     close: async () => {
       chatOrchestrator.dispose();

@@ -28,6 +28,7 @@ const config: HubConfig = {
   signupMode: "closed",
   allowedEmailDomains: [],
   allowPlaintextSecrets: true,
+  allowUnverifiedEmails: true,
 };
 
 const closers: (() => Promise<void>)[] = [];

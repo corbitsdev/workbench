@@ -133,6 +133,8 @@ export const SETTINGS_STRINGS = {
   accessPolicySaveError: "Couldn't save that change — try again.",
   accessPolicyNote:
     "Closed by default: no open signup, no self-serve sub-workbenches. These settings apply to this workbench.",
+  accessPolicyEnvOverrideNotice:
+    "The operator has sign-up switched off at the server level, so people still can't create an account yet — even though this setting would otherwise allow it. Ask the operator to turn on WORKBENCH_SIGNUP.",
 
   rolesSectionTitle: "Roles",
   rolesSectionDescription: "This bench's roles and who they're assigned to.",

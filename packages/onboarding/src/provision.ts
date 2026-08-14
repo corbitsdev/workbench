@@ -79,6 +79,11 @@ export type ProvisionArgs = {
   hubUrl: string;
   userId: string;
   userEmail: string;
+  /** better-auth is configured without `requireEmailVerification` — an
+   * unverified email must never pass a domain-allowlist or redeem a
+   * pending invite meant for someone else. See
+   * `@workbench/access-policy`'s `evaluateSignupGate` doc comment. */
+  userEmailVerified: boolean;
   /** Display name for the personal bench. Required to mint: when omitted
    * (shell membership probe), returns `needs-onboarding` and creates nothing. */
   displayName?: string;
@@ -94,6 +99,9 @@ export type ProvisionArgs = {
     store: AccessPolicyStore;
     envSignupMode: "open" | "closed";
     envAllowedDomains: readonly string[];
+    /** Dev/test-only opt-out of the `userEmailVerified` requirement —
+     * mirrors `ALLOW_PLAINTEXT_SECRETS`. Never set for a real deployment. */
+    allowUnverifiedEmails: boolean;
   };
 };
 
@@ -271,6 +279,8 @@ export async function provisionPersonalTenantIfNeeded(
       api: args.api,
       cookies: args.cookies,
       email: args.userEmail,
+      emailVerified: args.userEmailVerified,
+      allowUnverifiedEmails: args.accessPolicy.allowUnverifiedEmails,
     });
     if (resolved !== undefined) return { kind: "existing-member" };
   }
@@ -288,6 +298,8 @@ export async function provisionPersonalTenantIfNeeded(
       envSignupMode: args.accessPolicy.envSignupMode,
       envAllowedDomains: args.accessPolicy.envAllowedDomains,
       email: args.userEmail,
+      emailVerified: args.userEmailVerified,
+      allowUnverifiedEmails: args.accessPolicy.allowUnverifiedEmails,
       ...(args.operatorTenantId !== undefined
         ? { operatorTenantId: args.operatorTenantId }
         : {}),

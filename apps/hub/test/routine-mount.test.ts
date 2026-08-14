@@ -31,6 +31,7 @@ const config: HubConfig = {
   // No CREDENTIAL_ENCRYPTION_KEY here: this suite never touches the
   // credential-cipher seam, so the dev opt-in keeps boot working.
   allowPlaintextSecrets: true,
+  allowUnverifiedEmails: true,
 };
 
 const closers: (() => Promise<void>)[] = [];

@@ -68,6 +68,7 @@ export function domainAllowed(
 
 export type SignupGateReason =
   | "invalid_email"
+  | "email_unverified"
   | "signup_closed"
   | "domain_not_allowed"
   | "policy_open"
@@ -88,6 +89,16 @@ export type SignupGateArgs = {
   readonly envSignupMode: "open" | "closed";
   readonly envAllowedDomains: readonly string[];
   readonly email: string;
+  /** better-auth is configured without `requireEmailVerification`, so
+   * an unverified address can claim any domain or race a pending
+   * invite meant for someone else. Every email-trust decision this
+   * gate makes requires `emailVerified` unless `allowUnverifiedEmails`
+   * opts out (dev/test only — see `ALLOW_UNVERIFIED_EMAILS`, mirroring
+   * `ALLOW_PLAINTEXT_SECRETS`). Checked before policy/env are ever
+   * consulted, so no combination of settings can allow an unverified
+   * email through. */
+  readonly emailVerified: boolean;
+  readonly allowUnverifiedEmails: boolean;
 };
 
 /**
@@ -100,6 +111,10 @@ export type SignupGateArgs = {
 export function evaluateSignupGate(args: SignupGateArgs): SignupGateResult {
   const domain = domainOf(args.email);
   if (domain === undefined) return { allowed: false, reason: "invalid_email" };
+
+  if (!args.emailVerified && !args.allowUnverifiedEmails) {
+    return { allowed: false, reason: "email_unverified" };
+  }
 
   if (args.policy !== undefined) {
     if (args.policy.selfSignup === "off") {

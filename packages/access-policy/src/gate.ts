@@ -20,6 +20,8 @@ export type SignupGateCheckArgs = {
   readonly envSignupMode: "open" | "closed";
   readonly envAllowedDomains: readonly string[];
   readonly email: string;
+  readonly emailVerified: boolean;
+  readonly allowUnverifiedEmails: boolean;
 };
 
 /**
@@ -41,6 +43,8 @@ export async function checkSignupGate(
     envSignupMode: args.envSignupMode,
     envAllowedDomains: args.envAllowedDomains,
     email: args.email,
+    emailVerified: args.emailVerified,
+    allowUnverifiedEmails: args.allowUnverifiedEmails,
   });
 }
 
@@ -58,15 +62,38 @@ export type PendingInviteResolution = {
  * this package's record of prior consent, so there is no separate
  * accept step), and consumes an exact-email match. Returns undefined
  * when nothing matches — the caller falls back to its own signup gate.
+ *
+ * Requires `emailVerified` (or the `allowUnverifiedEmails` dev escape
+ * hatch): better-auth is configured without `requireEmailVerification`,
+ * so without this check an attacker could sign up claiming someone
+ * else's address and redeem an invite meant for them. Checked before
+ * even looking the invite up, so an unverified caller learns nothing
+ * about whether a matching invite exists.
  */
 export async function resolvePendingInviteOnLogin(args: {
   store: AccessPolicyStore;
   api: ApiCall;
   cookies: string[];
   email: string;
+  emailVerified: boolean;
+  allowUnverifiedEmails: boolean;
 }): Promise<PendingInviteResolution | undefined> {
+  if (!args.emailVerified && !args.allowUnverifiedEmails) return undefined;
+
   const match = await args.store.findMatchingPendingInvite(args.email);
   if (match === undefined) return undefined;
+
+  // Consume an exact-email match BEFORE ever calling the native invite
+  // route: `consumePendingInvite` is atomic (see store.ts), so exactly
+  // one concurrent caller racing for the same invite wins this check
+  // and every other one — including a second login attempt for the
+  // same address — sees `false` and backs off here, never reaching the
+  // native route at all. A domain-wildcard match is a standing rule and
+  // is never consumed, so every matching login redeems independently.
+  if (match.matchType === "email") {
+    const won = await args.store.consumePendingInvite(match.id);
+    if (!won) return undefined;
+  }
 
   const inviteBody: { email: string; roleId?: string } = {
     email: args.email,
@@ -102,10 +129,6 @@ export async function resolvePendingInviteOnLogin(args: {
     throw new Error(
       `pending invite ${match.id} redeemed a principal but activation failed (status ${activated.status}): ${JSON.stringify(activated.data)}`,
     );
-  }
-
-  if (match.matchType === "email") {
-    await args.store.consumePendingInvite(match.id);
   }
 
   return { tenantId: match.tenantId, principalId };
