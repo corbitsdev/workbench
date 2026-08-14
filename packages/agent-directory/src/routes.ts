@@ -29,10 +29,40 @@ import {
 import type { AssetService } from "@intx/hub-sessions";
 
 import {
+  AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
+  parseAgentSkills,
   serializeAgentDefinitionWorkflow,
+  serializeAgentSkills,
 } from "./agent-workflow";
-import { CreateAgentDefinitionInput } from "./validation";
+import {
+  CreateAgentDefinitionInput,
+  UpdateAgentSkillsInput,
+} from "./validation";
+
+/** Reads a definition's attached skills back from its asset tree.
+ * A definition created before this feature existed (or one that has
+ * never had skills attached) has no `skills.json` at all — that reads
+ * as "no skills attached", not an error. Any other asset-service failure
+ * propagates. */
+async function readDefinitionSkills(
+  assetService: AssetService,
+  assetId: string,
+): Promise<readonly string[]> {
+  let bytes: Uint8Array;
+  try {
+    bytes = await assetService.readAssetBlob({
+      assetId,
+      path: AGENT_SKILLS_ASSET_PATH,
+    });
+  } catch (cause) {
+    if (cause instanceof AssetServiceError && cause.reason === "not_found") {
+      return [];
+    }
+    throw cause;
+  }
+  return parseAgentSkills(bytes);
+}
 
 export type CreateAgentDefinitionRoutesDeps = {
   db: DB["db"];
@@ -76,6 +106,8 @@ export function createAgentDefinitionRoutes({
       ...(body.model !== undefined ? { model: body.model } : {}),
     });
     const workflowJson = serializeAgentDefinitionWorkflow(definition);
+    const skills = body.skills ?? [];
+    const skillsJson = serializeAgentSkills(skills);
 
     let assetId: string;
     try {
@@ -140,7 +172,10 @@ export function createAgentDefinitionRoutes({
       ref: DEFAULT_ASSET_REF,
       principal: { kind: "hub" },
       tree: {
-        files: { "workflow.json": workflowJson },
+        files: {
+          "workflow.json": workflowJson,
+          [AGENT_SKILLS_ASSET_PATH]: skillsJson,
+        },
         message: `Define agent ${body.name}`,
       },
     });
@@ -172,10 +207,96 @@ export function createAgentDefinitionRoutes({
         status: row.status,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
+        skills,
       },
       201,
     );
   });
+
+  app.get(
+    "/skills",
+    requireGrant("workflow-definition:*", "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const idsParam = c.req.query("ids") ?? "";
+      const ids = [
+        ...new Set(
+          idsParam
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id !== ""),
+        ),
+      ];
+
+      const entries = await Promise.all(
+        ids.map(async (definitionId) => {
+          const row = await db.query.workflowDefinition.findFirst({
+            where: and(
+              eq(workflowDefinition.id, definitionId),
+              eq(workflowDefinition.tenantId, tenant.id),
+            ),
+          });
+          if (row === undefined || row.assetId === null) return null;
+          const skills = await readDefinitionSkills(assetService, row.assetId);
+          return [definitionId, skills] as const;
+        }),
+      );
+
+      const skills: Record<string, readonly string[]> = {};
+      for (const entry of entries) {
+        if (entry !== null) skills[entry[0]] = entry[1];
+      }
+      return c.json({ skills });
+    },
+  );
+
+  app.put(
+    "/:definitionId/skills",
+    requireGrant("workflow-definition:*", "update"),
+    async (c) => {
+      const body = UpdateAgentSkillsInput(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
+          errorEnvelope("bad_request", `invalid skills list: ${body.summary}`),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const definitionId = c.req.param("definitionId");
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, definitionId),
+          eq(workflowDefinition.tenantId, tenant.id),
+        ),
+      });
+      if (row === undefined || row.assetId === null) {
+        return c.json(
+          errorEnvelope(
+            "not_found",
+            `No agent definition "${definitionId}" in this workbench`,
+          ),
+          404,
+        );
+      }
+
+      await assetService.populateAsset({
+        assetId: row.assetId,
+        ref: DEFAULT_ASSET_REF,
+        principal: { kind: "hub" },
+        tree: {
+          files: {
+            [AGENT_SKILLS_ASSET_PATH]: serializeAgentSkills(body.skills),
+          },
+          message: `Update agent skills for ${row.name}`,
+        },
+      });
+
+      return c.json({ skills: body.skills });
+    },
+  );
 
   return app;
 }
