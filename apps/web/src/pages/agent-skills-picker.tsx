@@ -70,7 +70,15 @@ export function AgentSkillsPicker({
     );
   }
 
-  if (state.skills.length === 0) {
+  const visibleNames = new Set(state.skills.map((skill) => skill.name));
+  // A pin can outlive its skill's visibility — the author made it
+  // private, it was renamed, or it was discarded — leaving a name in
+  // `selected` with no matching registry entry. Render those as
+  // removable rows rather than silently dropping them, so the picker
+  // can always reach a saveable state.
+  const staleNames = selected.filter((name) => !visibleNames.has(name));
+
+  if (state.skills.length === 0 && staleNames.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
         No skills yet — create one from Settings → Skills, then attach it here.
@@ -80,6 +88,28 @@ export function AgentSkillsPicker({
 
   return (
     <div className="flex flex-col gap-2">
+      {staleNames.map((name) => {
+        const id = `${idPrefix}-skill-stale-${name}`;
+        return (
+          <div key={id} className="flex items-start gap-2 text-sm">
+            <span className="flex flex-1 flex-col">
+              <span className="font-medium">{name}</span>
+              <span className="text-xs text-danger-foreground">
+                No longer available — its author may have made it private,
+                renamed it, or discarded it.
+              </span>
+            </span>
+            <button
+              type="button"
+              className="text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              disabled={disabled}
+              onClick={() => toggle(name)}
+            >
+              Remove
+            </button>
+          </div>
+        );
+      })}
       {state.skills.map((skill) => {
         const id = `${idPrefix}-skill-${skill.name}`;
         return (

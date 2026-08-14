@@ -8,6 +8,7 @@ import {
 } from "../src/registry";
 import { createFakeSkillAccess, createFakeSkillAssets } from "./fakes";
 import type { FakeSkillAssets } from "./fakes";
+import type { SkillAccessStore } from "../src/access";
 
 const AUTHOR = { tenantId: "tenant_1", principalId: "principal_author" };
 const TEAMMATE = { tenantId: "tenant_1", principalId: "principal_teammate" };
@@ -20,14 +21,13 @@ const DRAFT_INPUT = {
 };
 
 let assets: FakeSkillAssets;
+let access: SkillAccessStore;
 let registry: SkillRegistry;
 
 beforeEach(() => {
   assets = createFakeSkillAssets();
-  registry = createSkillRegistry({
-    assets,
-    access: createFakeSkillAccess(),
-  });
+  access = createFakeSkillAccess();
+  registry = createSkillRegistry({ assets, access });
 });
 
 async function publish(scope: "private" | "tenant") {
@@ -109,6 +109,48 @@ describe("publish", () => {
     expect(registry.publishDraft(TEAMMATE, "triage", "tenant")).rejects.toThrow(
       /no pending draft/,
     );
+  });
+
+  test("retrying publish after the canonical asset exists but the draft is still pending resumes, without erroring or duplicating", async () => {
+    await registry.createDraft(AUTHOR, DRAFT_INPUT);
+    const draftRow = await assets.findByName(
+      AUTHOR.tenantId,
+      `${DRAFT_ASSET_NAME_PREFIX}${DRAFT_INPUT.name}`,
+    );
+    if (draftRow === null) throw new Error("draft row missing");
+    const draftContents = await assets.readSkillMd({
+      assetId: draftRow.id,
+      skillName: DRAFT_INPUT.name,
+    });
+    if (draftContents === null) throw new Error("draft SKILL.md missing");
+
+    // Simulate a publish that created the canonical asset and its access
+    // row, then crashed or timed out before removing the draft.
+    const published = await assets.create({
+      tenantId: AUTHOR.tenantId,
+      name: DRAFT_INPUT.name,
+      displayName: DRAFT_INPUT.name,
+      creatorPrincipalId: AUTHOR.principalId,
+    });
+    await assets.writeSkillMd({
+      assetId: published.id,
+      skillName: DRAFT_INPUT.name,
+      contents: draftContents,
+      message: `Publish ${DRAFT_INPUT.name}`,
+    });
+    await access.upsert({
+      assetId: published.id,
+      tenantId: AUTHOR.tenantId,
+      skillName: DRAFT_INPUT.name,
+      creatorPrincipalId: AUTHOR.principalId,
+      scope: "tenant",
+    });
+
+    const resumed = await registry.publishDraft(AUTHOR, "triage", "tenant");
+    expect(resumed.assetId).toBe(published.id);
+    expect(await registry.listDrafts(AUTHOR)).toHaveLength(0);
+    const names = [...assets.assets.values()].map((row) => row.name);
+    expect(names).toEqual(["triage"]);
   });
 });
 

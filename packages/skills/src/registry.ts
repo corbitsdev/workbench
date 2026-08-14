@@ -426,10 +426,31 @@ export function createSkillRegistry(
       }
       const existing = await assets.findByName(caller.tenantId, skillName);
       if (existing !== null) {
-        throw new SkillRegistryError(
-          "conflict",
-          `a skill named "${skillName}" already exists in this workbench`,
-        );
+        const existingRow = await access.get(existing.id);
+        if (existingRow === null) {
+          throw new SkillRegistryError(
+            "conflict",
+            `a skill named "${skillName}" already exists in this workbench`,
+          );
+        }
+        // The canonical asset already exists and the caller's draft of the
+        // same name is still here too: since only one draft can ever exist
+        // per name and a draft never outlives its own publish, the only way
+        // to reach this state is a prior publishDraft call that created the
+        // canonical asset and then failed or timed out before removing the
+        // draft. Resume by finishing that cleanup — never re-create or
+        // overwrite the canonical asset — so retrying a stuck publish
+        // completes instead of 409ing forever.
+        await assets.remove(draft.id);
+        const summaries = await summarize(caller, [existingRow]);
+        const summary = summaries[0];
+        if (summary === undefined) {
+          throw new SkillRegistryError(
+            "not_found",
+            `published skill "${skillName}" is not readable back`,
+          );
+        }
+        return summary;
       }
       const published = await assets.create({
         tenantId: caller.tenantId,

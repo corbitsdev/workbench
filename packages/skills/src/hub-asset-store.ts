@@ -101,7 +101,22 @@ export function createHubSkillAssetStore(
     },
 
     async remove(assetId) {
-      await db.delete(assetTable).where(eq(assetTable.id, assetId));
+      // Neither RepoStore nor AssetService expose a delete primitive, so
+      // this reaches directly into the platform's own `asset` table as an
+      // interim workaround — tracked as CL-6040 for a real upstream delete
+      // primitive. Because it's a raw delete against another package's
+      // table, guard it: exactly one row must go, or something is wrong
+      // (a bad id, or a race that already removed it) and silently
+      // succeeding on 0 or >1 rows would be worse than failing loudly.
+      const deleted = await db
+        .delete(assetTable)
+        .where(eq(assetTable.id, assetId))
+        .returning({ id: assetTable.id });
+      if (deleted.length !== 1) {
+        throw new Error(
+          `expected to delete exactly one asset row for ${assetId}, deleted ${String(deleted.length)}`,
+        );
+      }
     },
 
     async writeSkillMd(input) {

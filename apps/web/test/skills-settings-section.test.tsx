@@ -132,7 +132,7 @@ describe("SkillsSettingsSection", () => {
     expect(el.textContent).toContain("Private");
   });
 
-  test("a pending draft is shown separately with a Publish action", async () => {
+  test("a pending draft is shown separately with Publish and Discard actions", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
       [`GET /api/tenants/${TENANT}/skills/drafts`]: { drafts: [PENDING_DRAFT] },
@@ -141,6 +141,29 @@ describe("SkillsSettingsSection", () => {
     expect(el.textContent).toContain("Pending");
     expect(el.textContent).toContain("summarize");
     expect(el.textContent).toContain("Publish");
+    expect(el.textContent).toContain("Discard");
+  });
+
+  test("Discard removes the pending draft through the registry's delete endpoint", async () => {
+    stubRoutes({
+      ...EMPTY_REGISTRY,
+      [`GET /api/tenants/${TENANT}/skills/drafts`]: { drafts: [PENDING_DRAFT] },
+      [`DELETE /api/tenants/${TENANT}/skills/drafts/summarize`]: undefined,
+    });
+    const el = await mount();
+    const discard = Array.from(el.querySelectorAll("button")).find(
+      (button) => button.textContent === "Discard",
+    );
+    await act(async () => {
+      discard?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(
+      requested.some(
+        (call) =>
+          call.method === "DELETE" &&
+          call.path.endsWith("/skills/drafts/summarize"),
+      ),
+    ).toBe(true);
   });
 
   test("Publish converts the draft through the registry's publish endpoint", async () => {
@@ -250,7 +273,7 @@ describe("SkillsSettingsSection", () => {
     expect(call?.body).toEqual({ commitSha: "0123456789" });
   });
 
-  test("Install shares a private skill with the whole workbench", async () => {
+  test("Share with workbench shares a private skill with the whole workbench", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
       [`GET /api/tenants/${TENANT}/skills`]: { skills: [TRIAGE] },
@@ -262,11 +285,11 @@ describe("SkillsSettingsSection", () => {
       [`PUT /api/tenants/${TENANT}/skills/triage/scope`]: { skill: TRIAGE },
     });
     const el = await mount({ entityId: "triage" });
-    const install = Array.from(el.querySelectorAll("button")).find(
-      (button) => button.textContent === "Install",
+    const share = Array.from(el.querySelectorAll("button")).find(
+      (button) => button.textContent === "Share with workbench",
     );
     await act(async () => {
-      install?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      share?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     const call = requested.find((entry) =>
       entry.path.endsWith("/skills/triage/scope"),

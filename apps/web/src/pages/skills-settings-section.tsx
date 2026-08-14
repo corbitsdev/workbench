@@ -8,9 +8,11 @@
 // Three states a skill can be in, all visible here:
 //   pending  — a draft exists; publishing turns it into a real skill
 //   private  — published, visible only to the person who wrote it
-//   shared   — published and installed for the whole workbench
+//   shared   — published and shared with the whole workbench
 //
-// "Install" and "Uninstall" are the two directions of that last step.
+// There is no external catalog: skills are authored in this workbench.
+// "Share with workbench" and "Make private" are the two directions of
+// that visibility toggle, not an install step.
 
 import {
   Badge,
@@ -34,6 +36,7 @@ import { useCallback, useEffect, useState } from "react";
 import { consumePendingNewSkill } from "../command-palette-actions";
 import {
   createSkillDraft,
+  discardSkillDraft,
   listSkillDrafts,
   listSkills,
   listSkillVersions,
@@ -148,7 +151,7 @@ function SkillDetailView({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={shared ? "info" : "neutral"}>
-            {shared ? "Installed" : "Private"}
+            {shared ? "Shared" : "Private"}
           </Badge>
           <Button
             type="button"
@@ -165,7 +168,7 @@ function SkillDetailView({
               )
             }
           >
-            {shared ? "Uninstall" : "Install"}
+            {shared ? "Make private" : "Share with workbench"}
           </Button>
         </div>
       </header>
@@ -342,6 +345,17 @@ export function SkillsSettingsSection({
     }
   }
 
+  async function handleDiscard(name: string) {
+    if (tenantId === null) return;
+    setActionError(null);
+    try {
+      await discardSkillDraft(tenantId, name);
+      await reload();
+    } catch (cause) {
+      setActionError(messageOf(cause));
+    }
+  }
+
   const createDialog = (
     <CreateSkillDialog
       open={createOpen}
@@ -406,7 +420,7 @@ export function SkillsSettingsSection({
         <RichEmptyState
           icon={<Sparkles />}
           title="No skills yet"
-          description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent can pin and a workbench can install. Write one and publish it into this workbench's registry."
+          description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent can pin. Write one in this workbench and publish it into the registry."
           actions={[
             {
               label: "New skill",
@@ -465,13 +479,23 @@ export function SkillsSettingsSection({
                   </span>
                 }
                 meta={
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => void handlePublish(draft.name)}
-                  >
-                    Publish
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleDiscard(draft.name)}
+                    >
+                      Discard
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void handlePublish(draft.name)}
+                    >
+                      Publish
+                    </Button>
+                  </div>
                 }
               />
             ))}
@@ -505,7 +529,7 @@ export function SkillsSettingsSection({
                       : "panel-status is-muted"
                   }
                 >
-                  {skill.scope === "tenant" ? "Installed" : "Private"}
+                  {skill.scope === "tenant" ? "Shared" : "Private"}
                 </span>
               }
               onSelect={() => select(skill.name)}

@@ -168,6 +168,21 @@ export function createSkillDraft(
   }).then((page) => page.draft);
 }
 
+export function discardSkillDraft(
+  tenantId: string,
+  name: string,
+): Promise<void> {
+  return request<void>(
+    `${base(tenantId)}/drafts/${encodeURIComponent(name)}`,
+    (data): void => {
+      if (data !== undefined) {
+        throw new Error("expected an empty response body");
+      }
+    },
+    { method: "DELETE" },
+  );
+}
+
 export function publishSkillDraft(
   tenantId: string,
   name: string,
@@ -193,9 +208,9 @@ export function restoreSkillVersion(
 }
 
 /**
- * Installing a skill shares it with the whole workbench; uninstalling
- * pulls it back to its author. Both are the same one-field write, so
- * they share a call rather than two endpoints that could drift.
+ * Sharing a skill exposes it to the whole workbench; making it private
+ * again pulls it back to its author alone. Both are the same one-field
+ * write, so they share a call rather than two endpoints that could drift.
  */
 export function setSkillScope(
   tenantId: string,
