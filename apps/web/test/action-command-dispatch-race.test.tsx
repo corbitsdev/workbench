@@ -19,18 +19,18 @@ import {
   runActionCommand,
 } from "../src/command-palette-actions";
 import { SkillsSettingsSection } from "../src/pages/skills-settings-section";
-import { resetSessionSkills } from "../src/skills-session";
 import { TestQueryProvider } from "./test-query-provider";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
+const realFetch = globalThis.fetch;
 
 afterEach(() => {
   if (root) act(() => root?.unmount());
   container?.remove();
   container = null;
   root = null;
-  resetSessionSkills();
+  globalThis.fetch = realFetch;
   resetPendingDialogRequests();
 });
 
@@ -56,15 +56,28 @@ describe("runActionCommand off-route dispatch ordering", () => {
 
     // Only now (mirroring main.tsx's setState-based navigate re-rendering
     // the route switch on the next tick) does the section actually mount.
+    // The section reads the registry on mount; serve it an empty one so
+    // the test exercises the pending-flag path, not a network failure.
+    globalThis.fetch = (async (input: RequestInfo | URL) =>
+      new Response(
+        JSON.stringify(
+          String(input).endsWith("/drafts") ? { drafts: [] } : { skills: [] },
+        ),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as typeof fetch;
+
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
       root?.render(
         <TestQueryProvider>
-          <SkillsSettingsSection />
+          <SkillsSettingsSection tenantId="tenant-1" />
         </TestQueryProvider>,
       );
+    });
+    await act(async () => {
+      await Promise.resolve();
     });
 
     // The create dialog (Radix, portaled to document.body) should have

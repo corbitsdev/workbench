@@ -29,6 +29,7 @@
     "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",
     "@corbits/routines": "workspace:*",
+    "@corbits/skills": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@intx/authz": "workspace:*",
     "@intx/crypto": "workspace:*",

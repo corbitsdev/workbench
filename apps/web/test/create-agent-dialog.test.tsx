@@ -8,30 +8,44 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { CreateAgentDialog } from "../src/pages/create-agent-dialog";
-import { resetSessionSkills, type Skill } from "../src/skills-session";
+import type { SkillSummary } from "../src/skills-api";
 
 const realFetch = globalThis.fetch;
 
-const SKILL_WEB_RESEARCH: Skill = {
-  id: "skl_1",
-  name: "Web research",
+const SKILL_WEB_RESEARCH: SkillSummary = {
+  assetId: "ast_1",
+  name: "web-research",
   description: "Searches the web and summarizes findings",
-  body: "",
-  access: "Private",
-  owner: "You",
-  updatedAt: "2026-08-05T11:00:00.000Z",
-  version: "0.1.0",
-  pinnedBy: [],
-  versions: [],
-  sessionLocal: true,
+  scope: "private",
+  creatorPrincipalId: "prn_1",
+  updatedAtIso: "2026-08-05T11:00:00.000Z",
 };
 
-const SKILL_LONG_FORM: Skill = {
+const SKILL_LONG_FORM: SkillSummary = {
   ...SKILL_WEB_RESEARCH,
-  id: "skl_2",
-  name: "Long-form write",
+  assetId: "ast_2",
+  name: "long-form-write",
   description: "Drafts long-form documents",
 };
+
+/** Serves the picker's registry read; anything else falls to `onOther`. */
+function stubRegistry(
+  skills: readonly SkillSummary[],
+  onOther: (input: unknown, init?: RequestInit) => Response = () =>
+    new Response("{}", { status: 200 }),
+): void {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/skills")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ skills }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(onOther(input, init));
+  }) as typeof fetch;
+}
 
 function json(body: unknown, status = 201) {
   return new Response(JSON.stringify(body), {
@@ -44,12 +58,11 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
 beforeEach(() => {
-  resetSessionSkills([]);
+  stubRegistry([]);
 });
 
 afterEach(() => {
   globalThis.fetch = realFetch;
-  resetSessionSkills([]);
   if (root !== null) {
     act(() => root?.unmount());
     root = null;
@@ -58,11 +71,13 @@ afterEach(() => {
   container = null;
 });
 
-function mount(onCreated: (definition: { id: string }) => void = () => {}) {
+async function mount(
+  onCreated: (definition: { id: string }) => void = () => {},
+) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => {
+  await act(async () => {
     root?.render(
       <CreateAgentDialog
         open
@@ -72,6 +87,10 @@ function mount(onCreated: (definition: { id: string }) => void = () => {}) {
         onCreated={onCreated}
       />,
     );
+  });
+  // Settle the picker's registry read before any assertion.
+  await act(async () => {
+    await Promise.resolve();
   });
   return container;
 }
@@ -103,8 +122,8 @@ function fillField(id: string, value: string, textarea = false) {
 }
 
 describe("CreateAgentDialog handle auto-derive", () => {
-  test("handle slugifies from the typed name until the user edits it", () => {
-    mount();
+  test("handle slugifies from the typed name until the user edits it", async () => {
+    await mount();
     fillField("create-agent-name", "Research Buddy");
     const handleInput = document.getElementById(
       "create-agent-handle",
@@ -115,8 +134,8 @@ describe("CreateAgentDialog handle auto-derive", () => {
     expect(handleInput.value).toBe("research-buddy-two");
   });
 
-  test("once the user edits the handle directly, name changes stop overriding it", () => {
-    mount();
+  test("once the user edits the handle directly, name changes stop overriding it", async () => {
+    await mount();
     fillField("create-agent-name", "Research Buddy");
     fillField("create-agent-handle", "custom-handle");
 
@@ -129,38 +148,46 @@ describe("CreateAgentDialog handle auto-derive", () => {
 });
 
 describe("CreateAgentDialog skills picker", () => {
-  test("with no skills yet, shows the empty state instead of a checkbox list", () => {
-    mount();
+  test("with no skills yet, shows the empty state instead of a checkbox list", async () => {
+    await mount();
     expect(document.body.textContent).toContain("No skills yet");
   });
 
+  test("a registry read failure says so rather than reading as no skills", async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: { message: "hub is down" } }), {
+          status: 503,
+        }),
+      )) as unknown as typeof fetch;
+    await mount();
+    expect(document.body.textContent).toContain("Could not load skills");
+    expect(document.body.textContent).not.toContain("No skills yet");
+  });
+
   test("checking a skill attaches it, submitting sends it in the create body", async () => {
-    resetSessionSkills([SKILL_WEB_RESEARCH, SKILL_LONG_FORM]);
     const captured: { body: { skills?: readonly string[] } | null } = {
       body: null,
     };
-    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    stubRegistry([SKILL_WEB_RESEARCH, SKILL_LONG_FORM], (_input, init) => {
       captured.body = JSON.parse(String(init?.body)) as {
         skills?: readonly string[];
       };
-      void input;
-      return Promise.resolve(
-        json({
-          id: "wfd_new",
-          tenantId: "tenant_1",
-          name: "Research Buddy",
-          description: null,
-          currentVersion: "1",
-          status: "deployed",
-          createdAt: "2026-08-05T11:00:00.000Z",
-          updatedAt: "2026-08-05T11:00:00.000Z",
-          skills: ["Web research"],
-        }),
-      );
-    }) as typeof fetch;
+      return json({
+        id: "wfd_new",
+        tenantId: "tenant_1",
+        name: "Research Buddy",
+        description: null,
+        currentVersion: "1",
+        status: "deployed",
+        createdAt: "2026-08-05T11:00:00.000Z",
+        updatedAt: "2026-08-05T11:00:00.000Z",
+        skills: ["web-research"],
+      });
+    });
 
     let created: { id: string } | null = null;
-    mount((definition) => {
+    await mount((definition) => {
       created = definition;
     });
 
@@ -175,7 +202,7 @@ describe("CreateAgentDialog skills picker", () => {
     const checkbox = [
       ...document.body.querySelectorAll('input[type="checkbox"]'),
     ].find((input) =>
-      (input.closest("label")?.textContent ?? "").includes("Web research"),
+      (input.closest("label")?.textContent ?? "").includes("web-research"),
     ) as HTMLInputElement | undefined;
     expect(checkbox).not.toBeUndefined();
     act(() => {
@@ -191,13 +218,13 @@ describe("CreateAgentDialog skills picker", () => {
       await Promise.resolve();
     });
 
-    expect(captured.body?.skills).toEqual(["Web research"]);
+    expect(captured.body?.skills).toEqual(["web-research"]);
     expect((created as { id: string } | null)?.id).toBe("wfd_new");
   });
 
-  test("unchecking a picked skill removes it before submit", () => {
-    resetSessionSkills([SKILL_WEB_RESEARCH]);
-    mount();
+  test("unchecking a picked skill removes it before submit", async () => {
+    stubRegistry([SKILL_WEB_RESEARCH]);
+    await mount();
     fillField("create-agent-name", "Research Buddy");
 
     const checkbox = document.body.querySelector(

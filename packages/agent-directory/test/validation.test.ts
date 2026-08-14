@@ -85,12 +85,20 @@ test("an empty skills list is accepted (clears attachments)", () => {
   expect(result instanceof type.errors).toBe(false);
 });
 
-test("a skill name that matches today's session-skill free-text names is accepted", () => {
+test("a registry skill name is accepted", () => {
   const result = CreateAgentDefinitionInput({
     ...VALID,
-    skills: ["Web research", "Long-form write"],
+    skills: ["web-research", "long-form-write"],
   });
   expect(result instanceof type.errors).toBe(false);
+});
+
+test("a free-text skill name no registry skill could carry is rejected", () => {
+  const result = CreateAgentDefinitionInput({
+    ...VALID,
+    skills: ["Web research"],
+  });
+  expect(result instanceof type.errors).toBe(true);
 });
 
 test("a blank skill name is rejected", () => {
@@ -104,7 +112,7 @@ test("a blank skill name is rejected", () => {
 test("an overlong skill name is rejected", () => {
   const result = CreateAgentDefinitionInput({
     ...VALID,
-    skills: ["x".repeat(101)],
+    skills: ["x".repeat(65)],
   });
   expect(result instanceof type.errors).toBe(true);
 });

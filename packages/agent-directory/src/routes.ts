@@ -29,9 +29,15 @@ import {
 import type { AssetService } from "@intx/hub-sessions";
 
 import {
+  SkillRegistryError,
+  type PinnedSkillIndexEntry,
+} from "@corbits/skills";
+
+import {
   AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
   parseAgentSkills,
+  reindexPinnedSkills,
   serializeAgentDefinitionWorkflow,
   serializeAgentSkills,
 } from "./agent-workflow";
@@ -64,11 +70,29 @@ async function readDefinitionSkills(
   return parseAgentSkills(bytes);
 }
 
+/**
+ * Resolves the pinned skill names a definition carries into the
+ * name-and-description index its system prompt advertises. Required, not
+ * optional: a definition pushed without a resolved index would carry
+ * pins its agent has no way to discover.
+ */
+export type PinnedSkillIndexResolver = {
+  resolve(
+    tenantId: string,
+    principalId: string,
+    names: readonly string[],
+  ): Promise<readonly PinnedSkillIndexEntry[]>;
+};
+
 export type CreateAgentDefinitionRoutesDeps = {
   db: DB["db"];
   assetService: AssetService;
+  skillIndex: PinnedSkillIndexResolver;
   requireGrant: RequireGrant;
 };
+
+/** Where a definition's serialized `WorkflowDefinition` lives in its asset tree. */
+const AGENT_DEFINITION_ASSET_PATH = "workflow.json";
 
 function errorEnvelope(code: string, message: string) {
   return { error: { code, message } };
@@ -77,9 +101,20 @@ function errorEnvelope(code: string, message: string) {
 export function createAgentDefinitionRoutes({
   db,
   assetService,
+  skillIndex,
   requireGrant,
 }: CreateAgentDefinitionRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
+
+  // Pinning a name the registry cannot resolve is a bad request from the
+  // person editing the agent, not a server fault — surface it as one
+  // rather than letting it read as a 500.
+  app.onError((err, c) => {
+    if (err instanceof SkillRegistryError) {
+      return c.json(errorEnvelope("bad_request", err.message), 400);
+    }
+    throw err;
+  });
 
   app.post("/", requireGrant("workflow-definition:*", "create"), async (c) => {
     const body = CreateAgentDefinitionInput(
@@ -98,6 +133,7 @@ export function createAgentDefinitionRoutes({
     const tenant = c.get("tenant");
     const principal = c.get("principal");
 
+    const skills = body.skills ?? [];
     const definition = buildAgentDefinitionWorkflow({
       handle: body.handle,
       tenantDomain: tenant.domain,
@@ -105,8 +141,14 @@ export function createAgentDefinitionRoutes({
       systemPrompt: body.systemPrompt,
       ...(body.model !== undefined ? { model: body.model } : {}),
     });
-    const workflowJson = serializeAgentDefinitionWorkflow(definition);
-    const skills = body.skills ?? [];
+    // The definition's own system prompt is what the author typed; the
+    // pinned-skills index is appended on the way to the asset so the
+    // stored prompt always describes exactly the skills the definition
+    // currently pins.
+    const workflowJson = reindexPinnedSkills(
+      serializeAgentDefinitionWorkflow(definition),
+      await skillIndex.resolve(tenant.id, principal.id, skills),
+    );
     const skillsJson = serializeAgentSkills(skills);
 
     let assetId: string;
@@ -173,7 +215,7 @@ export function createAgentDefinitionRoutes({
       principal: { kind: "hub" },
       tree: {
         files: {
-          "workflow.json": workflowJson,
+          [AGENT_DEFINITION_ASSET_PATH]: workflowJson,
           [AGENT_SKILLS_ASSET_PATH]: skillsJson,
         },
         message: `Define agent ${body.name}`,
@@ -282,12 +324,24 @@ export function createAgentDefinitionRoutes({
         );
       }
 
+      const principal = c.get("principal");
+      const workflowJson = new TextDecoder().decode(
+        await assetService.readAssetBlob({
+          assetId: row.assetId,
+          path: AGENT_DEFINITION_ASSET_PATH,
+        }),
+      );
+
       await assetService.populateAsset({
         assetId: row.assetId,
         ref: DEFAULT_ASSET_REF,
         principal: { kind: "hub" },
         tree: {
           files: {
+            [AGENT_DEFINITION_ASSET_PATH]: reindexPinnedSkills(
+              workflowJson,
+              await skillIndex.resolve(tenant.id, principal.id, body.skills),
+            ),
             [AGENT_SKILLS_ASSET_PATH]: serializeAgentSkills(body.skills),
           },
           message: `Update agent skills for ${row.name}`,

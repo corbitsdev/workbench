@@ -85,8 +85,8 @@ export type ActionCommand = {
 
 /** Static catalog: id, title, subtitle. Matches the mock's action-command
  * titles, with "Install skill" relabeled "New skill" to match the shell's
- * current skills model (session-local drafts, not an install-from-catalog
- * flow — see `skills-session.ts`). */
+ * current skills model: a person authors a skill into the workbench's own
+ * registry (`skills-api.ts`) rather than installing one from a catalog. */
 export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "new-channel",

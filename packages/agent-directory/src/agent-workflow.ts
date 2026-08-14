@@ -14,6 +14,10 @@
 import { defineAgent } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import {
+  withAvailableSkills,
+  type PinnedSkillIndexEntry,
+} from "@corbits/skills";
 import { type } from "arktype";
 
 export const AGENT_DEFINITION_STEP_ID = "agent";
@@ -32,6 +36,86 @@ export const AGENT_DEFINITION_STEP_ID = "agent";
 export const AGENT_SKILLS_ASSET_PATH = "skills.json";
 
 const SkillsFile = type({ skills: "string[]" });
+
+/**
+ * The tool package that turns a name in the `<available_skills>` index
+ * into an actual skill body at run time. A definition that pins skills
+ * must pin this too, or its prompt would tell the model to call a
+ * `load_skill` tool that does not exist.
+ */
+export const SKILLS_TOOL_PACKAGE_PIN = {
+  name: "@corbits/tools-skills",
+  version: "0.0.1",
+} as const;
+
+/**
+ * The parts of a serialized definition the pinned-skills reindex
+ * rewrites: every step agent's system prompt and its tool-package pins.
+ * Undeclared keys pass through, so re-serializing a validated definition
+ * preserves the trigger, the step timeouts, the inference sources, and
+ * everything else the builder put there.
+ */
+const DefinitionWithAgentSteps = type({
+  steps: {
+    "[string]": type({
+      agent: type({
+        systemPrompt: "string",
+        "toolPackagePins?": type({
+          name: "string",
+          version: "string",
+        })
+          .onUndeclaredKey("ignore")
+          .array(),
+      }).onUndeclaredKey("ignore"),
+    }).onUndeclaredKey("ignore"),
+  },
+}).onUndeclaredKey("ignore");
+
+type AgentToolPackagePins = NonNullable<
+  (typeof DefinitionWithAgentSteps.infer.steps)[string]["agent"]["toolPackagePins"]
+>;
+
+/** The pins a step agent should carry for exactly `entries`: the skills
+ * bundle present iff something is pinned, every other pin untouched. */
+function withSkillsToolPin(
+  existing: AgentToolPackagePins,
+  pinsSkills: boolean,
+): AgentToolPackagePins {
+  const others = existing.filter(
+    (pin) => pin.name !== SKILLS_TOOL_PACKAGE_PIN.name,
+  );
+  return pinsSkills ? [...others, { ...SKILLS_TOOL_PACKAGE_PIN }] : others;
+}
+
+/**
+ * Rewrites every step agent so it advertises exactly `entries`: an
+ * `<available_skills>` index in the system prompt, and the skills tool
+ * bundle among its tool-package pins. Replaces whatever a previous push
+ * left, so re-pinning is idempotent and unpinning removes both.
+ */
+export function reindexPinnedSkills(
+  workflowJson: string,
+  entries: readonly PinnedSkillIndexEntry[],
+): string {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry step agents to index skills into: ${definition.summary}`,
+    );
+  }
+  for (const step of Object.values(definition.steps)) {
+    step.agent.systemPrompt = withAvailableSkills(
+      step.agent.systemPrompt,
+      entries,
+    );
+    step.agent.toolPackagePins = withSkillsToolPin(
+      step.agent.toolPackagePins ?? [],
+      entries.length > 0,
+    );
+  }
+  return JSON.stringify(definition);
+}
 
 /** Serializes an agent definition's attached skill names to the JSON
  * `AGENT_SKILLS_ASSET_PATH` carries in the asset tree. */

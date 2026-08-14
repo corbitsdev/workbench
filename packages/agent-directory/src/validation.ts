@@ -2,6 +2,7 @@
 // boundary before anything touches the asset service.
 
 import { type } from "arktype";
+import { skillNameSchema } from "@corbits/skills";
 
 // Mirrors `@intx/hub-sessions`' `ASSET_NAME_PATTERN` exactly (not
 // imported: the constant is internal to that package). A definition's
@@ -23,16 +24,13 @@ function boundedNonBlankString(max: number) {
   });
 }
 
-// Not constrained to `@intx/hub-sessions`' skill-kind frontmatter name
-// pattern (kebab-case, `<=64` chars): there is no hub skill registry a
-// person can attach from yet (see `../../../apps/web/src/skills-session.ts`),
-// so a "skill" a definition carries today is whatever free-text name that
-// session-local registry gave it. Once a real skill registry exists this
-// should tighten to match its name rule — tracked as a known follow-up,
-// not silently worked around.
-const SkillName = boundedNonBlankString(100);
-
-const SkillNameArray = SkillName.array().narrow((skills, ctx) => {
+// A pinned skill names a row in the tenant's skill registry
+// (`@corbits/skills`), so it is bound by exactly the registry's own name
+// rule — the same kebab-case, `<=64`-char shape the hub's `skill` kind
+// handler requires of a SKILL.md's frontmatter. A name outside it could
+// never resolve to a real skill, so rejecting it here beats storing a
+// pin that silently indexes nothing.
+const SkillNameArray = skillNameSchema.array().narrow((skills, ctx) => {
   const seen = new Set<string>();
   for (const name of skills) {
     if (seen.has(name))
