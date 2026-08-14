@@ -32,6 +32,8 @@ const migrationNames = [
   "0009_channel_threads",
   "0010_block_responses",
   "0011_channel_threads_parent_thread_id",
+  "0012_message_reactions",
+  "0013_pinned_messages",
 ];
 
 describeIfDb("applyChatMigrations", () => {
@@ -83,7 +85,7 @@ describeIfDb("applyChatMigrations", () => {
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'chat' AND table_name IN ` +
-          `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy', 'chat_bench_settings', 'channel_threads', 'channel_thread_messages')`,
+          `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy', 'chat_bench_settings', 'channel_threads', 'channel_thread_messages', 'message_reactions', 'pinned_messages')`,
       );
       expect(tables.map((row) => String(row["table_name"])).sort()).toEqual(
         [
@@ -94,6 +96,8 @@ describeIfDb("applyChatMigrations", () => {
           "channel_thread_messages",
           "channel_threads",
           "chat_bench_settings",
+          "message_reactions",
+          "pinned_messages",
         ].sort(),
       );
 
@@ -102,7 +106,7 @@ describeIfDb("applyChatMigrations", () => {
       const publicTables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'public' AND table_name IN ` +
-          `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy', 'chat_bench_settings', 'channel_threads', 'channel_thread_messages', 'block_responses')`,
+          `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy', 'chat_bench_settings', 'channel_threads', 'channel_thread_messages', 'block_responses', 'message_reactions', 'pinned_messages')`,
       );
       expect(publicTables).toHaveLength(0);
 
@@ -114,6 +118,23 @@ describeIfDb("applyChatMigrations", () => {
       );
       expect(indexes.map((row) => String(row["indexname"]))).toContain(
         "channel_tenancy_parent_tenant_id_idx",
+      );
+
+      // The batched per-message reaction/pin reads on `GET /messages`
+      // filter on (tenant, channel[, message]) — without these, both
+      // become sequential scans on every page load.
+      const reactionIndexes = await sql.unsafe(
+        `SELECT indexname FROM pg_indexes WHERE schemaname = 'chat' AND tablename = 'message_reactions'`,
+      );
+      expect(reactionIndexes.map((row) => String(row["indexname"]))).toContain(
+        "message_reactions_message_idx",
+      );
+
+      const pinIndexes = await sql.unsafe(
+        `SELECT indexname FROM pg_indexes WHERE schemaname = 'chat' AND tablename = 'pinned_messages'`,
+      );
+      expect(pinIndexes.map((row) => String(row["indexname"]))).toContain(
+        "pinned_messages_channel_idx",
       );
     } finally {
       await sql.end();

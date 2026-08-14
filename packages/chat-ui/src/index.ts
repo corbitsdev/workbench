@@ -1,8 +1,10 @@
 export { ChatWorkspace } from "./chat-workspace";
 export type { TenantResolution, PresenceMember } from "./chat-workspace";
 
-export { ChannelTimeline } from "./timeline";
-export type { CurrentUser } from "./timeline";
+export { ChannelTimeline, messageDomId } from "./timeline";
+export type { CurrentUser, ReactionActions, PinActions } from "./timeline";
+
+export { PinnedStrip } from "./pinned-strip";
 export {
   Composer,
   draftAfterSend,
@@ -107,6 +109,11 @@ export {
   getBlockResponses,
   submitPollResponse,
   submitFormResponse,
+  REACTION_EMOJI,
+  toggleReaction,
+  pinMessage,
+  unpinMessage,
+  listPinnedMessages,
 } from "./api";
 export type {
   Channel,
@@ -126,6 +133,10 @@ export type {
   BenchChatSettingsPatch,
   BlockResponses,
   BlockResponsePayload as BlockResponsePayloadWire,
+  ReactionEmoji,
+  ReactionSummary,
+  Pinned,
+  PinnedMessage,
 } from "./api";
 export { ChannelSettingsSurface } from "./channel-settings";
 export {

@@ -25,12 +25,24 @@ class StubEventSource {
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
   readyState = StubEventSource.CONNECTING;
+  listeners = new Map<string, (message: MessageEvent) => void>();
 
   constructor(readonly url: string) {
     StubEventSource.instances.push(this);
   }
 
-  addEventListener() {}
+  addEventListener(
+    eventType: string,
+    listener: (message: MessageEvent) => void,
+  ) {
+    this.listeners.set(eventType, listener);
+  }
+
+  emit(eventType: string, data: unknown) {
+    this.listeners.get(eventType)?.({
+      data: JSON.stringify(data),
+    } as MessageEvent);
+  }
 
   close() {
     this.readyState = StubEventSource.CLOSED;
@@ -88,6 +100,7 @@ function mount(intervals: {
       return instance;
     },
     pollCount: () => pollCount,
+    events: () => events,
     settle: (ms: number) => act(() => sleep(ms)),
     unmount: () => act(() => root.unmount()),
   };
@@ -160,6 +173,26 @@ describe("useChannelStream (reconnect + poll wiring)", () => {
     window.dispatchEvent(new Event("online"));
 
     expect(StubEventSource.instances.length).toBe(liveCount);
+    harness.unmount();
+  });
+
+  test("chat.reaction and chat.pin events are forwarded to the caller — live, not just via poll", async () => {
+    const harness = mount({
+      pollMs: 1000,
+      baseDelayMs: 5000,
+      maxDelayMs: 5000,
+    });
+    harness.latest().open();
+
+    harness
+      .latest()
+      .emit("chat.reaction", { messageId: "m1", emoji: "👍", added: true });
+    harness.latest().emit("chat.pin", { messageId: "m1", pinned: true });
+
+    expect(harness.events()).toEqual([
+      ["chat.reaction", { messageId: "m1", emoji: "👍", added: true }],
+      ["chat.pin", { messageId: "m1", pinned: true }],
+    ]);
     harness.unmount();
   });
 });

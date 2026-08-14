@@ -30,6 +30,13 @@ import {
   type BlockResponsePayload,
   type BlockResponseStore,
 } from "./block-responses";
+import {
+  aggregateReactionsByMessage,
+  type ReactionStore,
+  type ReactionSummary,
+} from "./reactions";
+import { isKnownReactionEmoji } from "./reaction-emoji";
+import type { PinRow, PinStore } from "./pins";
 import { presetForKind } from "./kinds";
 import { localPartOf } from "./agent-address";
 import {
@@ -145,6 +152,19 @@ export type CreateChatRoutesDeps = {
    * `threads`.
    */
   blockResponses?: BlockResponseStore;
+  /**
+   * Message reaction storage — see `./reactions.ts`. Omitted entirely,
+   * the toggle route 404s and every message page's `reactions` field is
+   * simply absent, the same "no store, no feature" contract
+   * `blockResponses` follows.
+   */
+  reactions?: ReactionStore;
+  /**
+   * Pinned-message storage — see `./pins.ts`. Omitted entirely, the
+   * pin/unpin/list-pins routes 404 and every message page's `pinned`
+   * field is simply absent.
+   */
+  pins?: PinStore;
   /**
    * The `/name args` and `@name args` command registry — see
    * `@corbits/commands`. Omitted entirely, a message is always posted
@@ -299,6 +319,87 @@ async function channelInTenant(
     return true;
   }
   return store.hasLaunchedInstance(tenantId, channelId);
+}
+
+/**
+ * True when `messageId` names a real message in the channel's own
+ * mail — the guard both write-side reaction/pin routes need before
+ * touching storage. Without it, a `messageId` that was never sent (a
+ * typo, a stale client, a probe) still 200s and writes a permanent row
+ * keyed to nothing: invisible (no message ever renders it) and
+ * unremovable (no UI affordance exists for a message that isn't
+ * there). Mirrors the same single-page `listMail` + id lookup
+ * `GET /channels/:id/pins` and the thread-messages route already use
+ * to resolve a message id against the channel's mailbox.
+ */
+async function messageExistsInChannel(
+  platform: ChatPlatform,
+  tenantId: string,
+  channelId: string,
+  messageId: string,
+): Promise<boolean> {
+  const listed = await platform.listMail({ tenantId, channelId });
+  return listed.items.some((item) => item.id === messageId);
+}
+
+const ToggleReactionBody = type({ emoji: "string" });
+
+type WireMessageItem = {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly sender: unknown;
+  readonly parts: unknown;
+};
+
+/**
+ * Attaches `reactions` and `pinned` onto a page of message items, each
+ * in one batched query over the whole page rather than one round trip
+ * per message — "extend, don't fork" the wire type the timeline
+ * already consumes. Both fields are entirely absent (not `[]`/`false`)
+ * when the corresponding store isn't injected, matching how
+ * `blockResponses`'s absence 404s rather than silently no-opping: a
+ * host that never wired reactions/pins gets a wire shape with no trace
+ * of either feature, not a feature that always answers empty.
+ */
+async function enrichWithReactionsAndPins<T extends WireMessageItem>(
+  deps: CreateChatRoutesDeps,
+  tenantId: string,
+  channelId: string,
+  principalId: string,
+  items: readonly T[],
+): Promise<
+  readonly (T & { reactions?: readonly ReactionSummary[]; pinned?: boolean })[]
+> {
+  const reactionsByMessage =
+    deps.reactions !== undefined
+      ? aggregateReactionsByMessage(
+          await deps.reactions.listReactionsForMessages(
+            tenantId,
+            channelId,
+            items.map((item) => item.id),
+          ),
+          principalId,
+        )
+      : undefined;
+  const pinnedIds =
+    deps.pins !== undefined
+      ? new Set(
+          (await deps.pins.listPins(tenantId, channelId)).map(
+            (row) => row.messageId,
+          ),
+        )
+      : undefined;
+
+  if (reactionsByMessage === undefined && pinnedIds === undefined) {
+    return items;
+  }
+  return items.map((item) => ({
+    ...item,
+    ...(reactionsByMessage !== undefined
+      ? { reactions: reactionsByMessage.get(item.id) ?? [] }
+      : {}),
+    ...(pinnedIds !== undefined ? { pinned: pinnedIds.has(item.id) } : {}),
+  }));
 }
 
 /**
@@ -881,6 +982,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
+      const principal = c.get("principal");
       const channelId = c.req.param("id");
       const threadId = c.req.param("threadId");
       if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
@@ -926,7 +1028,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           title: thread.title,
           createdAt: thread.createdAt.toISOString(),
         },
-        items,
+        items: await enrichWithReactionsAndPins(
+          deps,
+          tenant.id,
+          channelId,
+          principal.id,
+          items,
+        ),
       });
     },
   );
@@ -977,6 +1085,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
+      const principal = c.get("principal");
       const channelId = c.req.param("id");
       const cursor = c.req.query("cursor");
 
@@ -1002,7 +1111,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
 
       return c.json({
-        items,
+        items: await enrichWithReactionsAndPins(
+          deps,
+          tenant.id,
+          channelId,
+          principal.id,
+          items,
+        ),
         ...(listed.nextCursor !== undefined
           ? { nextCursor: listed.nextCursor }
           : {}),
@@ -1268,6 +1383,214 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         rows.find((row) => row.principalId === principal.id)?.payload ?? null;
 
       return c.json({ tally, total, own });
+    },
+  );
+
+  app.post(
+    "/channels/:id/messages/:messageId/reactions/toggle",
+    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    async (c) => {
+      if (deps.reactions === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", "reactions not available"),
+          404,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const channelId = c.req.param("id");
+      const messageId = c.req.param("messageId");
+
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+      if (
+        !(await messageExistsInChannel(
+          deps.platform,
+          tenant.id,
+          channelId,
+          messageId,
+        ))
+      ) {
+        return c.json(ErrorEnvelope("not_found", "message not found"), 404);
+      }
+
+      const body = ToggleReactionBody(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `invalid reaction body: ${body.summary}`,
+          ),
+          400,
+        );
+      }
+      if (!isKnownReactionEmoji(body.emoji)) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `${JSON.stringify(body.emoji)} is not a supported reaction`,
+          ),
+          400,
+        );
+      }
+
+      const { added } = await deps.reactions.toggleReaction({
+        tenantId: tenant.id,
+        channelId,
+        messageId,
+        emoji: body.emoji,
+        principalId: principal.id,
+      });
+
+      const rows = await deps.reactions.listReactionsForMessages(
+        tenant.id,
+        channelId,
+        [messageId],
+      );
+      const count = rows.filter((row) => row.emoji === body.emoji).length;
+
+      publish(channelId, {
+        type: "chat.reaction",
+        data: {
+          messageId,
+          emoji: body.emoji,
+          principalId: principal.id,
+          added,
+        },
+      });
+
+      return c.json({ emoji: body.emoji, count, reactedByMe: added });
+    },
+  );
+
+  app.post(
+    "/channels/:id/messages/:messageId/pin",
+    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    async (c) => {
+      if (deps.pins === undefined) {
+        return c.json(ErrorEnvelope("not_found", "pins not available"), 404);
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const channelId = c.req.param("id");
+      const messageId = c.req.param("messageId");
+
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+      if (
+        !(await messageExistsInChannel(
+          deps.platform,
+          tenant.id,
+          channelId,
+          messageId,
+        ))
+      ) {
+        return c.json(ErrorEnvelope("not_found", "message not found"), 404);
+      }
+
+      const row = await deps.pins.pinMessage({
+        tenantId: tenant.id,
+        channelId,
+        messageId,
+        pinnedBy: principal.id,
+      });
+
+      publish(channelId, {
+        type: "chat.pin",
+        data: {
+          messageId,
+          pinned: true,
+          pinnedBy: row.pinnedBy,
+          pinnedAt: row.pinnedAt.toISOString(),
+        },
+      });
+
+      return c.json({
+        messageId,
+        pinnedBy: row.pinnedBy,
+        pinnedAt: row.pinnedAt.toISOString(),
+      });
+    },
+  );
+
+  app.delete(
+    "/channels/:id/messages/:messageId/pin",
+    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    async (c) => {
+      if (deps.pins === undefined) {
+        return c.json(ErrorEnvelope("not_found", "pins not available"), 404);
+      }
+
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      const messageId = c.req.param("messageId");
+
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      await deps.pins.unpinMessage(tenant.id, channelId, messageId);
+
+      publish(channelId, {
+        type: "chat.pin",
+        data: { messageId, pinned: false },
+      });
+
+      return c.body(null, 204);
+    },
+  );
+
+  app.get(
+    "/channels/:id/pins",
+    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    async (c) => {
+      if (deps.pins === undefined) {
+        return c.json(ErrorEnvelope("not_found", "pins not available"), 404);
+      }
+
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      const pins = await deps.pins.listPins(tenant.id, channelId);
+      if (pins.length === 0) return c.json({ items: [] });
+
+      const listed = await deps.platform.listMail({
+        tenantId: tenant.id,
+        channelId,
+      });
+      const byId = new Map(listed.items.map((item) => [item.id, item]));
+
+      const items = await Promise.all(
+        pins.flatMap((pin: PinRow) => {
+          const item = byId.get(pin.messageId);
+          if (item === undefined) return [];
+          return [
+            (async () => ({
+              id: item.id,
+              createdAt: item.createdAt,
+              sender: senderOf(item.mail),
+              parts: await decodeMail(item.mail, {
+                fetchBlob: (blobId) =>
+                  deps.platform.fetchBlob(channelId, blobId),
+              }),
+              pinnedBy: pin.pinnedBy,
+              pinnedAt: pin.pinnedAt.toISOString(),
+            }))(),
+          ];
+        }),
+      );
+
+      return c.json({ items });
     },
   );
 
