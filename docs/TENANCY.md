@@ -28,20 +28,67 @@ walks the chain on every read.
 
 ### Signup mode
 
-Env: `WORKBENCH_SIGNUP=open|closed` (default **`closed`**).
+`@workbench/access-policy` (CL-5886) is the actual enforcement point,
+called from `packages/onboarding`'s first-login provisioning hook — it
+is never patched into a vendor route. Two layers, in order:
 
-- **closed** — self-serve email signup is rejected. An owner adds
-  members via the native invite/membership path, or shares a
-  **copy-link invite** (token in the URL). Email delivery of invites is
-  out of scope.
-- **open** — email+password signup is allowed (still rate-limited).
-  Optional `WORKBENCH_ALLOWED_EMAIL_DOMAINS` (comma-separated) restricts
-  which email domains may sign up when open.
+1. **Bootstrap (env, no policy row yet)**: `WORKBENCH_SIGNUP=open|closed`
+   (default **`closed`**) plus optional `WORKBENCH_ALLOWED_EMAIL_DOMAINS`
+   (comma-separated). Local `bun run dev` injects `WORKBENCH_SIGNUP=open`
+   when the variable is unset, so a zero-edit `.env` can still seed the
+   admin account; an explicit value in `.env` always wins; production
+   deploys that do not use the dev launcher keep the closed default.
+2. **Policy row (operator tenant, once set)**: once `OPERATOR_TENANT_ID`
+   carries an explicit `access_policy.policy` row (editable from Settings
+   → People → "Who can join"), that row decides outright and the env
+   flag is no longer consulted — `selfSignup` is `"off"`, `"allowed-
+domains"` (with an `allowedDomains` list), or `"open"`. An absent row
+   is closed defaults, identical in effect to `selfSignup: "off"`.
 
-Local `bun run dev` injects `WORKBENCH_SIGNUP=open` when the variable is
-unset, so a zero-edit `.env` can still seed the admin account. An
-explicit value in `.env` always wins. Production deploys that do not
-use the dev launcher keep the closed default.
+**closed** — self-serve email signup is rejected. An owner adds members
+via the native invite/membership path, shares a **copy-link invite**
+(token in the URL, out of scope for delivery), or pre-vets an email (or
+a whole domain) as a **pending invite** — see below — before that person
+ever logs in.
+
+**Email must be verified.** better-auth is configured without
+`requireEmailVerification`, so a freshly-registered address is not
+proof of ownership on its own. Every email-trust decision
+`@workbench/access-policy` makes — an allowed-domains match, an open-
+policy pass, a pending-invite redemption — requires
+`user.emailVerified === true`; an unverified email is denied, fail-
+closed, regardless of what the policy or env otherwise allow.
+`ALLOW_UNVERIFIED_EMAILS=1` opts out for local dev/test only, mirroring
+`ALLOW_PLAINTEXT_SECRETS` — never set it for a real deployment.
+
+**A policy row and the env switch can disagree**, and that disagreement
+is not resolved automatically: `WORKBENCH_SIGNUP` also gates the
+underlying better-auth `/sign-up/email` route directly (see
+`apps/hub/src/index.ts`'s `authHandler`), independent of anything
+`@workbench/access-policy` decides. Setting a bench's own policy to
+`selfSignup: "allowed-domains"` or `"open"` while the operator's env
+still has `WORKBENCH_SIGNUP=closed` does not open the sign-up form —
+people still cannot create a password account at all, even though the
+policy would otherwise let them join once they had one. The "Who can
+join" settings panel surfaces this with an inline notice whenever the
+policy would allow signup but the env switch is still closed, rather
+than leaving it silently broken. There is no plan to make the policy
+row flip the env switch automatically — the env switch is an operator
+deployment fact, the policy row is a per-bench product setting, and the
+mismatch is meant to be visible, not auto-resolved.
+
+### Pending invites (the not-yet-registered-user bridge)
+
+The native invite route (`POST /tenants/:id/members/invite`) requires an
+existing `user` row looked up by email — it cannot invite someone who
+has never signed in. `@workbench/access-policy` bridges that gap with
+its own `pending_invite` table: an admin records an email (or a domain,
+for a standing "anyone at this domain may join" rule) against a tenant
+before that person has an account. On that email's first login, the
+onboarding hook resolves the match, redeems it through the native invite
+route (now that a user row exists) and an immediate activation, and
+consumes an exact-email match (a domain match is a standing rule and is
+never consumed).
 
 ### Workbench icon
 
@@ -52,14 +99,29 @@ and avatar badges. See `WorkbenchIcon` in `@corbits/bench-ui`.
 
 ### Sub-workbench creation
 
-Workbench validates before calling native tenant create:
+**[Intx gap] CL-6041**: `POST /api/tenants` itself is ungated at the
+platform level — any authenticated caller can hit it directly with an
+arbitrary `parentId` and become owner of a child under any tenant,
+bypassing the wrapper below entirely. Filed upstream; until it lands,
+`apps/hub/src/tenant-create-guard.ts` wraps the whole hub app in a guard
+registered in front of the native route (Hono composes handlers in
+registration order, so this has to be an outer wrap, not a middleware
+added after the route already exists) — see that file's module comment.
+Every `POST /api/tenants` call, whoever originates it, is decided the
+same way:
 
-1. Caller is **owner** of the parent (or has an explicit grant the
-   product treats as create-child).
-2. `parentId` refers to an existing tenant the caller can see.
-3. Cycle-safe: parent is not a descendant of the new tenant (for
-   create this is trivial — the new id does not exist yet; for any
-   future reparent it is required).
+- No `parentId`, or `parentId` equal to the operator tenant: the
+  signup gate (same decision as above) — this is the self-service
+  landing zone.
+- Any other `parentId`: the caller must already be a member of that
+  exact tenant, with a role its own `tenancyCreation` policy accepts —
+  `"owners"` (default), `"owners-admins"`, or `"none"`.
+
+`@workbench/access-policy`'s `POST /api/tenants/:tenantId/access-policy/
+child-tenants` is the polished UI-facing wrapper `@corbits/bench-ui`'s
+`createBench` calls whenever a `parentId` is given — it makes the same
+decision and gives a clean pre-flight 403, but the guard above is what
+actually closes the gap; the wrapper alone would not.
 
 Interchange currently does **not** validate `parentId` on POST and has
 **no** cycle constraint — see gaps below.
@@ -166,6 +228,15 @@ fork or shim inside `vendor/intx`.
    else; workbench derives it from `channel_tenancy` plus name shape
    (see "Tenancy kind" above) until the platform exposes one.
 
+10. **[Intx gap] CL-6041 — `POST /api/tenants` has no grant/policy
+    check of its own** — any authenticated user may call it directly
+    with an arbitrary `parentId` and become owner of a freshly-minted
+    child under any tenant. Workbench closes this with an outer guard
+    in `apps/hub/src/tenant-create-guard.ts` (see "Sub-workbench
+    creation" above) rather than waiting on an upstream fix; the
+    platform should reject the request unless the caller already holds
+    a create-child grant on `parentId`.
+
 ## Roles (mirror only)
 
 | Role     | Product meaning                                      |
@@ -181,4 +252,6 @@ needs a weaker role, that is an Interchange conversation first.
 
 - `@corbits/bench-ui` — switcher, create dialog, members, tenancy contracts
 - `@workbench/onboarding` — personal bench provision under operator parent
+- `@workbench/access-policy` — closed-by-default signup/sub-workbench-
+  creation policy, pending invites (CL-5886)
 - `apps/hub` — `WORKBENCH_SIGNUP`, invite routes, icon routes

@@ -94,7 +94,25 @@ export type CreateBenchInput = {
   readonly parentId?: string;
 };
 
+/**
+ * Creates a bench. A `parentId` (creating a sub-workbench under an
+ * existing one) routes through `@workbench/access-policy`'s gated
+ * surface instead of the native route directly — that surface checks
+ * the parent's own `tenancyCreation` policy against the caller's roles
+ * before ever calling `POST /api/tenants` itself. A bare top-level
+ * bench (no `parentId`) is unaffected and still hits the native route.
+ */
 export function createBench(input: CreateBenchInput): Promise<Bench> {
+  if (input.parentId !== undefined) {
+    return request(
+      `/api/tenants/${input.parentId}/access-policy/child-tenants`,
+      TenantResponse,
+      {
+        method: "POST",
+        body: JSON.stringify({ name: input.name, slug: input.slug }),
+      },
+    );
+  }
   return request("/api/tenants", TenantResponse, {
     method: "POST",
     body: JSON.stringify(input),

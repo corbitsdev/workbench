@@ -22,6 +22,8 @@ import {
 } from "@workbench/hub-client";
 import { Hono } from "hono";
 import { type } from "arktype";
+import type { AccessPolicyStore } from "@workbench/access-policy";
+
 import {
   isFullySeeded,
   personalTenantSlug,
@@ -93,6 +95,16 @@ export type CreateOnboardingRoutesDeps = {
    * from `createDrizzlePendingSeedStore(db, credentialCipher)` in
    * production; tests inject `createInMemoryPendingSeedStore`. */
   pendingSeedStore: PendingSeedStore;
+  /** The closed-by-default access-policy gate threaded straight into
+   * `provisionPersonalTenantIfNeeded` — see that function's own
+   * `accessPolicy` doc comment. Absent means no access-policy package
+   * is wired in at all; never a valid production shape. */
+  accessPolicy?: {
+    store: AccessPolicyStore;
+    envSignupMode: "open" | "closed";
+    envAllowedDomains: readonly string[];
+    allowUnverifiedEmails: boolean;
+  };
   /** Seals the OAuth connect state (PKCE verifier included) parked
    * between `/start` and `/callback`, so a hub restart in between
    * doesn't strand it — see `@workbench/connections`' `pkce.ts`. The same `CredentialCipher`
@@ -275,6 +287,7 @@ export function createOnboardingRoutes(
         hubUrl: deps.hubUrl,
         userId: user.id,
         userEmail: user.email,
+        userEmailVerified: user.emailVerified,
         pushWorkflow: deps.pushWorkflow,
         log: deps.log,
       };
@@ -283,6 +296,8 @@ export function createOnboardingRoutes(
       if (deps.seedModel !== undefined)
         provisionArgs.seedModel = deps.seedModel;
       if (body?.name !== undefined) provisionArgs.displayName = body.name;
+      if (deps.accessPolicy !== undefined)
+        provisionArgs.accessPolicy = deps.accessPolicy;
 
       const result = await provisionPersonalTenantIfNeeded(provisionArgs);
 
@@ -293,7 +308,12 @@ export function createOnboardingRoutes(
         `first-login provisioning failed for user ${user.id}: ${message}`,
       );
       if (cause instanceof ProvisionError) {
-        const status = cause.errorKind === "transient" ? 503 : 500;
+        const status =
+          cause.code === "signup_not_allowed"
+            ? 403
+            : cause.errorKind === "transient"
+              ? 503
+              : 500;
         return c.json(
           {
             error: {

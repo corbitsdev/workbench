@@ -38,6 +38,7 @@ import { applyPreferencesMigrations } from "../packages/preferences/src/migratio
 import { applyBenchMigrations } from "../packages/bench/src/migrations";
 import { applySkillsMigrations } from "../packages/skills/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
+import { applyAccessPolicyMigrations } from "../packages/access-policy/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -65,6 +66,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/bench", apply: applyBenchMigrations },
   { name: "@corbits/skills", apply: applySkillsMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
+  { name: "@workbench/access-policy", apply: applyAccessPolicyMigrations },
 ];
 
 /**
@@ -519,6 +521,7 @@ const PACKAGE_SCHEMAS = [
   "notify",
   "webhook_triggers",
   "onboarding",
+  "access_policy",
 ] as const;
 
 /**

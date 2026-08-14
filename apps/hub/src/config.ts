@@ -87,6 +87,9 @@ const HubEnv = type({
   "ALLOW_PLAINTEXT_SECRETS?": type("'1' | 'true'").describe(
     "dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY, storing secrets at rest unencrypted with a boot warning; never set this for a real deployment",
   ),
+  "ALLOW_UNVERIFIED_EMAILS?": type("'1' | 'true'").describe(
+    "dev/test-only opt-in to let @workbench/access-policy trust an email that better-auth has not verified — self-signup domain checks and pending-invite redemption normally require emailVerified; never set this for a real deployment",
+  ),
 });
 
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
@@ -134,6 +137,9 @@ export type HubConfig = {
   readonly credentialEncryptionKeyHex?: string;
   /** Dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY. */
   readonly allowPlaintextSecrets: boolean;
+  /** Dev/test-only opt-in to skip @workbench/access-policy's email-
+   * verification requirement. */
+  readonly allowUnverifiedEmails: boolean;
 };
 
 type ParsedHubEnv = typeof HubEnv.infer;
@@ -239,6 +245,7 @@ export function readHubConfig(
     signupMode: parsed.WORKBENCH_SIGNUP ?? "closed",
     allowedEmailDomains,
     allowPlaintextSecrets: parsed.ALLOW_PLAINTEXT_SECRETS !== undefined,
+    allowUnverifiedEmails: parsed.ALLOW_UNVERIFIED_EMAILS !== undefined,
     signupRateLimit: {
       windowSeconds: parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS
         ? Number(parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS)

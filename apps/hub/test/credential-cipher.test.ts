@@ -22,6 +22,7 @@ const baseConfig: HubConfig = {
   signupMode: "closed",
   allowedEmailDomains: [],
   allowPlaintextSecrets: false,
+  allowUnverifiedEmails: false,
 };
 
 describe("credentialCipherFrom", () => {

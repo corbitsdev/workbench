@@ -120,12 +120,18 @@ import {
   createPresenceRoomRegistry,
   createPresenceRoutes,
 } from "@corbits/presence";
-import { createGitWorkflowPusher } from "@workbench/hub-client";
+import { createGitWorkflowPusher, createHubAPI } from "@workbench/hub-client";
 import {
   createDrizzlePendingSeedStore,
   createOnboardingRoutes,
 } from "@workbench/onboarding";
 import { createConnectionRoutes } from "@workbench/connections";
+import {
+  applyAccessPolicyMigrations,
+  createAccessPolicyRoutes,
+  createDrizzleAccessPolicyStore,
+} from "@workbench/access-policy";
+import { guardedHubApp, resolveCallerRoleNames } from "./tenant-create-guard";
 import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
@@ -972,6 +978,27 @@ export async function createHub(config: HubConfig) {
     app.route("/api/workflow-memory", createUnavailableWorkflowMemoryRoutes());
   }
 
+  // Closed-by-default access policy: a per-tenant policy row layered
+  // over native tenancy/RBAC (see `@workbench/access-policy`). Migrated
+  // at hub start like insights/preferences/bench-settings; mounted
+  // tenant-scoped for the settings panel, and threaded into the
+  // onboarding hook below so first-login provisioning honors it without
+  // patching any vendor route.
+  await applyAccessPolicyMigrations(config.databaseUrl);
+  const accessPolicyStore = createDrizzleAccessPolicyStore(db);
+  const selfApi = createHubAPI(config.baseUrl);
+  app.route(
+    `${TENANT_PREFIX}/access-policy`,
+    createAccessPolicyRoutes({
+      store: accessPolicyStore,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      api: selfApi,
+    }),
+  );
+
   // The first-login hook mounts outside the tenant prefix, since the
   // session it serves belongs to no tenant yet. The route is
   // `@workbench/onboarding`'s; what it decides is documented in that
@@ -982,6 +1009,12 @@ export async function createHub(config: HubConfig) {
     log: (line) => log.info`${line}`,
     credentialCipher,
     pendingSeedStore: createDrizzlePendingSeedStore(db, credentialCipher),
+    accessPolicy: {
+      store: accessPolicyStore,
+      envSignupMode: config.signupMode,
+      envAllowedDomains: config.allowedEmailDomains,
+      allowUnverifiedEmails: config.allowUnverifiedEmails,
+    },
   };
   if (config.operatorTenantId !== undefined)
     onboardingDeps.operatorTenantId = config.operatorTenantId;
@@ -1077,8 +1110,38 @@ export async function createHub(config: HubConfig) {
   );
 
   app.get("/*", createStaticHandler(path.resolve(config.hubStaticDir)));
+
+  // [Intx gap] CL-6041: the native POST /api/tenants route is ungated —
+  // wrap the fully-built app in a guard that enforces
+  // @workbench/access-policy in front of it. See
+  // ./tenant-create-guard.ts's module comment for why this has to be an
+  // outer wrap rather than an `app.use()` added here: the native route
+  // is already registered by the time `createApp()` returns above, and
+  // Hono composes handlers in registration order.
+  const guardedApp = guardedHubApp(app, {
+    store: accessPolicyStore,
+    resolveCallerRoleNames: (tenantId, userId) =>
+      resolveCallerRoleNames(db, tenantId, userId),
+    envSignupMode: config.signupMode,
+    envAllowedDomains: config.allowedEmailDomains,
+    allowUnverifiedEmails: config.allowUnverifiedEmails,
+    getSessionUser: async (headers) => {
+      const result = await auth.api.getSession({ headers });
+      return result
+        ? {
+            id: result.user.id,
+            email: result.user.email,
+            emailVerified: result.user.emailVerified,
+          }
+        : undefined;
+    },
+    ...(config.operatorTenantId !== undefined
+      ? { operatorTenantId: config.operatorTenantId }
+      : {}),
+  });
+
   return {
-    app,
+    app: guardedApp,
     db,
     close: async () => {
       chatOrchestrator.dispose();

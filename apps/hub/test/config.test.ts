@@ -33,6 +33,7 @@ describe("readHubConfig", () => {
       allowedEmailDomains: [],
       signupRateLimit: { windowSeconds: 60, max: 5 },
       allowPlaintextSecrets: false,
+      allowUnverifiedEmails: false,
     });
   });
 
@@ -182,6 +183,21 @@ describe("readHubConfig", () => {
 
   test("allowPlaintextSecrets is false by default", () => {
     expect(readHubConfig(validEnv).allowPlaintextSecrets).toBe(false);
+  });
+
+  test("allowUnverifiedEmails is false by default", () => {
+    expect(readHubConfig(validEnv).allowUnverifiedEmails).toBe(false);
+  });
+
+  test("ALLOW_UNVERIFIED_EMAILS='1' or 'true' opts in", () => {
+    expect(
+      readHubConfig({ ...validEnv, ALLOW_UNVERIFIED_EMAILS: "1" })
+        .allowUnverifiedEmails,
+    ).toBe(true);
+    expect(
+      readHubConfig({ ...validEnv, ALLOW_UNVERIFIED_EMAILS: "true" })
+        .allowUnverifiedEmails,
+    ).toBe(true);
   });
 
   test("ALLOW_PLAINTEXT_SECRETS='1' or 'true' opts in", () => {

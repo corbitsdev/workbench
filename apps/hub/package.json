@@ -43,6 +43,7 @@
     "@intx/workflow": "workspace:*",
     "@workbench/connections": "workspace:*",
     "@workbench/echo": "workspace:*",
+    "@workbench/access-policy": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@workbench/onboarding": "workspace:*",
     "arktype": "catalog:",

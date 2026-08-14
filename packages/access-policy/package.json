@@ -1,7 +1,7 @@
 {
-  "name": "@workbench/onboarding",
+  "name": "@workbench/access-policy",
   "private": true,
-  "description": "First-login provisioning for the hub: the onboarding route and the decision behind it",
+  "description": "Closed-by-default access policy for the hub: per-tenant self-signup and sub-workbench creation rules, layered over native tenancy/RBAC without patching vendor routes.",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
@@ -14,11 +14,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/crypto": "workspace:*",
     "@intx/hub-api": "workspace:*",
-    "@intx/types": "workspace:*",
-    "@workbench/access-policy": "workspace:*",
-    "@workbench/connections": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",

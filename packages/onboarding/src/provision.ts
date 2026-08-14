@@ -23,6 +23,11 @@ import {
   type WorkflowPusher,
   isLiveDeploymentStatus,
 } from "@workbench/hub-client";
+import {
+  checkSignupGate,
+  resolvePendingInviteOnLogin,
+  type AccessPolicyStore,
+} from "@workbench/access-policy";
 
 export type ProvisionResult =
   | {
@@ -74,6 +79,11 @@ export type ProvisionArgs = {
   hubUrl: string;
   userId: string;
   userEmail: string;
+  /** better-auth is configured without `requireEmailVerification` — an
+   * unverified email must never pass a domain-allowlist or redeem a
+   * pending invite meant for someone else. See
+   * `@workbench/access-policy`'s `evaluateSignupGate` doc comment. */
+  userEmailVerified: boolean;
   /** Display name for the personal bench. Required to mint: when omitted
    * (shell membership probe), returns `needs-onboarding` and creates nothing. */
   displayName?: string;
@@ -81,6 +91,18 @@ export type ProvisionArgs = {
   seedModel?: ModelSource;
   pushWorkflow: WorkflowPusher;
   log: (line: string) => void;
+  /** The closed-by-default access-policy gate. Absent means this hub
+   * runs with no access-policy package wired in at all — never a valid
+   * production shape, but some tests exercise provisioning in
+   * isolation from it. */
+  accessPolicy?: {
+    store: AccessPolicyStore;
+    envSignupMode: "open" | "closed";
+    envAllowedDomains: readonly string[];
+    /** Dev/test-only opt-out of the `userEmailVerified` requirement —
+     * mirrors `ALLOW_PLAINTEXT_SECRETS`. Never set for a real deployment. */
+    allowUnverifiedEmails: boolean;
+  };
 };
 
 /** A lowercase-kebab personal-bench slug, unique per user without a
@@ -243,11 +265,52 @@ export async function provisionPersonalTenantIfNeeded(
     return { kind: "existing-member", seeded: true };
   }
 
-  // No membership yet. Creation requires an explicit display name from the
-  // onboarding naming step — a shell membership probe (no name) must not
-  // silently mint a personal bench.
+  // No membership yet. Before any signup decision, check whether this
+  // email was already pre-vetted through a pending invite (an admin
+  // invited an email — or a whole domain — that had no user row yet at
+  // invite time). A match joins the invited tenant directly; the
+  // closed-by-default signup gate below never runs for it. This check
+  // runs on every call, including the bare membership probe, because
+  // resolving an invite is itself the first-login decision, not
+  // something that waits on the naming step.
+  if (args.accessPolicy !== undefined) {
+    const resolved = await resolvePendingInviteOnLogin({
+      store: args.accessPolicy.store,
+      api: args.api,
+      cookies: args.cookies,
+      email: args.userEmail,
+      emailVerified: args.userEmailVerified,
+      allowUnverifiedEmails: args.accessPolicy.allowUnverifiedEmails,
+    });
+    if (resolved !== undefined) return { kind: "existing-member" };
+  }
+
+  // Creation requires an explicit display name from the onboarding
+  // naming step — a shell membership probe (no name) must not silently
+  // mint a personal bench.
   if (args.displayName === undefined || args.displayName.trim().length === 0) {
     return { kind: "needs-onboarding" };
+  }
+
+  if (args.accessPolicy !== undefined) {
+    const gate = await checkSignupGate({
+      store: args.accessPolicy.store,
+      envSignupMode: args.accessPolicy.envSignupMode,
+      envAllowedDomains: args.accessPolicy.envAllowedDomains,
+      email: args.userEmail,
+      emailVerified: args.userEmailVerified,
+      allowUnverifiedEmails: args.accessPolicy.allowUnverifiedEmails,
+      ...(args.operatorTenantId !== undefined
+        ? { operatorTenantId: args.operatorTenantId }
+        : {}),
+    });
+    if (!gate.allowed) {
+      throw new ProvisionError(
+        "signup_not_allowed",
+        `self-serve signup is not allowed for ${args.userEmail} (${gate.reason})`,
+        "permanent",
+      );
+    }
   }
 
   const tenantCreateBody: { name: string; slug: string; parentId?: string } = {
