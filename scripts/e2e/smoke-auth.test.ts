@@ -62,7 +62,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: sign-up and session", () => {
             crypto.getRandomValues(new Uint8Array(32)),
           ).toString("hex"),
           dataDir,
-          extraEnv: { WORKBENCH_SIGNUP: "open" },
         }),
       );
       const baseUrl = hub.baseUrl;

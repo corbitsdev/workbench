@@ -95,7 +95,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           crypto.getRandomValues(new Uint8Array(32)),
         ).toString("hex"),
         dataDir: hubDataDir,
-        extraEnv: { WORKBENCH_SIGNUP: "open" },
       }),
     );
 

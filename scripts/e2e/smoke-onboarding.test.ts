@@ -71,7 +71,6 @@ describe.skipIf(databaseUrl === undefined)(
             // Deliberately no ANTHROPIC_API_KEY: the hub carries no
             // hub-owned seed model credential, so provisioning must
             // report the bench as provisioned-but-unseeded.
-            extraEnv: { WORKBENCH_SIGNUP: "open" },
           }),
         );
         const baseUrl = hub.baseUrl;

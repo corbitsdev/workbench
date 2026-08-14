@@ -90,7 +90,6 @@ describe.skipIf(databaseUrl === undefined)("routine repeat fires", () => {
           crypto.getRandomValues(new Uint8Array(32)),
         ).toString("hex"),
         dataDir: await tempDir("e2e-routine-repeat-hub-data-"),
-        extraEnv: { WORKBENCH_SIGNUP: "open" },
       });
       track(handle);
       return handle;

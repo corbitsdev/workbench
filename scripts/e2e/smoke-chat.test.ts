@@ -79,7 +79,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
           crypto.getRandomValues(new Uint8Array(32)),
         ).toString("hex"),
         dataDir: hubDataDir,
-        extraEnv: { WORKBENCH_SIGNUP: "open" },
       }),
     );
 

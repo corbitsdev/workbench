@@ -413,7 +413,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     const res = await api(
       "POST",
       `/api/tenants/${tenantId}/chat/channels/${channel}/messages`,
-      textPart(text),
+      { parts: textPart(text) },
       cookies,
     );
     expectStatus(`post message "${text}"`, res, 201);

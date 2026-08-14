@@ -219,6 +219,9 @@ export async function startHub(options: {
   const baseUrl = `http://localhost:${options.port}`;
   const app = spawnApp("hub", HUB_DIR, {
     ...osEnv(),
+    // e2e hubs always allow signup; a caller's extraEnv can still
+    // override this back to the platform default.
+    WORKBENCH_SIGNUP: "open",
     ...options.extraEnv,
     DATABASE_URL: options.databaseUrl,
     BASE_URL: baseUrl,
