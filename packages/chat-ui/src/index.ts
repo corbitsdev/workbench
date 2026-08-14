@@ -42,6 +42,17 @@ export {
 } from "./mentions";
 export type { MentionCandidate, MentionQuery } from "./mentions";
 
+export {
+  SLASH_COMMANDS,
+  activeSlashQuery,
+  filterSlashCommands,
+} from "./slash-commands";
+export type {
+  SlashCommandId,
+  SlashCommandSpec,
+  SlashQuery,
+} from "./slash-commands";
+
 export { CHAT_STRINGS } from "./strings";
 
 export { BlockPartView } from "./blocks/registry";

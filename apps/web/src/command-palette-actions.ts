@@ -41,6 +41,22 @@ export const consumePendingNewRoutine = newRoutineRequest.consumePending;
 /** Consumed by skills-settings-section.tsx on mount. */
 export const consumePendingNewSkill = newSkillRequest.consumePending;
 
+/**
+ * Requests the routine create/run affordance — the same off-route-safe hop
+ * `runActionCommand("new-routine", …)` uses, pulled out so a caller with no
+ * command-palette context (the chat composer's `/run`) can request it too.
+ */
+export function requestNewRoutine(args: {
+  readonly alreadyOnRoutines: boolean;
+  readonly navigateToRoutines: () => void;
+}): void {
+  newRoutineRequest.request({
+    alreadyOnTargetRoute: args.alreadyOnRoutines,
+    navigateToTargetRoute: args.navigateToRoutines,
+    dispatch: () => window.dispatchEvent(new CustomEvent(NEW_ROUTINE_EVENT)),
+  });
+}
+
 /** Test helper — drop leftover pending state between cases. */
 export function resetPendingDialogRequests(): void {
   newChannelRequest.resetPending();
@@ -152,12 +168,10 @@ export async function runActionCommand(
       return;
     }
     case "new-routine": {
-      newRoutineRequest.request({
-        alreadyOnTargetRoute:
+      requestNewRoutine({
+        alreadyOnRoutines:
           ctx.path === "/routines" || ctx.path.startsWith("/routines/"),
-        navigateToTargetRoute: () => ctx.navigate("/routines"),
-        dispatch: () =>
-          window.dispatchEvent(new CustomEvent(NEW_ROUTINE_EVENT)),
+        navigateToRoutines: () => ctx.navigate("/routines"),
       });
       return;
     }

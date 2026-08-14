@@ -58,7 +58,8 @@ export const CHAT_STRINGS = {
     "Choose a channel or chat from the sidebar, or start a new one.",
   couldNotLoadChannels: "channels",
   couldNotLoadMessages: "messages",
-  composerPlaceholder: "Message this channel… use @ to mention an agent",
+  composerPlaceholder:
+    "Message this channel… use @ to mention an agent, / for commands",
   composerSend: "Send",
   composerAttach: "Attach files",
   composerAttachmentsLabel: "Selected attachments",
@@ -75,6 +76,13 @@ export const CHAT_STRINGS = {
   emptyTimelineTitle: "No messages yet",
   emptyTimelineDescription: "Say something to get the conversation going.",
   mentionEmpty: "No matching agents",
+  composerSlashEmpty: "No matching commands",
+  composerSummarizeNoAgentError:
+    "No agent in this channel to summarize for — invite one first.",
+  composerHelpTitle: "Slash commands",
+  composerHelpNote: "Not sent as a message",
+  composerHelpClose: "Close",
+  runRoutineUnavailable: "Open Routines to run one",
   unnamedChannel: "Untitled channel",
   unnamedRun: "Untitled agent",
   fallbackPartLabel: (kind: string) => `[${kind}]`,

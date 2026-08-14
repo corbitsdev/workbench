@@ -19,6 +19,7 @@ import {
 import {
   consumePendingNewChannel,
   NEW_CHANNEL_EVENT,
+  requestNewRoutine,
 } from "../command-palette-actions";
 import { useOpenProfileInCanvas } from "../shell/canvas-availability";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
@@ -97,6 +98,12 @@ export function ChatPage({
       onOpenArtifact={openArtifact}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       listMembers={listMembers}
+      onOpenRoutines={() =>
+        requestNewRoutine({
+          alreadyOnRoutines: false,
+          navigateToRoutines: () => navigate("/routines"),
+        })
+      }
     />
   );
 }
