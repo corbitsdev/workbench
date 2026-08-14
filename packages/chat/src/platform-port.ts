@@ -49,6 +49,19 @@ export interface ListedMail {
   readonly nextCursor?: string;
 }
 
+/**
+ * Per-channel activity a channel-list row can honestly show: the
+ * newest message's timestamp, and how many messages postdate the
+ * caller's read cursor. `lastActivityAt` is omitted (not zero, not a
+ * guess) when a channel has no messages, or when its mailbox cannot be
+ * resolved at all (see `listChannelActivity`) — a row with no signal
+ * renders no signal, never an invented one.
+ */
+export interface ChannelActivitySummary {
+  readonly lastActivityAt?: string;
+  readonly unreadCount: number;
+}
+
 export interface ChatChannelEvent {
   readonly type: string;
   readonly data: unknown;
@@ -121,6 +134,24 @@ export interface ChannelMail {
     readonly channelId: string;
     readonly cursor?: string;
   }): Promise<ListedMail>;
+
+  /**
+   * Bulk activity signals for a channel list — one call covering every
+   * row, never one `listMail` per channel. `sinceCreatedAt` is the
+   * caller's own read cursor for that channel (from
+   * `channel_read_state`), omitted for a channel the caller has never
+   * opened, in which case every message counts as unread. The result
+   * is keyed by `channelId`; a channel whose mailbox cannot be
+   * resolved (no session behind it yet) is simply absent from the
+   * result rather than reported with a fabricated zero.
+   */
+  listChannelActivity(input: {
+    readonly tenantId: string;
+    readonly channels: readonly {
+      readonly channelId: string;
+      readonly sinceCreatedAt?: string;
+    }[];
+  }): Promise<Record<string, ChannelActivitySummary>>;
 
   fetchBlob(channelId: string, blobId: string): Promise<string | Uint8Array>;
 }

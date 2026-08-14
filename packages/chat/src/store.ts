@@ -10,7 +10,7 @@
 // Routing against the interface (rather than a raw drizzle handle) keeps the
 // route layer testable with a plain in-memory fake, with no database and no
 // drizzle SQL-condition internals involved.
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import {
@@ -115,6 +115,17 @@ export interface ChatStore {
     principalId: string,
   ): Promise<ReadStateRow | undefined>;
   putReadState(input: PutReadStateInput): Promise<ReadStateRow>;
+  /**
+   * One caller's read cursors across many channels in a single query —
+   * the bulk counterpart `GET /channels` needs to compute unread
+   * badges without a `getReadState` round trip per row. A channel the
+   * caller has never opened is simply absent from the result.
+   */
+  listReadStates(
+    tenantId: string,
+    channelIds: readonly string[],
+    principalId: string,
+  ): Promise<ReadStateRow[]>;
   /**
    * True when `instanceId` is a workflow instance this tenant launched
    * (channel host or invited agent). Agent mailboxes are addressed by
@@ -278,6 +289,21 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
       return row as ReadStateRow;
     },
 
+    async listReadStates(tenantId, channelIds, principalId) {
+      if (channelIds.length === 0) return [];
+      const rows = await db
+        .select()
+        .from(channelReadState)
+        .where(
+          and(
+            eq(channelReadState.tenantId, tenantId),
+            eq(channelReadState.principalId, principalId),
+            inArray(channelReadState.channelId, channelIds),
+          ),
+        );
+      return rows as ReadStateRow[];
+    },
+
     async hasLaunchedInstance(tenantId, instanceId) {
       const [row] = await db
         .select({ instanceId: channelLaunch.instanceId })
@@ -387,6 +413,15 @@ export function createInMemoryChatStore(): ChatStore {
         row,
       );
       return row;
+    },
+
+    async listReadStates(tenantId, channelIds, principalId) {
+      return channelIds.flatMap((channelId) => {
+        const row = readStateByKey.get(
+          readStateKey(tenantId, channelId, principalId),
+        );
+        return row === undefined ? [] : [row];
+      });
     },
 
     async hasLaunchedInstance(tenantId, instanceId) {

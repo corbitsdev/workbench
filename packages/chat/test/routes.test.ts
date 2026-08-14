@@ -19,6 +19,7 @@ import {
   fakePlatform,
   mountAs,
   principal,
+  sendText,
   TENANT,
 } from "./test-support";
 
@@ -404,6 +405,87 @@ describe("GET /channels", () => {
 
     expect(body.items).toHaveLength(1);
     expect(body.items[0]?.title).toBe("Durable");
+  });
+
+  test("a channel with no messages reports unreadCount 0 and no lastActivityAt", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    await createChannel(app, { kind: "channel", name: "Quiet" });
+
+    const response = await app.request("/channels?kind=channel");
+    const body = (await response.json()) as {
+      items: {
+        unreadCount?: number;
+        lastActivityAt?: string;
+        live?: boolean;
+      }[];
+    };
+
+    expect(body.items[0]?.unreadCount).toBe(0);
+    expect(body.items[0]?.lastActivityAt).toBeUndefined();
+    expect(body.items[0]?.live).toBeUndefined();
+  });
+
+  test("counts messages sent since the caller's own read cursor as unread", async () => {
+    const deps = buildDeps();
+    const app = createChatRoutes(deps);
+    const appAlice = mountAs(app, "prn_alice");
+    const appBob = mountAs(app, "prn_bob");
+    const { body: channel } = await createChannel(appAlice, {
+      kind: "channel",
+      name: "General",
+    });
+
+    await sendText(appAlice, channel.id, "hello");
+    await sendText(appAlice, channel.id, "world");
+
+    const bobList = (await (
+      await appBob.request("/channels?kind=channel")
+    ).json()) as {
+      items: {
+        id: string;
+        unreadCount?: number;
+        lastActivityAt?: string;
+        live?: boolean;
+      }[];
+    };
+    const bobRow = bobList.items.find((item) => item.id === channel.id);
+    expect(bobRow?.unreadCount).toBe(2);
+    expect(bobRow?.lastActivityAt).toBeDefined();
+    expect(bobRow?.live).toBe(true);
+  });
+
+  test("the unread badge clears once the caller's read cursor catches up", async () => {
+    const deps = buildDeps();
+    const app = createChatRoutes(deps);
+    const appAlice = mountAs(app, "prn_alice");
+    const appBob = mountAs(app, "prn_bob");
+    const { body: channel } = await createChannel(appAlice, {
+      kind: "channel",
+      name: "General",
+    });
+
+    await sendText(appAlice, channel.id, "hello");
+    const sent = (await (
+      await appAlice.request(`/channels/${channel.id}/messages`)
+    ).json()) as { items: { id: string; createdAt: string }[] };
+    const last = sent.items.at(-1);
+    if (last === undefined) throw new Error("expected at least one message");
+
+    await appBob.request(`/channels/${channel.id}/read-state`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        lastSeenCreatedAt: last.createdAt,
+        lastSeenId: last.id,
+      }),
+    });
+
+    const bobList = (await (
+      await appBob.request("/channels?kind=channel")
+    ).json()) as { items: { id: string; unreadCount?: number }[] };
+    const bobRow = bobList.items.find((item) => item.id === channel.id);
+    expect(bobRow?.unreadCount).toBe(0);
   });
 });
 
