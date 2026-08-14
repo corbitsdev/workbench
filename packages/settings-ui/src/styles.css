@@ -331,3 +331,61 @@
   flex-direction: column;
   gap: 0.85rem;
 }
+
+.settings-connections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.settings-connection-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card, var(--background));
+  padding: 0.85rem 1rem;
+}
+
+.settings-connection-card-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.settings-connection-card-name {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.settings-connection-card-pinned {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
+.settings-connection-card-actions {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+.settings-connections-advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.settings-connections-advanced > summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.settings-connections-advanced-body {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
