@@ -13,7 +13,7 @@ tables — how its migrations are written, tracked, and applied.
 - **A ledger table the package owns.** Each package tracks which of its own
   migrations have run in a table named for itself (`chat_migrations`,
   `routine_migrations`, `notify_migrations`, `webhook_triggers_migrations`,
-  `insights_migrations`, …) — never the platform's own `@intx/db` drizzle
+  `insights_migrations`, `skills_migrations`, …) — never the platform's own `@intx/db` drizzle
   journal, and never `scripts/db-setup.ts`'s
   `workbench_setup_migration` table, which only tracks the platform's own
   migrations. A package's ledger stays inside the package: if it is ever
@@ -23,7 +23,8 @@ tables — how its migrations are written, tracked, and applied.
   lives in `public` — `public` belongs to the platform's own `@intx/db`
   schema alone. Every package creates and owns a Postgres schema named for
   itself (`mailbox`, `artifacts`, `memory`, `chat`, `routines`, `notify`,
-  `webhook_triggers`, `insights`, …) and puts every table it owns there,
+  `webhook_triggers`, `insights`, `skills`, …) and puts every table it
+  owns there,
   including its own ledger table. This holds regardless of whether a
   package's rows carry a `tenant_id` / `principal_id` column: those are
   plain text identifiers, not foreign keys, so a row in
@@ -61,7 +62,8 @@ non-transactional self-contained shape existed until CL-6017 unified every
 package onto the transactional pattern — see below):
 
 1. **Self-contained, transactional** — `@corbits/chat`, `@corbits/notify`,
-   `@corbits/webhook-triggers`, `@corbits/routines`, `@corbits/insights`.
+   `@corbits/webhook-triggers`, `@corbits/routines`, `@corbits/insights`,
+   `@corbits/skills`.
    The package's `src/migrations.ts` owns a literal `{ name, sql }[]` array,
    opens its own short-lived `postgres` client, creates its ledger table if
    absent, and applies each not-yet-applied migration inside
