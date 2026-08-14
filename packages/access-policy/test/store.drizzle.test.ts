@@ -1,0 +1,204 @@
+// DB-gated: skipped when no DATABASE_URL is reachable (a fresh checkout
+// still runs the unit gates), mirroring `@workbench/onboarding`'s own
+// `pending-seed-store.drizzle.test.ts`. Runs against its own scratch
+// database, never the developer's or the walking-skeleton suite's.
+//
+// Proves what the in-memory fake cannot: that
+// `createDrizzleAccessPolicyStore` actually persists across separate
+// connections, that an upsert replaces rather than duplicates the
+// single policy row per tenant, and that the real migrations produce a
+// schema the store's queries actually run against.
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+
+import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { applyAccessPolicyMigrations } from "../src/migrations";
+import { createDrizzleAccessPolicyStore } from "../src/store";
+
+function scratchUrlFor(e2eUrl: string): string {
+  const url = new URL(e2eUrl);
+  const database = url.pathname.replace(/^\//, "");
+  url.pathname = `/${database}_access_policy_store_test`;
+  return url.toString();
+}
+
+const databaseUrl = e2eDatabaseUrl();
+const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+
+describeIfDb("createDrizzleAccessPolicyStore", () => {
+  const scratchUrl = scratchUrlFor(
+    databaseUrl ?? "postgres://localhost:5432/unused",
+  );
+  const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
+
+  beforeAll(async () => {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    try {
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+      await maintenance.unsafe(`CREATE DATABASE "${scratchDatabase}"`);
+    } finally {
+      await maintenance.end();
+    }
+    await applyAccessPolicyMigrations(scratchUrl);
+  }, 20000);
+
+  afterAll(async () => {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    try {
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+    } finally {
+      await maintenance.end();
+    }
+  }, 20000);
+
+  test("getPolicy on a tenant with no row returns closed defaults", async () => {
+    const sql = postgres(scratchUrl, { max: 1 });
+    try {
+      const store = createDrizzleAccessPolicyStore(drizzle(sql));
+      const policy = await store.getPolicy("tnt_none");
+      expect(policy).toEqual({
+        selfSignup: "off",
+        allowedDomains: [],
+        tenancyCreation: "owners",
+      });
+      expect(await store.hasPolicyRow("tnt_none")).toBe(false);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  test("upsertPolicy inserts, then updates the same row rather than duplicating it", async () => {
+    const sql = postgres(scratchUrl, { max: 1 });
+    try {
+      const store = createDrizzleAccessPolicyStore(drizzle(sql));
+      await store.upsertPolicy("tnt_upsert", {
+        selfSignup: "allowed-domains",
+        allowedDomains: ["acme.example"],
+      });
+      await store.upsertPolicy("tnt_upsert", { tenancyCreation: "none" });
+
+      const rows =
+        await sql`select self_signup, allowed_domains, tenancy_creation from access_policy.policy where tenant_id = 'tnt_upsert'`;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.["self_signup"]).toBe("allowed-domains");
+      expect(rows[0]?.["tenancy_creation"]).toBe("none");
+      expect(JSON.parse(String(rows[0]?.["allowed_domains"]))).toEqual([
+        "acme.example",
+      ]);
+
+      const policy = await store.getPolicy("tnt_upsert");
+      expect(policy).toEqual({
+        selfSignup: "allowed-domains",
+        allowedDomains: ["acme.example"],
+        tenancyCreation: "none",
+      });
+      expect(await store.hasPolicyRow("tnt_upsert")).toBe(true);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  test("persists across separate connections", async () => {
+    const writeSql = postgres(scratchUrl, { max: 1 });
+    try {
+      const writeStore = createDrizzleAccessPolicyStore(drizzle(writeSql));
+      await writeStore.upsertPolicy("tnt_restart", { selfSignup: "open" });
+    } finally {
+      await writeSql.end();
+    }
+
+    const readSql = postgres(scratchUrl, { max: 1 });
+    try {
+      const readStore = createDrizzleAccessPolicyStore(drizzle(readSql));
+      const policy = await readStore.getPolicy("tnt_restart");
+      expect(policy.selfSignup).toBe("open");
+    } finally {
+      await readSql.end();
+    }
+  });
+
+  test("pending invites: exact-email match is found and consumption sticks", async () => {
+    const sql = postgres(scratchUrl, { max: 1 });
+    try {
+      const store = createDrizzleAccessPolicyStore(drizzle(sql));
+      const invite = await store.createPendingInvite("tnt_invites", {
+        matchType: "email",
+        value: "Person@Acme.Example",
+      });
+
+      const match = await store.findMatchingPendingInvite(
+        "person@acme.example",
+      );
+      expect(match?.id).toBe(invite.id);
+
+      await store.consumePendingInvite(invite.id);
+      const afterConsume = await store.findMatchingPendingInvite(
+        "person@acme.example",
+      );
+      expect(afterConsume).toBeUndefined();
+    } finally {
+      await sql.end();
+    }
+  });
+
+  test("pending invites: a domain match is found for any email on that domain", async () => {
+    const sql = postgres(scratchUrl, { max: 1 });
+    try {
+      const store = createDrizzleAccessPolicyStore(drizzle(sql));
+      await store.createPendingInvite("tnt_domain_invites", {
+        matchType: "domain",
+        value: "@Widgets.Example",
+      });
+
+      const matchOne = await store.findMatchingPendingInvite(
+        "alice@widgets.example",
+      );
+      const matchTwo = await store.findMatchingPendingInvite(
+        "bob@widgets.example",
+      );
+      expect(matchOne?.tenantId).toBe("tnt_domain_invites");
+      expect(matchTwo?.tenantId).toBe("tnt_domain_invites");
+
+      const noMatch = await store.findMatchingPendingInvite(
+        "carol@other.example",
+      );
+      expect(noMatch).toBeUndefined();
+    } finally {
+      await sql.end();
+    }
+  });
+
+  test("deletePendingInvite only removes the row for its own tenant", async () => {
+    const sql = postgres(scratchUrl, { max: 1 });
+    try {
+      const store = createDrizzleAccessPolicyStore(drizzle(sql));
+      const invite = await store.createPendingInvite("tnt_delete_a", {
+        matchType: "email",
+        value: "someone@acme.example",
+      });
+
+      await store.deletePendingInvite("tnt_delete_b", invite.id);
+      expect(
+        await store.findMatchingPendingInvite("someone@acme.example"),
+      ).toBeDefined();
+
+      await store.deletePendingInvite("tnt_delete_a", invite.id);
+      expect(
+        await store.findMatchingPendingInvite("someone@acme.example"),
+      ).toBeUndefined();
+    } finally {
+      await sql.end();
+    }
+  });
+});

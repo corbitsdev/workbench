@@ -80,6 +80,11 @@ const ALLOWLIST: readonly {
     maxOccurrences: 1,
     tables: ["bench_settings"],
   },
+  {
+    relPath: "packages/access-policy/src/schema.ts",
+    maxOccurrences: 2,
+    tables: ["policy", "pending_invite"],
+  },
 ];
 
 export async function scanFiles(
