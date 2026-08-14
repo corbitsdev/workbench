@@ -78,6 +78,20 @@ export type TenantResolution =
   | { readonly kind: "empty" }
   | { readonly kind: "ready"; readonly tenantId: string };
 
+/**
+ * One live presence entry for the channel's who's-here stack — deliberately
+ * a plain data shape, not `@corbits/presence`'s own type: this package
+ * never depends on presence, the same way it never depends on any other
+ * domain package it's merely handed data from. The host composes the real
+ * connection (`@corbits/presence/client`) and passes the current snapshot
+ * down as `presenceMembers`.
+ */
+export interface PresenceMember {
+  readonly principalId: string;
+  readonly displayName: string;
+  readonly color: string;
+}
+
 type ChannelsState =
   | { readonly kind: "loading" }
   | { readonly kind: "error"; readonly message: string }
@@ -208,6 +222,7 @@ function ChatWorkspaceInner({
   listMembers,
   registerComposerInsert,
   onOpenRoutines,
+  presenceMembers,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
@@ -243,6 +258,8 @@ function ChatWorkspaceInner({
    * route the host owns, so opening it is a host-supplied hop the same way
    * `onOpenArtifact` is. */
   readonly onOpenRoutines?: () => void;
+  /** See `ChatWorkspace`'s prop of the same name. */
+  readonly presenceMembers?: readonly PresenceMember[];
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -894,6 +911,21 @@ function ChatWorkspaceInner({
                       ))}
                     </div>
                   ) : null}
+                  {presenceMembers !== undefined &&
+                  presenceMembers.length > 0 ? (
+                    <div className="chat-presence-stack" aria-label="Live now">
+                      {presenceMembers.slice(0, 5).map((member) => (
+                        <span
+                          key={member.principalId}
+                          className="chat-presence-avatar"
+                          style={{ backgroundColor: member.color }}
+                          title={member.displayName}
+                        >
+                          {member.displayName.slice(0, 1).toUpperCase()}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   {canInviteAgent(activeChannel?.kind) ? (
                     <Button
                       variant="outline"
@@ -1045,6 +1077,7 @@ export function ChatWorkspace({
   listMembers,
   registerComposerInsert,
   onOpenRoutines,
+  presenceMembers,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -1094,6 +1127,13 @@ export function ChatWorkspace({
   ) => void;
   /** The composer's `/run` command — see `ChatWorkspaceInner`'s prop note. */
   readonly onOpenRoutines?: () => void;
+  /**
+   * Who's live in the active channel right now, beyond the static
+   * participants list — the host's `@corbits/presence/client` connection,
+   * handed down as data. Omitted entirely, no presence stack renders (the
+   * header looks exactly as it did before presence existed).
+   */
+  readonly presenceMembers?: readonly PresenceMember[];
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -1122,6 +1162,7 @@ export function ChatWorkspace({
             ? { registerComposerInsert }
             : {})}
           {...(onOpenRoutines !== undefined ? { onOpenRoutines } : {})}
+          {...(presenceMembers !== undefined ? { presenceMembers } : {})}
         />
       );
     case "empty":

@@ -36,6 +36,7 @@ import {
 } from "../shell/canvas-availability";
 import { useRegisterComposerInsert } from "../shell/composer-insertion";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
+import { usePresenceRoom } from "../presence/use-presence-room";
 
 export function ChatPage({
   path,
@@ -54,6 +55,13 @@ export function ChatPage({
   const principalId = bench.selectedPrincipalId ?? undefined;
   const queryClient = useQueryClient();
   const tenantId = bench.selectedTenantId;
+  // Who's live in this channel right now, beyond the static participants
+  // list — the server derives displayName/color, so no identity data
+  // needs resolving here (see `usePresenceRoom`).
+  const { members: presenceMembers } = usePresenceRoom(
+    tenantId,
+    channelId === null ? null : `channel:${channelId}`,
+  );
   const approvalActions = useMemo(
     () =>
       tenantId === null
@@ -180,6 +188,7 @@ export function ChatPage({
           navigateToRoutines: () => navigate("/routines"),
         })
       }
+      presenceMembers={presenceMembers}
     />
   );
 }

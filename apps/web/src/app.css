@@ -795,9 +795,51 @@ html {
 }
 
 .shell-artifact-pane-body {
+  position: relative;
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
+}
+
+/* Co-viewer cursors (CL-5958): positioned in the pane's own fractional
+   coordinate space (see `PresenceCursor` in canvas-column.tsx), never
+   intercepting pointer events — they are a read-only presence signal, not
+   an interactive layer. */
+.shell-artifact-cursor-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.shell-artifact-cursor {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  transform: translate(-2px, -2px);
+  transition:
+    left 0.12s ease-out,
+    top 0.12s ease-out;
+}
+
+.shell-artifact-cursor-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 1.5px var(--background);
+}
+
+.shell-artifact-cursor-label {
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--ui-radius-sm, 0.25rem);
+  background: currentColor;
+  color: var(--background);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* Reduced motion needs no rule here: the component library collapses every
