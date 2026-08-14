@@ -1470,6 +1470,35 @@
   margin-left: 0;
 }
 
+/* Who's live in this channel right now, beyond the static member stack
+   above — round (vs. the member stack's square avatars) and colored per
+   principal (server-assigned, see @corbits/presence) so "live" reads at a
+   glance without any extra chrome or a status dot. */
+.chat-presence-stack {
+  display: flex;
+  align-items: center;
+  margin-left: 0.35rem;
+}
+
+.chat-presence-avatar {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--background);
+  margin-left: -0.35rem;
+  color: var(--background);
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.chat-presence-avatar:first-child {
+  margin-left: 0;
+}
+
 .chat-thread-affordance {
   display: flex;
   align-items: center;

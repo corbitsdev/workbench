@@ -1,5 +1,5 @@
 export { ChatWorkspace } from "./chat-workspace";
-export type { TenantResolution } from "./chat-workspace";
+export type { TenantResolution, PresenceMember } from "./chat-workspace";
 
 export { ChannelTimeline } from "./timeline";
 export type { CurrentUser } from "./timeline";
