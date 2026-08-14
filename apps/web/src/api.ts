@@ -284,6 +284,33 @@ export function rejectApproval(
   );
 }
 
+/**
+ * One-shot fetch of a Library artifact's detail — the same
+ * `GET /api/tenants/:id/artifacts/:artifactId` read `LibraryRoute` uses via
+ * `useAPIQuery`, but as a plain promise for callers that aren't a mounted
+ * component (a chat artifact chip's open handler). Never falls back to
+ * blob bytes: an `artifactId` always resolves through this Library read.
+ */
+export async function fetchArtifactDetail(
+  tenantId: string,
+  artifactId: string,
+): Promise<ArtifactDetail> {
+  const response = await fetch(
+    `/api/tenants/${tenantId}/artifacts/${encodeURIComponent(artifactId)}`,
+    { headers: { accept: "application/json" } },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `The hub answered ${response.status} for artifact ${artifactId}.`,
+    );
+  }
+  const parsed = ArtifactDetailSchema(await response.json());
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected artifact response shape: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 export type NeedsYouDetailResult =
   | { readonly kind: "ready"; readonly item: NeedsYouDetail }
   | { readonly kind: "forbidden" }

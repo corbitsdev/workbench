@@ -8,8 +8,11 @@ export {
   LIBRARY_KIND_SEGMENTS,
   artifactMatchesLibraryKindSegment,
   libraryKindSegmentFromPath,
+  libraryArtifactPath,
+  libraryArtifactIdFromPath,
 } from "./kind-filter";
 export type { LibraryKindSegment } from "./kind-filter";
+export { workflowRunIdFromSource } from "./provenance";
 export {
   ARTIFACT_RENDERER_KINDS,
   isTextDecodableMediaType,

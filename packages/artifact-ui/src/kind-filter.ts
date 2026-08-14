@@ -25,6 +25,27 @@ export function libraryKindSegmentFromPath(path: string): string {
   return rest.split("/")[0] ?? "";
 }
 
+/** Distinct from the kind nav segments above (`document`, `sheet`, …) — a
+ * caller checks `libraryArtifactIdFromPath` before ever treating a path as
+ * a kind filter, so the two never collide. */
+const LIBRARY_ARTIFACT_SEGMENT = "a";
+
+/** Deep link to one artifact selected in the Library — the seam a chat
+ * artifact chip's "Open in Library" affordance navigates to (CL-6015). */
+export function libraryArtifactPath(artifactId: string): string {
+  return `${LIBRARY_PATH}/${LIBRARY_ARTIFACT_SEGMENT}/${encodeURIComponent(artifactId)}`;
+}
+
+/** Extracts the artifact id from a `libraryArtifactPath` deep link, or null
+ * for every other Library path (including plain kind-nav segments). */
+export function libraryArtifactIdFromPath(path: string): string | null {
+  const prefix = `${LIBRARY_PATH}/${LIBRARY_ARTIFACT_SEGMENT}/`;
+  if (!path.startsWith(prefix)) return null;
+  const rest = path.slice(prefix.length).split("/")[0];
+  if (rest === undefined || rest === "") return null;
+  return decodeURIComponent(rest);
+}
+
 function titleExtension(title: string): string {
   const lower = title.trim().toLowerCase();
   const dot = lower.lastIndexOf(".");

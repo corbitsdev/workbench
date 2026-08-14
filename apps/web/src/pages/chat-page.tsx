@@ -3,17 +3,21 @@
 // Canvas stays auxiliary (profiles and similar) and opens on demand from
 // this workspace.
 
+import { libraryArtifactPath } from "@corbits/artifact-ui";
 import { ChatWorkspace, fetchChannelBlob, type Part } from "@corbits/chat-ui";
 import { listPrincipals } from "@corbits/settings-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 
+import { fetchArtifactDetail } from "../api";
 import { createChatApprovalActions } from "../approval-actions";
 import { createChatBlockResponseActions } from "../block-response-actions";
 import { useBench } from "../bench-context";
 import {
   artifactContentFromBlob,
   artifactContentFromBlobError,
+  artifactContentFromDetail,
+  artifactContentFromDetailError,
 } from "../chat-artifact-open";
 import {
   channelIdFromPath,
@@ -79,22 +83,34 @@ export function ChatPage({
       .map((p) => ({ id: p.id, displayName: p.displayName }));
   }, []);
 
-  // A chat file part only carries a blob id today — Library artifacts have
-  // no stored link back to it (see `artifact-chip.tsx`), so this can't
-  // resolve through the Library artifacts read surface. It opens the
-  // canvas straight from the blob instead: read the bytes off the chat
-  // platform's own blob route and render them through the same typed
-  // renderers Library and the canvas already share. A real per-artifact
-  // deep link is follow-up work once that stored link exists.
+  // A file part with an `artifactId` links back to a real Library row
+  // (CL-6000) — this always resolves through the Library artifacts read
+  // surface for that id, the same one `LibraryRoute` reads, never raw blob
+  // bytes. Only a part with no `artifactId` (a plain human upload the
+  // platform never diverted into an artifact) falls back to reading the
+  // bytes off the chat platform's own blob route. Either path renders
+  // through the same typed renderers Library and the canvas already share.
   const openArtifact = useCallback(
     (part: Part & { kind: "file" }) => {
-      if (
-        part.blobId === undefined ||
-        tenantId === null ||
-        channelId === null
-      ) {
+      if (tenantId === null) return;
+      if (part.artifactId !== undefined) {
+        const artifactId = part.artifactId;
+        void fetchArtifactDetail(tenantId, artifactId)
+          .then((detail) => {
+            openArtifactInCanvas(artifactContentFromDetail(detail));
+          })
+          .catch((err) => {
+            openArtifactInCanvas(
+              artifactContentFromDetailError(
+                part,
+                artifactId,
+                err instanceof Error ? err.message : String(err),
+              ),
+            );
+          });
         return;
       }
+      if (part.blobId === undefined || channelId === null) return;
       const blobId = part.blobId;
       void fetchChannelBlob(tenantId, channelId, blobId)
         .then((contentBase64) => {
@@ -113,6 +129,17 @@ export function ChatPage({
         });
     },
     [tenantId, channelId, openArtifactInCanvas],
+  );
+
+  // The chip's "Open in Library" affordance — only ever offered for a part
+  // that carries an `artifactId` (see `ArtifactChip`), so this always has a
+  // real row to deep-link to.
+  const openArtifactInLibrary = useCallback(
+    (part: Part & { kind: "file" }) => {
+      if (part.artifactId === undefined) return;
+      navigate(libraryArtifactPath(part.artifactId));
+    },
+    [navigate],
   );
 
   // The command palette may have requested "New channel" from another
@@ -143,6 +170,7 @@ export function ChatPage({
         );
       }}
       onOpenArtifact={openArtifact}
+      onOpenArtifactInLibrary={openArtifactInLibrary}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       {...(blockResponses !== undefined ? { blockResponses } : {})}
       listMembers={listMembers}

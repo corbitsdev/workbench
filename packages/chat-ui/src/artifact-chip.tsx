@@ -7,11 +7,12 @@
 //
 // Opening a chip is a callback the host supplies (mirrors `onOpenProfile`
 // and `onOpenThread` in `timeline.tsx`): this package owns no router. A
-// host that only understands blob ids can still open an artifact-only chip
-// by falling back to the Library at large; a per-artifact deep link is the
-// host's call to make.
+// second, artifactId-only affordance — "Open in Library" — hands the host a
+// separate callback so it can navigate there directly (CL-6015); it only
+// ever renders when `artifactId` is present, since a blob-only part has no
+// Library row to deep-link to.
 
-import { FileText } from "lucide-react";
+import { FileText, Library } from "lucide-react";
 
 import type { Part } from "./api";
 import { CHAT_STRINGS } from "./strings";
@@ -19,32 +20,49 @@ import { CHAT_STRINGS } from "./strings";
 export function ArtifactChip({
   part,
   onOpen,
+  onOpenInLibrary,
 }: {
   readonly part: Part & { kind: "file" };
   readonly onOpen?: (part: Part & { kind: "file" }) => void;
+  readonly onOpenInLibrary?: (part: Part & { kind: "file" }) => void;
 }) {
   const openable =
     (part.blobId !== undefined || part.artifactId !== undefined) &&
     onOpen !== undefined;
+  const libraryOpenable =
+    part.artifactId !== undefined && onOpenInLibrary !== undefined;
 
   return (
-    <button
-      type="button"
-      className="chat-artifact-chip"
-      disabled={!openable}
-      {...(openable && onOpen !== undefined
-        ? { onClick: () => onOpen(part) }
-        : {})}
-    >
-      <span className="chat-artifact-chip-icon" aria-hidden="true">
-        <FileText />
-      </span>
-      <span className="chat-artifact-chip-meta">
-        <strong>{part.name}</strong>
-        <span>
-          {CHAT_STRINGS.filePartLabel} · {part.mediaType}
+    <div className="chat-artifact-chip">
+      <button
+        type="button"
+        className="chat-artifact-chip-open"
+        disabled={!openable}
+        {...(openable && onOpen !== undefined
+          ? { onClick: () => onOpen(part) }
+          : {})}
+      >
+        <span className="chat-artifact-chip-icon" aria-hidden="true">
+          <FileText />
         </span>
-      </span>
-    </button>
+        <span className="chat-artifact-chip-meta">
+          <strong>{part.name}</strong>
+          <span>
+            {CHAT_STRINGS.filePartLabel} · {part.mediaType}
+          </span>
+        </span>
+      </button>
+      {libraryOpenable && onOpenInLibrary !== undefined ? (
+        <button
+          type="button"
+          className="chat-artifact-chip-library"
+          aria-label="Open in Library"
+          title="Open in Library"
+          onClick={() => onOpenInLibrary(part)}
+        >
+          <Library />
+        </button>
+      ) : null}
+    </div>
   );
 }

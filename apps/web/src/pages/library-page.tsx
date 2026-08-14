@@ -25,9 +25,11 @@ import {
   ArtifactRenderer,
   artifactMatchesLibraryKindSegment,
   filterArtifacts,
+  libraryArtifactIdFromPath,
   libraryKindSegmentFromPath,
   resolveArtifactRendererKind,
   sortArtifacts,
+  workflowRunIdFromSource,
 } from "@corbits/artifact-ui";
 import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
@@ -45,6 +47,7 @@ import {
   consumePendingLibraryUpload,
   LIBRARY_UPLOAD_EVENT,
 } from "../library-upload";
+import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
 import { QueryView } from "../query-view";
 import {
@@ -109,6 +112,32 @@ function ArtifactRows({
   );
 }
 
+/**
+ * The one cheap provenance fact worth surfacing (CL-6015): a link to the
+ * workflow run that produced this artifact, when `source` says so
+ * (`workflowRunIdFromSource`). Not a lineage system — every other origin
+ * (manual, agent, imported, unknown) renders nothing here rather than
+ * guessing.
+ */
+function ProvenanceLine({
+  source,
+}: {
+  readonly source: Record<string, unknown>;
+}) {
+  const runId = workflowRunIdFromSource(source);
+  if (runId === null) return null;
+  return (
+    <p className="mt-0.5 truncate text-xs">
+      <Link
+        to={`/insights/runs/${encodeURIComponent(runId)}`}
+        className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      >
+        Produced by workflow run
+      </Link>
+    </p>
+  );
+}
+
 function PreviewPane({
   detail,
   loading,
@@ -134,6 +163,7 @@ function PreviewPane({
               {` · v${detail.version}`}
             </p>
           ) : null}
+          {detail !== null ? <ProvenanceLine source={detail.source} /> : null}
         </div>
         <Button
           type="button"
@@ -375,8 +405,20 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const kindSegment = libraryKindSegmentFromPath(path);
+  // `/library/a/:id` (CL-6015) — a chat artifact chip's "Open in Library"
+  // deep link, distinct from the kind-nav segments below. It only ever
+  // sets the initial selection; the user's own clicks stay local state,
+  // the same way kind-nav selection already worked before this route
+  // existed.
+  const deepLinkedArtifactId = libraryArtifactIdFromPath(path);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    deepLinkedArtifactId,
+  );
+  useEffect(() => {
+    if (deepLinkedArtifactId !== null) setSelectedId(deepLinkedArtifactId);
+  }, [deepLinkedArtifactId]);
+  const kindSegment =
+    deepLinkedArtifactId === null ? libraryKindSegmentFromPath(path) : "";
 
   const listPath =
     selectedTenantId === null

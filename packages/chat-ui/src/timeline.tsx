@@ -331,14 +331,19 @@ function FallbackPart({ part }: { part: Part }) {
 function FilePartView({
   part,
   onOpenArtifact,
+  onOpenArtifactInLibrary,
 }: {
   part: Part & { kind: "file" };
   onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
 }) {
   return (
     <ArtifactChip
       part={part}
       {...(onOpenArtifact !== undefined ? { onOpen: onOpenArtifact } : {})}
+      {...(onOpenArtifactInLibrary !== undefined
+        ? { onOpenInLibrary: onOpenArtifactInLibrary }
+        : {})}
     />
   );
 }
@@ -361,6 +366,7 @@ function MessageParts({
   onOpenThread,
   onOpenProfile,
   onOpenArtifact,
+  onOpenArtifactInLibrary,
   approvalActions,
   blockResponses,
 }: {
@@ -373,6 +379,7 @@ function MessageParts({
   readonly onOpenThread?: (messageId: string) => void;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   readonly approvalActions?: ApprovalActions;
   readonly blockResponses?: BlockResponseActions;
 }) {
@@ -410,6 +417,9 @@ function MessageParts({
               key={key}
               part={part}
               {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+              {...(onOpenArtifactInLibrary !== undefined
+                ? { onOpenArtifactInLibrary }
+                : {})}
             />
           );
         }
@@ -527,6 +537,7 @@ export function ChannelTimeline({
   onOpenThread,
   onOpenProfile,
   onOpenArtifact,
+  onOpenArtifactInLibrary,
   approvalActions,
   blockResponses,
 }: {
@@ -544,6 +555,10 @@ export function ChannelTimeline({
    * (Library today; canvas is a follow-up). No chat-ui component owns
    * routing, mirroring `onOpenThread` and `onOpenProfile`. */
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  /** The chip's "Open in Library" affordance — a second, host-supplied hop
+   * alongside `onOpenArtifact`, only ever offered when the part carries an
+   * `artifactId` (see `ArtifactChip`). */
+  readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   /** The approve block's live round-trip — the host's read/approve/reject
    * on the platform approval a card references. Undefined renders every
    * approve card in its pre-round-trip fixed-disabled framing. */
@@ -611,6 +626,9 @@ export function ChannelTimeline({
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
             {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
             {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+            {...(onOpenArtifactInLibrary !== undefined
+              ? { onOpenArtifactInLibrary }
+              : {})}
             {...(approvalActions !== undefined ? { approvalActions } : {})}
             {...(blockResponses !== undefined ? { blockResponses } : {})}
           />
