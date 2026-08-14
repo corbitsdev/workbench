@@ -30,6 +30,7 @@ import { createAgentDefinitionRoutes } from "@corbits/agent-directory";
 import {
   createArtifactDeliveryHandler,
   createChannelHostInferencePreferencesResolver,
+  createChannelSubscriberRegistry,
   createChannelTenancyRoutes,
   createChatOrchestrator,
   createChatRoutes,
@@ -493,23 +494,23 @@ export async function createHub(config: HubConfig) {
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
   });
+  // The one SSE subscriber registry for this process's channel events
+  // (see `@corbits/chat`'s `channel-events.ts`), constructed here in
+  // the composition root and shared by both consumers below: the
+  // chat router bridges it onto `/channels/:id/stream`, and the
+  // workflow-command path publishes through the same instance so a
+  // command-started workflow's join event reaches an open stream
+  // immediately, exactly like `POST .../invite`'s does.
+  const channelSubscribers = createChannelSubscriberRegistry();
   // The "/name args" and "@name args" command registry: every tenant's
   // invitable workflow definitions, exposed as commands by
   // `createWorkflowCommandPlugin`, resolved fresh on every list/lookup
   // so a newly-deployed definition is a command on its very next use —
   // no re-registration step. `startWorkflow` is `@corbits/chat`'s own
   // `startWorkflowCommand`, sharing the exact invite-then-send core
-  // `POST .../invite` uses.
-  //
-  // `publish` here is a no-op: the live per-channel SSE publish
-  // function is built inside `createChatRoutes` itself (see
-  // `channel-events.ts`'s subscriber registry), not exposed to this
-  // composition root. A workflow started via a command still shows up
-  // once the channel's settings are next fetched or its timeline is
-  // next polled; it only misses the immediate live push a `POST
-  // .../invite` triggers. Flagged for review — closing this gap means
-  // either exposing that publish hook out of `createChatRoutes` or
-  // moving command dispatch inside it.
+  // `POST .../invite` uses, including its live `publish` — bound to
+  // `channelSubscribers` above, the same registry `createChatRoutes`
+  // is given below.
   const commandRegistry = createCommandRegistry();
   commandRegistry.registerCommandPlugin(
     createWorkflowCommandPlugin({
@@ -520,7 +521,7 @@ export async function createHub(config: HubConfig) {
           {
             store: chatStore,
             platform: chatPlatform,
-            publish: () => undefined,
+            publish: channelSubscribers.publish,
           },
           input,
         ),
@@ -533,6 +534,7 @@ export async function createHub(config: HubConfig) {
     tenancy: chatTenancy,
     threads: threadStore,
     blockResponses: blockResponseStore,
+    channelSubscribers,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
