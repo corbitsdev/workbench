@@ -34,6 +34,7 @@ import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
+import type { CredentialBinding } from "@intx/types";
 
 export const GRANOLA_CALL_WORKFLOW_ID = "wf_granola_call";
 export const GRANOLA_CALL_STEP_ID = "granola-call";
@@ -58,6 +59,24 @@ export const GRANOLA_CALL_SYSTEM_PROMPT =
 /** Tool packages this definition pins (CL-5999); see the header comment. */
 export const GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/granola-tools", version: "0.0.1" },
+];
+
+/**
+ * Binds `@corbits/granola-tools`' declared "granola" handle to a
+ * tenant-owned Granola credential (CL-6028). The launch resolves this
+ * against `buildCredentialDelivery`, materializing a consumer-scoped
+ * `credential:{id}` / `use` grant for the pinned package — see
+ * `packages/granola-tools/src/tool.ts`'s header comment for the runtime
+ * gap that still separates a binding resolved at launch and a credential
+ * actually reachable by the tool at call time.
+ */
+export const GRANOLA_CALL_CREDENTIAL_BINDINGS: readonly CredentialBinding[] = [
+  {
+    package: "@corbits/granola-tools",
+    handle: "granola",
+    provider: "granola",
+    locator: "tenant",
+  },
 ];
 
 /**
@@ -101,6 +120,7 @@ export function buildGranolaCallWorkflow(
   return defineWorkflow({
     id: GRANOLA_CALL_WORKFLOW_ID,
     trigger: { type: "mail", to: input.triggerAddress },
+    credentialBindings: GRANOLA_CALL_CREDENTIAL_BINDINGS,
     steps: {
       [GRANOLA_CALL_STEP_ID]: step({
         agent: {

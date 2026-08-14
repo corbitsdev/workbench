@@ -21,6 +21,21 @@ the tool never throws — it returns a completed result with
 `isError: true` and content naming the source "not connected", so a
 calling agent can degrade gracefully instead of failing its turn.
 
+This package declares one credential handle, `granola`, in its
+`package.json`'s `interchange.credentials` field (CL-6028). Connect
+Granola once, in Settings · Connections, and every workflow that pins
+`@corbits/granola-tools` and binds this handle — `granola-call`,
+`process-granola-call`, `pain-point-collateral`, `collateral-generation`,
+`morning-brief` — resolves the same tenant-owned credential at launch;
+no per-workflow reconnection.
+
+That launch-time resolution (`buildCredentialDelivery`) is proven in
+`test/credential-delivery.drizzle.test.ts`. Delivering the resolved
+credential into this bundle's `run()` at call time is a separate,
+still-open seam — see `src/tool.ts`'s header comment for exactly which
+file is missing the wiring — so until that lands, `granolaApiKey` stays
+unset in production and the tool correctly reports "not connected."
+
 ## Usage
 
 ```ts

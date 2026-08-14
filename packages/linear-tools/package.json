@@ -8,6 +8,13 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "interchange": {
+    "credentials": [
+      {
+        "handle": "linear"
+      }
+    ]
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
@@ -18,6 +25,8 @@
     "arktype": "catalog:"
   },
   "devDependencies": {
+    "@intx/crypto": "workspace:*",
+    "@intx/db": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
+  PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS,
   PROCESS_GRANOLA_CALL_STEP_ID,
   PROCESS_GRANOLA_CALL_SYSTEM_PROMPT,
   PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS,
@@ -80,6 +81,21 @@ test("the system prompt commits to an honest failure instead of a fabricated doc
   const lowered = PROCESS_GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase();
   expect(lowered).toContain("do not publish a call-notes artifact");
   expect(lowered).toContain("never a fabricated document");
+});
+
+test("the definition binds @corbits/granola-tools' declared handle to a tenant-owned granola credential", () => {
+  const definition = buildProcessGranolaCallWorkflow(INPUT);
+  expect(definition.credentialBindings).toEqual([
+    ...PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS,
+  ]);
+  expect(PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS).toEqual([
+    {
+      package: "@corbits/granola-tools",
+      handle: "granola",
+      provider: "granola",
+      locator: "tenant",
+    },
+  ]);
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {

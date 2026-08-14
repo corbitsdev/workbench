@@ -50,6 +50,7 @@ import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
+import type { CredentialBinding } from "@intx/types";
 
 import { PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME } from "./finalize-tool";
 
@@ -88,6 +89,22 @@ export const PAIN_POINT_COLLATERAL_SYSTEM_PROMPT =
 /** Tool packages this definition pins (CL-5999); see the header comment. */
 export const PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
   [{ name: "@corbits/granola-tools", version: "0.0.1" }];
+
+/**
+ * Binds `@corbits/granola-tools`' declared "granola" handle to a
+ * tenant-owned Granola credential (CL-6028); see
+ * `workflows/granola-call/src/index.ts`'s sibling constant for the full
+ * rationale.
+ */
+export const PAIN_POINT_COLLATERAL_CREDENTIAL_BINDINGS: readonly CredentialBinding[] =
+  [
+    {
+      package: "@corbits/granola-tools",
+      handle: "granola",
+      provider: "granola",
+      locator: "tenant",
+    },
+  ];
 
 /**
  * Everything the definition needs that is per-deployment data. The
@@ -130,6 +147,7 @@ export function buildPainPointCollateralWorkflow(
   return defineWorkflow({
     id: PAIN_POINT_COLLATERAL_WORKFLOW_ID,
     trigger: { type: "mail", to: input.triggerAddress },
+    credentialBindings: PAIN_POINT_COLLATERAL_CREDENTIAL_BINDINGS,
     steps: {
       [PAIN_POINT_COLLATERAL_STEP_ID]: step({
         agent: {
