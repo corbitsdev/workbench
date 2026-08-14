@@ -27,8 +27,9 @@ test("requires the sanctioned workflow-artifacts env keys", () => {
   ]);
 });
 
-test("buildArtifactPayload passes the report through as a text artifact", () => {
+test("buildArtifactPayload marks a real report as a text artifact", () => {
   const payload = buildArtifactPayload({
+    outcome: "report",
     title: "Last 30 days: agentic coding tools",
     content: "## Overview\n\nSomething happened",
   });
@@ -36,6 +37,19 @@ test("buildArtifactPayload passes the report through as a text artifact", () => 
     title: "Last 30 days: agentic coding tools",
     kind: "text",
     content: "## Overview\n\nSomething happened",
+  });
+});
+
+test("buildArtifactPayload marks a no-data teaching payload as status-note, not text", () => {
+  const payload = buildArtifactPayload({
+    outcome: "status-note",
+    title: "Last 30 days: agentic coding tools — no results yet",
+    content: "`exa` is not connected yet.",
+  });
+  expect(payload).toEqual({
+    title: "Last 30 days: agentic coding tools — no results yet",
+    kind: "status-note",
+    content: "`exa` is not connected yet.",
   });
 });
 
@@ -61,6 +75,7 @@ test("run persists the artifact on real invocation (i.e. after approval re-dispa
         id: "call_1",
         name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
         arguments: {
+          outcome: "report",
           title: "Last 30 days: agentic coding tools",
           content: "## Overview\n\nSomething happened",
         },
@@ -88,7 +103,7 @@ test("run persists the artifact on real invocation (i.e. after approval re-dispa
   }
 });
 
-test("run persists a teaching payload on the no-data path the same way as a real report", async () => {
+test("run persists a teaching payload on the no-data path with a status-note kind, distinct from a real report", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
     new Response(JSON.stringify({ data: { id: "art_2", version: 1 } }), {
@@ -102,6 +117,7 @@ test("run persists a teaching payload on the no-data path the same way as a real
         id: "call_2",
         name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
         arguments: {
+          outcome: "status-note",
           title: "Last 30 days: agentic coding tools — no results yet",
           content:
             "This report would have searched the web (`exa`) and " +
@@ -114,8 +130,12 @@ test("run persists a teaching payload on the no-data path the same way as a real
     );
 
     expect(result.isError).toBe(false);
-    const parsed = JSON.parse(String(result.content)) as { persisted: boolean };
+    const parsed = JSON.parse(String(result.content)) as {
+      persisted: boolean;
+      kind: string;
+    };
     expect(parsed.persisted).toBe(true);
+    expect(parsed.kind).toBe("status-note");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -133,6 +153,7 @@ test("run returns an honest error result when persistence fails, never fabricati
         id: "call_1",
         name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
         arguments: {
+          outcome: "report",
           title: "Last 30 days: agentic coding tools",
           content: "## Overview\n\nSomething happened",
         },
@@ -154,6 +175,24 @@ test("run rejects malformed arguments without throwing", async () => {
       id: "call_1",
       name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
       arguments: {},
+    },
+    new AbortController().signal,
+  );
+  expect(result.isError).toBe(true);
+  expect(result.content).toContain("Invalid arguments");
+});
+
+test("run rejects an outcome value outside the two structural kinds", async () => {
+  const bundle = LAST_30_DAYS_RESEARCH_FINALIZE_TOOL(testEnv());
+  const result = await bundle.run(
+    {
+      id: "call_1",
+      name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
+      arguments: {
+        outcome: "summary",
+        title: "Last 30 days: agentic coding tools",
+        content: "## Overview\n\nSomething happened",
+      },
     },
     new AbortController().signal,
   );
