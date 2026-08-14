@@ -47,3 +47,4 @@ export {
   type ToolCallSummary,
 } from "./queries";
 export { createInsightsRoutes, type CreateInsightsRoutesDeps } from "./routes";
+export { createDrizzleRunTraceReader } from "./trace-reader";

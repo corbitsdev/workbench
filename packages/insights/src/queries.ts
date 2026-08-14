@@ -1,3 +1,5 @@
+import type { AuditAuthz } from "@intx/types/audit";
+
 import { computeCost, totalTokens, type TokenClasses } from "./pricing";
 import type { UsageStore, UsageTurnRecord } from "./store";
 
@@ -158,11 +160,12 @@ export async function activityByDay(
 }
 
 /**
- * Run-trace detail is owned by workflow_run / workflow_run_execution in
- * platform schema. This package does not re-query those tables here —
- * the hub mount injects a RunTraceReader when available. Until then
- * callers receive an explicit absent result rather than a fabricated
- * empty trace.
+ * Run-trace detail is owned by workflow_run / inference_turn / turn_part
+ * in the platform schema (see @corbits/insights' createDrizzleRunTraceReader
+ * for the concrete reader). This package's route layer does not re-query
+ * those tables itself — the hub mount injects a RunTraceReader. A tenant
+ * that mounts none receives an explicit absent result rather than a
+ * fabricated empty trace.
  */
 export type RunTraceSpan = {
   readonly id: string;
@@ -174,6 +177,16 @@ export type RunTraceSpan = {
   readonly tokens: TokenClasses | null;
   readonly phase: "ok" | "awaiting" | "failed";
   readonly error: string | null;
+  /**
+   * Authorization verdict for a `kind: "tool"` span. Verdicts are recorded
+   * only in the sidecar-side git-backed audit trail (`AuditRecord`, written
+   * via `IsogitStore.commitAudit`), which the hub's Postgres-only
+   * composition root has no read path into today — so this is always
+   * `null` for now, an honest absence rather than a fabricated verdict.
+   * The field exists so CL-5927 (Settings · Audit) can consume tool-call
+   * rows from this same reader once that read path is wired.
+   */
+  readonly authz?: AuditAuthz | null;
 };
 
 export type RunTrace = {
