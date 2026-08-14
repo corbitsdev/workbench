@@ -17,18 +17,25 @@
 //
 // Infrastructure gap (see README "Current limits", and
 // `@corbits/granola-call-workflow`'s header comment): nothing in this
-// host can spawn this workflow programmatically yet, and Granola access
-// itself (`corbitsdev/granola-tools`) is not published anywhere this
-// host's tool loader can resolve it from. This definition's single step
-// is an honest placeholder until both land — its system prompt commits
-// it to saying plainly that it cannot reach Granola or the artifact it
-// was asked about, rather than inventing call notes for a transcript it
-// never read.
+// host can spawn this workflow programmatically yet. That gap is
+// unrelated to tool access: CL-5999 closed the tool-pin gap this file
+// used to document here (`@intx/agent`'s `defineAgent` still does not
+// accept a `toolPackagePins` field — it is vendored, read-only source —
+// so the agent below is built directly against `AgentDefinition`'s own
+// type, which already carries the field). `@corbits/granola-tools` is
+// pinned below; whether it *resolves* at deploy time still depends on
+// an operator publishing it to a registry the host's tool-package
+// resolver can reach (see `apps/hub/src/index.ts`'s
+// `toolPackageRegistries` wiring). Until a deploy actually resolves the
+// pin, and until spawning itself lands, this definition's system
+// prompt still commits it to saying plainly that it cannot reach
+// Granola or the artifact it was asked about, rather than inventing
+// call notes for a transcript it never read.
 
-import { defineAgent } from "@intx/agent";
-import type { InferencePreference } from "@intx/agent";
+import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 
 export const PROCESS_GRANOLA_CALL_WORKFLOW_ID = "wf_process_granola_call";
 export const PROCESS_GRANOLA_CALL_STEP_ID = "process-granola-call";
@@ -50,6 +57,10 @@ export const PROCESS_GRANOLA_CALL_SYSTEM_PROMPT =
   "plainly, in one short sentence, and do not publish a call-notes " +
   "artifact for it. A bad transcript is this one run failing honestly, " +
   "never a fabricated document.";
+
+/** Tool packages this definition pins (CL-5999); see the header comment. */
+export const PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
+  [{ name: "@corbits/granola-tools", version: "0.0.1" }];
 
 /**
  * Everything the definition needs that is per-deployment data. The
@@ -98,16 +109,17 @@ export function buildProcessGranolaCallWorkflow(
     trigger: { type: "mail", to: input.triggerAddress },
     steps: {
       [PROCESS_GRANOLA_CALL_STEP_ID]: step({
-        agent: defineAgent({
+        agent: {
           id: PROCESS_GRANOLA_CALL_STEP_ID,
           description:
             "Processes one Granola call into a verified, published " +
             "call-notes artifact",
           systemPrompt: PROCESS_GRANOLA_CALL_SYSTEM_PROMPT,
-          tools: [],
+          toolFactories: [],
           capabilities: [],
           inference: { sources: input.inferencePreferences },
-        }),
+          toolPackagePins: PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS,
+        } satisfies AgentDefinition,
         timeout: input.turnTimeoutMs,
       }),
     },

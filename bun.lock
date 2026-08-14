@@ -848,6 +848,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -873,6 +874,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
@@ -897,9 +899,11 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {
+        "@corbits/folded-runs": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -909,6 +913,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
@@ -922,6 +927,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
       },
       "devDependencies": {

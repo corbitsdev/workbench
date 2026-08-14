@@ -29,18 +29,24 @@
 // for input. This definition keeps exactly one approval gate: finalizing
 // every piece the human approved, all at once.
 //
-// Known platform gaps (see `finalize-tool.ts`'s header for the write-side
-// account, and `@corbits/artifact-tools`' README for the read-side one):
-// no production workflow builder in this repo threads a caller-supplied
-// `toolPackagePins` onto a built definition yet (`docs/AGENTS-PAGE.md`),
-// the same gap `@corbits/pain-point-collateral-workflow` (CL-5995),
-// `@corbits/morning-brief-workflow` (CL-5993), and
-// `@corbits/granola-call-workflow` (CL-5998) document. Until that lands,
-// this definition's step ships with `tools: []`, matching every other
-// definition in this catalog — its system prompt commits it to saying
-// plainly when it has no way to reach a source or finalize a piece,
-// rather than inventing source material or an approval that never
-// happened.
+// Tool-package pins (CL-5999): `@intx/agent`'s `defineAgent` still does
+// not accept a `toolPackagePins` field on its authoring-time config —
+// it is vendored, read-only source for this change — so the agent
+// below is built directly against `AgentDefinition`'s own type, which
+// already carries the field. `@corbits/granola-tools` and
+// `@corbits/linear-tools` are pinned below; whether either pin
+// *resolves* at deploy time still depends on an operator publishing it
+// to a registry the host's tool-package resolver can reach (see
+// `apps/hub/src/index.ts`'s `toolPackageRegistries` wiring).
+// `@corbits/artifact-tools` (the read-side account in its own README)
+// stays unpinned: its one tool still cannot reach the Library engine
+// itself (CL-6000), so pinning it would resolve a package whose tool
+// cannot do anything yet. See `finalize-tool.ts`'s header for the
+// separate, still-open write-side gap. Until deploys actually resolve
+// the pins below, this definition's system prompt still commits it to
+// saying plainly when it has no way to reach a source or finalize a
+// piece, rather than inventing source material or an approval that
+// never happened.
 //
 // This package is installable data. It imports only published platform
 // packages, and nothing imports it statically: a host publishes the
@@ -48,10 +54,10 @@
 // platform's deploy machinery; the execution host materializes it at
 // runtime from the deploy alone.
 
-import { defineAgent } from "@intx/agent";
-import type { InferencePreference } from "@intx/agent";
+import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 
 import { COLLATERAL_GENERATION_FINALIZE_TOOL_NAME } from "./finalize-tool";
 
@@ -132,6 +138,17 @@ export const COLLATERAL_GENERATION_WIRED_SOURCES = [
 export const COLLATERAL_GENERATION_PENDING_SOURCES = [
   "workbench artifacts",
 ] as const;
+
+/**
+ * Tool packages this definition pins (CL-5999), one per wired source in
+ * `COLLATERAL_GENERATION_WIRED_SOURCES`; see the header comment for why
+ * `@corbits/artifact-tools` stays unpinned.
+ */
+export const COLLATERAL_GENERATION_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
+  [
+    { name: "@corbits/granola-tools", version: "0.0.1" },
+    { name: "@corbits/linear-tools", version: "0.0.1" },
+  ];
 
 const CONTENT_TYPE_LINES = COLLATERAL_CONTENT_TYPES.map(
   (type) => `- "${type.id}" (${type.label}): ${type.guidance}`,
@@ -241,17 +258,18 @@ export function buildCollateralGenerationWorkflow(
     trigger: { type: "mail", to: input.triggerAddress },
     steps: {
       [COLLATERAL_GENERATION_STEP_ID]: step({
-        agent: defineAgent({
+        agent: {
           id: COLLATERAL_GENERATION_STEP_ID,
           description:
             "Drafts marketing collateral from picked sources and " +
             "content types, with a swipe review per piece and one " +
             "human approval on the final approved set",
           systemPrompt: COLLATERAL_GENERATION_SYSTEM_PROMPT,
-          tools: [],
+          toolFactories: [],
           capabilities: [],
           inference: { sources: input.inferencePreferences },
-        }),
+          toolPackagePins: COLLATERAL_GENERATION_TOOL_PACKAGE_PINS,
+        } satisfies AgentDefinition,
         timeout: input.turnTimeoutMs,
       }),
     },

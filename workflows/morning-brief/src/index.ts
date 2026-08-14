@@ -25,10 +25,10 @@
 // platform's deploy machinery; the execution host materializes it at
 // runtime from the deploy alone.
 
-import { defineAgent } from "@intx/agent";
-import type { InferencePreference } from "@intx/agent";
+import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 
 export const MORNING_BRIEF_WORKFLOW_ID = "wf_morning_brief";
 export const MORNING_BRIEF_STEP_ID = "morning-brief";
@@ -53,6 +53,22 @@ export const MORNING_BRIEF_SECTIONS = [
 // it a tool package and a line here, never restructuring the brief.
 export const MORNING_BRIEF_WIRED_SOURCES = ["Granola", "Linear"] as const;
 export const MORNING_BRIEF_PENDING_SOURCES = ["Attio", "Vercel"] as const;
+
+/**
+ * Tool packages this definition pins (CL-5999). `@intx/agent`'s
+ * `defineAgent` does not yet accept a `toolPackagePins` field on its
+ * authoring-time config — it is vendored, read-only source for this
+ * change — so the agent below is built directly against
+ * `AgentDefinition`'s own type, which already carries the field. The
+ * deploy path (`@intx/workflow-deploy`, `@intx/hub-sessions`,
+ * `@corbits/folded-runs`) already resolves `toolPackagePins` into a
+ * tool closure at launch time; this is the declaration side of that
+ * existing pipeline.
+ */
+export const MORNING_BRIEF_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
+  { name: "@corbits/granola-tools", version: "0.0.1" },
+  { name: "@corbits/linear-tools", version: "0.0.1" },
+];
 
 export const MORNING_BRIEF_SYSTEM_PROMPT = [
   "You write a short daily brief summarizing the sender's recent " +
@@ -126,16 +142,17 @@ export function buildMorningBriefWorkflow(
     trigger: { type: "mail", to: input.triggerAddress },
     steps: {
       "morning-brief": step({
-        agent: defineAgent({
+        agent: {
           id: MORNING_BRIEF_STEP_ID,
           description:
             "Pulls recent activity across the sender's connected " +
             "sources and writes it up as a short daily brief",
           systemPrompt: MORNING_BRIEF_SYSTEM_PROMPT,
-          tools: [],
+          toolFactories: [],
           capabilities: [],
           inference: { sources: input.inferencePreferences },
-        }),
+          toolPackagePins: MORNING_BRIEF_TOOL_PACKAGE_PINS,
+        } satisfies AgentDefinition,
         timeout: input.turnTimeoutMs,
       }),
     },

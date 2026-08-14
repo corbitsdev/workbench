@@ -15,19 +15,25 @@
 // out into per-call child runs is Granola-specific machinery nowhere near
 // ready in this host today — no shipped Interchange host resolves the
 // `action` primitive `@intx/workflow` already declares (confirmed by
-// `@corbits/heartbeat-workflow`'s own README), and no production workflow
-// builder in this repo threads tool-package pins onto a definition at all
-// (`docs/AGENTS-PAGE.md`). Granola access itself is equally unavailable:
-// `corbitsdev/granola-tools` is not published anywhere this host's tool
-// loader can resolve it from. Until both land, this definition's single
-// step is an honest placeholder — its system prompt commits it to saying
-// plainly that Granola is not connected rather than inventing call data,
-// the same "no fallbacks" standard the rest of this repo holds.
+// `@corbits/heartbeat-workflow`'s own README). That gap is unrelated to
+// tool access: CL-5999 closed the tool-pin gap this file used to
+// document here (`@intx/agent`'s `defineAgent` still does not accept a
+// `toolPackagePins` field — it is vendored, read-only source — so the
+// agent below is built directly against `AgentDefinition`'s own type,
+// which already carries the field). `@corbits/granola-tools` is pinned
+// below; whether it *resolves* at deploy time still depends on an
+// operator publishing it to a registry the host's tool-package resolver
+// can reach (npm, or an Interchange package-registry asset — see
+// `apps/hub/src/index.ts`'s `toolPackageRegistries` wiring). Until a
+// deploy actually resolves the pin, this definition's system prompt
+// still commits it to saying plainly that Granola is not connected
+// rather than inventing call data, the same "no fallbacks" standard the
+// rest of this repo holds.
 
-import { defineAgent } from "@intx/agent";
-import type { InferencePreference } from "@intx/agent";
+import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 
 export const GRANOLA_CALL_WORKFLOW_ID = "wf_granola_call";
 export const GRANOLA_CALL_STEP_ID = "granola-call";
@@ -48,6 +54,11 @@ export const GRANOLA_CALL_SYSTEM_PROMPT =
   "If you have no way to reach Granola for this workspace — no " +
   "connection, no calls tool available — say so plainly, in one short " +
   "sentence, and stop. Never invent call counts, call names, or notes.";
+
+/** Tool packages this definition pins (CL-5999); see the header comment. */
+export const GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
+  { name: "@corbits/granola-tools", version: "0.0.1" },
+];
 
 /**
  * Everything the definition needs that is per-deployment data. The
@@ -92,16 +103,17 @@ export function buildGranolaCallWorkflow(
     trigger: { type: "mail", to: input.triggerAddress },
     steps: {
       [GRANOLA_CALL_STEP_ID]: step({
-        agent: defineAgent({
+        agent: {
           id: GRANOLA_CALL_STEP_ID,
           description:
             "Polls Granola for new calls and starts one call-notes run " +
             "per call that has not been processed yet",
           systemPrompt: GRANOLA_CALL_SYSTEM_PROMPT,
-          tools: [],
+          toolFactories: [],
           capabilities: [],
           inference: { sources: input.inferencePreferences },
-        }),
+          toolPackagePins: GRANOLA_CALL_TOOL_PACKAGE_PINS,
+        } satisfies AgentDefinition,
         timeout: input.turnTimeoutMs,
       }),
     },
