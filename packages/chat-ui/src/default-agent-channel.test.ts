@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { createDefaultAgentChannel, isChannelTitleMatch } from "./default-agent-channel";
+import {
+  createDefaultAgentChannel,
+  isChannelTitleMatch,
+} from "./default-agent-channel";
 import type { Channel } from "./api";
 
 function channel(partial: {
@@ -90,7 +93,8 @@ describe("createDefaultAgentChannel", () => {
       assetName: "assistant",
     });
     const calls = stubFetch((path) => {
-      if (path.endsWith("/chat/channels?kind=channel")) return json({ items: [] });
+      if (path.endsWith("/chat/channels?kind=channel"))
+        return json({ items: [] });
       if (path.endsWith("/chat/channels?kind=chat")) return json({ items: [] });
       if (path.endsWith("/chat/channels")) {
         return json({
@@ -109,7 +113,9 @@ describe("createDefaultAgentChannel", () => {
     ]);
 
     expect(result).toEqual({ kind: "ready", channelId: "chat-1" });
-    const createCall = calls.find((call) => call.path.endsWith("/chat/channels"));
+    const createCall = calls.find((call) =>
+      call.path.endsWith("/chat/channels"),
+    );
     expect(createCall?.init?.method).toBe("POST");
     expect(JSON.parse(String(createCall?.init?.body))).toEqual({
       kind: "chat",
@@ -154,7 +160,8 @@ describe("createDefaultAgentChannel", () => {
       assetName: "assistant",
     });
     stubFetch((path) => {
-      if (path.endsWith("/chat/channels?kind=channel")) return json({ items: [] });
+      if (path.endsWith("/chat/channels?kind=channel"))
+        return json({ items: [] });
       if (path.endsWith("/chat/channels?kind=chat")) return json({ items: [] });
       throw new Error(`unexpected fetch: ${path}`);
     });
@@ -167,9 +174,13 @@ describe("createDefaultAgentChannel", () => {
   });
 
   test("errors when the configured asset name is undefined", async () => {
-    const agent = createDefaultAgentChannel({ title: "Myra", assetName: undefined });
+    const agent = createDefaultAgentChannel({
+      title: "Myra",
+      assetName: undefined,
+    });
     stubFetch((path) => {
-      if (path.endsWith("/chat/channels?kind=channel")) return json({ items: [] });
+      if (path.endsWith("/chat/channels?kind=channel"))
+        return json({ items: [] });
       if (path.endsWith("/chat/channels?kind=chat")) return json({ items: [] });
       throw new Error(`unexpected fetch: ${path}`);
     });

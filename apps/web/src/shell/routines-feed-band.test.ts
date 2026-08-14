@@ -74,8 +74,8 @@ describe("routineTriggerSummary", () => {
   // `routineCadenceSummary`, covered there — this only proves the band
   // re-exports it under its established name.
   test("re-exports routineCadenceSummary", () => {
-    expect(
-      routineTriggerSummary({ kind: "daily", hour: 9, minute: 0 }),
-    ).toBe("Daily 09:00");
+    expect(routineTriggerSummary({ kind: "daily", hour: 9, minute: 0 })).toBe(
+      "Daily 09:00",
+    );
   });
 });

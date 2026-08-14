@@ -59,7 +59,9 @@ export function createDefaultAgentChannel(config: DefaultAgentChannelConfig) {
     return findChannelByTitle(channels, config.title);
   }
 
-  async function ensure<D extends { readonly id: string; readonly name: string }>(
+  async function ensure<
+    D extends { readonly id: string; readonly name: string },
+  >(
     tenantId: string,
     listDefinitions: (tenantId: string) => Promise<readonly D[]>,
   ): Promise<EnsureDefaultAgentChannelResult> {
@@ -74,7 +76,10 @@ export function createDefaultAgentChannel(config: DefaultAgentChannelConfig) {
         return { kind: "ready", channelId: existing.id };
       }
       const definitions = await listDefinitions(tenantId);
-      const definition = findDefinitionByAssetName(definitions, config.assetName);
+      const definition = findDefinitionByAssetName(
+        definitions,
+        config.assetName,
+      );
       if (definition === undefined) {
         return {
           kind: "error",
