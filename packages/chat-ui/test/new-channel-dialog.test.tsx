@@ -187,6 +187,98 @@ describe("NewChannelDialog guided stepper", () => {
     expect(chatCardAfterBack?.getAttribute("aria-pressed")).toBe("true");
   });
 
+  test("a typed purpose is passed to onCreate as the payload's second argument", async () => {
+    stubInvitableDefinitions([]);
+    let received: [unknown, string | undefined] | undefined;
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: (input, purpose) => {
+        received = [input, purpose];
+      },
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "channel",
+    });
+    await settle();
+
+    const nameInput = document.body.querySelector(
+      "input",
+    ) as HTMLInputElement | null;
+    act(() => {
+      nameInput?.dispatchEvent(new Event("focus"));
+    });
+    const textarea = document.body.querySelector("textarea");
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(textarea, "Launch planning");
+      textarea?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const nameSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      nameSetter?.call(nameInput, "Launch");
+      nameInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+
+    const createButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Create",
+    );
+    act(() => {
+      createButton?.click();
+    });
+    await settle();
+
+    expect(received).toBeDefined();
+    expect(received?.[1]).toBe("Launch planning");
+  });
+
+  test("an untyped purpose passes undefined to onCreate", async () => {
+    stubInvitableDefinitions([]);
+    let received: [unknown, string | undefined] | undefined;
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: (input, purpose) => {
+        received = [input, purpose];
+      },
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "channel",
+    });
+    await settle();
+
+    const nameInput = document.body.querySelector(
+      "input",
+    ) as HTMLInputElement | null;
+    const nameSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      nameSetter?.call(nameInput, "Launch");
+      nameInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+
+    const createButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Create",
+    );
+    act(() => {
+      createButton?.click();
+    });
+    await settle();
+
+    expect(received).toBeDefined();
+    expect(received?.[1]).toBeUndefined();
+  });
+
   test("an initial kind skips the kind step and opens straight on details, with no Back", async () => {
     stubInvitableDefinitions([{ id: "wfd_echo", name: "Echo" }]);
     mount({

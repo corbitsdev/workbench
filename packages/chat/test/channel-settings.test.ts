@@ -300,6 +300,39 @@ describe("PATCH /channels/:id/settings", () => {
     expect(response.status).toBe(400);
   });
 
+  test("chat/purpose round-trips through PATCH /channels/:id/settings", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/purpose": "Launch planning" }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      settings: Record<string, unknown>;
+    };
+    expect(body.settings["chat/purpose"]).toBe("Launch planning");
+
+    const stored = await deps.store.getChannelSettings(TENANT.id, channel.id);
+    expect(stored?.settings["chat/purpose"]).toBe("Launch planning");
+  });
+
+  test("rejects a non-string chat/purpose value", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const response = await app.request(`/channels/${channel.id}/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "chat/purpose": 123 }),
+    });
+    expect(response.status).toBe(400);
+  });
+
   test("a GET/PATCH response reports the effective contextWindow as inherited by default", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");
