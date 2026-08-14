@@ -147,6 +147,24 @@ export const chatMigrations: readonly ChatMigration[] = [
         ON "channel_thread_messages" ("tenant_id", "thread_id");
     `,
   },
+  {
+    name: "0010_block_responses",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "block_responses" (
+        "tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "message_id" text NOT NULL,
+        "block_id" text NOT NULL,
+        "principal_id" text NOT NULL,
+        "payload" jsonb NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        "updated_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "channel_id", "message_id", "block_id", "principal_id")
+      );
+      CREATE INDEX IF NOT EXISTS "block_responses_block_idx"
+        ON "block_responses" ("tenant_id", "channel_id", "message_id", "block_id");
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named

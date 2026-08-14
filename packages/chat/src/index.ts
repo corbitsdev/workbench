@@ -100,6 +100,20 @@ export type {
   ThreadDb,
 } from "./threads";
 
+export {
+  createInMemoryBlockResponseStore,
+  createDrizzleBlockResponseStore,
+  aggregatePollResponses,
+} from "./block-responses";
+export type {
+  BlockResponsePayload,
+  BlockResponseRow,
+  BlockResponseStore,
+  BlockResponseAggregation,
+  BlockResponseDb,
+  UpsertBlockResponseInput,
+} from "./block-responses";
+
 export { createNoopInferenceRoutes } from "./noop-inference";
 export {
   launchAndJoinAgent,

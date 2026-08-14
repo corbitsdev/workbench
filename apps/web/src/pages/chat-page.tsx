@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 
 import { createChatApprovalActions } from "../approval-actions";
+import { createChatBlockResponseActions } from "../block-response-actions";
 import { useBench } from "../bench-context";
 import {
   channelIdFromPath,
@@ -44,6 +45,13 @@ export function ChatPage({
         ? undefined
         : createChatApprovalActions(tenantId, queryClient),
     [tenantId, queryClient],
+  );
+  const blockResponses = useMemo(
+    () =>
+      tenantId === null || channelId === null
+        ? undefined
+        : createChatBlockResponseActions(tenantId, channelId),
+    [tenantId, channelId],
   );
 
   // The new-chat dialog's People tab: the same bench-membership listing
@@ -96,6 +104,7 @@ export function ChatPage({
       }}
       onOpenArtifact={openArtifact}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
+      {...(blockResponses !== undefined ? { blockResponses } : {})}
       listMembers={listMembers}
     />
   );

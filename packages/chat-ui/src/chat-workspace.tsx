@@ -54,6 +54,7 @@ import { CHAT_STRINGS } from "./strings";
 import { AgentBadge, ChannelTimeline } from "./timeline";
 import type { CurrentUser, ThreadAffordanceMeta } from "./timeline";
 import type { ApprovalActions } from "./blocks/approval-actions";
+import type { BlockResponseActions } from "./blocks/block-responses";
 import {
   typingLabel,
   TypingIndicator,
@@ -199,6 +200,7 @@ function ChatWorkspaceInner({
   onSettingsOpenChange,
   onOpenArtifact,
   approvalActions,
+  blockResponses,
   headerLeading,
   listMembers,
 }: {
@@ -215,6 +217,7 @@ function ChatWorkspaceInner({
   readonly onSettingsOpenChange?: (open: boolean) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly approvalActions?: ApprovalActions;
+  readonly blockResponses?: BlockResponseActions;
   readonly headerLeading?: ReactNode;
   /** The bench's people, for the new-chat dialog's People tab — see
    * `NewChannelDialog`'s own prop note. Host-supplied, the same way
@@ -796,6 +799,9 @@ function ChatWorkspaceInner({
                     {...(approvalActions !== undefined
                       ? { approvalActions }
                       : {})}
+                    {...(blockResponses !== undefined
+                      ? { blockResponses }
+                      : {})}
                   />
                   {typingState !== null ? (
                     <TypingIndicator
@@ -856,6 +862,7 @@ export function ChatWorkspace({
   onSettingsOpenChange,
   onOpenArtifact,
   approvalActions,
+  blockResponses,
   headerLeading,
   listMembers,
 }: {
@@ -884,6 +891,9 @@ export function ChatWorkspace({
   /** The approve block's live round-trip — see `ChannelTimeline`'s
    * `approvalActions`. */
   readonly approvalActions?: ApprovalActions;
+  /** The poll/form blocks' live round-trip — see `ChannelTimeline`'s
+   * `blockResponses`. */
+  readonly blockResponses?: BlockResponseActions;
   /** Host-supplied control rendered first in the channel header — the
    * shell's single col2 toggle, so chat carries the same top-bar chrome as
    * every other stage surface. */
@@ -912,6 +922,7 @@ export function ChatWorkspace({
             ? { onSettingsOpenChange }
             : {})}
           {...(approvalActions !== undefined ? { approvalActions } : {})}
+          {...(blockResponses !== undefined ? { blockResponses } : {})}
           {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
           {...(headerLeading !== undefined ? { headerLeading } : {})}
           {...(listMembers !== undefined ? { listMembers } : {})}

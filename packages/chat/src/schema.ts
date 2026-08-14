@@ -174,3 +174,45 @@ export const channelThreadMessages = pgTable(
     ),
   ],
 );
+
+/**
+ * One poll/form response per principal per block, upsert-on-repeat (see
+ * `./block-responses.ts`). `blockId` is the agent-authored `pollId`/`formId`
+ * — never unique on its own — so every row is additionally scoped by
+ * `messageId`: the block this row answers is the one in *this specific*
+ * message, never any other message that happens to reuse the same id.
+ */
+export const blockResponses = pgTable(
+  "block_responses",
+  {
+    tenantId: text("tenant_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    messageId: text("message_id").notNull(),
+    blockId: text("block_id").notNull(),
+    principalId: text("principal_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.tenantId,
+        table.channelId,
+        table.messageId,
+        table.blockId,
+        table.principalId,
+      ],
+    }),
+    index("block_responses_block_idx").on(
+      table.tenantId,
+      table.channelId,
+      table.messageId,
+      table.blockId,
+    ),
+  ],
+);

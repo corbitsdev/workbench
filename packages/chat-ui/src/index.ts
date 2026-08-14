@@ -53,6 +53,14 @@ export type {
   ApprovalDecisionResult,
   PlatformApprovalDetail,
 } from "./blocks/approval-actions";
+export type {
+  BlockResponseActions,
+  BlockResponseQuery,
+  BlockResponseSubmitResult,
+  BlockResponsePayload,
+  PollResponsePayload,
+  FormResponsePayload,
+} from "./blocks/block-responses";
 
 export {
   TextPart,
@@ -82,6 +90,9 @@ export {
   patchChannelSettings,
   getBenchChatSettings,
   patchBenchChatSettings,
+  getBlockResponses,
+  submitPollResponse,
+  submitFormResponse,
 } from "./api";
 export type {
   Channel,
@@ -98,6 +109,8 @@ export type {
   ResolvedContextWindow,
   BenchChatSettings,
   BenchChatSettingsPatch,
+  BlockResponses,
+  BlockResponsePayload as BlockResponsePayloadWire,
 } from "./api";
 export { ChannelSettingsSurface } from "./channel-settings";
 export {
