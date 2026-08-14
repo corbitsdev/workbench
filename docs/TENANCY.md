@@ -28,20 +28,41 @@ walks the chain on every read.
 
 ### Signup mode
 
-Env: `WORKBENCH_SIGNUP=open|closed` (default **`closed`**).
+`@workbench/access-policy` (CL-5886) is the actual enforcement point,
+called from `packages/onboarding`'s first-login provisioning hook — it
+is never patched into a vendor route. Two layers, in order:
 
-- **closed** — self-serve email signup is rejected. An owner adds
-  members via the native invite/membership path, or shares a
-  **copy-link invite** (token in the URL). Email delivery of invites is
-  out of scope.
-- **open** — email+password signup is allowed (still rate-limited).
-  Optional `WORKBENCH_ALLOWED_EMAIL_DOMAINS` (comma-separated) restricts
-  which email domains may sign up when open.
+1. **Bootstrap (env, no policy row yet)**: `WORKBENCH_SIGNUP=open|closed`
+   (default **`closed`**) plus optional `WORKBENCH_ALLOWED_EMAIL_DOMAINS`
+   (comma-separated). Local `bun run dev` injects `WORKBENCH_SIGNUP=open`
+   when the variable is unset, so a zero-edit `.env` can still seed the
+   admin account; an explicit value in `.env` always wins; production
+   deploys that do not use the dev launcher keep the closed default.
+2. **Policy row (operator tenant, once set)**: once `OPERATOR_TENANT_ID`
+   carries an explicit `access_policy.policy` row (editable from Settings
+   → People → "Who can join"), that row decides outright and the env
+   flag is no longer consulted — `selfSignup` is `"off"`, `"allowed-
+domains"` (with an `allowedDomains` list), or `"open"`. An absent row
+   is closed defaults, identical in effect to `selfSignup: "off"`.
 
-Local `bun run dev` injects `WORKBENCH_SIGNUP=open` when the variable is
-unset, so a zero-edit `.env` can still seed the admin account. An
-explicit value in `.env` always wins. Production deploys that do not
-use the dev launcher keep the closed default.
+**closed** — self-serve email signup is rejected. An owner adds members
+via the native invite/membership path, shares a **copy-link invite**
+(token in the URL, out of scope for delivery), or pre-vets an email (or
+a whole domain) as a **pending invite** — see below — before that person
+ever logs in.
+
+### Pending invites (the not-yet-registered-user bridge)
+
+The native invite route (`POST /tenants/:id/members/invite`) requires an
+existing `user` row looked up by email — it cannot invite someone who
+has never signed in. `@workbench/access-policy` bridges that gap with
+its own `pending_invite` table: an admin records an email (or a domain,
+for a standing "anyone at this domain may join" rule) against a tenant
+before that person has an account. On that email's first login, the
+onboarding hook resolves the match, redeems it through the native invite
+route (now that a user row exists) and an immediate activation, and
+consumes an exact-email match (a domain match is a standing rule and is
+never consumed).
 
 ### Workbench icon
 
@@ -52,14 +73,16 @@ and avatar badges. See `WorkbenchIcon` in `@corbits/bench-ui`.
 
 ### Sub-workbench creation
 
-Workbench validates before calling native tenant create:
+`@workbench/access-policy`'s `POST /api/tenants/:tenantId/access-policy/
+child-tenants` is the gated surface `@corbits/bench-ui`'s `createBench`
+calls whenever a `parentId` is given (a bare top-level bench still hits
+`POST /api/tenants` directly). Before ever calling the native route, it:
 
-1. Caller is **owner** of the parent (or has an explicit grant the
-   product treats as create-child).
-2. `parentId` refers to an existing tenant the caller can see.
-3. Cycle-safe: parent is not a descendant of the new tenant (for
-   create this is trivial — the new id does not exist yet; for any
-   future reparent it is required).
+1. Reads the parent tenant's own `tenancyCreation` policy —
+   `"owners"` (default), `"owners-admins"`, or `"none"`.
+2. Reads the caller's native roles back through the native principal-
+   detail route and checks them against that mode.
+3. Only then calls `POST /api/tenants` with `parentId` set.
 
 Interchange currently does **not** validate `parentId` on POST and has
 **no** cycle constraint — see gaps below.
@@ -181,4 +204,6 @@ needs a weaker role, that is an Interchange conversation first.
 
 - `@corbits/bench-ui` — switcher, create dialog, members, tenancy contracts
 - `@workbench/onboarding` — personal bench provision under operator parent
+- `@workbench/access-policy` — closed-by-default signup/sub-workbench-
+  creation policy, pending invites (CL-5886)
 - `apps/hub` — `WORKBENCH_SIGNUP`, invite routes, icon routes
