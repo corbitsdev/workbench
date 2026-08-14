@@ -12,6 +12,10 @@ import { App } from "../src/app";
 import { APP_ROUTES, matchesRoute, NAV_ROUTES } from "../src/routes";
 import type { SessionState } from "../src/session";
 
+/** Legacy routes that only redirect (see `pages/legacy-settings-redirects.tsx`)
+ * — no stable panel title to assert via the generic SSR loop below. */
+const LEGACY_REDIRECT_PATHS = new Set(["/agents", "/skills"]);
+
 const noNavigate = () => undefined;
 const noop = () => undefined;
 
@@ -90,13 +94,11 @@ describe("route table", () => {
     ]);
   });
 
-  test("rail nav is Channels, Routines, Library, Agents, Skills, Insights, Inbox, Settings", () => {
+  test("rail nav is Channels, Routines, Library, Insights, Inbox, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
       "Channels",
       "Routines",
       "Library",
-      "Agents",
-      "Skills",
       "Insights",
       "Inbox",
       "Settings",
@@ -114,10 +116,18 @@ describe("route table", () => {
     expect(matchesRoute("/settings", "/settings/people")).toBe(true);
     expect(matchesRoute("/settings", "/settings-lookalike")).toBe(false);
   });
+
+  test("legacy /agents and /skills stay routable (redirect-only, off the rail)", () => {
+    expect(matchesRoute("/agents", "/agents/wfd_1")).toBe(true);
+    expect(matchesRoute("/skills", "/skills/skill_1")).toBe(true);
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/agents");
+    expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/skills");
+  });
 });
 
 describe("routes render", () => {
   for (const route of APP_ROUTES) {
+    if (LEGACY_REDIRECT_PATHS.has(route.path)) continue;
     test(`${route.path} renders the ${route.label} screen`, () => {
       const markup = renderApp(route.path);
       // Myra land (`/`) lights Channels on the rail; panel title stays Myra.

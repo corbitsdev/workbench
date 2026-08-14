@@ -1,28 +1,31 @@
-// Path-id helpers for agents and skills deep links. Shared by the shell
-// (col2 selection) and the pages (stage detail) so neither layer owns the
-// other. Same pattern as channel-path.ts.
+// Path-id helpers for settings deep links. Shared by the shell (col2
+// section nav) and the settings sections (stage detail) so neither layer
+// owns the other. Same pattern as channel-path.ts. Agents and Skills used
+// to be their own top-level routes (`/agents/:id`, `/skills/:id`); they are
+// now Settings sections at `/settings/agents/:id` and `/settings/skills/:id`
+// — see `settingsEntityIdFromPath`.
 
-export const AGENTS_PATH_PREFIX = "/agents";
-export const SKILLS_PATH_PREFIX = "/skills";
 export const SETTINGS_PATH_PREFIX = "/settings";
 
-/** Extract an agent definition id from `/agents/:id`. */
-export function agentIdFromPath(path: string): string | null {
-  if (!path.startsWith(`${AGENTS_PATH_PREFIX}/`)) return null;
-  const rest = path.slice(AGENTS_PATH_PREFIX.length + 1);
-  return rest === "" ? null : decodeURIComponent(rest);
-}
-
-/** Extract a skill id from `/skills/:id`. */
-export function skillIdFromPath(path: string): string | null {
-  if (!path.startsWith(`${SKILLS_PATH_PREFIX}/`)) return null;
-  const rest = path.slice(SKILLS_PATH_PREFIX.length + 1);
-  return rest === "" ? null : decodeURIComponent(rest);
-}
-
-/** Extract a settings section id from `/settings/:id`. */
+/** Extract a settings section id from `/settings/:id` or `/settings/:id/…`
+ * — only the first path segment, so a section with its own sub-selection
+ * (e.g. `/settings/agents/:definitionId`) still resolves to its section id. */
 export function settingsSectionIdFromPath(path: string): string | null {
   if (!path.startsWith(`${SETTINGS_PATH_PREFIX}/`)) return null;
   const rest = path.slice(SETTINGS_PATH_PREFIX.length + 1);
+  if (rest === "") return null;
+  const id = rest.split("/")[0];
+  return id === undefined || id === "" ? null : decodeURIComponent(id);
+}
+
+/** Extract a section's own sub-selection from `/settings/:sectionId/:entityId`
+ * — `null` when the path isn't under that section, or carries no sub-id. */
+export function settingsEntityIdFromPath(
+  path: string,
+  sectionId: string,
+): string | null {
+  const prefix = `${SETTINGS_PATH_PREFIX}/${sectionId}/`;
+  if (!path.startsWith(prefix)) return null;
+  const rest = path.slice(prefix.length);
   return rest === "" ? null : decodeURIComponent(rest);
 }

@@ -10,14 +10,18 @@
 import {
   flattenSettingsSections,
   resolveActiveSection,
-  resolveSettingsSectionGroups,
   SettingsShell,
 } from "@corbits/settings-ui";
 import { PageShell } from "@corbits/react-ui";
 import { useEffect } from "react";
 
 import { useBench } from "../bench-context";
-import { SETTINGS_PATH_PREFIX, settingsSectionIdFromPath } from "../path-ids";
+import {
+  SETTINGS_PATH_PREFIX,
+  settingsEntityIdFromPath,
+  settingsSectionIdFromPath,
+} from "../path-ids";
+import { resolveAppSettingsSectionGroups } from "../settings-groups";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { useSettingsAccess } from "../settings-access";
 
@@ -30,10 +34,14 @@ export function SettingsRoute({
 }) {
   const { selectedTenantId, selectedPrincipalId } = useBench();
   const access = useSettingsAccess(selectedTenantId, selectedPrincipalId);
-  const groups = resolveSettingsSectionGroups(access);
+  const groups = resolveAppSettingsSectionGroups(access);
   const sections = flattenSettingsSections(groups);
   const requestedId = settingsSectionIdFromPath(path);
   const activeSection = resolveActiveSection(sections, requestedId);
+  const entityId =
+    activeSection === undefined
+      ? null
+      : settingsEntityIdFromPath(path, activeSection.id);
   const requestedSectionExists =
     requestedId !== null &&
     sections.some((section) => section.id === requestedId);
@@ -87,6 +95,8 @@ export function SettingsRoute({
             context={{
               tenantId: selectedTenantId,
               principalId: selectedPrincipalId,
+              navigate,
+              entityId,
             }}
           />
         </PageShell>

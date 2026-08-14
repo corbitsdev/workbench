@@ -5,13 +5,11 @@
 // bench context and the app router around it.
 
 import { SidebarItemRow } from "@corbits/react-ui";
-import {
-  resolveSettingsSectionGroups,
-  SETTINGS_STRINGS,
-} from "@corbits/settings-ui";
+import { SETTINGS_STRINGS } from "@corbits/settings-ui";
 
 import { useBench } from "../bench-context";
 import { SETTINGS_PATH_PREFIX, settingsSectionIdFromPath } from "../path-ids";
+import { resolveAppSettingsSectionGroups } from "../settings-groups";
 import { useSettingsAccess } from "../settings-access";
 
 export function SettingsNavBand({
@@ -23,7 +21,7 @@ export function SettingsNavBand({
 }) {
   const { selectedTenantId, selectedPrincipalId } = useBench();
   const access = useSettingsAccess(selectedTenantId, selectedPrincipalId);
-  const groups = resolveSettingsSectionGroups(access);
+  const groups = resolveAppSettingsSectionGroups(access);
   const activeId = settingsSectionIdFromPath(path);
 
   return (

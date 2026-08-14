@@ -17,22 +17,15 @@ import { CHAT_STRINGS, patchChannelSettings } from "@corbits/chat-ui";
 import type { Channel } from "@corbits/chat-ui";
 import {
   Bell,
-  Bot,
   Hash,
   MessageSquare,
   MoreHorizontal,
   Plus,
   Search,
-  Sparkles,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 
-import {
-  filterDefinitions,
-  purposeAgentDefinitions,
-} from "../agents-directory";
-import { useAgentDirectory } from "../agents-api";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
@@ -42,8 +35,6 @@ import {
 } from "../channel-rename-events";
 import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
 import { requestLibraryUpload } from "../library-upload";
-import { agentIdFromPath, skillIdFromPath } from "../path-ids";
-import { useSessionSkills } from "../skills-session";
 import { useBenchActivity } from "./bench-activity";
 import { InsightsViewsBand } from "./insights-band";
 import { LibraryKindBand } from "./library-band";
@@ -445,187 +436,6 @@ function ChannelsBand({
   );
 }
 
-function AgentsFeedBand({
-  path,
-  onNavigate,
-}: {
-  readonly path: string;
-  readonly onNavigate: (to: string) => void;
-}) {
-  const { selectedTenantId } = useBench();
-  const [query, setQuery] = useState("");
-  const selectedId = agentIdFromPath(path);
-  const directory = useAgentDirectory(selectedTenantId ?? undefined);
-
-  if (selectedTenantId === null) {
-    return (
-      <EmptyState
-        icon={<Bot />}
-        title="No bench selected"
-        description="Choose a bench from the rail to see agents."
-      />
-    );
-  }
-  if (directory.kind === "loading") {
-    return <Skeleton className="shell-activity-skeleton" />;
-  }
-  if (directory.kind === "error") {
-    return (
-      <EmptyState
-        icon={<Bot />}
-        title="Couldn't load agents"
-        description={directory.message}
-      />
-    );
-  }
-  if (directory.kind === "unauthenticated") {
-    return (
-      <EmptyState
-        icon={<Bot />}
-        title="Sign in required"
-        description="Sign in to see agents for this bench."
-      />
-    );
-  }
-
-  const definitions = purposeAgentDefinitions(directory.data.definitions);
-  const items = filterDefinitions(definitions, query);
-
-  return (
-    <div className="panel-stack" aria-label="Agents">
-      <label className="shell-panel-search">
-        <Search aria-hidden="true" />
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search…"
-          aria-label="Search agents"
-        />
-      </label>
-      {definitions.length === 0 ? (
-        <EmptyState
-          icon={<Bot />}
-          title="No agents yet"
-          description="Create an agent to start chats or invite into a channel."
-        />
-      ) : items.length === 0 ? (
-        <EmptyState
-          icon={<Bot />}
-          title="No matching agents"
-          description={`Nothing matches “${query.trim()}”.`}
-        />
-      ) : (
-        items.map((definition) => (
-          <SidebarItemRow
-            key={definition.id}
-            leading={<Bot />}
-            name={
-              <span className="panel-row-copy">
-                <strong>{definition.name}</strong>
-                <span>v{definition.currentVersion}</span>
-              </span>
-            }
-            meta={
-              <span
-                className={
-                  definition.status === "deployed"
-                    ? "panel-status is-ok"
-                    : "panel-status is-muted"
-                }
-              >
-                {definition.status}
-              </span>
-            }
-            selected={selectedId === definition.id}
-            onSelect={() =>
-              onNavigate(`/agents/${encodeURIComponent(definition.id)}`)
-            }
-          />
-        ))
-      )}
-    </div>
-  );
-}
-
-function SkillsFeedBand({
-  path,
-  onNavigate,
-}: {
-  readonly path: string;
-  readonly onNavigate: (to: string) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const selectedId = skillIdFromPath(path);
-  const skills = useSessionSkills();
-
-  const q = query.trim().toLowerCase();
-  const items =
-    q === ""
-      ? skills
-      : skills.filter(
-          (s) =>
-            s.name.toLowerCase().includes(q) ||
-            s.description.toLowerCase().includes(q),
-        );
-
-  return (
-    <div className="panel-stack" aria-label="Skills">
-      {skills.length > 0 ? (
-        <label className="shell-panel-search">
-          <Search aria-hidden="true" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search…"
-            aria-label="Search skills"
-          />
-        </label>
-      ) : null}
-      {skills.length === 0 ? (
-        <EmptyState
-          icon={<Sparkles />}
-          title="No skills yet"
-          description="No skill registry on the hub yet. Drafts you create stay in this session and list here."
-        />
-      ) : items.length === 0 ? (
-        <EmptyState
-          icon={<Sparkles />}
-          title="No matching skills"
-          description={`Nothing matches “${query.trim()}”.`}
-        />
-      ) : (
-        items.map((skill) => (
-          <SidebarItemRow
-            key={skill.id}
-            leading={<Sparkles />}
-            name={
-              <span className="panel-row-copy">
-                <strong>{skill.name}</strong>
-                <span>v{skill.version}</span>
-              </span>
-            }
-            meta={
-              <span
-                className={
-                  skill.sessionLocal
-                    ? "panel-status is-muted"
-                    : "panel-status is-ok"
-                }
-              >
-                {skill.sessionLocal ? "Draft" : "Installed"}
-              </span>
-            }
-            selected={selectedId === skill.id}
-            onSelect={() =>
-              onNavigate(`/skills/${encodeURIComponent(skill.id)}`)
-            }
-          />
-        ))
-      )}
-    </div>
-  );
-}
-
 const INBOX_FILTERS: readonly {
   id: "all" | "action" | "mention" | "delivery";
   label: string;
@@ -848,28 +658,6 @@ export function ensurePanelContributions(): void {
   });
 
   registerPanelContribution({
-    id: "agents",
-    match: (path) => pathMatches("/agents", path),
-    pageBand: (ctx) => ({
-      title: "Agents",
-      headerActions: [
-        {
-          id: "create-agent",
-          label: "Create agent",
-          icon: <Plus />,
-          onSelect: () => {
-            window.dispatchEvent(new CustomEvent("workbench:agents:create"));
-            if (!pathMatches("/agents", ctx.path)) ctx.onNavigate("/agents");
-          },
-        },
-      ],
-    }),
-    pageSpecific: (ctx) => (
-      <AgentsFeedBand path={ctx.path} onNavigate={ctx.onNavigate} />
-    ),
-  });
-
-  registerPanelContribution({
     id: "routines",
     match: (path) => pathMatches("/routines", path),
     pageBand: (ctx) => ({
@@ -926,28 +714,6 @@ export function ensurePanelContributions(): void {
     }),
     pageSpecific: (ctx) => (
       <LibraryKindBand path={ctx.path} onNavigate={ctx.onNavigate} />
-    ),
-  });
-
-  registerPanelContribution({
-    id: "skills",
-    match: (path) => pathMatches("/skills", path),
-    pageBand: (ctx) => ({
-      title: "Skills",
-      headerActions: [
-        {
-          id: "create-skill",
-          label: "Create skill",
-          icon: <Plus />,
-          onSelect: () => {
-            window.dispatchEvent(new CustomEvent("workbench:skills:create"));
-            if (!pathMatches("/skills", ctx.path)) ctx.onNavigate("/skills");
-          },
-        },
-      ],
-    }),
-    pageSpecific: (ctx) => (
-      <SkillsFeedBand path={ctx.path} onNavigate={ctx.onNavigate} />
     ),
   });
 

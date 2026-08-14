@@ -5,10 +5,13 @@
 // from any page, before the target page (and its window-event listener) has
 // mounted, so a same-tick `dispatchEvent` would be a race the listener
 // always loses. `pending-dialog-request.ts` generalizes that pattern; the
-// target pages (agents-page.tsx, routines-page.tsx, skills-page.tsx,
-// chat-page.tsx) consume the pending flag on mount. "New thread" is out of
-// scope (killed by owner decision); "Toggle sidebar" drives the same
-// `toggleCol2` col2's own control uses (see `stage-chrome.ts`).
+// target pages/sections (agents-settings-section.tsx, routines-page.tsx,
+// skills-settings-section.tsx, chat-page.tsx) consume the pending flag on
+// mount. Agents and Skills moved from their own routes into Settings
+// sections (CL-5990) — "New agent"/"New skill" now land on
+// `/settings/agents` / `/settings/skills`. "New thread" is out of scope
+// (killed by owner decision); "Toggle sidebar" drives the same `toggleCol2`
+// col2's own control uses (see `stage-chrome.ts`).
 
 import {
   CHANNEL_PATH_PREFIX,
@@ -31,11 +34,11 @@ const newSkillRequest = createPendingDialogRequest();
 
 /** Consumed by chat-page.tsx on mount. */
 export const consumePendingNewChannel = newChannelRequest.consumePending;
-/** Consumed by agents-page.tsx on mount. */
+/** Consumed by agents-settings-section.tsx on mount. */
 export const consumePendingNewAgent = newAgentRequest.consumePending;
 /** Consumed by routines-page.tsx on mount. */
 export const consumePendingNewRoutine = newRoutineRequest.consumePending;
-/** Consumed by skills-page.tsx on mount. */
+/** Consumed by skills-settings-section.tsx on mount. */
 export const consumePendingNewSkill = newSkillRequest.consumePending;
 
 /** Test helper — drop leftover pending state between cases. */
@@ -141,8 +144,9 @@ export async function runActionCommand(
     case "new-agent": {
       newAgentRequest.request({
         alreadyOnTargetRoute:
-          ctx.path === "/agents" || ctx.path.startsWith("/agents/"),
-        navigateToTargetRoute: () => ctx.navigate("/agents"),
+          ctx.path === "/settings/agents" ||
+          ctx.path.startsWith("/settings/agents/"),
+        navigateToTargetRoute: () => ctx.navigate("/settings/agents"),
         dispatch: () => window.dispatchEvent(new CustomEvent(NEW_AGENT_EVENT)),
       });
       return;
@@ -160,8 +164,9 @@ export async function runActionCommand(
     case "new-skill": {
       newSkillRequest.request({
         alreadyOnTargetRoute:
-          ctx.path === "/skills" || ctx.path.startsWith("/skills/"),
-        navigateToTargetRoute: () => ctx.navigate("/skills"),
+          ctx.path === "/settings/skills" ||
+          ctx.path.startsWith("/settings/skills/"),
+        navigateToTargetRoute: () => ctx.navigate("/settings/skills"),
         dispatch: () => window.dispatchEvent(new CustomEvent(NEW_SKILL_EVENT)),
       });
       return;

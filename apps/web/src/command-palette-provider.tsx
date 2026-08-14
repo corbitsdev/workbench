@@ -413,7 +413,7 @@ export function CommandPaletteProvider({
         const agentId = id.slice("entity:agents:".length);
         const title =
           agentItems.find((item) => item.id === id)?.title ?? agentId;
-        navigate(`/agents/${encodeURIComponent(agentId)}`);
+        navigate(`/settings/agents/${encodeURIComponent(agentId)}`);
         pushRecent({ kind: "agents", id, title, subtitle: "Agent" });
       } else if (id.startsWith("entity:routines:")) {
         const routineId = id.slice("entity:routines:".length);
@@ -425,7 +425,7 @@ export function CommandPaletteProvider({
         const skillId = id.slice("entity:skills:".length);
         const title =
           skillItems.find((item) => item.id === id)?.title ?? skillId;
-        navigate(`/skills/${encodeURIComponent(skillId)}`);
+        navigate(`/settings/skills/${encodeURIComponent(skillId)}`);
         pushRecent({ kind: "skills", id, title, subtitle: "Skill" });
       } else if (id.startsWith("entity:library:")) {
         // Library detail is local page state, not a route — see the PR
