@@ -2,61 +2,74 @@
 // collateral-drafting workflow needs to pick workbench artifacts as
 // source material.
 //
-// Unlike `@corbits/granola-tools` and `@corbits/linear-tools`, this
-// bundle has no per-user credential to be "not connected" — the gap it
-// hits is structural, not a missing key. Tool packages run inside the
-// sidecar's workflow-process child, a separate process with no database
-// handle and no authenticated hub-API path (confirmed while porting
-// `pain-point-collateral`'s finalize tool, CL-5995; tracked for the
-// write side as CL-6000, "Workflow tools can't persist Library
-// artifacts"). Listing artifacts hits the identical gap on the read
-// side: there is no sanctioned path yet for a tool running in that
-// child process to call the hub's `GET /artifacts` route. Rather than
-// inventing a one-off credential or auth scheme to route around that —
-// which would just be re-solving CL-6000 badly and in one corner — this
-// tool always returns an honest, structured "not reachable yet" result.
-// The moment a sanctioned workflow-tool-to-hub path lands (CL-6000), the
-// real `artifact_list` call belongs here as a one-line change, same as
-// `finalize-tool.ts`'s header describes for persistence.
+// Real as of CL-6000: calls `listRecentWorkflowArtifacts` (`./client.ts`)
+// against the sanctioned workflow-artifacts HTTP surface
+// (`@corbits/artifacts-hub`'s `createWorkflowArtifactRoutes`),
+// authenticating with the sidecar's own bearer token and the run's own
+// mailbox address — both already reach a workflow-process child's tool
+// env (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`), so
+// this bundle needs no per-user credential and never touches a database
+// handle. A transport, HTTP, or shape failure comes back as a completed
+// `ToolResult` with `isError: true`, same convention as
+// `@corbits/linear-tools`/`@corbits/granola-tools` — never fabricate
+// artifacts when the call fails.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 
+import { listRecentWorkflowArtifacts } from "./client";
+
 export const ARTIFACT_LIST_RECENT_TOOL = "artifact_list_recent";
 
-export const ARTIFACT_LIST_RECENT_UNAVAILABLE_REASON =
-  "Workbench artifacts are not reachable from a workflow tool yet — " +
-  "tool packages run in a separate process with no path to the hub's " +
-  "Library engine (see CL-6000). Treat this source as unavailable " +
-  "rather than fabricating artifact content.";
+/** Env this bundle needs beyond `BaseEnv`: the run's hub-reach credential. */
+export interface WorkflowArtifactEnv extends BaseEnv {
+  readonly hubArtifactsUrl: string;
+  readonly sidecarToken: string;
+  readonly address: string;
+}
 
-function unavailableResult(callId: string): ToolResult {
-  return {
-    callId,
-    isError: true,
-    content: ARTIFACT_LIST_RECENT_UNAVAILABLE_REASON,
-  };
+async function runArtifactListRecent(
+  env: WorkflowArtifactEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  const limitArg = call.arguments["limit"];
+  const limit = typeof limitArg === "number" ? limitArg : undefined;
+  try {
+    const artifacts = await listRecentWorkflowArtifacts(
+      {
+        hubArtifactsUrl: env.hubArtifactsUrl,
+        sidecarToken: env.sidecarToken,
+        runAddress: env.address,
+      },
+      limit !== undefined ? { limit } : {},
+    );
+    return { callId: call.id, isError: false, content: JSON.stringify({ artifacts }) };
+  } catch (err) {
+    return {
+      callId: call.id,
+      isError: true,
+      content: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /**
- * The `@corbits/artifact-tools` bundle factory: one tool, no env
- * requirements beyond `BaseEnv` — there is no credential to resolve,
- * only a platform gap to report honestly.
+ * The `@corbits/artifact-tools` bundle factory: one tool, three env keys
+ * — the sanctioned CL-6000 path, not a per-user credential.
  */
-export const artifactTools = defineTool<BaseEnv>({
+export const artifactTools = defineTool<WorkflowArtifactEnv>({
   id: "@corbits/artifact-tools/artifact",
-  requires: [],
+  requires: ["hubArtifactsUrl", "sidecarToken", "address"],
   definitions: [{ name: ARTIFACT_LIST_RECENT_TOOL }],
-  factory: () => ({
+  factory: (env) => ({
     definitions: [
       {
         name: ARTIFACT_LIST_RECENT_TOOL,
         description:
-          "Lists the tenant's recent Library artifacts (title, kind, " +
-          "created-at) for use as collateral source material. Currently " +
-          "always returns an error result naming this source " +
-          '"not reachable yet" (CL-6000) — never fabricate artifacts ' +
-          "when this happens.",
+          "Lists the tenant's recent Library artifacts (id, title, kind, " +
+          "created-at) for use as collateral source material. Returns an " +
+          "error result naming the failure when the Library engine is " +
+          "unreachable — never fabricate artifacts when this happens.",
         inputSchema: {
           type: "object",
           properties: {
@@ -69,6 +82,6 @@ export const artifactTools = defineTool<BaseEnv>({
       },
     ],
     run: (call: ToolCall, _signal: AbortSignal) =>
-      Promise.resolve(unavailableResult(call.id)),
+      runArtifactListRecent(env, call),
   }),
 });

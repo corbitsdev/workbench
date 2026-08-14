@@ -1,7 +1,7 @@
 {
   "name": "@corbits/artifact-tools",
   "private": true,
-  "description": "Workbench artifacts as an @intx/agent tool bundle: lists a tenant's Library artifacts for use as collateral-generation source material",
+  "description": "Workbench artifacts as an @intx/agent tool bundle: lists a tenant's Library artifacts, and the HTTP client the sanctioned workflow-artifacts surface (CL-6000) is built on",
   "version": "0.0.1",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
-    "@intx/types": "workspace:*"
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
