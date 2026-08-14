@@ -36,10 +36,13 @@ import {
   findPersonalTenant,
   testAndPersistCredential,
   type PersonalTenant,
+  type TestAndPersistCredentialResult,
 } from "./complete-credential";
 import {
-  createConnectStateStore,
-  generatePKCEPair,
+  CONNECTOR_REGISTRY,
+  createOAuthConnectRoutes,
+  type ConnectorDescriptor,
+  type OAuthExchangeResult,
 } from "@workbench/connections";
 import {
   openPendingSeed,
@@ -47,12 +50,8 @@ import {
   PENDING_SEED_TTL_MS,
   sealPendingSeed,
 } from "./pending-seed";
-import { exchangeCodeForKey, OPENROUTER_AUTH_URL } from "./openrouter-connect";
-import {
-  exchangeCodeForToken as exchangeHuggingFaceCodeForToken,
-  HUGGINGFACE_AUTHORIZE_URL,
-  HUGGINGFACE_SCOPE,
-} from "./huggingface-connect";
+import { exchangeCodeForKey } from "./openrouter-connect";
+import { exchangeCodeForToken as exchangeHuggingFaceCodeForToken } from "./huggingface-connect";
 
 const PROVIDER_IDS = supportedCredentialProviders().map((p) => p.id) as [
   SupportedCredentialProvider,
@@ -322,473 +321,206 @@ export function createOnboardingRoutes(
     }
   });
 
-  // OpenRouter PKCE connect: /start parks a fresh verifier server-side
-  // under a single-use state carried in an HttpOnly cookie, then sends
-  // the browser to OpenRouter's consent page; /callback consumes that
-  // state, trades the returned code for the user-scoped API key, and
-  // finishes through the same test-then-seed path a pasted key takes.
-  // Every outcome — success or failure — lands back in the wizard's
-  // credential phase as query parameters; the key itself never appears
-  // in a URL or a log line.
-  const CONNECT_STATE_TTL_MS = 10 * 60 * 1000;
-  const connectStates = createConnectStateStore({
-    cipher: credentialCipher,
-    provider: "openrouter",
-    ttlMs: CONNECT_STATE_TTL_MS,
-  });
-  const exchange = deps.openrouterConnect?.exchange ?? exchangeCodeForKey;
-  const connectOpenRouterCredential =
-    deps.openrouterConnect?.connectCredential ?? testAndPersistCredential;
-  const CONNECT_STATE_COOKIE = "workbench_openrouter_connect";
+  // OAuth connect (OpenRouter, Hugging Face): CL-6028 generalized both
+  // providers' start/callback mechanics into `@workbench/connections`'
+  // `createOAuthConnectRoutes` — state sealing, PKCE, cookies, rate
+  // limiting, and the duplicate-callback recovery shape all live there
+  // now, driven by `CONNECTOR_REGISTRY`'s `openrouter`/`huggingface`
+  // entries. What stays here, unchanged: proving and persisting the
+  // exchanged material (`testAndPersistCredential`, the fast half —
+  // never a workflow deploy), the duplicate-callback recovery lookup
+  // (`recentlyConnectedCredential`, below), and sealing the pending-seed
+  // cookie the deferred `/complete-setup` deploy step reads. Every test
+  // seam this package's deps already exposed (`openrouterConnect`/
+  // `huggingfaceConnect` overrides) still works — they're threaded into
+  // the registry entries' `oauth.exchange` below.
   const secureCookies = deps.hubUrl.startsWith("https:");
 
-  const wizardRedirectPath = (params: Record<string, string>): string => {
-    const query = new URLSearchParams(params);
-    query.set("connect", "openrouter");
-    return `/onboarding?${query.toString()}`;
+  /**
+   * Adapts `packages/onboarding`'s pre-CL-6028 exchange function shape
+   * (`{code, codeVerifier} -> {ok, key}|{ok, message}`, still what
+   * `deps.openrouterConnect.exchange` overrides in tests) onto
+   * `ConnectorOAuthConfig.exchange`'s generalized shape.
+   */
+  function adaptOpenRouterExchange(
+    exchange: typeof exchangeCodeForKey = deps.openrouterConnect?.exchange ??
+      exchangeCodeForKey,
+  ) {
+    return async (args: {
+      code: string;
+      codeVerifier?: string;
+      redirectUri: string;
+      clientId?: string;
+    }): Promise<OAuthExchangeResult> => {
+      const result = await exchange({
+        code: args.code,
+        codeVerifier: args.codeVerifier ?? "",
+      });
+      return result.ok ? { ok: true, apiKey: result.key } : result;
+    };
+  }
+
+  function adaptHuggingFaceExchange(
+    exchange: typeof exchangeHuggingFaceCodeForToken = deps.huggingfaceConnect
+      ?.exchange ?? exchangeHuggingFaceCodeForToken,
+  ) {
+    return async (args: {
+      code: string;
+      codeVerifier?: string;
+      redirectUri: string;
+      clientId?: string;
+    }): Promise<OAuthExchangeResult> => {
+      if (args.clientId === undefined) {
+        return {
+          ok: false,
+          message: "huggingface connect is not configured",
+        };
+      }
+      const result = await exchange({
+        code: args.code,
+        codeVerifier: args.codeVerifier ?? "",
+        redirectUri: args.redirectUri,
+        clientId: args.clientId,
+      });
+      return result.ok
+        ? {
+            ok: true,
+            apiKey: result.accessToken,
+            ...(result.expiresAt !== undefined
+              ? { expiresAt: result.expiresAt }
+              : {}),
+          }
+        : result;
+    };
+  }
+
+  const openrouterDescriptor = CONNECTOR_REGISTRY["openrouter"];
+  const huggingfaceDescriptor = CONNECTOR_REGISTRY["huggingface"];
+  if (openrouterDescriptor?.oauth === undefined) {
+    throw new Error(
+      "@workbench/connections' registry is missing the openrouter oauth-pkce entry",
+    );
+  }
+  if (huggingfaceDescriptor?.oauth === undefined) {
+    throw new Error(
+      "@workbench/connections' registry is missing the huggingface oauth-pkce entry",
+    );
+  }
+  const oauthRegistry: Readonly<Record<string, ConnectorDescriptor>> = {
+    ...CONNECTOR_REGISTRY,
+    openrouter: {
+      ...openrouterDescriptor,
+      oauth: {
+        ...openrouterDescriptor.oauth,
+        exchange: adaptOpenRouterExchange(),
+      },
+    },
+    huggingface: {
+      ...huggingfaceDescriptor,
+      oauth: {
+        ...huggingfaceDescriptor.oauth,
+        exchange: adaptHuggingFaceExchange(),
+      },
+    },
   };
 
-  // The same in-process per-user limiter `/provision` uses, for the same
-  // reason: every start parks a pending state, so a client stuck in a
-  // redirect loop (or a runaway script) can grow the state map without
-  // ever finishing a flow. One in-flight or recent start per user is
-  // enough; a real consent round trip takes longer than the window.
-  const CONNECT_START_RATE_LIMIT_MS = 10_000;
-  const lastConnectStartByUser = new Map<string, number>();
-
-  app.get("/oauth/openrouter/start", async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      return c.redirect(
-        wizardRedirectPath({ outcome: "error", code: "signed_out" }),
-        302,
-      );
-    }
-
-    const now = Date.now();
-    const lastStart = lastConnectStartByUser.get(user.id);
-    if (
-      lastStart !== undefined &&
-      now - lastStart < CONNECT_START_RATE_LIMIT_MS
-    ) {
-      return c.redirect(
-        wizardRedirectPath({ outcome: "error", code: "rate_limited" }),
-        302,
-      );
-    }
-    lastConnectStartByUser.set(user.id, now);
-
-    const pkce = await generatePKCEPair();
-    const state = await connectStates.issue({
-      userId: user.id,
-      codeVerifier: pkce.codeVerifier,
+  /** The fast half only — proves and persists the exchanged material,
+   * never deploys a workflow. Dispatches to whichever provider's own
+   * test-seam override (`deps.openrouterConnect`/`deps.huggingfaceConnect`)
+   * applies, defaulting both to `testAndPersistCredential`. */
+  async function connectCredential(args: {
+    connectorId: string;
+    userId: string;
+    userEmail: string;
+    cookies: string[];
+    apiKey: string;
+    credentialMetadata?: Record<string, unknown>;
+  }): Promise<TestAndPersistCredentialResult> {
+    const provider = args.connectorId as SupportedCredentialProvider;
+    const impl =
+      provider === "openrouter"
+        ? (deps.openrouterConnect?.connectCredential ??
+          testAndPersistCredential)
+        : (deps.huggingfaceConnect?.connectCredential ??
+          testAndPersistCredential);
+    return impl({
+      api,
+      cookies: args.cookies,
+      hubUrl: deps.hubUrl,
+      userId: args.userId,
+      userEmail: args.userEmail,
+      provider,
+      apiKey: args.apiKey,
+      pushWorkflow: deps.pushWorkflow,
+      log: deps.log,
+      ...(args.credentialMetadata !== undefined
+        ? { credentialMetadata: args.credentialMetadata }
+        : {}),
     });
-    setCookie(c, CONNECT_STATE_COOKIE, state, {
+  }
+
+  async function recentlyConnected(args: {
+    connectorId: string;
+    userId: string;
+    userEmail: string;
+    cookies: string[];
+    withinMs: number;
+  }): Promise<PersonalTenant | undefined> {
+    return recentlyConnectedCredential(api, args.cookies, {
+      userId: args.userId,
+      userEmail: args.userEmail,
+      provider: args.connectorId as SupportedCredentialProvider,
+      withinMs: args.withinMs,
+      log: deps.log,
+    });
+  }
+
+  /** Runs only for a connector whose `oauth.deploysDefaultWorkflows` is
+   * true (both OpenRouter and Hugging Face) — seals the plaintext
+   * material into the pending-seed cookie `/complete-setup` reads, so
+   * the deferred workflow deploy never blocks this redirect. */
+  async function afterConnected(args: {
+    c: import("hono").Context;
+    connectorId: string;
+    userId: string;
+    apiKey: string;
+    tenantId: string;
+    tenantSlug: string;
+    principalId: string;
+    tenantDomain: string;
+  }): Promise<void> {
+    const provider = args.connectorId as SupportedCredentialProvider;
+    const pendingSeedToken = await sealPendingSeed(credentialCipher, {
+      userId: args.userId,
+      tenantId: args.tenantId,
+      principalId: args.principalId,
+      tenantDomain: args.tenantDomain,
+      provider,
+      apiKey: args.apiKey,
+    });
+    setCookie(args.c, PENDING_SEED_COOKIE, pendingSeedToken, {
       httpOnly: true,
       sameSite: "Lax",
       secure: secureCookies,
       path: "/",
-      maxAge: 600,
+      maxAge: Math.floor(PENDING_SEED_TTL_MS / 1000),
     });
+  }
 
-    // Origin from configuration (the hub's public BASE_URL — the origin
-    // OpenRouter must send the browser back to, whatever host header
-    // this request arrived under), path from the request so the mount
-    // prefix is never guessed at.
-    const callbackUrl = new URL(
-      c.req.path.replace(/\/start$/, "/callback"),
-      deps.hubUrl,
-    );
-    const authUrl = new URL(OPENROUTER_AUTH_URL);
-    authUrl.searchParams.set("callback_url", callbackUrl.toString());
-    authUrl.searchParams.set("code_challenge", pkce.codeChallenge);
-    authUrl.searchParams.set("code_challenge_method", "S256");
-    return c.redirect(authUrl.toString(), 302);
-  });
-
-  app.get("/oauth/openrouter/callback", async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      return c.redirect(
-        wizardRedirectPath({ outcome: "error", code: "signed_out" }),
-        302,
-      );
-    }
-
-    const state = getCookie(c, CONNECT_STATE_COOKIE);
-    deleteCookie(c, CONNECT_STATE_COOKIE, { path: "/" });
-    const code = c.req.query("code");
-    const cookies = cookiesFromHeader(c.req.header("cookie"));
-    if (state === undefined || code === undefined || code === "") {
-      return c.redirect(
-        wizardRedirectPath({ outcome: "error", code: "state_expired" }),
-        302,
-      );
-    }
-    const codeVerifier = await connectStates.consume({
-      state,
-      userId: user.id,
-    });
-    if (codeVerifier === undefined) {
-      // Not necessarily a real failure: a browser that fires this exact
-      // callback twice burns the state on its first, successful arrival
-      // and only ever sees this branch on the second. See
-      // `recentlyConnectedCredential`'s own comment.
-      const recovered = await recentlyConnectedCredential(api, cookies, {
-        userId: user.id,
-        userEmail: user.email,
-        provider: "openrouter",
-        withinMs: CONNECT_STATE_TTL_MS,
-        log: deps.log,
-      });
-      if (recovered) {
-        return c.redirect(
-          wizardRedirectPath({
-            outcome: "connected",
-            tenantSlug: recovered.tenantSlug,
-          }),
-          302,
-        );
-      }
-      return c.redirect(
-        wizardRedirectPath({ outcome: "error", code: "state_expired" }),
-        302,
-      );
-    }
-
-    const exchanged = await exchange({ code, codeVerifier });
-    if (!exchanged.ok) {
-      deps.log(
-        `openrouter connect for user ${user.id}: code exchange failed: ${exchanged.message}`,
-      );
-      return c.redirect(
-        wizardRedirectPath({ outcome: "error", code: "exchange_failed" }),
-        302,
-      );
-    }
-
-    try {
-      // The fast half only: proves the key and persists it. Deploying
-      // the default workflows against it (`ensureSeeded`) never runs in
-      // this request — it runs from `/complete-setup`, after the
-      // browser has already landed back on the wizard. See
-      // `complete-credential.ts`'s module comment.
-      const result = await connectOpenRouterCredential({
-        api,
-        cookies,
-        hubUrl: deps.hubUrl,
-        userId: user.id,
-        userEmail: user.email,
-        provider: "openrouter",
-        apiKey: exchanged.key,
-        pushWorkflow: deps.pushWorkflow,
-        log: deps.log,
-      });
-      if (result.kind === "invalid-credential") {
-        deps.log(
-          `openrouter connect for user ${user.id}: minted key failed its probe: ${result.message}`,
-        );
-        return c.redirect(
-          wizardRedirectPath({ outcome: "error", code: "key_rejected" }),
-          302,
-        );
-      }
-      if (result.kind === "no-personal-bench") {
-        return c.redirect(
-          wizardRedirectPath({ outcome: "error", code: "no_bench" }),
-          302,
-        );
-      }
-      const pendingSeedToken = await sealPendingSeed(credentialCipher, {
-        userId: user.id,
-        tenantId: result.tenantId,
-        principalId: result.principalId,
-        tenantDomain: result.tenantDomain,
-        provider: "openrouter",
-        apiKey: exchanged.key,
-      });
-      setCookie(c, PENDING_SEED_COOKIE, pendingSeedToken, {
-        httpOnly: true,
-        sameSite: "Lax",
-        secure: secureCookies,
-        path: "/",
-        maxAge: Math.floor(PENDING_SEED_TTL_MS / 1000),
-      });
-      return c.redirect(
-        wizardRedirectPath({
-          outcome: "connected",
-          tenantSlug: result.tenantSlug,
-        }),
-        302,
-      );
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(
-        `openrouter connect setup failed for user ${user.id}: ${message}`,
-      );
-      return c.redirect(
-        wizardRedirectPath({ outcome: "error", code: "setup_failed" }),
-        302,
-      );
-    }
-  });
-
-  // Hugging Face PKCE connect: the same shape as OpenRouter's above, with
-  // two differences the provider forces. First, HF requires a registered
-  // client id (no client secret — a public app), so `/start` 404s the
-  // flow with a `not_configured` outcome when `deps.huggingfaceClientId`
-  // is unset rather than crash. Second, HF's exchange returns a standard,
-  // expiring OAuth access token — `expiresAt` (when HF reports
-  // `expires_in`) is threaded into `completeCredentialSetup` as
-  // credential metadata, never into a URL or a log line, alongside the
-  // token itself.
-  const huggingfaceConnectStates = createConnectStateStore({
-    cipher: credentialCipher,
-    provider: "huggingface",
-    ttlMs: CONNECT_STATE_TTL_MS,
-  });
-  const exchangeHuggingFace =
-    deps.huggingfaceConnect?.exchange ?? exchangeHuggingFaceCodeForToken;
-  const connectHuggingFaceCredential =
-    deps.huggingfaceConnect?.connectCredential ?? testAndPersistCredential;
-  const HUGGINGFACE_STATE_COOKIE = "workbench_huggingface_connect";
-
-  const huggingfaceWizardRedirectPath = (
-    params: Record<string, string>,
-  ): string => {
-    const query = new URLSearchParams(params);
-    query.set("connect", "huggingface");
-    return `/onboarding?${query.toString()}`;
-  };
-
-  const lastHuggingFaceConnectStartByUser = new Map<string, number>();
-
-  app.get("/oauth/huggingface/start", async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      return c.redirect(
-        huggingfaceWizardRedirectPath({ outcome: "error", code: "signed_out" }),
-        302,
-      );
-    }
-    if (deps.huggingfaceClientId === undefined) {
-      return c.redirect(
-        huggingfaceWizardRedirectPath({
-          outcome: "error",
-          code: "not_configured",
-        }),
-        302,
-      );
-    }
-
-    const now = Date.now();
-    const lastStart = lastHuggingFaceConnectStartByUser.get(user.id);
-    if (
-      lastStart !== undefined &&
-      now - lastStart < CONNECT_START_RATE_LIMIT_MS
-    ) {
-      return c.redirect(
-        huggingfaceWizardRedirectPath({
-          outcome: "error",
-          code: "rate_limited",
-        }),
-        302,
-      );
-    }
-    lastHuggingFaceConnectStartByUser.set(user.id, now);
-
-    const pkce = await generatePKCEPair();
-    const state = await huggingfaceConnectStates.issue({
-      userId: user.id,
-      codeVerifier: pkce.codeVerifier,
-    });
-    setCookie(c, HUGGINGFACE_STATE_COOKIE, state, {
-      httpOnly: true,
-      sameSite: "Lax",
-      secure: secureCookies,
-      path: "/",
-      maxAge: 600,
-    });
-
-    const callbackUrl = new URL(
-      c.req.path.replace(/\/start$/, "/callback"),
-      deps.hubUrl,
-    );
-    const authUrl = new URL(HUGGINGFACE_AUTHORIZE_URL);
-    authUrl.searchParams.set("client_id", deps.huggingfaceClientId);
-    authUrl.searchParams.set("redirect_uri", callbackUrl.toString());
-    authUrl.searchParams.set("scope", HUGGINGFACE_SCOPE);
-    authUrl.searchParams.set("state", state);
-    authUrl.searchParams.set("code_challenge", pkce.codeChallenge);
-    authUrl.searchParams.set("code_challenge_method", "S256");
-    return c.redirect(authUrl.toString(), 302);
-  });
-
-  app.get("/oauth/huggingface/callback", async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      return c.redirect(
-        huggingfaceWizardRedirectPath({ outcome: "error", code: "signed_out" }),
-        302,
-      );
-    }
-    if (deps.huggingfaceClientId === undefined) {
-      return c.redirect(
-        huggingfaceWizardRedirectPath({
-          outcome: "error",
-          code: "not_configured",
-        }),
-        302,
-      );
-    }
-
-    const cookieState = getCookie(c, HUGGINGFACE_STATE_COOKIE);
-    deleteCookie(c, HUGGINGFACE_STATE_COOKIE, { path: "/" });
-    const code = c.req.query("code");
-    const queryState = c.req.query("state");
-    const cookies = cookiesFromHeader(c.req.header("cookie"));
-    // Belt and suspenders: HF echoes `state`, so a callback whose query
-    // state disagrees with the cookie it arrived with is rejected before
-    // the state store is even consulted, on top of the store's own
-    // single-use/cross-user checks.
-    if (
-      cookieState === undefined ||
-      queryState === undefined ||
-      queryState !== cookieState ||
-      code === undefined ||
-      code === ""
-    ) {
-      return c.redirect(
-        huggingfaceWizardRedirectPath({
-          outcome: "error",
-          code: "state_expired",
-        }),
-        302,
-      );
-    }
-    const codeVerifier = await huggingfaceConnectStates.consume({
-      state: cookieState,
-      userId: user.id,
-    });
-    if (codeVerifier === undefined) {
-      // See `recentlyConnectedCredential` — a double-fired callback burns
-      // the state on its first, successful arrival and only ever sees
-      // this branch on the second.
-      const recovered = await recentlyConnectedCredential(api, cookies, {
-        userId: user.id,
-        userEmail: user.email,
-        provider: "huggingface",
-        withinMs: CONNECT_STATE_TTL_MS,
-        log: deps.log,
-      });
-      if (recovered) {
-        return c.redirect(
-          huggingfaceWizardRedirectPath({
-            outcome: "connected",
-            tenantSlug: recovered.tenantSlug,
-          }),
-          302,
-        );
-      }
-      return c.redirect(
-        huggingfaceWizardRedirectPath({
-          outcome: "error",
-          code: "state_expired",
-        }),
-        302,
-      );
-    }
-
-    const callbackUrl = new URL(c.req.path, deps.hubUrl).toString();
-    const exchanged = await exchangeHuggingFace({
-      code,
-      codeVerifier,
-      redirectUri: callbackUrl,
-      clientId: deps.huggingfaceClientId,
-    });
-    if (!exchanged.ok) {
-      deps.log(
-        `huggingface connect for user ${user.id}: code exchange failed: ${exchanged.message}`,
-      );
-      return c.redirect(
-        huggingfaceWizardRedirectPath({
-          outcome: "error",
-          code: "exchange_failed",
-        }),
-        302,
-      );
-    }
-
-    try {
-      // The fast half only — see the OpenRouter callback above.
-      const result = await connectHuggingFaceCredential({
-        api,
-        cookies,
-        hubUrl: deps.hubUrl,
-        userId: user.id,
-        userEmail: user.email,
-        provider: "huggingface",
-        apiKey: exchanged.accessToken,
-        pushWorkflow: deps.pushWorkflow,
-        log: deps.log,
-        ...(exchanged.expiresAt !== undefined
-          ? { credentialMetadata: { expiresAt: exchanged.expiresAt } }
-          : {}),
-      });
-      if (result.kind === "invalid-credential") {
-        deps.log(
-          `huggingface connect for user ${user.id}: minted token failed its probe: ${result.message}`,
-        );
-        return c.redirect(
-          huggingfaceWizardRedirectPath({
-            outcome: "error",
-            code: "key_rejected",
-          }),
-          302,
-        );
-      }
-      if (result.kind === "no-personal-bench") {
-        return c.redirect(
-          huggingfaceWizardRedirectPath({ outcome: "error", code: "no_bench" }),
-          302,
-        );
-      }
-      const pendingSeedToken = await sealPendingSeed(credentialCipher, {
-        userId: user.id,
-        tenantId: result.tenantId,
-        principalId: result.principalId,
-        tenantDomain: result.tenantDomain,
-        provider: "huggingface",
-        apiKey: exchanged.accessToken,
-      });
-      setCookie(c, PENDING_SEED_COOKIE, pendingSeedToken, {
-        httpOnly: true,
-        sameSite: "Lax",
-        secure: secureCookies,
-        path: "/",
-        maxAge: Math.floor(PENDING_SEED_TTL_MS / 1000),
-      });
-      return c.redirect(
-        huggingfaceWizardRedirectPath({
-          outcome: "connected",
-          tenantSlug: result.tenantSlug,
-        }),
-        302,
-      );
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(
-        `huggingface connect setup failed for user ${user.id}: ${message}`,
-      );
-      return c.redirect(
-        huggingfaceWizardRedirectPath({
-          outcome: "error",
-          code: "setup_failed",
-        }),
-        302,
-      );
-    }
-  });
+  app.route(
+    "/oauth",
+    createOAuthConnectRoutes({
+      hubUrl: deps.hubUrl,
+      log: deps.log,
+      credentialCipher,
+      registry: oauthRegistry,
+      oauthEnv: { huggingfaceClientId: deps.huggingfaceClientId },
+      connectCredential,
+      recentlyConnected,
+      afterConnected,
+      defaultReturnPath: "/onboarding",
+    }),
+  );
 
   // A pure test: proves a key against the provider's real API before the
   // caller commits to anything. No credential is stored here — storage
