@@ -91,7 +91,7 @@ export async function hop<T>(name: string, run: () => Promise<T>): Promise<T> {
  * the sweep).
  */
 export async function runCleanups(
-  cleanups: Array<() => Promise<void> | void>,
+  cleanups: (() => Promise<void> | void)[],
 ): Promise<void> {
   let firstFailure: unknown;
   for (const cleanup of cleanups.splice(0).reverse()) {

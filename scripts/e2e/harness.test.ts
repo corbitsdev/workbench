@@ -49,7 +49,7 @@ describe("createCleanupHarness", () => {
 
   test("a throwing cleanup does not abort the rest; first failure rethrows", async () => {
     const ran: string[] = [];
-    const cleanups: Array<() => Promise<void> | void> = [
+    const cleanups: (() => Promise<void> | void)[] = [
       () => {
         ran.push("first-registered");
       },
