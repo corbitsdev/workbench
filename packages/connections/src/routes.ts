@@ -120,13 +120,16 @@ export function createConnectionRoutes(
     },
   );
 
-  // Known, deliberate limitation: naming the credential after
-  // `descriptor.displayName` (e.g. "Anthropic") does NOT collide with
-  // onboarding's own seeded credential name (`"Anthropic-default"`, from
-  // `inferenceCredentialName` in seed.ts) — so reconnecting an inference
-  // provider through this surface creates a second, separate credential
-  // row rather than updating the onboarding-seeded one. Accepted for this
-  // ticket, not a bug to silently paper over.
+  // The PROVIDER row is named by the connector's lowercase `id` — the
+  // canonical name `credentialBindings` resolve against via the
+  // platform's case-sensitive `resolveProviderByName` (and the same
+  // convention onboarding's inference seeding uses). `displayName` is
+  // UI-only and must never reach a provider row. The CREDENTIAL row
+  // keeps the human-facing displayName; it does not collide with
+  // onboarding's seeded `"<id>-default"` name, so reconnecting an
+  // inference provider here creates a second row rather than updating
+  // the seeded one — accepted for this ticket, not silently papered
+  // over.
   app.post(
     "/:connectorId/complete",
     deps.requireGrant("credential:*", "create"),
@@ -164,7 +167,7 @@ export function createConnectionRoutes(
           cookies,
           {
             tenantId: tenant.id,
-            name: descriptor.displayName,
+            name: descriptor.id,
             plugin: descriptor.id,
           },
           deps.log,

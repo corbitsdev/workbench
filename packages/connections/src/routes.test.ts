@@ -189,8 +189,16 @@ describe("POST /:connectorId/complete", () => {
   });
 
   test("stores the credential once the probe accepts, returning its id", async () => {
+    // The provider row is named by the connector's lowercase id — the
+    // canonical name credentialBindings resolve against via the
+    // platform's case-sensitive provider lookup. displayName never
+    // reaches a provider row.
+    let providerRowName: string | undefined;
     const app = buildApp({
-      ensureProviderFn: async () => "prv_1",
+      ensureProviderFn: async (_api, _cookies, args) => {
+        providerRowName = (args as { name: string }).name;
+        return "prv_1";
+      },
       ensureCredentialFn: async () => "crd_1",
     });
     const response = await app.request("/accepting-connector/complete", {
@@ -205,6 +213,7 @@ describe("POST /:connectorId/complete", () => {
     };
     expect(body.credentialId).toBe("crd_1");
     expect(body.status).toBe("active");
+    expect(providerRowName).toBe("accepting-connector");
   });
 
   test("a storage failure after a good probe 500s", async () => {
