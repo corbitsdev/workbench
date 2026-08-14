@@ -86,6 +86,19 @@ function storedDefinitionBytes(
   );
 }
 
+/** The one step agent's tool-package pins inside a serialized definition. */
+function pinsFrom(workflowJson: string): { name: string; version: string }[] {
+  const parsed = JSON.parse(workflowJson) as {
+    steps: Record<
+      string,
+      { agent: { toolPackagePins?: { name: string; version: string }[] } }
+    >;
+  };
+  const step = Object.values(parsed.steps)[0];
+  if (step === undefined) throw new Error("definition carries no steps");
+  return step.agent.toolPackagePins ?? [];
+}
+
 /** The one step agent's system prompt inside a serialized definition. */
 function promptFrom(workflowJson: string): string {
   const parsed = JSON.parse(workflowJson) as {
@@ -546,9 +559,11 @@ test("PUT /:definitionId/skills with no pins strips the index from the prompt", 
     fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
   );
   await put(app, "/def_1/skills", { skills: [] });
-  expect(promptFrom(writtenFiles?.["workflow.json"] as string)).toBe(
+  const workflowJson = writtenFiles?.["workflow.json"] as string;
+  expect(promptFrom(workflowJson)).toBe(
     "You are a careful research assistant.",
   );
+  expect(pinsFrom(workflowJson)).toEqual([]);
 });
 
 test("PUT /:definitionId/skills rejects a duplicate skill name with a 400", async () => {
@@ -599,10 +614,16 @@ test("a create request indexes its pinned skills into the stored system prompt",
     systemPrompt: "You are a careful research assistant.",
     skills: ["web-research"],
   });
-  const prompt = promptFrom(writtenFiles?.["workflow.json"] as string);
+  const workflowJson = writtenFiles?.["workflow.json"] as string;
+  const prompt = promptFrom(workflowJson);
   expect(prompt.startsWith("You are a careful research assistant.")).toBe(true);
   expect(prompt).toContain("- web-research: What web-research does.");
   expect(prompt).toContain("load_skill");
+  // The prompt tells the model to call `load_skill`, so the bundle that
+  // provides it must be pinned on the same push.
+  expect(pinsFrom(workflowJson)).toEqual([
+    { name: "@corbits/tools-skills", version: "0.0.1" },
+  ]);
 });
 
 test("pinning a skill the registry cannot resolve is a 400, not a 500", async () => {
@@ -664,7 +685,9 @@ test("a create request with no pinned skills stores the author's prompt verbatim
     handle: "research-buddy",
     systemPrompt: "You are a careful research assistant.",
   });
-  expect(promptFrom(writtenFiles?.["workflow.json"] as string)).toBe(
+  const workflowJson = writtenFiles?.["workflow.json"] as string;
+  expect(promptFrom(workflowJson)).toBe(
     "You are a careful research assistant.",
   );
+  expect(pinsFrom(workflowJson)).toEqual([]);
 });
