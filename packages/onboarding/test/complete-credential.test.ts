@@ -159,7 +159,7 @@ describe("completeCredentialSetup", () => {
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
   });
 
-  test("a valid OpenAI key skips the Anthropic-only catalog but still seeds routines", async () => {
+  test("a valid OpenAI key seeds its own catalog and routines", async () => {
     const seedCatalogCalls: unknown[] = [];
     const seedTenantCalls: { model: { provider: string; model: string } }[] =
       [];
@@ -198,8 +198,53 @@ describe("completeCredentialSetup", () => {
       tenantSlug: TENANT_SLUG,
       workflows: ["echo", "assistant", "channel-digest"],
     });
-    expect(seedCatalogCalls).toHaveLength(0);
+    expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls).toHaveLength(1);
     expect(seedTenantCalls[0]?.model.provider).toBe("openai");
+  });
+
+  test("a valid Groq key seeds the shared OpenAI-compatible catalog and routines", async () => {
+    const seedCatalogCalls: { provider?: string }[] = [];
+    const seedTenantCalls: { model: { provider: string; model: string } }[] =
+      [];
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await completeCredentialSetup({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "groq",
+      apiKey: "gsk-good",
+      pushWorkflow: noopPush,
+      log: collector().log,
+      testCredential: async () => ({ ok: true }),
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args as never);
+      },
+      seedTenantFn: async (args) => {
+        seedTenantCalls.push(args as never);
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "seeded",
+      tenantId: TENANT_ID,
+      tenantSlug: TENANT_SLUG,
+      workflows: ["echo", "assistant", "channel-digest"],
+    });
+    expect(seedCatalogCalls).toHaveLength(1);
+    expect(seedCatalogCalls[0]?.provider).toBe("groq");
+    expect(seedTenantCalls).toHaveLength(1);
+    expect(seedTenantCalls[0]?.model.provider).toBe("openai-compatible");
   });
 });

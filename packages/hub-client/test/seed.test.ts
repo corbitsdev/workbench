@@ -710,12 +710,12 @@ describe("seedTenant", () => {
 
 const TIMESTAMP = "2026-01-01T00:00:00.000Z";
 
-function providerRow(id: string, name: string) {
+function providerRow(id: string, name: string, plugin: string = name) {
   return {
     id,
     tenantId: TENANT_ID,
     name,
-    plugin: name,
+    plugin,
     createdAt: TIMESTAMP,
     updatedAt: TIMESTAMP,
   };
@@ -745,13 +745,19 @@ function catalogModelRow(id: string, canonicalName: string) {
   };
 }
 
-function catalogProviderRow(id: string, name: string, credentialId: string) {
+function catalogProviderRow(
+  id: string,
+  name: string,
+  credentialId: string,
+  plugin: string = name,
+  baseURL = "https://api.anthropic.com",
+) {
   return {
     id,
     tenantId: TENANT_ID,
     name,
-    plugin: name,
-    baseURL: "https://api.anthropic.com",
+    plugin,
+    baseURL,
     credentialId,
     disabled: false,
     createdAt: TIMESTAMP,
@@ -971,6 +977,98 @@ describe("seedCatalog", () => {
       "catalog provider anthropic already exists (skipped)",
     );
     expect(output).toContain("catalog offering already exists (skipped)");
+  });
+
+  test("a non-default provider plants its own curated multi-model catalog under the 'openai-compatible' plugin", async () => {
+    const { lines, log } = collector();
+    const modelPosts: string[] = [];
+    const offeringPosts: { modelId: string; providerId: string }[] = [];
+    const handler: FakeHandler = (method, path, body) => {
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        const canonicalName = (body as { canonicalName: string }).canonicalName;
+        modelPosts.push(canonicalName);
+        return {
+          status: 201,
+          data: catalogModelRow(`mdl_${modelPosts.length}`, canonicalName),
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`) {
+        expect(body).toMatchObject({
+          name: "groq",
+          plugin: "openai-compatible",
+        });
+        return {
+          status: 201,
+          data: providerRow("prv_1", "groq", "openai-compatible"),
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 201,
+          data: credentialRow("cre_1", "prv_1", "groq-default"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        expect(body).toMatchObject({
+          name: "groq",
+          plugin: "openai-compatible",
+          baseURL: "https://api.groq.com/openai/v1",
+        });
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "groq",
+            "cre_1",
+            "openai-compatible",
+            "https://api.groq.com/openai/v1",
+          ),
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        const offering = body as { modelId: string; providerId: string };
+        offeringPosts.push(offering);
+        return {
+          status: 201,
+          data: catalogOfferingRow(
+            `off_${offeringPosts.length}`,
+            offering.modelId,
+            offering.providerId,
+          ),
+        };
+      }
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "groq",
+      apiKey: "gsk-test",
+      log,
+    });
+
+    expect(modelPosts).toEqual([
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "openai/gpt-oss-120b",
+    ]);
+    expect(offeringPosts).toHaveLength(3);
+    expect(offeringPosts.every((o) => o.providerId === "cpv_1")).toBe(true);
+
+    const output = lines.join("\n");
+    expect(output).toContain(
+      "catalog ready: groq/llama-3.3-70b-versatile, llama-3.1-8b-instant, openai/gpt-oss-120b",
+    );
   });
 
   test("an unexpected status from the provider route is a loud failure", async () => {
