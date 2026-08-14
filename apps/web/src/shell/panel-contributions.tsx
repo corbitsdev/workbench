@@ -373,8 +373,8 @@ function ChannelsBand({
     return (
       <EmptyState
         icon={<Hash />}
-        title="No bench selected"
-        description="Choose a bench from the rail to see its channels."
+        title="No workbench selected"
+        description="Choose a workbench from the switcher to see its channels."
       />
     );
   }
@@ -549,8 +549,8 @@ function LiveActivityBand({
     return (
       <EmptyState
         icon={<Hash />}
-        title="No bench selected"
-        description="Choose a bench from the rail to see live activity."
+        title="No workbench selected"
+        description="Choose a workbench from the switcher to see live activity."
       />
     );
   }
@@ -574,7 +574,7 @@ function LiveActivityBand({
       <EmptyState
         icon={<Bell />}
         title="Quiet right now"
-        description="Channels and running routines for this bench will appear here."
+        description="Channels and running routines for this workbench will appear here."
       />
     );
   }

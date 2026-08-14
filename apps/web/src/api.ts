@@ -198,7 +198,7 @@ export function useAPIQuery<T>(
         throw new UnauthenticatedError();
       }
       if (!response.ok) {
-        throw new Error(`The hub answered ${response.status} for ${path}.`);
+        throw new Error(`The server answered ${response.status} for ${path}.`);
       }
       const parsed = schema(await response.json());
       if (parsed instanceof type.errors) {
@@ -245,7 +245,7 @@ async function postJSON<T>(
   }
   if (!response.ok) {
     throw new APIMutationError(
-      `The hub answered ${response.status} for ${path}.`,
+      `The server answered ${response.status} for ${path}.`,
       response.status,
     );
   }
@@ -310,7 +310,7 @@ export async function getApprovalNeedsYou(
   if (!response.ok) {
     return {
       kind: "error",
-      message: `The hub answered ${response.status} for this approval.`,
+      message: `The server answered ${response.status} for this approval.`,
     };
   }
   const parsed = NeedsYouDetailSchema(await response.json());

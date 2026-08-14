@@ -51,7 +51,7 @@ export async function triggerFirstLoginProvisioning(
         kind: "error",
         message:
           envelope instanceof type.errors
-            ? `The hub answered ${response.status} while setting up your workbench.`
+            ? `The server answered ${response.status} while setting up your workbench.`
             : envelope.error.message,
       };
     }
@@ -72,7 +72,7 @@ export async function triggerFirstLoginProvisioning(
       return {
         kind: "error",
         message:
-          "Unexpected provisioning response: a provisioned bench is missing its tenant details.",
+          "Unexpected provisioning response: a provisioned workbench is missing its details.",
       };
     }
     return {
@@ -130,9 +130,9 @@ const OPENROUTER_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
   key_rejected:
     "OpenRouter minted a key, but its test call failed. Try connecting again.",
   no_bench:
-    "No personal bench was found for this account yet. Reload and try again.",
+    "No personal workbench was found for this account yet. Reload and try again.",
   setup_failed:
-    "Your OpenRouter key checked out, but setting up your bench failed. Try again in a moment.",
+    "Your OpenRouter key checked out, but setting up your workbench failed. Try again in a moment.",
   signed_out:
     "Your session ended during the OpenRouter connection. Sign in and try again.",
   rate_limited:
@@ -147,9 +147,9 @@ const HUGGINGFACE_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
   key_rejected:
     "Hugging Face minted a token, but its test call failed. Try connecting again.",
   no_bench:
-    "No personal bench was found for this account yet. Reload and try again.",
+    "No personal workbench was found for this account yet. Reload and try again.",
   setup_failed:
-    "Your Hugging Face token checked out, but setting up your bench failed. Try again in a moment.",
+    "Your Hugging Face token checked out, but setting up your workbench failed. Try again in a moment.",
   signed_out:
     "Your session ended during the Hugging Face connection. Sign in and try again.",
   rate_limited:
@@ -354,7 +354,7 @@ function readErrorEnvelope(
 ): string {
   const envelope = ErrorEnvelope(body);
   return envelope instanceof type.errors
-    ? `The hub answered ${status} while ${verb}.`
+    ? `The server answered ${status} while ${verb}.`
     : envelope.error.message;
 }
 
@@ -415,7 +415,7 @@ export async function submitCredential(
       const message = readErrorEnvelope(
         response.status,
         body,
-        "setting up your bench",
+        "setting up your workbench",
       );
       return response.status === 422
         ? { kind: "rejected", message }

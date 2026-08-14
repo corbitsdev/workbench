@@ -83,7 +83,7 @@ export async function ensureMyraChannel(
     if (definition === undefined) {
       return {
         kind: "error",
-        message: `No deployed "${MYRA_CHANNEL_TITLE}" agent definition found for this workbench.`,
+        message: `No "${MYRA_CHANNEL_TITLE}" agent found for this workbench.`,
       };
     }
     const created = await createChannel(tenantId, {

@@ -518,7 +518,7 @@ function DeliveryChannelPicker({
   if (channels.length === 0) {
     return (
       <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-        No delivery channel on this bench yet — create a channel first.
+        No delivery channel on this workbench yet — create a channel first.
       </p>
     );
   }
@@ -930,7 +930,7 @@ function CreateRoutineDialog({
                     className="text-xs text-[var(--ui-fg-muted)]"
                     role="status"
                   >
-                    No automatable workflows on this bench yet — describe it
+                    No automatable workflows on this workbench yet — describe it
                     instead.
                   </p>
                 ) : null}
@@ -1525,7 +1525,7 @@ export function RoutinesListPage({
                   Runs workflow{" "}
                   <span className="font-medium text-[var(--ui-fg)]">
                     {definitions.find((d) => d.id === selected.definitionId)
-                      ?.name ?? "selected definition"}
+                      ?.name ?? "selected agent"}
                   </span>
                   .
                 </p>
@@ -1673,7 +1673,7 @@ export function RoutineDetailPage({
                     <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">
                       Runs workflow{" "}
                       {definitions.find((d) => d.id === data.definitionId)
-                        ?.name ?? "selected definition"}
+                        ?.name ?? "selected agent"}
                       .
                     </p>
                   ) : (
@@ -1892,7 +1892,8 @@ export function RoutinesRoute({
     name: string;
     definitionId: string;
   }) => {
-    if (tenantId === null) throw new Error("No bench to create this in yet");
+    if (tenantId === null)
+      throw new Error("No workbench to create this in yet");
     const created = await createWebhookTrigger(tenantId, {
       name: input.name,
       workflowDefinitionId: input.definitionId,
@@ -1935,7 +1936,7 @@ export function RoutinesRoute({
         onOpenChannel={(channelId) => navigate(channelPath(channelId))}
         onEdit={async (routine, patch) => {
           if (tenantId === null)
-            throw new Error("No bench to edit this in yet");
+            throw new Error("No workbench to edit this in yet");
           await updateRoutine(tenantId, routine.id, patch);
           invalidateRoutines();
         }}
@@ -1964,7 +1965,7 @@ export function RoutinesRoute({
       }
       onCreate={async (input) => {
         if (tenantId === null)
-          throw new Error("No bench to create this in yet");
+          throw new Error("No workbench to create this in yet");
         await createRoutine(tenantId, input);
         invalidateRoutines();
         toast(routineCreatedToast(input.name));
@@ -1975,12 +1976,13 @@ export function RoutinesRoute({
       }
       onRotateWebhookSecret={onRotateWebhookSecret}
       onDescribe={async (input) => {
-        if (tenantId === null) throw new Error("No bench to draft this in yet");
+        if (tenantId === null)
+          throw new Error("No workbench to draft this in yet");
         return createRoutineDraft(tenantId, input);
       }}
       onApproveDraft={async (draftId) => {
         if (tenantId === null)
-          throw new Error("No bench to approve this draft in yet");
+          throw new Error("No workbench to approve this draft in yet");
         const result = await approveRoutineDraft(tenantId, draftId);
         invalidateRoutines();
         navigate(
@@ -1998,13 +2000,15 @@ export function RoutinesRoute({
         );
       }}
       onRunNow={async (routine) => {
-        if (tenantId === null) throw new Error("No bench to run this on yet");
+        if (tenantId === null)
+          throw new Error("No workbench to run this on yet");
         await runRoutineNow(tenantId, routine.id);
         invalidateRoutines();
         toast(routineRunStartedToast(routine.name));
       }}
       onEdit={async (routine, patch) => {
-        if (tenantId === null) throw new Error("No bench to edit this in yet");
+        if (tenantId === null)
+          throw new Error("No workbench to edit this in yet");
         await updateRoutine(tenantId, routine.id, patch);
         invalidateRoutines();
       }}

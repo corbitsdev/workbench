@@ -77,7 +77,7 @@ export async function uploadArtifactFiles(
   }
   if (!response.ok) {
     throw new ArtifactUploadError(
-      `The hub answered ${response.status} for artifact upload.`,
+      `The server answered ${response.status} for artifact upload.`,
       response.status,
     );
   }

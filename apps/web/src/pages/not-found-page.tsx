@@ -3,13 +3,13 @@ import { Compass } from "lucide-react";
 
 import { Link } from "../navigation";
 
-export function NotFoundPage({ path }: { readonly path: string }) {
+export function NotFoundPage() {
   return (
     <PageShell width="full" className="page-fill">
       <EmptyState
         icon={<Compass />}
         title="Page not found"
-        description={`Nothing lives at ${path}.`}
+        description="This page doesn't exist."
         action={
           <Button asChild variant="outline">
             <Link to="/">Back to Myra</Link>

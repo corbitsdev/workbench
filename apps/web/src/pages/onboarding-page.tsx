@@ -58,7 +58,7 @@ const GUIDANCE_CARDS = [
     icon: <Bot />,
     title: "Routines",
     description:
-      "A routine is a workflow an agent runs on your behalf — scheduled, triggered, or kicked off right from a channel. Your bench ships with a couple of starter routines already running.",
+      "A routine is a workflow an agent runs on your behalf — scheduled, triggered, or kicked off right from a channel. Your workbench ships with a couple of starter routines already running.",
   },
   {
     icon: <AtSign />,
@@ -310,7 +310,7 @@ export function OnboardingPage() {
         setState({
           phase: "provisioning-error",
           message:
-            "The hub did not create your workbench. Try a different name.",
+            "Setup couldn't create your workbench. Try a different name.",
         });
       }
     });
@@ -350,14 +350,14 @@ export function OnboardingPage() {
       <OnboardingPhase
         phase={state.phase}
         title="Create your workbench"
-        subtitle="Give your workbench a name. This labels your personal bench across the app — you can change it later."
+        subtitle="Give your workbench a name. This labels your personal workbench across the app — you can change it later."
       >
         <form onSubmit={handleNameSubmit} className="onboarding-name-form">
           <label htmlFor="onboarding-workbench-name">Workbench name</label>
           <Input
             id="onboarding-workbench-name"
             type="text"
-            placeholder="e.g. Ada's bench"
+            placeholder="e.g. Ada's workbench"
             value={workbenchName}
             onChange={(event) => setWorkbenchName(event.target.value)}
             required
@@ -365,7 +365,7 @@ export function OnboardingPage() {
             autoFocus
           />
           <p id="onboarding-workbench-name-help">
-            Used as the display name for your bench.
+            Used as your workbench's display name.
           </p>
           <Button type="submit" disabled={workbenchName.trim().length === 0}>
             Continue
@@ -415,7 +415,7 @@ export function OnboardingPage() {
       <OnboardingPhase
         phase={state.phase}
         title="Your workbench is ready"
-        subtitle="We've set up a personal bench for you with a starter channel and the default workflows deployed. Here's what to expect."
+        subtitle="We've set up a personal workbench for you with a starter channel and the default workflows running. Here's what to expect."
       >
         <GuidanceCards />
         <Button asChild>
@@ -436,7 +436,7 @@ export function OnboardingPage() {
       <OnboardingPhase
         phase={state.phase}
         title="Your first routines are running"
-        subtitle="Your key checked out, and every default routine on your bench has already fired and answered."
+        subtitle="Your key checked out, and every default routine on your workbench has already fired and answered."
       >
         <ProgressChecklist steps={checklist} label="Default routines" />
         <Button onClick={() => navigate("/")}>Meet Myra</Button>
@@ -452,7 +452,7 @@ export function OnboardingPage() {
     <OnboardingPhase
       phase={state.phase}
       title="Add an inference credential"
-      subtitle="Your workbench needs an inference credential before any agent or routine can run. Connect OpenRouter in one click, or pick a provider and paste your own key — either way it's used only for this bench."
+      subtitle="Your workbench needs an inference credential before any agent or routine can run. Connect OpenRouter in one click, or pick a provider and paste your own key — either way it's used only for this workbench."
     >
       <section
         className="onboarding-connect-card"
@@ -462,8 +462,8 @@ export function OnboardingPage() {
           <h2>Connect with OpenRouter</h2>
           <p>
             The easiest path: one click, ~50 models, pay-as-you-go. Approve
-            access on OpenRouter and your bench comes back with a working key —
-            nothing to copy.
+            access on OpenRouter and your workbench comes back with a working
+            key — nothing to copy.
           </p>
         </div>
         <Button asChild>
@@ -478,8 +478,8 @@ export function OnboardingPage() {
           <h2>Sign in with Hugging Face</h2>
           <p>
             Pay-as-you-go across Groq, Together, Fireworks &amp; more, billed to
-            your HF account — approve access and your bench comes back with a
-            working connection.
+            your HF account — approve access and your workbench comes back with
+            a working connection.
           </p>
         </div>
         <Button asChild>

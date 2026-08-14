@@ -66,8 +66,8 @@ function InboxList({
     return (
       <EmptyState
         icon={<Inbox />}
-        title="Inbox zero"
-        description="Nothing open in this filter. You're clear."
+        title="All caught up"
+        description="Nothing open in this filter."
       />
     );
   }

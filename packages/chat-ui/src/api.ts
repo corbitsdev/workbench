@@ -160,7 +160,7 @@ async function request<T>(
   }
   if (!response.ok) {
     throw new ChatApiError(
-      `The hub answered ${response.status} for ${path}.`,
+      `The server answered ${response.status} for ${path}.`,
       response.status,
     );
   }

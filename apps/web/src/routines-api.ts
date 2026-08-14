@@ -173,7 +173,7 @@ async function request<T>(
       )
       .catch(() => "");
     throw new RoutinesApiError(
-      `The hub answered ${response.status} for ${path}.${detail === "" ? "" : ` ${detail}`}`,
+      `The server answered ${response.status} for ${path}.${detail === "" ? "" : ` ${detail}`}`,
       response.status,
     );
   }

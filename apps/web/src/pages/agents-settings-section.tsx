@@ -214,11 +214,11 @@ function AgentDetailPanel({
 
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-medium text-muted-foreground">
-          Instances ({instances.length})
+          Active agents ({instances.length})
         </h3>
         {instances.length === 0 ? (
           <span className="text-sm text-muted-foreground">
-            No instances deployed. Use Start chat to launch one.
+            No active agents. Use Start chat to launch one.
           </span>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-3">
@@ -283,8 +283,8 @@ export function AgentsSettingsSection({
     return (
       <EmptyState
         icon={<Bot />}
-        title="No bench selected"
-        description="Choose a bench from the rail to see its agents."
+        title="No workbench selected"
+        description="Choose a workbench from the switcher to see its agents."
       />
     );
   }
@@ -297,7 +297,7 @@ export function AgentsSettingsSection({
       <EmptyState
         icon={<Bot />}
         title="Sign in required"
-        description="Sign in to see agents for this bench."
+        description="Sign in to see agents for this workbench."
       />
     );
   }

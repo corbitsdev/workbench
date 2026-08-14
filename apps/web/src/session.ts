@@ -35,7 +35,7 @@ export async function fetchSession(): Promise<SessionState> {
     if (!response.ok) {
       return {
         kind: "error",
-        message: `The hub answered ${response.status} for the session check.`,
+        message: `The server answered ${response.status} for the session check.`,
       };
     }
     const body: unknown = await response.json();
@@ -79,7 +79,7 @@ async function postAuth(
         ok: false,
         message:
           failure instanceof type.errors
-            ? `The hub answered ${response.status} for ${path}.`
+            ? `The server answered ${response.status} for ${path}.`
             : failure.message,
       };
     }
@@ -139,7 +139,7 @@ export async function fetchAuthConfig(): Promise<AuthConfigResult> {
     if (!response.ok) {
       return {
         kind: "unavailable",
-        message: `The hub answered ${response.status} for the auth config.`,
+        message: `The server answered ${response.status} for the auth config.`,
       };
     }
     const body: unknown = await response.json();
@@ -191,7 +191,7 @@ export async function signInSocial(
         ok: false,
         message:
           failure instanceof type.errors
-            ? `The hub answered ${response.status} starting ${provider} sign-in.`
+            ? `The server answered ${response.status} starting ${provider} sign-in.`
             : failure.message,
       };
     }

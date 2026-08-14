@@ -60,7 +60,7 @@ async function getJSON<T>(path: string, schema: Validator<T>): Promise<T> {
   }
   if (!response.ok) {
     throw new AgentDirectoryError(
-      `The hub answered ${response.status} for ${path}.`,
+      `The server answered ${response.status} for ${path}.`,
       response.status,
     );
   }
@@ -97,7 +97,7 @@ async function postJSON<T>(
     const envelope = ErrorEnvelope(json);
     const message =
       envelope instanceof type.errors
-        ? `The hub answered ${response.status} for ${path}.`
+        ? `The server answered ${response.status} for ${path}.`
         : envelope.error.message;
     throw new AgentDirectoryError(message, response.status);
   }

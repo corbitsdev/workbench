@@ -72,7 +72,7 @@ function Shell({
               <CommandPaletteProvider path={path} navigate={navigate} />
               <AppShell path={path} user={user} onSignOut={onSignOut}>
                 {route === undefined ? (
-                  <NotFoundPage path={path} />
+                  <NotFoundPage />
                 ) : (
                   route.render(path, navigate)
                 )}
@@ -133,7 +133,7 @@ export function App({
         <div className="app-boot-frame">
           <EmptyState
             icon={<CircleAlert />}
-            title="Couldn't reach the hub"
+            title="Connection lost"
             description={session.message}
             action={
               <Button variant="outline" onClick={onRetry}>
