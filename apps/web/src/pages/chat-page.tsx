@@ -22,6 +22,7 @@ import {
   NEW_CHANNEL_EVENT,
 } from "../command-palette-actions";
 import { useOpenProfileInCanvas } from "../shell/canvas-availability";
+import { useRegisterComposerInsert } from "../shell/composer-insertion";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
 
 export function ChatPage({
@@ -35,6 +36,7 @@ export function ChatPage({
   const channelId = channelIdFromPath(path);
   const settingsOpen = isChannelSettingsPath(path);
   const openProfile = useOpenProfileInCanvas();
+  const registerComposerInsert = useRegisterComposerInsert();
   const tenant = tenantResolutionFromBench(bench);
   const principalId = bench.selectedPrincipalId ?? undefined;
   const queryClient = useQueryClient();
@@ -95,6 +97,7 @@ export function ChatPage({
       channelId={channelId}
       onChannelChange={(nextChannelId) => navigate(channelPath(nextChannelId))}
       onOpenProfile={openProfile}
+      registerComposerInsert={registerComposerInsert}
       settingsOpen={settingsOpen}
       onSettingsOpenChange={(open) => {
         if (channelId === null) return;

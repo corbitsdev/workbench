@@ -745,12 +745,6 @@ html {
   justify-content: flex-end;
 }
 
-.shell-profile-pane-hint {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-
 /* Reduced motion needs no rule here: the component library collapses every
    animation and transition to a single frame at the foundation (see
    `prefers-reduced-motion` in its theme.css), and these transitions inherit

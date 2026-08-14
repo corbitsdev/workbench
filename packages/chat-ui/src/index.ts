@@ -16,6 +16,7 @@ export {
   attachmentValidationMessage,
   attachmentBytesOnComposer,
   base64DecodedByteLength,
+  insertTextAtCaret,
 } from "./composer";
 export type {
   ComposerAttachment,
@@ -23,6 +24,7 @@ export type {
   ComposerAttachmentLimits,
   AttachmentPickCandidate,
   AttachmentValidationError,
+  ComposerHandle,
 } from "./composer";
 export { renamePayload, rowMenuLabels } from "./sidebar";
 
@@ -96,6 +98,7 @@ export {
 } from "./api";
 export type {
   Channel,
+  CreateChannelInput,
   ParticipantRecord,
   MessageItem,
   MessagesResponse,
@@ -126,6 +129,10 @@ export type {
 } from "./channel-settings";
 export { profileSubjectFromParticipant } from "./profile-subject";
 export type { ProfileSubject } from "./profile-subject";
+
+export { sharedChannelsWith } from "./shared-channels";
+export type { SharedChannelSummary } from "./shared-channels";
+export { findDirectChannelWith } from "./direct-channel";
 
 export { ArtifactChip } from "./artifact-chip";
 

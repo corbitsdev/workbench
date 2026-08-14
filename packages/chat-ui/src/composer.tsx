@@ -8,7 +8,7 @@
 
 import { Button } from "@corbits/react-ui";
 import { Paperclip, Send, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 
 import type { Part } from "./api";
@@ -32,6 +32,26 @@ export type ComposerSendPayload = {
   readonly text: string;
   readonly attachments: readonly ComposerAttachment[];
 };
+
+/** Imperative seam a host can grab a ref to, so content from outside the
+ * composer's own tree — the profile card's Mention action (CL-5914) — can
+ * land in the active draft at the caret. */
+export type ComposerHandle = {
+  readonly insertText: (text: string) => void;
+};
+
+/** Splice `insertion` in at `caret`, pure and independent of any DOM state
+ * so it unit-tests the same way `insertMention` does. */
+export function insertTextAtCaret(
+  value: string,
+  caret: number,
+  insertion: string,
+): { readonly text: string; readonly caret: number } {
+  const before = value.slice(0, caret);
+  const after = value.slice(caret);
+  const text = `${before}${insertion}${after}`;
+  return { text, caret: before.length + insertion.length };
+}
 
 /**
  * The B2 fix, isolated as a pure rule: a successful send clears the draft;
@@ -237,14 +257,14 @@ function nextAttachmentId(): string {
   return `att_${attachmentSeq}`;
 }
 
-export function Composer({
-  agents,
-  onSend,
-}: {
-  readonly agents: readonly MentionCandidate[];
-  /** Resolves to whether the send succeeded; the composer decides draft/attachment cleanup from that. */
-  readonly onSend: (payload: ComposerSendPayload) => Promise<boolean>;
-}) {
+export const Composer = forwardRef<
+  ComposerHandle,
+  {
+    readonly agents: readonly MentionCandidate[];
+    /** Resolves to whether the send succeeded; the composer decides draft/attachment cleanup from that. */
+    readonly onSend: (payload: ComposerSendPayload) => Promise<boolean>;
+  }
+>(function Composer({ agents, onSend }, ref) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>(
     [],
@@ -256,6 +276,23 @@ export function Composer({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      insertText: (text: string) => {
+        const textarea = textareaRef.current;
+        const caret = textarea?.selectionStart ?? value.length;
+        const result = insertTextAtCaret(value, caret, text);
+        setValue(result.text);
+        requestAnimationFrame(() => {
+          textarea?.focus();
+          textarea?.setSelectionRange(result.caret, result.caret);
+        });
+      },
+    }),
+    [value],
+  );
 
   const candidates =
     mention !== null ? filterMentionCandidates(agents, mention.query) : [];
@@ -499,4 +536,4 @@ export function Composer({
       )}
     </div>
   );
-}
+});
