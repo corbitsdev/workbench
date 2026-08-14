@@ -38,6 +38,7 @@ const config: HubConfig = {
   hubStaticDir: staticDir,
   signupRateLimit: { windowSeconds: 60, max: 5 },
   socialProviders: {},
+  allowUnverifiedEmails: true,
   signupMode: "closed",
   allowedEmailDomains: [],
   allowPlaintextSecrets: true,
