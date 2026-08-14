@@ -141,9 +141,7 @@ describe("createDefaultAgentChannel", () => {
               title: "Myra",
               kind: "chat",
               pinned: false,
-              participants: [
-                { address: "myra@wf_1.tnt_1", handle: "myra" },
-              ],
+              participants: [{ address: "myra@wf_1.tnt_1", handle: "myra" }],
             },
           ],
         });
