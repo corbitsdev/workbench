@@ -38,7 +38,7 @@ import { createTenantFederationRoutes } from "./routes/tenant-federation";
 import { createPrincipalRoutes, createInviteRoutes } from "./routes/principals";
 import { createRoleRoutes, createRoleAssignRoutes } from "./routes/roles";
 import { createGrantRoutes, createEvaluateRoutes } from "./routes/grants";
-import { createInstanceRoutes } from "./routes/instances";
+import { createRunRoutes } from "./routes/runs";
 import { createWorkflowRoutes } from "./routes/workflows";
 import { createWorkflowDefinitionRoutes } from "./routes/workflow-definitions";
 import {
@@ -274,23 +274,26 @@ export function mountHubRoutes(
     "/api/tenants/:tenantId/principals/:principalId/evaluate",
     createEvaluateRoutes({ db, grantStore, conditionRegistry }),
   );
-  // The run management surface -- launch, list, observe, stop, mail a single
-  // run. Mounted as `/workflows/runs` (tenant-wide runs) before the `/workflows`
+  // The run management surface -- list, observe, stop, mail a single run.
+  // Mounted as `/workflows/runs` (tenant-wide runs) before the `/workflows`
   // deploy router below, and its literal `runs` segment out-prioritizes that
-  // router's `:deploymentId`, so `/workflows/runs` never resolves as a
+  // router's `:runId`, so `/workflows/runs` never resolves as a
   // deployment id.
   app.route(
     "/api/tenants/:tenantId/workflows/runs",
-    createInstanceRoutes({
+    createRunRoutes({
       db,
       sessionService,
       sidecarRouter,
       eventCollectors,
+      repoStore,
+      assetService,
+      ...(workflowDispatchService !== undefined
+        ? { workflowDispatchService }
+        : {}),
       grantStore,
       conditionRegistry,
       requireGrant,
-      assetService,
-      credentialCipher,
     }),
   );
 
@@ -299,7 +302,7 @@ export function mountHubRoutes(
   // stays available even when the gated `/workflows` deploy surface is off.
   // Registered before that surface as a defensive measure: the concrete
   // `/workflows/definitions/...` paths do not overlap the deploy router's
-  // `/:deploymentId` patterns, so this ordering is belt-and-suspenders.
+  // `/:runId` patterns, so this ordering is belt-and-suspenders.
   app.route(
     "/api/tenants/:tenantId/workflows/definitions",
     createWorkflowDefinitionRoutes({ db, requireGrant }),
@@ -473,7 +476,7 @@ export function mountHubRoutes(
     // The folded run's agent-state clone surface. Mounts at `/workflows/runs`
     // alongside the run-management routes; the git sub-paths (`:runId/state.git`)
     // are disjoint from the run routes, and the literal `runs` segment
-    // out-ranks the `/workflows/:deploymentId` deploy router.
+    // out-ranks the `/workflows/:runId` deploy router.
     app.route(
       "/api/tenants/:tenantId/workflows/runs",
       createAgentStateRunGitRoutes({

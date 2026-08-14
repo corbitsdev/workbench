@@ -23,7 +23,7 @@ import {
   hashDefinition,
   type WorkflowDefinition,
 } from "@intx/workflow/definition";
-import { deriveDeploymentAddress } from "@intx/workflow-deploy";
+import { deriveRunAddress, deriveRunAgentId } from "@intx/workflow-deploy";
 
 import type { DeployContent } from "./agent-repo";
 import {
@@ -51,7 +51,7 @@ export class ExclusiveWorkflowPlacementError extends Error {
 
 export type PrepareExclusiveWorkflowDeploymentArgs = {
   readonly tenantId: string;
-  readonly deploymentId: string;
+  readonly anchorRunId: string;
   readonly deploymentDomain: string;
   readonly definition: WorkflowDefinition;
   readonly definitionAssetId: string;
@@ -67,7 +67,7 @@ export type PrepareExclusiveWorkflowDeploymentArgs = {
 };
 
 export type PreparedExclusiveWorkflowDeployment = {
-  readonly deploymentId: string;
+  readonly anchorRunId: string;
   readonly deploymentAddress: string;
   readonly allocationId: string;
   readonly status: "pending";
@@ -225,9 +225,9 @@ export function createWorkflowAllocationService({
 
     const allocationId = createAllocationId();
     const createdAt = now();
-    const deploymentAddress = deriveDeploymentAddress({
-      deploymentId: args.deploymentId,
-      deploymentDomain: args.deploymentDomain,
+    const deploymentAddress = deriveRunAddress({
+      runId: args.anchorRunId,
+      domain: args.deploymentDomain,
     });
     await db.transaction(async (tx) => {
       const { definitionId } = await ensureWorkflowDefinitionForAsset(
@@ -235,19 +235,21 @@ export function createWorkflowAllocationService({
         args.definitionAssetId,
       );
       await tx.insert(workflowRun).values({
-        id: args.deploymentId,
+        id: args.anchorRunId,
         tenantId: args.tenantId,
-        deploymentId: args.deploymentId,
+        anchorRunId: args.anchorRunId,
         definitionId,
         address: deploymentAddress,
-        status: "running",
+        // Born "deployed": the anchor is live but pre-trigger. The first trigger
+        // flips it to "running" (see `anchorWithPrincipal`).
+        status: "deployed",
         createdAt,
       });
       await tx.insert(grant).values({
         id: generateId("grant"),
         tenantId: args.tenantId,
         principalId: args.sourceAuthorityPrincipalId,
-        resource: `workflow-run:${args.deploymentId}`,
+        resource: `workflow-run:${args.anchorRunId}`,
         action: "read",
         effect: "allow",
         origin: "creator",
@@ -256,7 +258,7 @@ export function createWorkflowAllocationService({
       });
       await launchSpecStore.create(
         {
-          anchorRunId: args.deploymentId,
+          anchorRunId: args.anchorRunId,
           sessionId: args.sessionId,
           deploymentDomain: args.deploymentDomain,
           sourceAuthorityPrincipalId: args.sourceAuthorityPrincipalId,
@@ -275,7 +277,7 @@ export function createWorkflowAllocationService({
       await allocationStore.createPending(
         {
           id: allocationId,
-          anchorRunId: args.deploymentId,
+          anchorRunId: args.anchorRunId,
           tenantId: args.tenantId,
           provisionerId: provisioner.id,
           provisionerApiVersion: provisioner.apiVersion,
@@ -288,7 +290,7 @@ export function createWorkflowAllocationService({
     });
 
     return {
-      deploymentId: args.deploymentId,
+      anchorRunId: args.anchorRunId,
       deploymentAddress,
       allocationId,
       status: "pending",
@@ -358,13 +360,13 @@ export function createWorkflowAllocationService({
         `Default offering ${spec.defaultSourceOfferingId} was not resolved for allocation ${allocation.id}`,
       );
     }
-    const deploymentAddress = deriveDeploymentAddress({
-      deploymentId: allocation.anchorRunId,
-      deploymentDomain: spec.deploymentDomain,
+    const deploymentAddress = deriveRunAddress({
+      runId: allocation.anchorRunId,
+      domain: spec.deploymentDomain,
     });
     const config: HarnessConfig = {
       sessionId: spec.sessionId,
-      agentId: `ins_${allocation.anchorRunId}`,
+      agentId: deriveRunAgentId({ runId: allocation.anchorRunId }),
       tenantId: allocation.tenantId,
       principalId: spec.sourceAuthorityPrincipalId,
       agentAddress: deploymentAddress,
@@ -379,7 +381,7 @@ export function createWorkflowAllocationService({
 
     return preparedDeployer.deployPreparedWorkflowDefinition({
       tenantId: allocation.tenantId,
-      deploymentId: allocation.anchorRunId,
+      anchorRunId: allocation.anchorRunId,
       deploymentDomain: spec.deploymentDomain,
       definition,
       config,

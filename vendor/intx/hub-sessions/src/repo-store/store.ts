@@ -10,7 +10,7 @@ import {
   maybeGC,
   type CommitSigner,
   type GCPolicy,
-} from "@intx/storage-isogit/node";
+} from "@intx/storage-isogit";
 import { hasCode } from "@intx/types";
 import { getLogger } from "@intx/log";
 import type {

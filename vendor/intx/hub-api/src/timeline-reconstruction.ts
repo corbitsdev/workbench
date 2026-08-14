@@ -5,7 +5,7 @@ import {
   IsogitStore,
   listMail,
   type MailDirection,
-} from "@intx/storage-isogit/node";
+} from "@intx/storage-isogit";
 import {
   formatSafetyRatingText,
   type ConversationTurn,

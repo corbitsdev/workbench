@@ -1,16 +1,12 @@
+import fs from "node:fs";
+import path from "node:path";
 import git from "isomorphic-git";
 import { parseHeaderSection } from "@intx/mime";
-import { hasCode, hexEncode } from "@intx/types";
+import { hexEncode } from "@intx/types";
 import { AUTHOR } from "./init";
 import type { CommitSigner } from "./signer";
-import {
-  buildSigningArgs,
-  commitDurably,
-  restoreIndexAfterFailedCommit,
-  UncertainRefPublicationError,
-} from "./commit-helpers";
+import { buildSigningArgs } from "./commit-helpers";
 import { withRepoDirLock } from "./repo-lock";
-import type { StorageRuntime } from "./runtime";
 
 const MAIL_DIR = "state/mail";
 
@@ -72,7 +68,6 @@ function parseThreadingHeaders(raw: Uint8Array): {
 }
 
 export async function createMailAuditStore(
-  runtime: StorageRuntime,
   dir: string,
   signer?: CommitSigner,
 ): Promise<MailAuditStore> {
@@ -82,9 +77,8 @@ export async function createMailAuditStore(
   const messageIndex = new Map<string, string>();
   // thread-id -> thread state
   const threads = new Map<string, ThreadState>();
-  let reconciliationFailure: Error | undefined;
 
-  await rebuildIndex(runtime, dir, messageIndex, threads);
+  await rebuildIndex(dir, messageIndex, threads);
 
   function resolveThread(
     inReplyTo: string | undefined,
@@ -125,14 +119,7 @@ export async function createMailAuditStore(
     // The whole body runs under the per-directory lock: the ordinal peek,
     // the commit, and the in-memory index/ordinal advance must be atomic
     // against a concurrent reactor commit or GC pass sharing this repo.
-    return withRepoDirLock(runtime, dir, async () => {
-      if (reconciliationFailure !== undefined) {
-        throw new Error(
-          "Mail audit store cannot accept writes after failed ref reconciliation",
-          { cause: reconciliationFailure },
-        );
-      }
-
+    return withRepoDirLock(dir, async () => {
       const { messageId, inReplyTo, references } =
         parseThreadingHeaders(rawMessage);
 
@@ -146,13 +133,14 @@ export async function createMailAuditStore(
       const threadId = resolveThread(inReplyTo, references);
       const ordinal = peekNextOrdinal(threadId);
       const filename = `${formatOrdinal(ordinal)}-${direction}.eml`;
-      const filepath = runtime.path.join(MAIL_DIR, threadId, filename);
+      const filepath = path.join(MAIL_DIR, threadId, filename);
 
-      const fullDir = runtime.path.join(dir, MAIL_DIR, threadId);
-      await runtime.fs.mkdir(fullDir, { recursive: true });
+      const fullDir = path.join(dir, MAIL_DIR, threadId);
+      await fs.promises.mkdir(fullDir, { recursive: true });
 
-      const fullPath = runtime.path.join(dir, filepath);
-      await runtime.fs.writeFile(fullPath, rawMessage);
+      const fullPath = path.join(dir, filepath);
+      await fs.promises.writeFile(fullPath, rawMessage);
+      await git.add({ fs, dir, filepath });
 
       const label = direction === "in" ? "inbound" : "outbound";
       const subject = `Record ${label} mail ${messageId}`;
@@ -160,46 +148,13 @@ export async function createMailAuditStore(
         options?.checkpointHash !== undefined
           ? `${subject}\n\nCheckpoint: ${options.checkpointHash}`
           : subject;
-      try {
-        await git.add({ fs: runtime.fs.git, dir, filepath });
-        await commitDurably(runtime, dir, {
-          message,
-          author: AUTHOR,
-          ...signingArgs,
-        });
-      } catch (cause) {
-        try {
-          await restoreIndexAfterFailedCommit(runtime, dir, [filepath]);
-        } catch (reconciliationCause) {
-          reconciliationFailure = new Error(
-            "Could not restore the mail index after commit failure",
-            {
-              cause: new AggregateError([cause, reconciliationCause]),
-            },
-          );
-          throw reconciliationFailure;
-        }
-
-        if (!(cause instanceof UncertainRefPublicationError)) throw cause;
-
-        try {
-          const actualOid = await git.resolveRef({
-            fs: runtime.fs.git,
-            dir,
-            ref: cause.ref,
-          });
-          if (actualOid === cause.oid) {
-            advanceOrdinal(threadId);
-            messageIndex.set(messageId, threadId);
-          }
-        } catch (reconciliationCause) {
-          reconciliationFailure = new Error(
-            `Could not reconcile uncertain mail commit ${cause.oid}`,
-            { cause: reconciliationCause },
-          );
-        }
-        throw cause;
-      }
+      await git.commit({
+        fs,
+        dir,
+        message,
+        author: AUTHOR,
+        ...signingArgs,
+      });
 
       advanceOrdinal(threadId);
       messageIndex.set(messageId, threadId);
@@ -236,17 +191,14 @@ function parseFilename(filename: string): {
   return { ordinal, direction: directionStr };
 }
 
-async function scanMail(
-  runtime: StorageRuntime,
-  dir: string,
-): Promise<MailEntry[]> {
-  const mailDir = runtime.path.join(dir, MAIL_DIR);
+async function scanMail(dir: string): Promise<MailEntry[]> {
+  const mailDir = path.join(dir, MAIL_DIR);
 
   let threadDirs: string[];
   try {
-    threadDirs = await runtime.fs.readdir(mailDir);
+    threadDirs = await fs.promises.readdir(mailDir);
   } catch (e: unknown) {
-    if (hasCode(e) && e.code === "ENOENT") {
+    if (e instanceof Error && "code" in e && e.code === "ENOENT") {
       return [];
     }
     throw e;
@@ -257,17 +209,17 @@ async function scanMail(
   const entries: MailEntry[] = [];
 
   for (const threadId of threadDirs) {
-    const threadPath = runtime.path.join(mailDir, threadId);
-    const stat = await runtime.fs.stat(threadPath);
+    const threadPath = path.join(mailDir, threadId);
+    const stat = await fs.promises.stat(threadPath);
     if (!stat.isDirectory()) continue;
 
-    const files = await runtime.fs.readdir(threadPath);
+    const files = await fs.promises.readdir(threadPath);
     const emlFiles = files.filter((f) => f.endsWith(".eml")).sort();
 
     for (const file of emlFiles) {
       const { ordinal, direction } = parseFilename(file);
-      const fullPath = runtime.path.join(threadPath, file);
-      const raw = await runtime.fs.readFile(fullPath);
+      const fullPath = path.join(threadPath, file);
+      const raw = await fs.promises.readFile(fullPath);
       const { messageId } = parseThreadingHeaders(raw);
 
       entries.push({ threadId, ordinal, direction, messageId, raw });
@@ -277,20 +229,16 @@ async function scanMail(
   return entries;
 }
 
-export async function listMail(
-  runtime: StorageRuntime,
-  dir: string,
-): Promise<MailEntry[]> {
-  return scanMail(runtime, dir);
+export async function listMail(dir: string): Promise<MailEntry[]> {
+  return scanMail(dir);
 }
 
 async function rebuildIndex(
-  runtime: StorageRuntime,
   dir: string,
   messageIndex: Map<string, string>,
   threads: Map<string, ThreadState>,
 ): Promise<void> {
-  const entries = await scanMail(runtime, dir);
+  const entries = await scanMail(dir);
 
   for (const entry of entries) {
     messageIndex.set(entry.messageId, entry.threadId);
