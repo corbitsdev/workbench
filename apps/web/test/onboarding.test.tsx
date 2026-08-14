@@ -11,7 +11,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/app";
 import {
   CREDENTIAL_PROVIDERS,
+  PRIMARY_CREDENTIAL_PROVIDERS,
   readOpenRouterConnectReturn,
+  SECONDARY_CREDENTIAL_PROVIDERS,
   submitCredential,
   testCredential,
   triggerFirstLoginProvisioning,
@@ -41,9 +43,9 @@ const signedIn: SessionState = {
 describe("CREDENTIAL_PROVIDERS", () => {
   // ProviderPicker (onboarding-page.tsx) renders one card per entry here —
   // this is the data the cards are built from, so covering it covers what
-  // actually shows up: eight cards, one per SupportedCredentialProvider,
+  // actually shows up: nine cards, one per SupportedCredentialProvider,
   // each with a distinct honest one-liner and a real key-console link.
-  test("has one card for every OpenAI-compatible relay plus the three direct providers", () => {
+  test("has one card for every OpenAI-compatible relay plus the direct providers", () => {
     expect(CREDENTIAL_PROVIDERS.map((p) => p.id).sort()).toEqual([
       "anthropic",
       "deepseek",
@@ -53,6 +55,7 @@ describe("CREDENTIAL_PROVIDERS", () => {
       "openai",
       "opencode-zen",
       "openrouter",
+      "xai",
     ]);
   });
 
@@ -67,6 +70,34 @@ describe("CREDENTIAL_PROVIDERS", () => {
   test("no two cards share the same description", () => {
     const descriptions = CREDENTIAL_PROVIDERS.map((p) => p.description);
     expect(new Set(descriptions).size).toBe(descriptions.length);
+  });
+});
+
+describe("PRIMARY_CREDENTIAL_PROVIDERS and SECONDARY_CREDENTIAL_PROVIDERS", () => {
+  test("the primary six lead in the owner's exact order", () => {
+    expect(PRIMARY_CREDENTIAL_PROVIDERS.map((p) => p.id)).toEqual([
+      "openai",
+      "anthropic",
+      "google-genai",
+      "xai",
+      "openrouter",
+      "opencode-zen",
+    ]);
+  });
+
+  test("groq, deepseek, and mistral sit behind the secondary group", () => {
+    expect(SECONDARY_CREDENTIAL_PROVIDERS.map((p) => p.id)).toEqual([
+      "groq",
+      "deepseek",
+      "mistral",
+    ]);
+  });
+
+  test("primary and secondary together account for every card, primary first", () => {
+    expect(CREDENTIAL_PROVIDERS).toEqual([
+      ...PRIMARY_CREDENTIAL_PROVIDERS,
+      ...SECONDARY_CREDENTIAL_PROVIDERS,
+    ]);
   });
 });
 
@@ -408,5 +439,72 @@ describe("the OpenRouter connect card", () => {
     expect(markup).toContain("Your first routines are running");
     expect(markup).toContain("Echo routine");
     expect(markup).toContain("Myra routine");
+  });
+});
+
+describe("the provider picker's primary row and secondary expander", () => {
+  const renderCredentialPhase = () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/onboarding?connect=openrouter&outcome=error&code=state_expired",
+    );
+    try {
+      return renderToStaticMarkup(
+        <App
+          path={ONBOARDING_PATH}
+          navigate={noop}
+          session={signedIn}
+          onSignedIn={noop}
+          onSignOut={noop}
+          onRetry={noop}
+        />,
+      );
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  };
+
+  test("the primary six render in the owner's exact order, ahead of the expander", () => {
+    const markup = renderCredentialPhase();
+    // Search only from the radiogroup onward — "OpenRouter" also appears
+    // in the one-click connect card above the picker.
+    const pickerMarkup = markup.slice(
+      markup.indexOf('aria-label="Inference provider"'),
+    );
+    const labels = [
+      "OpenAI",
+      "Anthropic",
+      "Google",
+      "xAI",
+      "OpenRouter",
+      "Opencode Zen",
+      "More providers",
+    ];
+    const positions = labels.map((label) => pickerMarkup.indexOf(label));
+
+    expect(positions.every((index) => index >= 0)).toBe(true);
+    const isStrictlyIncreasing = positions.every(
+      (position, i) => i === 0 || position > (positions[i - 1] ?? -Infinity),
+    );
+    expect(isStrictlyIncreasing).toBe(true);
+  });
+
+  test("groq, deepseek, and mistral still render, fully functional, inside the expander", () => {
+    const markup = renderCredentialPhase();
+    const moreIndex = markup.indexOf("More providers");
+
+    for (const label of ["Groq", "DeepSeek", "Mistral"]) {
+      const labelIndex = markup.indexOf(label);
+      expect(labelIndex).toBeGreaterThan(moreIndex);
+    }
+    // Still real radio buttons, not disabled or decorative.
+    expect(markup).toContain('role="radio"');
+  });
+
+  test("the expander is collapsed by default — anthropic is the initial selection", () => {
+    const markup = renderCredentialPhase();
+    expect(markup).toContain('class="onboarding-provider-more"');
+    expect(markup).not.toMatch(/class="onboarding-provider-more" open/);
   });
 });

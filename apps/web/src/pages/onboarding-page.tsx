@@ -35,11 +35,13 @@ import { Link, useNavigate } from "../navigation";
 import {
   CREDENTIAL_PROVIDERS,
   OPENROUTER_CONNECT_START_PATH,
+  PRIMARY_CREDENTIAL_PROVIDERS,
   readOpenRouterConnectReturn,
+  SECONDARY_CREDENTIAL_PROVIDERS,
   submitCredential,
   triggerFirstLoginProvisioning,
 } from "../onboarding";
-import type { CredentialProvider } from "../onboarding";
+import type { CredentialProvider, CredentialProviderCard } from "../onboarding";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
 import { OnboardingProgress } from "../onboarding/onboarding-progress";
 
@@ -156,6 +158,33 @@ function OnboardingPhase({
   );
 }
 
+function ProviderCardButton({
+  provider,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  readonly provider: CredentialProviderCard;
+  readonly selected: CredentialProvider;
+  readonly disabled: boolean;
+  readonly onSelect: (provider: CredentialProvider) => void;
+}) {
+  return (
+    <Button
+      type="button"
+      role="radio"
+      title={provider.description}
+      aria-checked={provider.id === selected}
+      variant={provider.id === selected ? "primary" : "outline"}
+      disabled={disabled}
+      onClick={() => onSelect(provider.id)}
+    >
+      <ProviderMark provider={provider.id} size="sm" />
+      {provider.label}
+    </Button>
+  );
+}
+
 function ProviderPicker({
   selected,
   onSelect,
@@ -165,27 +194,48 @@ function ProviderPicker({
   readonly onSelect: (provider: CredentialProvider) => void;
   readonly disabled: boolean;
 }) {
+  // The six providers most people reach for lead the row; the rest stay
+  // fully functional but tucked behind "More providers" so the primary
+  // choice never has to compete with a wall of cards. A secondary pick
+  // (e.g. returning to the flow with Groq already selected) opens the
+  // expander automatically rather than hiding the active choice.
+  const secondaryHasSelection = SECONDARY_CREDENTIAL_PROVIDERS.some(
+    (provider) => provider.id === selected,
+  );
   return (
     <div
       role="radiogroup"
       aria-label="Inference provider"
       className="onboarding-provider-picker"
     >
-      {CREDENTIAL_PROVIDERS.map((provider) => (
-        <Button
+      {PRIMARY_CREDENTIAL_PROVIDERS.map((provider) => (
+        <ProviderCardButton
           key={provider.id}
-          type="button"
-          role="radio"
-          title={provider.description}
-          aria-checked={provider.id === selected}
-          variant={provider.id === selected ? "primary" : "outline"}
+          provider={provider}
+          selected={selected}
           disabled={disabled}
-          onClick={() => onSelect(provider.id)}
-        >
-          <ProviderMark provider={provider.id} size="sm" />
-          {provider.label}
-        </Button>
+          onSelect={onSelect}
+        />
       ))}
+      <details
+        className="onboarding-provider-more"
+        open={secondaryHasSelection}
+      >
+        <summary className="onboarding-provider-more-trigger">
+          More providers
+        </summary>
+        <div className="onboarding-provider-more-panel">
+          {SECONDARY_CREDENTIAL_PROVIDERS.map((provider) => (
+            <ProviderCardButton
+              key={provider.id}
+              provider={provider}
+              selected={selected}
+              disabled={disabled}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      </details>
     </div>
   );
 }

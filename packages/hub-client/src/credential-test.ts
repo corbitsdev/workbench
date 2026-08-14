@@ -15,6 +15,7 @@ export type SupportedCredentialProvider =
   | "anthropic"
   | "openai"
   | "google-genai"
+  | "xai"
   | "openrouter"
   | "opencode-zen"
   | "groq"
@@ -95,6 +96,12 @@ const ANTHROPIC_VERSION = "2023-06-01";
 
 const GoogleErrorBody = type({ "error?": { "status?": "string" } });
 
+// xAI's list-models rejection carries the message as a bare string
+// (`{ code, error }`), not nested under `error.message` like the other
+// OpenAI-shaped providers, so its rejection check reads `code` directly
+// instead of matching the shared `ErrorBody` shape below.
+const XaiErrorBody = type({ "code?": "string" });
+
 const PROVIDER_TEST_CONFIG: Readonly<
   Record<SupportedCredentialProvider, ProviderTestConfig>
 > = {
@@ -137,6 +144,25 @@ const PROVIDER_TEST_CONFIG: Readonly<
       const parsed = GoogleErrorBody(JSON.parse(body));
       if (parsed instanceof type.errors) return false;
       return parsed.error?.status === "INVALID_ARGUMENT";
+    },
+  },
+  xai: {
+    displayName: "xAI",
+    baseURL: "https://api.x.ai/v1",
+    adapterPlugin: "openai-compatible",
+    probeModel: "grok-4.6",
+    buildProbeRequest: (apiKey) => ({
+      url: "https://api.x.ai/v1/models",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }),
+    // Confirmed live: a bad key gets a 400 with
+    // `{ code: "invalid-argument", error: "Incorrect API key provided..." }`,
+    // not the 401 most Bearer-token providers use.
+    isKeyRejected: (status, body) => {
+      if (status !== 400) return false;
+      const parsed = XaiErrorBody(JSON.parse(body));
+      if (parsed instanceof type.errors) return false;
+      return parsed.code === "invalid-argument";
     },
   },
   openrouter: {
@@ -255,18 +281,28 @@ export function supportedCredentialProviders(): readonly {
 
 const ErrorBody = type({ "error?": { "message?": "string" } });
 
+// xAI's error body carries its message as a bare string (`error`), not
+// nested under `error.message` like the other providers — tried once the
+// nested shape above doesn't match.
+const FlatErrorBody = type({ "error?": "string" });
+
 function providerErrorMessage(
   displayName: string,
   status: number,
   body: string,
 ): string {
   try {
-    const parsed = ErrorBody(JSON.parse(body));
-    if (!(parsed instanceof type.errors) && parsed.error?.message) {
-      return parsed.error.message;
+    const parsedJson: unknown = JSON.parse(body);
+    const nested = ErrorBody(parsedJson);
+    if (!(nested instanceof type.errors) && nested.error?.message) {
+      return nested.error.message;
+    }
+    const flat = FlatErrorBody(parsedJson);
+    if (!(flat instanceof type.errors) && flat.error) {
+      return flat.error;
     }
   } catch {
-    // Not JSON, or didn't match the shape — fall through to the
+    // Not JSON, or didn't match either shape — fall through to the
     // generic message below.
   }
   return `${displayName} rejected the request with status ${status}`;

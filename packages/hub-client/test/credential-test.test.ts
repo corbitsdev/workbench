@@ -28,6 +28,7 @@ describe("supportedCredentialProviders", () => {
       "openai",
       "opencode-zen",
       "openrouter",
+      "xai",
     ]);
   });
 });
@@ -35,6 +36,7 @@ describe("supportedCredentialProviders", () => {
 describe("providerModelSource", () => {
   test("maps every OpenAI-compatible relay to the shared 'openai-compatible' adapter", () => {
     for (const provider of [
+      "xai",
       "openrouter",
       "opencode-zen",
       "groq",
@@ -202,6 +204,109 @@ describe("testProviderCredential", () => {
       }
     });
   }
+});
+
+describe("testProviderCredential: xai", () => {
+  // xAI's list-models probe is a plain GET like most providers, but its
+  // rejected-key response is a 400 with a flat `{ code, error }` body —
+  // confirmed against the live endpoint — rather than the 401
+  // `{ error: { message } }` shape the generic loop above assumes.
+  test("reports ok when the key is accepted", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(JSON.stringify({ data: [] }), { status: 200 });
+
+    const result = await testProviderCredential({
+      provider: "xai",
+      apiKey: "test-real-key",
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  test("reports the specific reason when the key is rejected", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        JSON.stringify({
+          code: "invalid-argument",
+          error:
+            "Incorrect API key provided. You can obtain an API key from https://console.x.ai.",
+        }),
+        { status: 400 },
+      );
+
+    const result = await testProviderCredential({
+      provider: "xai",
+      apiKey: "test-wrong-key",
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toBe(
+        "Incorrect API key provided. You can obtain an API key from https://console.x.ai.",
+      );
+    }
+  });
+
+  test("distinguishes a non-auth provider error from a rejected key", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        JSON.stringify({ code: "internal-error", error: "server exploded" }),
+        { status: 500 },
+      );
+
+    const result = await testProviderCredential({
+      provider: "xai",
+      apiKey: "test-real-key",
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toContain("not a rejected key");
+      expect(result.message).toContain("server exploded");
+    }
+  });
+
+  test("a 400 that isn't the invalid-argument code is not treated as a rejected key", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        JSON.stringify({ code: "some-other-code", error: "unrelated" }),
+        { status: 400 },
+      );
+
+    const result = await testProviderCredential({
+      provider: "xai",
+      apiKey: "test-real-key",
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("not a rejected key");
+  });
+
+  test("probes /v1/models with GET and the real key", async () => {
+    let seenMethod = "";
+    let seenUrl = "";
+    let seenHeaders: Record<string, string> = {};
+    const fetchImpl: FetchLike = async (url, init) => {
+      seenUrl = url;
+      seenMethod = init.method;
+      seenHeaders = Object.fromEntries(new Headers(init.headers).entries());
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    };
+
+    await testProviderCredential({
+      provider: "xai",
+      apiKey: "test-secret-key",
+      fetchImpl,
+    });
+
+    expect(seenMethod).toBe("GET");
+    expect(seenUrl).toBe("https://api.x.ai/v1/models");
+    expect(seenHeaders["authorization"]).toContain("test-secret-key");
+  });
 });
 
 describe("testProviderCredential: opencode-zen", () => {
