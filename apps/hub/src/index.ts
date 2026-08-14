@@ -10,9 +10,14 @@ import path from "node:path";
 import { createDB, createGrantStore } from "@intx/db";
 import { workflowDefinition } from "@intx/db/schema";
 import { and, eq } from "drizzle-orm";
-import { generateKeyPair } from "@intx/crypto";
+import {
+  createEnvKeyCredentialCipher,
+  createNoopCredentialCipher,
+  generateKeyPair,
+} from "@intx/crypto";
 import { timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
+import type { CredentialCipher } from "@intx/types";
 import {
   createApp,
   createRequireGrant,
@@ -171,6 +176,27 @@ function createStaticHandler(staticDir: string) {
     if (await index.exists()) return new Response(index);
     return next();
   };
+}
+
+/**
+ * The `CredentialCipher` (see `@intx/types`) every secret-at-rest seam
+ * in this composition root shares — currently just
+ * `webhookTriggerStore`'s signing secrets. A real key
+ * (`CREDENTIAL_ENCRYPTION_KEY`) builds an AES-256-GCM cipher; an unset
+ * key falls back to the identity no-op cipher with a boot warning —
+ * fine for dev/test, never for a real deployment.
+ */
+function credentialCipherFrom(
+  config: HubConfig,
+  log: ReturnType<typeof getLogger>,
+): CredentialCipher {
+  if (config.credentialEncryptionKeyHex === undefined) {
+    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets) will NOT be encrypted at rest. Expected in dev/test only — set CREDENTIAL_ENCRYPTION_KEY for any real deployment.`;
+    return createNoopCredentialCipher();
+  }
+  return createEnvKeyCredentialCipher(
+    Buffer.from(config.credentialEncryptionKeyHex, "hex"),
+  );
 }
 
 export async function createHub(config: HubConfig) {
@@ -544,7 +570,10 @@ export async function createHub(config: HubConfig) {
   // comes from the trigger row the id resolves to, and the only trust
   // it is granted comes from the HMAC signature check in
   // `createWebhookIngressRoutes` itself.
-  const webhookTriggerStore = createDrizzleWebhookTriggerStore(db);
+  const webhookTriggerStore = createDrizzleWebhookTriggerStore(
+    db,
+    credentialCipherFrom(config, log),
+  );
   const webhookCryptoProviders = createCryptoProviderCache();
   app.route(
     `${TENANT_PREFIX}/webhook-triggers`,
@@ -639,6 +668,19 @@ export async function createHub(config: HubConfig) {
           columns: { id: true },
         });
         return row !== undefined;
+      },
+      // A `{kind: "webhook"}` trigger's `webhookTriggerId` must resolve
+      // to a real `webhook_trigger` row in this tenant, pointed at the
+      // exact same workflow definition the routine itself runs — see
+      // `webhookTriggerValid`'s doc comment in
+      // `@corbits/routines`' routes.ts for why the two ids must agree.
+      webhookTriggerInTenant: async (
+        tenantId,
+        webhookTriggerId,
+        definitionId,
+      ) => {
+        const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
+        return row !== undefined && row.workflowDefinitionId === definitionId;
       },
     }),
   );
