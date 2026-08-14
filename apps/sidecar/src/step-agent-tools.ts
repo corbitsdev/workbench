@@ -188,6 +188,25 @@ function getStepCredentialContext(
  * credential-resolution.ts`) keys the consumer identity on -- so a tool
  * factory's `id` and its declared credential handles resolve to the
  * same consumer here without a second source of truth.
+ *
+ * Trust boundary: this derives the consumer identity from the tool
+ * bundle's OWN self-declared `id` string (`defineTool({ id, ... })`,
+ * `vendor/intx/agent/src/tool.ts`) -- nothing in the loader checks that a
+ * factory whose `id` claims package X actually shipped inside package
+ * X's tarball. A factory could declare `id: "@corbits/granola-tools/
+ * granola"` from inside a different package's code and this function
+ * would hand it that package's `credentials` capability, resolving
+ * whatever the launch bound to the real `@corbits/granola-tools`
+ * consumer. This is acceptable ONLY because tool packages are
+ * operator-installed, root-bucket-trusted code (AGENTS.md: "Root-bucket
+ * modules are operator-installed... sandboxed installables use
+ * Interchange's native contracts and never get root-bucket powers") --
+ * the same trust level a root-bucket module already holds to declare
+ * routes, migrations, and grants. It is NOT a boundary that holds against
+ * a hostile or sandboxed tool package, which this substrate never loads.
+ * Binding the loader's package-provenance to a factory's declared `id` is
+ * a real gap for a future untrusted-tool-package story; it is filed and
+ * tracked separately from this wiring, not solved here.
  */
 function packageFromToolId(id: string): string {
   const lastSlash = id.lastIndexOf("/");

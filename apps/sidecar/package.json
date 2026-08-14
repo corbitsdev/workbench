@@ -15,6 +15,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/credential-providers": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/authz": "workspace:*",
     "@intx/crypto": "workspace:*",

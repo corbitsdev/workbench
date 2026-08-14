@@ -14,8 +14,11 @@
 //   3. compose the consumer-scoped `credentials` capability exactly as
 //      `apps/sidecar/src/step-agent-tools.ts`'s `createToolBearingAgentFactory`
 //      does at a real step build -- `createCredentialCapability` +
-//      `createHttpCredentialProvider`, both `@intx/harness`, never
-//      reimplemented here;
+//      `createHttpCredentialProvider` (`@intx/harness`) over
+//      `deriveResolvedBindings` (`@corbits/credential-providers`, the
+//      package-side twin of the sidecar's own `consumerBindings`, proven
+//      to agree with it by `apps/sidecar/test/
+//      credential-bindings-parity.test.ts`) -- never reimplemented here;
 //   4. run this package's real `granolaTools` bundle against that
 //      capability and assert the tool call reaches the (stubbed) network
 //      carrying the seeded secret as a bearer token.
@@ -41,7 +44,6 @@ import { schema } from "@intx/db";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { credentialAad } from "@intx/types";
 import type { CredentialBinding } from "@intx/types";
-import type { CredentialDelivery } from "@intx/types/sidecar";
 import { toolConsumer } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
 import {
@@ -49,7 +51,7 @@ import {
   createCredentialProviderRegistry,
   createHttpCredentialProvider,
 } from "@intx/harness";
-import type { ResolvedCredentialBinding } from "@intx/harness";
+import { deriveResolvedBindings } from "@corbits/credential-providers";
 import type { ToolCall } from "@intx/types/runtime";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
@@ -71,38 +73,6 @@ const GRANOLA_BINDING: CredentialBinding = {
   provider: "granola",
   locator: "tenant",
 };
-
-/**
- * Reshape `buildCredentialDelivery`'s output into the `ResolvedCredentialBinding`
- * map `createCredentialCapability` consumes, exactly the derivation
- * `apps/sidecar/src/step-agent-tools.ts`'s `consumerBindings` performs
- * from a step's live `CredentialWiring`. Inlined here (rather than
- * imported from the sidecar app) because packages own the domain and
- * never depend on an app; the platform functions this composes
- * (`createCredentialCapability`, `createHttpCredentialProvider`) are the
- * real, shared seam both sites call.
- */
-function toResolvedBindings(
-  delivery: CredentialDelivery,
-  consumer: string,
-): ReadonlyMap<string, ResolvedCredentialBinding> {
-  const bindings = new Map<string, ResolvedCredentialBinding>();
-  for (const binding of delivery.bindings) {
-    if (binding.consumer !== consumer) continue;
-    const material = delivery.materials.find(
-      (entry: CredentialDelivery["materials"][number]) =>
-        entry.credentialId === binding.credentialId,
-    );
-    if (material === undefined) continue;
-    bindings.set(binding.handle, {
-      credentialId: binding.credentialId,
-      providerKey: material.providerKey,
-      origin: material.origin,
-      readCurrentMaterial: () => ({ secret: material.secret }),
-    });
-  }
-  return bindings;
-}
 
 /** The launch-time grant the resolver stamps, reshaped into a `GrantRule`. */
 function toGrantRule(bindingGrant: {
@@ -212,7 +182,7 @@ describeIfDb(
         ]);
         const capability = createCredentialCapability({
           consumer: CONSUMER,
-          bindings: toResolvedBindings(delivery, CONSUMER),
+          bindings: deriveResolvedBindings(delivery, CONSUMER),
           providers,
           grants: result.bindingGrants.map(toGrantRule),
         });

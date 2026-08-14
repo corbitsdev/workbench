@@ -32,6 +32,7 @@ import {
   builtinCredentialProviders,
   createCredentialProviderRegistry,
 } from "@intx/harness";
+import { createHttpRawAuthorizationCredentialProvider } from "@corbits/credential-providers";
 import { loadAdapterRegistry } from "@intx/inference/providers";
 import { createSSHSignature } from "@intx/crypto";
 import {
@@ -356,15 +357,18 @@ export function createSidecarSubstrateFactory(
     });
 
     // Credential provider registry: the platform's built-in `http`
-    // provider (`@intx/harness`'s `builtinCredentialProviders`), the
-    // only plugin a launch-time `CredentialDelivery` resolves against
-    // today (every tool credential is delivered as an origin-pinned
-    // bearer handle). Fixed for the child's lifetime -- unlike the
-    // per-step wiring below, a provider plugin is not something a
-    // rotation or `credentials-updated` frame changes.
-    const credentialProviders = createCredentialProviderRegistry(
-      builtinCredentialProviders(),
-    );
+    // (Bearer) provider (`@intx/harness`'s `builtinCredentialProviders`)
+    // plus this workbench's own `http-raw-authorization` plugin
+    // (`@corbits/credential-providers`) for a provider row whose API
+    // expects the raw secret in `authorization` with no `Bearer ` prefix
+    // (Linear's convention) rather than forking or reaching around the
+    // vendored plugin. Fixed for the child's lifetime -- unlike the
+    // per-step wiring below, the set of provider plugins is not something
+    // a rotation or `credentials-updated` frame changes.
+    const credentialProviders = createCredentialProviderRegistry([
+      ...builtinCredentialProviders(),
+      createHttpRawAuthorizationCredentialProvider(),
+    ]);
 
     // The tool-bearing agent factory reads the materialized tool
     // runtime off the per-step env (set by `buildStepEnv` via
