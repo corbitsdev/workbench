@@ -1,0 +1,23 @@
+{
+  "name": "@corbits/artifact-tools",
+  "private": true,
+  "description": "Workbench artifacts as an @intx/agent tool bundle: lists a tenant's Library artifacts for use as collateral-generation source material",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
