@@ -196,8 +196,7 @@ describe("ChatWorkspace settings surface", () => {
       harness.container.querySelectorAll(".channel-settings-nav-item"),
     );
     const membersItem = items.find((el) => el.textContent === "Members") as
-      | HTMLButtonElement
-      | undefined;
+      HTMLButtonElement | undefined;
     expect(membersItem).not.toBeUndefined();
     act(() => membersItem?.click());
     await harness.settle();
