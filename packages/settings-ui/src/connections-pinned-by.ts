@@ -8,8 +8,14 @@
 export const CONNECTOR_PINNED_WORKFLOWS: Readonly<
   Record<string, readonly string[]>
 > = {
-  granola: ["granola-call", "process-granola-call"],
-  linear: [],
-  exa: [],
-  scrapecreators: [],
+  granola: [
+    "granola-call",
+    "process-granola-call",
+    "morning-brief",
+    "pain-point-collateral",
+    "collateral-generation",
+  ],
+  linear: ["morning-brief", "collateral-generation"],
+  exa: ["last-30-days-research"],
+  scrapecreators: ["reddit-opportunity-scanner"],
 };

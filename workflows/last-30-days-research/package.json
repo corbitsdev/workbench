@@ -21,7 +21,8 @@
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
-    "@intx/workflow": "workspace:*"
+    "@intx/workflow": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

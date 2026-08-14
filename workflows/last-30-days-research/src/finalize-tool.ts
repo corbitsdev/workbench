@@ -1,29 +1,17 @@
-// The one piece of this workflow gated by human approval: finalizing a
-// drafted collateral piece. Kept inside the workflow package rather than
-// a shared tool package — this behavior (what "finalize" means for a
-// pain-point-collateral run) is specific to this workflow, not a
-// reusable integration, so it stays folded into the definition per the
-// workflow-catalog's "workflow-specific logic lives in the definition"
-// convention (only genuinely reusable integrations, like
-// `@corbits/granola-tools`, live outside it).
+// The one piece of this workflow gated by human approval: finalizing the
+// research report. Kept inside the workflow package rather than a shared
+// tool package — same "workflow-specific logic lives in the definition"
+// convention `pain-point-collateral`'s `finalize-tool.ts` established —
+// this is not a reusable integration on its own.
 //
-// Approval mechanics: `defineTool`'s `definitions` array marks this
-// tool's one definition `approval: "ask"` (see
-// `vendor/intx/agent/src/tool.ts`'s `ToolDeclaration`/`toolApprovalEffect`),
-// the platform's native gate. When the model calls this tool, the
-// authz extension floors the call's grant at `"ask"` and suspends the
-// run instead of invoking `run` below — the sidecar co-writes an
-// `approval` row (visible in the inbox via `@corbits/approvals`) and the
-// run parks until a human approves or rejects it
-// (`vendor/intx/inference/src/reactor.ts`'s `resolveApprovalDecision`).
-// On approval the parked call is re-dispatched and `run` below executes
-// for real, exactly once. On rejection `run` never executes at all — the
-// model instead sees a synthetic `isError: true` result ("denied by
-// approver"), which this workflow's system prompt (see `./index.ts`'s
-// `PAIN_POINT_COLLATERAL_SYSTEM_PROMPT`) turns into a calm, plain
-// terminal reply rather than an error.
+// Approval mechanics: identical to `pain-point-collateral`'s
+// `finalize-tool.ts` — `definitions` marks this tool's one definition
+// `approval: "ask"`, the platform's native tool-approval gate. Calling it
+// suspends the run and creates a real `approval` row; only executes once
+// a human approves it. See that file's header comment for the full
+// suspend/resume account, which applies unchanged here.
 //
-// Persistence (CL-6000): `run` below calls `createWorkflowArtifact`
+// Persistence: `run` below calls `createWorkflowArtifact`
 // (`./artifact-client.ts`, duplicated from `@corbits/artifact-tools`'
 // client rather than imported — see that file's header for why this
 // installable-data package never imports another `@corbits/*` package)
@@ -34,32 +22,37 @@
 // delivery pipeline can reference it with a file part
 // (`packages/chat/src/artifact-delivery.ts`); a failed call surfaces as
 // an honest `isError: true` result rather than a fabricated success.
+//
+// The finalized content is not always a "real" report: on the no-data
+// path (no wired source returns anything for the topic) this workflow's
+// system prompt (see `./index.ts`) still calls this same tool with a
+// teaching payload — what it searched for and which connectors are
+// missing — so a run always ends in a persisted, chip-visible artifact
+// rather than silence.
 
 import { type } from "arktype";
 import { defineTool, type BaseEnv } from "@intx/agent";
 import { createWorkflowArtifact } from "./artifact-client";
 
-export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME =
-  "pain_point_collateral_finalize";
+export const LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME =
+  "last_30_days_research_finalize";
 
-export const PAIN_POINT_COLLATERAL_FINALIZE_DESCRIPTION =
-  "Finalizes one piece of pain-point sales collateral, pending human approval, and persists it as a Library artifact.";
+export const LAST_30_DAYS_RESEARCH_FINALIZE_DESCRIPTION =
+  "Finalizes the research report, pending human approval, and persists it as a Library artifact.";
 
 const FinalizeArgs = type({
   /**
-   * Which of the two shapes this call is: `"collateral"` for a real,
-   * drafted piece; `"status-note"` for the no-data path's teaching
+   * Which of the two shapes this call is: `"report"` for a real,
+   * populated report; `"status-note"` for the no-data path's teaching
    * payload. This is what fixes the persisted artifact's `kind` — the
    * model names the outcome, but never supplies `kind` directly, so a
    * run can never accidentally (or by prompt drift) mislabel a teaching
-   * payload as real collateral or vice versa.
+   * payload as a real report or vice versa.
    */
-  outcome: "'collateral'|'status-note'",
+  outcome: "'report'|'status-note'",
   /** Short, human-facing title. Doubles as the inbox/approve-card headline. */
   title: "string > 0",
-  /** The customer pain point this piece targets, verbatim from the transcript. */
-  painPoint: "string > 0",
-  /** The drafted collateral body. */
+  /** The finished report's markdown body — a real report, or an honest teaching payload on the no-data path. */
   content: "string > 0",
 });
 
@@ -81,7 +74,7 @@ export function buildArtifactPayload(args: FinalizeArgs): ArtifactPayload {
   return {
     title: args.title,
     kind: args.outcome === "status-note" ? "status-note" : "text",
-    content: `Targets: ${args.painPoint}\n\n${args.content}`,
+    content: args.content,
   };
 }
 
@@ -101,30 +94,29 @@ export interface WorkflowArtifactEnv extends BaseEnv {
  * `defineTool`'s env-DI factory shape. Needs the sanctioned
  * workflow-artifacts credential trio beyond `BaseEnv`.
  */
-export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL =
+export const LAST_30_DAYS_RESEARCH_FINALIZE_TOOL =
   defineTool<WorkflowArtifactEnv>({
-    id: "@corbits/workflow-pain-point-collateral/finalize",
+    id: "@corbits/workflow-last-30-days-research/finalize",
     requires: ["hubArtifactsUrl", "sidecarToken", "address"],
     definitions: [
       {
-        name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+        name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
         approval: "ask",
       },
     ],
     factory: (env) => ({
       definitions: [
         {
-          name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
-          description: PAIN_POINT_COLLATERAL_FINALIZE_DESCRIPTION,
+          name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
+          description: LAST_30_DAYS_RESEARCH_FINALIZE_DESCRIPTION,
           inputSchema: {
             type: "object",
             properties: {
-              outcome: { type: "string", enum: ["collateral", "status-note"] },
+              outcome: { type: "string", enum: ["report", "status-note"] },
               title: { type: "string" },
-              painPoint: { type: "string" },
               content: { type: "string" },
             },
-            required: ["outcome", "title", "painPoint", "content"],
+            required: ["outcome", "title", "content"],
           },
         },
       ],
@@ -134,7 +126,7 @@ export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL =
           return {
             callId: call.id,
             isError: true,
-            content: `Invalid arguments for ${PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME}: ${parsed.summary}`,
+            content: `Invalid arguments for ${LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME}: ${parsed.summary}`,
           };
         }
         const artifact = buildArtifactPayload(parsed);

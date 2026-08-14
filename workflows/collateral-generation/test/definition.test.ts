@@ -112,6 +112,13 @@ test("the system prompt commits to an honest 'nothing to draft from' failure, no
   expect(COLLATERAL_GENERATION_SYSTEM_PROMPT).toMatch(/never invent/i);
 });
 
+test("the system prompt commits to a teaching artifact, not silence, when nothing is reachable", () => {
+  expect(COLLATERAL_GENERATION_SYSTEM_PROMPT).toContain(
+    COLLATERAL_GENERATION_FINALIZE_TOOL_NAME,
+  );
+  expect(COLLATERAL_GENERATION_SYSTEM_PROMPT).toMatch(/status-note/i);
+});
+
 test("the system prompt caps a rejected piece at one revise pass", () => {
   expect(COLLATERAL_GENERATION_SYSTEM_PROMPT).toMatch(
     /never revise the same piece a second time/i,

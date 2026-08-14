@@ -64,7 +64,10 @@ import type { InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 
-import { REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME } from "./finalize-tool";
+import {
+  REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME,
+  REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME,
+} from "./finalize-tool";
 
 export const REDDIT_OPPORTUNITY_SCANNER_WORKFLOW_ID =
   "wf_reddit_opportunity_scanner";
@@ -100,7 +103,20 @@ export const REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT = [
     "errors means that pair is not reachable right now — say so plainly " +
     "and continue with the others; never fail the whole run because one " +
     "search failed. If every search is unreachable, or none return any " +
-    "results, say so plainly and stop rather than inventing posts.",
+    "results, call " +
+    REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME +
+    " exactly once with an honest account: the target URL, one line per " +
+    "keyword/subreddit pair actually attempted (or an empty list if none " +
+    "were reachable), the connector id this run could not reach if that " +
+    'is why nothing came back (e.g. "scrapecreators", the connector ' +
+    "reddit_search and reddit_subreddit_search need — leave this empty " +
+    "if every search WAS reachable and simply found nothing), and a " +
+    "plain next step for the sender (connect the missing connector, or " +
+    "try a different target URL). This call needs no approval — nothing " +
+    "was selected, so there is nothing to confirm. After it returns, " +
+    "give the sender the same honest account as your reply; never " +
+    "invent posts to fill the gap, and never leave the sender with a " +
+    "reply and nothing else.",
 
   "Ranking: score every result found from 1 (weak fit, off-topic, or " +
     "outdated) to 5 (an explicit buying signal or urgent, specific pain " +
@@ -242,10 +258,14 @@ export {
   REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL,
   REDDIT_OPPORTUNITY_SCANNER_FINALIZE_TOOL_NAME,
   REDDIT_OPPORTUNITY_SCANNER_FINALIZE_DESCRIPTION,
+  REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME,
+  REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_DESCRIPTION,
   buildArtifactPayloads,
+  buildNoResultsArtifactPayload,
 } from "./finalize-tool";
 export type {
   ArtifactPayload,
   FinalizeArgs,
+  NoResultsReportArgs,
   RedditOpportunity,
 } from "./finalize-tool";

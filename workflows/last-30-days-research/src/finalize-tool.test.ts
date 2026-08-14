@@ -1,59 +1,55 @@
 import { expect, test } from "bun:test";
 
 import {
-  PAIN_POINT_COLLATERAL_FINALIZE_TOOL,
-  PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+  LAST_30_DAYS_RESEARCH_FINALIZE_TOOL,
+  LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
   buildArtifactPayload,
   type WorkflowArtifactEnv,
 } from "./finalize-tool";
 
 test("the tool's definition marks itself approval-gated", () => {
-  expect(PAIN_POINT_COLLATERAL_FINALIZE_TOOL.definitions).toEqual([
-    { name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME, approval: "ask" },
+  expect(LAST_30_DAYS_RESEARCH_FINALIZE_TOOL.definitions).toEqual([
+    { name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME, approval: "ask" },
   ]);
 });
 
 test("the tool is namespaced under this workflow package, not a shared one", () => {
-  expect(PAIN_POINT_COLLATERAL_FINALIZE_TOOL.id).toBe(
-    "@corbits/workflow-pain-point-collateral/finalize",
+  expect(LAST_30_DAYS_RESEARCH_FINALIZE_TOOL.id).toBe(
+    "@corbits/workflow-last-30-days-research/finalize",
   );
 });
 
 test("requires the sanctioned workflow-artifacts env keys", () => {
-  expect(PAIN_POINT_COLLATERAL_FINALIZE_TOOL.requires).toEqual([
+  expect(LAST_30_DAYS_RESEARCH_FINALIZE_TOOL.requires).toEqual([
     "hubArtifactsUrl",
     "sidecarToken",
     "address",
   ]);
 });
 
-test("buildArtifactPayload marks real collateral as a text artifact and folds the targeted pain point into the body", () => {
+test("buildArtifactPayload marks a real report as a text artifact", () => {
   const payload = buildArtifactPayload({
-    outcome: "collateral",
-    title: "Faster onboarding for Acme Corp",
-    painPoint: "Onboarding takes six weeks",
-    content: "Our platform cuts onboarding to two weeks by...",
+    outcome: "report",
+    title: "Last 30 days: agentic coding tools",
+    content: "## Overview\n\nSomething happened",
   });
   expect(payload).toEqual({
-    title: "Faster onboarding for Acme Corp",
+    title: "Last 30 days: agentic coding tools",
     kind: "text",
-    content:
-      "Targets: Onboarding takes six weeks\n\nOur platform cuts onboarding to two weeks by...",
+    content: "## Overview\n\nSomething happened",
   });
 });
 
 test("buildArtifactPayload marks a no-data teaching payload as status-note, not text", () => {
   const payload = buildArtifactPayload({
     outcome: "status-note",
-    title: "No transcript available",
-    painPoint: "none found",
-    content: "Neither the transcript nor noteId field carried content.",
+    title: "Last 30 days: agentic coding tools — no results yet",
+    content: "`exa` is not connected yet.",
   });
   expect(payload).toEqual({
-    title: "No transcript available",
+    title: "Last 30 days: agentic coding tools — no results yet",
     kind: "status-note",
-    content:
-      "Targets: none found\n\nNeither the transcript nor noteId field carried content.",
+    content: "`exa` is not connected yet.",
   });
 });
 
@@ -73,16 +69,15 @@ test("run persists the artifact on real invocation (i.e. after approval re-dispa
     })) as unknown as typeof fetch;
 
   try {
-    const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+    const bundle = LAST_30_DAYS_RESEARCH_FINALIZE_TOOL(testEnv());
     const result = await bundle.run(
       {
         id: "call_1",
-        name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+        name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
         arguments: {
-          outcome: "collateral",
-          title: "Faster onboarding for Acme Corp",
-          painPoint: "Onboarding takes six weeks",
-          content: "Our platform cuts onboarding to two weeks by...",
+          outcome: "report",
+          title: "Last 30 days: agentic coding tools",
+          content: "## Overview\n\nSomething happened",
         },
       },
       new AbortController().signal,
@@ -99,7 +94,7 @@ test("run persists the artifact on real invocation (i.e. after approval re-dispa
     expect(parsed).toEqual({
       id: "art_1",
       version: 1,
-      title: "Faster onboarding for Acme Corp",
+      title: "Last 30 days: agentic coding tools",
       kind: "text",
       persisted: true,
     });
@@ -108,7 +103,7 @@ test("run persists the artifact on real invocation (i.e. after approval re-dispa
   }
 });
 
-test("run persists a teaching payload on the no-data path with a status-note kind, distinct from real collateral", async () => {
+test("run persists a teaching payload on the no-data path with a status-note kind, distinct from a real report", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
     new Response(JSON.stringify({ data: { id: "art_2", version: 1 } }), {
@@ -116,16 +111,19 @@ test("run persists a teaching payload on the no-data path with a status-note kin
     })) as unknown as typeof fetch;
 
   try {
-    const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+    const bundle = LAST_30_DAYS_RESEARCH_FINALIZE_TOOL(testEnv());
     const result = await bundle.run(
       {
         id: "call_2",
-        name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+        name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
         arguments: {
           outcome: "status-note",
-          title: "No transcript available",
-          painPoint: "none found",
-          content: "Neither the transcript nor noteId field carried content.",
+          title: "Last 30 days: agentic coding tools — no results yet",
+          content:
+            "This report would have searched the web (`exa`) and " +
+            "GitHub activity for this topic. `exa` is not connected " +
+            "yet — connect it in Settings to get a real report next " +
+            "time.",
         },
       },
       new AbortController().signal,
@@ -149,16 +147,15 @@ test("run returns an honest error result when persistence fails, never fabricati
     new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
   try {
-    const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+    const bundle = LAST_30_DAYS_RESEARCH_FINALIZE_TOOL(testEnv());
     const result = await bundle.run(
       {
         id: "call_1",
-        name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+        name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
         arguments: {
-          outcome: "collateral",
-          title: "Faster onboarding for Acme Corp",
-          painPoint: "Onboarding takes six weeks",
-          content: "Our platform cuts onboarding to two weeks by...",
+          outcome: "report",
+          title: "Last 30 days: agentic coding tools",
+          content: "## Overview\n\nSomething happened",
         },
       },
       new AbortController().signal,
@@ -172,11 +169,11 @@ test("run returns an honest error result when persistence fails, never fabricati
 });
 
 test("run rejects malformed arguments without throwing", async () => {
-  const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+  const bundle = LAST_30_DAYS_RESEARCH_FINALIZE_TOOL(testEnv());
   const result = await bundle.run(
     {
       id: "call_1",
-      name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+      name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
       arguments: {},
     },
     new AbortController().signal,
@@ -186,16 +183,15 @@ test("run rejects malformed arguments without throwing", async () => {
 });
 
 test("run rejects an outcome value outside the two structural kinds", async () => {
-  const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+  const bundle = LAST_30_DAYS_RESEARCH_FINALIZE_TOOL(testEnv());
   const result = await bundle.run(
     {
       id: "call_1",
-      name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+      name: LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
       arguments: {
-        outcome: "draft",
-        title: "Faster onboarding for Acme Corp",
-        painPoint: "Onboarding takes six weeks",
-        content: "Our platform cuts onboarding to two weeks by...",
+        outcome: "summary",
+        title: "Last 30 days: agentic coding tools",
+        content: "## Overview\n\nSomething happened",
       },
     },
     new AbortController().signal,

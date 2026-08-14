@@ -30,13 +30,22 @@
 // collateral, collateral-generation). Only the genuinely reusable
 // integrations stay external tool packages.
 //
-// Known platform gap (same category `@corbits/collateral-generation-
-// workflow`'s README documents, CL-6000): no workflow tool package in
-// this repo can reach the Library engine yet, so this definition does
-// not attempt to persist the report as a Library artifact. The report
-// reaches the human as the delivered chat reply, same as morning-brief's
-// plain markdown reply — persisting it is a follow-up once CL-6000
-// closes, not a redesign of this definition.
+// Persistence (CL-6029): `@corbits/pain-point-collateral-workflow` and
+// `@corbits/collateral-generation-workflow` both proved (CL-6000) that a
+// workflow tool package CAN reach the Library engine, via
+// `createWorkflowArtifact` against the sanctioned workflow-artifacts
+// HTTP surface — the "no workflow tool package can reach the Library
+// engine yet" gap this file used to document here is stale. This
+// definition now closes it the same way: `finalize-tool.ts`'s
+// `last_30_days_research_finalize`, gated behind a single human approval
+// (`approval: "ask"`, the platform's native tool-approval gate — see
+// that file's header for the full suspend/resume account), persists the
+// report as a Library artifact and returns `{ id, version, title, kind,
+// persisted: true }`, the shape `packages/chat/src/artifact-delivery.ts`
+// recognizes and turns into a Library-linked chip in the thread. Every
+// run now ends in a persisted artifact — a real report, or (on the
+// no-data path) an honest teaching payload — never a bare markdown
+// reply.
 //
 // This package is installable data. It imports only published platform
 // packages, and nothing imports it statically: a host publishes the
@@ -48,6 +57,8 @@ import { defineAgent } from "@intx/agent";
 import type { InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+
+import { LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME } from "./finalize-tool";
 
 export const LAST_30_DAYS_RESEARCH_WORKFLOW_ID = "wf_last_30_days_research";
 export const LAST_30_DAYS_RESEARCH_STEP_ID = "last-30-days-research";
@@ -117,6 +128,27 @@ export const LAST_30_DAYS_RESEARCH_SYSTEM_PROMPT = [
   "If every wired source is unreachable, say so plainly at the top " +
     '("no source results to report for this topic") instead of ' +
     "presenting empty or padded sections as if there were real content.",
+  `Finalizing: once you have written the report, call ` +
+    `\`${LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME}\` exactly once with ` +
+    `outcome "report", a short title (e.g. "Last 30 days: <topic>"), ` +
+    "and the full markdown report as content. This call requires a " +
+    "human's approval before it completes. Always finalize, even when " +
+    "no wired source returned anything for the topic: in that case, " +
+    `still call \`${LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME}\` once ` +
+    'with outcome "status-note", a teaching title (e.g. "Last 30 ' +
+    'days: <topic> — no results yet"), and content that honestly ' +
+    "explains what it searched for, names the missing or unreachable " +
+    "connectors by id (`exa` for web search; `scrapecreators` would " +
+    "back a future Reddit source), and says what to do next (connect " +
+    "the missing credential, or try a narrower topic or focus). Never " +
+    "end a run without finalizing — a plain reply with no artifact is " +
+    "not an acceptable outcome, even on the no-data path.",
+  "If the finalize call succeeds, present the finalized report as " +
+    "your reply exactly as written, with no commentary about the " +
+    "approval mechanism itself. If the call is denied, reply with one " +
+    "calm, plain sentence that the report was not approved and no " +
+    "action was taken; never present a denial as an error, and never " +
+    "apologize as if something broke.",
 ].join("\n\n");
 
 /**
@@ -232,3 +264,11 @@ function assertJsonPortable(value: unknown, path: string): void {
     assertJsonPortable(entry, `${path}.${key}`);
   }
 }
+
+export {
+  LAST_30_DAYS_RESEARCH_FINALIZE_TOOL,
+  LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
+  LAST_30_DAYS_RESEARCH_FINALIZE_DESCRIPTION,
+  buildArtifactPayload,
+} from "./finalize-tool";
+export type { ArtifactPayload, FinalizeArgs } from "./finalize-tool";

@@ -8,6 +8,7 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
   PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS,
+  PROCESS_GRANOLA_CALL_FINALIZE_TOOL_NAME,
   PROCESS_GRANOLA_CALL_STEP_ID,
   PROCESS_GRANOLA_CALL_SYSTEM_PROMPT,
   PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS,
@@ -79,8 +80,22 @@ test("the agent pins @corbits/granola-tools by name and version", () => {
 
 test("the system prompt commits to an honest failure instead of a fabricated document", () => {
   const lowered = PROCESS_GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase();
-  expect(lowered).toContain("do not publish a call-notes artifact");
+  expect(lowered).toContain("do not fabricate call notes");
   expect(lowered).toContain("never a fabricated document");
+});
+
+test("the system prompt names the finalize tool for both the notes and no-data cases", () => {
+  expect(PROCESS_GRANOLA_CALL_SYSTEM_PROMPT).toContain(
+    PROCESS_GRANOLA_CALL_FINALIZE_TOOL_NAME,
+  );
+  expect(PROCESS_GRANOLA_CALL_SYSTEM_PROMPT).toContain('status: "notes"');
+  expect(PROCESS_GRANOLA_CALL_SYSTEM_PROMPT).toContain('status: "no-data"');
+});
+
+test("the no-data path still teaches the human what to check next, not a bare failure", () => {
+  const lowered = PROCESS_GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase();
+  expect(lowered).toContain("granola connector");
+  expect(lowered).toContain("next steps");
 });
 
 test("the definition binds @corbits/granola-tools' declared handle to a tenant-owned granola credential", () => {

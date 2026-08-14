@@ -1,59 +1,55 @@
 import { expect, test } from "bun:test";
 
 import {
-  PAIN_POINT_COLLATERAL_FINALIZE_TOOL,
-  PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+  MORNING_BRIEF_FINALIZE_TOOL,
+  MORNING_BRIEF_FINALIZE_TOOL_NAME,
   buildArtifactPayload,
   type WorkflowArtifactEnv,
 } from "./finalize-tool";
 
 test("the tool's definition marks itself approval-gated", () => {
-  expect(PAIN_POINT_COLLATERAL_FINALIZE_TOOL.definitions).toEqual([
-    { name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME, approval: "ask" },
+  expect(MORNING_BRIEF_FINALIZE_TOOL.definitions).toEqual([
+    { name: MORNING_BRIEF_FINALIZE_TOOL_NAME, approval: "ask" },
   ]);
 });
 
 test("the tool is namespaced under this workflow package, not a shared one", () => {
-  expect(PAIN_POINT_COLLATERAL_FINALIZE_TOOL.id).toBe(
-    "@corbits/workflow-pain-point-collateral/finalize",
+  expect(MORNING_BRIEF_FINALIZE_TOOL.id).toBe(
+    "@corbits/workflow-morning-brief/finalize",
   );
 });
 
 test("requires the sanctioned workflow-artifacts env keys", () => {
-  expect(PAIN_POINT_COLLATERAL_FINALIZE_TOOL.requires).toEqual([
+  expect(MORNING_BRIEF_FINALIZE_TOOL.requires).toEqual([
     "hubArtifactsUrl",
     "sidecarToken",
     "address",
   ]);
 });
 
-test("buildArtifactPayload marks real collateral as a text artifact and folds the targeted pain point into the body", () => {
+test("buildArtifactPayload marks a real brief as a text artifact", () => {
   const payload = buildArtifactPayload({
-    outcome: "collateral",
-    title: "Faster onboarding for Acme Corp",
-    painPoint: "Onboarding takes six weeks",
-    content: "Our platform cuts onboarding to two weeks by...",
+    outcome: "brief",
+    title: "Morning brief — Tuesday",
+    content: "## What happened\n\n- Shipped the thing",
   });
   expect(payload).toEqual({
-    title: "Faster onboarding for Acme Corp",
+    title: "Morning brief — Tuesday",
     kind: "text",
-    content:
-      "Targets: Onboarding takes six weeks\n\nOur platform cuts onboarding to two weeks by...",
+    content: "## What happened\n\n- Shipped the thing",
   });
 });
 
 test("buildArtifactPayload marks a no-data teaching payload as status-note, not text", () => {
   const payload = buildArtifactPayload({
     outcome: "status-note",
-    title: "No transcript available",
-    painPoint: "none found",
-    content: "Neither the transcript nor noteId field carried content.",
+    title: "Morning brief — no connected sources yet",
+    content: "Neither `granola` nor `linear` is connected yet.",
   });
   expect(payload).toEqual({
-    title: "No transcript available",
+    title: "Morning brief — no connected sources yet",
     kind: "status-note",
-    content:
-      "Targets: none found\n\nNeither the transcript nor noteId field carried content.",
+    content: "Neither `granola` nor `linear` is connected yet.",
   });
 });
 
@@ -73,16 +69,15 @@ test("run persists the artifact on real invocation (i.e. after approval re-dispa
     })) as unknown as typeof fetch;
 
   try {
-    const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+    const bundle = MORNING_BRIEF_FINALIZE_TOOL(testEnv());
     const result = await bundle.run(
       {
         id: "call_1",
-        name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+        name: MORNING_BRIEF_FINALIZE_TOOL_NAME,
         arguments: {
-          outcome: "collateral",
-          title: "Faster onboarding for Acme Corp",
-          painPoint: "Onboarding takes six weeks",
-          content: "Our platform cuts onboarding to two weeks by...",
+          outcome: "brief",
+          title: "Morning brief — Tuesday",
+          content: "## What happened\n\n- Shipped the thing",
         },
       },
       new AbortController().signal,
@@ -99,7 +94,7 @@ test("run persists the artifact on real invocation (i.e. after approval re-dispa
     expect(parsed).toEqual({
       id: "art_1",
       version: 1,
-      title: "Faster onboarding for Acme Corp",
+      title: "Morning brief — Tuesday",
       kind: "text",
       persisted: true,
     });
@@ -108,7 +103,7 @@ test("run persists the artifact on real invocation (i.e. after approval re-dispa
   }
 });
 
-test("run persists a teaching payload on the no-data path with a status-note kind, distinct from real collateral", async () => {
+test("run persists a teaching payload on the no-data path with a status-note kind, distinct from a real brief", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
     new Response(JSON.stringify({ data: { id: "art_2", version: 1 } }), {
@@ -116,16 +111,19 @@ test("run persists a teaching payload on the no-data path with a status-note kin
     })) as unknown as typeof fetch;
 
   try {
-    const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+    const bundle = MORNING_BRIEF_FINALIZE_TOOL(testEnv());
     const result = await bundle.run(
       {
         id: "call_2",
-        name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+        name: MORNING_BRIEF_FINALIZE_TOOL_NAME,
         arguments: {
           outcome: "status-note",
-          title: "No transcript available",
-          painPoint: "none found",
-          content: "Neither the transcript nor noteId field carried content.",
+          title: "Morning brief — no connected sources yet",
+          content:
+            "This brief would have looked for recent Granola call " +
+            "notes and recently updated Linear issues. Neither `granola` " +
+            "nor `linear` is connected yet — connect them in Settings to " +
+            "get a real brief tomorrow.",
         },
       },
       new AbortController().signal,
@@ -149,16 +147,15 @@ test("run returns an honest error result when persistence fails, never fabricati
     new Response("nope", { status: 500 })) as unknown as typeof fetch;
 
   try {
-    const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+    const bundle = MORNING_BRIEF_FINALIZE_TOOL(testEnv());
     const result = await bundle.run(
       {
         id: "call_1",
-        name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+        name: MORNING_BRIEF_FINALIZE_TOOL_NAME,
         arguments: {
-          outcome: "collateral",
-          title: "Faster onboarding for Acme Corp",
-          painPoint: "Onboarding takes six weeks",
-          content: "Our platform cuts onboarding to two weeks by...",
+          outcome: "brief",
+          title: "Morning brief — Tuesday",
+          content: "## What happened\n\n- Shipped the thing",
         },
       },
       new AbortController().signal,
@@ -172,11 +169,11 @@ test("run returns an honest error result when persistence fails, never fabricati
 });
 
 test("run rejects malformed arguments without throwing", async () => {
-  const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+  const bundle = MORNING_BRIEF_FINALIZE_TOOL(testEnv());
   const result = await bundle.run(
     {
       id: "call_1",
-      name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+      name: MORNING_BRIEF_FINALIZE_TOOL_NAME,
       arguments: {},
     },
     new AbortController().signal,
@@ -186,16 +183,15 @@ test("run rejects malformed arguments without throwing", async () => {
 });
 
 test("run rejects an outcome value outside the two structural kinds", async () => {
-  const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+  const bundle = MORNING_BRIEF_FINALIZE_TOOL(testEnv());
   const result = await bundle.run(
     {
       id: "call_1",
-      name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+      name: MORNING_BRIEF_FINALIZE_TOOL_NAME,
       arguments: {
-        outcome: "draft",
-        title: "Faster onboarding for Acme Corp",
-        painPoint: "Onboarding takes six weeks",
-        content: "Our platform cuts onboarding to two weeks by...",
+        outcome: "summary",
+        title: "Morning brief — Tuesday",
+        content: "## What happened\n\n- Shipped the thing",
       },
     },
     new AbortController().signal,

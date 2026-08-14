@@ -77,8 +77,20 @@ const definitions = [
     name: "Researcher",
     status: "deployed",
     description: "Pulls research",
+    whatItDoes: "Pulls research from connected sources.",
+    requiredConnections: [],
+    exampleOutput: "Research summary, three sources cited.",
+    typicalDuration: "a few minutes",
   },
-  { id: "wfd_2", name: "Summarizer", status: "deployed" },
+  {
+    id: "wfd_2",
+    name: "Summarizer",
+    status: "deployed",
+    whatItDoes: "Summarizes a document into a short brief.",
+    requiredConnections: [],
+    exampleOutput: "A three-paragraph summary of the source document.",
+    typicalDuration: "under a minute",
+  },
 ] as const;
 
 const channels = [

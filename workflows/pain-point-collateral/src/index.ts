@@ -53,6 +53,7 @@ import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { CredentialBinding } from "@intx/types";
 
 import { PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME } from "./finalize-tool";
+import { PAIN_POINT_COLLATERAL_INTAKE_TOOL_NAME } from "./intake-tool";
 
 export const PAIN_POINT_COLLATERAL_WORKFLOW_ID = "wf_pain_point_collateral";
 export const PAIN_POINT_COLLATERAL_STEP_ID = "pain-point-collateral";
@@ -61,24 +62,34 @@ export const PAIN_POINT_COLLATERAL_SYSTEM_PROMPT =
   "You turn one sales call transcript into one piece of collateral " +
   "targeted at a customer's real pain points, with a mandatory human " +
   "approval step before anything is finalized.\n\n" +
-  "Intake: the trigger carries either a pasted transcript (`transcript`) " +
-  "or a Granola note id (`noteId`). If `transcript` is given, use it " +
-  "verbatim. Otherwise, if `noteId` is given, fetch that note's " +
-  `transcript with \`granola_get_note\`. If you were given a noteId but ` +
-  "have no way to fetch it — no Granola tool available, or the fetch " +
-  "fails — say so plainly in one sentence and stop. If neither " +
-  "`transcript` nor `noteId` is given, or the transcript you end up " +
-  "with is empty, reply with one plain sentence saying you have no " +
-  "transcript to work from and stop. Never invent a transcript, pain " +
-  "points, or collateral.\n\n" +
+  "Intake: the trigger carries exactly two named fields — a pasted " +
+  "transcript (`transcript`) or a Granola note id (`noteId`). Call " +
+  `\`${PAIN_POINT_COLLATERAL_INTAKE_TOOL_NAME}\` first, passing along ` +
+  "whichever of `transcript`/`noteId` you actually found in the " +
+  "trigger, verbatim (omit a field you did not receive — never invent " +
+  "one). Its result names which field, if either, carried real intake " +
+  'content: `"transcript"`, `"noteId"`, or `"none"`. If it reports ' +
+  '`"transcript"`, use that text verbatim. If it reports `"noteId"`, ' +
+  "fetch that note's transcript with `granola_get_note` (the `granola` " +
+  "connector). If you have no way to fetch it — no Granola tool " +
+  "available, or the fetch fails — say so plainly in one sentence and " +
+  'stop. If it reports `"none"`, or the transcript you end up with is ' +
+  `still empty, call \`${PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME}\` ` +
+  'with outcome "status-note" and a teaching payload instead of ' +
+  'stopping silently: a title such as "No transcript available", the ' +
+  "pain point stated honestly as none found, and a body naming what " +
+  "was checked (both the `transcript` and `noteId` trigger fields), " +
+  "that neither carried usable content, and the concrete next step — " +
+  "reply with a pasted transcript, or with a Granola call's note id. " +
+  "Never invent a transcript, pain points, or collateral content.\n\n" +
   "Extraction: from the transcript, identify the customer's real pain " +
   "points — specific problems they described, not generic categories.\n\n" +
   "Drafting: draft one piece of collateral that speaks directly to the " +
   "most significant pain point you found.\n\n" +
   `Finalizing: call \`${PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME}\` ` +
-  "exactly once, with a short title, the exact pain point you are " +
-  "targeting, and the drafted collateral body. This call requires a " +
-  "human's approval before it completes.\n\n" +
+  'exactly once, with outcome "collateral", a short title, the exact ' +
+  "pain point you are targeting, and the drafted collateral body. " +
+  "This call requires a human's approval before it completes.\n\n" +
   "If the call succeeds, present the finalized collateral as your " +
   "reply — the title, then the body, clearly formatted — with no " +
   "commentary about the approval mechanism itself. If the call is " +
@@ -224,3 +235,11 @@ export {
   buildArtifactPayload,
 } from "./finalize-tool";
 export type { ArtifactPayload, FinalizeArgs } from "./finalize-tool";
+
+export {
+  PAIN_POINT_COLLATERAL_INTAKE_TOOL,
+  PAIN_POINT_COLLATERAL_INTAKE_TOOL_NAME,
+  PAIN_POINT_COLLATERAL_INTAKE_DESCRIPTION,
+  resolveIntake,
+} from "./intake-tool";
+export type { IntakeArgs, IntakeResult } from "./intake-tool";

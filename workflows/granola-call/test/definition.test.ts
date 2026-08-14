@@ -9,6 +9,7 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 import {
   DEFAULT_CALL_LIMIT,
   GRANOLA_CALL_CREDENTIAL_BINDINGS,
+  GRANOLA_CALL_REPORT_STATUS_TOOL_NAME,
   GRANOLA_CALL_STEP_ID,
   GRANOLA_CALL_SYSTEM_PROMPT,
   GRANOLA_CALL_TOOL_PACKAGE_PINS,
@@ -73,6 +74,15 @@ test("the system prompt commits to the default call limit and an honest no-conne
   expect(GRANOLA_CALL_SYSTEM_PROMPT).toContain(String(DEFAULT_CALL_LIMIT));
   expect(GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase()).toContain(
     "never invent call counts",
+  );
+});
+
+test("the system prompt names the status-report tool for a run that starts no children", () => {
+  expect(GRANOLA_CALL_SYSTEM_PROMPT).toContain(
+    GRANOLA_CALL_REPORT_STATUS_TOOL_NAME,
+  );
+  expect(GRANOLA_CALL_SYSTEM_PROMPT.toLowerCase()).toContain(
+    "granola connector",
   );
 });
 

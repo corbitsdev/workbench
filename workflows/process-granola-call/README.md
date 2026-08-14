@@ -15,40 +15,51 @@ One step, one agent. The system prompt commits it to, per call:
    Summary, Pain points, Decisions, Action items — grounded in the
    transcript (quoted or closely paraphrased, "None noted" where a
    section is empty, never invented),
-3. verifying that draft against the transcript and publishing the final
-   call-notes artifact with the same five sections.
+3. verifying that draft against the transcript, then calling
+   `process_granola_call_finalize` (`./src/finalize-tool.ts`) once with
+   `status: "notes"` to persist the final call-notes artifact.
 
 If it cannot fetch the call's transcript — no Granola connection, an
-unknown note id, an empty transcript — it says so plainly in one
-sentence and does not publish a call-notes artifact for that call. That
-failure is scoped to the one run: because the parent spawns one run per
-call, one bad transcript never blocks the rest of a batch.
+unknown call id, an empty transcript — it does not fabricate call notes.
+Instead it calls the same finalize tool once with `status: "no-data"`: a
+plain-language reason grounded in what actually happened, and next
+steps a human can check, starting with the `granola` connector's
+connection status for this workspace
+(`packages/connections/src/registry.ts`). That failure is scoped to the
+one run: because the parent spawns one run per call, one bad transcript
+never blocks the rest of a batch — and the human still gets something
+useful instead of a bare "nothing to report" line.
+
+Both finalize calls are approval-gated (`approval: "ask"`, the
+platform's native tool-approval gate — see
+`workflows/pain-point-collateral/src/finalize-tool.ts`'s header comment
+for the exact suspend/resume mechanics, identical here) and, once
+approved, persist a real Library artifact via
+`createWorkflowArtifact` (`./src/artifact-client.ts`, CL-6000), which
+becomes a chip through `packages/chat/src/artifact-delivery.ts`. A
+denied call gets a calm, plain reply that nothing was published, never
+an error.
+
+**Teaching-artifact kind**: `status` (`"notes"` | `"no-data"`), already
+the structural argument that picks which of the two content shapes to
+build, also picks the persisted artifact's `kind`: `"text"` for real
+call notes, `"status-note"` for the no-data teaching payload — decided
+by `buildArtifactPayload` from `args.status`, never left to free text.
+`"status-note"` is the one teaching-artifact kind shared by every
+workflow in this catalog, so the Library's kind badge always reads
+"Status note" for a no-data run, regardless of which workflow made it.
 
 ## Current limits (read before deploying)
 
-Same two platform-level gaps as the parent
+One platform-level gap remains, shared with the parent
 (`@corbits/granola-call-workflow`'s README): no shipped host resolves
 `@intx/workflow`'s `action` primitive, so nothing can spawn this
-workflow programmatically yet, and `corbitsdev/granola-tools` is not
-published anywhere this host's tool loader can resolve it from. Until
-both land, this definition's agent has no tools, so it honestly reports
-that it cannot reach Granola or the call it was asked about rather than
-fabricating notes for a transcript it never read.
-
-## Delivery design
-
-Once real Granola access and a spawn mechanism land, the parent's own
-run-summary reply is the natural place for a structured delivery — a
-`steps` block (one row per call: queued / done / error) or a `metrics`
-block (calls processed, calls skipped as already-published, calls
-failed) alongside the plain-text summary line, using the block
-vocabulary `packages/chat/src/blocks.ts` already defines
-(`StepsBlockData`, `MetricsBlockData`). That is future work: today an
-agent's reply is plain text only — no production caller in this repo
-authors a `BlockPart` from a workflow step's own output (the one
-precedent, `packages/chat/src/settings-control.ts`, is non-agent
-platform code) — so this definition does not fabricate block usage it
-cannot yet produce.
+workflow programmatically yet — it must be started by hand (or by
+future host machinery) with a call id until that lands. Separately,
+`corbitsdev/granola-tools` still needs to be published somewhere this
+host's tool loader can resolve it from before a real transcript fetch
+succeeds; until an operator does that, every run's finalize call
+reports `status: "no-data"` honestly rather than fabricating notes.
 
 ## Usage
 

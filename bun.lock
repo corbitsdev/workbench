@@ -114,6 +114,7 @@
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-slot": "^1.2.3",
         "@tanstack/react-query": "catalog:",
+        "@workbench/connections": "workspace:*",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
         "lucide-react": "^1.27.0",
@@ -690,6 +691,7 @@
       "version": "0.0.1",
       "devDependencies": {
         "@types/bun": "catalog:",
+        "@workbench/connections": "workspace:*",
         "typescript": "catalog:",
       },
     },
@@ -1024,6 +1026,7 @@
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1048,6 +1051,7 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1061,6 +1065,7 @@
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@corbits/folded-runs": "workspace:*",
@@ -1089,6 +1094,7 @@
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",

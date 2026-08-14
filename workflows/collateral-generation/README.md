@@ -18,9 +18,12 @@ system prompt commits it to:
   LinkedIn post/article, Twitter/X post/article, short/mid/long blog. A
   run can draft more than one. Wait for an answer.
 - **Gathering**: fetch every picked source. A source that errors is
-  reported plainly and skipped, never fabricated; if nothing loads and no
-  text was pasted either, the run says so and stops rather than drafting
-  from nothing.
+  reported plainly and skipped, never fabricated. If nothing loads and no
+  text was pasted either, the run calls `collateral_generation_finalize`
+  (the same tool the normal path uses, not a second one) with a single
+  `"status-note"` piece naming which sources were tried, which were
+  unreachable or not picked, and the concrete next step — so a Library
+  entry and chip still land instead of a bare, artifact-less reply.
 - **Drafting**: one piece per picked content type, grounded only in what
   was gathered, following that type's length/structure guidance. Public
   collateral: customer- and company-identifying detail is stripped or
@@ -31,6 +34,13 @@ system prompt commits it to:
 - **Finalizing**: exactly one call to `collateral_generation_finalize`
   (`./src/finalize-tool.ts`) with every approved piece, gated behind a
   single human approval.
+
+**Teaching-artifact kind**: each piece's `kind` is `piece.contentType`,
+one of the seven real content-type ids for a normal draft, or
+`"status-note"` for the no-data teaching piece above. `"status-note"` is
+the one teaching-artifact kind shared by every workflow in this catalog,
+so the Library's kind badge always reads "Status note" for a no-data
+run, regardless of which workflow made it.
 
 ## Gate consolidation
 

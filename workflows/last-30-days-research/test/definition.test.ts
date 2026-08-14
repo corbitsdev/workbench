@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
+  LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
   LAST_30_DAYS_RESEARCH_PENDING_SOURCES,
   LAST_30_DAYS_RESEARCH_SECTIONS,
   LAST_30_DAYS_RESEARCH_STEP_ID,
@@ -119,6 +120,27 @@ test("the prompt requires an honest failure state when nothing is connected", ()
 
 test("the prompt requires an honest 'no topic' failure state rather than inventing one", () => {
   expect(LAST_30_DAYS_RESEARCH_SYSTEM_PROMPT).toMatch(/no topic/i);
+});
+
+test("the prompt names the exact approval-gated finalize tool", () => {
+  expect(LAST_30_DAYS_RESEARCH_SYSTEM_PROMPT).toContain(
+    LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME,
+  );
+});
+
+test("the prompt commits to always finalizing, even with a teaching payload on the no-data path", () => {
+  expect(LAST_30_DAYS_RESEARCH_SYSTEM_PROMPT).toMatch(/teaching/i);
+  expect(LAST_30_DAYS_RESEARCH_SYSTEM_PROMPT).toMatch(
+    /never end a run without finalizing/i,
+  );
+  expect(LAST_30_DAYS_RESEARCH_SYSTEM_PROMPT).toContain("exa");
+});
+
+test("the prompt commits to a calm terminal reply on denial, not an error", () => {
+  expect(LAST_30_DAYS_RESEARCH_SYSTEM_PROMPT).toMatch(/not approved/i);
+  expect(LAST_30_DAYS_RESEARCH_SYSTEM_PROMPT).toMatch(
+    /never present a denial as an error/i,
+  );
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {

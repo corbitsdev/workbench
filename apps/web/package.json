@@ -27,6 +27,7 @@
     "@corbits/settings-ui": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#1c9d9ce4e7224998f2d64883ade95b8d759e74ea",
     "@intx/types": "workspace:*",
+    "@workbench/connections": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",

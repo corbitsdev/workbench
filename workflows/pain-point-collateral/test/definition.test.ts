@@ -9,6 +9,7 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 import {
   PAIN_POINT_COLLATERAL_CREDENTIAL_BINDINGS,
   PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+  PAIN_POINT_COLLATERAL_INTAKE_TOOL_NAME,
   PAIN_POINT_COLLATERAL_STEP_ID,
   PAIN_POINT_COLLATERAL_SYSTEM_PROMPT,
   PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS,
@@ -79,9 +80,23 @@ test("the system prompt names the exact approval-gated finalize tool", () => {
   );
 });
 
-test("the system prompt commits to an honest no-transcript failure, not a fabricated one", () => {
+test("the system prompt names the intake tool and requires calling it first", () => {
+  expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toContain(
+    PAIN_POINT_COLLATERAL_INTAKE_TOOL_NAME,
+  );
+});
+
+test("the system prompt names both trigger-carried fields unambiguously", () => {
+  expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toContain("`transcript`");
+  expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toContain("`noteId`");
+});
+
+test("the system prompt commits to a teaching artifact, not silence, when intake finds nothing", () => {
   expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toMatch(/no transcript/i);
   expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toMatch(/never invent/i);
+  expect(PAIN_POINT_COLLATERAL_SYSTEM_PROMPT).toMatch(
+    /teaching payload instead of stopping silently/i,
+  );
 });
 
 test("the system prompt commits to a calm terminal reply on denial, not an error", () => {

@@ -29,8 +29,17 @@
 // `toolPackageRegistries` wiring). Until a deploy actually resolves the
 // pin, and until spawning itself lands, this definition's system
 // prompt still commits it to saying plainly that it cannot reach
-// Granola or the artifact it was asked about, rather than inventing
-// call notes for a transcript it never read.
+// Granola or the call it was asked about, rather than inventing call
+// notes for a transcript it never read.
+//
+// Finalizing (CL-6029): `process_granola_call_finalize`
+// (`./finalize-tool.ts`) persists the run's outcome as a real Library
+// artifact either way — a five-section call-notes artifact when the
+// transcript was read, or a teaching artifact (what call was attempted,
+// why it came up empty, what to check next) when it was not. Both are
+// approval-gated the same way `pain-point-collateral`'s finalize tool
+// is; see that package's `finalize-tool.ts` header for the full
+// suspend/resume mechanics, identical here.
 
 import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
@@ -38,11 +47,13 @@ import type { WorkflowDefinition } from "@intx/workflow";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { CredentialBinding } from "@intx/types";
 
+import { PROCESS_GRANOLA_CALL_FINALIZE_TOOL_NAME } from "./finalize-tool";
+
 export const PROCESS_GRANOLA_CALL_WORKFLOW_ID = "wf_process_granola_call";
 export const PROCESS_GRANOLA_CALL_STEP_ID = "process-granola-call";
 
 export const PROCESS_GRANOLA_CALL_SYSTEM_PROMPT =
-  "You process one Granola call end to end, for the note id this run " +
+  "You process one Granola call end to end, for the call id this run " +
   "was started with. Fetch its transcript and save it as a raw " +
   "transcript artifact. Read the whole transcript and extract working " +
   "notes with exactly five sections: Participants (names and, when " +
@@ -51,13 +62,24 @@ export const PROCESS_GRANOLA_CALL_SYSTEM_PROMPT =
   'grounded in the transcript — write "None noted" when the ' +
   "transcript shows none; quote or closely paraphrase, never invent). " +
   "Verify that working document against the transcript, fixing anything " +
-  "unsupported or misattributed, then publish the final call-notes " +
-  "artifact with the same five sections. " +
+  "unsupported or misattributed, then call " +
+  `\`${PROCESS_GRANOLA_CALL_FINALIZE_TOOL_NAME}\` exactly once with ` +
+  '`status: "notes"` and the five sections to publish the final ' +
+  "call-notes artifact. " +
   "If you cannot fetch this call's transcript — no Granola connection, " +
-  "the note id does not exist, or the transcript is empty — say so " +
-  "plainly, in one short sentence, and do not publish a call-notes " +
-  "artifact for it. A bad transcript is this one run failing honestly, " +
-  "never a fabricated document.";
+  "the call id does not exist, or the transcript is empty — do not " +
+  "fabricate call notes. Instead call " +
+  `\`${PROCESS_GRANOLA_CALL_FINALIZE_TOOL_NAME}\` exactly once with ` +
+  '`status: "no-data"`, a plain-language reason grounded in what ' +
+  "actually happened, and next steps a human can check, starting with " +
+  "the granola connector's connection status for this workspace. Do not " +
+  "publish a call-notes artifact for it — that failure is this one run " +
+  "failing honestly, never a fabricated document, but it still teaches " +
+  "the human what to do next rather than leaving them with nothing. " +
+  "Both calls require a human's approval before they complete; if " +
+  "denied, reply with one calm, plain sentence that nothing was " +
+  "published and no action was taken, never present a denial as an " +
+  "error.";
 
 /** Tool packages this definition pins (CL-5999); see the header comment. */
 export const PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
@@ -193,3 +215,11 @@ function assertJsonPortable(value: unknown, path: string): void {
     assertJsonPortable(entry, `${path}.${key}`);
   }
 }
+
+export {
+  PROCESS_GRANOLA_CALL_FINALIZE_TOOL,
+  PROCESS_GRANOLA_CALL_FINALIZE_TOOL_NAME,
+  PROCESS_GRANOLA_CALL_FINALIZE_DESCRIPTION,
+  buildArtifactPayload,
+} from "./finalize-tool";
+export type { ArtifactPayload, FinalizeArgs } from "./finalize-tool";

@@ -29,12 +29,23 @@
 // still commits it to saying plainly that Granola is not connected
 // rather than inventing call data, the same "no fallbacks" standard the
 // rest of this repo holds.
+//
+// Status reporting (CL-6029): the spawn gap above blocks the pipeline's
+// real work, not an honest account of a run that did nothing.
+// `granola_call_report_status` (`./finalize-tool.ts`) persists a real,
+// chip-visible Library artifact — what was examined, why nothing
+// started, what to check next — every time a run starts no children,
+// instead of a bare "Granola is not connected" line with nothing else.
+// It is not approval-gated: a status report has nothing for a human to
+// confirm, only what actually happened.
 
 import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { CredentialBinding } from "@intx/types";
+
+import { GRANOLA_CALL_REPORT_STATUS_TOOL_NAME } from "./finalize-tool";
 
 export const GRANOLA_CALL_WORKFLOW_ID = "wf_granola_call";
 export const GRANOLA_CALL_STEP_ID = "granola-call";
@@ -52,9 +63,16 @@ export const GRANOLA_CALL_SYSTEM_PROMPT =
   "is what keeps this idempotent. If a call's transcript is missing or " +
   "unreadable, skip only that call and continue with the rest of the " +
   "batch; never let one bad call stop the run. " +
-  "If you have no way to reach Granola for this workspace — no " +
-  "connection, no calls tool available — say so plainly, in one short " +
-  "sentence, and stop. Never invent call counts, call names, or notes.";
+  "If a run starts no process-granola-call children — no way to reach " +
+  "Granola at all, or Granola is connected but there is nothing new to " +
+  "process — never invent call counts, call names, or notes. Instead " +
+  `call \`${GRANOLA_CALL_REPORT_STATUS_TOOL_NAME}\` exactly once with a ` +
+  "plain-language reason grounded in what actually happened, how many " +
+  "calls you actually examined (0 if you had no way to reach Granola at " +
+  "all), and next steps a human can check, starting with the granola " +
+  "connector's connection status for this workspace. This call requires " +
+  "no approval; after it completes, give a one-sentence plain-text " +
+  "summary of the same finding as your reply.";
 
 /** Tool packages this definition pins (CL-5999); see the header comment. */
 export const GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
@@ -189,3 +207,11 @@ function assertJsonPortable(value: unknown, path: string): void {
     assertJsonPortable(entry, `${path}.${key}`);
   }
 }
+
+export {
+  GRANOLA_CALL_REPORT_STATUS_TOOL,
+  GRANOLA_CALL_REPORT_STATUS_TOOL_NAME,
+  GRANOLA_CALL_REPORT_STATUS_DESCRIPTION,
+  buildStatusArtifactPayload,
+} from "./finalize-tool";
+export type { ArtifactPayload, StatusReportArgs } from "./finalize-tool";
