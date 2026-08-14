@@ -126,6 +126,26 @@ describe("NewChannelDialog guided stepper", () => {
     expect(createButton?.hasAttribute("disabled")).toBe(true);
   });
 
+  test("submitting swaps the Create label to Creating…, matching the create-agent/invite-agent dialogs' pending pattern", async () => {
+    stubInvitableDefinitions([]);
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: true,
+      initialKind: "channel",
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain("Creating…");
+    const submitButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.getAttribute("type") === "submit",
+    );
+    expect(submitButton?.textContent).toBe("Creating…");
+    expect(submitButton?.hasAttribute("disabled")).toBe(true);
+  });
+
   test("Back returns to the kind step without losing the chosen kind", async () => {
     stubInvitableDefinitions([]);
     mount({
