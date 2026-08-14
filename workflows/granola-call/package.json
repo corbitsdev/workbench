@@ -1,0 +1,30 @@
+{
+  "name": "@corbits/granola-call-workflow",
+  "private": true,
+  "description": "Polls Granola for new calls and starts one call-notes run per call without a published call-notes artifact yet",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "corbits": {
+    "workflow": {
+      "assetName": "granola-call",
+      "displayName": "Granola call notes",
+      "automatable": true
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/workflow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
