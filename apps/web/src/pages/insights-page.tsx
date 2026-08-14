@@ -546,7 +546,7 @@ function InsightsRunsHistory({
   );
 }
 
-function InsightsRunDetail({
+export function InsightsRunDetail({
   runId,
   run,
   trace,
@@ -586,14 +586,17 @@ function InsightsRunDetail({
               <InsightsStat
                 label="Steps"
                 value={dash(traceStats?.steps ?? null)}
+                loading={trace.kind === "loading"}
               />
               <InsightsStat
                 label="Completed"
                 value={dash(traceStats?.completed ?? null)}
+                loading={trace.kind === "loading"}
               />
               <InsightsStat
                 label="Failed"
                 value={dash(traceStats?.failed ?? null)}
+                loading={trace.kind === "loading"}
               />
               <InsightsStat
                 label="Duration"
@@ -602,6 +605,7 @@ function InsightsRunDetail({
                     ? durationLabel(traceStats.durationMs)
                     : null,
                 )}
+                loading={trace.kind === "loading"}
               />
             </div>
 

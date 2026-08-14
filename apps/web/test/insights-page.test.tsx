@@ -12,7 +12,7 @@ import type { APIQuery } from "../src/api";
 import { BenchProvider } from "../src/bench-context";
 import { type ToolCall } from "../src/insights-api";
 import { NavigationProvider } from "../src/navigation";
-import { InsightsPage } from "../src/pages/insights-page";
+import { InsightsPage, InsightsRunDetail } from "../src/pages/insights-page";
 import type { Routine } from "../src/routines-api";
 import { TestQueryProvider } from "./test-query-provider";
 
@@ -172,5 +172,35 @@ describe("InsightsPage run-detail stat strip", () => {
     expect(markup).toContain(">Duration<");
     expect(markup).not.toContain(">Status<");
     expect(markup).not.toContain(">Bench<");
+  });
+
+  test("while the trace is loading, the KPIs render an ellipsis, not a dash", () => {
+    const markup = renderToStaticMarkup(
+      <InsightsRunDetail
+        runId="run_1"
+        run={purposeRun}
+        trace={{ kind: "loading" }}
+        onBack={() => undefined}
+      />,
+    );
+    expect(markup).toContain(">…<");
+    // Owner is genuinely absent from WorkflowRunSummary today (not a
+    // loading state), so it keeps its dash even while the trace loads.
+    expect(markup).toContain(">—<");
+  });
+
+  test("once the trace is ready-but-empty, the KPIs fall back to a genuine dash", () => {
+    const markup = renderToStaticMarkup(
+      <InsightsRunDetail
+        runId="run_1"
+        run={purposeRun}
+        trace={{
+          kind: "ready",
+          data: { runId: "run_1", spans: null, absent: "no trace reader" },
+        }}
+        onBack={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain(">…<");
   });
 });
