@@ -7,6 +7,7 @@
 // fail because the source is unreachable.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
+import type { CredentialCapability } from "@intx/types";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 
 import { searchReddit, searchSubreddit } from "./client";
@@ -15,17 +16,20 @@ import type { RedditSearchParams } from "./client";
 export const REDDIT_SEARCH_TOOL = "reddit_search";
 export const REDDIT_SUBREDDIT_SEARCH_TOOL = "reddit_subreddit_search";
 
+/** The handle this package declares in `interchange.credentials`. */
+const SCRAPECREATORS_CREDENTIAL_HANDLE = "scrapecreators";
+
 /**
- * Env this bundle needs beyond `BaseEnv`: a ScrapeCreators credential.
- * There is no separate Reddit credential — Reddit is reached through
- * ScrapeCreators, the same as any other ScrapeCreators-backed
- * integration, since Reddit's own public endpoints are IP-blocked from
- * datacenter hosts and its authenticated API needs a server-side OAuth
- * flow this platform does not run.
+ * Env this bundle needs beyond `BaseEnv`: the mediated-credential
+ * capability, bound to a ScrapeCreators credential. There is no separate
+ * Reddit credential — Reddit is reached through ScrapeCreators, the same
+ * as any other ScrapeCreators-backed integration, since Reddit's own
+ * public endpoints are IP-blocked from datacenter hosts and its
+ * authenticated API needs a server-side OAuth flow this platform does
+ * not run.
  */
 export interface RedditEnv extends BaseEnv {
-  /** Absent or empty means "not connected" — never a thrown error. */
-  readonly scrapeCreatorsApiKey?: string;
+  readonly credentials?: CredentialCapability;
 }
 
 function notConnectedResult(callId: string): ToolResult {
@@ -34,6 +38,26 @@ function notConnectedResult(callId: string): ToolResult {
     content: "Reddit is not connected for this user.",
     isError: true,
   };
+}
+
+/**
+ * Resolve this bundle's mediated ScrapeCreators credential, or `null`
+ * when it is not connected -- an absent `env.credentials`, an unbound
+ * handle, or a denied grant all collapse to the same "not connected"
+ * signal, never a thrown error out of the tool.
+ */
+async function resolveRedditCredential(
+  env: RedditEnv,
+): Promise<{ fetchImpl: typeof fetch } | null> {
+  if (env.credentials === undefined) return null;
+  try {
+    const mediated = await env.credentials.resolve(
+      SCRAPECREATORS_CREDENTIAL_HANDLE,
+    );
+    return { fetchImpl: mediated.fetch as unknown as typeof fetch };
+  } catch {
+    return null;
+  }
 }
 
 function requiredStringArg(call: ToolCall, name: string): string | undefined {
@@ -61,10 +85,8 @@ async function runRedditSearch(
   env: RedditEnv,
   call: ToolCall,
 ): Promise<ToolResult> {
-  if (
-    env.scrapeCreatorsApiKey === undefined ||
-    env.scrapeCreatorsApiKey === ""
-  ) {
+  const credential = await resolveRedditCredential(env);
+  if (credential === null) {
     return notConnectedResult(call.id);
   }
   const query = requiredStringArg(call, "query");
@@ -77,7 +99,7 @@ async function runRedditSearch(
   }
   try {
     const posts = await searchReddit(
-      { apiKey: env.scrapeCreatorsApiKey },
+      { fetchImpl: credential.fetchImpl },
       { query, ...searchOptions(call) },
     );
     return { callId: call.id, content: JSON.stringify({ posts }) };
@@ -94,10 +116,8 @@ async function runRedditSubredditSearch(
   env: RedditEnv,
   call: ToolCall,
 ): Promise<ToolResult> {
-  if (
-    env.scrapeCreatorsApiKey === undefined ||
-    env.scrapeCreatorsApiKey === ""
-  ) {
+  const credential = await resolveRedditCredential(env);
+  if (credential === null) {
     return notConnectedResult(call.id);
   }
   const subreddit = requiredStringArg(call, "subreddit");
@@ -111,7 +131,7 @@ async function runRedditSubredditSearch(
   }
   try {
     const posts = await searchSubreddit(
-      { apiKey: env.scrapeCreatorsApiKey },
+      { fetchImpl: credential.fetchImpl },
       { subreddit, query, ...searchOptions(call) },
     );
     return { callId: call.id, content: JSON.stringify({ posts }) };
@@ -125,14 +145,14 @@ async function runRedditSubredditSearch(
 }
 
 /**
- * The `@corbits/reddit-tools` bundle factory: two tools sharing one env
- * key (`scrapeCreatorsApiKey`). Pin this package's `reddit` bundle on
- * any agent that needs to search Reddit, sitewide or scoped to one
- * subreddit.
+ * The `@corbits/reddit-tools` bundle factory: two tools sharing one
+ * mediated credential (handle "scrapecreators"). Pin this package's
+ * `reddit` bundle on any agent that needs to search Reddit, sitewide or
+ * scoped to one subreddit.
  */
 export const redditTools = defineTool<RedditEnv>({
   id: "@corbits/reddit-tools/reddit",
-  requires: ["scrapeCreatorsApiKey"],
+  requires: ["credentials"],
   definitions: [
     { name: REDDIT_SEARCH_TOOL },
     { name: REDDIT_SUBREDDIT_SEARCH_TOOL },
