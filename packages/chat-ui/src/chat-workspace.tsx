@@ -45,7 +45,7 @@ import type {
 } from "./api";
 import { ChannelSettingsSurface } from "./channel-settings";
 import { Composer, partsForSend } from "./composer";
-import type { ComposerSendPayload } from "./composer";
+import type { ComposerHandle, ComposerSendPayload } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
@@ -201,6 +201,7 @@ function ChatWorkspaceInner({
   approvalActions,
   headerLeading,
   listMembers,
+  registerComposerInsert,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
@@ -220,6 +221,16 @@ function ChatWorkspaceInner({
    * `NewChannelDialog`'s own prop note. Host-supplied, the same way
    * `currentUser`/`tenant` are. */
   readonly listMembers?: (tenantId: string) => Promise<readonly PersonOption[]>;
+  /**
+   * Hands the host a function that inserts text into the active channel's
+   * composer, or `null` while no composer is mounted (loading/error states,
+   * settings surface). The profile card's Mention action (CL-5914) is the
+   * first caller — a shell-level seam, so the host stores the latest
+   * function rather than this component reaching outside its own tree.
+   */
+  readonly registerComposerInsert?: (
+    insert: ((text: string) => void) | null,
+  ) => void;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -259,6 +270,7 @@ function ChatWorkspaceInner({
   >(new Map());
 
   const unauthorizedRef = useRef(false);
+  const composerRef = useRef<ComposerHandle>(null);
 
   const loadThreads = useCallback(
     async (channelId: string) => {
@@ -457,6 +469,19 @@ function ChatWorkspaceInner({
       void loadThreads(activeChannelId);
     }
   };
+
+  const composerMounted =
+    !settingsOpen && activeChannelId !== null && messagesState.kind === "ready";
+
+  useEffect(() => {
+    if (registerComposerInsert === undefined) return;
+    if (!composerMounted) {
+      registerComposerInsert(null);
+      return;
+    }
+    registerComposerInsert((text) => composerRef.current?.insertText(text));
+    return () => registerComposerInsert(null);
+  }, [registerComposerInsert, composerMounted]);
 
   const { typingState, handleStreamEvent: handleTypingEvent } =
     useTypingIndicator(currentUser?.principalId, activeChannelId);
@@ -806,6 +831,7 @@ function ChatWorkspaceInner({
                     />
                   ) : null}
                   <Composer
+                    ref={composerRef}
                     agents={mentionCandidatesFromParticipants(
                       activeChannel?.participants ?? [],
                     )}
@@ -858,6 +884,7 @@ export function ChatWorkspace({
   approvalActions,
   headerLeading,
   listMembers,
+  registerComposerInsert,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -895,6 +922,10 @@ export function ChatWorkspace({
    * entirely, the dialog's People tab does not render at all.
    */
   readonly listMembers?: (tenantId: string) => Promise<readonly PersonOption[]>;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly registerComposerInsert?: (
+    insert: ((text: string) => void) | null,
+  ) => void;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -915,6 +946,9 @@ export function ChatWorkspace({
           {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
           {...(headerLeading !== undefined ? { headerLeading } : {})}
           {...(listMembers !== undefined ? { listMembers } : {})}
+          {...(registerComposerInsert !== undefined
+            ? { registerComposerInsert }
+            : {})}
         />
       );
     case "empty":

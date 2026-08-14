@@ -20,6 +20,7 @@ import { createAppQueryClient } from "./query-client";
 import { APP_ROUTES, matchesRoute, ONBOARDING_PATH } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
+import { ComposerInsertionProvider } from "./shell/composer-insertion";
 import { ShellChromeProvider } from "./shell/shell-chrome-provider";
 
 /**
@@ -66,17 +67,19 @@ function Shell({
     <QueryClientProvider client={queryClient}>
       <NavigationProvider navigate={navigate}>
         <BenchProvider>
-          <ShellChromeProvider path={path} navigate={navigate}>
-            <CommandPaletteProvider path={path} navigate={navigate} />
-            <AppShell path={path} user={user} onSignOut={onSignOut}>
-              {route === undefined ? (
-                <NotFoundPage path={path} />
-              ) : (
-                route.render(path, navigate)
-              )}
-            </AppShell>
-          </ShellChromeProvider>
-          <Toaster />
+          <ComposerInsertionProvider>
+            <ShellChromeProvider path={path} navigate={navigate}>
+              <CommandPaletteProvider path={path} navigate={navigate} />
+              <AppShell path={path} user={user} onSignOut={onSignOut}>
+                {route === undefined ? (
+                  <NotFoundPage path={path} />
+                ) : (
+                  route.render(path, navigate)
+                )}
+              </AppShell>
+            </ShellChromeProvider>
+            <Toaster />
+          </ComposerInsertionProvider>
         </BenchProvider>
       </NavigationProvider>
     </QueryClientProvider>

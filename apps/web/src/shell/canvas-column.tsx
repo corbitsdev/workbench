@@ -15,10 +15,18 @@ import {
   Button,
   EmptyState,
   ProfileCard,
+  toast,
   type ProfileCardAction,
+  type ProfileCardChannel,
 } from "@corbits/react-ui";
-import type { ProfileSubject } from "@corbits/chat-ui";
+import type { ProfileSubject, SharedChannelSummary } from "@corbits/chat-ui";
 import { UserRound, X } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { useBench } from "../bench-context";
+import { channelPath } from "../channel-path";
+import { ensureProfileDm, loadSharedChannels } from "../profile-relations";
+import { useInsertIntoComposer } from "./composer-insertion";
 
 export function CanvasColumn({
   open,
@@ -57,25 +65,76 @@ export function CanvasColumn({
   );
 }
 
+/**
+ * Open-or-create the DM with `profile` and land on it. `tenantId === null`
+ * (bench not resolved yet) has nothing to message against — the button
+ * stays present but no-ops rather than crashing.
+ */
+function messageAction(
+  tenantId: string | null,
+  profile: ProfileSubject,
+  onNavigate: (path: string) => void,
+): () => void {
+  return () => {
+    if (tenantId === null) return;
+    void ensureProfileDm(tenantId, profile).then((result) => {
+      if (result.kind === "ready") {
+        onNavigate(channelPath(result.channelId));
+      } else {
+        toast(result.message);
+      }
+    });
+  };
+}
+
+/** Insert `@handle` into whichever channel's composer is on screen — an
+ * honest "nothing to mention into" toast when none is (CL-5914: no channel
+ * open, or the settings surface is showing instead of a conversation). */
+function mentionAction(
+  profile: ProfileSubject,
+  insertIntoComposer: (text: string) => boolean,
+): () => void {
+  return () => {
+    const inserted = insertIntoComposer(`@${profile.handle} `);
+    if (!inserted) {
+      toast(`Open a channel to mention @${profile.handle}`);
+    }
+  };
+}
+
 function profileActions(
   profile: ProfileSubject,
+  tenantId: string | null,
   onClose: () => void,
   onNavigate: (path: string) => void,
+  insertIntoComposer: (text: string) => boolean,
 ): readonly ProfileCardAction[] {
+  const message: ProfileCardAction = {
+    id: "message",
+    label: "Message",
+    tone: "primary",
+    onClick: () => {
+      messageAction(tenantId, profile, onNavigate)();
+      onClose();
+    },
+  };
+  const mention: ProfileCardAction = {
+    id: "mention",
+    label: "Mention",
+    tone: "outline",
+    onClick: () => {
+      mentionAction(profile, insertIntoComposer)();
+      onClose();
+    },
+  };
+
+  // Pause has no backing API today (CL-5884 follow-up: no workflow-run
+  // pause endpoint exists anywhere in the hub) — omitted rather than left
+  // as a no-op that pretends to do something.
   if (profile.kind === "agent") {
     return [
-      {
-        id: "message",
-        label: "Message",
-        tone: "primary",
-        onClick: onClose,
-      },
-      {
-        id: "mention",
-        label: "Mention",
-        tone: "outline",
-        onClick: onClose,
-      },
+      message,
+      mention,
       {
         id: "edit-agent",
         label: "Edit agent",
@@ -94,28 +153,12 @@ function profileActions(
           onNavigate("/insights");
         },
       },
-      {
-        id: "pause",
-        label: "Pause",
-        tone: "outline",
-        onClick: onClose,
-      },
     ];
   }
 
   return [
-    {
-      id: "message",
-      label: "Message",
-      tone: "primary",
-      onClick: onClose,
-    },
-    {
-      id: "mention",
-      label: "Mention",
-      tone: "outline",
-      onClick: onClose,
-    },
+    message,
+    mention,
     {
       id: "view-activity",
       label: "View activity",
@@ -137,6 +180,48 @@ function profileActions(
   ];
 }
 
+function toProfileCardChannels(
+  channels: readonly SharedChannelSummary[],
+): readonly ProfileCardChannel[] {
+  return channels.map((channel) => ({
+    id: channel.id,
+    name: channel.title,
+    href: channelPath(channel.id),
+  }));
+}
+
+/** Shared channels between the viewer and `profile` (CL-5919) — refetched
+ * whenever the open profile changes, dropped if a later change races past
+ * an in-flight fetch. Pinned skills are intentionally never populated: no
+ * agent carries any real skill-attachment data yet (tracked in CL-5991), so
+ * showing them would be fabricated, not deferred. */
+function useSharedChannels(
+  tenantId: string | null,
+  viewerPrincipalId: string | null,
+  profile: ProfileSubject,
+): readonly SharedChannelSummary[] {
+  const [channels, setChannels] = useState<readonly SharedChannelSummary[]>([]);
+
+  useEffect(() => {
+    setChannels([]);
+    if (tenantId === null || viewerPrincipalId === null) return;
+    let cancelled = false;
+    void loadSharedChannels(tenantId, viewerPrincipalId, profile).then(
+      (result) => {
+        if (!cancelled) setChannels(result);
+      },
+      () => {
+        if (!cancelled) setChannels([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, viewerPrincipalId, profile.address]);
+
+  return channels;
+}
+
 function ProfileCanvasPane({
   profile,
   onClose,
@@ -146,6 +231,14 @@ function ProfileCanvasPane({
   readonly onClose: () => void;
   readonly onNavigate: (path: string) => void;
 }) {
+  const { selectedTenantId, selectedPrincipalId } = useBench();
+  const insertIntoComposer = useInsertIntoComposer();
+  const sharedChannels = useSharedChannels(
+    selectedTenantId,
+    selectedPrincipalId,
+    profile,
+  );
+
   return (
     <div className="shell-profile-pane">
       <div className="shell-profile-pane-header">
@@ -164,11 +257,15 @@ function ProfileCanvasPane({
         initials={profile.initials}
         statusLabel={profile.kind === "agent" ? "Agent" : "Member"}
         avatarTone={profile.kind === "agent" ? "agent" : "neutral"}
-        actions={profileActions(profile, onClose, onNavigate)}
+        actions={profileActions(
+          profile,
+          selectedTenantId,
+          onClose,
+          onNavigate,
+          insertIntoComposer,
+        )}
+        sharedChannels={toProfileCardChannels(sharedChannels)}
       />
-      <p className="shell-profile-pane-hint">
-        Shared channels and pinned skills land here when the host has them.
-      </p>
     </div>
   );
 }
