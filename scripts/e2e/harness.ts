@@ -4,6 +4,7 @@
 // Nothing platform-side is mocked; when a hop cannot be exercised for
 // real the suite fails and says which hop, it never fakes the result.
 
+import { afterAll } from "bun:test";
 import { spawn } from "node:child_process";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -71,6 +72,38 @@ export async function hop<T>(name: string, run: () => Promise<T>): Promise<T> {
       { cause: error },
     );
   }
+}
+
+// --- shared cleanup registry -------------------------------------------
+
+/**
+ * One `afterAll`-backed cleanup registry per suite: `tempDir` mkdtemps
+ * under the OS temp dir and queues its removal, `track` queues a
+ * spawned app's `stop()`. Registered cleanups run last-in-first-out
+ * once the suite's tests finish, whether they passed or failed — the
+ * same guarantee every e2e suite used to hand-roll with its own
+ * `cleanups` array and `try`/`finally`.
+ */
+export function createCleanupHarness(): {
+  tempDir(prefix: string): Promise<string>;
+  track(app: SpawnedApp): void;
+} {
+  const cleanups: (() => Promise<void>)[] = [];
+
+  afterAll(async () => {
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  });
+
+  return {
+    async tempDir(prefix) {
+      const dir = await mkdtemp(path.join(tmpdir(), prefix));
+      cleanups.push(() => rm(dir, { recursive: true, force: true }));
+      return dir;
+    },
+    track(app) {
+      cleanups.push(() => app.stop());
+    },
+  };
 }
 
 // --- hub-resolved postgres client ------------------------------------

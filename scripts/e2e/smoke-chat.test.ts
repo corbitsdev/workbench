@@ -11,13 +11,11 @@
 // credential of any kind.
 
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   api,
+  createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   freePort,
@@ -26,8 +24,9 @@ import {
   startHub,
   startSidecar,
   type HubHandle,
-  type SpawnedApp,
 } from "./harness.ts";
+
+const { tempDir, track } = createCleanupHarness();
 
 const databaseUrl = e2eDatabaseUrl();
 if (databaseUrl === undefined) {
@@ -58,12 +57,8 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
       await setupDatabase(url);
     });
 
-    const hubDataDir = await mkdtemp(
-      path.join(tmpdir(), "e2e-smoke-chat-hub-data-"),
-    );
-    const sidecarDataDir = await mkdtemp(
-      path.join(tmpdir(), "e2e-smoke-chat-sidecar-data-"),
-    );
+    const hubDataDir = await tempDir("e2e-smoke-chat-hub-data-");
+    const sidecarDataDir = await tempDir("e2e-smoke-chat-sidecar-data-");
 
     const sidecarId = "sidecar-e2e-smoke-chat";
     const sidecarToken = crypto.randomUUID();
@@ -81,8 +76,9 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
         dataDir: hubDataDir,
       }),
     );
+    track(hub);
 
-    const sidecar: SpawnedApp = await hop("sidecar boot", () =>
+    const sidecar = await hop("sidecar boot", () =>
       Promise.resolve(
         startSidecar({
           hubPort: Number(new URL(hub.baseUrl).port),
@@ -92,8 +88,9 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
         }),
       ),
     );
+    track(sidecar);
 
-    try {
+    {
       const cookies = await hop("sign-up", async () => {
         const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
           name: "Chat Smoke Tester",
@@ -231,11 +228,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
           }
         },
       );
-    } finally {
-      await sidecar.stop();
-      await hub.stop();
-      await rm(hubDataDir, { recursive: true, force: true });
-      await rm(sidecarDataDir, { recursive: true, force: true });
     }
   }, 120_000);
 });

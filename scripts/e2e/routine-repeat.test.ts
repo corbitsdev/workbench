@@ -7,10 +7,7 @@
 // Every launch here resolves inference against the hub's own
 // noop-inference endpoint, so the whole proof costs nothing.
 
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
@@ -19,6 +16,7 @@ import {
 } from "../../workflows/heartbeat/src/index.ts";
 import {
   api,
+  createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   freePort,
@@ -28,7 +26,6 @@ import {
   startHub,
   startSidecar,
   type HubHandle,
-  type SpawnedApp,
 } from "./harness.ts";
 
 const databaseUrl = e2eDatabaseUrl();
@@ -50,21 +47,7 @@ function stringField(data: unknown, field: string, what: string): string {
   );
 }
 
-const cleanups: (() => Promise<void>)[] = [];
-
-afterAll(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-});
-
-async function tempDir(prefix: string): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), prefix));
-  cleanups.push(() => rm(dir, { recursive: true, force: true }));
-  return dir;
-}
-
-function track(app: SpawnedApp): void {
-  cleanups.push(() => app.stop());
-}
+const { tempDir, track } = createCleanupHarness();
 
 describe.skipIf(databaseUrl === undefined)("routine repeat fires", () => {
   test("one routine fired twice launches two distinct runs", async () => {
