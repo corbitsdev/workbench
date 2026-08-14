@@ -43,14 +43,43 @@ Every source call degrades gracefully, never fails the run:
 - Attio and Vercel have no tool to call yet, so the prompt names them
   as "not connected" directly — an honest line, not a fabricated
   section.
-- If every source is unavailable, the brief says so at the top rather
-  than presenting empty or padded sections as if there were real
-  content.
+- If every source is unavailable, the brief still gets finalized — see
+  "Finalizing and persistence" below — with a teaching payload instead
+  of a real brief, rather than presenting empty or padded sections as
+  if there were real content.
 
 Adding a source later (Attio, Vercel, or a new one) means: build its
 tool package, add it to `MORNING_BRIEF_TOOL_PACKAGE_PINS` in this
 definition, and add one line to the prompt's source list — never
 restructuring the brief.
+
+## Finalizing and persistence
+
+The agent's last act is always one call to `morning_brief_finalize`
+(`src/finalize-tool.ts`), gated behind a single human approval
+(`approval: "ask"`, the platform's native tool-approval gate — see that
+file's header for the full suspend/resume account). On approval, the
+call persists the brief as a Library artifact via
+`createWorkflowArtifact` (`src/artifact-client.ts`, duplicated from
+`@corbits/artifact-tools`' client per this package's "installable data,
+`@intx/*` and `arktype` only" import boundary — see
+`test/boundary.test.ts`) and returns `{ id, version, title, kind,
+persisted: true }`, the shape `packages/chat/src/artifact-delivery.ts`
+recognizes and turns into a Library-linked chip in the thread. A failed
+persist surfaces as an honest tool error, never a fabricated success.
+
+This runs on both paths, not just the happy one:
+
+- **Real brief**: every source that returned something feeds a normal
+  brief, finalized with a real title and the full markdown body.
+- **No-data path**: when every source is not connected or came back
+  empty, the agent still calls `morning_brief_finalize` — with a
+  teaching title (e.g. "Morning brief — no connected sources yet") and
+  content that honestly explains what it would have looked for (recent
+  Granola call notes, recently updated Linear issues), names the
+  missing connectors by id (`granola`, `linear`), and says how to
+  connect them. A run never ends in silence or a bare markdown reply —
+  it always ends in a persisted, chip-visible artifact.
 
 ## Usage
 
