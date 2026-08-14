@@ -29,16 +29,36 @@ export const NeedsYouItem = type({
 });
 export type NeedsYouItem = typeof NeedsYouItem.infer;
 
-function headlineFor(toolDefinition: unknown): string {
-  if (
-    typeof toolDefinition === "object" &&
-    toolDefinition !== null &&
-    "name" in toolDefinition &&
-    typeof (toolDefinition as { name: unknown }).name === "string"
-  ) {
-    return (toolDefinition as { name: string }).name;
-  }
-  return "Run a tool";
+function stringField(source: object, field: string): string | undefined {
+  if (!(field in source)) return undefined;
+  const value = (source as Record<string, unknown>)[field];
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+/**
+ * Builds the inbox headline for a pending approval. Prefers the tool's
+ * own `description` — written by the tool's author to be human-readable
+ * — over its bare `name`, which is a machine identifier. When the live
+ * call's arguments carry a `title` (a tool author's own convention for
+ * per-invocation context, e.g. "finalize this piece of collateral
+ * titled X"), it is appended so the headline reflects what THIS
+ * approval is actually about, not just which tool is asking.
+ */
+export function headlineFor(
+  toolDefinition: unknown,
+  toolArguments: unknown,
+): string {
+  const base =
+    typeof toolDefinition === "object" && toolDefinition !== null
+      ? (stringField(toolDefinition, "description") ??
+        stringField(toolDefinition, "name"))
+      : undefined;
+  const headline = base ?? "Run a tool";
+  const title =
+    typeof toolArguments === "object" && toolArguments !== null
+      ? stringField(toolArguments, "title")
+      : undefined;
+  return title === undefined ? headline : `${headline}: "${title}"`;
 }
 
 /**
@@ -92,7 +112,7 @@ export async function hydrateNeedsYou(
       id: row.id,
       agentName,
       benchName,
-      headline: headlineFor(row.toolDefinition),
+      headline: headlineFor(row.toolDefinition, row.toolArguments),
       arguments: row.toolArguments as object,
       status: row.status,
       createdAt: row.createdAt.toISOString(),

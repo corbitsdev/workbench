@@ -29,6 +29,13 @@ describe("workflow catalog", () => {
     );
   });
 
+  test("does not mark pain-point-collateral automatable — its approval gate is a poor fit for unattended scheduling", () => {
+    expect(isAutomatableWorkflowName("pain-point-collateral")).toBe(false);
+    expect(workflowDisplayName("pain-point-collateral")).toBe(
+      "Pain-point collateral",
+    );
+  });
+
   test("rejects agent handles and channel-host names as automatable", () => {
     expect(isAutomatableWorkflowName("my-researcher")).toBe(false);
     expect(isAutomatableWorkflowName("channel-host-abc")).toBe(false);

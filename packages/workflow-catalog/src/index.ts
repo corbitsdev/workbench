@@ -54,6 +54,11 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     displayName: "Morning brief",
     automatable: true,
   },
+  {
+    assetName: "pain-point-collateral",
+    displayName: "Pain-point collateral",
+    automatable: false,
+  },
 ];
 
 const byAssetName = new Map(
