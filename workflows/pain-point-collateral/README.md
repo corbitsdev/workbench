@@ -66,14 +66,14 @@ approval is real and works end-to-end there.
 Two real gaps stand between this definition and a fully live deploy,
 both platform-level, not specific to this workflow:
 
-1. **No tool-package pin.** No production workflow builder in this repo
-   threads a caller-supplied `toolPackagePins` onto a built definition
-   yet (`docs/AGENTS-PAGE.md`) — the same gap `@corbits/morning-brief-workflow`
-   (CL-5993) and `@corbits/granola-call-workflow` (CL-5998) document.
-   Until it lands, this definition ships with `tools: []`, matching
-   every other definition in this catalog; `@corbits/granola-tools`'
-   `granola_get_note` and `./src/finalize-tool.ts` exist, are tested,
-   and are ready to wire in the moment pinning is built.
+1. **Tool-package pin resolves only once published** (CL-5999 closed the
+   pinning gap; publishing is still an operator step). This definition
+   pins `@corbits/granola-tools` (`PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS`)
+   for `granola_get_note`; the pin resolves at deploy time once an
+   operator publishes the package to a registry the host's
+   `toolPackageRegistries` config reaches — npmjs, or a `package-registry`
+   asset for the `@corbits` scope (see `apps/hub/src/index.ts`'s
+   `CORBITS_TOOLS_REGISTRY` wiring).
 2. **No Library-write path from a workflow tool.** Tool packages are
    materialized into the sidecar's workflow-process child, a separate
    process with no database handle and no authenticated hub-API path —
