@@ -36,7 +36,11 @@ Launch-time resolution (`buildCredentialDelivery`) is proven in
 `test/credential-delivery.drizzle.test.ts`; the full chain — seeded
 credential through the sidecar's step wiring
 (`apps/sidecar/src/step-agent-tools.ts`) to this bundle's tool call — is
-proven in `test/credential-wiring-e2e.drizzle.test.ts` (CL-6032).
+proven in `test/credential-wiring-e2e.drizzle.test.ts` (CL-6032). See
+`docs/credential-wiring.md` for the end-to-end picture and the provider
+plugins involved (this package's Granola credential uses the vendored
+`http` / Bearer plugin; `@corbits/linear-tools`'s Linear credential does
+not).
 
 ## Usage
 

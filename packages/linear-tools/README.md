@@ -30,11 +30,20 @@ Linear once, in Settings · Connections, and every workflow that pins
 no per-workflow reconnection.
 
 Launch-time resolution (`buildCredentialDelivery`) is proven in
-`test/credential-delivery.drizzle.test.ts`. This package has no
-DB-gated wiring end-to-end test of its own (see
-`@corbits/granola-tools`'s `test/credential-wiring-e2e.drizzle.test.ts`,
-CL-6032, for the pattern) — the substrate-side composition it depends on
-is shared and covered there plus in `apps/sidecar/src/step-agent-tools.test.ts`.
+`test/credential-delivery.drizzle.test.ts`; the full chain — seeded
+credential through the sidecar's step wiring
+(`apps/sidecar/src/step-agent-tools.ts`) to this bundle's tool call — is
+proven in `test/credential-wiring-e2e.drizzle.test.ts` (CL-6032).
+
+**Provider plugin.** Linear's API expects the raw key verbatim in
+`authorization`, not a `Bearer `-prefixed token. `@intx/harness`'s
+vendored `http` provider always sends Bearer, so a Linear provider row
+MUST set `plugin: "http-raw-authorization"`
+(`@corbits/credential-providers`) rather than the `"http"` default other
+connectors use — seeding it wrong sends the wrong header shape and
+Linear rejects the call. See `docs/credential-wiring.md` and
+`test/linear-raw-authorization-regression.test.ts`, a regression guard
+for exactly this bug.
 
 ## Usage
 
