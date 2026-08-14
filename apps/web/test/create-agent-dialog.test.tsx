@@ -102,6 +102,32 @@ function fillField(id: string, value: string, textarea = false) {
   });
 }
 
+describe("CreateAgentDialog handle auto-derive", () => {
+  test("handle slugifies from the typed name until the user edits it", () => {
+    mount();
+    fillField("create-agent-name", "Research Buddy");
+    const handleInput = document.getElementById(
+      "create-agent-handle",
+    ) as HTMLInputElement;
+    expect(handleInput.value).toBe("research-buddy");
+
+    fillField("create-agent-name", "Research Buddy Two");
+    expect(handleInput.value).toBe("research-buddy-two");
+  });
+
+  test("once the user edits the handle directly, name changes stop overriding it", () => {
+    mount();
+    fillField("create-agent-name", "Research Buddy");
+    fillField("create-agent-handle", "custom-handle");
+
+    fillField("create-agent-name", "Research Buddy Two");
+    const handleInput = document.getElementById(
+      "create-agent-handle",
+    ) as HTMLInputElement;
+    expect(handleInput.value).toBe("custom-handle");
+  });
+});
+
 describe("CreateAgentDialog skills picker", () => {
   test("with no skills yet, shows the empty state instead of a checkbox list", () => {
     mount();
