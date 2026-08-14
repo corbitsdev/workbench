@@ -23,6 +23,7 @@ import {
 import { createAgentDefinitionRoutes } from "@corbits/agent-directory";
 
 import {
+  createChannelHostInferencePreferencesResolver,
   createChannelTenancyRoutes,
   createChatOrchestrator,
   createChatRoutes,
@@ -31,6 +32,7 @@ import {
   createDrizzleThreadStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
+  listConnectedProviders,
   startWorkflowCommand,
 } from "@corbits/chat";
 import { createCryptoProviderCache } from "@corbits/folded-runs";
@@ -123,12 +125,6 @@ const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
 // mid-turn instance regardless of this value, so it only has to be
 // long enough that an agent between turns is never mistaken for idle.
 const CHAT_IDLE_SLEEP_MS = 60_000;
-// The same anthropic/claude-sonnet-5 pairing the workbench seed plants
-// in the tenant catalog, so a channel host can always resolve an
-// inference source against it.
-const DEFAULT_CHANNEL_HOST_INFERENCE_PREFERENCES = [
-  { provider: "anthropic", model: "claude-sonnet-5" },
-];
 
 // Signup mode is operator-controlled (WORKBENCH_SIGNUP). Default closed:
 // self-serve email signup is rejected; owners add users or share a
@@ -437,11 +433,15 @@ export async function createHub(config: HubConfig) {
       conditionRegistry: chatConditionRegistry,
     }),
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
-    // Always the constant default: the hub's own seed model credential
-    // (config.seedModel) never names a different provider or model, so
-    // there is nothing for it to override here — only the onboarding
-    // path below cares whether a real credential is configured.
-    channelHostInferencePreferences: DEFAULT_CHANNEL_HOST_INFERENCE_PREFERENCES,
+    // Derived per tenant, per channel creation, from that tenant's own
+    // connected catalog providers (see `@corbits/chat`'s
+    // `createChannelHostInferencePreferencesResolver`) — never a fixed
+    // provider/model pair, so a bench whose only credential is, say,
+    // OpenRouter still gets a channel host that can resolve a source.
+    channelHostInferencePreferences:
+      createChannelHostInferencePreferencesResolver((tenantId) =>
+        listConnectedProviders(db, tenantId),
+      ),
     commands: commandRegistry,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));

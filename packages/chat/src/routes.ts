@@ -104,14 +104,22 @@ export type CreateChatRoutesDeps = {
   /** Per-occurrence timeout for the channel host's step. */
   turnTimeoutMs: number;
   /**
-   * The provider/model chain the channel host's definition declares.
-   * A folded interactive-instance launch resolves and pins a real
-   * inference source chain against the tenant catalog before it will
-   * launch at all (see `platform-adapter.ts`), so this must name a
-   * model a seeded catalog source can resolve — omitting it is valid
-   * up front, but `launchChannel` then fails loud at creation time.
+   * Resolves the provider/model chain a newly created channel's host
+   * declares, for the tenant the channel is being created in — see
+   * `@corbits/chat`'s `createChannelHostInferencePreferencesResolver`,
+   * which derives it from that tenant's actually-connected catalog
+   * providers rather than a fixed list, so a bench with no Anthropic
+   * credential still gets a working host. A folded interactive-instance
+   * launch resolves and pins a real inference source chain against the
+   * tenant catalog before it will launch at all (see
+   * `platform-adapter.ts`), so the resolved list must name a model a
+   * seeded catalog source can resolve — omitting the dep, or resolving
+   * to an empty list, is valid up front, but `launchChannel` then fails
+   * loud at creation time.
    */
-  channelHostInferencePreferences?: readonly InferencePreference[];
+  channelHostInferencePreferences?: (
+    tenantId: string,
+  ) => Promise<readonly InferencePreference[]>;
   /**
    * Thread identity store (root / reply / delivery). When omitted,
    * thread list routes return empty and delivery-thread creation is
@@ -404,10 +412,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const channelId = generateId("workflowRun");
       const triggerAddress = formatRunAddress(channelId, tenant.domain);
+      const inferencePreferences =
+        (await deps.channelHostInferencePreferences?.(tenant.id)) ?? [];
       const definition = serializeChannelHostWorkflow(
         buildChannelHostWorkflow({
           triggerAddress,
-          inferencePreferences: deps.channelHostInferencePreferences ?? [],
+          inferencePreferences,
           turnTimeoutMs: deps.turnTimeoutMs,
         }),
       );
