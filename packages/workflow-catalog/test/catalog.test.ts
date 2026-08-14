@@ -14,6 +14,20 @@ describe("workflow catalog", () => {
     expect(isAutomatableWorkflowName("assistant")).toBe(false);
   });
 
+  test("marks the granola-call parent automatable, not its process-granola-call child", () => {
+    // The parent is schedule-attachable; the child is spawned per call and
+    // must never appear as an independent Routines-picker option.
+    expect(isAutomatableWorkflowName("granola-call")).toBe(true);
+    expect(isAutomatableWorkflowName("process-granola-call")).toBe(false);
+  });
+
+  test("prefers the catalog display name for the granola-call workflows", () => {
+    expect(workflowDisplayName("granola-call")).toBe("Granola call notes");
+    expect(workflowDisplayName("process-granola-call")).toBe(
+      "Process Granola call",
+    );
+  });
+
   test("rejects agent handles and channel-host names as automatable", () => {
     expect(isAutomatableWorkflowName("my-researcher")).toBe(false);
     expect(isAutomatableWorkflowName("channel-host-abc")).toBe(false);
