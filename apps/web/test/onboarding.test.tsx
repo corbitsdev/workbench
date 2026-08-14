@@ -92,6 +92,7 @@ describe("PRIMARY_CREDENTIAL_PROVIDERS and SECONDARY_CREDENTIAL_PROVIDERS", () =
       "groq",
       "deepseek",
       "mistral",
+      "huggingface",
     ]);
   });
 
@@ -524,10 +525,15 @@ describe("the provider picker's primary row and secondary expander", () => {
 
   test("groq, deepseek, and mistral still render, fully functional, inside the expander", () => {
     const markup = renderCredentialPhase();
-    const moreIndex = markup.indexOf("More providers");
+    // Search only from the radiogroup onward — provider names also appear
+    // in the one-click connect cards' copy above the picker.
+    const pickerMarkup = markup.slice(
+      markup.indexOf('aria-label="Inference provider"'),
+    );
+    const moreIndex = pickerMarkup.indexOf("More providers");
 
     for (const label of ["Groq", "DeepSeek", "Mistral"]) {
-      const labelIndex = markup.indexOf(label);
+      const labelIndex = pickerMarkup.indexOf(label);
       expect(labelIndex).toBeGreaterThan(moreIndex);
     }
     // Still real radio buttons, not disabled or decorative.
