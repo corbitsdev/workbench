@@ -94,14 +94,24 @@ export function createArtifactDocPersistence(
 
   const timers = new Map<string, unknown>();
   const pendingAuthor = new Map<string, string>();
+  // Per-room write serialization: two snapshot writes for the same room
+  // can otherwise both be in flight at once (a slow write #1 still
+  // pending when write #2's own debounce elapses and starts). Since each
+  // write's promise resolves independently, a slower earlier write can
+  // finish AFTER a faster later one and re-notify a stale, lower version
+  // — a "Saved v1" regression after "Saved v2" already rendered. Chaining
+  // every write onto the previous one for its room guarantees writes (and
+  // therefore `notifySnapshot` calls) execute and resolve in the order
+  // they were enqueued, never out of order.
+  const writeChains = new Map<string, Promise<void>>();
 
-  async function snapshot(
+  async function writeSnapshot(
     key: PresenceRoomKey,
     authorPrincipalId: string,
+    content: string,
   ): Promise<void> {
     const artifactId = artifactIdForSurface(key.surface);
     if (artifactId === null) return;
-    const content = deps.registry.docText(key);
     try {
       const written = await deps.writeArtifactSnapshot(
         key.tenantId,
@@ -118,6 +128,40 @@ export function createArtifactDocPersistence(
     }
   }
 
+  /**
+   * Reads the doc's content and chains a write onto the room's write
+   * queue. The content read has to happen synchronously, right now,
+   * before this function returns — not deferred into the chained
+   * callback — because `flushNow` calls this from inside `onEmpty`,
+   * which fires *before* the registry destroys the room's doc but
+   * *before* returning control to a caller that then immediately
+   * proceeds to destroy it. By the time a deferred read would run (after
+   * whatever write is currently ahead of it in the chain finishes), the
+   * room may no longer exist in the registry at all, silently
+   * "snapshotting" an empty string instead of the room's real last
+   * content.
+   */
+  function enqueueSnapshot(
+    key: PresenceRoomKey,
+    authorPrincipalId: string,
+  ): void {
+    if (artifactIdForSurface(key.surface) === null) return;
+    const content = deps.registry.docText(key);
+    const id = roomKeyId(key);
+    const previous = writeChains.get(id) ?? Promise.resolve();
+    const next = previous.then(() =>
+      writeSnapshot(key, authorPrincipalId, content),
+    );
+    // The chain itself must never reject — `writeSnapshot` already
+    // swallows its own errors via `onSnapshotError`, but a defensive
+    // catch here keeps one unexpected throw from permanently wedging
+    // every later write queued behind it for this room.
+    writeChains.set(
+      id,
+      next.catch(() => undefined),
+    );
+  }
+
   function scheduleSnapshot(
     key: PresenceRoomKey,
     authorPrincipalId: string,
@@ -131,7 +175,7 @@ export function createArtifactDocPersistence(
       timers.delete(id);
       const author = pendingAuthor.get(id);
       pendingAuthor.delete(id);
-      if (author !== undefined) void snapshot(key, author);
+      if (author !== undefined) enqueueSnapshot(key, author);
     }, debounceMs);
     timers.set(id, handle);
   }
@@ -144,7 +188,7 @@ export function createArtifactDocPersistence(
     clearTimeoutImpl(existing);
     timers.delete(id);
     pendingAuthor.delete(id);
-    void snapshot(key, author);
+    enqueueSnapshot(key, author);
   }
 
   deps.registry.onDocChange((key, authorPrincipalId) => {

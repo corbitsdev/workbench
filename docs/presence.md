@@ -24,6 +24,25 @@ has no members and no SSE subscribers left — there is no persistence layer
 to clean up, and a process restart simply loses presence, which is correct
 for "who's here right now."
 
+**This assumes exactly one hub replica.** Every room lives in one
+process's memory; there is no cross-replica broadcast, no shared pub/sub,
+no external store a second replica could read the same room from. For
+phase 1's plain awareness this is a low-stakes assumption — split traffic
+across two replicas and the worst case is a "who's here" list that's
+missing someone until they reconnect and land on the right replica.
+**Phase 2's doc content makes the same assumption load-bearing in a way
+that fails silently**: two hub replicas serving the same
+`(tenantId, surface)` room would each hold an independent, diverging
+`Y.Doc` with no way to ever reconcile — two editors landing on different
+replicas would each see their own edits and never the other's, with no
+error, no warning, just quietly diverging documents that both look
+correct locally. Multi-replica support (a shared broadcast layer so every
+replica's registry applies the same updates, or moving room state out of
+process memory entirely) is a known phase-3 item, not something this
+phase's design pretends to solve — running more than one hub replica
+today is only safe for presence's awareness-only surfaces, never for a
+doc-carrying (`artifact:<id>`) one.
+
 ## Why Yjs, given the wire format is JSON
 
 Each room keeps one `y-protocols` `Awareness` instance (backed by a
@@ -123,30 +142,47 @@ back its `Awareness` instance — now carries real content in a
   (below) uses to flush on last-client-leave and to announce a confirmed
   write back out over SSE.
 
+(Applies in one process's memory only — see the single-hub-replica
+assumption under Rooms, above; phase 2's doc content is exactly where that
+assumption stops being low-stakes.)
+
 The wire format stays plain JSON, as phase 1's own doc already argued for:
 a Yjs update is base64-encoded inside a JSON body/event
 (`base64.ts` — a small hand-rolled codec, not `Buffer`/`btoa`, since this
 module is shared between the Node/Bun server and the browser client).
 `POST /rooms/:surface/update` accepts `{ update: string }`, arktype-checked
-for shape and then size-capped at `MAX_DOC_UPDATE_BYTES` (256 KiB decoded)
-before it ever reaches Yjs — comfortably above a large paste, well below
-"megabyte update" territory. A malformed update (bad base64, or valid
-base64 that isn't a real Yjs update) is a 400, never silently dropped or
-partially applied. `POST /rooms/:surface/join`'s response grew a
-`docUpdate` field — the room's current full state, so a late joiner
+for shape, then size-capped at `MAX_DOC_UPDATE_BYTES` (256 KiB decoded) —
+checked twice, deliberately: first as a bound on the base64 STRING's
+length (`maxBase64LengthFor`, the exact ceiling that could possibly decode
+to the byte limit), rejecting an oversize payload before it's ever
+decoded, then again on the actual decoded byte count as a belt-and-suspenders
+check once decoding has happened. Comfortably above a large paste, well
+below "megabyte update" territory. A malformed update (bad base64, or
+valid base64 that isn't a real Yjs update) is a 400, never silently
+dropped or partially applied. `POST /rooms/:surface/join`'s response grew
+a `docUpdate` field — the room's current full state, so a late joiner
 converges immediately instead of starting from an empty doc. The SSE
 stream carries two new event types alongside `presence.state`:
 `doc.update` (every applied update, relayed to every other subscriber) and
 `doc.saved` (see Persistence, below).
 
-`POST /rooms/:surface/update` is the one presence route phase 2 gates
-behind a grant: `CreatePresenceRoutesDeps.requireGrant`, when supplied,
-checks `("asset:*", "write")` before an update is ever applied — the same
-grant Library's own upload route checks. Join/heartbeat/leave/stream stay
-exactly as open as phase 1 left them; waving a cursor was never a write,
-but mutating shared content that persistence turns into a real artifact
-version is. `apps/hub/src/index.ts` wires this with the same
-`chatGrantStore`/`chatConditionRegistry` every other extension route uses.
+**Every doc-carrying surface is grant-gated on read as well as write.**
+`CreatePresenceRoutesDeps.requireGrant` is REQUIRED, not optional — a room's
+join response and its SSE stream both carry the room's actual document
+text, so a principal Library's own read route would 403 must be refused
+here too, not just on the write path. `POST /rooms/:surface/join` and
+`GET /rooms/:surface/stream` check `("asset:*", "read")`, and
+`POST /rooms/:surface/update` checks `("asset:*", "write")`, the same
+grants Library's own artifact routes check — but only for a surface
+`isDocCarryingSurface` (default: the `artifact:<id>` convention
+`artifact-persistence.ts` owns) says actually carries doc content. A
+presence-only surface (a channel's who's-here stack, never
+`artifact:...`) stays exactly as ungated on all four routes as phase 1
+left it: waving a cursor was never a write or a read of anything sensitive,
+and gating it would require an unrelated grant a channel viewer has no
+reason to hold. `apps/hub/src/index.ts` wires the required `requireGrant`
+with the same `chatGrantStore`/`chatConditionRegistry` every other
+extension route uses.
 
 ### Persistence
 
@@ -175,7 +211,19 @@ co-edited document's history reads identically to any other revision.
   of quiet.
 - **Flush on empty**: `registry.onEmpty` triggers an immediate flush,
   bypassing the debounce — the last person leaving a room is a natural
-  save point, not something worth waiting 2 more seconds for.
+  save point, not something worth waiting 2 more seconds for. The doc's
+  content is read synchronously at the moment of flushing (not deferred),
+  since `onEmpty` fires just before the registry tears the room's doc
+  down — reading it a tick later would silently "snapshot" an empty
+  string instead of the room's real last content.
+- **Write serialization**: every room's writes are chained onto a
+  per-room promise (`enqueueSnapshot`), never left to race independently.
+  Without this, a slow write and a faster later write (their own debounce
+  windows can overlap when edits keep landing) could resolve out of
+  order, and the slower-but-earlier write's `notifySnapshot` would fire
+  _after_ the faster-but-later one already had — a "Saved v1" regression
+  rendered right after "Saved v2." Chaining guarantees writes execute,
+  and therefore notify, strictly in the order they were scheduled.
 - **Saved notification**: a successful write calls
   `registry.notifySnapshot(key, { version, savedAt })`, which the SSE
   route relays as a `doc.saved` event. This is the only source the UI
@@ -194,11 +242,22 @@ at all — `artifact-text-editor.tsx` (below) only ever mounts for a "doc"
 
 A plain `<textarea>` bound to the shared `Y.Text`, not a rich-text editor
 dependency — `y-text-diff.ts`'s `diffText` computes the single contiguous
-region a textarea's `input` event changed (common prefix + common suffix),
-and `applyTextDiffToYText` replays it as a `Y.Text` delete+insert, so a
-keystroke stays a small Yjs operation instead of "replace the whole
-field." Remote changes (including the initial doc-sync snapshot) flow the
-other way through `yText.observe`.
+region between two strings (common prefix + common suffix), and
+`applyTextDiffToYText(yText, after)` replays that diff as a `Y.Text`
+delete+insert, wrapped in `doc.transact` for atomicity. Deliberately NOT
+`applyTextDiffToYText(yText, before, after)` with a caller-supplied
+`before`: an earlier version took one, and trusted it still matched
+`yText`'s real content at apply time — a remote update landing between
+the textarea's `onChange` firing and this function actually running broke
+that assumption and corrupted the doc (a diff computed against a stale
+baseline, replayed against content that had since moved). The fixed
+version reads `yText.toString()` itself, fresh, right before diffing, so
+the result always reconciles the doc to exactly `after` no matter what
+raced in — the trade-off is that a genuine race no longer produces the
+minimal "just what the user typed" op, it produces whatever op gets the
+live doc to the user's intended end state, which is the honest choice
+once "live" can move out from under a caller. Remote changes (including
+the initial doc-sync snapshot) flow the other way through `yText.observe`.
 
 The component always renders for a "doc"-kind artifact once the host hands
 it a synced `Y.Doc` — regardless of write access. A viewer without

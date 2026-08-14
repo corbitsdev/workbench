@@ -86,7 +86,7 @@ describe("applyTextDiffToYText", () => {
     const yText = doc.getText("content");
     yText.insert(0, "hello brave world");
 
-    applyTextDiffToYText(yText, "hello brave world", "hello cruel world");
+    applyTextDiffToYText(yText, "hello cruel world");
 
     expect(yText.toString()).toBe("hello cruel world");
   });
@@ -99,8 +99,8 @@ describe("applyTextDiffToYText", () => {
     aliceText.insert(0, "shared start");
     Y.applyUpdate(bob, Y.encodeStateAsUpdate(alice));
 
-    applyTextDiffToYText(aliceText, "shared start", "shared start + alice");
-    applyTextDiffToYText(bobText, "shared start", "bob + shared start");
+    applyTextDiffToYText(aliceText, "shared start + alice");
+    applyTextDiffToYText(bobText, "bob + shared start");
 
     Y.applyUpdate(bob, Y.encodeStateAsUpdate(alice));
     Y.applyUpdate(alice, Y.encodeStateAsUpdate(bob));
@@ -119,8 +119,53 @@ describe("applyTextDiffToYText", () => {
       changed = true;
     });
 
-    applyTextDiffToYText(yText, "unchanged", "unchanged");
+    applyTextDiffToYText(yText, "unchanged");
 
     expect(changed).toBe(false);
+  });
+
+  // Promoted from the reviewer's
+  // tmp/critique-tests/stale-diff-corruption.test.ts repro (a diff
+  // computed against a caller-captured `before` corrupted the doc —
+  // "XX hello wo abcrld" — once a remote update mutated `yText` between
+  // the caller reading `before` and the diff actually being applied).
+  // Inverted here to assert the fix: `applyTextDiffToYText` reads
+  // `yText`'s own live content at apply time, so a race can never
+  // corrupt it — it always converges exactly to `after`.
+  test("a concurrent remote update racing in before apply never corrupts the doc", () => {
+    const doc = new Y.Doc();
+    const yText = doc.getText("content");
+    yText.insert(0, "hello world");
+
+    // What the user intended: append " abc" onto the "hello world" they
+    // last saw.
+    const localAfter = "hello world abc";
+
+    // A remote peer's update lands on this doc AFTER the user's edit was
+    // conceptually formed but BEFORE `applyTextDiffToYText` runs — the
+    // exact race a stale `before` baseline can't survive.
+    const remoteDoc = new Y.Doc();
+    Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+    remoteDoc.getText("content").insert(0, "XX ");
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(remoteDoc), "presence-remote");
+    expect(yText.toString()).toBe("XX hello world");
+
+    applyTextDiffToYText(yText, localAfter);
+
+    expect(yText.toString()).toBe(localAfter);
+  });
+
+  test("a local edit is applied atomically: an observer never sees a half-applied delete-without-insert", () => {
+    const doc = new Y.Doc();
+    const yText = doc.getText("content");
+    yText.insert(0, "hello brave world");
+    const observedStates: string[] = [];
+    yText.observe(() => observedStates.push(yText.toString()));
+
+    applyTextDiffToYText(yText, "hello cruel world");
+
+    // Exactly one observed change — delete+insert landed as one
+    // transaction, not two separately-observable steps.
+    expect(observedStates).toEqual(["hello cruel world"]);
   });
 });

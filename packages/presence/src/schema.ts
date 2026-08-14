@@ -43,3 +43,18 @@ export const PresenceDocUpdateBody = type({
  * time out or run OOM.
  */
 export const MAX_DOC_UPDATE_BYTES = 256 * 1024;
+
+/**
+ * The largest base64 string that could possibly decode to `byteLimit`
+ * bytes or fewer — `4 * ceil(byteLimit / 3)`, the standard base64
+ * expansion ratio (3 bytes → 4 characters, rounded up to a full group
+ * with padding). The route handler checks the raw STRING length against
+ * this bound before ever calling `decodeBase64`, so a hostile
+ * multi-megabyte string is rejected by a cheap `.length` check rather
+ * than first being materialized into a decoded `Uint8Array` (the decode
+ * itself allocates and loops over the whole input) only to be thrown away
+ * once the byte-length check downstream finally catches it.
+ */
+export function maxBase64LengthFor(byteLimit: number): number {
+  return Math.ceil(byteLimit / 3) * 4;
+}

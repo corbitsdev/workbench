@@ -84,7 +84,14 @@ export function ArtifactTextEditor({
         onChange={(event) => {
           if (readOnly) return;
           const next = event.target.value;
-          applyTextDiffToYText(yText, value, next);
+          // `applyTextDiffToYText` reads `yText`'s own live content, not
+          // `value` — a remote update could have raced in since this
+          // component's last render, and diffing against a stale `value`
+          // would corrupt the doc (see y-text-diff.ts). `setValue` still
+          // reflects `next` immediately for responsive typing; the
+          // `yText.observe` effect above reconciles it to whatever the
+          // doc actually ends up holding.
+          applyTextDiffToYText(yText, next);
           setValue(next);
           markTyping();
         }}

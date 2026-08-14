@@ -9,6 +9,11 @@ import { mountAs } from "./test-support";
 
 const SURFACE = "channel:chn_1";
 
+/** A grant checker that always allows — the default fixture for every
+ * test that isn't specifically exercising the grant gate itself, the
+ * same pattern `@corbits/artifacts-hub`'s own route tests use. */
+const allowAll: RequireGrant = () => async (_c, next) => next();
+
 interface PresenceMember {
   principalId: string;
   displayName: string;
@@ -23,7 +28,7 @@ interface JoinResponseBody {
 
 describe("presence routes", () => {
   test("join assigns a server-side color and returns the room's members", async () => {
-    const app = mountAs(createPresenceRoutes(), {
+    const app = mountAs(createPresenceRoutes({ requireGrant: allowAll }), {
       tenantId: "tnt_a",
       principalId: "prn_alice",
       displayName: "Alice",
@@ -46,7 +51,7 @@ describe("presence routes", () => {
   });
 
   test("a client cannot supply its own color or principalId in the join body", async () => {
-    const app = mountAs(createPresenceRoutes(), {
+    const app = mountAs(createPresenceRoutes({ requireGrant: allowAll }), {
       tenantId: "tnt_a",
       principalId: "prn_alice",
     });
@@ -66,7 +71,7 @@ describe("presence routes", () => {
   });
 
   test("heartbeat rejects a principal that never joined", async () => {
-    const app = mountAs(createPresenceRoutes(), {
+    const app = mountAs(createPresenceRoutes({ requireGrant: allowAll }), {
       tenantId: "tnt_a",
       principalId: "prn_ghost",
     });
@@ -81,7 +86,7 @@ describe("presence routes", () => {
   });
 
   test("an invalid join body is rejected with 400", async () => {
-    const app = mountAs(createPresenceRoutes(), {
+    const app = mountAs(createPresenceRoutes({ requireGrant: allowAll }), {
       tenantId: "tnt_a",
       principalId: "prn_alice",
     });
@@ -97,14 +102,20 @@ describe("presence routes", () => {
 
   test("two clients join the same room through the routes and each sees the other", async () => {
     const registry = createPresenceRoomRegistry();
-    const alice = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
-    const bob = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_bob",
-    });
+    const alice = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
+    const bob = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_bob",
+      },
+    );
 
     await alice.request(`/rooms/${SURFACE}/join`, {
       method: "POST",
@@ -126,10 +137,13 @@ describe("presence routes", () => {
 
   test("leave drops the caller from the room", async () => {
     const registry = createPresenceRoomRegistry();
-    const app = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
+    const app = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
 
     await app.request(`/rooms/${SURFACE}/join`, {
       method: "POST",
@@ -148,14 +162,20 @@ describe("presence routes", () => {
 
   test("tenant isolation: a client in tenant A cannot see or join tenant B's room", async () => {
     const registry = createPresenceRoomRegistry();
-    const tenantA = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
-    const tenantB = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_b",
-      principalId: "prn_mallory",
-    });
+    const tenantA = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
+    const tenantB = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_b",
+        principalId: "prn_mallory",
+      },
+    );
 
     await tenantA.request(`/rooms/${SURFACE}/join`, {
       method: "POST",
@@ -182,10 +202,13 @@ describe("presence routes", () => {
 
   test("the SSE stream opens and carries the join event for a subscriber already listening", async () => {
     const registry = createPresenceRoomRegistry();
-    const app = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
+    const app = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
 
     const streamResponse = await app.request(`/rooms/${SURFACE}/stream`, {
       headers: { accept: "text/event-stream" },
@@ -230,10 +253,13 @@ describe("presence routes: doc sync", () => {
       { tenantId: "tnt_a", surface: ARTIFACT_SURFACE },
       "existing content",
     );
-    const app = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
+    const app = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
 
     const response = await app.request(`/rooms/${ARTIFACT_SURFACE}/join`, {
       method: "POST",
@@ -249,14 +275,20 @@ describe("presence routes: doc sync", () => {
 
   test("two clients converge: concurrent updates from each land in the shared doc", async () => {
     const registry = createPresenceRoomRegistry();
-    const alice = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
-    const bob = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_bob",
-    });
+    const alice = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
+    const bob = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_bob",
+      },
+    );
 
     await alice.request(`/rooms/${ARTIFACT_SURFACE}/update`, {
       method: "POST",
@@ -281,14 +313,20 @@ describe("presence routes: doc sync", () => {
 
   test("a late joiner's join response reflects updates already applied by others", async () => {
     const registry = createPresenceRoomRegistry();
-    const alice = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
-    const bob = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_bob",
-    });
+    const alice = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
+    const bob = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_bob",
+      },
+    );
 
     await alice.request(`/rooms/${ARTIFACT_SURFACE}/update`, {
       method: "POST",
@@ -310,7 +348,11 @@ describe("presence routes: doc sync", () => {
   test("an oversize update is rejected with 413, not silently truncated or applied", async () => {
     const registry = createPresenceRoomRegistry();
     const app = mountAs(
-      createPresenceRoutes({ registry, maxDocUpdateBytes: 16 }),
+      createPresenceRoutes({
+        registry,
+        maxDocUpdateBytes: 16,
+        requireGrant: allowAll,
+      }),
       {
         tenantId: "tnt_a",
         principalId: "prn_alice",
@@ -333,10 +375,13 @@ describe("presence routes: doc sync", () => {
 
   test("a malformed (non-Yjs) update is rejected with 400", async () => {
     const registry = createPresenceRoomRegistry();
-    const app = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
+    const app = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
 
     const response = await app.request(`/rooms/${ARTIFACT_SURFACE}/update`, {
       method: "POST",
@@ -350,7 +395,7 @@ describe("presence routes: doc sync", () => {
   });
 
   test("invalid base64 in the update body is rejected with 400", async () => {
-    const app = mountAs(createPresenceRoutes(), {
+    const app = mountAs(createPresenceRoutes({ requireGrant: allowAll }), {
       tenantId: "tnt_a",
       principalId: "prn_alice",
     });
@@ -366,10 +411,13 @@ describe("presence routes: doc sync", () => {
 
   test("tenant isolation: an update posted in tenant A never reaches tenant B's identically-named room", async () => {
     const registry = createPresenceRoomRegistry();
-    const tenantA = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
+    const tenantA = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
 
     await tenantA.request(`/rooms/${ARTIFACT_SURFACE}/update`, {
       method: "POST",
@@ -387,10 +435,13 @@ describe("presence routes: doc sync", () => {
 
   test("the SSE stream carries doc.update events for updates applied by others", async () => {
     const registry = createPresenceRoomRegistry();
-    const app = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
+    const app = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
 
     const streamResponse = await app.request(
       `/rooms/${ARTIFACT_SURFACE}/stream`,
@@ -418,10 +469,13 @@ describe("presence routes: doc sync", () => {
 
   test("the SSE stream carries a doc.saved event when the registry announces a snapshot", async () => {
     const registry = createPresenceRoomRegistry();
-    const app = mountAs(createPresenceRoutes({ registry }), {
-      tenantId: "tnt_a",
-      principalId: "prn_alice",
-    });
+    const app = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
 
     const streamResponse = await app.request(
       `/rooms/${ARTIFACT_SURFACE}/stream`,
@@ -488,12 +542,106 @@ describe("presence routes: doc sync", () => {
     ).toBe("allowed");
   });
 
-  test("join/heartbeat/leave/stream stay ungated even when requireGrant is supplied", async () => {
+  // A presence-only surface (never doc-carrying) has nothing a grant
+  // check would protect — join/heartbeat/leave/stream stay exactly as
+  // ungated on it as phase 1 left them, even when requireGrant is
+  // supplied and would deny everything.
+  test("join/heartbeat/leave/stream stay ungated on a presence-only (non-artifact) surface", async () => {
     const registry = createPresenceRoomRegistry();
     const denyAll: RequireGrant = () => async (c) =>
       c.json({ error: { code: "forbidden", message: "no grant" } }, 403);
     const app = mountAs(
       createPresenceRoutes({ registry, requireGrant: denyAll }),
+      { tenantId: "tnt_a", principalId: "prn_alice" },
+    );
+
+    const joinResponse = await app.request(`/rooms/${SURFACE}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(joinResponse.status).toBe(200);
+
+    const heartbeatResponse = await app.request(`/rooms/${SURFACE}/heartbeat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(heartbeatResponse.status).toBe(200);
+
+    const streamResponse = await app.request(`/rooms/${SURFACE}/stream`, {
+      headers: { accept: "text/event-stream" },
+    });
+    expect(streamResponse.status).toBe(200);
+    await streamResponse.body?.cancel();
+
+    const leaveResponse = await app.request(`/rooms/${SURFACE}/leave`, {
+      method: "POST",
+    });
+    expect(leaveResponse.status).toBe(202);
+  });
+
+  // The read-access bypass this test set guards against: join's response
+  // and the SSE stream both carry a doc-carrying surface's full content,
+  // so a principal Library's own read route would refuse must be refused
+  // here too — "waving a cursor isn't a write" never covered "reading
+  // the document," and phase 2 made join/stream carry real document text
+  // for the first time.
+  test("a principal without the asset read grant cannot join a doc-carrying (artifact) surface", async () => {
+    const registry = createPresenceRoomRegistry();
+    registry.seedDocText(
+      { tenantId: "tnt_a", surface: ARTIFACT_SURFACE },
+      "secret content",
+    );
+    const denyAll: RequireGrant = () => async (c) =>
+      c.json({ error: { code: "forbidden", message: "no grant" } }, 403);
+    const app = mountAs(
+      createPresenceRoutes({ registry, requireGrant: denyAll }),
+      { tenantId: "tnt_a", principalId: "prn_mallory" },
+    );
+
+    const joinResponse = await app.request(`/rooms/${ARTIFACT_SURFACE}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+
+    expect(joinResponse.status).toBe(403);
+    // Never joined the room as a side effect of the denied request.
+    expect(
+      registry
+        .states({ tenantId: "tnt_a", surface: ARTIFACT_SURFACE })
+        .map((s) => s.principalId),
+    ).toEqual([]);
+  });
+
+  test("a principal without the asset read grant cannot open the SSE stream for a doc-carrying (artifact) surface", async () => {
+    const registry = createPresenceRoomRegistry();
+    const denyAll: RequireGrant = () => async (c) =>
+      c.json({ error: { code: "forbidden", message: "no grant" } }, 403);
+    const app = mountAs(
+      createPresenceRoutes({ registry, requireGrant: denyAll }),
+      { tenantId: "tnt_a", principalId: "prn_mallory" },
+    );
+
+    const streamResponse = await app.request(
+      `/rooms/${ARTIFACT_SURFACE}/stream`,
+      {
+        headers: { accept: "text/event-stream" },
+      },
+    );
+
+    expect(streamResponse.status).toBe(403);
+  });
+
+  test("a principal WITH the asset read grant can join and stream a doc-carrying (artifact) surface", async () => {
+    const registry = createPresenceRoomRegistry();
+    registry.seedDocText(
+      { tenantId: "tnt_a", surface: ARTIFACT_SURFACE },
+      "visible content",
+    );
+    const app = mountAs(
+      createPresenceRoutes({ registry, requireGrant: allowAll }),
       { tenantId: "tnt_a", principalId: "prn_alice" },
     );
 
@@ -503,5 +651,18 @@ describe("presence routes: doc sync", () => {
       body: "{}",
     });
     expect(joinResponse.status).toBe(200);
+    const body = (await joinResponse.json()) as JoinResponseBody;
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, decodeBase64(body.docUpdate));
+    expect(doc.getText("content").toString()).toBe("visible content");
+
+    const streamResponse = await app.request(
+      `/rooms/${ARTIFACT_SURFACE}/stream`,
+      {
+        headers: { accept: "text/event-stream" },
+      },
+    );
+    expect(streamResponse.status).toBe(200);
+    await streamResponse.body?.cancel();
   });
 });
