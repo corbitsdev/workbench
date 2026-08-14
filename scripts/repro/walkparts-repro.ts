@@ -22,7 +22,7 @@ import {
   assembleSignedContent,
   extractPartByPath,
   type MessageHeaders,
-} from "@intx/mime";
+} from "../../vendor/intx/mime/src/index.ts";
 
 const attachmentText = "hello attachment body";
 

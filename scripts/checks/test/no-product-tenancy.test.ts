@@ -86,11 +86,12 @@ test("allowlisted files fail when they grow past their max", () => {
       contents: [
         `export const routine = pgTable("routine", {});`,
         `export const routineRun = pgTable("routine_run", {});`,
+        `export const routineDraft = pgTable("routine_draft", {});`,
         `export const extra = pgTable("routine_extra", {});`,
       ].join("\n"),
     },
   ]);
   expect(report.violations).toHaveLength(1);
   expect(report.violations[0]).toContain("packages/routines/src/schema.ts");
-  expect(report.violations[0]).toContain("3 pgTable");
+  expect(report.violations[0]).toContain("4 pgTable");
 });

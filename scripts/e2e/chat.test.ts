@@ -32,7 +32,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { formatAgentAddress } from "../../vendor/intx/types/src/index.ts";
+import { formatRunAddress } from "../../vendor/intx/types/src/index.ts";
 import {
   createHubAPI,
   seedCatalog,
@@ -548,7 +548,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       "id",
       "create second channel",
     );
-    const secondChannelAddress = formatAgentAddress(secondChannelId, domain);
+    const secondChannelAddress = formatRunAddress(secondChannelId, domain);
 
     const patched = await api(
       "PATCH",

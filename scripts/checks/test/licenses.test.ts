@@ -8,7 +8,10 @@ import {
 } from "../licenses";
 
 function pkg(dir: string, license: string | undefined): WorkspacePackage {
-  return { dir, packageJson: { license } };
+  return {
+    dir,
+    packageJson: license === undefined ? {} : { license },
+  };
 }
 
 test("a library declaring the LGPL license with a matching LICENSE file passes", () => {
