@@ -491,6 +491,7 @@
       "name": "@workbench/onboarding",
       "version": "0.0.1",
       "dependencies": {
+        "@intx/crypto": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/types": "workspace:*",
         "@workbench/hub-client": "workspace:*",

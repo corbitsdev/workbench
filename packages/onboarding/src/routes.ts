@@ -5,6 +5,8 @@
 // in ./provision.ts.
 
 import type { AppEnv } from "@intx/hub-api";
+import { createNoopCredentialCipher } from "@intx/crypto";
+import type { CredentialCipher } from "@intx/types";
 import {
   createHubAPI,
   supportedCredentialProviders,
@@ -60,6 +62,14 @@ export type CreateOnboardingRoutesDeps = {
     exchange?: typeof exchangeHuggingFaceCodeForToken;
     completeSetup?: typeof completeCredentialSetup;
   };
+  /** Seals the OAuth connect state (PKCE verifier included) parked
+   * between `/start` and `/callback`, so a hub restart in between
+   * doesn't strand it — see `./pkce.ts`. The same `CredentialCipher`
+   * every other secret-at-rest seam in the hub shares
+   * (`CREDENTIAL_ENCRYPTION_KEY`, `apps/hub`'s `credentialCipherFrom`).
+   * Defaults to the identity no-op cipher: fine for dev/test, never for
+   * a real deployment. */
+  credentialCipher?: CredentialCipher;
 };
 
 function cookiesFromHeader(header: string | undefined): string[] {
@@ -75,6 +85,8 @@ export function createOnboardingRoutes(
 ): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const api = createHubAPI(deps.hubUrl);
+  const credentialCipher =
+    deps.credentialCipher ?? createNoopCredentialCipher();
 
   // A simple in-process per-user provision rate limiter. Provisioning is
   // idempotent and safe to retry, but a client stuck in a tight retry loop
@@ -223,7 +235,10 @@ export function createOnboardingRoutes(
   // Every outcome — success or failure — lands back in the wizard's
   // credential phase as query parameters; the key itself never appears
   // in a URL or a log line.
-  const connectStates = createConnectStateStore();
+  const connectStates = createConnectStateStore({
+    cipher: credentialCipher,
+    provider: "openrouter",
+  });
   const exchange = deps.openrouterConnect?.exchange ?? exchangeCodeForKey;
   const completeConnectedSetup =
     deps.openrouterConnect?.completeSetup ?? completeCredentialSetup;
@@ -267,7 +282,7 @@ export function createOnboardingRoutes(
     lastConnectStartByUser.set(user.id, now);
 
     const pkce = await generatePKCEPair();
-    const state = connectStates.issue({
+    const state = await connectStates.issue({
       userId: user.id,
       codeVerifier: pkce.codeVerifier,
     });
@@ -312,7 +327,10 @@ export function createOnboardingRoutes(
         302,
       );
     }
-    const codeVerifier = connectStates.consume({ state, userId: user.id });
+    const codeVerifier = await connectStates.consume({
+      state,
+      userId: user.id,
+    });
     if (codeVerifier === undefined) {
       return c.redirect(
         wizardRedirectPath({ outcome: "error", code: "state_expired" }),
@@ -388,7 +406,10 @@ export function createOnboardingRoutes(
   // `expires_in`) is threaded into `completeCredentialSetup` as
   // credential metadata, never into a URL or a log line, alongside the
   // token itself.
-  const huggingfaceConnectStates = createConnectStateStore();
+  const huggingfaceConnectStates = createConnectStateStore({
+    cipher: credentialCipher,
+    provider: "huggingface",
+  });
   const exchangeHuggingFace =
     deps.huggingfaceConnect?.exchange ?? exchangeHuggingFaceCodeForToken;
   const completeHuggingFaceSetup =
@@ -440,7 +461,7 @@ export function createOnboardingRoutes(
     lastHuggingFaceConnectStartByUser.set(user.id, now);
 
     const pkce = await generatePKCEPair();
-    const state = huggingfaceConnectStates.issue({
+    const state = await huggingfaceConnectStates.issue({
       userId: user.id,
       codeVerifier: pkce.codeVerifier,
     });
@@ -507,7 +528,7 @@ export function createOnboardingRoutes(
         302,
       );
     }
-    const codeVerifier = huggingfaceConnectStates.consume({
+    const codeVerifier = await huggingfaceConnectStates.consume({
       state: cookieState,
       userId: user.id,
     });

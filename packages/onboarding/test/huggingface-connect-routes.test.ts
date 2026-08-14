@@ -11,9 +11,16 @@ import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import type { CreateOnboardingRoutesDeps } from "../src/routes";
 import { s256Challenge } from "../src/pkce";
+
+// Stands in for a stable `CREDENTIAL_ENCRYPTION_KEY`: a fresh cipher
+// built from these same bytes is indistinguishable, to the state store,
+// from the cipher a still-running process already had — which is
+// exactly what a restart needs to be true.
+const RESTART_STABLE_KEY = Buffer.alloc(32, 5);
 
 function asUser(session: { userId: string }): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
@@ -51,6 +58,8 @@ function connectRoutes(
   }
   if (overrides.huggingfaceConnect !== undefined)
     deps.huggingfaceConnect = overrides.huggingfaceConnect;
+  if (overrides.credentialCipher !== undefined)
+    deps.credentialCipher = overrides.credentialCipher;
   return mountAuthenticated(createOnboardingRoutes(deps), session);
 }
 
@@ -88,7 +97,15 @@ describe("GET /oauth/huggingface/start", () => {
     const state = location.searchParams.get("state");
     expect(state).toBeTruthy();
     const setCookie = response.headers.get("set-cookie") ?? "";
-    expect(setCookie).toContain(`workbench_huggingface_connect=${state}`);
+    // The state cookie carries the sealed state as its value; Hono
+    // percent-encodes it in `Set-Cookie`, so compare decoded rather than
+    // as a raw substring.
+    const cookieMatch = /workbench_huggingface_connect=([^;]+)/.exec(setCookie);
+    expect(
+      cookieMatch?.[1] !== undefined
+        ? decodeURIComponent(cookieMatch[1])
+        : undefined,
+    ).toBe(state ?? undefined);
     expect(setCookie).toContain("HttpOnly");
   });
 
@@ -174,7 +191,7 @@ describe("GET /oauth/huggingface/callback", () => {
     const state = location.searchParams.get("state") ?? "";
 
     const response = await app.request(
-      `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${state}`,
+      `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${encodeURIComponent(state)}`,
       { headers: { cookie } },
     );
 
@@ -268,7 +285,7 @@ describe("GET /oauth/huggingface/callback", () => {
 
     session.userId = "user_2";
     const response = await app.request(
-      `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${state}`,
+      `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${encodeURIComponent(state)}`,
       { headers: { cookie } },
     );
 
@@ -297,7 +314,7 @@ describe("GET /oauth/huggingface/callback", () => {
     const { response: started, location } = await startConnect(app);
     const cookie = stateCookie(started);
     const state = location.searchParams.get("state") ?? "";
-    const path = `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${state}`;
+    const path = `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${encodeURIComponent(state)}`;
 
     const first = await app.request(path, { headers: { cookie } });
     const second = await app.request(path, { headers: { cookie } });
@@ -311,6 +328,53 @@ describe("GET /oauth/huggingface/callback", () => {
     expect(
       new URL(
         second.headers.get("location") ?? "",
+        "https://x",
+      ).searchParams.get("code"),
+    ).toBe("state_expired");
+  });
+
+  test("survives a hub restart between /start and /callback, and still enforces single-use after it", async () => {
+    // /start runs against the pre-restart app; a fresh app (a new
+    // `createOnboardingRoutes` call, a fresh in-memory state store, the
+    // works) stands in for the process that comes back up after a
+    // restart. The only thing they share is the cipher key — exactly
+    // what a stable `CREDENTIAL_ENCRYPTION_KEY` gives a real restart.
+    const beforeRestart = connectRoutes({
+      credentialCipher: createEnvKeyCredentialCipher(RESTART_STABLE_KEY),
+    });
+    const { response: started, location } = await startConnect(beforeRestart);
+    const cookie = stateCookie(started);
+    const state = location.searchParams.get("state") ?? "";
+
+    const afterRestart = connectRoutes({
+      credentialCipher: createEnvKeyCredentialCipher(RESTART_STABLE_KEY),
+      huggingfaceConnect: {
+        exchange: async () => ({ ok: true, accessToken: "hf_oauth_minted" }),
+        completeSetup: async () => ({
+          kind: "seeded",
+          tenantId: "ten_1",
+          tenantSlug: "alice-user1",
+          workflows: ["echo"],
+        }),
+      },
+    });
+    const path = `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${encodeURIComponent(state)}`;
+
+    const first = await afterRestart.request(path, { headers: { cookie } });
+    expect(
+      new URL(
+        first.headers.get("location") ?? "",
+        "https://x",
+      ).searchParams.get("outcome"),
+    ).toBe("seeded");
+
+    // Replaying the same cookie and query state against the
+    // post-restart app — no new /start — must fail even though nothing
+    // here remembers the pre-restart process at all.
+    const replay = await afterRestart.request(path, { headers: { cookie } });
+    expect(
+      new URL(
+        replay.headers.get("location") ?? "",
         "https://x",
       ).searchParams.get("code"),
     ).toBe("state_expired");
@@ -341,7 +405,7 @@ describe("GET /oauth/huggingface/callback", () => {
     const state = location.searchParams.get("state") ?? "";
 
     const response = await app.request(
-      `/api/onboarding/oauth/huggingface/callback?code=expired_code&state=${state}`,
+      `/api/onboarding/oauth/huggingface/callback?code=expired_code&state=${encodeURIComponent(state)}`,
       { headers: { cookie: stateCookie(started) } },
     );
 
@@ -371,7 +435,7 @@ describe("GET /oauth/huggingface/callback", () => {
     const state = location.searchParams.get("state") ?? "";
 
     const response = await app.request(
-      `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${state}`,
+      `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${encodeURIComponent(state)}`,
       { headers: { cookie: stateCookie(started) } },
     );
 
@@ -398,7 +462,7 @@ describe("GET /oauth/huggingface/callback", () => {
     const state = location.searchParams.get("state") ?? "";
 
     const response = await app.request(
-      `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${state}`,
+      `/api/onboarding/oauth/huggingface/callback?code=auth_code_1&state=${encodeURIComponent(state)}`,
       { headers: { cookie: stateCookie(started) } },
     );
 

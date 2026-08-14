@@ -19,9 +19,12 @@ at `/api/onboarding`); the wizard only navigates.
 
 1. **`GET /oauth/openrouter/start`** — requires a signed-in session.
    Generates a fresh PKCE verifier and its S256 challenge
-   (`openrouter-connect.ts`), parks the verifier server-side under a
-   random single-use state with a ten-minute TTL (matching OpenRouter's
-   own authorization-code expiry), sets that state in an HttpOnly
+   (`openrouter-connect.ts`), seals the verifier into a single-use
+   state with a ten-minute TTL (matching OpenRouter's own
+   authorization-code expiry) — encrypted through the same
+   `CredentialCipher` seam `CREDENTIAL_ENCRYPTION_KEY` backs everywhere
+   else a secret is encrypted at rest, so the verifier never leaves the
+   server in the clear — sets that state in an HttpOnly
    `SameSite=Lax` cookie, and 302s the browser to
    `https://openrouter.ai/auth?callback_url=...&code_challenge=...&code_challenge_method=S256`.
    The callback URL's **origin comes from the hub's configured
@@ -98,6 +101,12 @@ The one-click card is therefore OpenRouter alone today.
   usually `http://localhost:3000`), so the wizard resumes on the hub
   origin rather than the vite one. Cookies are host-scoped (ports are
   ignored), so both the session and the state cookie survive the hop.
-- The pending-connect state store is in-process; the callback must land
-  on the process that issued it (the hub runs as one service, same as
-  the provision rate limiter's assumption).
+- The pending-connect state is a signed/encrypted token, not a
+  server-side lookup, so it survives a hub restart between `/start` and
+  `/callback` (a dev watch reload, a deploy) as long as
+  `CREDENTIAL_ENCRYPTION_KEY` is stable — the callback no longer has to
+  land on the exact process that issued it. See `pkce.ts`'s
+  `createConnectStateStore`. (The per-user rate limiters are still
+  plain in-process maps, so a restart does reset those — a client can
+  immediately retry a start it otherwise would have been briefly
+  rate-limited on. Low-stakes: worst case is one extra pending state.)

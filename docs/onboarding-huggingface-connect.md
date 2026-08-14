@@ -43,9 +43,12 @@ expiring token.
    redirects with `outcome=error&code=not_configured` rather than
    crash. Generates a fresh PKCE verifier and its S256 challenge
    (`huggingface-connect.ts`, sharing the same PKCE primitives
-   OpenRouter's flow uses — see `pkce.ts`), parks the verifier
-   server-side under a random single-use state with a ten-minute TTL,
-   sets that state in an HttpOnly `SameSite=Lax` cookie, and 302s the
+   OpenRouter's flow uses — see `pkce.ts`), seals the verifier into a
+   single-use state with a ten-minute TTL — encrypted through the same
+   `CredentialCipher` seam `CREDENTIAL_ENCRYPTION_KEY` backs everywhere
+   else a secret is encrypted at rest, so the verifier never leaves the
+   server in the clear — sets that state in an HttpOnly `SameSite=Lax`
+   cookie, and 302s the
    browser to
    `https://huggingface.co/oauth/authorize?client_id=...&redirect_uri=...&scope=openid+inference-api&state=...&code_challenge=...&code_challenge_method=S256`.
    The `redirect_uri`'s origin comes from the hub's configured
@@ -149,8 +152,12 @@ to it.
   the hub; Hugging Face then calls back on the hub origin (`BASE_URL`),
   so the wizard resumes there rather than on the vite origin — the same
   behavior OpenRouter's flow has.
-- The pending-connect state store is in-process, like OpenRouter's; the
-  callback must land on the process that issued it.
+- The pending-connect state is a signed/encrypted token, not a
+  server-side lookup, so it survives a hub restart between `/start` and
+  `/callback` (a dev watch reload, a deploy) as long as
+  `CREDENTIAL_ENCRYPTION_KEY` is stable — the callback no longer has to
+  land on the exact process that issued it. See `pkce.ts`'s
+  `createConnectStateStore`.
 - A second OAuth-connected provider whose tokens expire should extend
   `SWEPT_PROVIDER_LABELS` in `credential-expiry-sweep.ts`, not add a
   second sweep loop.
