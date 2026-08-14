@@ -45,7 +45,7 @@ import {
 } from "./granola-webhook-api";
 import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
-import { WebhookSecretPanel } from "./webhook-secret-panel";
+import { CopyButton, WebhookSecretPanel } from "./webhook-secret-panel";
 
 /** The one automatable Granola workflow — see this file's header comment. */
 const GRANOLA_WORKFLOW_ASSET_NAME = "granola-call";
@@ -351,17 +351,44 @@ function GranolaWebhookDialog({
                       : SETTINGS_STRINGS.connectionsWebhookCreateAction}
                   </Button>
                 ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busyRoutineId === binding.routine.id}
-                    onClick={() => handleRotate(binding)}
-                  >
-                    {busyRoutineId === binding.routine.id
-                      ? SETTINGS_STRINGS.connectionsWebhookRotating
-                      : SETTINGS_STRINGS.connectionsWebhookRotateAction}
-                  </Button>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-medium">Hook URL</span>
+                      <div className="flex items-center gap-1.5 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-1.5">
+                        <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--ui-fg)]">
+                          {webhookTriggerUrl(binding.webhookTrigger.id)}
+                        </code>
+                        <CopyButton
+                          value={webhookTriggerUrl(binding.webhookTrigger.id)}
+                          label="Copy hook URL"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs font-medium">
+                        Signing secret
+                      </span>
+                      <p
+                        className="text-xs text-[var(--ui-fg-muted)]"
+                        role="status"
+                      >
+                        {SETTINGS_STRINGS.connectionsWebhookHiddenSecretNote}
+                      </p>
+                    </div>
+                    <div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={busyRoutineId === binding.routine.id}
+                        onClick={() => handleRotate(binding)}
+                      >
+                        {busyRoutineId === binding.routine.id
+                          ? SETTINGS_STRINGS.connectionsWebhookRotating
+                          : SETTINGS_STRINGS.connectionsWebhookRotateAction}
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
             ))

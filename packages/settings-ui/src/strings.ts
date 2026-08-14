@@ -274,6 +274,8 @@ export const SETTINGS_STRINGS = {
   connectionsWebhookCreateAction: "Create",
   connectionsWebhookRotateAction: "Rotate secret",
   connectionsWebhookRotating: "Rotating…",
+  connectionsWebhookHiddenSecretNote:
+    "Hidden — shown only once, right after creation or a rotate. Rotate to issue (and reveal) a new one; the old secret stops verifying immediately.",
 
   auditSectionTitle: "Audit",
   auditSectionDescription: "Who changed what, when — orientation only.",
