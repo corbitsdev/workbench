@@ -69,6 +69,40 @@ parts, or one non-text part — becomes a list of MIME attachments, each
 platform's JMAP-style response the same way, so callers always see the same
 `Part[]` shape regardless of which side of the wire produced it.
 
+## Threads: channel → thread → sub-thread
+
+A channel's timeline is itself a thread — its **root thread**, one per
+channel, created lazily on first use. Any message can be replied to, which
+opens (or reuses) a **depth-1 thread** anchored on that message; any message
+*inside* a depth-1 thread can be **forked**, which opens (or reuses) a
+**depth-2 sub-thread** anchored on that message. That's the whole model —
+channel → thread → sub-thread, stop. There is no depth 3 (owner ruling,
+CL-5908): nesting a reply off a message that already lives in a sub-thread
+is rejected with an honest `409 conflict` rather than silently growing a
+third level.
+
+Forking is the first-class affordance CL-5948 adds — "something Slack
+doesn't have": any message inside a thread offers **Fork**, spawning a
+sub-thread rooted at it. Forking from a message already inside a sub-thread
+never creates a third level; it redirects to a **sibling sub-thread** under
+that sub-thread's same depth-1 parent instead. Both the redirect and the
+409 share one piece of pure logic, `resolveThreadAnchor` in
+`packages/chat/src/threads.ts`: given the root thread and the thread a
+message currently lives in, it returns where a new thread should hang and
+whether that would be a third level. `openReplyThread` (implicit replies)
+refuses on that signal; `forkThread` (explicit forks) redirects on it —
+neither reimplements depth math.
+
+Every non-root thread carries a `parentThreadId` — the thread it hangs
+directly off (the root thread's id for a depth-1 thread, a depth-1 thread's
+id for a depth-2 sub-thread) — alongside its existing `parentMessageId`,
+the origin message it answers or forks. `@corbits/chat-ui` reads
+`parentThreadId` to render the breadcrumb (`Channel / Thread / Sub-thread`,
+at most three segments), to walk a fork back to its parent thread, and to
+indent sub-threads under their parent in the threads menu; a forked
+sub-thread also shows a small banner above its timeline linking back to its
+origin message — the fork's visible back-reference.
+
 ## Participants and mentions
 
 A channel's participants are held in its settings as records of
@@ -187,7 +221,11 @@ following routes:
 | `POST /channels`               | Mints the channel's own tenant, launches its host, writes its initial settings, and — for a chat — joins its one counterpart (an agent or a person; see [Chats and direct messages](#chats-and-direct-messages-dms)) |
 | `GET /channels`                | Lists the tenant's channels, optionally filtered by kind                                                                                                                                                             |
 | `GET /channels/:id/messages`   | Reads the channel's timeline, decoded into parts, paginated by cursor                                                                                                                                                |
-| `POST /channels/:id/messages`  | Posts a message, fanning a copy to every @mentioned agent participant                                                                                                                                                |
+| `POST /channels/:id/messages`  | Posts a message, fanning a copy to every @mentioned agent participant. `threadId` or `inReplyToMessageId` route it into a thread instead of the root feed; a reply that would nest past depth 2 is a `409 conflict` |
+| `GET /channels/:id/threads`    | Lists a channel's threads (root, delivery, replies, and sub-threads) plus its root thread id                                                                                                                         |
+| `GET /channels/:id/threads/:threadId/messages` | Reads one thread's own membership, decoded into parts — never the full channel mailbox                                                                                                              |
+| `POST /channels/:id/threads/fork` | Forks a sub-thread rooted at any message inside a thread (CL-5948); idempotent per origin message, and redirects to a sibling sub-thread rather than nesting past depth 2 (see [Threads](#threads-channel--thread--sub-thread)) |
+| `POST /channels/:id/delivery-threads` | Creates (or reuses) the delivery thread for a routine run                                                                                                                                                     |
 | `GET /channels/:id/invitable`  | Lists the tenant's deployed definitions that can be invited into a channel                                                                                                                                           |
 | `POST /channels/:id/invite`    | Launches a definition into the channel and adds it as a participant                                                                                                                                                  |
 | `POST /channels/:id/move`      | Re-parents a channel's own tenant to a different bench                                                                                                                                                               |
