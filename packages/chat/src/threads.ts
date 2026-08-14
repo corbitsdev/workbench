@@ -14,16 +14,67 @@ import { channelThreadMessages, channelThreads } from "./schema";
 
 export type ThreadKind = "root" | "reply" | "delivery";
 
+/**
+ * Two levels, stop: channel → thread → sub-thread, no unbounded
+ * nesting (owner ruling, CL-5908). `parentThreadId` is the thread this
+ * one hangs directly off — null for the root thread, the root
+ * thread's id for a depth-1 thread, and a depth-1 thread's id for a
+ * depth-2 sub-thread. A depth-2 thread's id never appears as another
+ * thread's `parentThreadId` — see `resolveThreadAnchor`.
+ */
 export type ChannelThread = {
   readonly id: string;
   readonly tenantId: string;
   readonly channelId: string;
   readonly kind: ThreadKind;
   readonly parentMessageId: string | null;
+  readonly parentThreadId: string | null;
   readonly runRef: string | null;
   readonly title: string | null;
   readonly createdAt: Date;
 };
+
+/** A reply/fork would nest a thread past the two-level cap. */
+export class ThreadDepthCapError extends Error {
+  constructor() {
+    super("thread nesting is capped at two levels (thread → sub-thread)");
+    this.name = "ThreadDepthCapError";
+  }
+}
+
+export type ThreadAnchor = {
+  /** Which thread the new reply/fork thread should hang off. */
+  readonly parentThreadId: string;
+  /**
+   * True when `container` is already a depth-2 sub-thread, so hanging
+   * a new thread directly off it would be a third level. A capped
+   * reply-open must refuse (see `openReplyThread`); an explicit fork
+   * instead redirects to `parentThreadId` — a sibling sub-thread under
+   * the same depth-1 parent, never a third level (CL-5948).
+   */
+  readonly blocked: boolean;
+};
+
+/**
+ * Where a new thread anchored on a message inside `container` belongs.
+ * `container` is the thread the origin message currently lives in (the
+ * root thread if the message isn't assigned to any thread yet).
+ */
+export function resolveThreadAnchor(
+  root: ChannelThread,
+  container: ChannelThread,
+): ThreadAnchor {
+  if (container.id === root.id) {
+    return { parentThreadId: root.id, blocked: false };
+  }
+  if (
+    container.parentThreadId === null ||
+    container.parentThreadId === root.id
+  ) {
+    return { parentThreadId: container.id, blocked: false };
+  }
+  return { parentThreadId: container.parentThreadId, blocked: true };
+}
 
 export type CreateDeliveryThreadInput = {
   readonly tenantId: string;
@@ -39,6 +90,11 @@ export type OpenReplyThreadInput = {
   readonly title?: string;
 };
 
+/** Same shape as opening a reply thread — a fork is anchored the same
+ * way, just explicitly user-initiated and depth-cap-redirecting rather
+ * than depth-cap-refusing. See `resolveThreadAnchor`. */
+export type ForkThreadInput = OpenReplyThreadInput;
+
 export type AssignMessageInput = {
   readonly tenantId: string;
   readonly channelId: string;
@@ -51,7 +107,16 @@ export interface ThreadStore {
   createDeliveryThread(
     input: CreateDeliveryThreadInput,
   ): Promise<ChannelThread>;
+  /** Opens (or reuses) the depth-1 reply thread for a message. Throws
+   * `ThreadDepthCapError` if the message already lives in a depth-2
+   * sub-thread — a caller wanting the depth-cap-redirect behavior wants
+   * `forkThread`, not this. */
   openReplyThread(input: OpenReplyThreadInput): Promise<ChannelThread>;
+  /** Opens (or reuses) a sub-thread rooted at a message, honoring the
+   * two-level cap: forking from a message already inside a sub-thread
+   * creates a sibling sub-thread under that sub-thread's parent rather
+   * than a third level (CL-5948). Never throws for depth. */
+  forkThread(input: ForkThreadInput): Promise<ChannelThread>;
   getThread(
     tenantId: string,
     threadId: string,
@@ -117,28 +182,85 @@ export function createInMemoryThreadStore(): ThreadStore {
   const messageKey = (tenantId: string, channelId: string, messageId: string) =>
     `${tenantId}::${channelId}::${messageId}`;
 
-  return {
-    async ensureRootThread(tenantId, channelId) {
-      const key = channelKey(tenantId, channelId);
-      const ids = byChannel.get(key) ?? [];
-      for (const id of ids) {
-        const t = threads.get(id);
-        if (t?.kind === "root") return t;
+  async function ensureRootThread(
+    tenantId: string,
+    channelId: string,
+  ): Promise<ChannelThread> {
+    const key = channelKey(tenantId, channelId);
+    const ids = byChannel.get(key) ?? [];
+    for (const id of ids) {
+      const t = threads.get(id);
+      if (t?.kind === "root") return t;
+    }
+    const row: ChannelThread = {
+      id: newThreadId(),
+      tenantId,
+      channelId,
+      kind: "root",
+      parentMessageId: null,
+      parentThreadId: null,
+      runRef: null,
+      title: null,
+      createdAt: new Date(),
+    };
+    threads.set(row.id, row);
+    byChannel.set(key, [...ids, row.id]);
+    return row;
+  }
+
+  /** The thread a message currently lives in, or `root` if unassigned. */
+  async function containerThreadFor(
+    tenantId: string,
+    channelId: string,
+    parentMessageId: string,
+    root: ChannelThread,
+  ): Promise<ChannelThread> {
+    const containerId = messageToThread.get(
+      messageKey(tenantId, channelId, parentMessageId),
+    );
+    if (containerId === undefined) return root;
+    return threads.get(containerId) ?? root;
+  }
+
+  async function anchoredReplyThread(
+    input: OpenReplyThreadInput,
+    mode: "reply" | "fork",
+  ): Promise<ChannelThread> {
+    const key = channelKey(input.tenantId, input.channelId);
+    const root = await ensureRootThread(input.tenantId, input.channelId);
+    const ids = byChannel.get(key) ?? [];
+    for (const id of ids) {
+      const t = threads.get(id);
+      if (t?.kind === "reply" && t.parentMessageId === input.parentMessageId) {
+        return t;
       }
-      const row: ChannelThread = {
-        id: newThreadId(),
-        tenantId,
-        channelId,
-        kind: "root",
-        parentMessageId: null,
-        runRef: null,
-        title: null,
-        createdAt: new Date(),
-      };
-      threads.set(row.id, row);
-      byChannel.set(key, [...ids, row.id]);
-      return row;
-    },
+    }
+    const container = await containerThreadFor(
+      input.tenantId,
+      input.channelId,
+      input.parentMessageId,
+      root,
+    );
+    const anchor = resolveThreadAnchor(root, container);
+    if (anchor.blocked && mode === "reply") throw new ThreadDepthCapError();
+    const row: ChannelThread = {
+      id: newThreadId(),
+      tenantId: input.tenantId,
+      channelId: input.channelId,
+      kind: "reply",
+      parentMessageId: input.parentMessageId,
+      parentThreadId: anchor.parentThreadId,
+      runRef: null,
+      title: input.title ?? null,
+      createdAt: new Date(),
+    };
+    threads.set(row.id, row);
+    byChannel.set(key, [...ids, row.id]);
+    return row;
+  }
+
+  return {
+    ensureRootThread,
 
     async createDeliveryThread(input) {
       const key = channelKey(input.tenantId, input.channelId);
@@ -153,6 +275,7 @@ export function createInMemoryThreadStore(): ThreadStore {
         channelId: input.channelId,
         kind: "delivery",
         parentMessageId: null,
+        parentThreadId: null,
         runRef: input.runRef,
         title: input.title ?? null,
         createdAt: new Date(),
@@ -162,32 +285,8 @@ export function createInMemoryThreadStore(): ThreadStore {
       return row;
     },
 
-    async openReplyThread(input) {
-      const key = channelKey(input.tenantId, input.channelId);
-      const ids = byChannel.get(key) ?? [];
-      for (const id of ids) {
-        const t = threads.get(id);
-        if (
-          t?.kind === "reply" &&
-          t.parentMessageId === input.parentMessageId
-        ) {
-          return t;
-        }
-      }
-      const row: ChannelThread = {
-        id: newThreadId(),
-        tenantId: input.tenantId,
-        channelId: input.channelId,
-        kind: "reply",
-        parentMessageId: input.parentMessageId,
-        runRef: null,
-        title: input.title ?? null,
-        createdAt: new Date(),
-      };
-      threads.set(row.id, row);
-      byChannel.set(key, [...ids, row.id]);
-      return row;
-    },
+    openReplyThread: (input) => anchoredReplyThread(input, "reply"),
+    forkThread: (input) => anchoredReplyThread(input, "fork"),
 
     async getThread(tenantId, threadId) {
       const t = threads.get(threadId);
@@ -247,6 +346,7 @@ function mapThreadRow(row: typeof channelThreads.$inferSelect): ChannelThread {
     channelId: row.channelId,
     kind: asKind(row.kind),
     parentMessageId: row.parentMessageId ?? null,
+    parentThreadId: row.parentThreadId ?? null,
     runRef: row.runRef ?? null,
     title: row.title ?? null,
     createdAt: row.createdAt,
@@ -256,35 +356,117 @@ function mapThreadRow(row: typeof channelThreads.$inferSelect): ChannelThread {
 export function createDrizzleThreadStore<
   TSchema extends Record<string, unknown>,
 >(db: ThreadDb<TSchema>): ThreadStore {
+  async function ensureRootThread(
+    tenantId: string,
+    channelId: string,
+  ): Promise<ChannelThread> {
+    const existing = await db
+      .select()
+      .from(channelThreads)
+      .where(
+        and(
+          eq(channelThreads.tenantId, tenantId),
+          eq(channelThreads.channelId, channelId),
+          eq(channelThreads.kind, "root"),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) return mapThreadRow(existing[0]);
+    const id = newThreadId();
+    const inserted = await db
+      .insert(channelThreads)
+      .values({
+        id,
+        tenantId,
+        channelId,
+        kind: "root",
+        parentMessageId: null,
+        parentThreadId: null,
+        runRef: null,
+        title: null,
+      })
+      .returning();
+    return mapThreadRow(requireReturningRow(inserted, "root thread"));
+  }
+
+  /** The thread a message currently lives in, or `root` if unassigned. */
+  async function containerThreadFor(
+    tenantId: string,
+    channelId: string,
+    parentMessageId: string,
+    root: ChannelThread,
+  ): Promise<ChannelThread> {
+    const rows = await db
+      .select({ threadId: channelThreadMessages.threadId })
+      .from(channelThreadMessages)
+      .where(
+        and(
+          eq(channelThreadMessages.tenantId, tenantId),
+          eq(channelThreadMessages.channelId, channelId),
+          eq(channelThreadMessages.messageId, parentMessageId),
+        ),
+      )
+      .limit(1);
+    const containerId = rows[0]?.threadId;
+    if (containerId === undefined) return root;
+    const containerRows = await db
+      .select()
+      .from(channelThreads)
+      .where(
+        and(
+          eq(channelThreads.tenantId, tenantId),
+          eq(channelThreads.id, containerId),
+        ),
+      )
+      .limit(1);
+    return containerRows[0] ? mapThreadRow(containerRows[0]) : root;
+  }
+
+  async function anchoredReplyThread(
+    input: OpenReplyThreadInput,
+    mode: "reply" | "fork",
+  ): Promise<ChannelThread> {
+    const existing = await db
+      .select()
+      .from(channelThreads)
+      .where(
+        and(
+          eq(channelThreads.tenantId, input.tenantId),
+          eq(channelThreads.channelId, input.channelId),
+          eq(channelThreads.kind, "reply"),
+          eq(channelThreads.parentMessageId, input.parentMessageId),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) return mapThreadRow(existing[0]);
+    const root = await ensureRootThread(input.tenantId, input.channelId);
+    const container = await containerThreadFor(
+      input.tenantId,
+      input.channelId,
+      input.parentMessageId,
+      root,
+    );
+    const anchor = resolveThreadAnchor(root, container);
+    if (anchor.blocked && mode === "reply") throw new ThreadDepthCapError();
+    const id = newThreadId();
+    const inserted = await db
+      .insert(channelThreads)
+      .values({
+        id,
+        tenantId: input.tenantId,
+        channelId: input.channelId,
+        kind: "reply",
+        parentMessageId: input.parentMessageId,
+        parentThreadId: anchor.parentThreadId,
+        runRef: null,
+        title: input.title ?? null,
+      })
+      .returning();
+    return mapThreadRow(requireReturningRow(inserted, `${mode} thread`));
+  }
+
   return {
-    async ensureRootThread(tenantId, channelId) {
-      const existing = await db
-        .select()
-        .from(channelThreads)
-        .where(
-          and(
-            eq(channelThreads.tenantId, tenantId),
-            eq(channelThreads.channelId, channelId),
-            eq(channelThreads.kind, "root"),
-          ),
-        )
-        .limit(1);
-      if (existing[0]) return mapThreadRow(existing[0]);
-      const id = newThreadId();
-      const inserted = await db
-        .insert(channelThreads)
-        .values({
-          id,
-          tenantId,
-          channelId,
-          kind: "root",
-          parentMessageId: null,
-          runRef: null,
-          title: null,
-        })
-        .returning();
-      return mapThreadRow(requireReturningRow(inserted, "root thread"));
-    },
+    ensureRootThread,
 
     async createDeliveryThread(input) {
       const existing = await db
@@ -309,6 +491,7 @@ export function createDrizzleThreadStore<
           channelId: input.channelId,
           kind: "delivery",
           parentMessageId: null,
+          parentThreadId: null,
           runRef: input.runRef,
           title: input.title ?? null,
         })
@@ -316,35 +499,8 @@ export function createDrizzleThreadStore<
       return mapThreadRow(requireReturningRow(inserted, "delivery thread"));
     },
 
-    async openReplyThread(input) {
-      const existing = await db
-        .select()
-        .from(channelThreads)
-        .where(
-          and(
-            eq(channelThreads.tenantId, input.tenantId),
-            eq(channelThreads.channelId, input.channelId),
-            eq(channelThreads.kind, "reply"),
-            eq(channelThreads.parentMessageId, input.parentMessageId),
-          ),
-        )
-        .limit(1);
-      if (existing[0]) return mapThreadRow(existing[0]);
-      const id = newThreadId();
-      const inserted = await db
-        .insert(channelThreads)
-        .values({
-          id,
-          tenantId: input.tenantId,
-          channelId: input.channelId,
-          kind: "reply",
-          parentMessageId: input.parentMessageId,
-          runRef: null,
-          title: input.title ?? null,
-        })
-        .returning();
-      return mapThreadRow(requireReturningRow(inserted, "reply thread"));
-    },
+    openReplyThread: (input) => anchoredReplyThread(input, "reply"),
+    forkThread: (input) => anchoredReplyThread(input, "fork"),
 
     async getThread(tenantId, threadId) {
       const rows = await db

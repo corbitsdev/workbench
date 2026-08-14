@@ -137,6 +137,13 @@ export const channelThreads = pgTable(
     kind: text("kind").notNull(),
     /** Message id this reply thread answers; null for root/delivery. */
     parentMessageId: text("parent_message_id"),
+    /**
+     * The thread this one hangs directly off: null for the root
+     * thread, the root thread's id for a depth-1 thread, a depth-1
+     * thread's id for a depth-2 sub-thread. Two levels, stop — see
+     * `resolveThreadAnchor` in `./threads.ts`.
+     */
+    parentThreadId: text("parent_thread_id"),
     /** Routine/run reference for delivery threads; null otherwise. */
     runRef: text("run_ref"),
     title: text("title"),

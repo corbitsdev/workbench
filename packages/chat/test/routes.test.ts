@@ -552,6 +552,172 @@ describe("threads — root feed vs reply membership (4a)", () => {
   });
 });
 
+describe("POST /channels/:id/threads/fork — two-level cap (CL-5908, CL-5948)", () => {
+  test("forking a message inside a thread opens a depth-2 sub-thread, carrying the origin message id", async () => {
+    const deps = buildDeps({ threads: createInMemoryThreadStore() });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const rootPost = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "root note" }] }),
+    });
+    const rootSent = (await rootPost.json()) as { id: string };
+
+    const replyPost = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "in the thread" }],
+        inReplyToMessageId: rootSent.id,
+      }),
+    });
+    const replySent = (await replyPost.json()) as {
+      id: string;
+      threadId: string;
+    };
+
+    const forkRes = await app.request(`/channels/${channel.id}/threads/fork`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parentMessageId: replySent.id }),
+    });
+    expect(forkRes.status).toBe(201);
+    const forked = (await forkRes.json()) as {
+      id: string;
+      kind: string;
+      parentMessageId: string;
+      parentThreadId: string;
+    };
+    expect(forked.kind).toBe("reply");
+    expect(forked.parentMessageId).toBe(replySent.id);
+    expect(forked.parentThreadId).toBe(replySent.threadId);
+  });
+
+  test("forking a message already inside a sub-thread creates a sibling under the same parent, never a third level", async () => {
+    const deps = buildDeps({ threads: createInMemoryThreadStore() });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const rootSent = (await (
+      await app.request(`/channels/${channel.id}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ kind: "text", text: "root" }] }),
+      })
+    ).json()) as { id: string };
+
+    const threadSent = (await (
+      await app.request(`/channels/${channel.id}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "in thread" }],
+          inReplyToMessageId: rootSent.id,
+        }),
+      })
+    ).json()) as { id: string; threadId: string };
+
+    const subThreadFork = (await (
+      await app.request(`/channels/${channel.id}/threads/fork`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parentMessageId: threadSent.id }),
+      })
+    ).json()) as { id: string; parentThreadId: string };
+
+    // Post a message into the sub-thread, then fork *that* message.
+    const subMessageSent = (await (
+      await app.request(`/channels/${channel.id}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "inside the sub-thread" }],
+          threadId: subThreadFork.id,
+        }),
+      })
+    ).json()) as { id: string };
+
+    const siblingRes = await app.request(
+      `/channels/${channel.id}/threads/fork`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parentMessageId: subMessageSent.id }),
+      },
+    );
+    expect(siblingRes.status).toBe(201);
+    const sibling = (await siblingRes.json()) as {
+      id: string;
+      parentThreadId: string;
+    };
+    expect(sibling.id).not.toBe(subThreadFork.id);
+    // Sibling hangs off the same depth-1 parent as the sub-thread it was
+    // forked from — never a third level.
+    expect(sibling.parentThreadId).toBe(subThreadFork.parentThreadId);
+    expect(sibling.parentThreadId).toBe(threadSent.threadId);
+  });
+
+  test("replying (not forking) to a message already in a sub-thread is an honest 409, not silent third-level nesting", async () => {
+    const deps = buildDeps({ threads: createInMemoryThreadStore() });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const rootSent = (await (
+      await app.request(`/channels/${channel.id}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ kind: "text", text: "root" }] }),
+      })
+    ).json()) as { id: string };
+
+    const threadSent = (await (
+      await app.request(`/channels/${channel.id}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "in thread" }],
+          inReplyToMessageId: rootSent.id,
+        }),
+      })
+    ).json()) as { id: string };
+
+    const subThreadFork = (await (
+      await app.request(`/channels/${channel.id}/threads/fork`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parentMessageId: threadSent.id }),
+      })
+    ).json()) as { id: string };
+
+    const subMessageSent = (await (
+      await app.request(`/channels/${channel.id}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "inside the sub-thread" }],
+          threadId: subThreadFork.id,
+        }),
+      })
+    ).json()) as { id: string };
+
+    const blockedRes = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "trying a third level" }],
+        inReplyToMessageId: subMessageSent.id,
+      }),
+    });
+    expect(blockedRes.status).toBe(409);
+    const blockedBody = (await blockedRes.json()) as {
+      error: { code: string };
+    };
+    expect(blockedBody.error.code).toBe("conflict");
+  });
+});
+
 describe("PATCH /channels/:id/settings — route surface", () => {
   test("a missing channel is a 404", async () => {
     const deps = buildDeps();
