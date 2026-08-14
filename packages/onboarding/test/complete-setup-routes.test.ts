@@ -154,7 +154,7 @@ describe("POST /complete-setup", () => {
       c.json(
         DEFAULT_WORKFLOWS.map((_workflow, index) => ({
           definitionAssetId: `ast_${index}`,
-          status: "active",
+          status: "deployed",
         })),
       ),
     );
@@ -312,7 +312,7 @@ describe("POST /complete-setup", () => {
       c.json(
         DEFAULT_WORKFLOWS.map((_workflow, index) => ({
           definitionAssetId: `ast_${index}`,
-          status: "active",
+          status: "deployed",
         })),
       ),
     );
@@ -476,7 +476,7 @@ describe("POST /complete-setup", () => {
           id: d.id,
           tenantId: TENANT_ID,
           definitionAssetId: d.definitionAssetId,
-          status: "active",
+          status: "deployed",
           createdAt: TIMESTAMP,
         })),
       ),
@@ -536,7 +536,7 @@ describe("POST /complete-setup", () => {
           id,
           tenantId: TENANT_ID,
           definitionAssetId: body.assetId,
-          status: "active",
+          status: "deployed",
           createdAt: TIMESTAMP,
         },
         201,
