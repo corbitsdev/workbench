@@ -15,6 +15,7 @@ import {
   type PaletteSource,
   type RecentEntry,
 } from "@corbits/command-palette";
+import { useStageChrome } from "@corbits/shell-layout";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { listAgentDefinitions } from "./agents-api";
@@ -29,7 +30,6 @@ import { NAV_ROUTES } from "./routes";
 import { ArtifactListPageSchema, RunsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
-import { useStageChrome } from "./shell/stage-chrome";
 import { listRoutines, runRoutineNow, useTenantQuery } from "./routines-api";
 import { useSessionSkills } from "./skills-session";
 import { tenantKeys } from "./query-client";

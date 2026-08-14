@@ -16,12 +16,16 @@ import { useRef, type ReactNode } from "react";
 import { useNavigate } from "../navigation";
 import type { SessionUser } from "../session";
 import {
+  COL2_ID,
+  Col2EdgeHandle,
   contextualPanelIsDrawer,
   contextualPanelVisible,
   railShowLabels,
-} from "./breakpoints";
-import { useShellFocusRescue } from "./focus-rescue";
-import { useScrollReset } from "./use-scroll-reset";
+  useShellFocusRescue,
+  useShellLayoutMode,
+  useScrollReset,
+  useStageChrome,
+} from "@corbits/shell-layout";
 import {
   useCanvasColumnAvailable,
   useCanvasColumnOpen,
@@ -32,8 +36,6 @@ import { CanvasColumn } from "./canvas-column";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
 import { ContextualPanel } from "./contextual-panel";
 import { Rail } from "./rail";
-import { COL2_ID, Col2EdgeHandle, useStageChrome } from "./stage-chrome";
-import { useShellLayoutMode } from "./use-shell-layout";
 
 export function AppShell({
   path,

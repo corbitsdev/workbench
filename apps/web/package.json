@@ -23,6 +23,7 @@
     "@corbits/routines": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
+    "@corbits/shell-layout": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
     "@intx/types": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",

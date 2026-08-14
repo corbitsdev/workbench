@@ -102,6 +102,7 @@
         "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
         "@corbits/routines": "workspace:*",
         "@corbits/settings-ui": "workspace:*",
+        "@corbits/shell-layout": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@intx/types": "workspace:*",
         "@radix-ui/react-dialog": "^1.1.15",
@@ -513,6 +514,23 @@
         "@types/bun": "catalog:",
         "@types/react": "^19.2.2",
         "@types/react-dom": "^19.2.1",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/shell-layout": {
+      "name": "@corbits/shell-layout",
+      "version": "0.0.1",
+      "dependencies": {
+        "arktype": "catalog:",
+        "lucide-react": "^1.27.0",
+        "react": "^19.2.0",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.11.2",
+        "@types/bun": "catalog:",
+        "@types/react": "^19.2.2",
+        "@types/react-dom": "^19.2.2",
+        "react-dom": "^19.2.0",
         "typescript": "catalog:",
       },
     },
@@ -1078,6 +1096,8 @@
     "@corbits/routines": ["@corbits/routines@workspace:packages/routines"],
 
     "@corbits/settings-ui": ["@corbits/settings-ui@workspace:packages/settings-ui"],
+
+    "@corbits/shell-layout": ["@corbits/shell-layout@workspace:packages/shell-layout"],
 
     "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
 

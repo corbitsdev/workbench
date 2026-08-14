@@ -16,6 +16,10 @@ import { isAgentAddress } from "@corbits/chat/mentions";
 import { CHAT_STRINGS, patchChannelSettings } from "@corbits/chat-ui";
 import type { Channel } from "@corbits/chat-ui";
 import {
+  registerPanelContribution,
+  type PanelRenderContext,
+} from "@corbits/shell-layout";
+import {
   Bell,
   Hash,
   MessageSquare,
@@ -38,10 +42,6 @@ import { requestLibraryUpload } from "../library-upload";
 import { useBenchActivity } from "./bench-activity";
 import { InsightsViewsBand } from "./insights-band";
 import { LibraryKindBand } from "./library-band";
-import {
-  registerPanelContribution,
-  type PanelRenderContext,
-} from "./panel-contribution";
 import { RoutinesFeedBand } from "./routines-feed-band";
 import { SettingsNavBand } from "./settings-nav-band";
 
