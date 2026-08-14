@@ -161,10 +161,29 @@ function senderDisplay(
   };
 }
 
-function SenderAvatar({ initials }: { initials: string }) {
+function SenderAvatar({
+  initials,
+  tenantMonogram,
+  tenantName,
+}: {
+  initials: string;
+  tenantMonogram?: string;
+  tenantName?: string;
+}) {
   return (
-    <span className="chat-sender-avatar" aria-hidden="true">
-      {initials}
+    <span className="chat-sender-avatar-wrap">
+      <span className="chat-sender-avatar" aria-hidden="true">
+        {initials}
+      </span>
+      {tenantMonogram !== undefined ? (
+        <span
+          className="chat-sender-tenant-badge"
+          title={tenantName}
+          aria-hidden="true"
+        >
+          {tenantMonogram}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -220,7 +239,15 @@ function TextBubble({
           disabled={profileSubject === null || onOpenProfile === undefined}
           onClick={handleOpenProfile}
         >
-          <SenderAvatar initials={display.initials} />
+          <SenderAvatar
+            initials={display.initials}
+            {...(sender?.tenantMonogram !== undefined
+              ? { tenantMonogram: sender.tenantMonogram }
+              : {})}
+            {...(sender?.tenantName !== undefined
+              ? { tenantName: sender.tenantName }
+              : {})}
+          />
         </button>
       )}
       <div className="chat-bubble" data-own={isOwn}>

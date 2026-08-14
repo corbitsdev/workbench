@@ -174,6 +174,34 @@ export const chatMigrations: readonly ChatMigration[] = [
         ON "chat"."channel_threads" ("tenant_id", "parent_thread_id");
     `,
   },
+  {
+    name: "0012_channel_share",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."channel_share" (
+        "owning_tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "projected_tenant_id" text NOT NULL,
+        "created_by" text NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("channel_id", "projected_tenant_id")
+      );
+      CREATE INDEX IF NOT EXISTS "channel_share_projected_idx"
+        ON "chat"."channel_share" ("projected_tenant_id");
+    `,
+  },
+  {
+    name: "0013_channel_share_member",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."channel_share_member" (
+        "projected_tenant_id" text NOT NULL,
+        "channel_id" text NOT NULL,
+        "principal_id" text NOT NULL,
+        "added_by" text NOT NULL,
+        "added_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("projected_tenant_id", "channel_id", "principal_id")
+      );
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named

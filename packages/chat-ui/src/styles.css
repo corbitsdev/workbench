@@ -410,6 +410,34 @@
   line-height: 1;
 }
 
+/* Wraps a message sender's avatar with room for the shared-channel
+   tenant-monogram badge (CL-5882), positioned bottom-right — only
+   rendered when the server annotates the sender with a
+   `tenantMonogram` (see `resolveMessageSenderTenant` in
+   `packages/chat/src/routes.ts`). */
+.chat-sender-avatar-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.chat-sender-tenant-badge {
+  position: absolute;
+  right: -0.2rem;
+  bottom: -0.05rem;
+  display: grid;
+  place-items: center;
+  min-width: 0.95rem;
+  height: 0.95rem;
+  padding: 0 0.1rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--background);
+  background: var(--chat-agent-accent, var(--primary));
+  color: var(--primary-foreground, #fff);
+  font-size: 0.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .chat-sender-avatar-button {
   display: grid;
   place-items: start center;

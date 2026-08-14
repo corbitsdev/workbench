@@ -52,6 +52,12 @@ const ChannelWire = type({
   "unreadCount?": "number",
   "lastActivityAt?": "string",
   "live?": "boolean",
+  // `GET /channels` sets this server-side (see
+  // `packages/chat/src/routes.ts`) only for a channel projected into
+  // this tenant via CL-5882's shared-channel machinery: "shared via
+  // parent · <parent name>" for true siblings, "shared · <owning tenant
+  // name>" otherwise. Absent for every ordinary, non-projected channel.
+  "sharedLabel?": "string",
 });
 
 const Channel = ChannelWire.pipe((wire) => ({
@@ -71,7 +77,18 @@ const ChannelsResponse = type({ items: ChannelWire.array() }).pipe(
   }),
 );
 
-export const MessageSender = type({ name: "string | null", address: "string" });
+// `tenantId`/`tenantName`/`tenantMonogram` are set server-side only for a
+// message sent by a shared channel's "other side" participant — a share
+// member of a tenant this channel was projected into (see
+// `resolveMessageSenderTenant` in `packages/chat/src/routes.ts`). Absent
+// for every ordinary same-tenant sender.
+export const MessageSender = type({
+  name: "string | null",
+  address: "string",
+  "tenantId?": "string",
+  "tenantName?": "string",
+  "tenantMonogram?": "string",
+});
 export type MessageSender = typeof MessageSender.infer;
 
 const MessageItem = type({

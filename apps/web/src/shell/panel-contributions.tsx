@@ -104,13 +104,12 @@ export function channelDetails(
 
 /**
  * Optional row signals the mock shows (shared / live / time / unread).
- * `GET /channels` now carries `unreadCount`/`lastActivityAt`/`live` when a
- * channel's mailbox could be resolved (see `packages/chat/src/routes.ts`);
- * `sharedLabel` stays permanently unset — cross-bench channel projection is
- * documented as not-yet-real (CL-5913, `docs/TENANCY.md`'s "Shared channels"
- * section), so this omits the badge honestly rather than guessing at it from
- * participant addresses. Render only when present; never invent counts or
- * timestamps.
+ * `GET /channels` carries `unreadCount`/`lastActivityAt`/`live` when a
+ * channel's mailbox could be resolved, and now `sharedLabel` (CL-5882) for
+ * a channel projected into this tenant via bilateral trust — see
+ * `resolveMessageSenderTenant`/the `GET /channels` shared-projection block
+ * in `packages/chat/src/routes.ts`. Render only when present; never invent
+ * counts or timestamps.
  */
 type ChannelRowSignals = {
   readonly sharedLabel?: string;
@@ -129,10 +128,16 @@ type ChannelRowSignals = {
  * rather than waiting on a round trip that isn't coming.
  */
 export function channelRowSignals(
-  channel: Pick<Channel, "unreadCount" | "lastActivityAt" | "live">,
+  channel: Pick<
+    Channel,
+    "unreadCount" | "lastActivityAt" | "live" | "sharedLabel"
+  >,
   isOpen: boolean,
 ): ChannelRowSignals {
   return {
+    ...(channel.sharedLabel !== undefined
+      ? { sharedLabel: channel.sharedLabel }
+      : {}),
     ...(channel.live !== undefined ? { live: channel.live } : {}),
     ...(channel.lastActivityAt !== undefined
       ? { time: formatRelativeTime(channel.lastActivityAt) }
@@ -325,8 +330,10 @@ function ChannelPanelRow({
 /**
  * Tenancy-shaped sidebar buckets (not activity-shaped). Pinned and External
  * stay hidden until they have rows; Internal/Agents/DMs always show once any
- * channels exist. External has no wire flag yet, so it stays empty until
- * shared-channel metadata lands.
+ * channels exist. External now fills from `channel.sharedLabel` (CL-5882) —
+ * `GET /channels` sets it only for a channel actually projected into this
+ * tenant, so this is an honest membership fact, never a guess from
+ * participant addresses.
  */
 type ChannelBucketId = "pinned" | "agents" | "internal" | "external" | "dms";
 
@@ -342,9 +349,17 @@ const CHANNEL_BUCKETS: readonly {
   { id: "dms", label: "DMs", hideWhenEmpty: false },
 ];
 
-/** Pure bucket assignment for a channel row — testable without rendering. */
-export function assignChannelBucket(channel: Channel): ChannelBucketId {
+/**
+ * Pure bucket assignment for a channel row — testable without rendering.
+ * Pinned wins over shared: a pinned+shared channel is still "pinned" to
+ * this user first, matching how pinned already wins over every other
+ * bucket below it.
+ */
+export function assignChannelBucket(
+  channel: Pick<Channel, "pinned" | "kind" | "participants" | "sharedLabel">,
+): ChannelBucketId {
   if (channel.pinned) return "pinned";
+  if (channel.sharedLabel !== undefined) return "external";
   if (channel.kind === "chat") {
     const hasAgent = channel.participants.some((participant) =>
       isAgentAddress(participant.address),
