@@ -64,6 +64,7 @@ export function ChannelSettingsSurface({
   onBack,
   onInviteParticipant,
   onSaved,
+  initialSection = "general",
 }: {
   readonly tenantId: string;
   readonly channelId: string;
@@ -71,9 +72,13 @@ export function ChannelSettingsSurface({
   readonly onBack: () => void;
   readonly onInviteParticipant: () => void;
   readonly onSaved?: (settings: ChannelSettings) => void;
+  /** Which section to land on — `/agents` opens straight to Agents rather
+   * than the default General. */
+  readonly initialSection?: ChannelSettingsSectionId;
 }) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
-  const [section, setSection] = useState<ChannelSettingsSectionId>("general");
+  const [section, setSection] =
+    useState<ChannelSettingsSectionId>(initialSection);
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [pinned, setPinned] = useState(false);

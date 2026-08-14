@@ -1250,6 +1250,44 @@
   color: var(--muted-foreground);
 }
 
+.chat-slash-help {
+  max-height: none;
+}
+
+.chat-slash-help-title {
+  padding: 0.45rem 0.65rem 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+}
+
+.chat-slash-help-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.chat-slash-help-note {
+  font-size: 0.7rem;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+
+.chat-slash-help-close {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--primary);
+  cursor: pointer;
+}
+
 .chat-thread-breadcrumb {
   display: flex;
   min-width: 0;

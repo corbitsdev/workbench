@@ -18,6 +18,12 @@ import {
   insertMention,
 } from "./mentions";
 import type { MentionCandidate, MentionQuery } from "./mentions";
+import {
+  SLASH_COMMANDS,
+  activeSlashQuery,
+  filterSlashCommands,
+} from "./slash-commands";
+import type { SlashCommandSpec, SlashQuery } from "./slash-commands";
 import { CHAT_STRINGS } from "./strings";
 
 /** A file the user picked in the composer, already base64-encoded for the wire. */
@@ -263,14 +269,26 @@ export const Composer = forwardRef<
     readonly agents: readonly MentionCandidate[];
     /** Resolves to whether the send succeeded; the composer decides draft/attachment cleanup from that. */
     readonly onSend: (payload: ComposerSendPayload) => Promise<boolean>;
+    /** `/invite` — opens the invite-agent dialog. */
+    readonly onInviteAgent: () => void;
+    /** `/agents` — opens this channel's settings, Agents section. */
+    readonly onOpenAgentsSettings: () => void;
+    /** `/run` — the cheapest real hop to running a routine: Routines, create/run open. */
+    readonly onOpenRoutines: () => void;
   }
->(function Composer({ agents, onSend }, ref) {
+>(function Composer(
+  { agents, onSend, onInviteAgent, onOpenAgentsSettings, onOpenRoutines },
+  ref,
+) {
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>(
     [],
   );
   const [mention, setMention] = useState<MentionQuery | null>(null);
   const [highlight, setHighlight] = useState(0);
+  const [slash, setSlash] = useState<SlashQuery | null>(null);
+  const [slashHighlight, setSlashHighlight] = useState(0);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -296,14 +314,77 @@ export const Composer = forwardRef<
 
   const candidates =
     mention !== null ? filterMentionCandidates(agents, mention.query) : [];
+  const slashCandidates =
+    slash !== null ? filterSlashCommands(slash.query) : [];
   const busy = { sending, preparing };
   const canSend = canSendComposerAction(value, attachments, busy);
   const canAttach = canAttachComposer(busy);
 
-  function syncMentionState(text: string, caret: number) {
-    const next = activeMentionQuery(text, caret);
-    setMention(next);
+  function syncComposerSuggestState(text: string, caret: number) {
+    setHelpOpen(false);
+    const openSlash = activeSlashQuery(text, caret);
+    if (openSlash !== null) {
+      setSlash(openSlash);
+      setSlashHighlight(0);
+      setMention(null);
+      return;
+    }
+    setSlash(null);
+    const openMention = activeMentionQuery(text, caret);
+    setMention(openMention);
     setHighlight(0);
+  }
+
+  async function performSend(payload: ComposerSendPayload): Promise<boolean> {
+    setSending(true);
+    setErrorMessage(null);
+    const succeeded = await onSend(payload);
+    setSending(false);
+    return succeeded;
+  }
+
+  function runSlashCommand(command: SlashCommandSpec) {
+    switch (command.id) {
+      case "invite":
+        onInviteAgent();
+        return;
+      case "agents":
+        onOpenAgentsSettings();
+        return;
+      case "run":
+        onOpenRoutines();
+        return;
+      case "summarize":
+        void summarizeThread();
+        return;
+      case "help":
+        setHelpOpen(true);
+        return;
+    }
+  }
+
+  function chooseSlash(command: SlashCommandSpec) {
+    setValue("");
+    setSlash(null);
+    setSlashHighlight(0);
+    runSlashCommand(command);
+  }
+
+  /** The mock's own honest macro: no server-side "/summarize" exists, so
+   * this addresses the channel's actual first agent participant the same
+   * way a person would type the mention by hand. */
+  async function summarizeThread() {
+    const target = agents[0];
+    if (target === undefined) {
+      setErrorMessage(CHAT_STRINGS.composerSummarizeNoAgentError);
+      return;
+    }
+    if (sending || preparing) return;
+    const succeeded = await performSend({
+      text: `@${target.handle} summarize this thread`,
+      attachments: [],
+    });
+    if (!succeeded) setErrorMessage(CHAT_STRINGS.sendFailedMessage);
   }
 
   function pickMention(candidate: MentionCandidate) {
@@ -373,14 +454,7 @@ export const Composer = forwardRef<
     if (!canSendComposerAction(value, attachments, { sending, preparing })) {
       return;
     }
-    const payload: ComposerSendPayload = {
-      text: value,
-      attachments,
-    };
-    setSending(true);
-    setErrorMessage(null);
-    const succeeded = await onSend(payload);
-    setSending(false);
+    const succeeded = await performSend({ text: value, attachments });
     setValue((previous) => draftAfterSend(previous, succeeded));
     setAttachments((previous) => attachmentsAfterSend(previous, succeeded));
     if (succeeded) {
@@ -391,6 +465,36 @@ export const Composer = forwardRef<
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (helpOpen && event.key === "Escape") {
+      event.preventDefault();
+      setHelpOpen(false);
+      return;
+    }
+    if (slash !== null && slashCandidates.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSlashHighlight((index) => (index + 1) % slashCandidates.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSlashHighlight(
+          (index) =>
+            (index - 1 + slashCandidates.length) % slashCandidates.length,
+        );
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const chosen = slashCandidates[slashHighlight];
+        if (chosen !== undefined) chooseSlash(chosen);
+        return;
+      }
+      if (event.key === "Escape") {
+        setSlash(null);
+        return;
+      }
+    }
     if (mention !== null && candidates.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -427,7 +531,36 @@ export const Composer = forwardRef<
 
   return (
     <div className="chat-composer">
-      {mention !== null && (
+      {slash !== null && (
+        <div className="chat-mention-popover" role="listbox">
+          {slashCandidates.length === 0 ? (
+            <div className="chat-mention-empty">
+              {CHAT_STRINGS.composerSlashEmpty}
+            </div>
+          ) : (
+            slashCandidates.map((command, index) => (
+              <button
+                key={command.id}
+                type="button"
+                role="option"
+                aria-selected={index === slashHighlight}
+                className="chat-mention-option"
+                data-highlighted={index === slashHighlight}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  chooseSlash(command);
+                }}
+              >
+                <span className="chat-mention-handle">{command.name}</span>
+                <span className="chat-mention-label">
+                  {command.description}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+      {slash === null && mention !== null && (
         <div className="chat-mention-popover" role="listbox">
           {candidates.length === 0 ? (
             <div className="chat-mention-empty">
@@ -454,6 +587,34 @@ export const Composer = forwardRef<
               </button>
             ))
           )}
+        </div>
+      )}
+      {helpOpen && (
+        <div className="chat-mention-popover chat-slash-help" role="note">
+          <div className="chat-slash-help-title">
+            {CHAT_STRINGS.composerHelpTitle}
+          </div>
+          {SLASH_COMMANDS.map((command) => (
+            <div key={command.id} className="chat-mention-option">
+              <span className="chat-mention-handle">{command.name}</span>
+              <span className="chat-mention-label">{command.description}</span>
+            </div>
+          ))}
+          <div className="chat-slash-help-footer">
+            <span className="chat-slash-help-note">
+              {CHAT_STRINGS.composerHelpNote}
+            </span>
+            <button
+              type="button"
+              className="chat-slash-help-close"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                setHelpOpen(false);
+              }}
+            >
+              {CHAT_STRINGS.composerHelpClose}
+            </button>
+          </div>
         </div>
       )}
       {attachments.length > 0 && (
@@ -503,7 +664,7 @@ export const Composer = forwardRef<
           placeholder={CHAT_STRINGS.composerPlaceholder}
           onChange={(event) => {
             setValue(event.target.value);
-            syncMentionState(
+            syncComposerSuggestState(
               event.target.value,
               event.target.selectionStart ?? event.target.value.length,
             );

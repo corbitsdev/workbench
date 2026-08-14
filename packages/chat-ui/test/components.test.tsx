@@ -25,6 +25,14 @@ import { ChannelTimeline } from "../src/timeline";
 /** The floor: no rendered text may ever contain a raw identifier. */
 const RAW_ID_PATTERN = /\b(prn_|ins_|tnt_)[a-z0-9]/i;
 
+/** The composer's slash-command hops — a no-op stand-in for these
+ * render-only tests, which never trigger them. */
+const composerSlashHandlers = {
+  onInviteAgent: () => {},
+  onOpenAgentsSettings: () => {},
+  onOpenRoutines: () => {},
+};
+
 describe("ChannelTimeline", () => {
   const items: MessageItem[] = [
     {
@@ -334,7 +342,11 @@ describe("ChannelTimeline", () => {
 describe("Composer", () => {
   test("disables send while the draft is empty", () => {
     const markup = renderToStaticMarkup(
-      <Composer agents={[]} onSend={() => Promise.resolve(true)} />,
+      <Composer
+        agents={[]}
+        onSend={() => Promise.resolve(true)}
+        {...composerSlashHandlers}
+      />,
     );
     expect(markup).toMatch(/<button[^>]*disabled[^>]*>/);
   });
@@ -350,6 +362,7 @@ describe("Composer", () => {
           },
         ]}
         onSend={() => Promise.resolve(true)}
+        {...composerSlashHandlers}
       />,
     );
     expect(markup).not.toContain("@undefined");
@@ -357,7 +370,11 @@ describe("Composer", () => {
 
   test("exposes an attach control, file input, and polite preparing live region", () => {
     const markup = renderToStaticMarkup(
-      <Composer agents={[]} onSend={() => Promise.resolve(true)} />,
+      <Composer
+        agents={[]}
+        onSend={() => Promise.resolve(true)}
+        {...composerSlashHandlers}
+      />,
     );
     expect(markup).toContain('aria-label="Attach files"');
     expect(markup).toContain('type="file"');
@@ -494,6 +511,7 @@ describe("no raw identifiers on screen", () => {
             },
           ]}
           onSend={() => Promise.resolve(true)}
+          {...composerSlashHandlers}
         />,
       ),
     ].join("\n");

@@ -24,6 +24,7 @@ import {
 import {
   consumePendingNewChannel,
   NEW_CHANNEL_EVENT,
+  requestNewRoutine,
 } from "../command-palette-actions";
 import {
   useOpenArtifactInCanvas,
@@ -145,6 +146,12 @@ export function ChatPage({
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       {...(blockResponses !== undefined ? { blockResponses } : {})}
       listMembers={listMembers}
+      onOpenRoutines={() =>
+        requestNewRoutine({
+          alreadyOnRoutines: false,
+          navigateToRoutines: () => navigate("/routines"),
+        })
+      }
     />
   );
 }

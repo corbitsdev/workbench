@@ -45,6 +45,7 @@ import type {
   Part,
 } from "./api";
 import { ChannelSettingsSurface } from "./channel-settings";
+import type { ChannelSettingsSectionId } from "./channel-settings";
 import { Composer, partsForSend } from "./composer";
 import type { ComposerHandle, ComposerSendPayload } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
@@ -205,6 +206,7 @@ function ChatWorkspaceInner({
   headerLeading,
   listMembers,
   registerComposerInsert,
+  onOpenRoutines,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
@@ -235,6 +237,10 @@ function ChatWorkspaceInner({
   readonly registerComposerInsert?: (
     insert: ((text: string) => void) | null,
   ) => void;
+  /** The composer's `/run` command: routine create/run lives on its own
+   * route the host owns, so opening it is a host-supplied hop the same way
+   * `onOpenArtifact` is. */
+  readonly onOpenRoutines?: () => void;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -258,6 +264,8 @@ function ChatWorkspaceInner({
     null,
   );
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [settingsSection, setSettingsSection] =
+    useState<ChannelSettingsSectionId>("general");
   // null = channel root feed. A concrete id opens that thread in the same
   // geometry (timeline + composer). pendingParentMessageId is set when the
   // user opens a reply on a message that has no thread yet.
@@ -519,6 +527,14 @@ function ChatWorkspaceInner({
     }
   }
 
+  /** The one door into the channel settings surface — the gear button and
+   * the composer's `/agents` command both go through this so the section
+   * that lands is always the one the caller meant to open. */
+  function openChannelSettings(section: ChannelSettingsSectionId = "general") {
+    setSettingsSection(section);
+    onSettingsOpenChange?.(true);
+  }
+
   async function handleInvite(definitionId: string) {
     if (activeChannelId === null) return;
     await inviteAgent(tenantId, activeChannelId, definitionId);
@@ -697,6 +713,7 @@ function ChatWorkspaceInner({
             tenantId={tenantId}
             channelId={activeChannelId}
             channelTitle={activeChannel.title || CHAT_STRINGS.unnamedChannel}
+            initialSection={settingsSection}
             onBack={() => onSettingsOpenChange?.(false)}
             onInviteParticipant={() => {
               onSettingsOpenChange?.(false);
@@ -889,7 +906,7 @@ function ChatWorkspaceInner({
                     variant="outline"
                     size="sm"
                     aria-label={CHAT_STRINGS.channelSettingsAction}
-                    onClick={() => onSettingsOpenChange?.(true)}
+                    onClick={() => openChannelSettings()}
                   >
                     <SlidersHorizontal />
                   </Button>
@@ -962,6 +979,15 @@ function ChatWorkspaceInner({
                       activeChannel?.participants ?? [],
                     )}
                     onSend={handleSend}
+                    onInviteAgent={() => setInviteDialogOpen(true)}
+                    onOpenAgentsSettings={() => openChannelSettings("agents")}
+                    onOpenRoutines={() => {
+                      if (onOpenRoutines !== undefined) {
+                        onOpenRoutines();
+                        return;
+                      }
+                      toast(CHAT_STRINGS.runRoutineUnavailable);
+                    }}
                   />
                 </>
               )}
@@ -1012,6 +1038,7 @@ export function ChatWorkspace({
   headerLeading,
   listMembers,
   registerComposerInsert,
+  onOpenRoutines,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -1056,6 +1083,8 @@ export function ChatWorkspace({
   readonly registerComposerInsert?: (
     insert: ((text: string) => void) | null,
   ) => void;
+  /** The composer's `/run` command — see `ChatWorkspaceInner`'s prop note. */
+  readonly onOpenRoutines?: () => void;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -1080,6 +1109,7 @@ export function ChatWorkspace({
           {...(registerComposerInsert !== undefined
             ? { registerComposerInsert }
             : {})}
+          {...(onOpenRoutines !== undefined ? { onOpenRoutines } : {})}
         />
       );
     case "empty":
