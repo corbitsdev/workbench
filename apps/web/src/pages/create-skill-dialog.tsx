@@ -1,8 +1,14 @@
 // The create-skill form: identity (name, description) and the skill
-// body itself (the instructions/tools text). There is no skill
-// registry in the hub yet, so this dialog never POSTs — it collects
-// the values a future registry will expect and hands them to
-// `onCreated` so the page can decide what to do once a seam is real.
+// body itself (the instructions/tools text). Submitting hands the
+// values to `onDrafted`, which the Skills section turns into a pending
+// draft in the workbench's registry (`../skills-api.ts`); a separate
+// Publish action is what makes the skill real. The dialog itself owns
+// only the form.
+//
+// The name field is bound by the registry's own rule — lowercase
+// letters, digits, and hyphens — because that is what a SKILL.md's
+// frontmatter must carry. Rejecting it here beats a server error after
+// the person has typed a whole skill body.
 
 import {
   Button,
@@ -19,11 +25,14 @@ import {
 import type { IntakeField } from "@corbits/react-ui";
 import { useState } from "react";
 
-export type SkillDraft = {
+export type SkillDraftInput = {
   readonly name: string;
   readonly description: string;
   readonly body: string;
 };
+
+/** Mirrors `@corbits/skills`' `skillNameSchema` — kebab-case, `<=64`. */
+const SKILL_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 type FormValues = {
   readonly name: string;
@@ -43,13 +52,16 @@ const FIELDS: readonly IntakeField[] = [
     label: "Name",
     type: "text",
     required: true,
-    placeholder: "Summarize transcript",
+    placeholder: "summarize-transcript",
+    help: "Lowercase letters, digits, and hyphens — this becomes the skill's name in the registry.",
   },
   {
     name: "description",
     label: "Description",
     type: "textarea",
+    required: true,
     placeholder: "What this skill does and when to use it",
+    help: "Agents see this line — and only this line — when deciding whether to load the skill.",
   },
   {
     name: "body",
@@ -67,7 +79,21 @@ const FIELDS: readonly IntakeField[] = [
  * NewChannelDialog note: Radix portals yield no static markup). */
 export function validationIssues(values: FormValues): readonly string[] {
   const issues: string[] = [];
-  if (values.name.trim() === "") issues.push("Name is required.");
+  const name = values.name.trim();
+  if (name === "") {
+    issues.push("Name is required.");
+  } else if (!SKILL_NAME_PATTERN.test(name)) {
+    issues.push(
+      "Name must be lowercase letters, digits, and hyphens — no spaces or capitals.",
+    );
+  } else if (name.length > 64) {
+    issues.push("Name must be at most 64 characters.");
+  } else if (name.startsWith("draft-")) {
+    issues.push(
+      'Name cannot start with "draft-" — that prefix marks a pending draft.',
+    );
+  }
+  if (values.description.trim() === "") issues.push("Description is required.");
   if (values.body.trim() === "") issues.push("Skill body is required.");
   return issues;
 }
@@ -75,13 +101,13 @@ export function validationIssues(values: FormValues): readonly string[] {
 export function CreateSkillDialog({
   open,
   onOpenChange,
-  onCreated,
+  onDrafted,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  /** Receives the drafted values; the page owns what (if anything) happens
-   * with them. No backend is wired up at this stage. */
-  readonly onCreated: (draft: SkillDraft) => void;
+  /** Receives the authored values; the Skills section turns them into a
+   * pending draft on the registry. */
+  readonly onDrafted: (draft: SkillDraftInput) => void;
 }) {
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
   const [showIssues, setShowIssues] = useState(false);
@@ -111,14 +137,13 @@ export function CreateSkillDialog({
       setShowIssues(true);
       return;
     }
-    const draft: SkillDraft = {
+    const draft: SkillDraftInput = {
       name: values.name.trim(),
       description: values.description.trim(),
       body: values.body.trim(),
     };
     reset();
-    onOpenChange(false);
-    onCreated(draft);
+    onDrafted(draft);
   }
 
   return (

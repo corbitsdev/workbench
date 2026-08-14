@@ -14,6 +14,10 @@
 import { defineAgent } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import {
+  withAvailableSkills,
+  type PinnedSkillIndexEntry,
+} from "@corbits/skills";
 import { type } from "arktype";
 
 export const AGENT_DEFINITION_STEP_ID = "agent";
@@ -32,6 +36,47 @@ export const AGENT_DEFINITION_STEP_ID = "agent";
 export const AGENT_SKILLS_ASSET_PATH = "skills.json";
 
 const SkillsFile = type({ skills: "string[]" });
+
+/**
+ * The part of a serialized definition the pinned-skills index rewrites:
+ * every step's agent system prompt. Undeclared keys pass through, so
+ * re-serializing a validated definition preserves the trigger, the step
+ * timeouts, the inference sources, and everything else the builder put
+ * there.
+ */
+const DefinitionWithAgentSteps = type({
+  steps: {
+    "[string]": type({
+      agent: type({ systemPrompt: "string" }).onUndeclaredKey("ignore"),
+    }).onUndeclaredKey("ignore"),
+  },
+}).onUndeclaredKey("ignore");
+
+/**
+ * Rewrites every step agent's system prompt so it carries an
+ * `<available_skills>` index for exactly `entries` — replacing whatever
+ * index a previous push left, so re-pinning is idempotent and unpinning
+ * removes the stanza outright.
+ */
+export function reindexPinnedSkills(
+  workflowJson: string,
+  entries: readonly PinnedSkillIndexEntry[],
+): string {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry step agents to index skills into: ${definition.summary}`,
+    );
+  }
+  for (const step of Object.values(definition.steps)) {
+    step.agent.systemPrompt = withAvailableSkills(
+      step.agent.systemPrompt,
+      entries,
+    );
+  }
+  return JSON.stringify(definition);
+}
 
 /** Serializes an agent definition's attached skill names to the JSON
  * `AGENT_SKILLS_ASSET_PATH` carries in the asset tree. */

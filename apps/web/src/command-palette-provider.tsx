@@ -31,7 +31,7 @@ import { useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
 import { useStageChrome } from "./shell/stage-chrome";
 import { listRoutines, runRoutineNow, useTenantQuery } from "./routines-api";
-import { useSessionSkills } from "./skills-session";
+import { listSkills } from "./skills-api";
 import { tenantKeys } from "./query-client";
 import type { Navigate } from "./navigation";
 
@@ -194,7 +194,11 @@ export function CommandPaletteProvider({
     open && selectedTenantId !== null,
     () => listRoutines(selectedTenantId ?? ""),
   );
-  const skills = useSessionSkills();
+  const skillsQuery = useTenantQuery(
+    tenantKeys.skills(selectedTenantId ?? ""),
+    open && selectedTenantId !== null,
+    () => listSkills(selectedTenantId ?? ""),
+  );
   const artifactsQuery = useAPIQuery(
     selectedTenantId === null || !open
       ? ""
@@ -289,12 +293,14 @@ export function CommandPaletteProvider({
 
   const skillItems = useMemo<readonly PaletteResultItem[]>(
     () =>
-      skills.map((skill) => ({
-        id: `entity:skills:${skill.id}`,
-        title: skill.name,
-        subtitle: skill.description,
-      })),
-    [skills],
+      skillsQuery.kind === "ready"
+        ? skillsQuery.data.map((skill) => ({
+            id: `entity:skills:${skill.name}`,
+            title: skill.name,
+            subtitle: skill.description,
+          }))
+        : [],
+    [skillsQuery],
   );
 
   const libraryItems = useMemo<readonly PaletteResultItem[]>(

@@ -92,7 +92,9 @@ export interface SidecarStepBuildEnvDeps {
    * The same origin is re-exposed on the step env as `hubMemoryUrl` for
    * `@corbits/memory-tools` (`requires: ["hubMemoryUrl", "sidecarToken",
    * "address"]`), which calls the sibling workflow-memory HTTP surface
-   * (`@corbits/memory-hub`'s `createWorkflowMemoryRoutes`, CL-5852).
+   * (`@corbits/memory-hub`'s `createWorkflowMemoryRoutes`, CL-5852), and
+   * again as `hubSkillsUrl` for `@corbits/tools-skills`, which calls
+   * `@corbits/skills`' `createWorkflowSkillRoutes`.
    */
   hubArtifactsUrl: string;
   sidecarToken: string;
@@ -292,6 +294,7 @@ export function createSidecarStepBuildEnv(
       address: string;
       hubArtifactsUrl: string;
       hubMemoryUrl: string;
+      hubSkillsUrl: string;
       sidecarToken: string;
     } = {
       // Feed the reactor the step's full ordered failover chain and pin
@@ -320,6 +323,10 @@ export function createSidecarStepBuildEnv(
       // bundle's own precedent rather than overloading its name for an
       // unrelated surface.
       hubMemoryUrl: deps.hubArtifactsUrl,
+      // And once more under the key `@corbits/tools-skills` declares
+      // (`requires: ["hubSkillsUrl", "sidecarToken", "address"]`) for the
+      // skill registry's own run-authenticated surface.
+      hubSkillsUrl: deps.hubArtifactsUrl,
       sidecarToken: deps.sidecarToken,
     };
     // Carry the materialized tool runtime to the tool-bearing

@@ -193,6 +193,7 @@ function AgentSkillsSection({
       {editing ? (
         <>
           <AgentSkillsPicker
+            tenantId={tenantId}
             selected={draft}
             onChange={setDraft}
             idPrefix={`agent-${definitionId}`}

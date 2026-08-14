@@ -1,27 +1,27 @@
 {
-  "name": "@corbits/agent-directory",
+  "name": "@corbits/skills",
   "private": true,
-  "description": "Creates agent definitions as workflow assets the tenant can browse, invite, and launch",
+  "description": "The skill registry over native kind:\"skill\" hub assets: SKILL.md authoring, draft-then-publish, git-history versions, per-principal access scoping, and the pinned-skills prompt index",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/skills": "workspace:*",
-    "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
-    "@intx/workflow": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
-    "hono": "^4.11.9"
+    "hono": "^4.11.9",
+    "isomorphic-git": "catalog:",
+    "postgres": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

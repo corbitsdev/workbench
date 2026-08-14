@@ -35,6 +35,7 @@ export function workspaceExtraSections(): readonly SettingsSection[] {
       icon: Sparkles,
       render: (ctx) => (
         <SkillsSettingsSection
+          tenantId={ctx.tenantId}
           {...(ctx.navigate !== undefined ? { navigate: ctx.navigate } : {})}
           entityId={ctx.entityId ?? null}
         />

@@ -1,23 +1,54 @@
-// The skills a hand-authored agent carries: a checkbox list over this
-// browser's skills registry (`../skills-session.ts`, CL-5990 — there is
-// no hub skill registry yet). Shared between the create-agent dialog and
-// the detail panel's inline editor so both attach against the same list
-// and the same "no skills yet" empty state.
+// The skills a hand-authored agent pins: a checkbox list over the
+// workbench's real skill registry (`../skills-api.ts`). Shared between
+// the create-agent dialog and the detail panel's inline editor so both
+// attach against the same list.
+//
+// A registry that fails to load says so. It never renders as "no skills
+// yet", because attaching nothing because the read failed and attaching
+// nothing because there is nothing are very different outcomes.
 
-import { useSessionSkills } from "../skills-session";
+import { useEffect, useState } from "react";
+
+import { listSkills, type SkillSummary } from "../skills-api";
+
+type LoadState =
+  | { readonly status: "loading" }
+  | { readonly status: "ready"; readonly skills: readonly SkillSummary[] }
+  | { readonly status: "error"; readonly message: string };
 
 export function AgentSkillsPicker({
+  tenantId,
   selected,
   onChange,
   idPrefix,
   disabled = false,
 }: {
+  readonly tenantId: string;
   readonly selected: readonly string[];
   readonly onChange: (next: readonly string[]) => void;
   readonly idPrefix: string;
   readonly disabled?: boolean;
 }) {
-  const skills = useSessionSkills();
+  const [state, setState] = useState<LoadState>({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ status: "loading" });
+    listSkills(tenantId)
+      .then((skills) => {
+        if (!cancelled) setState({ status: "ready", skills });
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setState({
+          status: "error",
+          message: cause instanceof Error ? cause.message : String(cause),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
 
   function toggle(name: string) {
     onChange(
@@ -27,7 +58,19 @@ export function AgentSkillsPicker({
     );
   }
 
-  if (skills.length === 0) {
+  if (state.status === "loading") {
+    return <p className="text-sm text-muted-foreground">Loading skills…</p>;
+  }
+
+  if (state.status === "error") {
+    return (
+      <p className="text-sm text-danger-foreground" role="alert">
+        Could not load skills: {state.message}
+      </p>
+    );
+  }
+
+  if (state.skills.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
         No skills yet — create one from Settings → Skills, then attach it here.
@@ -37,11 +80,11 @@ export function AgentSkillsPicker({
 
   return (
     <div className="flex flex-col gap-2">
-      {skills.map((skill) => {
-        const id = `${idPrefix}-skill-${skill.id}`;
+      {state.skills.map((skill) => {
+        const id = `${idPrefix}-skill-${skill.name}`;
         return (
           <label
-            key={skill.id}
+            key={skill.assetId}
             htmlFor={id}
             className="flex items-start gap-2 text-sm"
           >

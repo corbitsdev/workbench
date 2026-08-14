@@ -2,6 +2,7 @@ export {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
   parseAgentSkills,
+  reindexPinnedSkills,
   serializeAgentSkills,
   AGENT_DEFINITION_STEP_ID,
   AGENT_SKILLS_ASSET_PATH,
@@ -18,4 +19,5 @@ export type {
 export {
   createAgentDefinitionRoutes,
   type CreateAgentDefinitionRoutesDeps,
+  type PinnedSkillIndexResolver,
 } from "./routes";

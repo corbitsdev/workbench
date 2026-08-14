@@ -131,11 +131,13 @@ import {
   createSinkRegistry,
 } from "@corbits/notify";
 import { mountMemory } from "./memory-mount";
+import { mountSkills } from "./skills-mount";
 import {
   createUnavailableWorkflowMemoryRoutes,
   createWorkflowMemoryRoutes,
   createWorkflowMemoryStore,
 } from "@corbits/memory-hub";
+import { createSkillRoutes, createWorkflowSkillRoutes } from "@corbits/skills";
 import { mountArtifacts } from "./artifacts-mount";
 import {
   createCredentialExpirySweep,
@@ -713,11 +715,40 @@ export async function createHub(config: HubConfig) {
   // `chatGrantStore`/`chatConditionRegistry` with every other extension
   // mounted here — there is nothing chat-specific about that pair, it
   // is just this composition root's one db-backed grant store.
+  // The skill registry over native `kind:"skill"` assets, plus the two
+  // surfaces it serves: the tenant-session one the Skills settings
+  // section calls, and the run-authenticated one a workflow child's
+  // `@corbits/tools-skills` bundle calls (mounted outside the tenant
+  // prefix below, beside `/api/workflow-memory`).
+  const skills = mountSkills({
+    db,
+    assetService,
+    repoStore: agentRepoStore.repoStore,
+  });
+  app.route(
+    `${TENANT_PREFIX}/skills`,
+    createSkillRoutes({
+      registry: skills.registry,
+      pinnedBy: skills.pinnedBy,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
+  app.route(
+    "/api/workflow-skills",
+    createWorkflowSkillRoutes({
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      registry: skills.registry,
+    }),
+  );
   app.route(
     `${TENANT_PREFIX}/agent-definitions`,
     createAgentDefinitionRoutes({
       db,
       assetService,
+      skillIndex: skills.skillIndex,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,

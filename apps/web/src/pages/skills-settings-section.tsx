@@ -1,9 +1,16 @@
-// Settings · Skills: session drafts (CL-5990). There is no hub skill
-// registry yet, so drafts live in the same session store shared across
-// mounts (see `../skills-session.ts`). Formerly its own rail destination
-// (`/skills`, `skills-page.tsx` + shell col2's `SkillsFeedBand`); both the
-// stage detail and the list now live together here, self-contained, since a
-// settings section has no separate col2 list to lean on.
+// Settings · Skills, over the workbench's real skill registry
+// (`@corbits/skills`, via `../skills-api.ts`). This replaced the
+// session-local store CL-5991 shipped: a skill now lives in a native
+// `kind:"skill"` hub asset, its version history is that asset's git
+// history, and a draft is a pending row on the same registry rather than
+// something that vanishes with the browser tab.
+//
+// Three states a skill can be in, all visible here:
+//   pending  — a draft exists; publishing turns it into a real skill
+//   private  — published, visible only to the person who wrote it
+//   shared   — published and installed for the whole workbench
+//
+// "Install" and "Uninstall" are the two directions of that last step.
 
 import {
   Badge,
@@ -22,58 +29,112 @@ import {
   formatRelativeTime,
 } from "@corbits/react-ui";
 import { Plus, Search, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { consumePendingNewSkill } from "../command-palette-actions";
 import {
-  addSessionSkill,
-  updateSessionSkills,
-  useSessionSkills,
-  type Skill,
-} from "../skills-session";
-import { CreateSkillDialog, type SkillDraft } from "./create-skill-dialog";
+  createSkillDraft,
+  listSkillDrafts,
+  listSkills,
+  listSkillVersions,
+  loadSkill,
+  publishSkillDraft,
+  restoreSkillVersion,
+  setSkillScope,
+  type PinnedByEntry,
+  type SkillDetail,
+  type SkillDraft,
+  type SkillSummary,
+  type SkillVersion,
+} from "../skills-api";
+import { CreateSkillDialog, type SkillDraftInput } from "./create-skill-dialog";
 
-function accessTone(access: Skill["access"]): "info" | "neutral" {
-  return access === "Shared" ? "info" : "neutral";
+type RegistryState =
+  | { readonly status: "loading" }
+  | {
+      readonly status: "ready";
+      readonly skills: readonly SkillSummary[];
+      readonly drafts: readonly SkillDraft[];
+    }
+  | { readonly status: "error"; readonly message: string };
+
+type DetailState =
+  | { readonly status: "loading" }
+  | {
+      readonly status: "ready";
+      readonly skill: SkillDetail;
+      readonly pinnedBy: readonly PinnedByEntry[];
+      readonly versions: readonly SkillVersion[];
+    }
+  | { readonly status: "error"; readonly message: string };
+
+function messageOf(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function draftToSkill(
-  draft: SkillDraft,
-  id: string,
-  nowIso: string,
-): Skill {
-  return {
-    id,
-    name: draft.name.trim(),
-    description: draft.description.trim(),
-    body: draft.body,
-    access: "Private",
-    owner: "You",
-    updatedAt: nowIso,
-    version: "0.1.0",
-    pinnedBy: [],
-    versions: [
-      {
-        version: "0.1.0",
-        note: "Session draft",
-        who: "You",
-        whenIso: nowIso,
-        current: true,
-      },
-    ],
-    sessionLocal: true,
-  };
-}
-
-function SkillDetail({
-  skill,
+function SkillDetailView({
+  tenantId,
+  name,
   now,
-  onRestore,
+  onChanged,
 }: {
-  readonly skill: Skill;
+  readonly tenantId: string;
+  readonly name: string;
   readonly now: number;
-  readonly onRestore: (version: string) => void;
+  readonly onChanged: () => void;
 }) {
+  const [state, setState] = useState<DetailState>({ status: "loading" });
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(async () => {
+    setState({ status: "loading" });
+    try {
+      const [detail, versions] = await Promise.all([
+        loadSkill(tenantId, name),
+        listSkillVersions(tenantId, name),
+      ]);
+      setState({
+        status: "ready",
+        skill: detail.skill,
+        pinnedBy: detail.pinnedBy,
+        versions,
+      });
+    } catch (cause) {
+      setState({ status: "error", message: messageOf(cause) });
+    }
+  }, [tenantId, name]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  if (state.status === "loading") {
+    return <p className="text-sm text-muted-foreground">Loading skill…</p>;
+  }
+  if (state.status === "error") {
+    return (
+      <p className="text-sm text-danger-foreground" role="alert">
+        Could not load “{name}”: {state.message}
+      </p>
+    );
+  }
+
+  const { skill, pinnedBy, versions } = state;
+  const shared = skill.scope === "tenant";
+
+  async function run(action: () => Promise<unknown>) {
+    setBusy(true);
+    try {
+      await action();
+      await reload();
+      onChanged();
+    } catch (cause) {
+      setState({ status: "error", message: messageOf(cause) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -82,27 +143,39 @@ function SkillDetail({
             {skill.name}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {skill.description === ""
-              ? "No description yet."
-              : skill.description}
+            {skill.description}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={accessTone(skill.access)}>{skill.access}</Badge>
-          <Badge tone="neutral">v{skill.version}</Badge>
-          {skill.sessionLocal ? (
-            <Badge tone="warning">Session draft</Badge>
-          ) : null}
+          <Badge tone={shared ? "info" : "neutral"}>
+            {shared ? "Installed" : "Private"}
+          </Badge>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              void run(() =>
+                setSkillScope(
+                  tenantId,
+                  skill.name,
+                  shared ? "private" : "tenant",
+                ),
+              )
+            }
+          >
+            {shared ? "Uninstall" : "Install"}
+          </Button>
         </div>
       </header>
 
       <Section title="About" description="What this skill packages.">
         <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
-          {skill.body === "" ? "(empty body)" : skill.body}
+          {skill.body}
         </pre>
         <p className="mt-2 text-xs text-muted-foreground">
-          Owner {skill.owner} · updated{" "}
-          {formatRelativeTime(skill.updatedAt, now)}
+          Updated {formatRelativeTime(skill.updatedAtIso, now)}
         </p>
       </Section>
 
@@ -110,15 +183,15 @@ function SkillDetail({
         title="Pinned by"
         description="Agents that currently declare this skill."
       >
-        {skill.pinnedBy.length === 0 ? (
+        {pinnedBy.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No agents pin this skill yet.
           </p>
         ) : (
           <ul className="flex flex-wrap gap-2">
-            {skill.pinnedBy.map((name) => (
-              <li key={name}>
-                <Badge tone="neutral">{name}</Badge>
+            {pinnedBy.map((entry) => (
+              <li key={entry.definitionId}>
+                <Badge tone="neutral">{entry.name}</Badge>
               </li>
             ))}
           </ul>
@@ -127,7 +200,7 @@ function SkillDetail({
 
       <Section
         title="Version history"
-        description="Restore rewinds the live version. Session drafts have only the draft version until a registry exists."
+        description="Every commit on this skill's asset. Restore re-commits an older version as the current one."
       >
         <Table>
           <TableHeader>
@@ -140,37 +213,38 @@ function SkillDetail({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {skill.versions.map((ver) => (
-              <TableRow key={ver.version}>
+            {versions.map((version) => (
+              <TableRow key={version.commitSha}>
                 <TableCell className="font-mono text-xs">
-                  v{ver.version}
-                  {ver.current ? (
+                  {version.commitSha.slice(0, 8)}
+                  {version.current ? (
                     <Badge tone="success" className="ml-2">
                       current
                     </Badge>
                   ) : null}
                 </TableCell>
-                <TableCell className="text-sm">{ver.note}</TableCell>
+                <TableCell className="text-sm">{version.message}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {ver.who}
+                  {version.author}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {formatRelativeTime(ver.whenIso, now)}
+                  {formatRelativeTime(version.committedAtIso, now)}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={ver.current || skill.sessionLocal}
-                    title={
-                      skill.sessionLocal
-                        ? "Restore needs a skill registry"
-                        : ver.current
-                          ? "Already current"
-                          : `Restore v${ver.version}`
+                    disabled={version.current || busy}
+                    onClick={() =>
+                      void run(() =>
+                        restoreSkillVersion(
+                          tenantId,
+                          skill.name,
+                          version.commitSha,
+                        ),
+                      )
                     }
-                    onClick={() => onRestore(ver.version)}
                   >
                     Restore
                   </Button>
@@ -185,29 +259,44 @@ function SkillDetail({
 }
 
 /**
- * Settings · Skills: session drafts. `navigate` and `entityId` come from
- * the settings section context (see `../settings-workspace-sections.tsx`);
- * `skills`/`now`/`onSkillsChange` are injectable for tests, mirroring the
- * former `SkillsPage`'s controlled-list escape hatch.
+ * Settings · Skills. `navigate` and `entityId` come from the settings
+ * section context (see `../settings-workspace-sections.tsx`); `tenantId`
+ * is the registry every read and write is scoped to.
  */
 export function SkillsSettingsSection({
+  tenantId,
   navigate,
   entityId,
-  skills: controlledSkills,
   now = Date.now(),
-  onSkillsChange,
 }: {
+  readonly tenantId: string | null;
   readonly navigate?: (to: string) => void;
   readonly entityId?: string | null;
-  readonly skills?: readonly Skill[];
   readonly now?: number;
-  readonly onSkillsChange?: (next: readonly Skill[]) => void;
 }) {
-  const sessionSkills = useSessionSkills();
-  const skills = controlledSkills ?? sessionSkills;
+  const [state, setState] = useState<RegistryState>({ status: "loading" });
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(entityId ?? null);
+  const [selected, setSelected] = useState<string | null>(entityId ?? null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    if (tenantId === null) return;
+    setState({ status: "loading" });
+    try {
+      const [skills, drafts] = await Promise.all([
+        listSkills(tenantId),
+        listSkillDrafts(tenantId),
+      ]);
+      setState({ status: "ready", skills, drafts });
+    } catch (cause) {
+      setState({ status: "error", message: messageOf(cause) });
+    }
+  }, [tenantId]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   useEffect(() => {
     if (consumePendingNewSkill()) setCreateOpen(true);
@@ -220,55 +309,104 @@ export function SkillsSettingsSection({
       window.removeEventListener("workbench:skills:create", onCreate);
   }, []);
 
-  function select(id: string | null) {
-    setSelectedId(id);
+  function select(name: string | null) {
+    setSelected(name);
     navigate?.(
-      id === null
+      name === null
         ? "/settings/skills"
-        : `/settings/skills/${encodeURIComponent(id)}`,
+        : `/settings/skills/${encodeURIComponent(name)}`,
     );
   }
 
-  function commitSkills(next: readonly Skill[]): void {
-    if (controlledSkills !== undefined) {
-      onSkillsChange?.(next);
-      return;
+  async function handleDrafted(draft: SkillDraftInput) {
+    if (tenantId === null) return;
+    setActionError(null);
+    try {
+      await createSkillDraft(tenantId, draft);
+      setCreateOpen(false);
+      await reload();
+    } catch (cause) {
+      setActionError(messageOf(cause));
     }
-    updateSessionSkills(() => next);
   }
 
-  function handleCreated(draft: SkillDraft): void {
-    const id = `skill_local_${crypto.randomUUID()}`;
-    const next = draftToSkill(draft, id, new Date(now).toISOString());
-    if (controlledSkills !== undefined) {
-      onSkillsChange?.([next, ...controlledSkills]);
-    } else {
-      addSessionSkill(next);
+  async function handlePublish(name: string) {
+    if (tenantId === null) return;
+    setActionError(null);
+    try {
+      await publishSkillDraft(tenantId, name, "private");
+      await reload();
+      select(name);
+    } catch (cause) {
+      setActionError(messageOf(cause));
     }
-    setCreateOpen(false);
-    select(id);
   }
-
-  const selected =
-    selectedId === null
-      ? null
-      : (skills.find((s) => s.id === selectedId) ?? null);
 
   const createDialog = (
     <CreateSkillDialog
       open={createOpen}
       onOpenChange={setCreateOpen}
-      onCreated={handleCreated}
+      onDrafted={(draft) => void handleDrafted(draft)}
     />
   );
 
-  if (skills.length === 0) {
+  if (tenantId === null) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Pick a workbench to see its skills.
+      </p>
+    );
+  }
+
+  if (state.status === "loading") {
+    return <p className="text-sm text-muted-foreground">Loading skills…</p>;
+  }
+
+  if (state.status === "error") {
+    return (
+      <p className="text-sm text-danger-foreground" role="alert">
+        Could not load the skill registry: {state.message}
+      </p>
+    );
+  }
+
+  const errorNote =
+    actionError === null ? null : (
+      <p className="text-sm text-danger-foreground" role="alert">
+        {actionError}
+      </p>
+    );
+
+  if (selected !== null) {
     return (
       <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <Button variant="outline" size="sm" onClick={() => select(null)}>
+            All skills
+          </Button>
+        </div>
+        {errorNote}
+        <SkillDetailView
+          tenantId={tenantId}
+          name={selected}
+          now={now}
+          onChanged={() => void reload()}
+        />
+        {createDialog}
+      </div>
+    );
+  }
+
+  const { skills, drafts } = state;
+
+  if (skills.length === 0 && drafts.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        {errorNote}
         <RichEmptyState
           icon={<Sparkles />}
           title="No skills yet"
-          description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent can declare and a workbench can install. There's no skill registry yet; drafts you create stay in this session only."
+          description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent can pin and a workbench can install. Write one and publish it into this workbench's registry."
           actions={[
             {
               label: "New skill",
@@ -282,47 +420,14 @@ export function SkillsSettingsSection({
     );
   }
 
-  if (selected !== null) {
-    return (
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <Button variant="outline" size="sm" onClick={() => select(null)}>
-            All skills
-          </Button>
-        </div>
-        <SkillDetail
-          skill={selected}
-          now={now}
-          onRestore={(version) => {
-            commitSkills(
-              skills.map((s) => {
-                if (s.id !== selected.id || s.sessionLocal) return s;
-                return {
-                  ...s,
-                  version,
-                  versions: s.versions.map((v) => ({
-                    ...v,
-                    current: v.version === version,
-                  })),
-                  updatedAt: new Date(now).toISOString(),
-                };
-              }),
-            );
-          }}
-        />
-        {createDialog}
-      </div>
-    );
-  }
-
-  const q = query.trim().toLowerCase();
+  const needle = query.trim().toLowerCase();
   const filtered =
-    q === ""
+    needle === ""
       ? skills
       : skills.filter(
-          (s) =>
-            s.name.toLowerCase().includes(q) ||
-            s.description.toLowerCase().includes(q),
+          (skill) =>
+            skill.name.toLowerCase().includes(needle) ||
+            skill.description.toLowerCase().includes(needle),
         );
 
   return (
@@ -341,6 +446,39 @@ export function SkillsSettingsSection({
           <Plus /> New skill
         </Button>
       </div>
+      {errorNote}
+
+      {drafts.length > 0 && (
+        <Section
+          title="Pending"
+          description="Drafts nobody else can see yet. Publishing adds the skill to this workbench's registry."
+        >
+          <div className="flex flex-col gap-1">
+            {drafts.map((draft) => (
+              <SidebarItemRow
+                key={draft.assetId}
+                leading={<Sparkles />}
+                name={
+                  <span className="panel-row-copy">
+                    <strong>{draft.name}</strong>
+                    <span>{draft.description}</span>
+                  </span>
+                }
+                meta={
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void handlePublish(draft.name)}
+                  >
+                    Publish
+                  </Button>
+                }
+              />
+            ))}
+          </div>
+        </Section>
+      )}
+
       {filtered.length === 0 ? (
         <EmptyState
           icon={<Sparkles />}
@@ -351,26 +489,26 @@ export function SkillsSettingsSection({
         <div className="flex flex-col gap-1">
           {filtered.map((skill) => (
             <SidebarItemRow
-              key={skill.id}
+              key={skill.assetId}
               leading={<Sparkles />}
               name={
                 <span className="panel-row-copy">
                   <strong>{skill.name}</strong>
-                  <span>v{skill.version}</span>
+                  <span>{skill.description}</span>
                 </span>
               }
               meta={
                 <span
                   className={
-                    skill.sessionLocal
-                      ? "panel-status is-muted"
-                      : "panel-status is-ok"
+                    skill.scope === "tenant"
+                      ? "panel-status is-ok"
+                      : "panel-status is-muted"
                   }
                 >
-                  {skill.sessionLocal ? "Draft" : "Installed"}
+                  {skill.scope === "tenant" ? "Installed" : "Private"}
                 </span>
               }
-              onSelect={() => select(skill.id)}
+              onSelect={() => select(skill.name)}
             />
           ))}
         </div>

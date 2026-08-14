@@ -74,7 +74,7 @@ describe("ACTION_COMMANDS", () => {
     }
   });
 
-  test("labels 'New skill' to match the app's session-local skills model, not 'Install skill'", () => {
+  test("labels 'New skill' to match the app's authoring model, not 'Install skill'", () => {
     const skillCommand = ACTION_COMMANDS.find((c) => c.id === "new-skill");
     expect(skillCommand?.title).toBe("New skill");
   });
