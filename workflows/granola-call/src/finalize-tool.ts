@@ -97,67 +97,65 @@ export interface WorkflowArtifactEnv extends BaseEnv {
  * `defineTool`'s env-DI factory shape. Needs the sanctioned
  * workflow-artifacts credential trio beyond `BaseEnv`.
  */
-export const GRANOLA_CALL_REPORT_STATUS_TOOL = defineTool<WorkflowArtifactEnv>(
-  {
-    id: "@corbits/workflow-granola-call/report-status",
-    requires: ["hubArtifactsUrl", "sidecarToken", "address"],
-    definitions: [{ name: GRANOLA_CALL_REPORT_STATUS_TOOL_NAME }],
-    factory: (env) => ({
-      definitions: [
-        {
-          name: GRANOLA_CALL_REPORT_STATUS_TOOL_NAME,
-          description: GRANOLA_CALL_REPORT_STATUS_DESCRIPTION,
-          inputSchema: {
-            type: "object",
-            properties: {
-              reason: { type: "string" },
-              callsExamined: { type: "number" },
-              nextSteps: { type: "string" },
-            },
-            required: ["reason", "callsExamined", "nextSteps"],
+export const GRANOLA_CALL_REPORT_STATUS_TOOL = defineTool<WorkflowArtifactEnv>({
+  id: "@corbits/workflow-granola-call/report-status",
+  requires: ["hubArtifactsUrl", "sidecarToken", "address"],
+  definitions: [{ name: GRANOLA_CALL_REPORT_STATUS_TOOL_NAME }],
+  factory: (env) => ({
+    definitions: [
+      {
+        name: GRANOLA_CALL_REPORT_STATUS_TOOL_NAME,
+        description: GRANOLA_CALL_REPORT_STATUS_DESCRIPTION,
+        inputSchema: {
+          type: "object",
+          properties: {
+            reason: { type: "string" },
+            callsExamined: { type: "number" },
+            nextSteps: { type: "string" },
           },
+          required: ["reason", "callsExamined", "nextSteps"],
         },
-      ],
-      run: async (call) => {
-        const parsed = StatusReportArgs(call.arguments);
-        if (parsed instanceof type.errors) {
-          return {
-            callId: call.id,
-            isError: true,
-            content: `Invalid arguments for ${GRANOLA_CALL_REPORT_STATUS_TOOL_NAME}: ${parsed.summary}`,
-          };
-        }
-        const artifact = buildStatusArtifactPayload(parsed);
-        try {
-          const created = await createWorkflowArtifact(
-            {
-              hubArtifactsUrl: env.hubArtifactsUrl,
-              sidecarToken: env.sidecarToken,
-              runAddress: env.address,
-            },
-            artifact,
-          );
-          return {
-            callId: call.id,
-            isError: false,
-            content: JSON.stringify({
-              id: created.id,
-              version: created.version,
-              title: artifact.title,
-              kind: artifact.kind,
-              persisted: true,
-            }),
-          };
-        } catch (err) {
-          return {
-            callId: call.id,
-            isError: true,
-            content: `Failed to persist "${artifact.title}" as a Library artifact: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          };
-        }
       },
-    }),
-  },
-);
+    ],
+    run: async (call) => {
+      const parsed = StatusReportArgs(call.arguments);
+      if (parsed instanceof type.errors) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: `Invalid arguments for ${GRANOLA_CALL_REPORT_STATUS_TOOL_NAME}: ${parsed.summary}`,
+        };
+      }
+      const artifact = buildStatusArtifactPayload(parsed);
+      try {
+        const created = await createWorkflowArtifact(
+          {
+            hubArtifactsUrl: env.hubArtifactsUrl,
+            sidecarToken: env.sidecarToken,
+            runAddress: env.address,
+          },
+          artifact,
+        );
+        return {
+          callId: call.id,
+          isError: false,
+          content: JSON.stringify({
+            id: created.id,
+            version: created.version,
+            title: artifact.title,
+            kind: artifact.kind,
+            persisted: true,
+          }),
+        };
+      } catch (err) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: `Failed to persist "${artifact.title}" as a Library artifact: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        };
+      }
+    },
+  }),
+});

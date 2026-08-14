@@ -94,9 +94,7 @@ test("the system prompt names the honest no-data teaching-artifact tool and its 
   expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain(
     REDDIT_OPPORTUNITY_SCANNER_REPORT_NO_RESULTS_TOOL_NAME,
   );
-  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain(
-    "scrapecreators",
-  );
+  expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toContain("scrapecreators");
   expect(REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT).toMatch(
     /needs no approval/i,
   );

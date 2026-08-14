@@ -157,7 +157,7 @@ per its system prompt:
   workflow never invents one.
 - `focus` (optional) — narrows which angle of `topic` to chase across
   every source (e.g. `topic: "agentic coding tools"`, `focus:
-  "pricing changes"`).
+"pricing changes"`).
 
 Today the only way to set these is the raw body of the triggering mail
 — there is no create-time UI field for them yet. Wiring a `topic`/

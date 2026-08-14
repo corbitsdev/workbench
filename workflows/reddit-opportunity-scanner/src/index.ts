@@ -108,7 +108,7 @@ export const REDDIT_OPPORTUNITY_SCANNER_SYSTEM_PROMPT = [
     " exactly once with an honest account: the target URL, one line per " +
     "keyword/subreddit pair actually attempted (or an empty list if none " +
     "were reachable), the connector id this run could not reach if that " +
-    "is why nothing came back (e.g. \"scrapecreators\", the connector " +
+    'is why nothing came back (e.g. "scrapecreators", the connector ' +
     "reddit_search and reddit_subreddit_search need — leave this empty " +
     "if every search WAS reachable and simply found nothing), and a " +
     "plain next step for the sender (connect the missing connector, or " +

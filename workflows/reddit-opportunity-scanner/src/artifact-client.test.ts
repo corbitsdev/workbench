@@ -23,7 +23,11 @@ test("posts to the workflow-artifacts endpoint and returns id/version", async ()
 
   const result = await createWorkflowArtifact(
     { ...CONFIG, fetchImpl },
-    { title: "Founder asking for an onboarding tool", kind: "reddit-opportunity-scan", content: "hello" },
+    {
+      title: "Founder asking for an onboarding tool",
+      kind: "reddit-opportunity-scan",
+      content: "hello",
+    },
   );
 
   expect(result).toEqual({ id: "art_1", version: 1 });

@@ -62,9 +62,7 @@ test("buildArtifactPayloads fixes every opportunity's kind and folds context int
 test("buildNoResultsArtifactPayload honestly reports the attempt, missing connector, and next step", () => {
   const payload = buildNoResultsArtifactPayload({
     targetUrl: "https://example.com",
-    attemptedSearches: [
-      'keyword "onboarding tool" in r/startups: unreachable',
-    ],
+    attemptedSearches: ['keyword "onboarding tool" in r/startups: unreachable'],
     missingConnectors: ["scrapecreators"],
     nextSteps: "Connect the ScrapeCreators connector, then re-run this scan.",
   });

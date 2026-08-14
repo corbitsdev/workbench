@@ -105,12 +105,16 @@ test("the prompt requires an honest failure state when nothing is connected", ()
 });
 
 test("the prompt names the exact approval-gated finalize tool", () => {
-  expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain(MORNING_BRIEF_FINALIZE_TOOL_NAME);
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain(
+    MORNING_BRIEF_FINALIZE_TOOL_NAME,
+  );
 });
 
 test("the prompt commits to always finalizing, even with a teaching payload on the no-data path", () => {
   expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(/teaching/i);
-  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(/never end a run without finalizing/i);
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(
+    /never end a run without finalizing/i,
+  );
   expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain("granola");
   expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain("linear");
 });
