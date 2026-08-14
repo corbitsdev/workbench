@@ -20,9 +20,6 @@
 
 import { createHmac } from "node:crypto";
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
@@ -33,6 +30,7 @@ import {
   api,
   assertNeverRealProvider,
   connectE2eDb,
+  createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   freePort,
@@ -42,8 +40,9 @@ import {
   startHub,
   startSidecar,
   type HubHandle,
-  type SpawnedApp,
 } from "./harness.ts";
+
+const { tempDir, track } = createCleanupHarness();
 
 const databaseUrl = e2eDatabaseUrl();
 if (databaseUrl === undefined) {
@@ -74,12 +73,8 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
       await setupDatabase(url);
     });
 
-    const hubDataDir = await mkdtemp(
-      path.join(tmpdir(), "e2e-smoke-webhook-hub-data-"),
-    );
-    const sidecarDataDir = await mkdtemp(
-      path.join(tmpdir(), "e2e-smoke-webhook-sidecar-data-"),
-    );
+    const hubDataDir = await tempDir("e2e-smoke-webhook-hub-data-");
+    const sidecarDataDir = await tempDir("e2e-smoke-webhook-sidecar-data-");
 
     const sidecarId = "sidecar-e2e-smoke-webhook";
     const sidecarToken = crypto.randomUUID();
@@ -97,8 +92,9 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         dataDir: hubDataDir,
       }),
     );
+    track(hub);
 
-    const sidecar: SpawnedApp = await hop("sidecar boot", () =>
+    const sidecar = await hop("sidecar boot", () =>
       Promise.resolve(
         startSidecar({
           hubPort: Number(new URL(hub.baseUrl).port),
@@ -108,8 +104,9 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         }),
       ),
     );
+    track(sidecar);
 
-    try {
+    {
       const cookies = await hop("sign-up", async () => {
         const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
           name: "Webhook Smoke Tester",
@@ -490,11 +487,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         "smoke-webhook: a signed delivery to the public ingress route " +
           "launched a real run row for a routine bound to a webhook trigger.",
       );
-    } finally {
-      await sidecar.stop();
-      await hub.stop();
-      await rm(hubDataDir, { recursive: true, force: true });
-      await rm(sidecarDataDir, { recursive: true, force: true });
     }
   }, 180_000);
 });

@@ -153,16 +153,12 @@ export function CreateAgentDialog({
 
   function handleFormChange(next: Record<string, unknown>) {
     const name = typeof next.name === "string" ? next.name : values.name;
-    const handleEdited =
-      typeof next.handle === "string" && next.handle !== values.handle;
+    const nextHandle =
+      typeof next.handle === "string" ? next.handle : values.handle;
+    const handleEdited = !handleTouched && nextHandle !== values.handle;
     setValues({
       name,
-      handle:
-        typeof next.handle === "string"
-          ? next.handle
-          : handleTouched
-            ? values.handle
-            : slugify(name),
+      handle: handleTouched || handleEdited ? nextHandle : slugify(name),
       description: typeof next.description === "string" ? next.description : "",
       systemPrompt:
         typeof next.systemPrompt === "string" ? next.systemPrompt : "",

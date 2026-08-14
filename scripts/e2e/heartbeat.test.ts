@@ -11,10 +11,7 @@
 // inference call — against `noop-inference`'s constant, locally
 // served reply, never a real model.
 
-import { afterAll, describe, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { describe, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
@@ -24,6 +21,7 @@ import {
 } from "../../workflows/heartbeat/src/index.ts";
 import {
   api,
+  createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   expectStepCompleted,
@@ -36,7 +34,6 @@ import {
   waitForRunCompletion,
   type ApiResult,
   type HubHandle,
-  type SpawnedApp,
 } from "./harness.ts";
 
 const databaseUrl = e2eDatabaseUrl();
@@ -72,21 +69,7 @@ function runIds(data: unknown): string[] {
   throw new Error(`expected a runIds array: ${JSON.stringify(data)}`);
 }
 
-const cleanups: (() => Promise<void>)[] = [];
-
-afterAll(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-});
-
-async function tempDir(prefix: string): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), prefix));
-  cleanups.push(() => rm(dir, { recursive: true, force: true }));
-  return dir;
-}
-
-function track(app: SpawnedApp): void {
-  cleanups.push(() => app.stop());
-}
+const { tempDir, track } = createCleanupHarness();
 
 describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
   // Skipped: the first mail trigger against a freshly deployed workflow

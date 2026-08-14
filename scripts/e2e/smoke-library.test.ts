@@ -11,20 +11,19 @@
 // credential, no external network call of any kind.
 
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   api,
+  createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   freePort,
   hop,
   startHub,
-  type HubHandle,
 } from "./harness.ts";
+
+const { tempDir, track } = createCleanupHarness();
 
 const databaseUrl = e2eDatabaseUrl();
 if (databaseUrl === undefined) {
@@ -112,123 +111,116 @@ describe.skipIf(databaseUrl === undefined)("smoke: library", () => {
       await setupDatabase(url);
     });
 
-    const dataDir = await mkdtemp(
-      path.join(tmpdir(), "e2e-smoke-library-hub-data-"),
+    const dataDir = await tempDir("e2e-smoke-library-hub-data-");
+    const hub = await hop("hub boot", () =>
+      startHub({
+        databaseUrl: url,
+        port: freePort(),
+        sessionSecret: Buffer.from(
+          crypto.getRandomValues(new Uint8Array(32)),
+        ).toString("hex"),
+        dataDir,
+      }),
     );
-    let hub: HubHandle | undefined;
-    try {
-      hub = await hop("hub boot", () =>
-        startHub({
-          databaseUrl: url,
-          port: freePort(),
-          sessionSecret: Buffer.from(
-            crypto.getRandomValues(new Uint8Array(32)),
-          ).toString("hex"),
-          dataDir,
-        }),
+    track(hub);
+    const baseUrl = hub.baseUrl;
+
+    const cookies = await hop("sign-up", async () => {
+      const res = await api(baseUrl, "POST", "/api/auth/sign-up/email", {
+        name: "Library Smoke Tester",
+        email: `smoke-library-${crypto.randomUUID()}@example.invalid`,
+        password: `pw-${crypto.randomUUID()}`,
+      });
+      expectStatus("sign-up", res, 200);
+      if (res.cookies.length === 0) {
+        throw new Error("sign-up returned no session cookie");
+      }
+      return res.cookies;
+    });
+
+    const tenantId = await hop("tenant creation", async () => {
+      const slug = `smokelib${crypto.randomUUID().slice(0, 8)}`;
+      const res = await api(
+        baseUrl,
+        "POST",
+        "/api/tenants",
+        { name: "Library Smoke", slug },
+        cookies,
       );
-      const baseUrl = hub.baseUrl;
+      expectStatus("create tenant", res, 201);
+      return stringField(res.data, "id", "create tenant");
+    });
 
-      const cookies = await hop("sign-up", async () => {
-        const res = await api(baseUrl, "POST", "/api/auth/sign-up/email", {
-          name: "Library Smoke Tester",
-          email: `smoke-library-${crypto.randomUUID()}@example.invalid`,
-          password: `pw-${crypto.randomUUID()}`,
-        });
-        expectStatus("sign-up", res, 200);
-        if (res.cookies.length === 0) {
-          throw new Error("sign-up returned no session cookie");
-        }
-        return res.cookies;
-      });
-
-      const tenantId = await hop("tenant creation", async () => {
-        const slug = `smokelib${crypto.randomUUID().slice(0, 8)}`;
-        const res = await api(
-          baseUrl,
-          "POST",
-          "/api/tenants",
-          { name: "Library Smoke", slug },
-          cookies,
-        );
-        expectStatus("create tenant", res, 201);
-        return stringField(res.data, "id", "create tenant");
-      });
-
-      const fileBytes = new TextEncoder().encode(
-        `smoke library bytes ${crypto.randomUUID()}`,
+    const fileBytes = new TextEncoder().encode(
+      `smoke library bytes ${crypto.randomUUID()}`,
+    );
+    const artifactId = await hop("upload an artifact", async () => {
+      const res = await uploadArtifact(
+        baseUrl,
+        tenantId,
+        cookies,
+        "smoke.pdf",
+        fileBytes,
       );
-      const artifactId = await hop("upload an artifact", async () => {
-        const res = await uploadArtifact(
-          baseUrl,
-          tenantId,
-          cookies,
-          "smoke.pdf",
-          fileBytes,
+      if (res.status !== 201) {
+        throw new Error(
+          `upload artifact: expected HTTP 201, got ${res.status}: ${JSON.stringify(res.data)}`,
         );
-        if (res.status !== 201) {
-          throw new Error(
-            `upload artifact: expected HTTP 201, got ${res.status}: ${JSON.stringify(res.data)}`,
-          );
-        }
-        const items = (res.data as { data: { id: string; title: string }[] })
-          .data;
-        if (items.length !== 1) {
-          throw new Error(
-            `upload artifact: expected exactly one item, got: ${JSON.stringify(res.data)}`,
-          );
-        }
-        const item = items[0];
-        expect(item?.title).toBe("smoke.pdf");
-        const ref = uploadRef(item, "upload response");
-        expect(ref.filename).toBe("smoke.pdf");
-        expect(ref.mimeType).toBe("application/pdf");
-        expect(ref.size).toBe(fileBytes.byteLength);
-        return stringField({ id: item?.id }, "id", "upload artifact");
-      });
+      }
+      const items = (res.data as { data: { id: string; title: string }[] })
+        .data;
+      if (items.length !== 1) {
+        throw new Error(
+          `upload artifact: expected exactly one item, got: ${JSON.stringify(res.data)}`,
+        );
+      }
+      const item = items[0];
+      expect(item?.title).toBe("smoke.pdf");
+      const ref = uploadRef(item, "upload response");
+      expect(ref.filename).toBe("smoke.pdf");
+      expect(ref.mimeType).toBe("application/pdf");
+      expect(ref.size).toBe(fileBytes.byteLength);
+      return stringField({ id: item?.id }, "id", "upload artifact");
+    });
 
-      await hop("the artifact is listed", async () => {
+    await hop("the artifact is listed", async () => {
+      const res = await api(
+        baseUrl,
+        "GET",
+        `/api/tenants/${tenantId}/artifacts`,
+        undefined,
+        cookies,
+      );
+      expectStatus("list artifacts", res, 200);
+      const items = (res.data as { data: { id: string; title: string }[] })
+        .data;
+      const found = items.find((item) => item.id === artifactId);
+      if (found === undefined) {
+        throw new Error(
+          `uploaded artifact missing from the listing: ${JSON.stringify(items)}`,
+        );
+      }
+      expect(found.title).toBe("smoke.pdf");
+    });
+
+    await hop(
+      "the artifact is fetchable by id with its upload reference intact",
+      async () => {
         const res = await api(
           baseUrl,
           "GET",
-          `/api/tenants/${tenantId}/artifacts`,
+          `/api/tenants/${tenantId}/artifacts/${artifactId}`,
           undefined,
           cookies,
         );
-        expectStatus("list artifacts", res, 200);
-        const items = (res.data as { data: { id: string; title: string }[] })
-          .data;
-        const found = items.find((item) => item.id === artifactId);
-        if (found === undefined) {
-          throw new Error(
-            `uploaded artifact missing from the listing: ${JSON.stringify(items)}`,
-          );
-        }
-        expect(found.title).toBe("smoke.pdf");
-      });
-
-      await hop(
-        "the artifact is fetchable by id with its upload reference intact",
-        async () => {
-          const res = await api(
-            baseUrl,
-            "GET",
-            `/api/tenants/${tenantId}/artifacts/${artifactId}`,
-            undefined,
-            cookies,
-          );
-          expectStatus("get artifact", res, 200);
-          const data = res.data as { id: string };
-          expect(data.id).toBe(artifactId);
-          const ref = uploadRef(data, "get artifact response");
-          expect(ref.filename).toBe("smoke.pdf");
-          expect(ref.mimeType).toBe("application/pdf");
-          expect(ref.size).toBe(fileBytes.byteLength);
-        },
-      );
-    } finally {
-      await hub?.stop();
-      await rm(dataDir, { recursive: true, force: true });
-    }
+        expectStatus("get artifact", res, 200);
+        const data = res.data as { id: string };
+        expect(data.id).toBe(artifactId);
+        const ref = uploadRef(data, "get artifact response");
+        expect(ref.filename).toBe("smoke.pdf");
+        expect(ref.mimeType).toBe("application/pdf");
+        expect(ref.size).toBe(fileBytes.byteLength);
+      },
+    );
   }, 60_000);
 });

@@ -27,10 +27,7 @@
 // its own sibling `<database>_e2e` database, failures name the
 // capability that broke, and teardown stops every spawned process.
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { beforeAll, describe, expect, test } from "bun:test";
 
 import { formatRunAddress } from "../../vendor/intx/types/src/index.ts";
 import {
@@ -46,6 +43,7 @@ import {
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
+  createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   freePort,
@@ -103,21 +101,7 @@ function arrayField(data: unknown, field: string, what: string): unknown[] {
   );
 }
 
-const cleanups: (() => Promise<void>)[] = [];
-
-afterAll(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-});
-
-async function tempDir(prefix: string): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), prefix));
-  cleanups.push(() => rm(dir, { recursive: true, force: true }));
-  return dir;
-}
-
-function track(app: SpawnedApp): void {
-  cleanups.push(() => app.stop());
-}
+const { tempDir, track } = createCleanupHarness();
 
 type SignedUpUser = { userId: string; email: string; cookies: string[] };
 
