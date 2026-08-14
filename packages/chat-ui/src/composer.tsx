@@ -678,7 +678,12 @@ export const Composer = forwardRef<
           size="icon"
           disabled={!canSend}
           onClick={() => void send()}
-          aria-label={CHAT_STRINGS.composerSend}
+          aria-label={
+            sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
+          }
+          title={
+            sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
+          }
         >
           <Send />
         </Button>

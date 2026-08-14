@@ -496,7 +496,9 @@ export function NewChannelDialog({
               variant="primary"
               disabled={!canSubmit || submitting}
             >
-              {CHAT_STRINGS.newChannelSubmit}
+              {submitting
+                ? CHAT_STRINGS.newChannelSubmitting
+                : CHAT_STRINGS.newChannelSubmit}
             </Button>
           )}
         </DialogFooter>
