@@ -41,7 +41,7 @@ const ALLOWLIST: readonly {
 }[] = [
   {
     relPath: "packages/chat/src/schema.ts",
-    maxOccurrences: 10,
+    maxOccurrences: 12,
     tables: [
       "channel_settings",
       "chat_bench_settings",
@@ -50,6 +50,8 @@ const ALLOWLIST: readonly {
       "channel_tenancy",
       "channel_threads",
       "channel_thread_messages",
+      "channel_share",
+      "channel_share_member",
       "block_responses",
       "message_reactions",
       "pinned_messages",

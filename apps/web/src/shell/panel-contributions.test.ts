@@ -96,9 +96,19 @@ describe("channelRowSignals", () => {
     expect(channelRowSignals(channel, false).unread).toBe(0);
   });
 
-  test("never invents sharedLabel — cross-bench projection isn't real yet (CL-5913)", () => {
+  test("carries no sharedLabel for an ordinary, non-projected channel", () => {
     const channel: Channel = { ...baseChannel, unreadCount: 1 };
     expect(channelRowSignals(channel, false).sharedLabel).toBeUndefined();
+  });
+
+  test("passes through the server's sharedLabel for a projected channel", () => {
+    const channel: Channel = {
+      ...baseChannel,
+      sharedLabel: "shared via parent · Parent Co",
+    };
+    expect(channelRowSignals(channel, false).sharedLabel).toBe(
+      "shared via parent · Parent Co",
+    );
   });
 });
 
@@ -222,5 +232,24 @@ describe("assignChannelBucket", () => {
 
   test("ordinary channels go to internal", () => {
     expect(assignChannelBucket(baseChannel)).toBe("internal");
+  });
+
+  test("a channel carrying sharedLabel goes to external", () => {
+    expect(
+      assignChannelBucket({
+        ...baseChannel,
+        sharedLabel: "shared · Beta Co",
+      }),
+    ).toBe("external");
+  });
+
+  test("pinned wins over shared", () => {
+    expect(
+      assignChannelBucket({
+        ...baseChannel,
+        pinned: true,
+        sharedLabel: "shared · Beta Co",
+      }),
+    ).toBe("pinned");
   });
 });

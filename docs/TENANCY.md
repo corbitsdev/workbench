@@ -136,31 +136,77 @@ A DM is a **two-member channel** tenancy:
 
 Creation helper: `createDmChannelSpec` in `@corbits/bench-ui`.
 
-### Shared channels (same-parent siblings)
+### Shared channels (Slack-Connect-style projection)
 
-**Achievable today without Interchange changes:**
+**Achievable today without Interchange changes (CL-5882):**
 
-- Channel runtime lives in **one** parent bench (the tenant that owns
-  the channel row).
-- Sibling benches under the same parent can be given membership on that
-  parent (or on the channel's tenant) via native membership routes, so
-  humans from sibling benches can participate when they are also
-  principals of the parent.
+- A channel owned by one tenant can be **projected** into a sibling
+  tenant — no dual native membership required — gated by two
+  workbench-owned facts, both required, neither implied by the other:
+  1. **Bilateral federation trust** between the two tenants: both sides
+     must hold a `direction: 'bilateral'` row naming the other, in
+     Interchange's native `federation_trust` table (see
+     `packages/chat/src/federation-trust.ts`, which reads/writes that
+     table directly — it never forks
+     `vendor/intx/hub-api/src/routes/tenant-federation.ts`). A single
+     one-directional trust row is never enough.
+  2. **An explicit per-principal share membership** the projected
+     tenant's own admin maintains (`channel_share_member`, see
+     `packages/chat/src/channel-share.ts`), fully separate from the
+     owning tenant's own `chat/participants`. Creating a share never
+     auto-adds anyone; each side's own admin explicitly adds their own
+     principals.
+- `channel_share` records that a projection exists; `channel_share_member`
+  records who, on the projected side, can actually see it.
+  `packages/chat/src/routes.ts`'s `resolveChannelAccess` is the one
+  fail-closed gate every message/read-state/typing/stream/blob/block-response
+  route resolves through: no share row → not found; a share row but the
+  caller's principal was never added as a member → also not found — a
+  third tenant with no share, and a projected tenant's principal nobody
+  added, are both indistinguishable from "channel doesn't exist" to the
+  caller.
+- The approval boundary is unchanged: every route still evaluates
+  `requireGrant` against the ACTING tenant's own grants. A share never
+  widens what a projected-tenant caller may do — it only widens which
+  channel that tenant's own rules apply to.
+- `GET /channels` now sets a real `sharedLabel` for a channel projected
+  into the caller's tenant ("shared via parent · <name>" for true
+  siblings sharing a parent, "shared · <owning tenant name>"
+  otherwise), and a message's sender carries an optional
+  `tenantId`/`tenantName`/`tenantMonogram` when it was sent by a share
+  member of the "other side" — closing CL-5913 and CL-5881's tracked
+  gap: the sidebar's per-row "shared" badge
+  (`apps/web/src/shell/panel-contributions.tsx`) and the timeline's
+  tenant-monogram badge (`packages/chat-ui/src/timeline.tsx`) both
+  render from this real signal now, never a guess from participant
+  addresses.
+- `GET /channels/:id/stream` enforces `resolveChannelAccess` live, not
+  only at connect time: `bridgeChannelStream`
+  (`packages/chat/src/channel-events.ts`) re-runs the same fail-closed
+  check before every event it writes, from either the local typing/
+  settings registry or the platform's own event stream, and the moment
+  it returns "no access" it unsubscribes from both sources and closes
+  the connection. Revoking a `channel_share_member` row or a
+  `channel_share` mid-connection stops that subscriber as of the next
+  event published on the channel — live relative to the channel's own
+  traffic, not an instant kill on a channel that goes quiet (a truly
+  instant kill would need a poll/heartbeat independent of traffic,
+  which is out of scope here).
 
-**Not achievable workbench-side today:**
+**Explicit scope boundary — what this does NOT do:**
 
-- Projecting a channel into a sibling tenant without dual membership.
-- External cross-org connect (explicitly out of scope).
-
-Document any product UX that implies "shared channel without dual
-membership" as blocked on the projection gaps below.
-
-The sidebar's per-row "shared" badge (CL-5881) is one such UX: `GET
-/channels` never sets a `sharedLabel` signal, and
-`apps/web/src/shell/panel-contributions.tsx` never renders one, because
-there is no honest per-channel "is this projected across benches" fact
-to show yet — see CL-5913 for the tracked follow-up once the
-projection gaps below close.
+- Settings (rename/pin/participant edits), invite, move, and thread
+  routes remain owner-tenant-only. A projected tenant's member can read
+  and post messages and see live events, but cannot administer the
+  channel. Widening that is future work, not silently implied here.
+- Revoking bilateral trust does not cascade-delete existing shares —
+  documented, known follow-up, not fixed here. A share created while
+  trust existed keeps working after trust is revoked; only new share
+  creation is gated by trust.
+- Sibling benches under the same parent can still additionally be given
+  ordinary native membership on the channel's own tenant (the older,
+  dual-membership path) — that path is unaffected by, and independent
+  of, the projection machinery above.
 
 ### Tenancy kind (bench switcher)
 
@@ -211,9 +257,16 @@ fork or shim inside `vendor/intx`.
    workbench-owned until Interchange offers stable tenant presentation
    metadata.
 
-6. **No channel projection primitives** — cannot project a channel into
-   another tenant without dual membership; no shared-channel join
-   without principal membership on the owning tenant.
+6. **No native channel-projection primitive** — Interchange itself has
+   no concept of "project this channel into another tenant"; workbench
+   built the whole thing product-side on top of the native
+   `federation_trust` table (see "Shared channels" above, CL-5882).
+   What's still missing upstream: `federation_trust` has no cascade
+   from trust revocation to anything workbench layers on top of it (by
+   design — cascading is a product decision, not a platform one), and
+   there's still no native notion of channel membership scoped to a
+   non-owning tenant, which is why `channel_share`/`channel_share_member`
+   have to be workbench-owned tables rather than native ones.
 
 7. **Signup is always open at the auth layer** — better-auth
    email+password enablement is hub-config, not a platform tenancy

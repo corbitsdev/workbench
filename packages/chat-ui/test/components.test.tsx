@@ -80,6 +80,39 @@ describe("ChannelTimeline", () => {
     expect(markup).toContain("Researcher");
   });
 
+  test("renders the tenant-monogram badge when the sender carries shared-channel tenant context", () => {
+    const withSender: MessageItem[] = [
+      {
+        id: "m4b",
+        createdAt: "2026-01-01T00:03:30.000Z",
+        parts: [{ kind: "text", text: "hi from the other side" }],
+        sender: {
+          name: "Researcher",
+          address: "researcher@agents.example",
+          tenantId: "tnt_2",
+          tenantName: "Beta Co",
+          tenantMonogram: "BC",
+        },
+      },
+    ];
+    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    expect(markup).toContain("chat-sender-tenant-badge");
+    expect(markup).toContain("BC");
+  });
+
+  test("shows no tenant-monogram badge when the sender carries no tenant context", () => {
+    const withSender: MessageItem[] = [
+      {
+        id: "m4c",
+        createdAt: "2026-01-01T00:03:45.000Z",
+        parts: [{ kind: "text", text: "hi" }],
+        sender: { name: "Researcher", address: "researcher@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(<ChannelTimeline items={withSender} />);
+    expect(markup).not.toContain("chat-sender-tenant-badge");
+  });
+
   test("falls back to a deterministic 'Member' label with no name and no matching participant", () => {
     const withSender: MessageItem[] = [
       {

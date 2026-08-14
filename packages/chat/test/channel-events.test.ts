@@ -1,5 +1,9 @@
 // Unit tests for the SSE subscriber registry and its stream bridge —
-// split out of `routes.test.ts` alongside `./channel-events.ts`.
+// split out of `routes.test.ts` alongside `./channel-events.ts`. The
+// live-revocation behavior itself (an `authorize` callback going false
+// mid-stream) is covered end to end over real HTTP in
+// `channel-share-routes.test.ts`; these tests only pin the bridge's
+// own unit-level contract with a stub `authorize`.
 import { describe, expect, test } from "bun:test";
 import {
   bridgeChannelStream,
@@ -7,8 +11,13 @@ import {
 } from "../src/channel-events";
 import type { ChatChannelEvent, ChannelEvents } from "../src/platform-port";
 
-function fakeStream(writeSSE: (message: unknown) => Promise<void>) {
-  return { writeSSE } as unknown as Parameters<
+const alwaysAuthorized = () => Promise.resolve(true);
+
+function fakeStream(
+  writeSSE: (message: unknown) => Promise<void>,
+  close: () => Promise<void> = () => Promise.resolve(),
+) {
+  return { writeSSE, close } as unknown as Parameters<
     typeof bridgeChannelStream
   >[0]["stream"];
 }
@@ -67,8 +76,10 @@ describe("bridgeChannelStream", () => {
       platform: noopPlatformEvents(),
       channelId: "chan_1",
       stream,
+      authorize: alwaysAuthorized,
     });
     registry.publish("chan_1", { type: "chat.typing", data: { a: 1 } });
+    await Promise.resolve();
     await Promise.resolve();
 
     expect(writes).toHaveLength(1);
@@ -87,14 +98,17 @@ describe("bridgeChannelStream", () => {
       platform: noopPlatformEvents(),
       channelId: "chan_1",
       stream,
+      authorize: alwaysAuthorized,
     });
 
     registry.publish("chan_1", { type: "chat.typing", data: {} });
     // Let the rejected write's `.catch` run before publishing again.
     await Promise.resolve();
     await Promise.resolve();
+    await Promise.resolve();
 
     registry.publish("chan_1", { type: "chat.typing", data: {} });
+    await Promise.resolve();
     await Promise.resolve();
 
     // The first publish attempted a write that failed and unsubscribed
@@ -102,5 +116,54 @@ describe("bridgeChannelStream", () => {
     // — a zombie subscriber would keep attempting (and failing) writes
     // forever.
     expect(writeCount).toBe(1);
+  });
+
+  test("authorize going false unsubscribes both sources and closes the stream, without writing the event", async () => {
+    const registry = createChannelSubscriberRegistry();
+    const writes: unknown[] = [];
+    let closeCount = 0;
+    const stream = fakeStream(
+      (message) => {
+        writes.push(message);
+        return Promise.resolve();
+      },
+      () => {
+        closeCount += 1;
+        return Promise.resolve();
+      },
+    );
+    let platformUnsubscribed = false;
+    const platform: ChannelEvents = {
+      subscribeToChannel() {
+        return () => {
+          platformUnsubscribed = true;
+        };
+      },
+    };
+
+    bridgeChannelStream({
+      registry,
+      platform,
+      channelId: "chan_1",
+      stream,
+      authorize: () => Promise.resolve(false),
+    });
+
+    registry.publish("chan_1", { type: "chat.typing", data: {} });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(writes).toHaveLength(0);
+    expect(closeCount).toBe(1);
+    expect(platformUnsubscribed).toBe(true);
+
+    // A further publish after revocation must not write, or close again.
+    registry.publish("chan_1", { type: "chat.typing", data: {} });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(writes).toHaveLength(0);
+    expect(closeCount).toBe(1);
   });
 });

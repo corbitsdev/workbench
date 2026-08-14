@@ -88,6 +88,9 @@ import { InferenceResolutionError } from "@corbits/folded-runs";
 import type { ChannelTenancyStore } from "./channel-tenancy";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
+import type { ChannelShareStore } from "./channel-share";
+import { monogramFromName } from "./channel-share";
+import type { FederationTrustStore } from "./federation-trust";
 
 export type {
   ChannelActivitySummary,
@@ -189,6 +192,24 @@ export type CreateChatRoutesDeps = {
    * so both sides fan out through the same subscriber set.
    */
   channelSubscribers?: ChannelSubscriberRegistry;
+  /**
+   * Slack-Connect-style channel projection (CL-5882) — see
+   * `./channel-share.ts`. Omitted entirely, every `/channels/:id/shares*`
+   * and `/channels/:id/share-members*` route 404s, and `resolveChannelAccess`
+   * only ever resolves the owning-tenant path: a deployment that doesn't
+   * wire this dep behaves exactly as it did before this feature existed.
+   */
+  shares?: ChannelShareStore;
+  /**
+   * Read-only trust lookups the shares routes use to build a human
+   * `sharedLabel`/`tenantName`/`tenantMonogram` — never the full
+   * `FederationTrustStore` (this router never establishes or revokes
+   * trust itself; that stays the native federation-trust surface's job).
+   */
+  trust?: Pick<
+    FederationTrustStore,
+    "resolveSharedViaParent" | "getTenantName"
+  >;
 };
 
 const log = getLogger(["chat", "routes"]);
@@ -319,6 +340,102 @@ async function channelInTenant(
     return true;
   }
   return store.hasLaunchedInstance(tenantId, channelId);
+}
+
+/**
+ * The single fail-closed gate every
+ * message/read-state/typing/stream/blob/block-response route resolves
+ * through: the acting tenant either owns the channel
+ * outright (the ordinary case, `channelInTenant`), or it's a tenant a
+ * share was explicitly created for AND the acting principal was
+ * explicitly added as a share member (`ChannelShareStore.isShareMember`)
+ * — never merely "a share exists for this tenant", since not every
+ * member of the projected tenant automatically sees a shared channel,
+ * only the ones each side's own admin added one at a time via `POST
+ * .../share-members`. A third tenant with no share row at all, and a
+ * projected tenant's principal nobody added, both resolve to `undefined`
+ * — indistinguishable from "channel doesn't exist" to the caller, which
+ * is the honest answer for a channel this caller has no standing to see.
+ *
+ * `ownerTenantId` is what every downstream `deps.store`/`deps.platform`
+ * call takes as `tenantId` — a projected-tenant caller's message reads
+ * and writes are always scoped to the OWNING tenant's mailbox
+ * (`ChannelMail.sendMail`/`listMail` are keyed by an explicit tenantId
+ * argument, never an ambient caller tenant — see `./platform-port.ts`),
+ * never a copy of the channel materialized under the projected tenant.
+ *
+ * Approval boundary unchanged: `requireGrant` (wired per-route, above
+ * this function) still evaluates only the ACTING tenant's own grants —
+ * a share never widens what a projected-tenant caller may do beyond its
+ * own tenant's rules; it only widens which channel those rules apply to.
+ * No grant-widening code exists anywhere in this router, deliberately.
+ */
+async function resolveChannelAccess(
+  deps: CreateChatRoutesDeps,
+  actingTenantId: string,
+  channelId: string,
+  principalId: string,
+): Promise<{ ownerTenantId: string } | undefined> {
+  if (await channelInTenant(deps.store, actingTenantId, channelId)) {
+    return { ownerTenantId: actingTenantId };
+  }
+  if (deps.shares === undefined) return undefined;
+  const share = await deps.shares.getShare(channelId, actingTenantId);
+  if (share === undefined) return undefined;
+  if (
+    !(await deps.shares.isShareMember(actingTenantId, channelId, principalId))
+  ) {
+    return undefined;
+  }
+  return { ownerTenantId: share.owningTenantId };
+}
+
+/**
+ * A message's sender carries the shared-channel context
+ * (`tenantId`/`tenantName`/`tenantMonogram`) only when the channel
+ * actually has at least one share AND the sender is a share member of
+ * one of them — never for an ordinary owning-tenant participant, and
+ * never fabricated when `deps.shares`/`deps.trust` aren't wired. Checked
+ * per message rather than once per channel because a channel can be
+ * shared into several tenants; the first share the sender is a member of
+ * wins (a principal id is never added as a member under two different
+ * projected tenants for the same channel in the UI flow this ships, but
+ * nothing stops it structurally — first match is a stable, if arbitrary,
+ * tie-break).
+ */
+async function resolveMessageSenderTenant(
+  deps: CreateChatRoutesDeps,
+  ownerTenantId: string,
+  channelId: string,
+  senderAddress: string,
+): Promise<
+  { tenantId: string; tenantName?: string; tenantMonogram?: string } | undefined
+> {
+  if (deps.shares === undefined) return undefined;
+  const shares = await deps.shares.listSharesForChannel(
+    ownerTenantId,
+    channelId,
+  );
+  if (shares.length === 0) return undefined;
+  const principalId = localPartOf(senderAddress);
+  for (const share of shares) {
+    if (
+      await deps.shares.isShareMember(
+        share.projectedTenantId,
+        channelId,
+        principalId,
+      )
+    ) {
+      const name = await deps.trust?.getTenantName(share.projectedTenantId);
+      return {
+        tenantId: share.projectedTenantId,
+        ...(name !== undefined
+          ? { tenantName: name, tenantMonogram: monogramFromName(name) }
+          : {}),
+      };
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -881,27 +998,81 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }),
       });
 
-      return c.json({
-        items: rows.map((row, index) => {
-          const link = links[index];
-          const view =
-            link !== undefined
-              ? withTenancy(channelView(row), link)
-              : { ...channelView(row), tenancy: null, legacy: true };
-          const activity = activityByChannelId[row.channelId];
-          if (activity === undefined) return view;
-          return {
-            ...view,
-            unreadCount: activity.unreadCount,
-            ...(activity.lastActivityAt !== undefined
-              ? {
-                  lastActivityAt: activity.lastActivityAt,
-                  live: isRecentlyActive(activity.lastActivityAt),
-                }
-              : {}),
-          };
-        }),
+      const ownItems = rows.map((row, index) => {
+        const link = links[index];
+        const view =
+          link !== undefined
+            ? withTenancy(channelView(row), link)
+            : { ...channelView(row), tenancy: null, legacy: true };
+        const activity = activityByChannelId[row.channelId];
+        if (activity === undefined) return view;
+        return {
+          ...view,
+          unreadCount: activity.unreadCount,
+          ...(activity.lastActivityAt !== undefined
+            ? {
+                lastActivityAt: activity.lastActivityAt,
+                live: isRecentlyActive(activity.lastActivityAt),
+              }
+            : {}),
+        };
       });
+
+      // Channels a sibling tenant projected into this one (CL-5882) —
+      // a UNION with this tenant's own rows above, never a replacement.
+      // Only a share this caller's principal was explicitly added to
+      // (`isShareMember`) contributes a row: a share that exists but has
+      // no member row for this principal, or a tenant with no share at
+      // all, adds nothing here, matching `resolveChannelAccess`'s same
+      // fail-closed rule for the message/read-state/stream routes.
+      const shares = deps.shares;
+      const sharedItems =
+        shares === undefined
+          ? []
+          : await (async () => {
+              const projectedShares = await shares.listSharesProjectedInto(
+                tenant.id,
+              );
+              const items: Record<string, unknown>[] = [];
+              for (const share of projectedShares) {
+                if (
+                  !(await shares.isShareMember(
+                    tenant.id,
+                    share.channelId,
+                    principal.id,
+                  ))
+                ) {
+                  continue;
+                }
+                const ownerRow = await deps.store.getChannelSettings(
+                  share.owningTenantId,
+                  share.channelId,
+                );
+                if (ownerRow === undefined) continue;
+                const view = channelView(ownerRow);
+                if (kind !== undefined && view.kind !== kind) continue;
+                const viaParent = await deps.trust?.resolveSharedViaParent(
+                  share.owningTenantId,
+                  tenant.id,
+                );
+                const owningTenantName = await deps.trust?.getTenantName(
+                  share.owningTenantId,
+                );
+                const sharedLabel =
+                  viaParent !== undefined
+                    ? `shared via parent · ${viaParent.parentName}`
+                    : `shared · ${owningTenantName ?? "another tenant"}`;
+                items.push({
+                  ...view,
+                  tenancy: null,
+                  legacy: false,
+                  sharedLabel,
+                });
+              }
+              return items;
+            })();
+
+      return c.json({ items: [...ownItems, ...sharedItems] });
     },
   );
 
@@ -1089,31 +1260,49 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const channelId = c.req.param("id");
       const cursor = c.req.query("cursor");
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
       const listed = await deps.platform.listMail({
-        tenantId: tenant.id,
+        tenantId: access.ownerTenantId,
         channelId,
         ...(cursor !== undefined ? { cursor } : {}),
       });
 
       const items = await Promise.all(
-        listed.items.map(async (item) => ({
-          id: item.id,
-          createdAt: item.createdAt,
-          sender: senderOf(item.mail),
-          parts: await decodeMail(item.mail, {
-            fetchBlob: (blobId) => deps.platform.fetchBlob(channelId, blobId),
-          }),
-        })),
+        listed.items.map(async (item) => {
+          const sender = senderOf(item.mail);
+          const senderTenant = await resolveMessageSenderTenant(
+            deps,
+            access.ownerTenantId,
+            channelId,
+            sender.address,
+          );
+          return {
+            id: item.id,
+            createdAt: item.createdAt,
+            sender:
+              senderTenant !== undefined
+                ? { ...sender, ...senderTenant }
+                : sender,
+            parts: await decodeMail(item.mail, {
+              fetchBlob: (blobId) => deps.platform.fetchBlob(channelId, blobId),
+            }),
+          };
+        }),
       );
 
       return c.json({
         items: await enrichWithReactionsAndPins(
           deps,
-          tenant.id,
+          access.ownerTenantId,
           channelId,
           principal.id,
           items,
@@ -1136,9 +1325,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
+      const principal = c.get("principal");
       const channelId = c.req.param("id");
       const blobId = c.req.param("blobId");
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      if (
+        (await resolveChannelAccess(
+          deps,
+          tenant.id,
+          channelId,
+          principal.id,
+        )) === undefined
+      ) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
       let blob: string | Uint8Array;
@@ -1183,9 +1380,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const channelId = c.req.param("id");
       const messageParts = parsed.parts as PartType[];
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
+      const ownerTenantId = access.ownerTenantId;
 
       // Slash messages, and `@name` messages whose name resolves to a
       // command rather than an already-invited agent participant, are
@@ -1196,7 +1400,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // confirmed not to name a known handle, so that mention keeps
       // its ordinary fan-out behavior exactly as before.
       const commandResult = await dispatchChannelCommand(deps, {
-        tenantId: tenant.id,
+        tenantId: ownerTenantId,
         principalId: principal.id,
         channelId,
         text: textOf(messageParts),
@@ -1205,7 +1409,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         const resultText = textForCommandResult(commandResult);
         if (resultText !== undefined) {
           await deps.platform.sendMail({
-            tenantId: tenant.id,
+            tenantId: ownerTenantId,
             channelId,
             principalId: principal.id,
             content: encodeParts([{ kind: "text", text: resultText }]),
@@ -1217,7 +1421,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const sent = await sendChannelMessage(
         { store: deps.store, platform: deps.platform },
         {
-          tenantId: tenant.id,
+          tenantId: ownerTenantId,
           principalId: principal.id,
           channelId,
           messageParts,
@@ -1225,11 +1429,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
 
       if (deps.threads !== undefined) {
-        const root = await deps.threads.ensureRootThread(tenant.id, channelId);
+        const root = await deps.threads.ensureRootThread(
+          ownerTenantId,
+          channelId,
+        );
         let targetThreadId = root.id;
         if (parsed.threadId !== undefined) {
           const existing = await deps.threads.getThread(
-            tenant.id,
+            ownerTenantId,
             parsed.threadId,
           );
           if (existing === undefined || existing.channelId !== channelId) {
@@ -1240,7 +1447,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           let reply;
           try {
             reply = await deps.threads.openReplyThread({
-              tenantId: tenant.id,
+              tenantId: ownerTenantId,
               channelId,
               parentMessageId: parsed.inReplyToMessageId,
             });
@@ -1253,7 +1460,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           targetThreadId = reply.id;
         }
         await deps.threads.assignMessage({
-          tenantId: tenant.id,
+          tenantId: ownerTenantId,
           channelId,
           threadId: targetThreadId,
           messageId: sent.id,
@@ -1289,9 +1496,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const messageId = c.req.param("messageId");
       const blockId = c.req.param("blockId");
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
+      const ownerTenantId = access.ownerTenantId;
 
       const body = SubmitBlockResponseBody(
         await c.req.json().catch(() => undefined),
@@ -1312,7 +1526,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           : { kind: "form", values: body.values };
 
       const row = await deps.blockResponses.upsertBlockResponse({
-        tenantId: tenant.id,
+        tenantId: ownerTenantId,
         channelId,
         messageId,
         blockId,
@@ -1330,7 +1544,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // GET route below is the boundary that must never let a member read
       // *another* member's raw response on demand.
       await deps.platform.sendMail({
-        tenantId: tenant.id,
+        tenantId: ownerTenantId,
         channelId,
         principalId: principal.id,
         content: encodeParts([
@@ -1363,7 +1577,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const messageId = c.req.param("messageId");
       const blockId = c.req.param("blockId");
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
@@ -1373,7 +1593,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // and this caller's alone — no other principal's raw poll choice or
       // form values is ever assembled into the response body.
       const rows = await deps.blockResponses.listBlockResponses(
-        tenant.id,
+        access.ownerTenantId,
         channelId,
         messageId,
         blockId,
@@ -1402,13 +1622,20 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const channelId = c.req.param("id");
       const messageId = c.req.param("messageId");
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
+      const ownerTenantId = access.ownerTenantId;
       if (
         !(await messageExistsInChannel(
           deps.platform,
-          tenant.id,
+          ownerTenantId,
           channelId,
           messageId,
         ))
@@ -1439,7 +1666,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const { added } = await deps.reactions.toggleReaction({
-        tenantId: tenant.id,
+        tenantId: ownerTenantId,
         channelId,
         messageId,
         emoji: body.emoji,
@@ -1447,7 +1674,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       });
 
       const rows = await deps.reactions.listReactionsForMessages(
-        tenant.id,
+        ownerTenantId,
         channelId,
         [messageId],
       );
@@ -1480,13 +1707,20 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const channelId = c.req.param("id");
       const messageId = c.req.param("messageId");
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
+      const ownerTenantId = access.ownerTenantId;
       if (
         !(await messageExistsInChannel(
           deps.platform,
-          tenant.id,
+          ownerTenantId,
           channelId,
           messageId,
         ))
@@ -1495,7 +1729,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const row = await deps.pins.pinMessage({
-        tenantId: tenant.id,
+        tenantId: ownerTenantId,
         channelId,
         messageId,
         pinnedBy: principal.id,
@@ -1528,14 +1762,21 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const tenant = c.get("tenant");
+      const principal = c.get("principal");
       const channelId = c.req.param("id");
       const messageId = c.req.param("messageId");
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
-      await deps.pins.unpinMessage(tenant.id, channelId, messageId);
+      await deps.pins.unpinMessage(access.ownerTenantId, channelId, messageId);
 
       publish(channelId, {
         type: "chat.pin",
@@ -1555,17 +1796,25 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const tenant = c.get("tenant");
+      const principal = c.get("principal");
       const channelId = c.req.param("id");
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
+      const ownerTenantId = access.ownerTenantId;
 
-      const pins = await deps.pins.listPins(tenant.id, channelId);
+      const pins = await deps.pins.listPins(ownerTenantId, channelId);
       if (pins.length === 0) return c.json({ items: [] });
 
       const listed = await deps.platform.listMail({
-        tenantId: tenant.id,
+        tenantId: ownerTenantId,
         channelId,
       });
       const byId = new Map(listed.items.map((item) => [item.id, item]));
@@ -1767,6 +2016,237 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     },
   );
 
+  const CreateShareBody = type({ projectedTenantId: "string" });
+
+  app.post(
+    "/channels/:id/shares",
+    deps.requireGrant(idResource("workflow-run", "id"), "manage"),
+    async (c) => {
+      const body = CreateShareBody(await c.req.json().catch(() => undefined));
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope("bad_request", `invalid share body: ${body.summary}`),
+          400,
+        );
+      }
+      if (deps.shares === undefined) {
+        return c.json(ErrorEnvelope("not_found", "shares not available"), 404);
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const channelId = c.req.param("id");
+
+      // A share can only ever be created by the tenant that already
+      // owns the channel — the same ownership check `/move` runs.
+      const existing = await deps.store.getChannelSettings(
+        tenant.id,
+        channelId,
+      );
+      if (existing === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      const outcome = await deps.shares.createShare({
+        owningTenantId: tenant.id,
+        channelId,
+        projectedTenantId: body.projectedTenantId,
+        createdBy: principal.id,
+      });
+
+      switch (outcome.kind) {
+        case "trust_missing":
+          return c.json(
+            ErrorEnvelope(
+              "forbidden",
+              "no bilateral trust with the target tenant — establish " +
+                "trust before sharing",
+            ),
+            403,
+          );
+        case "already_shared":
+          return c.json(
+            ErrorEnvelope(
+              "conflict",
+              "this channel is already shared with " + "that tenant",
+            ),
+            409,
+          );
+        case "created": {
+          const viaParent = await deps.trust?.resolveSharedViaParent(
+            tenant.id,
+            body.projectedTenantId,
+          );
+          const targetName = await deps.trust?.getTenantName(
+            body.projectedTenantId,
+          );
+          const sharedContext =
+            deps.trust !== undefined
+              ? {
+                  sharedContext: {
+                    ...(viaParent !== undefined ? { viaParent } : {}),
+                    ...(targetName !== undefined
+                      ? { targetTenantName: targetName }
+                      : {}),
+                  },
+                }
+              : {};
+          return c.json(
+            {
+              owningTenantId: outcome.row.owningTenantId,
+              channelId: outcome.row.channelId,
+              projectedTenantId: outcome.row.projectedTenantId,
+              createdBy: outcome.row.createdBy,
+              createdAt: outcome.row.createdAt.toISOString(),
+              ...sharedContext,
+            },
+            201,
+          );
+        }
+      }
+    },
+  );
+
+  app.get(
+    "/channels/:id/shares",
+    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    async (c) => {
+      if (deps.shares === undefined) {
+        return c.json(ErrorEnvelope("not_found", "shares not available"), 404);
+      }
+
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+
+      const existing = await deps.store.getChannelSettings(
+        tenant.id,
+        channelId,
+      );
+      if (existing === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      const rows = await deps.shares.listSharesForChannel(tenant.id, channelId);
+      return c.json({
+        items: rows.map((row) => ({
+          owningTenantId: row.owningTenantId,
+          channelId: row.channelId,
+          projectedTenantId: row.projectedTenantId,
+          createdBy: row.createdBy,
+          createdAt: row.createdAt.toISOString(),
+        })),
+      });
+    },
+  );
+
+  app.delete(
+    "/channels/:id/shares/:projectedTenantId",
+    deps.requireGrant(idResource("workflow-run", "id"), "manage"),
+    async (c) => {
+      if (deps.shares === undefined) {
+        return c.json(ErrorEnvelope("not_found", "shares not available"), 404);
+      }
+
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      const projectedTenantId = c.req.param("projectedTenantId");
+
+      const existing = await deps.store.getChannelSettings(
+        tenant.id,
+        channelId,
+      );
+      if (existing === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      const revoked = await deps.shares.revokeShare(
+        tenant.id,
+        channelId,
+        projectedTenantId,
+      );
+      if (!revoked) {
+        return c.json(ErrorEnvelope("not_found", "share not found"), 404);
+      }
+      return c.body(null, 204);
+    },
+  );
+
+  const AddShareMemberBody = type({ principalId: "string" });
+
+  app.post(
+    "/channels/:id/share-members",
+    deps.requireGrant(idResource("workflow-run", "id"), "manage"),
+    async (c) => {
+      const body = AddShareMemberBody(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `invalid share-member body: ${body.summary}`,
+          ),
+          400,
+        );
+      }
+      if (deps.shares === undefined) {
+        return c.json(ErrorEnvelope("not_found", "shares not available"), 404);
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const channelId = c.req.param("id");
+
+      // Evaluated against the ACTING tenant, never the owning tenant —
+      // this is the projected tenant's own admin managing their own
+      // side. A share never widens grants: this route only ever inserts
+      // into `channel_share_member` for `projectedTenantId = tenant.id`,
+      // never touches the owning tenant's own participant list. Also
+      // doubles as "is this channel even shared with me" — a tenant
+      // with no share on this channel gets the same 404 a nonexistent
+      // channel would.
+      const share = await deps.shares.getShare(channelId, tenant.id);
+      if (share === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      const outcome = await deps.shares.addShareMember({
+        projectedTenantId: tenant.id,
+        channelId,
+        principalId: body.principalId,
+        addedBy: principal.id,
+      });
+      if (outcome === "no_share") {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+      return c.json({ principalId: body.principalId }, 200);
+    },
+  );
+
+  app.delete(
+    "/channels/:id/share-members/:principalId",
+    deps.requireGrant(idResource("workflow-run", "id"), "manage"),
+    async (c) => {
+      if (deps.shares === undefined) {
+        return c.json(ErrorEnvelope("not_found", "shares not available"), 404);
+      }
+
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      const principalId = c.req.param("principalId");
+
+      const removed = await deps.shares.removeShareMember(
+        tenant.id,
+        channelId,
+        principalId,
+      );
+      if (!removed) {
+        return c.json(ErrorEnvelope("not_found", "member not found"), 404);
+      }
+      return c.body(null, 204);
+    },
+  );
+
   async function withResolvedContextWindow(
     tenantId: string,
     row: { channelId: string; settings: Record<string, unknown> },
@@ -1950,11 +2430,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
       const channelId = c.req.param("id");
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
       const row = await deps.store.getReadState(
-        tenant.id,
+        access.ownerTenantId,
         channelId,
         principal.id,
       );
@@ -1987,12 +2473,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const principal = c.get("principal");
       const channelId = c.req.param("id");
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
       const row = await deps.store.putReadState({
-        tenantId: tenant.id,
+        tenantId: access.ownerTenantId,
         channelId,
         principalId: principal.id,
         lastSeenCreatedAt: new Date(body.lastSeenCreatedAt),
@@ -2013,7 +2505,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
       const channelId = c.req.param("id");
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      if (
+        (await resolveChannelAccess(
+          deps,
+          tenant.id,
+          channelId,
+          principal.id,
+        )) === undefined
+      ) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
       publish(channelId, {
@@ -2029,8 +2528,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
+      const principal = c.get("principal");
       const channelId = c.req.param("id");
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      if (
+        (await resolveChannelAccess(
+          deps,
+          tenant.id,
+          channelId,
+          principal.id,
+        )) === undefined
+      ) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
@@ -2040,6 +2547,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           platform: deps.platform,
           channelId,
           stream,
+          authorize: () =>
+            resolveChannelAccess(deps, tenant.id, channelId, principal.id).then(
+              (access) => access !== undefined,
+            ),
         });
         stream.onAbort(unbridge);
         await new Promise<void>(() => undefined);

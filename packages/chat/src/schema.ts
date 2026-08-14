@@ -188,6 +188,63 @@ export const channelThreadMessages = chatSchema.table(
 );
 
 /**
+ * One channel's projection into a sibling tenant (CL-5882's
+ * Slack-Connect-style shared channels). The owning tenant is never
+ * inferable from `channelId` alone (a channel's own tenancy lives in
+ * `channelTenancy`/`channel_settings`, not here), so it's carried
+ * explicitly — `getShare`/`listSharesForChannel` in `./channel-share.ts`
+ * always take it rather than re-deriving it. A row here is created only
+ * after `FederationTrustStore.hasBilateralTrust` passes (see
+ * `./channel-share.ts`'s `createShare`); this table records that a
+ * projection *exists*, never that trust does — trust can later be
+ * revoked without cascading a delete here (see `docs/TENANCY.md`).
+ */
+export const channelShare = chatSchema.table(
+  "channel_share",
+  {
+    owningTenantId: text("owning_tenant_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    projectedTenantId: text("projected_tenant_id").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.projectedTenantId] }),
+    index("channel_share_projected_idx").on(table.projectedTenantId),
+  ],
+);
+
+/**
+ * Which principals of a projected tenant can actually see a shared
+ * channel — a share never auto-adds anyone (see `docs/TENANCY.md`'s
+ * scope boundary): each side's own admin explicitly adds their own
+ * principals here via `POST /channels/:id/share-members`, fully
+ * separate from the owning tenant's own `chat/participants`. Scoped by
+ * `projectedTenantId` first (matching the primary access question,
+ * "can this caller, in this tenant, see this channel") so two tenants
+ * sharing the same channel keep fully independent membership.
+ */
+export const channelShareMember = chatSchema.table(
+  "channel_share_member",
+  {
+    projectedTenantId: text("projected_tenant_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    principalId: text("principal_id").notNull(),
+    addedBy: text("added_by").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.projectedTenantId, table.channelId, table.principalId],
+    }),
+  ],
+);
+
+/**
  * One poll/form response per principal per block, upsert-on-repeat (see
  * `./block-responses.ts`). `blockId` is the agent-authored `pollId`/`formId`
  * — never unique on its own — so every row is additionally scoped by

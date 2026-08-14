@@ -173,6 +173,30 @@ export type {
 export { createChannelTenancyRoutes } from "./channel-tenancy-routes";
 export type { CreateChannelTenancyRoutesDeps } from "./channel-tenancy-routes";
 
+export {
+  createDrizzleFederationTrustStore,
+  createInMemoryFederationTrustStore,
+} from "./federation-trust";
+export type {
+  FederationTrustDb,
+  FederationTrustStore,
+} from "./federation-trust";
+
+export {
+  createDrizzleChannelShareStore,
+  createInMemoryChannelShareStore,
+  monogramFromName,
+} from "./channel-share";
+export type {
+  AddShareMemberInput,
+  ChannelShareDb,
+  ChannelShareRow,
+  ChannelShareStore,
+  ChannelShareStoreDeps,
+  CreateShareInput,
+  CreateShareOutcome,
+} from "./channel-share";
+
 export { createHubChatPlatform } from "./platform-adapter";
 export type {
   CreateHubChatPlatformDeps,
