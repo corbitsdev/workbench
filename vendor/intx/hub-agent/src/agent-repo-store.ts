@@ -15,7 +15,7 @@ import {
   createDeployPack,
   currentBranch,
   type CommitVerifier,
-} from "@intx/storage-isogit/node";
+} from "@intx/storage-isogit";
 
 import { agentDir } from "./agent-paths";
 

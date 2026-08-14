@@ -557,7 +557,7 @@ describe("createHubChatPlatform", () => {
     const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
       agentAddress: string;
       agentId: string;
-      instanceId: string;
+      runId: string;
       config: {
         systemPrompt: string;
         sources: {
@@ -574,7 +574,7 @@ describe("createHubChatPlatform", () => {
     };
     expect(deployed.agentAddress).toBe("ins_channel1@ten1.workbench.test");
     expect(deployed.agentId).toBe("ins_channel1");
-    expect(deployed.instanceId).toBe("ins_channel1");
+    expect(deployed.runId).toBe("ins_channel1");
     expect(deployed.config.systemPrompt.length).toBeGreaterThan(0);
     expect(deployed.config.sources).toEqual([
       {
@@ -613,7 +613,7 @@ describe("createHubChatPlatform", () => {
     expect(runInsert?.values).toMatchObject({
       id: "ins_channel1",
       definitionId: "wfd_channel1",
-      deploymentId: null,
+      anchorRunId: null,
       tenantId: "ten_1",
       address: "ins_channel1@ten1.workbench.test",
       status: "running",
@@ -902,7 +902,7 @@ describe("createHubChatPlatform", () => {
       definitionId: "wfd_echo",
     });
 
-    expect(launched.instanceId).toMatch(/^ins_/);
+    expect(launched.instanceId).toMatch(/^run_/);
     expect(launched.address).toBe(`${launched.instanceId}@ten1.workbench.test`);
 
     expect(assetService.readAssetBlobCalls).toEqual([
@@ -912,16 +912,16 @@ describe("createHubChatPlatform", () => {
     expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
     const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
       agentAddress: string;
-      instanceId: string;
+      runId: string;
     };
     expect(deployed.agentAddress).toBe(launched.address);
-    expect(deployed.instanceId).toBe(launched.instanceId);
+    expect(deployed.runId).toBe(launched.instanceId);
 
     const runInsert = db.inserted.find((row) => row.table === workflowRun);
     expect(runInsert?.values).toMatchObject({
       id: launched.instanceId,
       definitionId: "wfd_echo",
-      deploymentId: null,
+      anchorRunId: null,
       tenantId: "ten_1",
       address: launched.address,
       status: "running",
@@ -1326,10 +1326,10 @@ describe("createHubChatPlatform", () => {
       expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
       const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
         agentAddress: string;
-        instanceId: string;
+        runId: string;
       };
       expect(deployed.agentAddress).toBe("ins_channel1@ten1.workbench.test");
-      expect(deployed.instanceId).toBe("ins_channel1");
+      expect(deployed.runId).toBe("ins_channel1");
       // ...before the send.
       expect(sessionService.sendUserMessageCalls).toHaveLength(1);
     });

@@ -47,7 +47,7 @@ import type {
   SessionService,
   SidecarRouter,
 } from "@intx/hub-sessions";
-import { formatAgentAddress } from "@intx/types";
+import { formatRunAddress } from "@intx/types";
 import { type } from "arktype";
 import type {
   ChatChannelEvent,
@@ -342,8 +342,8 @@ export function createHubChatPlatform(
         );
       }
 
-      const instanceId = generateId("instance");
-      const triggerAddress = formatAgentAddress(instanceId, tenantRow.domain);
+      const instanceId = generateId("workflowRun");
+      const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
 
       await launchFoldedRun(foldedRunsDeps, {
         tenantId: input.tenantId,

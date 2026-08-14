@@ -340,7 +340,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       }
       echoDeployed = await api(
         "POST",
-        `/api/tenants/${tenantId}/workflows/instances`,
+        `/api/tenants/${tenantId}/workflows/deployments`,
         {
           assetId: echoAssetId,
           sources: [

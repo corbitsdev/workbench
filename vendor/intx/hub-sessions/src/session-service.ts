@@ -49,7 +49,7 @@ import {
 import {
   assertChainHeadIsDefault,
   createWorkflowDeployOrchestrator,
-  deriveDeploymentAddress,
+  deriveRunAddress,
   walkCapabilities,
   wrapHarnessAsSingleStepWorkflow,
   type ApprovalSet,
@@ -108,7 +108,7 @@ export type SessionService = {
   stageWorkflowStep(params: {
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    runId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
     toolPackagePins?: readonly ToolPackagePin[];
@@ -116,10 +116,10 @@ export type SessionService = {
   }): Promise<void>;
 
   /**
-   * Deploy a single-agent instance through the single-step-at-head path,
+   * Deploy a single agent through the single-step-at-head path,
    * wrapping the harness as a one-step workflow and routing it through the
-   * deploy core with the instance's real identity. Replaces `launchSession`
-   * as the production instance-deploy entry point: the instance runs as a
+   * deploy core with the run's real identity. Replaces `launchSession`
+   * as the production single-agent deploy entry point: the run executes as a
    * supervised workflow-process child. Records no deployment anchor run.
    * Returns the head's agent-key ack (the key the head signs its
    * reconnect challenges with).
@@ -127,7 +127,7 @@ export type SessionService = {
   deployInstanceAtHead(params: {
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    runId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
     toolPackagePins?: readonly ToolPackagePin[];
@@ -151,12 +151,12 @@ export type SessionService = {
    * deploy entry point: it is not coupled to a single agent's
    * credential/session model the way `launchSession` is. The
    * orchestrator derives every per-step address
-   * from `deploymentId` + `deploymentDomain`, provisions each step's
+   * from `anchorRunId` + `deploymentDomain`, provisions each step's
    * agent-state repo via the shared per-agent deploy phases, writes the
    * workflow repo, and fires the deployment-level `agent.deploy` frame.
    *
    * Persists the deployment's anchor run -- the `workflow_run` whose id is
-   * `deploymentId` -- carrying its routing identity and definition, so the
+   * `anchorRunId` -- carrying its routing identity and definition, so the
    * deployment is listable per tenant off its runs; the RepoStore substrate
    * has no by-kind listing API of its own.
    *
@@ -188,11 +188,11 @@ export type DeployWorkflowDefinitionParams = {
    * every derived per-step address and the deployment-level address, and
    * it is the deployment's anchor-run id. The caller owns its generation.
    */
-  deploymentId: string;
+  anchorRunId: string;
   /**
    * Mail domain the deployment's derived addresses live under. The
-   * orchestrator derives `ins_<deploymentId>-<stepId>@<deploymentDomain>`
-   * per step and `ins_<deploymentId>@<deploymentDomain>` for the
+   * orchestrator derives `<anchorRunId>-<stepId>@<deploymentDomain>`
+   * per step and `<anchorRunId>@<deploymentDomain>` for the
    * deployment-level supervisor address.
    */
   deploymentDomain: string;
@@ -225,7 +225,7 @@ export type DeployPreparedWorkflowDefinitionParams = Omit<
 
 export type DeployWorkflowDefinitionResult = {
   /** Echoes the deployment id recorded on the projection row. */
-  deploymentId: string;
+  anchorRunId: string;
   /** Deployment-level mail address the supervisor registers on the bus. */
   deploymentAddress: string;
   /** Supervisor principal public key from the sidecar's deploy ack. */
@@ -319,7 +319,7 @@ type ResolvedAttachment = {
 };
 
 type SessionAssetRecord = {
-  instanceId: string;
+  runId: string;
   mountPath: string;
   assetPackSha: string;
   sourceCommitSha: string;
@@ -561,7 +561,7 @@ export function createSessionService(
   async function executeLaunchPhases(params: {
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    runId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
     toolPackagePins?: readonly ToolPackagePin[];
@@ -593,7 +593,7 @@ export function createSessionService(
     stageOnly?: boolean;
     allocationTarget?: AllocatedSidecarTarget;
   }): Promise<{ publicKey: string } | undefined> {
-    const { agentAddress, agentId, instanceId, config, deployContent } = params;
+    const { agentAddress, agentId, runId, config, deployContent } = params;
     const toolPackagePins = params.toolPackagePins ?? [];
     const stageOnly = params.stageOnly ?? false;
     if (params.workflowFrame !== undefined && stageOnly) {
@@ -832,7 +832,7 @@ export function createSessionService(
         for (const att of fanOut) {
           try {
             const committedRecord = await sendAttachmentPack(
-              instanceId,
+              runId,
               agentAddress,
               att,
               params.allocationTarget,
@@ -887,7 +887,7 @@ export function createSessionService(
     const result = await executeLaunchPhases({
       agentAddress: deployParams.agentAddress,
       agentId: deployParams.agentId,
-      instanceId: deployParams.instanceId,
+      runId: deployParams.runId,
       config: deployParams.config,
       deployContent: bridgeOrchestratorDeployContent(
         deployParams.deployContent,
@@ -938,7 +938,7 @@ export function createSessionService(
       stageWorkflowStep({
         agentAddress: orchestratorParams.agentAddress,
         agentId: orchestratorParams.agentId,
-        instanceId: orchestratorParams.instanceId,
+        runId: orchestratorParams.runId,
         config: orchestratorParams.config,
         deployContent: bridgeOrchestratorDeployContent(
           orchestratorParams.deployContent,
@@ -994,7 +994,7 @@ export function createSessionService(
   async function stageWorkflowStep(params: {
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    runId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
     toolPackagePins?: readonly ToolPackagePin[];
@@ -1003,7 +1003,7 @@ export function createSessionService(
     await executeLaunchPhases({
       agentAddress: params.agentAddress,
       agentId: params.agentId,
-      instanceId: params.instanceId,
+      runId: params.runId,
       config: params.config,
       deployContent: params.deployContent,
       stageOnly: true,
@@ -1017,9 +1017,9 @@ export function createSessionService(
   }
 
   /**
-   * Deploy a single-agent instance through the single-step-at-head path: wrap
+   * Deploy a single agent through the single-step-at-head path: wrap
    * the harness as a one-step workflow (the same wrap `launchSession` uses) and
-   * route it through `deploySingleStepAtHead` with the instance's REAL identity
+   * route it through `deploySingleStepAtHead` with the run's REAL identity
    * -- so the head address IS the instance address and the deploy runs as a
    * supervised workflow-process child.
    *
@@ -1035,13 +1035,13 @@ export function createSessionService(
   async function deployInstanceAtHead(params: {
     agentAddress: string;
     agentId: string;
-    instanceId: string;
+    runId: string;
     config: HarnessConfig;
     deployContent: DeployContent;
     toolPackagePins?: readonly ToolPackagePin[];
     credentials?: CredentialDelivery;
   }): Promise<{ publicKey: string }> {
-    const { agentAddress, agentId, instanceId, config, deployContent } = params;
+    const { agentAddress, agentId, runId, config, deployContent } = params;
 
     const singleStepAgent = wrapHarnessAsSingleStepWorkflow({
       config,
@@ -1078,7 +1078,7 @@ export function createSessionService(
     return deploySingleStepAtHead({
       agentAddress,
       agentId,
-      instanceId,
+      runId,
       config,
       deployContent,
       definition: workflow,
@@ -1116,7 +1116,7 @@ export function createSessionService(
       directorRegistry,
       deployArgs: {
         workflow: params.definition,
-        deploymentId: params.deploymentId,
+        runId: params.anchorRunId,
         deploymentDomain: params.deploymentDomain,
         config: params.config,
         deployContent: params.deployContent,
@@ -1132,10 +1132,10 @@ export function createSessionService(
     });
 
     return {
-      deploymentId: params.deploymentId,
-      deploymentAddress: deriveDeploymentAddress({
-        deploymentId: params.deploymentId,
-        deploymentDomain: params.deploymentDomain,
+      anchorRunId: params.anchorRunId,
+      deploymentAddress: deriveRunAddress({
+        runId: params.anchorRunId,
+        domain: params.deploymentDomain,
       }),
       publicKey: result.publicKey,
     };
@@ -1146,7 +1146,7 @@ export function createSessionService(
   ): Promise<DeployWorkflowDefinitionResult> {
     const {
       tenantId,
-      deploymentId,
+      anchorRunId,
       deploymentDomain,
       definitionAssetId,
       config,
@@ -1172,24 +1172,27 @@ export function createSessionService(
 
       // The deployment's anchor run: the one workflow_run that carries the
       // deployment's routing identity, 1:1 with the deployment (id and address
-      // both derived from `deploymentId`). It is the deployment's sole
+      // both derived from `anchorRunId`). It is the deployment's sole
       // first-class record -- the row that owns the address and public key the
       // reconnect ownership challenge verifies: deploy-ack writes the key here
-      // and the key lookup reads it off this row. It is born running with no key
-      // yet (deploy-ack fills it), carrying its definition. Its `deploymentId`
-      // equals its own id, so the anchor row references itself. Child runs of
-      // this deployment are separate address-less rows. `principalId` is null --
-      // the workflow-derived key path reads `publicKey` directly and never
-      // consults it, and the `workflow-run:<deploymentId>` grant seeded below
-      // already covers reads.
+      // and the key lookup reads it off this row. It is born "deployed" -- live
+      // but pre-trigger; the first trigger flips it to "running" -- carrying its
+      // definition. Its `anchorRunId` equals its own id, so the anchor row
+      // references itself. Child runs of this deployment are separate
+      // address-less rows. `principalId` is null -- the workflow-derived key
+      // path reads `publicKey` directly and never consults it, and the
+      // `workflow-run:<anchorRunId>` grant seeded below already covers reads.
       await tx.insert(workflowRunTable).values({
-        id: deploymentId,
+        id: anchorRunId,
         tenantId,
-        deploymentId,
+        anchorRunId,
         definitionId,
-        address: deriveDeploymentAddress({ deploymentId, deploymentDomain }),
+        address: deriveRunAddress({
+          runId: anchorRunId,
+          domain: deploymentDomain,
+        }),
         publicKey: result.publicKey,
-        status: "running",
+        status: "deployed",
         createdAt: now,
       });
 
@@ -1202,7 +1205,7 @@ export function createSessionService(
         id: generateId("grant"),
         tenantId,
         principalId: config.principalId,
-        resource: `workflow-run:${deploymentId}`,
+        resource: `workflow-run:${anchorRunId}`,
         action: "read",
         effect: "allow",
         origin: "creator",
@@ -1226,9 +1229,9 @@ export function createSessionService(
       agentRepoStore,
       allocationRouter: requireAllocationRouter(),
       allocationTarget: params.allocationTarget,
-      agentAddress: deriveDeploymentAddress({
-        deploymentId: params.deploymentId,
-        deploymentDomain: params.deploymentDomain,
+      agentAddress: deriveRunAddress({
+        runId: params.anchorRunId,
+        domain: params.deploymentDomain,
       }),
     });
     const result = await executeWorkflowDefinitionDeploy(params);
@@ -1251,7 +1254,7 @@ export function createSessionService(
           .for("update");
         if (
           allocation === undefined ||
-          allocation.anchorRunId !== params.deploymentId ||
+          allocation.anchorRunId !== params.anchorRunId ||
           allocation.status !== "allocated" ||
           allocation.generation !== params.allocationTarget.generation ||
           allocation.ensureAcceptedGeneration !==
@@ -1264,8 +1267,8 @@ export function createSessionService(
           .set({ publicKey: result.publicKey })
           .where(
             and(
-              eq(workflowRunTable.id, params.deploymentId),
-              eq(workflowRunTable.deploymentId, params.deploymentId),
+              eq(workflowRunTable.id, params.anchorRunId),
+              eq(workflowRunTable.anchorRunId, params.anchorRunId),
               eq(workflowRunTable.tenantId, params.tenantId),
             ),
           )
@@ -1274,7 +1277,7 @@ export function createSessionService(
       });
       if (updated === null) {
         throw new Error(
-          `Prepared anchor run ${params.deploymentId} lost allocation ownership before initialization completed`,
+          `Prepared anchor run ${params.anchorRunId} lost allocation ownership before initialization completed`,
         );
       }
     } catch (error) {
@@ -1297,20 +1300,20 @@ export function createSessionService(
           .delete(sessionAssetTable)
           .where(
             and(
-              eq(sessionAssetTable.instanceId, record.instanceId),
+              eq(sessionAssetTable.runId, record.runId),
               eq(sessionAssetTable.mountPath, record.mountPath),
               eq(sessionAssetTable.assetPackSha, record.assetPackSha),
               eq(sessionAssetTable.sourceCommitSha, record.sourceCommitSha),
             ),
           );
       } catch (err) {
-        logger.warn`session_asset rollback failed for earlier-committed instance=${record.instanceId} mountPath=${record.mountPath}: ${err instanceof Error ? err.message : String(err)}`;
+        logger.warn`session_asset rollback failed for earlier-committed instance=${record.runId} mountPath=${record.mountPath}: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
   }
 
   async function sendAttachmentPack(
-    instanceId: string,
+    runId: string,
     agentAddress: string,
     attachment: ResolvedAttachment,
     allocationTarget?: AllocatedSidecarTarget,
@@ -1326,7 +1329,7 @@ export function createSessionService(
 
     const assetPackSha = await createPackSha(pack);
     const record: SessionAssetRecord = {
-      instanceId,
+      runId,
       mountPath,
       assetPackSha,
       sourceCommitSha,
@@ -1346,13 +1349,13 @@ export function createSessionService(
         .insert(sessionAssetTable)
         .values({ ...record, materializedAt: new Date() })
         .onConflictDoNothing({
-          target: [sessionAssetTable.instanceId, sessionAssetTable.mountPath],
+          target: [sessionAssetTable.runId, sessionAssetTable.mountPath],
         })
-        .returning({ instanceId: sessionAssetTable.instanceId });
+        .returning({ runId: sessionAssetTable.runId });
       if (inserted.length === 0) {
         const existing = await db.query.sessionAsset.findFirst({
           where: and(
-            eq(sessionAssetTable.instanceId, instanceId),
+            eq(sessionAssetTable.runId, runId),
             eq(sessionAssetTable.mountPath, mountPath),
           ),
           columns: {
@@ -1362,7 +1365,7 @@ export function createSessionService(
         });
         if (existing === undefined) {
           throw new Error(
-            `session_asset ${instanceId}/${mountPath} disappeared after its insert conflicted`,
+            `session_asset ${runId}/${mountPath} disappeared after its insert conflicted`,
           );
         }
         if (
@@ -1370,7 +1373,7 @@ export function createSessionService(
           existing.sourceCommitSha !== sourceCommitSha
         ) {
           throw new Error(
-            `session_asset ${instanceId}/${mountPath} conflicts with the allocated workflow's restored asset`,
+            `session_asset ${runId}/${mountPath} conflicts with the allocated workflow's restored asset`,
           );
         }
       }
@@ -1413,7 +1416,7 @@ export function createSessionService(
             .delete(sessionAssetTable)
             .where(
               and(
-                eq(sessionAssetTable.instanceId, rollbackRecord.instanceId),
+                eq(sessionAssetTable.runId, rollbackRecord.runId),
                 eq(sessionAssetTable.mountPath, rollbackRecord.mountPath),
                 eq(sessionAssetTable.assetPackSha, rollbackRecord.assetPackSha),
                 eq(
@@ -1427,7 +1430,7 @@ export function createSessionService(
             rollbackErr instanceof Error
               ? rollbackErr.message
               : String(rollbackErr);
-          logger.warn`session_asset rollback failed for instance=${instanceId} mountPath=${mountPath}: ${msg}`;
+          logger.warn`session_asset rollback failed for instance=${runId} mountPath=${mountPath}: ${msg}`;
         }
       }
       throw err;

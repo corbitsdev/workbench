@@ -34,9 +34,9 @@ test("per-run mode writes runs/<runId>/grants.json into the workflow-run repo", 
     repoStore: store,
     deploymentId: "dep-1",
     stepOrder: ["step-1", "step-2"],
-    deriveStepRepoId: ({ deploymentId, stepId }) => ({
+    deriveStepRepoId: ({ runId, stepId }) => ({
       kind: "agent-state",
-      id: `${deploymentId}-${stepId}`,
+      id: `${runId}-${stepId}`,
     }),
     grants: [{ resource: "tool:echo", action: "invoke" }],
     runId: "run-1",
@@ -56,9 +56,9 @@ test("step fan-out mode writes one agent-state grants file per step", async () =
     repoStore: store,
     deploymentId: "dep-1",
     stepOrder: ["step-1", "step-2"],
-    deriveStepRepoId: ({ deploymentId, stepId }) => ({
+    deriveStepRepoId: ({ runId, stepId }) => ({
       kind: "agent-state",
-      id: `${deploymentId}-${stepId}`,
+      id: `${runId}-${stepId}`,
     }),
     grants: undefined,
   });

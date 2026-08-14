@@ -156,7 +156,7 @@ export function createSidecarWorkflowSupervisor(
   );
   const supervisorPrincipal: WorkflowRunSupervisorPrincipal = {
     kind: "supervisor",
-    deploymentId: opts.deploymentId,
+    anchorRunId: opts.deploymentId,
   };
   const supervisor = createWorkflowSupervisor({
     repoStore: opts.repoStore,
@@ -171,7 +171,7 @@ export function createSidecarWorkflowSupervisor(
     dynamicSpawnEnv: opts.dynamicSpawnEnv,
     workflowRunRepoId: opts.workflowRunRepoId,
     workflowRunRef: opts.workflowRunRef,
-    deploymentId: opts.deploymentId,
+    anchorRunId: opts.deploymentId,
     stepCount: opts.stepCount,
     deploymentMailAddress: opts.deploymentMailAddress,
     readPrincipal: supervisorPrincipal,

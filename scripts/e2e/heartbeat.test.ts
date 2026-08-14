@@ -230,7 +230,7 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
         res = await api(
           hub.baseUrl,
           "POST",
-          `/api/tenants/${tenantId}/workflows/instances`,
+          `/api/tenants/${tenantId}/workflows/deployments`,
           body,
           user.cookies,
         );

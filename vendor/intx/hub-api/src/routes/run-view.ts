@@ -1,6 +1,5 @@
-// Shapes a folded run's routing record into the wire instance view -- one
-// shaper, one resolver (`findRoutableById`) -- so a run renders as the instance
-// it stands in for.
+// Shapes a workflow run's routing record into the wire run view -- one shaper,
+// one resolver (`findRoutableById`) -- so a run renders through a single path.
 
 import type { WorkflowRunStatus } from "@intx/types";
 import type { RoutableRecord } from "@intx/hub-sessions";
@@ -8,13 +7,14 @@ import type { RoutableRecord } from "@intx/hub-sessions";
 import { ts } from "../format";
 
 // A workflow run's lifecycle enum differs from the run-view enum the wire
-// contract speaks. A run is `running` while live; its terminal states map onto
-// the view vocabulary: a clean finish or an operator stop both read as
-// `stopped`, a failure as `error`.
-export function mapRunStatusToInstanceStatus(
-  status: string,
-): WorkflowRunStatus {
+// contract speaks. A `deployed` (pre-trigger) or `running` run is live and maps
+// to the wire status of the same name; its terminal states map onto the view
+// vocabulary: a clean finish or an operator stop both read as `stopped`, a
+// failure as `error`.
+export function mapRunStatusToViewStatus(status: string): WorkflowRunStatus {
   switch (status) {
+    case "deployed":
+      return "deployed";
     case "running":
       return "running";
     case "completed":
@@ -30,17 +30,17 @@ export function mapRunStatusToInstanceStatus(
 
 // The record's status in the run-view vocabulary: a run's status mapped onto
 // it. Route status guards (a stopped endpoint is gone) through this so a
-// terminal run 410s exactly as a stopped instance would.
-export function instanceStatusOf(record: RoutableRecord): WorkflowRunStatus {
-  return mapRunStatusToInstanceStatus(record.status);
+// terminal run 410s exactly as a stopped run would.
+export function viewStatusOf(record: RoutableRecord): WorkflowRunStatus {
+  return mapRunStatusToViewStatus(record.status);
 }
 
-export function formatInstanceView(
+export function formatRunView(
   record: RoutableRecord,
   definitionName: string,
   runtimeStatus?: string,
 ) {
-  const status = instanceStatusOf(record);
+  const status = viewStatusOf(record);
   return {
     id: record.id,
     definitionId: record.definitionId,

@@ -134,7 +134,7 @@ async function isFullySeeded(
 
   const deploymentsResponse = await api(
     "GET",
-    `/api/tenants/${tenantId}/workflows/instances`,
+    `/api/tenants/${tenantId}/workflows/deployments`,
     undefined,
     cookies,
   );

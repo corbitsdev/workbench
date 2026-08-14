@@ -17,7 +17,7 @@ import {
   type FoldedRunsDeps,
 } from "@corbits/folded-runs";
 import { generateId } from "@intx/hub-common";
-import { formatAgentAddress } from "@intx/types";
+import { formatRunAddress } from "@intx/types";
 import type { AssetService } from "@intx/hub-sessions";
 import type { RoutineLauncher } from "@corbits/routines";
 
@@ -72,8 +72,8 @@ export function createHubRoutineLauncher(
       );
       const foldedBody = readFoldedBody(definitionJSON);
 
-      const instanceId = generateId("instance");
-      const triggerAddress = formatAgentAddress(instanceId, tenantRow.domain);
+      const instanceId = generateId("workflowRun");
+      const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
 
       await launchFoldedRun(deps, {
         tenantId: input.tenantId,

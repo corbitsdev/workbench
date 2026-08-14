@@ -1,7 +1,7 @@
+import fs from "node:fs";
 import git from "isomorphic-git";
 import { collectReachableObjects } from "./object-walk";
 import { withRepoDirLock } from "./repo-lock";
-import type { StorageRuntime } from "./runtime";
 
 /**
  * Create a git packfile containing all objects reachable from a ref.
@@ -11,18 +11,17 @@ import type { StorageRuntime } from "./runtime";
  * as chunked repo.pack.push frames.
  */
 export async function createDeployPack(
-  runtime: StorageRuntime,
   dir: string,
   ref: string,
 ): Promise<{ pack: Uint8Array; commitSha: string }> {
   // Read under the per-directory lock so a concurrent GC pass cannot prune
   // a loose object out from under the reachability walk or the pack write.
-  return withRepoDirLock(runtime, dir, async () => {
-    const commitSha = await git.resolveRef({ fs: runtime.fs.git, dir, ref });
-    const oids = await collectReachableObjects(runtime, dir, commitSha);
+  return withRepoDirLock(dir, async () => {
+    const commitSha = await git.resolveRef({ fs, dir, ref });
+    const oids = await collectReachableObjects(dir, commitSha);
 
     const result = await git.packObjects({
-      fs: runtime.fs.git,
+      fs,
       dir,
       oids,
       write: false,
@@ -51,7 +50,6 @@ export async function createDeployPack(
 export type IncludeShaPredicate = (sha: string) => boolean | Promise<boolean>;
 
 async function collectCommitChain(
-  runtime: StorageRuntime,
   dir: string,
   start: string,
 ): Promise<string[]> {
@@ -62,7 +60,7 @@ async function collectCommitChain(
     if (oid === undefined) break;
     if (seen.has(oid)) continue;
     seen.add(oid);
-    const { commit } = await git.readCommit({ fs: runtime.fs.git, dir, oid });
+    const { commit } = await git.readCommit({ fs, dir, oid });
     for (const parent of commit.parent) {
       if (!seen.has(parent)) queue.push(parent);
     }
@@ -71,16 +69,15 @@ async function collectCommitChain(
 }
 
 async function reachableFromCommits(
-  runtime: StorageRuntime,
   dir: string,
   commits: readonly string[],
 ): Promise<Set<string>> {
   const reachable = new Set<string>();
   for (const commitOid of commits) {
-    const chain = await collectCommitChain(runtime, dir, commitOid);
+    const chain = await collectCommitChain(dir, commitOid);
     for (const ancestor of chain) {
       if (reachable.has(ancestor)) continue;
-      const objects = await collectReachableObjects(runtime, dir, ancestor);
+      const objects = await collectReachableObjects(dir, ancestor);
       for (const oid of objects) {
         reachable.add(oid);
       }
@@ -128,7 +125,6 @@ export type CreateNegotiatedPackOptions = {
 };
 
 export async function createNegotiatedPack(
-  runtime: StorageRuntime,
   dir: string,
   wants: readonly string[],
   haves: readonly string[],
@@ -140,12 +136,12 @@ export async function createNegotiatedPack(
   }
 
   const wantedObjects =
-    options?.wantedObjects ?? (await reachableFromCommits(runtime, dir, wants));
+    options?.wantedObjects ?? (await reachableFromCommits(dir, wants));
 
   const knownHaves: string[] = [];
   for (const have of haves) {
     try {
-      await git.readCommit({ fs: runtime.fs.git, dir, oid: have });
+      await git.readCommit({ fs, dir, oid: have });
       knownHaves.push(have);
     } catch {
       // Unknown have — the client's advertised state is not present
@@ -153,7 +149,7 @@ export async function createNegotiatedPack(
     }
   }
 
-  const haveObjects = await reachableFromCommits(runtime, dir, knownHaves);
+  const haveObjects = await reachableFromCommits(dir, knownHaves);
 
   const candidates: string[] = [];
   for (const oid of wantedObjects) {
@@ -174,7 +170,7 @@ export async function createNegotiatedPack(
   if (oids.length === 0) return null;
 
   const result = await git.packObjects({
-    fs: runtime.fs.git,
+    fs,
     dir,
     oids,
     write: false,

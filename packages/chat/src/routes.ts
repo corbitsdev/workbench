@@ -11,7 +11,7 @@
 // `./platform-port`, the settings vocabulary in `./channel-settings`,
 // join/fan-out orchestration in `./channel-service`, and the SSE
 // subscriber registry in `./channel-events`.
-import { formatAgentAddress } from "@intx/types";
+import { formatRunAddress } from "@intx/types";
 import type { InferencePreference } from "@intx/agent";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
@@ -402,8 +402,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
       }
 
-      const channelId = generateId("instance");
-      const triggerAddress = formatAgentAddress(channelId, tenant.domain);
+      const channelId = generateId("workflowRun");
+      const triggerAddress = formatRunAddress(channelId, tenant.domain);
       const definition = serializeChannelHostWorkflow(
         buildChannelHostWorkflow({
           triggerAddress,

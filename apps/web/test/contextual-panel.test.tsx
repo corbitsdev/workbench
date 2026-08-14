@@ -99,7 +99,7 @@ describe("ContextualPanel", () => {
           }),
         );
       }
-      const body = path.includes("/workflows/instances") ? [] : { items: [] };
+      const body = path.includes("/workflows/deployments") ? [] : { items: [] };
       return Promise.resolve(
         new Response(JSON.stringify(body), {
           status: 200,
@@ -170,7 +170,7 @@ describe("ContextualPanel", () => {
           }),
         );
       }
-      const body = path.includes("/workflows/instances") ? [] : { items: [] };
+      const body = path.includes("/workflows/deployments") ? [] : { items: [] };
       return Promise.resolve(
         new Response(JSON.stringify(body), {
           status: 200,
@@ -250,7 +250,7 @@ describe("ContextualPanel", () => {
           }),
         );
       }
-      const body = path.includes("/workflows/instances") ? [] : { items: [] };
+      const body = path.includes("/workflows/deployments") ? [] : { items: [] };
       return Promise.resolve(
         new Response(JSON.stringify(body), {
           status: 200,

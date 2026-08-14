@@ -25,7 +25,8 @@ function stubTenantFetch(calls: string[]): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     calls.push(path);
-    if (path.includes("/workflows/instances")) return Promise.resolve(json([]));
+    if (path.includes("/workflows/deployments"))
+      return Promise.resolve(json([]));
     return Promise.resolve(json({ items: [] }));
   }) as typeof fetch;
 }
@@ -76,7 +77,7 @@ describe("useBenchActivity", () => {
     });
     expect(calls.some((path) => path.includes("kind=channel"))).toBe(true);
     expect(calls.some((path) => path.includes("kind=chat"))).toBe(true);
-    expect(calls.some((path) => path.includes("/workflows/instances"))).toBe(
+    expect(calls.some((path) => path.includes("/workflows/deployments"))).toBe(
       true,
     );
     root.unmount();

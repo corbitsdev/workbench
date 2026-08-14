@@ -21,14 +21,20 @@ import { type } from "arktype";
 import {
   asset,
   grant as grantTable,
+  isLiveWorkflowRunStatus,
   principal as principalTable,
+  sidecarAllocation,
   workflowDefinition,
   workflowRun,
 } from "@intx/db/schema";
 import type { DB, DBExecutor } from "@intx/db";
 import { createWorkflowRunStore } from "@intx/db";
 import type { GrantStore, GrantRule } from "@intx/types/authz";
-import { GrantRequirement, type GrantEffect } from "@intx/types";
+import {
+  GrantRequirement,
+  isSidecarAllocationDispatchable,
+  type GrantEffect,
+} from "@intx/types";
 import { RunGrantsFrame } from "@intx/types/sidecar";
 import {
   workflowDefinitionEnvelopeSchema,
@@ -328,7 +334,7 @@ export async function collectCreatorGrants(
 export type CommitRunGrantsArgs = {
   db: DB["db"];
   tenantId: string;
-  deploymentId: string;
+  anchorRunId: string;
   /**
    * The deployment's definition, resolved by the caller off the anchor run.
    * Anchors the run on its definition. Edge resolves; this interior trusts.
@@ -345,25 +351,55 @@ export type CommittedRunGrants = {
   stepGrants: RunGrantsFrame["stepGrants"];
 };
 
-/** Lock and classify one run row owned by a deployment. */
+/**
+ * Lock and classify one run row owned by a deployment. A live run -- a
+ * "deployed" anchor in its pre-trigger window or a "running" run -- classifies
+ * as "running"; the started-vs-not distinction is owned by the durable
+ * lifecycle, not this status axis.
+ */
 export async function lockWorkflowRunState(
   tx: DBExecutor,
-  deploymentId: string,
+  anchorRunId: string,
   runId: string,
 ): Promise<"absent" | "running" | "terminal"> {
   const [run] = await tx
     .select({ status: workflowRun.status })
     .from(workflowRun)
     .where(
-      and(
-        eq(workflowRun.id, runId),
-        eq(workflowRun.deploymentId, deploymentId),
-      ),
+      and(eq(workflowRun.id, runId), eq(workflowRun.anchorRunId, anchorRunId)),
     )
     .limit(1)
     .for("update");
   if (run === undefined) return "absent";
-  return run.status === "running" ? "running" : "terminal";
+  return isLiveWorkflowRunStatus(run.status) ? "running" : "terminal";
+}
+
+/**
+ * Lock a deployment's sidecar allocation `FOR UPDATE` and report whether it is
+ * still dispatchable. Serializes an exclusive trigger's commit with concurrent
+ * allocation transitions so a durable dispatch is never enqueued against an
+ * allocation that has moved to a non-dispatchable state.
+ */
+export async function lockDispatchableAllocation(
+  tx: DBExecutor,
+  allocationId: string,
+  anchorRunId: string,
+): Promise<boolean> {
+  const [allocation] = await tx
+    .select({ status: sidecarAllocation.status })
+    .from(sidecarAllocation)
+    .where(
+      and(
+        eq(sidecarAllocation.id, allocationId),
+        eq(sidecarAllocation.anchorRunId, anchorRunId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  return (
+    allocation !== undefined &&
+    isSidecarAllocationDispatchable(allocation.status)
+  );
 }
 
 async function loadCommittedRunGrantsFromExecutor(
@@ -484,7 +520,7 @@ export async function commitRunGrants(
     await workflowRunStore.anchorWithPrincipal(
       {
         id: args.runId,
-        deploymentId: args.deploymentId,
+        anchorRunId: args.anchorRunId,
         definitionId: args.definitionId,
         tenantId: args.tenantId,
         principalId: args.runPrincipalId,
@@ -539,7 +575,7 @@ export function createMailTriggeredRunGrantsMaterializer(
     const topLevelRun = alias(workflowRun, "mail_triggered_top_level_run");
     const [anchor] = await deps.db
       .select({
-        deploymentId: workflowRun.id,
+        anchorRunId: workflowRun.id,
         tenantId: workflowRun.tenantId,
         definitionId: workflowRun.definitionId,
         definitionAssetId: workflowDefinition.assetId,
@@ -555,16 +591,27 @@ export function createMailTriggeredRunGrantsMaterializer(
         topLevelRun,
         and(
           eq(topLevelRun.id, runId),
-          eq(topLevelRun.deploymentId, workflowRun.id),
+          eq(topLevelRun.anchorRunId, workflowRun.id),
         ),
       )
       .where(eq(workflowRun.address, agentAddress))
       .limit(1);
     if (anchor === undefined) return { outcome: "skip" };
+    // A "deployed" anchor is live: mail-triggering it IS its first trigger, so
+    // it must not be rejected as terminal here.
+    //
+    // This preflight inspects only the workflow_run.status column and omits the
+    // durable-lifecycle terminal check that the HTTP trigger route in
+    // workflow-run-trigger.ts applies. The supervisor's durable run-ref guard
+    // (rejectTerminalRun / readWorkflowRunLifecycle in supervisor.ts) is the
+    // fired/not-fired authority and never re-fires a durably-settled run, so
+    // this status check is a lagging fast-fail only. The two preflights diverge
+    // inside the status-flip lag window; that asymmetry is tolerable and is
+    // tracked for unification in INTR-456.
     if (
-      anchor.anchorStatus !== "running" ||
+      !isLiveWorkflowRunStatus(anchor.anchorStatus) ||
       (anchor.topLevelRunStatus !== null &&
-        anchor.topLevelRunStatus !== "running")
+        !isLiveWorkflowRunStatus(anchor.topLevelRunStatus))
     ) {
       return {
         outcome: "rejected",
@@ -580,7 +627,7 @@ export function createMailTriggeredRunGrantsMaterializer(
     }
     const definitionAssetId = anchor.definitionAssetId;
     const tenantId = anchor.tenantId;
-    const deploymentId = anchor.deploymentId;
+    const anchorRunId = anchor.anchorRunId;
 
     const committed = await loadCommittedRunGrants(deps.db, tenantId, runId);
     if (committed !== null) {
@@ -644,9 +691,9 @@ export function createMailTriggeredRunGrantsMaterializer(
 
     const stepGrants = await deps.db.transaction(async (tx) => {
       if (
-        (await lockWorkflowRunState(tx, deploymentId, deploymentId)) !==
+        (await lockWorkflowRunState(tx, anchorRunId, anchorRunId)) !==
           "running" ||
-        (await lockWorkflowRunState(tx, deploymentId, runId)) === "terminal"
+        (await lockWorkflowRunState(tx, anchorRunId, runId)) === "terminal"
       ) {
         return null;
       }
@@ -654,7 +701,7 @@ export function createMailTriggeredRunGrantsMaterializer(
         {
           db: deps.db,
           tenantId,
-          deploymentId,
+          anchorRunId,
           definitionId: anchor.definitionId,
           runId,
           runPrincipalId,

@@ -41,8 +41,8 @@ describeIfDb("needs-you: resolving pending approvals to display labels", () => {
 
   const tenantId = generateId("tenant");
   const otherTenantId = generateId("tenant");
-  const definitionId = `def_${generateId("deployment")}`;
-  const runId = `run_${generateId("deployment")}`;
+  const definitionId = `def_${generateId("workflowRun")}`;
+  const runId = `run_${generateId("workflowRun")}`;
   const approvalId = generateId("approval");
   const resolvedApprovalId = generateId("approval");
   const otherTenantApprovalId = generateId("approval");
@@ -90,7 +90,7 @@ describeIfDb("needs-you: resolving pending approvals to display labels", () => {
     await db.db.insert(schema.approval).values({
       id: approvalId,
       tenantId,
-      deploymentId: runId,
+      anchorRunId: runId,
       runId,
       agentAddress: `instance_abc123@growth-${tenantId}.localhost`,
       correlationId: `cor_${generateId("signal")}`,
@@ -101,7 +101,7 @@ describeIfDb("needs-you: resolving pending approvals to display labels", () => {
     await db.db.insert(schema.approval).values({
       id: resolvedApprovalId,
       tenantId,
-      deploymentId: runId,
+      anchorRunId: runId,
       runId,
       agentAddress: `instance_abc123@growth-${tenantId}.localhost`,
       correlationId: `cor_${generateId("signal")}`,
@@ -113,7 +113,7 @@ describeIfDb("needs-you: resolving pending approvals to display labels", () => {
     await db.db.insert(schema.approval).values({
       id: otherTenantApprovalId,
       tenantId: otherTenantId,
-      deploymentId: runId,
+      anchorRunId: runId,
       runId,
       agentAddress: `instance_abc123@growth-${tenantId}.localhost`,
       correlationId: `cor_${generateId("signal")}`,

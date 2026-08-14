@@ -105,9 +105,9 @@ export function createStepStrategy(args: {
   }
   return {
     deriveStepAddress: args.multistepDeriveStepAddress,
-    deriveStepRepoId: ({ deploymentId, stepId }) => ({
+    deriveStepRepoId: ({ runId, stepId }) => ({
       kind: "agent-state",
-      id: `${deploymentId}-${stepId}`,
+      id: `${runId}-${stepId}`,
     }),
   };
 }
@@ -162,7 +162,7 @@ export async function writeStepGrants(args: {
   }
   for (const stepId of args.stepOrder) {
     const repoId = args.deriveStepRepoId({
-      deploymentId: args.deploymentId,
+      runId: args.deploymentId,
       stepId,
     });
     await args.repoStore.writeTree(

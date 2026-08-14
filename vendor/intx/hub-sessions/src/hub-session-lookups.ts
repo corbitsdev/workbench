@@ -6,7 +6,7 @@
 // single struct that the hub app passes to `createSidecarRouter` as
 // `lookups`.
 
-import { eq, and, asc, isNull } from "drizzle-orm";
+import { eq, and, asc, inArray, isNull } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import {
   createApprovalStore,
@@ -16,18 +16,16 @@ import {
 } from "@intx/db";
 import {
   agentSession,
+  liveWorkflowRunStatuses,
   principal,
   sessionMail,
   sidecarAllocation,
   workflowRun,
 } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
-import { parseAgentAddress, signalName } from "@intx/types";
+import { parseRunAddress, signalName } from "@intx/types";
 import { SignalDeliverFrame } from "@intx/types/sidecar";
-import {
-  deriveWorkflowRunRepoId,
-  isWorkflowDerivedAddress,
-} from "@intx/workflow-deploy";
+import { deriveWorkflowRunRepoId } from "@intx/workflow-deploy";
 
 import type { AgentRepoStore } from "./agent-repo";
 import { generateId } from "@intx/hub-common";
@@ -57,50 +55,42 @@ export function createHubSessionLookups(
 
   return {
     async lookupPublicKey(agentAddress) {
-      // Route by address space. A workflow-derived address's key lives on the
-      // deployment's anchor workflow_run row; a plain `ins_<hex>` address is
-      // backed by a folded workflow_run, resolved through
-      // `resolveRoutableAddress`. A missing endpoint (or a null key) returns
-      // null so the reconnect challenge fails closed and the address stays
-      // unrouted rather than routing without ownership proof.
-      if (isWorkflowDerivedAddress(agentAddress)) {
-        // Read the key off the deployment's anchor run, gated on a live
-        // ("running") run so a decommissioned deployment's key can no longer
-        // satisfy a challenge. The anchor run is born running and no path flips
-        // it terminal today: the gate is the read-side invariant a future
-        // undeploy/teardown feature will satisfy -- mirroring the deployment's
-        // dormant `status='error'` contract -- not dead code. A null publicKey
-        // (running but not yet acked) or an absent row returns null.
-        const row = await db
-          .select({ publicKey: workflowRun.publicKey })
-          .from(workflowRun)
-          .where(
-            and(
-              eq(workflowRun.address, agentAddress),
-              eq(workflowRun.status, "running"),
-            ),
-          )
-          .limit(1)
-          .then((rows) => rows[0]);
-        return row?.publicKey ?? null;
-      }
-      const endpoint = await resolveRoutableAddress(db, agentAddress);
-      return endpoint?.publicKey ?? null;
+      // Every routable address names one workflow run, whose key lives on its
+      // single self-anchored workflow_run row, keyed by address. Read the key
+      // off that row, gated on a live run (born "deployed", "running" after its
+      // first trigger) so a decommissioned deployment's key can no longer
+      // satisfy a challenge. The "deployed" arm is load-bearing: the reconnect
+      // ownership challenge fires in the deploy->first-trigger window, so a
+      // "running"-only gate would fail every such challenge closed. A missing
+      // row or a null publicKey (live but not yet acked) returns null so the
+      // reconnect challenge fails closed and the address stays unrouted rather
+      // than routing without ownership proof.
+      const row = await db
+        .select({ publicKey: workflowRun.publicKey })
+        .from(workflowRun)
+        .where(
+          and(
+            eq(workflowRun.address, agentAddress),
+            inArray(workflowRun.status, [...liveWorkflowRunStatuses]),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]);
+      return row?.publicKey ?? null;
     },
 
     async lookupDeployRef() {
-      // A plain address now resolves only to a folded run, and a folded run is
-      // a supervised workflow-process child pinned forever like a native
-      // deployment: it keeps its launch-time deploy tree and never reconciles.
-      // So no plain address enrolls in the reconnect deploy-ref catch-up.
+      // A workflow run is a supervised workflow-process pinned forever like a
+      // native deployment: it keeps its deploy-time definition and never
+      // reconciles, so no address enrolls in the reconnect deploy-ref catch-up.
       return null;
     },
 
     async persistMail({ senderAddress, recipients, raw }) {
-      // The sender and recipients are plain addresses backed by a folded
-      // workflow_run; resolve each through the resolver. A mail record's
-      // `instanceId` is always null for a run -- it is not an instance -- and
-      // the record anchors on the run's session instead.
+      // The sender and recipients are run addresses, each backed by its
+      // self-anchored workflow_run; resolve each through the resolver. A mail
+      // record's `runId` is always null for a run -- it keys on the run's
+      // session instead.
       const sender = await resolveRoutableAddress(db, senderAddress);
       if (sender === undefined) {
         throw new Error(
@@ -113,14 +103,14 @@ export function createHubSessionLookups(
         );
       }
       const createdAt = new Date();
-      const senderInstanceId = null;
+      const senderRunId = null;
 
       // Outbound record on the sender's session.
       const outboundId = generateId("sessionMail");
       const outboundRecord = {
         id: outboundId,
         sessionId: sender.sessionId,
-        instanceId: senderInstanceId,
+        runId: senderRunId,
         tenantId: sender.tenantId,
         direction: "outbound" as const,
         status: "delivered" as const,
@@ -150,13 +140,13 @@ export function createHubSessionLookups(
       const inboundEntries = recipientEndpoints.map(
         ({ addr, endpoint, sessionId }) => {
           const id = generateId("sessionMail");
-          // A folded run is not an instance, so its mail records no instanceId.
-          const instanceId = null;
+          // A folded run is not an instance, so its mail records no runId.
+          const runId = null;
           return {
             record: {
               id,
               sessionId,
-              instanceId,
+              runId,
               tenantId: endpoint.tenantId,
               direction: "inbound" as const,
               status: "delivered" as const,
@@ -166,7 +156,7 @@ export function createHubSessionLookups(
             result: {
               id,
               direction: "inbound" as const,
-              instanceId,
+              runId,
               address: addr,
               createdAt,
             },
@@ -182,7 +172,7 @@ export function createHubSessionLookups(
         {
           id: outboundId,
           direction: "outbound" as const,
-          instanceId: senderInstanceId,
+          runId: senderRunId,
           address: sender.address,
           createdAt,
         },
@@ -193,7 +183,7 @@ export function createHubSessionLookups(
     async registerSignalCorrelation({
       correlationId,
       runId,
-      deploymentId,
+      anchorRunId,
       agentAddress,
       kind,
       approvalSnapshot,
@@ -212,22 +202,22 @@ export function createHubSessionLookups(
         // address names. The anchor is the tenancy origin every approval needs
         // (an approval has no agent_instance/agent/principal referent). The
         // lookup keys off `address` (the field the wire layer's ownership gate
-        // authorized), not the frame's `deploymentId`: that is the workflow-run
+        // authorized), not the frame's `anchorRunId`: that is the workflow-run
         // repo slug the supervisor derives from the address
         // (`deriveWorkflowRunRepoId`), cross-checked below against the slug
         // re-derived from `agentAddress` rather than against the row id. A
         // mismatch fails loud instead of silently writing an inconsistent pair.
         // The FK columns take the anchor run's id (= the deployment id), which
-        // is what `signal_correlation.deployment_id` and `approval.deployment_id`
+        // is what `signal_correlation.anchor_run_id` and `approval.anchor_run_id`
         // reference.
         //
         // The resolution takes a `FOR UPDATE` row lock and runs inside the
-        // co-write transaction, gated on a live "running" anchor run, so the
-        // liveness check and the inserts are atomic against a concurrent
-        // teardown that flips the anchor run terminal. The lock order is
-        // workflow_run before signal_correlation and approval; a teardown path
-        // must take the anchor-run lock before touching those rows to keep the
-        // ordering acyclic.
+        // co-write transaction, gated on a live anchor run ("deployed" or
+        // "running"), so the liveness check and the inserts are atomic against a
+        // concurrent teardown that flips the anchor run terminal. The lock order
+        // is workflow_run before signal_correlation and approval; a teardown
+        // path must take the anchor-run lock before touching those rows to keep
+        // the ordering acyclic.
         const anchor = await tx
           .select({
             id: workflowRun.id,
@@ -238,7 +228,7 @@ export function createHubSessionLookups(
           .where(
             and(
               eq(workflowRun.address, agentAddress),
-              eq(workflowRun.status, "running"),
+              inArray(workflowRun.status, [...liveWorkflowRunStatuses]),
             ),
           )
           .for("update")
@@ -246,13 +236,13 @@ export function createHubSessionLookups(
           .then((rows) => rows[0]);
         if (anchor === undefined) {
           throw new Error(
-            `No running workflow run for address "${agentAddress}"; cannot register signal correlation ${correlationId}`,
+            `No live workflow run for address "${agentAddress}"; cannot register signal correlation ${correlationId}`,
           );
         }
         const addressSlug = deriveWorkflowRunRepoId(agentAddress);
-        if (addressSlug !== deploymentId) {
+        if (addressSlug !== anchorRunId) {
           throw new Error(
-            `Deployment id mismatch registering signal correlation ${correlationId}: frame claims "${deploymentId}" but address "${agentAddress}" derives the workflow-run repo slug "${addressSlug}"`,
+            `Anchor run id mismatch registering signal correlation ${correlationId}: frame claims "${anchorRunId}" but address "${agentAddress}" derives the workflow-run repo slug "${addressSlug}"`,
           );
         }
         const tenantId = anchor.tenantId;
@@ -269,7 +259,7 @@ export function createHubSessionLookups(
         await workflowRunStore.createIfAbsent(
           {
             id: runId,
-            deploymentId: anchor.id,
+            anchorRunId: anchor.id,
             definitionId,
             tenantId,
             principalId: null,
@@ -282,7 +272,7 @@ export function createHubSessionLookups(
           {
             correlationId,
             tenantId,
-            deploymentId: anchor.id,
+            anchorRunId: anchor.id,
             agentAddress,
             runId,
             signalName: signalName(correlationId),
@@ -294,7 +284,7 @@ export function createHubSessionLookups(
           {
             id: generateId("approval"),
             tenantId,
-            deploymentId: anchor.id,
+            anchorRunId: anchor.id,
             runId,
             agentAddress,
             correlationId,
@@ -369,22 +359,22 @@ export function createHubSessionLookups(
         .select({
           id: workflowRun.id,
           address: workflowRun.address,
-          deploymentId: workflowRun.deploymentId,
+          anchorRunId: workflowRun.anchorRunId,
         })
         .from(workflowRun)
         .where(
           and(
             eq(workflowRun.address, source.agentAddress),
-            eq(workflowRun.status, "running"),
+            inArray(workflowRun.status, [...liveWorkflowRunStatuses]),
           ),
         )
         .limit(1);
       if (
         anchor === undefined ||
-        anchor.deploymentId !== anchor.id ||
+        anchor.anchorRunId !== anchor.id ||
         anchor.address === null
       ) {
-        logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address has no running deployment anchor`;
+        logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address has no live deployment anchor`;
         return { accepted: false, reason: "path_violation" as const };
       }
       const anchorAddress = anchor.address;
@@ -473,11 +463,11 @@ export function createHubSessionLookups(
         try {
           await db.transaction(async (tx) => {
             const [ownedRun] = await tx
-              .select({ deploymentId: workflowRun.deploymentId })
+              .select({ anchorRunId: workflowRun.anchorRunId })
               .from(workflowRun)
               .where(eq(workflowRun.id, runId))
               .limit(1);
-            if (ownedRun?.deploymentId !== anchor.id) {
+            if (ownedRun?.anchorRunId !== anchor.id) {
               logger.error`Ignoring terminal event for run ${runId}: it does not belong to source deployment ${anchor.id}`;
               return;
             }
@@ -588,11 +578,16 @@ export function createHubSessionLookups(
           // recorded on the exact run named by its durable delivery frame.
           // Group retained dispatches by that Git run before scanning so an
           // internal run's SignalReceived evidence settles its own dispatch.
+          // The `runs/<runId>/` log keys on the run id (the address local
+          // part), NOT the full address: post-collapse the top-level run's id
+          // IS `anchor.id`, so mail keys on `anchor.id`; a signal keys on its
+          // frame's own run id. (The `addresses/<address>/` consumed subtree
+          // above keys on the full address -- a different subtree.)
           const messageIdsByRun = new Map<string, Set<string>>();
           for (const dispatch of unsettledByMessageId.values()) {
             const runId =
               dispatch.kind === "mail"
-                ? anchorAddress
+                ? anchor.id
                 : SignalDeliverFrame.assert(
                     JSON.parse(new TextDecoder().decode(dispatch.rawMessage)),
                   ).runId;
@@ -617,7 +612,7 @@ export function createHubSessionLookups(
             }
           }
           topLevelTerminalSettlementProjected =
-            (await readCommittedWorkflowRunLifecycle(reads, anchorAddress)) ===
+            (await readCommittedWorkflowRunLifecycle(reads, anchor.id)) ===
             "terminal";
         }
       } catch (error) {
@@ -643,22 +638,22 @@ export function createHubSessionLookups(
 }
 
 /**
- * Extract the instance id from an `<instanceId>@<domain>` agent address.
- * Throws on any input the `@intx/types`-owned `parseAgentAddress`
- * rejects: missing or leading `@`, empty domain, or an instance id
- * without the canonical `ins_` prefix.
+ * Extract the run id from an `<runId>@<domain>` run address.
+ * Throws on any input the `@intx/types`-owned `parseRunAddress`
+ * rejects: missing or leading `@`, empty domain, or a run id
+ * without the canonical `run_` prefix.
  */
 export function parseAgentId(agentAddress: string): string {
-  const parsed = parseAgentAddress(agentAddress);
+  const parsed = parseRunAddress(agentAddress);
   if (parsed === null) {
-    throw new Error(`Invalid agent address: "${agentAddress}"`);
+    throw new Error(`Invalid run address: "${agentAddress}"`);
   }
-  return parsed.instanceId;
+  return parsed.runId;
 }
 
 /**
- * A live routing endpoint backing a plain `ins_<hex>` agent address. A launch
- * produces a folded `workflow_run`, so the endpoint is always that run.
+ * A live routing endpoint backing a run address. Each address names one
+ * self-anchored `workflow_run`, so the endpoint is always that run.
  */
 export interface RoutableEndpoint {
   readonly id: string;
@@ -683,23 +678,15 @@ export interface RoutableEndpoint {
 }
 
 /**
- * Resolve a plain (non-workflow-derived) agent address to the folded
- * `workflow_run` endpoint backing it. A plain `ins_<hex>` address that a launch
- * produces is owned by exactly one folded run, keyed by the run's `address`.
+ * Resolve a run address to the `workflow_run` endpoint backing it, keyed by
+ * the run's `address`. Every routable address names one self-anchored run --
+ * the deployment's anchor -- so this resolves the run's own address (the
+ * source `persistMail` depends on to record a triggered deployment's mail).
  */
 export async function resolveRoutableAddress(
   db: DB["db"],
   address: string,
 ): Promise<RoutableEndpoint | undefined> {
-  // A workflow-derived address belongs to a deployment's anchor run, resolved
-  // through the workflow-derived key path (`lookupPublicKey`/deploy-ack), not
-  // here. `resolveRoutableAddress` owns plain `ins_<hex>` resolution; excluding
-  // the derived family keeps the anchor run invisible to every plain-address
-  // consumer (mail persistence, the reconnect reaction), preserving the
-  // undefined result those paths saw before the anchor row existed.
-  if (isWorkflowDerivedAddress(address)) {
-    return undefined;
-  }
   const runRow = await db
     .select({
       id: workflowRun.id,
@@ -828,11 +815,11 @@ export interface RoutableRecord {
 }
 
 /**
- * Shape a run row and its already-resolved routing address into the instance
- * record. Callers decide whether the run resolves at all -- a null or
- * workflow-derived address is not an instance -- and pass the address they have
- * narrowed; this only maps the columns, including the run's `endedAt ??
- * createdAt` stand-in for the absent `updatedAt`.
+ * Shape a run row and its already-resolved routing address into the run
+ * record. Callers decide whether the run resolves at all -- only a top-level
+ * run (`isTopLevelRun`) does -- and pass the address they have narrowed; this
+ * only maps the columns, including the run's `endedAt ?? createdAt` stand-in
+ * for the absent `updatedAt`.
  */
 export function runRowToRoutableRecord(
   run: {
@@ -866,10 +853,24 @@ export function runRowToRoutableRecord(
 }
 
 /**
- * Resolve a plain run id to its instance-shaped record. A run resolves only
- * when it presents as an instance: it owns a routing address AND its definition
- * is instance-kind. A run with no address is deployment-anchored, not an
- * instance, and returns undefined (mirroring the stop route).
+ * A run is a top-level run -- the addressable head of a deployment -- when it
+ * owns a routing address AND self-anchors (`anchorRunId === id`). A lazy child
+ * park row anchors on its parent (`anchorRunId !== id`) and carries no address;
+ * either condition excludes it. This is the single predicate the run read
+ * surface classifies on, so the resolver and the run list cannot drift.
+ */
+export function isTopLevelRun(row: {
+  id: string;
+  address: string | null;
+  anchorRunId: string | null;
+}): boolean {
+  return row.address !== null && row.anchorRunId === row.id;
+}
+
+/**
+ * Resolve a run id to its record. A run resolves only when it is a top-level
+ * run (`isTopLevelRun`): it owns a routing address and self-anchors. A child
+ * park row (address-null, anchored on its parent) is not served here.
  */
 export async function findRoutableById(
   db: DB["db"],
@@ -881,6 +882,7 @@ export async function findRoutableById(
       id: workflowRun.id,
       tenantId: workflowRun.tenantId,
       address: workflowRun.address,
+      anchorRunId: workflowRun.anchorRunId,
       publicKey: workflowRun.publicKey,
       status: workflowRun.status,
       createdAt: workflowRun.createdAt,
@@ -895,19 +897,16 @@ export async function findRoutableById(
     .limit(1)
     .then((rows) => rows[0]);
 
-  if (runRow !== undefined) {
-    if (runRow.address === null) {
-      // A deployment-anchored run owns no plain address; not served here.
-      return undefined;
-    }
-    if (isWorkflowDerivedAddress(runRow.address)) {
-      // A deployment's anchor run owns a workflow-derived address; an instance
-      // run owns a plain (non-derived) one, so the address family classifies
-      // the run and the anchor is not served on the instance read surface.
-      return undefined;
-    }
-    return runRowToRoutableRecord(runRow, runRow.address);
+  // The `address === null` arm is redundant with `isTopLevelRun` (which already
+  // requires a non-null address) but narrows `address` from `string | null` to
+  // `string` for `runRowToRoutableRecord`, which `isTopLevelRun`'s boolean
+  // return cannot do.
+  if (
+    runRow === undefined ||
+    !isTopLevelRun(runRow) ||
+    runRow.address === null
+  ) {
+    return undefined;
   }
-
-  return undefined;
+  return runRowToRoutableRecord(runRow, runRow.address);
 }

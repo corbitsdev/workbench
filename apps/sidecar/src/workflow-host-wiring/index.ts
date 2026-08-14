@@ -414,7 +414,7 @@ export function createSidecarDeployRouter(deps: {
     deps.multistepSubprocessSpawner ?? defaultSubprocessSpawner;
   const multistepDeriveStepAddress: DeriveStepAddress =
     deps.multistepDeriveStepAddress ??
-    (({ deploymentId, stepId }) => `${deploymentId}-${stepId}`);
+    (({ runId, stepId }) => `${runId}-${stepId}`);
 
   // Per-deployment supervisor tracking. The multi-step branch
   // constructs one `SidecarWorkflowSupervisor` per `agent.deploy`
