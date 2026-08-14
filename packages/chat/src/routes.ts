@@ -2182,6 +2182,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           platform: deps.platform,
           channelId,
           stream,
+          authorize: () =>
+            resolveChannelAccess(deps, tenant.id, channelId, principal.id).then(
+              (access) => access !== undefined,
+            ),
         });
         stream.onAbort(unbridge);
         await new Promise<void>(() => undefined);
