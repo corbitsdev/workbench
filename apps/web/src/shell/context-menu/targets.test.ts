@@ -91,6 +91,11 @@ describe("SHELL_CONTEXT_MENU_TARGETS", () => {
     });
   });
 
+  test("resolves the rail avatar as the account target", () => {
+    const container = mount('<button data-ctx-account=""></button>');
+    expect(resolve(container)).toEqual({ type: "account" });
+  });
+
   test("falls back to the shell target for anything unmatched", () => {
     const container = mount('<div><span id="plain"></span></div>');
     expect(resolve(container.querySelector("#plain"))).toEqual(

@@ -35,7 +35,6 @@ function renderRail(path: string, showLabels = false): string {
             path={path}
             onNavigate={noop}
             user={user}
-            onSignOut={noop}
             showLabels={showLabels}
           />
         </BenchProvider>
@@ -110,5 +109,11 @@ describe("Rail", () => {
 
   test("never shows the account id", () => {
     expect(renderRail("/")).not.toContain("user_1");
+  });
+
+  test("avatar left-click still routes to Settings; right-click goes through the shell context menu, not a bare sign-out", () => {
+    const markup = renderRail("/");
+    expect(markup).toContain(`aria-label="${user.name} · Settings"`);
+    expect(markup).toContain("data-ctx-account");
   });
 });

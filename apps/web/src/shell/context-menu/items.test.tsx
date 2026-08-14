@@ -39,6 +39,7 @@ function actions(
     navigate: mock(() => undefined),
     openProfile: mock(() => undefined),
     cycleTheme: mock(() => undefined),
+    signOut: mock(() => undefined),
     ...overrides,
   };
 }
@@ -167,6 +168,31 @@ describe("shellContextMenuFor: insights-run", () => {
     expect(itemIds(menu.entries)).toEqual(["open", "copy-link"]);
     findItem(menu.entries, "open").onSelect();
     expect(navigate).toHaveBeenCalledWith("/insights/runs/run-1");
+  });
+});
+
+describe("shellContextMenuFor: account", () => {
+  test("offers settings and sign-out, never a bare destructive gesture", () => {
+    const menu = shellContextMenuFor({ type: "account" }, actions());
+    expect(itemIds(menu.entries)).toEqual(["settings", "sign-out"]);
+  });
+
+  test("settings navigates to the settings route", () => {
+    const navigate = mock((_to: string) => undefined);
+    const menu = shellContextMenuFor(
+      { type: "account" },
+      actions({ navigate }),
+    );
+    findItem(menu.entries, "settings").onSelect();
+    expect(navigate).toHaveBeenCalledWith("/settings");
+  });
+
+  test("sign-out only fires from its own explicit menu item", () => {
+    const signOut = mock(() => undefined);
+    const menu = shellContextMenuFor({ type: "account" }, actions({ signOut }));
+    expect(signOut).not.toHaveBeenCalled();
+    findItem(menu.entries, "sign-out").onSelect();
+    expect(signOut).toHaveBeenCalledTimes(1);
   });
 });
 
