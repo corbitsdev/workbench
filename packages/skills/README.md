@@ -27,7 +27,7 @@ visibility verdict, and nothing else. See `src/migrations.ts` and
 
 ## Drafts, and the deviation behind them
 
-A draft's *existence* is the pending state: while a draft exists the
+A draft's _existence_ is the pending state: while a draft exists the
 skill is invisible to `list`, `search`, and `load`, and it carries no
 `skill_access` row at all. Publishing creates the canonical asset,
 commits the drafted `SKILL.md` into it, writes the access row, and only

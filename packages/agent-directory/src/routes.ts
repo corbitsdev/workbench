@@ -28,7 +28,10 @@ import {
 } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
-import type { PinnedSkillIndexEntry } from "@corbits/skills";
+import {
+  SkillRegistryError,
+  type PinnedSkillIndexEntry,
+} from "@corbits/skills";
 
 import {
   AGENT_SKILLS_ASSET_PATH,
@@ -102,6 +105,16 @@ export function createAgentDefinitionRoutes({
   requireGrant,
 }: CreateAgentDefinitionRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
+
+  // Pinning a name the registry cannot resolve is a bad request from the
+  // person editing the agent, not a server fault — surface it as one
+  // rather than letting it read as a 500.
+  app.onError((err, c) => {
+    if (err instanceof SkillRegistryError) {
+      return c.json(errorEnvelope("bad_request", err.message), 400);
+    }
+    throw err;
+  });
 
   app.post("/", requireGrant("workflow-definition:*", "create"), async (c) => {
     const body = CreateAgentDefinitionInput(

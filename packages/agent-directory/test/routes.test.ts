@@ -14,6 +14,8 @@ import { AssetServiceError } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 
+import { SkillRegistryError } from "@corbits/skills";
+
 import {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
@@ -601,6 +603,38 @@ test("a create request indexes its pinned skills into the stored system prompt",
   expect(prompt.startsWith("You are a careful research assistant.")).toBe(true);
   expect(prompt).toContain("- web-research: What web-research does.");
   expect(prompt).toContain("load_skill");
+});
+
+test("pinning a skill the registry cannot resolve is a 400, not a 500", async () => {
+  const routes = createAgentDefinitionRoutes({
+    db: fakeCreateDb(),
+    assetService: fakeAssetService(),
+    skillIndex: {
+      resolve: () =>
+        Promise.reject(
+          new SkillRegistryError("not_found", 'cannot pin skill "ghost"'),
+        ),
+    },
+    requireGrant: () => async (_c, next) => {
+      await next();
+    },
+  });
+  const app = new Hono<TenantEnv>();
+  app.use("*", async (c, next) => {
+    c.set("tenant", TENANT);
+    c.set("principal", PRINCIPAL);
+    await next();
+  });
+  app.route("/", routes);
+  const response = await post(app, {
+    name: "Research Buddy",
+    handle: "research-buddy",
+    systemPrompt: "You are a careful research assistant.",
+    skills: ["ghost"],
+  });
+  expect(response.status).toBe(400);
+  const body = (await response.json()) as { error: { message: string } };
+  expect(body.error.message).toContain("ghost");
 });
 
 test("a create request with no pinned skills stores the author's prompt verbatim", async () => {
