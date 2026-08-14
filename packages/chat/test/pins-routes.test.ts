@@ -29,6 +29,21 @@ async function unpin(
   return app.request(pinUrl(channelId, messageId), { method: "DELETE" });
 }
 
+/** Sends a real message and returns its id — pin tests that expect a
+ * 200/204 round trip need a message that actually exists, now that
+ * pinning an unknown id 404s. */
+async function sendAndGetMessageId(
+  app: ReturnType<typeof mountAs>,
+  channelId: string,
+): Promise<string> {
+  await sendText(app, channelId, "hello");
+  const list = await app.request(`/channels/${channelId}/messages`);
+  const body = (await list.json()) as { items: { id: string }[] };
+  const id = body.items[0]?.id;
+  if (id === undefined) throw new Error("sendAndGetMessageId: no message id");
+  return id;
+}
+
 describe("pin routes — gating", () => {
   test("no pins store injected: pin, unpin, and list all 404", async () => {
     const deps = buildDeps();
@@ -74,6 +89,21 @@ describe("pin routes — gating", () => {
       "prn_mallory",
     );
     expect((await pin(otherApp, body.id, "m1")).status).toBe(404);
+  });
+
+  test("a messageId that was never sent 404s rather than writing an orphaned pin row", async () => {
+    const store = createInMemoryPinStore();
+    const deps = buildDeps({ pins: store });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+    // A real message exists in the channel, but "m_ghost" is not it —
+    // proves the check resolves the specific id, not just "some
+    // message exists in this channel".
+    await sendText(app, channel.id, "unrelated message");
+
+    const response = await pin(app, channel.id, "m_ghost");
+    expect(response.status).toBe(404);
+    expect(await store.listPins("tnt_1", channel.id)).toHaveLength(0);
   });
 });
 
@@ -170,21 +200,22 @@ describe("pin routes — chat.pin SSE event", () => {
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: channel } = await createChannel(app, { kind: "channel" });
+    const messageId = await sendAndGetMessageId(app, channel.id);
 
     const received: ChatChannelEvent[] = [];
     channelSubscribers.subscribe(channel.id, (event) => received.push(event));
 
-    await pin(app, channel.id, "m1");
-    await unpin(app, channel.id, "m1");
+    await pin(app, channel.id, messageId);
+    await unpin(app, channel.id, messageId);
 
     expect(received).toHaveLength(2);
     expect(received[0]).toMatchObject({
       type: "chat.pin",
-      data: { messageId: "m1", pinned: true },
+      data: { messageId, pinned: true },
     });
     expect(received[1]).toMatchObject({
       type: "chat.pin",
-      data: { messageId: "m1", pinned: false },
+      data: { messageId, pinned: false },
     });
   });
 });

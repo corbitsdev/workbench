@@ -321,6 +321,27 @@ async function channelInTenant(
   return store.hasLaunchedInstance(tenantId, channelId);
 }
 
+/**
+ * True when `messageId` names a real message in the channel's own
+ * mail — the guard both write-side reaction/pin routes need before
+ * touching storage. Without it, a `messageId` that was never sent (a
+ * typo, a stale client, a probe) still 200s and writes a permanent row
+ * keyed to nothing: invisible (no message ever renders it) and
+ * unremovable (no UI affordance exists for a message that isn't
+ * there). Mirrors the same single-page `listMail` + id lookup
+ * `GET /channels/:id/pins` and the thread-messages route already use
+ * to resolve a message id against the channel's mailbox.
+ */
+async function messageExistsInChannel(
+  platform: ChatPlatform,
+  tenantId: string,
+  channelId: string,
+  messageId: string,
+): Promise<boolean> {
+  const listed = await platform.listMail({ tenantId, channelId });
+  return listed.items.some((item) => item.id === messageId);
+}
+
 const ToggleReactionBody = type({ emoji: "string" });
 
 type WireMessageItem = {
@@ -1384,6 +1405,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
+      if (
+        !(await messageExistsInChannel(
+          deps.platform,
+          tenant.id,
+          channelId,
+          messageId,
+        ))
+      ) {
+        return c.json(ErrorEnvelope("not_found", "message not found"), 404);
+      }
 
       const body = ToggleReactionBody(
         await c.req.json().catch(() => undefined),
@@ -1451,6 +1482,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+      if (
+        !(await messageExistsInChannel(
+          deps.platform,
+          tenant.id,
+          channelId,
+          messageId,
+        ))
+      ) {
+        return c.json(ErrorEnvelope("not_found", "message not found"), 404);
       }
 
       const row = await deps.pins.pinMessage({

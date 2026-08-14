@@ -123,6 +123,36 @@ describe("ReactionStore — toggle semantics", () => {
     const rows = await store.listReactionsForMessages(TENANT, CHANNEL, []);
     expect(rows).toEqual([]);
   });
+
+  // The in-memory store's `toggleReaction` body has no `await` between
+  // its has/set — it runs to completion in one turn of the JS event
+  // loop, so it can never interleave with another call the way the
+  // drizzle-backed store's two separate statements could (see
+  // `reactions.drizzle.test.ts` for the real race that fix covers).
+  // `Promise.all` here still proves it: with no interleaving possible,
+  // two toggles of the same reaction settle exactly like two sequential
+  // calls would — added, then removed — never a double-add or a crash.
+  test("concurrent toggles of the same reaction can never interleave — the event loop serializes them", async () => {
+    const store = createInMemoryReactionStore();
+    const input = {
+      tenantId: TENANT,
+      channelId: CHANNEL,
+      messageId: "m_race",
+      emoji: "👍",
+      principalId: "prn_alice",
+    };
+
+    const [first, second] = await Promise.all([
+      store.toggleReaction(input),
+      store.toggleReaction(input),
+    ]);
+
+    expect([first.added, second.added]).toEqual([true, false]);
+    const rows = await store.listReactionsForMessages(TENANT, CHANNEL, [
+      "m_race",
+    ]);
+    expect(rows).toHaveLength(0);
+  });
 });
 
 describe("aggregateReactions / aggregateReactionsByMessage", () => {

@@ -160,44 +160,50 @@ export function createDrizzleReactionStore<
   TSchema extends Record<string, unknown>,
 >(db: ReactionDb<TSchema>): ReactionStore {
   return {
+    // A single atomic `INSERT ... ON CONFLICT DO NOTHING`, never a
+    // select-then-branch: two concurrent toggles for the same
+    // (tenant, channel, message, emoji, principal) both attempt the
+    // insert, Postgres serializes them at the row lock, and the loser
+    // gets an empty `returning()` rather than a thrown PK-violation.
+    // An empty `returning()` means the row is already there — from an
+    // earlier toggle or from the winner of this very race — so the
+    // correct response is the same either way: this call's toggle is
+    // the one that removes it.
     async toggleReaction(input) {
-      const existing = await db
-        .select({ principalId: messageReactions.principalId })
-        .from(messageReactions)
-        .where(
-          and(
-            eq(messageReactions.tenantId, input.tenantId),
-            eq(messageReactions.channelId, input.channelId),
-            eq(messageReactions.messageId, input.messageId),
-            eq(messageReactions.emoji, input.emoji),
-            eq(messageReactions.principalId, input.principalId),
-          ),
-        )
-        .limit(1);
+      const rowKey = and(
+        eq(messageReactions.tenantId, input.tenantId),
+        eq(messageReactions.channelId, input.channelId),
+        eq(messageReactions.messageId, input.messageId),
+        eq(messageReactions.emoji, input.emoji),
+        eq(messageReactions.principalId, input.principalId),
+      );
 
-      if (existing.length > 0) {
-        await db
-          .delete(messageReactions)
-          .where(
-            and(
-              eq(messageReactions.tenantId, input.tenantId),
-              eq(messageReactions.channelId, input.channelId),
-              eq(messageReactions.messageId, input.messageId),
-              eq(messageReactions.emoji, input.emoji),
-              eq(messageReactions.principalId, input.principalId),
-            ),
-          );
-        return { added: false };
+      const inserted = await db
+        .insert(messageReactions)
+        .values({
+          tenantId: input.tenantId,
+          channelId: input.channelId,
+          messageId: input.messageId,
+          emoji: input.emoji,
+          principalId: input.principalId,
+        })
+        .onConflictDoNothing({
+          target: [
+            messageReactions.tenantId,
+            messageReactions.channelId,
+            messageReactions.messageId,
+            messageReactions.emoji,
+            messageReactions.principalId,
+          ],
+        })
+        .returning({ principalId: messageReactions.principalId });
+
+      if (inserted.length > 0) {
+        return { added: true };
       }
 
-      await db.insert(messageReactions).values({
-        tenantId: input.tenantId,
-        channelId: input.channelId,
-        messageId: input.messageId,
-        emoji: input.emoji,
-        principalId: input.principalId,
-      });
-      return { added: true };
+      await db.delete(messageReactions).where(rowKey);
+      return { added: false };
     },
 
     async listReactionsForMessages(tenantId, channelId, messageIds) {

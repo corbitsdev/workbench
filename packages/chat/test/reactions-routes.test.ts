@@ -27,6 +27,22 @@ async function toggle(
   });
 }
 
+/** Sends a real message and returns its id — every toggle test below
+ * that expects a 200/400 round trip (rather than a gating 403/404 that
+ * never reaches the message-existence check) needs a message that
+ * actually exists, now that toggling against an unknown id 404s. */
+async function sendAndGetMessageId(
+  app: ReturnType<typeof mountAs>,
+  channelId: string,
+): Promise<string> {
+  await sendText(app, channelId, "hello");
+  const list = await app.request(`/channels/${channelId}/messages`);
+  const body = (await list.json()) as { items: { id: string }[] };
+  const id = body.items[0]?.id;
+  if (id === undefined) throw new Error("sendAndGetMessageId: no message id");
+  return id;
+}
+
 describe("reaction routes — gating", () => {
   test("no reactions store injected: toggle 404s, never silently no-ops", async () => {
     const deps = buildDeps();
@@ -79,9 +95,27 @@ describe("reaction routes — gating", () => {
     const deps = buildDeps({ reactions: createInMemoryReactionStore() });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: channel } = await createChannel(app, { kind: "channel" });
+    const messageId = await sendAndGetMessageId(app, channel.id);
 
-    const response = await toggle(app, channel.id, "m1", "🐙");
+    const response = await toggle(app, channel.id, messageId, "🐙");
     expect(response.status).toBe(400);
+  });
+
+  test("a messageId that was never sent 404s rather than writing an orphaned reaction row", async () => {
+    const store = createInMemoryReactionStore();
+    const deps = buildDeps({ reactions: store });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+    // A real message exists in the channel, but "m_ghost" is not it —
+    // proves the check resolves the specific id, not just "some
+    // message exists in this channel".
+    await sendText(app, channel.id, "unrelated message");
+
+    const response = await toggle(app, channel.id, "m_ghost", "👍");
+    expect(response.status).toBe(404);
+    expect(
+      await store.listReactionsForMessages("tnt_1", channel.id, ["m_ghost"]),
+    ).toHaveLength(0);
   });
 });
 
@@ -90,8 +124,9 @@ describe("reaction routes — toggle semantics", () => {
     const deps = buildDeps({ reactions: createInMemoryReactionStore() });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: channel } = await createChannel(app, { kind: "channel" });
+    const messageId = await sendAndGetMessageId(app, channel.id);
 
-    const first = await toggle(app, channel.id, "m1", "👍");
+    const first = await toggle(app, channel.id, messageId, "👍");
     expect(first.status).toBe(200);
     const firstBody = (await first.json()) as {
       emoji: string;
@@ -100,7 +135,7 @@ describe("reaction routes — toggle semantics", () => {
     };
     expect(firstBody).toEqual({ emoji: "👍", count: 1, reactedByMe: true });
 
-    const second = await toggle(app, channel.id, "m1", "👍");
+    const second = await toggle(app, channel.id, messageId, "👍");
     const secondBody = (await second.json()) as {
       emoji: string;
       count: number;
@@ -117,9 +152,10 @@ describe("reaction routes — toggle semantics", () => {
     const { body: channel } = await createChannel(appAlice, {
       kind: "channel",
     });
+    const messageId = await sendAndGetMessageId(appAlice, channel.id);
 
-    await toggle(appAlice, channel.id, "m1", "🎉");
-    const bobResult = await toggle(appBob, channel.id, "m1", "🎉");
+    await toggle(appAlice, channel.id, messageId, "🎉");
+    const bobResult = await toggle(appBob, channel.id, messageId, "🎉");
     const bobBody = (await bobResult.json()) as { count: number };
     expect(bobBody.count).toBe(2);
   });
@@ -175,16 +211,17 @@ describe("reaction routes — chat.reaction SSE event", () => {
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: channel } = await createChannel(app, { kind: "channel" });
+    const messageId = await sendAndGetMessageId(app, channel.id);
 
     const received: ChatChannelEvent[] = [];
     channelSubscribers.subscribe(channel.id, (event) => received.push(event));
 
-    await toggle(app, channel.id, "m1", "🚀");
+    await toggle(app, channel.id, messageId, "🚀");
 
     expect(received).toHaveLength(1);
     expect(received[0]).toMatchObject({
       type: "chat.reaction",
-      data: { messageId: "m1", emoji: "🚀", added: true },
+      data: { messageId, emoji: "🚀", added: true },
     });
   });
 });
