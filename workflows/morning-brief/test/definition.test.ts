@@ -8,6 +8,7 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
   MORNING_BRIEF_CREDENTIAL_BINDINGS,
+  MORNING_BRIEF_FINALIZE_TOOL_NAME,
   MORNING_BRIEF_PENDING_SOURCES,
   MORNING_BRIEF_SECTIONS,
   MORNING_BRIEF_STEP_ID,
@@ -100,6 +101,24 @@ test("the prompt instructs honest degradation for every wired and pending source
 test("the prompt requires an honest failure state when nothing is connected", () => {
   expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(
     /no connected sources to report from today/,
+  );
+});
+
+test("the prompt names the exact approval-gated finalize tool", () => {
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain(MORNING_BRIEF_FINALIZE_TOOL_NAME);
+});
+
+test("the prompt commits to always finalizing, even with a teaching payload on the no-data path", () => {
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(/teaching/i);
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(/never end a run without finalizing/i);
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain("granola");
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toContain("linear");
+});
+
+test("the prompt commits to a calm terminal reply on denial, not an error", () => {
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(/not approved/i);
+  expect(MORNING_BRIEF_SYSTEM_PROMPT).toMatch(
+    /never present a denial as an error/i,
   );
 });
 
