@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { createChatRoutes } from "../src/routes";
 import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
+import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
 import {
   buildDeps,
   createChannel,
@@ -64,6 +65,36 @@ describe("message fan-out", () => {
     const fanned = platform.sentMail[platform.sentMail.length - 1];
     expect(fanned?.channelId).toBe("ins_invited1");
     expect(fanned?.fromChannelId).toBe(channel.id);
+  });
+
+  test("a message to a person-DM chat fans out to no one — the other party reads the channel's own timeline", async () => {
+    const deps = buildDeps();
+    const tenancy = deps.tenancy as ReturnType<
+      typeof createInMemoryChannelTenancyStore
+    >;
+    tenancy.registerPrincipal(TENANT.id, {
+      id: "prn_bob",
+      kind: "user",
+      status: "active",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "chat",
+      principalId: "prn_bob",
+    });
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const mailBefore = platform.sentMail.length; // the join event
+
+    const parts: Part[] = [{ kind: "text", text: "hey Bob" }];
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(platform.sentMail).toHaveLength(mailBefore + 1); // only the send itself, no fan-out copy
   });
 
   test("a message to a channel still requires a mention to fan out", async () => {

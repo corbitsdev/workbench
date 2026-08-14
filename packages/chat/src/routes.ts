@@ -27,7 +27,11 @@ import { decodeMail, encodeParts, senderOf } from "./codec";
 import { Part, type Part as PartType } from "./parts";
 import { presetForKind } from "./kinds";
 import { localPartOf } from "./agent-address";
-import { parseParticipants, addParticipant } from "./participants";
+import {
+  parseParticipants,
+  addParticipant,
+  handleFromName,
+} from "./participants";
 import type { ParticipantRecord } from "./participants";
 import {
   buildChannelHostWorkflow,
@@ -49,7 +53,11 @@ import {
   validateBenchSettingsPatch,
   validateSettingsPatch,
 } from "./channel-settings";
-import { launchAndJoinAgent, sendChannelMessage } from "./channel-service";
+import {
+  joinHumanParticipant,
+  launchAndJoinAgent,
+  sendChannelMessage,
+} from "./channel-service";
 import {
   bridgeChannelStream,
   createChannelSubscriberRegistry,
@@ -135,6 +143,7 @@ const CreateChannelBody = type({
   "name?": "string",
   "participants?": "string[]",
   "definitionId?": "string",
+  "principalId?": "string",
 });
 type CreateChannelBodyT = typeof CreateChannelBody.infer;
 
@@ -143,14 +152,31 @@ type CreateChannelBodyT = typeof CreateChannelBody.infer;
  * definitionId" shape, letting the type system carry the proof
  * `definitionId` is present rather than a `throw new
  * Error("unreachable")` after the fact — the route already 400s above
- * when `kind === "chat"` and `definitionId` is absent, so this guard
- * fails into an ordinary response, never a thrown "impossible" error,
- * if that invariant is ever broken by a future edit.
+ * when `kind === "chat"` and neither `definitionId` nor `principalId`
+ * is present, so this guard fails into an ordinary response, never a
+ * thrown "impossible" error, if that invariant is ever broken by a
+ * future edit.
  */
 function isChatWithDefinition(
   body: CreateChannelBodyT,
 ): body is CreateChannelBodyT & { kind: "chat"; definitionId: string } {
   return body.kind === "chat" && body.definitionId !== undefined;
+}
+
+/**
+ * Narrows a validated create-channel body to the "chat with a
+ * principalId" shape — a direct chat whose counterpart is a bench
+ * member (a person), not an agent. Chosen over a separate `dm: true`
+ * wire flag: `assignChannelBucket` in the host app's sidebar already
+ * derives "is this a DM" from `kind === "chat"` plus the absence of an
+ * agent-shaped participant address (see `mentions.ts`'s
+ * `isAgentAddress`), so a `principalId`-created chat lands in the DMs
+ * bucket for free, with no second signal to keep in sync.
+ */
+function isChatWithPrincipal(
+  body: CreateChannelBodyT,
+): body is CreateChannelBodyT & { kind: "chat"; principalId: string } {
+  return body.kind === "chat" && body.principalId !== undefined;
 }
 
 const InviteAgentBody = type({
@@ -308,12 +334,31 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         );
       }
 
-      if (body.kind === "chat" && body.definitionId === undefined) {
+      if (
+        body.kind === "chat" &&
+        body.definitionId === undefined &&
+        body.principalId === undefined
+      ) {
         return c.json(
           ErrorEnvelope(
             "bad_request",
-            "creating a chat requires a definitionId naming the single " +
-              "agent it launches with",
+            "creating a chat requires either a definitionId naming the " +
+              "one agent it launches with, or a principalId naming the " +
+              "one bench member it's a direct conversation with",
+          ),
+          400,
+        );
+      }
+      if (
+        body.kind === "chat" &&
+        body.definitionId !== undefined &&
+        body.principalId !== undefined
+      ) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            "a chat's counterpart is exactly one agent or one person, " +
+              "never both",
           ),
           400,
         );
@@ -321,6 +366,41 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
+
+      // A person-DM's counterpart is validated before anything is
+      // minted: a caller cannot start a direct chat with themselves
+      // (structurally never a DM — there is no second party), and
+      // `principalId` must name a real, active member of this bench.
+      // Both fail closed with an ordinary client error rather than
+      // seeding a channel with a participant record nothing backs.
+      if (isChatWithPrincipal(body)) {
+        if (body.principalId === principal.id) {
+          return c.json(
+            ErrorEnvelope(
+              "conflict",
+              "you cannot start a direct chat with yourself",
+            ),
+            409,
+          );
+        }
+        const target = await deps.tenancy.getTenantPrincipal(
+          tenant.id,
+          body.principalId,
+        );
+        if (
+          target === undefined ||
+          target.kind !== "user" ||
+          target.status !== "active"
+        ) {
+          return c.json(
+            ErrorEnvelope(
+              "bad_request",
+              "principalId does not name an active member of this bench",
+            ),
+            400,
+          );
+        }
+      }
 
       const channelId = generateId("instance");
       const triggerAddress = formatAgentAddress(channelId, tenant.domain);
@@ -409,6 +489,83 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         settings,
         updatedBy: principal.id,
       });
+
+      if (isChatWithPrincipal(body)) {
+        // A person-DM's counterpart is added directly, with no
+        // instance to launch (see `joinHumanParticipant`'s own doc
+        // comment). Its handle has no settings-held name to derive
+        // from the way an invited agent's does, so it comes from the
+        // slug of whatever title the caller gave the chat — chat-ui
+        // always sends the chosen member's display name as `name`
+        // when the person didn't type a custom title, so this
+        // resolves to something readable in the overwhelming case;
+        // the local-part-of-the-principal-id fallback below only
+        // fires for a bare API call that omits `name` entirely.
+        const memberHandle = handleFromName(body.name ?? "", body.principalId);
+        try {
+          const joined = await joinHumanParticipant(
+            { store: deps.store, platform: deps.platform, publish },
+            {
+              tenantId: tenant.id,
+              principalId: principal.id,
+              channelId,
+              memberPrincipalId: body.principalId,
+              memberHandle,
+              existingSettings: row.settings,
+            },
+          );
+
+          // The chat's default title, when the caller passes no name,
+          // is the same handle its one participant record carries —
+          // mirroring the agent-chat fallback below exactly.
+          const finalSettings =
+            body.name === undefined
+              ? (
+                  await deps.store.updateChannelSettings({
+                    tenantId: tenant.id,
+                    channelId,
+                    settings: {
+                      ...joined.settings,
+                      "chat/name": joined.handle,
+                    },
+                    updatedBy: principal.id,
+                  })
+                ).settings
+              : joined.settings;
+
+          return c.json(
+            withTenancy(
+              channelView({ channelId, settings: finalSettings }),
+              channelTenant,
+            ),
+            201,
+          );
+        } catch (err) {
+          log.error(
+            "Adding the person-DM participant failed for channel " +
+              "{channelId} after the host launched and settings were " +
+              "written; compensating the channel tenant and deleting " +
+              "its settings",
+            { channelId, tenantId: channelTenant.tenantId, err },
+          );
+          try {
+            await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
+            await deps.store.deleteChannelSettings(tenant.id, channelId);
+          } catch (compensationErr) {
+            log.error(
+              "Compensation failed after person-DM join failure for " +
+                "channel {channelId}; the orphaned tenant {tenantId} " +
+                "and/or its settings require manual cleanup",
+              {
+                channelId,
+                tenantId: channelTenant.tenantId,
+                compensationErr,
+              },
+            );
+          }
+          throw err;
+        }
+      }
 
       if (!isChatWithDefinition(body)) {
         return c.json(withTenancy(channelView(row), channelTenant), 201);

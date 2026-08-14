@@ -216,6 +216,143 @@ describe("POST /channels", () => {
   });
 });
 
+describe("POST /channels — chat with a person (DM)", () => {
+  function registerBob(deps: ReturnType<typeof buildDeps>) {
+    const tenancy = deps.tenancy as ReturnType<
+      typeof createInMemoryChannelTenancyStore
+    >;
+    tenancy.registerPrincipal(TENANT.id, {
+      id: "prn_bob",
+      kind: "user",
+      status: "active",
+    });
+  }
+
+  test("creates a two-member chat carrying the person as its participant", async () => {
+    const deps = buildDeps();
+    registerBob(deps);
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response, body } = await createChannel(app, {
+      kind: "chat",
+      principalId: "prn_bob",
+      name: "Bob",
+    });
+
+    expect(response.status).toBe(201);
+    expect(body.kind).toBe("chat");
+    expect(body.title).toBe("Bob");
+    expect(body.participants).toEqual([{ address: "prn_bob", handle: "bob" }]);
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.launchInviteCalls).toHaveLength(0);
+    expect(platform.sentMail).toHaveLength(1);
+    const decoded = JSON.parse(
+      Buffer.from(
+        (platform.sentMail[0]?.content.attachments?.[0]?.data ?? "") as string,
+        "base64",
+      ).toString("utf-8"),
+    ) as { kind: string; event: string };
+    expect(decoded.kind).toBe("event");
+    expect(decoded.event).toBe("channel.member-joined");
+  });
+
+  test("falls back to the bare principal id as both handle and title when no name is given — the defensive edge case a bare API call can hit; chat-ui always sends the member's display name as `name` instead", async () => {
+    const deps = buildDeps();
+    registerBob(deps);
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response, body } = await createChannel(app, {
+      kind: "chat",
+      principalId: "prn_bob",
+    });
+
+    expect(response.status).toBe(201);
+    expect(body.title).toBe("prn_bob");
+    expect(body.participants).toEqual([
+      { address: "prn_bob", handle: "prn_bob" },
+    ]);
+  });
+
+  test("rejects a chat with both a definitionId and a principalId", async () => {
+    const deps = buildDeps();
+    registerBob(deps);
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/channels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "chat",
+        definitionId: "wfd_echo",
+        principalId: "prn_bob",
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("bad_request");
+  });
+
+  test("refuses to start a direct chat with yourself — 409", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/channels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", principalId: "prn_alice" }),
+    });
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("conflict");
+
+    // Nothing was minted for a request refused before creation began.
+    const channels = await deps.store.listChannelSettings(TENANT.id);
+    expect(channels).toHaveLength(0);
+  });
+
+  test("rejects a principalId naming no active member of this bench — 400", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/channels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", principalId: "prn_ghost" }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("bad_request");
+
+    const channels = await deps.store.listChannelSettings(TENANT.id);
+    expect(channels).toHaveLength(0);
+  });
+
+  test("rejects a principalId naming a suspended member — 400", async () => {
+    const deps = buildDeps();
+    const tenancy = deps.tenancy as ReturnType<
+      typeof createInMemoryChannelTenancyStore
+    >;
+    tenancy.registerPrincipal(TENANT.id, {
+      id: "prn_bob",
+      kind: "user",
+      status: "suspended",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request("/channels", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "chat", principalId: "prn_bob" }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+});
+
 describe("POST /channels/:id/invite", () => {
   test("an agent with no launchable inference source returns 409, not 500", async () => {
     const deps = buildDeps({
