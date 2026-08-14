@@ -66,7 +66,7 @@ test("buildNoResultsArtifactPayload honestly reports the attempt, missing connec
     missingConnectors: ["scrapecreators"],
     nextSteps: "Connect the ScrapeCreators connector, then re-run this scan.",
   });
-  expect(payload.kind).toBe("reddit-opportunity-scan-no-results");
+  expect(payload.kind).toBe("status-note");
   expect(payload.title).toContain("https://example.com");
   expect(payload.content).toContain(
     'keyword "onboarding tool" in r/startups: unreachable',
@@ -289,7 +289,7 @@ test("the no-results report persists one honest teaching artifact on real invoca
     };
     expect(parsed.persisted).toBe(true);
     expect(parsed.id).toBe("art_teach");
-    expect(parsed.kind).toBe("reddit-opportunity-scan-no-results");
+    expect(parsed.kind).toBe("status-note");
   } finally {
     globalThis.fetch = originalFetch;
   }
