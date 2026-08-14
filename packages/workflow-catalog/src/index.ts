@@ -64,6 +64,11 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     displayName: "Collateral generation",
     automatable: false,
   },
+  {
+    assetName: "reddit-opportunity-scanner",
+    displayName: "Reddit opportunity scanner",
+    automatable: true,
+  },
 ];
 
 const byAssetName = new Map(
