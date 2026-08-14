@@ -35,6 +35,7 @@ import { applyRoutineMigrations } from "../packages/routines/src/migrations";
 import { applyMailboxMigrations } from "../packages/inbox/src/migrations";
 import { applyInsightsMigrations } from "../packages/insights/src/migrations";
 import { applyPreferencesMigrations } from "../packages/preferences/src/migrations";
+import { applyBenchMigrations } from "../packages/bench/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -59,6 +60,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
   { name: "@corbits/insights", apply: applyInsightsMigrations },
   { name: "@corbits/preferences", apply: applyPreferencesMigrations },
+  { name: "@corbits/bench", apply: applyBenchMigrations },
 ];
 
 /**

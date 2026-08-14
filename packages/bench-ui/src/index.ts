@@ -34,12 +34,16 @@ export {
   listMembers,
   inviteMember,
   listChannelTenantIds,
+  getBenchSettings,
+  patchBenchSettings,
 } from "./api";
 export type {
   Bench,
   BenchMember,
   BenchMembership,
   CreateBenchInput,
+  BenchSettingsPatch,
+  BenchSettingsResponse,
 } from "./api";
 
 export {

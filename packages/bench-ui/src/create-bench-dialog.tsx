@@ -1,7 +1,9 @@
 // The "new workbench" affordance: type cards (global vs sub), name, purpose,
 // derived slug preview, and a join-policy note that reflects operator signup
-// defaults. Create still posts only the name — inheritance and join policy
-// storage are not on the hub yet.
+// defaults. `onCreate` still names the bench itself — purpose and type are
+// not part of Interchange's native tenant-creation route, so the caller is
+// expected to persist them with a follow-up call once the bench exists (see
+// `BenchSwitcher.handleCreate`). Join policy storage is not on the hub yet.
 
 import {
   Button,
@@ -31,7 +33,18 @@ export function CreateBenchDialog({
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  readonly onCreate: (name: string) => void;
+  /**
+   * `purpose`/`benchType` are only passed when the person actually entered
+   * one — `purpose` when non-empty after trimming, `benchType` always
+   * (the type cards always have one selected, "global" by default, so a
+   * "not set" state doesn't exist the way it does for the free-text
+   * purpose field).
+   */
+  readonly onCreate: (
+    name: string,
+    purpose?: string,
+    benchType?: BenchCreateType,
+  ) => void;
   readonly submitting: boolean;
   readonly error?: string | null;
   /** When true, join-policy copy reflects open signup; otherwise invites-only. */
@@ -50,7 +63,13 @@ export function CreateBenchDialog({
   }
 
   function handleSubmit() {
-    if (canSubmit) onCreate(name.trim());
+    if (!canSubmit) return;
+    const trimmedPurpose = purpose.trim();
+    onCreate(
+      name.trim(),
+      trimmedPurpose.length > 0 ? trimmedPurpose : undefined,
+      benchType,
+    );
   }
 
   return (

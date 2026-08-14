@@ -12,6 +12,18 @@ import {
   TenantResponse,
   paginatedSchema,
 } from "@intx/types";
+import { getBenchSettings, patchBenchSettings } from "@corbits/bench/client";
+import type {
+  BenchSettingsPatch,
+  BenchSettingsResponse,
+} from "@corbits/bench/client";
+
+// Purpose and type aren't part of Interchange's native tenant shape (see
+// this file's header note), so they come from `@corbits/bench`'s own
+// side-table client — re-exported here rather than imported directly by
+// components, so `bench-ui`'s components keep this one seam.
+export { getBenchSettings, patchBenchSettings };
+export type { BenchSettingsPatch, BenchSettingsResponse };
 
 export type BenchMembership = typeof PrincipalSummary.infer;
 export type BenchMember = typeof PrincipalResponse.infer;

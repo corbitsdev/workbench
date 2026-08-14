@@ -13,9 +13,10 @@
 import { ChevronDown, Plus } from "lucide-react";
 import { useState } from "react";
 
-import { BenchApiError, createBench } from "./api";
+import { BenchApiError, createBench, patchBenchSettings } from "./api";
 import type { Bench, BenchMembership } from "./api";
 import { CreateBenchDialog } from "./create-bench-dialog";
+import type { BenchCreateType } from "./create-bench-dialog";
 import { deriveBenchSlug, membershipDisplay } from "./membership";
 import { BENCH_STRINGS } from "./strings";
 
@@ -138,11 +139,31 @@ export function BenchSwitcher({
   const activeName =
     active !== undefined ? membershipDisplay(active).name : null;
 
-  function handleCreate(name: string) {
+  function handleCreate(
+    name: string,
+    purpose?: string,
+    benchType?: BenchCreateType,
+  ) {
     setCreateSubmitting(true);
     setCreateError(null);
     createBench({ name, slug: deriveBenchSlug(name) })
-      .then((bench) => {
+      .then(async (bench) => {
+        // Purpose/type aren't part of the native tenant-creation route
+        // (see create-bench-dialog.tsx's header note), so they land via a
+        // follow-up PATCH once the bench itself exists. A failure here is
+        // swallowed on purpose: the bench was already created successfully,
+        // and losing the purpose/type it was given is a smaller problem
+        // than reporting a creation failure that didn't happen.
+        if (purpose !== undefined || benchType !== undefined) {
+          try {
+            await patchBenchSettings(bench.id, {
+              ...(purpose !== undefined ? { purpose } : {}),
+              ...(benchType !== undefined ? { type: benchType } : {}),
+            });
+          } catch {
+            // best-effort, see comment above
+          }
+        }
         setCreateSubmitting(false);
         setCreateOpen(false);
         onBenchCreated(bench);

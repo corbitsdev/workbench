@@ -1,12 +1,21 @@
-// The "This bench" settings section: name, slug, workbench icon preview, and
-// the member list (member management itself is `@corbits/bench-ui`'s to own
-// — this section mounts its `MembersPanel`, never re-implements it).
-// Renaming goes through the native `PATCH /api/tenants/:tenantId` route;
-// there is no native route for changing a bench's slug, so the address
-// stays read-only. Icon color is a local preview until tenant branding ships.
+// The "This bench" settings section: name, purpose, slug, workbench icon
+// preview, and the member list (member management itself is
+// `@corbits/bench-ui`'s to own — this section mounts its `MembersPanel`,
+// never re-implements it). Renaming goes through the native `PATCH
+// /api/tenants/:tenantId` route; purpose goes through `@corbits/bench`'s own
+// side-table client (re-exported from `@corbits/bench-ui`), since purpose
+// isn't part of Interchange's native tenant shape — see
+// `create-bench-dialog.tsx`'s header note. There is no native route for
+// changing a bench's slug, so the address stays read-only. Icon color is a
+// local preview until tenant branding ships.
 
 import type { BenchMembership } from "@corbits/bench-ui";
-import { listMyMemberships, MembersPanel } from "@corbits/bench-ui";
+import {
+  getBenchSettings,
+  listMyMemberships,
+  MembersPanel,
+  patchBenchSettings,
+} from "@corbits/bench-ui";
 import {
   EmptyState,
   Input,
@@ -45,6 +54,8 @@ export function BenchSection({
     kind: "loading",
   });
   const [name, setName] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [savedPurpose, setSavedPurpose] = useState("");
   const [iconColor, setIconColor] = useState<string>(ICON_SWATCHES[0]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -54,8 +65,8 @@ export function BenchSection({
     if (tenantId === null) return;
     let cancelled = false;
     setState({ kind: "loading" });
-    listMyMemberships()
-      .then((memberships) => {
+    Promise.all([listMyMemberships(), getBenchSettings(tenantId)])
+      .then(([memberships, settings]) => {
         if (cancelled) return;
         const current = memberships.find((m) => m.tenantId === tenantId);
         if (current === undefined) {
@@ -66,6 +77,8 @@ export function BenchSection({
           return;
         }
         setName(current.tenantName);
+        setPurpose(settings.purpose ?? "");
+        setSavedPurpose(settings.purpose ?? "");
         setState({ kind: "ready", data: current });
       })
       .catch((cause: unknown) => {
@@ -98,24 +111,42 @@ export function BenchSection({
     );
   }
 
-  const dirty = name.trim().length > 0 && name.trim() !== state.data.tenantName;
+  const nameDirty =
+    name.trim().length > 0 && name.trim() !== state.data.tenantName;
+  const purposeDirty = purpose !== savedPurpose;
+  const dirty = nameDirty || purposeDirty;
 
   function handleSave() {
-    const trimmed = name.trim();
-    if (trimmed.length === 0) return;
+    const trimmedName = name.trim();
+    if (trimmedName.length === 0) return;
     setSaving(true);
     setSaveError(null);
-    renameBench(tenantId as string, trimmed)
-      .then((bench) => {
-        setState((previous) =>
-          previous.kind === "ready"
-            ? {
-                kind: "ready",
-                data: { ...previous.data, tenantName: bench.name },
-              }
-            : previous,
-        );
-        setName(bench.name);
+    const tasks: Promise<unknown>[] = [];
+    if (nameDirty) {
+      tasks.push(
+        renameBench(tenantId as string, trimmedName).then((bench) => {
+          setState((previous) =>
+            previous.kind === "ready"
+              ? {
+                  kind: "ready",
+                  data: { ...previous.data, tenantName: bench.name },
+                }
+              : previous,
+          );
+          setName(bench.name);
+        }),
+      );
+    }
+    if (purposeDirty) {
+      tasks.push(
+        patchBenchSettings(tenantId as string, { purpose }).then((settings) => {
+          setPurpose(settings.purpose ?? "");
+          setSavedPurpose(settings.purpose ?? "");
+        }),
+      );
+    }
+    Promise.all(tasks)
+      .then(() => {
         setSavedAt(new Date().toLocaleTimeString());
         toast(SETTINGS_STRINGS.settingsSavedToast);
       })
@@ -127,6 +158,7 @@ export function BenchSection({
     <>
       <BenchSectionView
         name={name}
+        purpose={purpose}
         slug={state.data.tenantSlug}
         iconColor={iconColor}
         dirty={dirty}
@@ -134,9 +166,13 @@ export function BenchSection({
         error={saveError}
         savedAt={savedAt}
         onNameChange={setName}
+        onPurposeChange={setPurpose}
         onIconColorChange={setIconColor}
         onSave={handleSave}
-        onReset={() => setName(state.data.tenantName)}
+        onReset={() => {
+          setName(state.data.tenantName);
+          setPurpose(savedPurpose);
+        }}
       />
       <MembersPanel tenantId={tenantId} />
     </>
@@ -151,6 +187,7 @@ export function BenchSection({
  */
 export function BenchSectionView({
   name,
+  purpose = "",
   slug,
   iconColor = ICON_SWATCHES[0],
   dirty,
@@ -158,11 +195,13 @@ export function BenchSectionView({
   error,
   savedAt,
   onNameChange,
+  onPurposeChange,
   onIconColorChange,
   onSave,
   onReset,
 }: {
   readonly name: string;
+  readonly purpose?: string;
   readonly slug: string;
   readonly iconColor?: string;
   readonly dirty: boolean;
@@ -170,6 +209,7 @@ export function BenchSectionView({
   readonly error: string | null;
   readonly savedAt: string | null;
   readonly onNameChange: (name: string) => void;
+  readonly onPurposeChange?: (purpose: string) => void;
   readonly onIconColorChange?: (color: string) => void;
   readonly onSave: () => void;
   readonly onReset: () => void;
@@ -190,6 +230,16 @@ export function BenchSectionView({
         <Input
           value={name}
           onChange={(event) => onNameChange(event.target.value)}
+        />
+      </label>
+      <label className="settings-form-field">
+        <span>{SETTINGS_STRINGS.benchPurposeLabel}</span>
+        <textarea
+          className="settings-textarea"
+          value={purpose}
+          onChange={(event) => onPurposeChange?.(event.target.value)}
+          placeholder={SETTINGS_STRINGS.benchPurposePlaceholder}
+          rows={2}
         />
       </label>
       <div className="settings-form-field">

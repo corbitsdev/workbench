@@ -73,6 +73,11 @@ const ALLOWLIST: readonly {
     maxOccurrences: 2,
     tables: ["usage_turn", "model_price"],
   },
+  {
+    relPath: "packages/bench/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["bench_settings"],
+  },
 ];
 
 export async function scanFiles(

@@ -62,6 +62,11 @@ import {
   createPostgresPreferencesStore,
   createPreferencesRoutes,
 } from "@corbits/preferences";
+import {
+  applyBenchMigrations,
+  createBenchRoutes,
+  createPostgresBenchSettingsStore,
+} from "@corbits/bench";
 import { generateId } from "@intx/hub-common";
 import {
   createInMemoryMailboxEventBus,
@@ -629,6 +634,21 @@ export async function createHub(config: HubConfig) {
       }),
     }),
   );
+  // Bench purpose/type: benches are Interchange tenants, so this is a
+  // package-owned side-table keyed by tenant id, migrated at hub start
+  // like insights and preferences.
+  await applyBenchMigrations(config.databaseUrl);
+  const benchSettings = createPostgresBenchSettingsStore(config.databaseUrl);
+  app.route(
+    `${TENANT_PREFIX}/bench-settings`,
+    createBenchRoutes({
+      store: benchSettings.store,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
   {
     const mailboxApp = new Hono<TenantEnv>();
     mountMailbox(mailboxApp, {
@@ -983,6 +1003,7 @@ export async function createHub(config: HubConfig) {
       credentialExpirySweep.stop();
       await insightsUsage.close();
       await preferences.close();
+      await benchSettings.close();
       await closeMailbox();
       await close();
     },

@@ -49,6 +49,8 @@ export const SETTINGS_STRINGS = {
   benchSectionDescription:
     "Landing, chrome, and defaults for the selected workbench.",
   benchNameLabel: "Name",
+  benchPurposeLabel: "Purpose",
+  benchPurposePlaceholder: "What is this workbench for?",
   benchAddressLabel: "Slug",
   benchIconLabel: "Workbench icon",
   benchIconHint:
