@@ -79,11 +79,12 @@ async function postJSON<T>(
   path: string,
   schema: Validator<T>,
   body: unknown,
+  method: "POST" | "PUT" = "POST",
 ): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
-      method: "POST",
+      method,
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
@@ -148,17 +149,54 @@ export type CreateAgentDefinitionInput = {
   readonly description?: string;
   readonly systemPrompt: string;
   readonly model?: string;
+  readonly skills?: readonly string[];
 };
+
+const CreatedAgentDefinition = WorkflowDefinitionResponse.and({
+  skills: "string[]",
+});
 
 export function createAgentDefinition(
   tenantId: string,
   input: CreateAgentDefinitionInput,
-): Promise<AgentDefinition> {
+): Promise<AgentDefinition & { readonly skills: readonly string[] }> {
   return postJSON(
     `/api/tenants/${tenantId}/agent-definitions`,
-    WorkflowDefinitionResponse,
+    CreatedAgentDefinition,
     input,
   );
+}
+
+const DefinitionSkillsMap = type({ skills: { "[string]": "string[]" } });
+
+/** Every attached-skill list for the given definitions, keyed by definition
+ * id. Best-effort at the call site — a bench with no skills backed asset
+ * yet just gets `[]` for everything, never an error that blanks the page. */
+export function listAgentSkills(
+  tenantId: string,
+  definitionIds: readonly string[],
+): Promise<Record<string, readonly string[]>> {
+  if (definitionIds.length === 0) return Promise.resolve({});
+  const ids = encodeURIComponent(definitionIds.join(","));
+  return getJSON(
+    `/api/tenants/${tenantId}/agent-definitions/skills?ids=${ids}`,
+    DefinitionSkillsMap,
+  ).then((page) => page.skills);
+}
+
+/** Replaces one definition's attached skills wholesale — an empty array
+ * detaches every skill, never a partial patch. */
+export function updateAgentSkills(
+  tenantId: string,
+  definitionId: string,
+  skills: readonly string[],
+): Promise<readonly string[]> {
+  return postJSON(
+    `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}/skills`,
+    type({ skills: "string[]" }),
+    { skills },
+    "PUT",
+  ).then((body) => body.skills);
 }
 
 export type AgentDirectoryData = {
@@ -166,6 +204,8 @@ export type AgentDirectoryData = {
   readonly definitions: readonly AgentDefinition[];
   readonly instances: readonly AgentInstance[];
   readonly models: readonly CatalogModel[];
+  /** Attached skills per definition id. Missing entries read as "none". */
+  readonly definitionSkills: Record<string, readonly string[]>;
   /** Set when the model catalog failed independently; definitions and
    * instances still load so the page stays usable. */
   readonly modelsError?: string;
@@ -177,7 +217,8 @@ type ModelsOutcome =
 
 /**
  * Loads a bench's agent directory. Definitions and instances are required;
- * the model catalog is best-effort so a picker failure never blanks the page.
+ * the model catalog and each definition's attached skills are best-effort
+ * so either failing alone never blanks the page.
  */
 export async function loadAgentDirectory(
   tenantId: string,
@@ -194,14 +235,26 @@ export async function loadAgentDirectory(
     ),
   ]);
 
+  const definitionSkills = await listAgentSkills(
+    tenantId,
+    definitions.map((definition) => definition.id),
+  ).catch(() => ({}) as Record<string, readonly string[]>);
+
   if (modelsOutcome.ok) {
-    return { tenantId, definitions, instances, models: modelsOutcome.models };
+    return {
+      tenantId,
+      definitions,
+      instances,
+      models: modelsOutcome.models,
+      definitionSkills,
+    };
   }
   return {
     tenantId,
     definitions,
     instances,
     models: [],
+    definitionSkills,
     modelsError: modelsOutcome.message,
   };
 }

@@ -23,6 +23,25 @@ function boundedNonBlankString(max: number) {
   });
 }
 
+// Not constrained to `@intx/hub-sessions`' skill-kind frontmatter name
+// pattern (kebab-case, `<=64` chars): there is no hub skill registry a
+// person can attach from yet (see `../../../apps/web/src/skills-session.ts`),
+// so a "skill" a definition carries today is whatever free-text name that
+// session-local registry gave it. Once a real skill registry exists this
+// should tighten to match its name rule — tracked as a known follow-up,
+// not silently worked around.
+const SkillName = boundedNonBlankString(100);
+
+const SkillNameArray = SkillName.array().narrow((skills, ctx) => {
+  const seen = new Set<string>();
+  for (const name of skills) {
+    if (seen.has(name))
+      return ctx.mustBe(`a list without duplicate skill "${name}"`);
+    seen.add(name);
+  }
+  return true;
+});
+
 export const CreateAgentDefinitionInput = type({
   name: boundedNonBlankString(100),
   handle: HANDLE_PATTERN.describe(
@@ -31,6 +50,15 @@ export const CreateAgentDefinitionInput = type({
   "description?": type("string <= 500"),
   systemPrompt: boundedNonBlankString(8000),
   "model?": boundedNonBlankString(200),
+  "skills?": SkillNameArray,
 });
 export type CreateAgentDefinitionInput =
   typeof CreateAgentDefinitionInput.infer;
+
+/** The body of a request that replaces a definition's attached skills
+ * wholesale — an empty array clears every attachment, never a partial
+ * patch, so the client always states the full set it wants. */
+export const UpdateAgentSkillsInput = type({
+  skills: SkillNameArray,
+});
+export type UpdateAgentSkillsInput = typeof UpdateAgentSkillsInput.infer;

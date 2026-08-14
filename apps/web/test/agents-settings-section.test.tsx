@@ -44,6 +44,7 @@ const directoryData: AgentDirectoryData = {
   definitions: [definition],
   instances: [instance],
   models: [],
+  definitionSkills: { wfd_1: ["web-research", "long-form-write"] },
 };
 
 function seededClient(data: AgentDirectoryData): QueryClient {
@@ -144,7 +145,28 @@ describe("AgentsSettingsSection", () => {
       definitions: [],
       instances: [],
       models: [],
+      definitionSkills: {},
     });
     expect(el.textContent).toContain("No agents yet");
+  });
+
+  test("attached skills render as chips in the list row", async () => {
+    const el = await mount(directoryData);
+    expect(el.textContent).toContain("web-research");
+    expect(el.textContent).toContain("long-form-write");
+  });
+
+  test("attached skills render as chips in the detail panel", async () => {
+    const el = await mount(directoryData, { entityId: "wfd_1" });
+    expect(el.textContent).toContain("web-research");
+    expect(el.textContent).toContain("long-form-write");
+  });
+
+  test("a definition with no attached skills shows no chips", async () => {
+    const el = await mount({
+      ...directoryData,
+      definitionSkills: {},
+    });
+    expect(el.textContent).not.toContain("web-research");
   });
 });

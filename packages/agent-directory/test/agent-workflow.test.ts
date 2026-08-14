@@ -8,8 +8,11 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
   AGENT_DEFINITION_STEP_ID,
+  AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
+  parseAgentSkills,
   serializeAgentDefinitionWorkflow,
+  serializeAgentSkills,
 } from "../src/agent-workflow";
 
 const INPUT = {
@@ -82,4 +85,29 @@ test("serialization round-trips through JSON byte-faithfully", () => {
   const definition = buildAgentDefinitionWorkflow(INPUT);
   const json = serializeAgentDefinitionWorkflow(definition);
   expect(JSON.parse(json)).toEqual(JSON.parse(JSON.stringify(definition)));
+});
+
+test("skills asset path is a sibling of workflow.json, not a subdirectory", () => {
+  expect(AGENT_SKILLS_ASSET_PATH).toBe("skills.json");
+});
+
+test("a skills list round-trips through serialize/parse byte-faithfully", () => {
+  const skills = ["web-research", "long-form-write"];
+  const bytes = new TextEncoder().encode(serializeAgentSkills(skills));
+  expect(parseAgentSkills(bytes)).toEqual(skills);
+});
+
+test("an empty skills list serializes and parses back empty", () => {
+  const bytes = new TextEncoder().encode(serializeAgentSkills([]));
+  expect(parseAgentSkills(bytes)).toEqual([]);
+});
+
+test("malformed skills.json content fails closed rather than silently dropping skills", () => {
+  const bytes = new TextEncoder().encode("not json");
+  expect(() => parseAgentSkills(bytes)).toThrow();
+});
+
+test("skills.json missing the skills key fails closed", () => {
+  const bytes = new TextEncoder().encode(JSON.stringify({ notSkills: [] }));
+  expect(() => parseAgentSkills(bytes)).toThrow();
 });
