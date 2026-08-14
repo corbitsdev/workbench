@@ -184,10 +184,7 @@ export function ConnectToolsGrid({
   return (
     <div className="onboarding-connect-tools">
       {state.kind === "loading" && (
-        <div
-          className="onboarding-connect-tools-loading"
-          aria-hidden="true"
-        >
+        <div className="onboarding-connect-tools-loading" aria-hidden="true">
           <div className="onboarding-spinner" />
         </div>
       )}

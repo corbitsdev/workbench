@@ -43,7 +43,9 @@ describe("OnboardingProgress", () => {
         optionalStep={3}
       />,
     );
-    const segments = markup.match(/<span[^>]*class="onboarding-progress-segment"[^>]*>/g);
+    const segments = markup.match(
+      /<span[^>]*class="onboarding-progress-segment"[^>]*>/g,
+    );
     expect(segments).not.toBeNull();
     expect(segments?.[2]).toContain('data-optional="true"');
     expect(segments?.[0]).not.toContain("data-optional");

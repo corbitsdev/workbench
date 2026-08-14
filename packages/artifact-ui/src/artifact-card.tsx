@@ -2,7 +2,11 @@
 // line (owner · source · size · updated). Pure presentational — the page
 // owns selection and preview.
 
-import { Badge, artifactKindLabel, formatRelativeTime } from "@corbits/react-ui";
+import {
+  Badge,
+  artifactKindLabel,
+  formatRelativeTime,
+} from "@corbits/react-ui";
 import type { ReactNode } from "react";
 
 import type { ArtifactSummary } from "./types";

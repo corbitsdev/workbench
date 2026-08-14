@@ -56,7 +56,8 @@ function mount(): { container: HTMLDivElement; root: Root } {
   return { container, root };
 }
 
-const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () =>
+  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 describe("ConnectorCredentialDialog key-changed nudge", () => {
   test("shows quiet copy once an edit invalidates a passed test", async () => {

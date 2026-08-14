@@ -100,7 +100,8 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Pulls the sender's recent Granola calls and Linear issues and writes a three-section daily brief: what happened, what needs attention, and suggested next actions.",
     requiredConnections: ["granola", "linear"],
-    exampleOutput: "2 calls logged, 3 issues updated, CLI-142 blocked on review",
+    exampleOutput:
+      "2 calls logged, 3 issues updated, CLI-142 blocked on review",
     typicalDuration: "under a minute",
   },
   {
@@ -120,7 +121,8 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Drafts marketing collateral across picked content types from Granola notes, Linear issues, or pasted text, with a swipe review on every draft and one approval on the final set.",
     requiredConnections: ["granola", "linear"],
-    exampleOutput: "3 drafts ready to review: LinkedIn post, blog, Twitter thread",
+    exampleOutput:
+      "3 drafts ready to review: LinkedIn post, blog, Twitter thread",
     typicalDuration: "several minutes, plus review and approval time",
   },
   {

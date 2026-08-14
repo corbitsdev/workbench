@@ -21,7 +21,8 @@ const json = (body: unknown) =>
     headers: { "content-type": "application/json" },
   });
 
-const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+const settle = () =>
+  act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
 describe("Connections status chips", () => {
   test("an unconfigured OAuth connector reads distinctly from a not-connected api-key one", async () => {
@@ -59,9 +60,7 @@ describe("Connections status chips", () => {
       );
       expect(needsSetupBadge).not.toBeUndefined();
       expect(notConnectedBadge).not.toBeUndefined();
-      expect(needsSetupBadge?.className).not.toBe(
-        notConnectedBadge?.className,
-      );
+      expect(needsSetupBadge?.className).not.toBe(notConnectedBadge?.className);
     } finally {
       act(() => root.unmount());
       container.remove();
