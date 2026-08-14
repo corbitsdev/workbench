@@ -25,16 +25,19 @@
 // (visible in the inbox via `@corbits/approvals`), and only executes
 // once a human approves it.
 //
-// Known platform gap (see `finalize-tool.ts`'s header for the full
-// account, and this package's README for the reader-facing version): no
-// production workflow builder in this repo threads a caller-supplied
-// `toolPackagePins` onto a built definition yet (`docs/AGENTS-PAGE.md`),
-// the same gap `@corbits/morning-brief-workflow` (CL-5993) and
-// `@corbits/granola-call-workflow` (CL-5998) document for their own
-// Granola dependencies. Until that lands, this definition's step ships
-// with `tools: []`, matching every other definition in this catalog —
-// its system prompt commits it to saying plainly when it has no way to
-// reach Granola or finalize a piece, rather than inventing a
+// Tool-package pins (CL-5999): `@intx/agent`'s `defineAgent` still does
+// not accept a `toolPackagePins` field on its authoring-time config —
+// it is vendored, read-only source for this change — so the agent
+// below is built directly against `AgentDefinition`'s own type, which
+// already carries the field. `@corbits/granola-tools` is pinned below
+// for `granola_get_note`; whether the pin *resolves* at deploy time
+// still depends on an operator publishing it to a registry the host's
+// tool-package resolver can reach (see `apps/hub/src/index.ts`'s
+// `toolPackageRegistries` wiring). See `finalize-tool.ts`'s header for
+// the separate, still-open gap around this workflow's local finalize
+// tool. Until a deploy actually resolves the pin, this definition's
+// system prompt still commits it to saying plainly when it has no way
+// to reach Granola or finalize a piece, rather than inventing a
 // transcript, pain points, or an approval that never happened.
 //
 // This package is installable data. It imports only published platform
@@ -43,10 +46,10 @@
 // platform's deploy machinery; the execution host materializes it at
 // runtime from the deploy alone.
 
-import { defineAgent } from "@intx/agent";
-import type { InferencePreference } from "@intx/agent";
+import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 
 import { PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME } from "./finalize-tool";
 
@@ -81,6 +84,10 @@ export const PAIN_POINT_COLLATERAL_SYSTEM_PROMPT =
   "denied, reply with one calm, plain sentence that the collateral was " +
   "not approved and no action was taken; never present a denial as an " +
   "error, and never apologize as if something broke.";
+
+/** Tool packages this definition pins (CL-5999); see the header comment. */
+export const PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
+  [{ name: "@corbits/granola-tools", version: "0.0.1" }];
 
 /**
  * Everything the definition needs that is per-deployment data. The
@@ -125,16 +132,17 @@ export function buildPainPointCollateralWorkflow(
     trigger: { type: "mail", to: input.triggerAddress },
     steps: {
       [PAIN_POINT_COLLATERAL_STEP_ID]: step({
-        agent: defineAgent({
+        agent: {
           id: PAIN_POINT_COLLATERAL_STEP_ID,
           description:
             "Drafts sales collateral targeted at a call transcript's " +
             "pain points and finalizes it only once a human approves",
           systemPrompt: PAIN_POINT_COLLATERAL_SYSTEM_PROMPT,
-          tools: [],
+          toolFactories: [],
           capabilities: [],
           inference: { sources: input.inferencePreferences },
-        }),
+          toolPackagePins: PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS,
+        } satisfies AgentDefinition,
         timeout: input.turnTimeoutMs,
       }),
     },

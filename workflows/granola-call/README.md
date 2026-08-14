@@ -41,15 +41,17 @@ platform-level, not specific to Granola:
    callback it needs (see `@corbits/heartbeat-workflow`'s README for the
    same finding). Fanning out into per-call `process-granola-call` runs
    needs that wired first.
-2. **No Granola tool access.** `corbitsdev/granola-tools` is not
-   published anywhere this host's tool loader (`@intx/tool-packaging`,
-   resolving against `npmjs` by default) can reach it from, and no
-   production workflow builder in this repo threads tool-package pins
-   onto a definition at all yet (`docs/AGENTS-PAGE.md`).
+2. **`@corbits/granola-tools` is not published anywhere this host's tool
+   loader (`@intx/tool-packaging`) can resolve it from by default.** This
+   definition now pins it (`GRANOLA_CALL_TOOL_PACKAGE_PINS`, CL-5999),
+   but a pin only resolves once an operator seeds it into a registry the
+   host's `toolPackageRegistries` config reaches — either npmjs, or a
+   `package-registry` asset for the `@corbits` scope (see
+   `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` wiring).
 
 Until both land, a deployment of this definition is an honest
-placeholder: its agent has no tools, so every run replies that Granola
-is not connected rather than fabricating a call list. That is
+placeholder: until an operator publishes the pin, every run replies that
+Granola is not connected rather than fabricating a call list. That is
 deliberate — see the "no fallbacks" and "parse at every trust boundary"
 rules in `AGENTS.md`; a workflow that quietly returns fake data on a
 broken dependency is worse than one that says so.

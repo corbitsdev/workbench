@@ -11,6 +11,7 @@ import {
   MORNING_BRIEF_SECTIONS,
   MORNING_BRIEF_STEP_ID,
   MORNING_BRIEF_SYSTEM_PROMPT,
+  MORNING_BRIEF_TOOL_PACKAGE_PINS,
   MORNING_BRIEF_WIRED_SOURCES,
   MORNING_BRIEF_WORKFLOW_ID,
   buildMorningBriefWorkflow,
@@ -59,6 +60,15 @@ test("the agent carries the fixed prompt, the preferences, and inlines no tools"
   // Tools arrive as packages on the deploy, never inlined here: an
   // inline factory is a function-valued field the asset cannot carry.
   expect(agent.toolFactories).toEqual([]);
+});
+
+test("the agent pins the wired sources' tool packages by name and version", () => {
+  const agent = morningBriefStep(buildMorningBriefWorkflow(INPUT)).agent;
+  expect(agent.toolPackagePins).toEqual([...MORNING_BRIEF_TOOL_PACKAGE_PINS]);
+  expect(MORNING_BRIEF_TOOL_PACKAGE_PINS).toEqual([
+    { name: "@corbits/granola-tools", version: "0.0.1" },
+    { name: "@corbits/linear-tools", version: "0.0.1" },
+  ]);
 });
 
 test("the prompt names the fixed section headings, in order", () => {

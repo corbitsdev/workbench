@@ -12,6 +12,7 @@ import {
   COLLATERAL_GENERATION_PENDING_SOURCES,
   COLLATERAL_GENERATION_STEP_ID,
   COLLATERAL_GENERATION_SYSTEM_PROMPT,
+  COLLATERAL_GENERATION_TOOL_PACKAGE_PINS,
   COLLATERAL_GENERATION_WIRED_SOURCES,
   COLLATERAL_GENERATION_WORKFLOW_ID,
   buildCollateralGenerationWorkflow,
@@ -62,6 +63,17 @@ test("the agent carries the fixed prompt, the preferences, and inlines no tools"
   // Tools arrive as packages on the deploy, never inlined here: an
   // inline factory is a function-valued field the asset cannot carry.
   expect(agent.toolFactories).toEqual([]);
+});
+
+test("the agent pins @corbits/granola-tools and @corbits/linear-tools by name and version", () => {
+  const agent = collateralStep(buildCollateralGenerationWorkflow(INPUT)).agent;
+  expect(agent.toolPackagePins).toEqual([
+    ...COLLATERAL_GENERATION_TOOL_PACKAGE_PINS,
+  ]);
+  expect(COLLATERAL_GENERATION_TOOL_PACKAGE_PINS).toEqual([
+    { name: "@corbits/granola-tools", version: "0.0.1" },
+    { name: "@corbits/linear-tools", version: "0.0.1" },
+  ]);
 });
 
 test("the system prompt names the exact approval-gated finalize tool", () => {

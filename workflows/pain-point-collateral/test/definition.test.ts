@@ -10,6 +10,7 @@ import {
   PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
   PAIN_POINT_COLLATERAL_STEP_ID,
   PAIN_POINT_COLLATERAL_SYSTEM_PROMPT,
+  PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS,
   PAIN_POINT_COLLATERAL_WORKFLOW_ID,
   buildPainPointCollateralWorkflow,
   serializePainPointCollateralWorkflow,
@@ -59,6 +60,16 @@ test("the agent carries the fixed prompt, the preferences, and inlines no tools"
   // Tools arrive as packages on the deploy, never inlined here: an
   // inline factory is a function-valued field the asset cannot carry.
   expect(agent.toolFactories).toEqual([]);
+});
+
+test("the agent pins @corbits/granola-tools by name and version", () => {
+  const agent = collateralStep(buildPainPointCollateralWorkflow(INPUT)).agent;
+  expect(agent.toolPackagePins).toEqual([
+    ...PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS,
+  ]);
+  expect(PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS).toEqual([
+    { name: "@corbits/granola-tools", version: "0.0.1" },
+  ]);
 });
 
 test("the system prompt names the exact approval-gated finalize tool", () => {

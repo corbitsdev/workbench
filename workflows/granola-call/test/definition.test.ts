@@ -10,6 +10,7 @@ import {
   DEFAULT_CALL_LIMIT,
   GRANOLA_CALL_STEP_ID,
   GRANOLA_CALL_SYSTEM_PROMPT,
+  GRANOLA_CALL_TOOL_PACKAGE_PINS,
   GRANOLA_CALL_WORKFLOW_ID,
   buildGranolaCallWorkflow,
   serializeGranolaCallWorkflow,
@@ -57,6 +58,14 @@ test("the agent instructs the pipeline, carries the preferences, and inlines no 
   // Tools arrive as packages on the deploy, never inlined here: an
   // inline factory is a function-valued field the asset cannot carry.
   expect(agent.toolFactories).toEqual([]);
+});
+
+test("the agent pins @corbits/granola-tools by name and version", () => {
+  const agent = granolaCallStep(buildGranolaCallWorkflow(INPUT)).agent;
+  expect(agent.toolPackagePins).toEqual([...GRANOLA_CALL_TOOL_PACKAGE_PINS]);
+  expect(GRANOLA_CALL_TOOL_PACKAGE_PINS).toEqual([
+    { name: "@corbits/granola-tools", version: "0.0.1" },
+  ]);
 });
 
 test("the system prompt commits to the default call limit and an honest no-connection message", () => {

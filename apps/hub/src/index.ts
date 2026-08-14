@@ -117,6 +117,22 @@ import { createRoutineScheduler } from "./routine-scheduler";
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
+// In-repo tool packages (`packages/granola-tools`, `packages/linear-tools`,
+// `packages/artifact-tools`) are unpublished to npm and stay that way:
+// they are workbench-specific integration bundles, not general-purpose
+// npm packages, so publishing them to a public registry would be the
+// wrong distribution surface for what they are. `@intx/hub-sessions`
+// already resolves any `package-registry`-kind asset visible to a
+// tenant as a named tool-package registry (see `session-service.ts`'s
+// `buildAndResolve`), ahead of the statically-configured HTTP
+// registries on a name collision — the platform-native alternative to
+// npm publishing the CL-5999 capability audit called for. Routing the
+// `@corbits` scope at this registry name means a `@corbits/*` pin
+// resolves only once an operator seeds a `package-registry` asset named
+// `CORBITS_TOOLS_REGISTRY` with the package's tarball; until then,
+// resolution fails loud rather than silently falling through to npmjs
+// (which could never carry an unpublished scope anyway).
+const CORBITS_TOOLS_REGISTRY = "corbits-tools";
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
@@ -238,6 +254,7 @@ export async function createHub(config: HubConfig) {
     toolPackageRegistries: {
       httpRegistries: REGISTRIES,
       defaultRegistry: "npmjs",
+      scopeRouting: [{ scope: "@corbits", registry: CORBITS_TOOLS_REGISTRY }],
     },
   });
   const app = createApp({

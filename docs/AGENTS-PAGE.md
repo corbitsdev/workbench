@@ -52,10 +52,15 @@ separate deploy step, and no page reload needed to see it appear.
 **Tools and a model provider are not exposed on the create form.** The
 platform's wire contract for a workflow definition
 (`WorkflowDefinitionResponse` in `@intx/types`) carries no tool-package
-field, and `@intx/agent`'s `defineAgent` does not thread a caller-supplied
-`toolPackagePins` onto the built definition — no production builder in this
-codebase sets one today. A model is accepted as a bare canonical name only;
-the provider is resolved fresh against the tenant's catalog at launch time
+field, and `@intx/agent`'s `defineAgent` does not accept a caller-supplied
+`toolPackagePins` on its authoring-time config — it is vendored, read-only
+source. The five catalog workflow packages (`granola-call`,
+`process-granola-call`, `morning-brief`, `pain-point-collateral`,
+`collateral-generation`) build their `AgentDefinition`s directly against
+that type instead, and do set `toolPackagePins` (CL-5999) — but this
+create-form path is unrelated to those packages and still has no field to
+carry one. A model is accepted as a bare canonical name only; the provider
+is resolved fresh against the tenant's catalog at launch time
 (`resolveDefinitionSources`), never baked into the definition.
 
 ## The mailbox address

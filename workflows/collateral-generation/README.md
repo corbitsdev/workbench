@@ -68,12 +68,17 @@ which applies unchanged here.
 Three real gaps stand between this definition and a fully live deploy,
 all platform-level, not specific to this workflow:
 
-1. **No tool-package pin** (CL-5999). No production workflow builder in
-   this repo threads a caller-supplied `toolPackagePins` onto a built
-   definition yet. Until it lands, this definition ships with
-   `tools: []`; `@corbits/granola-tools`, `@corbits/linear-tools`, and
-   `@corbits/artifact-tools` all exist, are tested, and are ready to wire
-   in the moment pinning is built.
+1. **Tool-package pins resolve only once published** (CL-5999 closed the
+   pinning gap; publishing is still an operator step). This definition
+   pins `@corbits/granola-tools` and `@corbits/linear-tools`
+   (`COLLATERAL_GENERATION_TOOL_PACKAGE_PINS`); a pin resolves at deploy
+   time once an operator publishes the package to a registry the host's
+   `toolPackageRegistries` config reaches — npmjs, or a `package-registry`
+   asset for the `@corbits` scope (see `apps/hub/src/index.ts`'s
+   `CORBITS_TOOLS_REGISTRY` wiring). `@corbits/artifact-tools` stays
+   unpinned here: its one tool still cannot reach the Library engine
+   (CL-6000), so pinning it would resolve a package whose tool answers
+   "not reachable yet" for every call.
 2. **No Library-write path from a workflow tool** (CL-6000). Tool
    packages run in the sidecar's workflow-process child, a separate
    process with no database handle and no authenticated hub-API path.
