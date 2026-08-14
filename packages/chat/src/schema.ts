@@ -1,6 +1,7 @@
 // Product tables @corbits/chat owns (see scripts/checks/no-product-tenancy
-// ALLOWLIST): channel_settings, channel_read_state, channel_launch, and
-// channel_tenancy. These tables live in their own `chat` Postgres schema,
+// ALLOWLIST): channel_settings, channel_read_state, channel_launch,
+// channel_tenancy, message_reactions, and pinned_messages. These tables
+// live in their own `chat` Postgres schema,
 // fully siloed from the platform's `public` schema — see
 // docs/package-migrations.md. `tenantId`/`principalId` are plain text
 // identifiers, not foreign keys, so referencing platform tenant/principal
@@ -282,5 +283,74 @@ export const blockResponses = chatSchema.table(
       table.messageId,
       table.blockId,
     ),
+  ],
+);
+
+/**
+ * One row per (tenant, channel, message, emoji, principal) — a
+ * principal either has reacted with a given emoji on a given message
+ * or hasn't; there is no count column, the row's presence *is* the
+ * count (see `./reactions.ts`'s `toggleReaction`, which inserts on a
+ * miss and deletes on a hit — true toggle semantics, never an
+ * increment/decrement counter that can drift from reality). The
+ * natural composite key doubles as the anti-double-react guard: a
+ * second `INSERT` for the same five columns can only ever be the same
+ * toggle flipping back off.
+ */
+export const messageReactions = chatSchema.table(
+  "message_reactions",
+  {
+    tenantId: text("tenant_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    messageId: text("message_id").notNull(),
+    emoji: text("emoji").notNull(),
+    principalId: text("principal_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.tenantId,
+        table.channelId,
+        table.messageId,
+        table.emoji,
+        table.principalId,
+      ],
+    }),
+    index("message_reactions_message_idx").on(
+      table.tenantId,
+      table.channelId,
+      table.messageId,
+    ),
+  ],
+);
+
+/**
+ * One row per pinned message — a message is pinned or it isn't, so
+ * this is presence-as-truth the same way `messageReactions` is: no
+ * `pinned: boolean` column anywhere, the row's existence is the pin.
+ * `pinnedBy`/`pinnedAt` record who pinned it and when for the pinned
+ * strip's byline; unpinning deletes the row outright rather than
+ * soft-deleting it, since there is no history feature reading pin/unpin
+ * churn today.
+ */
+export const pinnedMessages = chatSchema.table(
+  "pinned_messages",
+  {
+    tenantId: text("tenant_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    messageId: text("message_id").notNull(),
+    pinnedBy: text("pinned_by").notNull(),
+    pinnedAt: timestamp("pinned_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.tenantId, table.channelId, table.messageId],
+    }),
+    index("pinned_messages_channel_idx").on(table.tenantId, table.channelId),
   ],
 );

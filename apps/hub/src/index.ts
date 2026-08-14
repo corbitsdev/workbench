@@ -37,6 +37,8 @@ import {
   createDrizzleBlockResponseStore,
   createDrizzleChannelTenancyStore,
   createDrizzleChatStore,
+  createDrizzlePinStore,
+  createDrizzleReactionStore,
   createDrizzleThreadStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
@@ -493,6 +495,8 @@ export async function createHub(config: HubConfig) {
   const chatStore = createDrizzleChatStore(db);
   const threadStore = createDrizzleThreadStore(db);
   const blockResponseStore = createDrizzleBlockResponseStore(db);
+  const reactionStore = createDrizzleReactionStore(db);
+  const pinStore = createDrizzlePinStore(db);
   // Mounted outside the tenant prefix — the sidecar reaches it as a
   // plain inference endpoint, never through tenant-scoped auth, the
   // same way it reaches a real provider's API. `config.baseUrl` (not
@@ -593,6 +597,8 @@ export async function createHub(config: HubConfig) {
     tenancy: chatTenancy,
     threads: threadStore,
     blockResponses: blockResponseStore,
+    reactions: reactionStore,
+    pins: pinStore,
     channelSubscribers,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,

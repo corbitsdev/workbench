@@ -216,27 +216,31 @@ no per-channel editor, since a channel's override belongs to the channel.
 `@corbits/chat` mounts one router, under a tenant-scoped prefix, with the
 following routes:
 
-| Method & path                                  | What it does                                                                                                                                                                                                                    |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /channels`                               | Mints the channel's own tenant, launches its host, writes its initial settings, and — for a chat — joins its one counterpart (an agent or a person; see [Chats and direct messages](#chats-and-direct-messages-dms))            |
-| `GET /channels`                                | Lists the tenant's channels, optionally filtered by kind                                                                                                                                                                        |
-| `GET /channels/:id/messages`                   | Reads the channel's timeline, decoded into parts, paginated by cursor                                                                                                                                                           |
-| `POST /channels/:id/messages`                  | Posts a message, fanning a copy to every @mentioned agent participant. `threadId` or `inReplyToMessageId` route it into a thread instead of the root feed; a reply that would nest past depth 2 is a `409 conflict`             |
-| `GET /channels/:id/threads`                    | Lists a channel's threads (root, delivery, replies, and sub-threads) plus its root thread id                                                                                                                                    |
-| `GET /channels/:id/threads/:threadId/messages` | Reads one thread's own membership, decoded into parts — never the full channel mailbox                                                                                                                                          |
-| `POST /channels/:id/threads/fork`              | Forks a sub-thread rooted at any message inside a thread (CL-5948); idempotent per origin message, and redirects to a sibling sub-thread rather than nesting past depth 2 (see [Threads](#threads-channel--thread--sub-thread)) |
-| `POST /channels/:id/delivery-threads`          | Creates (or reuses) the delivery thread for a routine run                                                                                                                                                                       |
-| `GET /channels/:id/invitable`                  | Lists the tenant's deployed definitions that can be invited into a channel                                                                                                                                                      |
-| `POST /channels/:id/invite`                    | Launches a definition into the channel and adds it as a participant                                                                                                                                                             |
-| `POST /channels/:id/move`                      | Re-parents a channel's own tenant to a different bench                                                                                                                                                                          |
-| `GET /channels/:id/settings`                   | Reads a channel's settings, including its resolved context window                                                                                                                                                               |
-| `PATCH /channels/:id/settings`                 | Updates settings, recording each change as a timeline event                                                                                                                                                                     |
-| `GET /channels/:id/read-state`                 | Reads the calling principal's last-seen cursor for the channel                                                                                                                                                                  |
-| `PUT /channels/:id/read-state`                 | Advances the calling principal's last-seen cursor                                                                                                                                                                               |
-| `POST /channels/:id/typing`                    | Publishes an ephemeral typing indicator to the channel's live stream                                                                                                                                                            |
-| `GET /channels/:id/stream`                     | Server-Sent Events stream of live channel activity                                                                                                                                                                              |
-| `GET /bench/settings`                          | Reads the tenant's bench-wide chat defaults                                                                                                                                                                                     |
-| `PATCH /bench/settings`                        | Updates the tenant's bench-wide chat defaults                                                                                                                                                                                   |
+| Method & path                                             | What it does                                                                                                                                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /channels`                                          | Mints the channel's own tenant, launches its host, writes its initial settings, and — for a chat — joins its one counterpart (an agent or a person; see [Chats and direct messages](#chats-and-direct-messages-dms))            |
+| `GET /channels`                                           | Lists the tenant's channels, optionally filtered by kind                                                                                                                                                                        |
+| `GET /channels/:id/messages`                              | Reads the channel's timeline, decoded into parts, paginated by cursor                                                                                                                                                           |
+| `POST /channels/:id/messages`                             | Posts a message, fanning a copy to every @mentioned agent participant. `threadId` or `inReplyToMessageId` route it into a thread instead of the root feed; a reply that would nest past depth 2 is a `409 conflict`             |
+| `GET /channels/:id/threads`                               | Lists a channel's threads (root, delivery, replies, and sub-threads) plus its root thread id                                                                                                                                    |
+| `GET /channels/:id/threads/:threadId/messages`            | Reads one thread's own membership, decoded into parts — never the full channel mailbox                                                                                                                                          |
+| `POST /channels/:id/threads/fork`                         | Forks a sub-thread rooted at any message inside a thread (CL-5948); idempotent per origin message, and redirects to a sibling sub-thread rather than nesting past depth 2 (see [Threads](#threads-channel--thread--sub-thread)) |
+| `POST /channels/:id/delivery-threads`                     | Creates (or reuses) the delivery thread for a routine run                                                                                                                                                                       |
+| `GET /channels/:id/invitable`                             | Lists the tenant's deployed definitions that can be invited into a channel                                                                                                                                                      |
+| `POST /channels/:id/invite`                               | Launches a definition into the channel and adds it as a participant                                                                                                                                                             |
+| `POST /channels/:id/move`                                 | Re-parents a channel's own tenant to a different bench                                                                                                                                                                          |
+| `GET /channels/:id/settings`                              | Reads a channel's settings, including its resolved context window                                                                                                                                                               |
+| `PATCH /channels/:id/settings`                            | Updates settings, recording each change as a timeline event                                                                                                                                                                     |
+| `GET /channels/:id/read-state`                            | Reads the calling principal's last-seen cursor for the channel                                                                                                                                                                  |
+| `PUT /channels/:id/read-state`                            | Advances the calling principal's last-seen cursor                                                                                                                                                                               |
+| `POST /channels/:id/typing`                               | Publishes an ephemeral typing indicator to the channel's live stream                                                                                                                                                            |
+| `POST /channels/:id/messages/:messageId/reactions/toggle` | Toggles the calling principal's reaction with a curated emoji on a message; publishes `chat.reaction`                                                                                                                           |
+| `POST /channels/:id/messages/:messageId/pin`              | Pins a message; publishes `chat.pin`                                                                                                                                                                                            |
+| `DELETE /channels/:id/messages/:messageId/pin`            | Unpins a message; publishes `chat.pin`                                                                                                                                                                                          |
+| `GET /channels/:id/pins`                                  | Lists a channel's currently-pinned messages, decoded into parts, newest pin first                                                                                                                                               |
+| `GET /channels/:id/stream`                                | Server-Sent Events stream of live channel activity                                                                                                                                                                              |
+| `GET /bench/settings`                                     | Reads the tenant's bench-wide chat defaults                                                                                                                                                                                     |
+| `PATCH /bench/settings`                                   | Updates the tenant's bench-wide chat defaults                                                                                                                                                                                   |
 
 Every route runs behind the hub's tenant-scoped middleware, so the calling
 tenant and principal are always resolved before a handler runs; principals
@@ -353,9 +357,39 @@ the live stream (see the HTTP surface table above) — `ChatWorkspace` tracks
 the latest ping with a short expiry and resolves it to the typist's
 participant handle, never a raw principal id.
 
-The pinned/quick-action strip the shell mock shows above the message list
-has no backing store yet — `@corbits/chat` only tracks whether a whole
-channel is pinned in the sidebar, not a per-channel list of pinned
-artifacts — so `ChatWorkspace` renders nothing there rather than fake data.
-Reactions are a separate follow-up: the wire model has no reaction part or
-endpoint yet.
+### Reactions and pinned messages (CL-6030)
+
+Message reactions and per-channel message pinning (the open question left
+by CL-5942) are both in scope and backed by their own tables — `message_reactions`
+and `pinned_messages` — in `@corbits/chat`'s own `chat` schema (see
+`packages/chat/src/schema.ts`; distinct from the sidebar's whole-channel
+`chat/pinned` setting, which is unrelated). Both are presence-as-truth:
+a reaction row's existence _is_ the reaction (`./reactions.ts`'s
+`toggleReaction` inserts on a miss and deletes on a hit — true on/off, never
+a counter that can drift), and a pin row's existence _is_ the pin.
+
+`GET /channels/:id/messages` (and `GET /channels/:id/threads/:threadId/messages`)
+attach `reactions` (a per-emoji `{ emoji, count, reactedByMe }[]`) and
+`pinned` (boolean) onto every item — extending the wire type the timeline
+already consumed rather than a parallel read. Both batch over the whole
+page in one query each (`listReactionsForMessages`, `listPins`), and both
+fields are simply absent from the wire when the host never injects the
+corresponding store, the same "no store, no feature" contract
+`blockResponses` already follows.
+
+Reactions are restricted server-side to a small curated emoji set
+(`REACTION_EMOJI` in `packages/chat/src/reaction-emoji.ts`, shared with
+`@corbits/chat-ui`'s picker) — an emoji outside it is a `400`, never
+silently accepted. Toggling and pinning both publish onto the channel's
+existing SSE subscriber registry (`chat.reaction`, `chat.pin`), live, the
+same channel `bridgeChannelStream` already bridges typing and settings
+events through.
+
+In the UI, `ChannelTimeline` renders a reaction chip row under each message
+(click a chip to toggle; an "add reaction" trigger opens the curated
+picker) and a pin/unpin toggle, both hover/focus-revealed and keyboard
+operable — see `ReactionActions`/`PinActions` in `timeline.tsx`. The
+pinned strip the shell mock shows above the message list
+(`@corbits/chat-ui`'s `PinnedStrip`) renders every currently-pinned message
+as a jump-to chip; clicking one scrolls the timeline to that message's own
+row (`messageDomId`).

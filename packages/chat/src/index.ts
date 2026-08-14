@@ -118,6 +118,27 @@ export type {
   UpsertBlockResponseInput,
 } from "./block-responses";
 
+export { REACTION_EMOJI, isKnownReactionEmoji } from "./reaction-emoji";
+export type { ReactionEmoji } from "./reaction-emoji";
+
+export {
+  createInMemoryReactionStore,
+  createDrizzleReactionStore,
+  aggregateReactions,
+  aggregateReactionsByMessage,
+} from "./reactions";
+export type {
+  ReactionRow,
+  ReactionStore,
+  ReactionSummary,
+  ReactionDb,
+  ToggleReactionInput,
+  ToggleReactionResult,
+} from "./reactions";
+
+export { createInMemoryPinStore, createDrizzlePinStore } from "./pins";
+export type { PinRow, PinStore, PinDb, PinMessageInput } from "./pins";
+
 export { createNoopInferenceRoutes } from "./noop-inference";
 export {
   launchAndJoinAgent,

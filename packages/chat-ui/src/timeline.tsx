@@ -11,15 +11,17 @@
 
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { EmptyState } from "@corbits/react-ui";
-import { MessageSquare } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { MessageSquare, Pin, PinOff, SmilePlus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import type {
   MessageItem,
   MessageSender,
   ParticipantRecord,
   Part,
+  ReactionSummary,
 } from "./api";
+import { REACTION_EMOJI } from "./api";
 import { ArtifactChip } from "./artifact-chip";
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
@@ -42,6 +44,32 @@ import { CHAT_STRINGS } from "./strings";
  * messages.
  */
 export type ThreadAffordanceMode = "reply" | "fork";
+
+/**
+ * The reaction chip row's live round-trip — the host's toggle against
+ * `@corbits/chat`'s reaction routes, mirroring how `blockResponses`
+ * threads the poll/form round-trip down to its card. Undefined renders
+ * no reaction affordance at all (no chips, no "add reaction" trigger),
+ * the same "no port, no feature" contract every other optional action
+ * on this timeline follows.
+ */
+export type ReactionActions = {
+  readonly onToggle: (messageId: string, emoji: string) => void;
+};
+
+/** The pin/unpin round-trip a message's hover row offers — undefined
+ * renders no pin affordance at all. */
+export type PinActions = {
+  readonly onPin: (messageId: string) => void;
+  readonly onUnpin: (messageId: string) => void;
+};
+
+/** The DOM id a message's group renders under — the pinned strip's
+ * jump-to-message target (`document.getElementById`). Exported so the
+ * host never has to hand-guess the id format. */
+export function messageDomId(messageId: string): string {
+  return `chat-message-${messageId}`;
+}
 
 export type CurrentUser = {
   /**
@@ -383,6 +411,116 @@ function DayDivider({ createdAt }: { createdAt: string }) {
   );
 }
 
+/**
+ * The reaction chip row: every emoji with at least one reactor renders
+ * as a chip (count + reacted-state), plus a trailing "add reaction"
+ * trigger that reveals the curated emoji picker. Renders nothing at
+ * all when `reactionActions` is undefined — no chips, no trigger — so
+ * a host that never wires reactions sees this timeline exactly as it
+ * looked before the feature existed.
+ */
+function ReactionChipsRow({
+  messageId,
+  reactions,
+  reactionActions,
+}: {
+  readonly messageId: string;
+  readonly reactions: readonly ReactionSummary[];
+  readonly reactionActions: ReactionActions;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  function toggle(emoji: string) {
+    reactionActions.onToggle(messageId, emoji);
+    setPickerOpen(false);
+  }
+
+  return (
+    <div className="chat-reaction-row">
+      {reactions.map((reaction) => (
+        <button
+          key={reaction.emoji}
+          type="button"
+          className="chat-reaction-chip"
+          data-reacted={reaction.reactedByMe}
+          aria-pressed={reaction.reactedByMe}
+          aria-label={CHAT_STRINGS.reactionChipLabel(
+            reaction.emoji,
+            reaction.count,
+          )}
+          onClick={() => toggle(reaction.emoji)}
+        >
+          <span aria-hidden="true">{reaction.emoji}</span>
+          <span className="chat-reaction-chip-count">{reaction.count}</span>
+        </button>
+      ))}
+      <span className="chat-reaction-picker-anchor">
+        <button
+          type="button"
+          className="chat-reaction-add"
+          aria-label={CHAT_STRINGS.reactionAddAction}
+          aria-expanded={pickerOpen}
+          onClick={() => setPickerOpen((open) => !open)}
+        >
+          <SmilePlus aria-hidden="true" />
+        </button>
+        {pickerOpen ? (
+          <span
+            className="chat-reaction-picker"
+            role="menu"
+            aria-label={CHAT_STRINGS.reactionPickerLabel}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setPickerOpen(false);
+            }}
+          >
+            {REACTION_EMOJI.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                role="menuitem"
+                className="chat-reaction-picker-option"
+                aria-label={CHAT_STRINGS.reactionPickerOptionLabel(emoji)}
+                onClick={() => toggle(emoji)}
+              >
+                {emoji}
+              </button>
+            ))}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+/** The pin/unpin toggle a message's hover row offers — renders nothing
+ * when `pinActions` is undefined. */
+function PinToggleButton({
+  messageId,
+  pinned,
+  pinActions,
+}: {
+  readonly messageId: string;
+  readonly pinned: boolean;
+  readonly pinActions: PinActions;
+}) {
+  return (
+    <button
+      type="button"
+      className="chat-pin-toggle"
+      data-pinned={pinned}
+      aria-pressed={pinned}
+      aria-label={
+        pinned ? CHAT_STRINGS.unpinMessageAction : CHAT_STRINGS.pinMessageAction
+      }
+      onClick={() =>
+        pinned ? pinActions.onUnpin(messageId) : pinActions.onPin(messageId)
+      }
+    >
+      {pinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
+    </button>
+  );
+}
+
 function MessageParts({
   item,
   participants,
@@ -396,6 +534,8 @@ function MessageParts({
   onOpenArtifactInLibrary,
   approvalActions,
   blockResponses,
+  reactionActions,
+  pinActions,
 }: {
   readonly item: MessageItem;
   readonly participants: readonly ParticipantRecord[];
@@ -409,9 +549,11 @@ function MessageParts({
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   readonly approvalActions?: ApprovalActions;
   readonly blockResponses?: BlockResponseActions;
+  readonly reactionActions?: ReactionActions;
+  readonly pinActions?: PinActions;
 }) {
   return (
-    <>
+    <div className="chat-message-group" id={messageDomId(item.id)}>
       {showDayDivider && <DayDivider createdAt={item.createdAt} />}
       {item.parts.map((part, index) => {
         const key = `${item.id}-${index}`;
@@ -463,6 +605,24 @@ function MessageParts({
         }
         return <FallbackPart key={key} part={part} />;
       })}
+      {reactionActions !== undefined || pinActions !== undefined ? (
+        <div className="chat-message-actions">
+          {reactionActions !== undefined ? (
+            <ReactionChipsRow
+              messageId={item.id}
+              reactions={item.reactions ?? []}
+              reactionActions={reactionActions}
+            />
+          ) : null}
+          {pinActions !== undefined ? (
+            <PinToggleButton
+              messageId={item.id}
+              pinned={item.pinned ?? false}
+              pinActions={pinActions}
+            />
+          ) : null}
+        </div>
+      ) : null}
       {onOpenThread !== undefined ? (
         <ThreadAffordance
           messageId={item.id}
@@ -472,7 +632,7 @@ function MessageParts({
           onOpen={() => onOpenThread(item.id)}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -567,6 +727,8 @@ export function ChannelTimeline({
   onOpenArtifactInLibrary,
   approvalActions,
   blockResponses,
+  reactionActions,
+  pinActions,
 }: {
   readonly items: readonly MessageItem[];
   readonly participants?: readonly ParticipantRecord[];
@@ -594,6 +756,13 @@ export function ChannelTimeline({
    * against `@corbits/chat`'s response routes. Undefined renders every
    * poll/form card in its pre-round-trip fixed-disabled framing. */
   readonly blockResponses?: BlockResponseActions;
+  /** The reaction chip row's live round-trip — see `ReactionActions`.
+   * Undefined renders no chips and no "add reaction" trigger at all,
+   * the same "no port, no feature" contract `blockResponses` follows. */
+  readonly reactionActions?: ReactionActions;
+  /** The hover pin/unpin toggle — see `PinActions`. Undefined renders
+   * no pin affordance on any message. */
+  readonly pinActions?: PinActions;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Starts true so a channel's first render always lands pinned to the
@@ -658,6 +827,8 @@ export function ChannelTimeline({
               : {})}
             {...(approvalActions !== undefined ? { approvalActions } : {})}
             {...(blockResponses !== undefined ? { blockResponses } : {})}
+            {...(reactionActions !== undefined ? { reactionActions } : {})}
+            {...(pinActions !== undefined ? { pinActions } : {})}
           />
         );
       })}

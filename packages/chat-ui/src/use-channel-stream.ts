@@ -138,6 +138,8 @@ export function useChannelStream(
         "chat.agent",
         "chat.settings",
         "chat.typing",
+        "chat.reaction",
+        "chat.pin",
         "message",
       ]) {
         source.addEventListener(eventType, forward(eventType));

@@ -15,6 +15,8 @@ import { createInMemoryChannelShareStore } from "../src/channel-share";
 import { createInMemoryFederationTrustStore } from "../src/federation-trust";
 import { createChannelSubscriberRegistry } from "../src/channel-events";
 import { createInMemoryBlockResponseStore } from "../src/block-responses";
+import { createInMemoryReactionStore } from "../src/reactions";
+import { createInMemoryPinStore } from "../src/pins";
 import {
   buildDeps,
   createChannel,
@@ -491,5 +493,139 @@ describe("shared channel projection — block responses", () => {
       responsesUrl(channel.id, "m1", "blk_poll1"),
     );
     expect(get.status).toBe(404);
+  });
+});
+
+describe("shared channel projection — reactions and pins", () => {
+  function toggleUrl(channelId: string, messageId: string) {
+    return `/channels/${channelId}/messages/${messageId}/reactions/toggle`;
+  }
+
+  function pinUrl(channelId: string, messageId: string) {
+    return `/channels/${channelId}/messages/${messageId}/pin`;
+  }
+
+  async function establishShare(
+    trust: ReturnType<typeof createInMemoryFederationTrustStore>,
+    owner: Hono<TenantEnv>,
+    memberSide: Hono<TenantEnv>,
+    channelId: string,
+    memberPrincipalId: string,
+  ) {
+    await trust.establishBilateralTrust(TENANT.id, TENANT_B.id);
+    await owner.request(`/channels/${channelId}/shares`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectedTenantId: TENANT_B.id }),
+    });
+    await memberSide.request(`/channels/${channelId}/share-members`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ principalId: memberPrincipalId }),
+    });
+  }
+
+  test("a projected-tenant share member can toggle a reaction and pin a message without a 404", async () => {
+    const trust = createInMemoryFederationTrustStore();
+    trust.registerTenant(TENANT.id, TENANT.name);
+    trust.registerTenant(TENANT_B.id, TENANT_B.name);
+    const shares = createInMemoryChannelShareStore({ trust });
+    const reactions = createInMemoryReactionStore();
+    const pins = createInMemoryPinStore();
+    const deps = buildDeps({ shares, trust, reactions, pins });
+    const routes = createChatRoutes(deps);
+    const owner = mountAsTenant(routes, TENANT, "prn_alice");
+    const memberSide = mountAsTenant(routes, TENANT_B, "prn_bob");
+
+    const { body: channel } = await createChannel(owner, { kind: "channel" });
+    await establishShare(trust, owner, memberSide, channel.id, "prn_bob");
+
+    await sendText(owner, channel.id, "hello from the owner");
+    const list = (await (
+      await owner.request(`/channels/${channel.id}/messages`)
+    ).json()) as { items: { id: string }[] };
+    const messageId = list.items[0]?.id;
+    if (messageId === undefined) throw new Error("no message id");
+
+    const toggle = await memberSide.request(toggleUrl(channel.id, messageId), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
+    expect(toggle.status).toBe(200);
+    const toggleBody = (await toggle.json()) as {
+      emoji: string;
+      count: number;
+      reactedByMe: boolean;
+    };
+    expect(toggleBody).toEqual({ emoji: "👍", count: 1, reactedByMe: true });
+
+    // Stored under the OWNING tenant, not the acting (projected) tenant.
+    expect(
+      await reactions.listReactionsForMessages(TENANT.id, channel.id, [
+        messageId,
+      ]),
+    ).toHaveLength(1);
+
+    const pin = await memberSide.request(pinUrl(channel.id, messageId), {
+      method: "POST",
+    });
+    expect(pin.status).toBe(200);
+    expect(await pins.listPins(TENANT.id, channel.id)).toHaveLength(1);
+
+    // Both land on subsequent reads back from either side.
+    const ownerMessages = (await (
+      await owner.request(`/channels/${channel.id}/messages`)
+    ).json()) as {
+      items: { id: string; reactions?: unknown[]; pinned?: boolean }[];
+    };
+    const ownerItem = ownerMessages.items.find((item) => item.id === messageId);
+    expect(ownerItem?.pinned).toBe(true);
+    expect(ownerItem?.reactions).toHaveLength(1);
+
+    const memberPins = (await (
+      await memberSide.request(`/channels/${channel.id}/pins`)
+    ).json()) as { items: { id: string }[] };
+    expect(memberPins.items.map((item) => item.id)).toContain(messageId);
+  });
+
+  test("a tenant with no share still 404s on reaction-toggle and pin routes", async () => {
+    const trust = createInMemoryFederationTrustStore();
+    trust.registerTenant(TENANT.id, TENANT.name);
+    trust.registerTenant(TENANT_C.id, TENANT_C.name);
+    const shares = createInMemoryChannelShareStore({ trust });
+    const reactions = createInMemoryReactionStore();
+    const pins = createInMemoryPinStore();
+    const deps = buildDeps({ shares, trust, reactions, pins });
+    const routes = createChatRoutes(deps);
+    const owner = mountAsTenant(routes, TENANT, "prn_alice");
+    const outsider = mountAsTenant(routes, TENANT_C, "prn_carol");
+
+    const { body: channel } = await createChannel(owner, { kind: "channel" });
+    await sendText(owner, channel.id, "hello from the owner");
+    const list = (await (
+      await owner.request(`/channels/${channel.id}/messages`)
+    ).json()) as { items: { id: string }[] };
+    const messageId = list.items[0]?.id;
+    if (messageId === undefined) throw new Error("no message id");
+
+    const toggle = await outsider.request(toggleUrl(channel.id, messageId), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
+    expect(toggle.status).toBe(404);
+
+    const pin = await outsider.request(pinUrl(channel.id, messageId), {
+      method: "POST",
+    });
+    expect(pin.status).toBe(404);
+
+    expect(
+      await reactions.listReactionsForMessages(TENANT.id, channel.id, [
+        messageId,
+      ]),
+    ).toHaveLength(0);
+    expect(await pins.listPins(TENANT.id, channel.id)).toHaveLength(0);
   });
 });

@@ -13,12 +13,16 @@ import {
   listRuns,
   listInvitableDefinitions,
   listMessages,
+  listPinnedMessages,
   sendMessage,
   fetchChannelBlob,
   getChannelSettings,
   patchChannelSettings,
   getBenchChatSettings,
   patchBenchChatSettings,
+  pinMessage,
+  toggleReaction,
+  unpinMessage,
 } from "../src/api";
 
 const realFetch = globalThis.fetch;
@@ -430,6 +434,82 @@ describe("patchBenchChatSettings", () => {
       "chat/contextWindow": 42,
     });
     expect(settings.contextWindow).toBe(42);
+  });
+});
+
+describe("toggleReaction", () => {
+  test("POSTs the emoji and parses the fresh per-emoji summary", async () => {
+    const calls = stubFetch(() =>
+      json({ emoji: "👍", count: 3, reactedByMe: true }),
+    );
+    const summary = await toggleReaction("tenant_1", "c1", "m1", "👍");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/channels/c1/messages/m1/reactions/toggle",
+    );
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ emoji: "👍" });
+    expect(summary).toEqual({ emoji: "👍", count: 3, reactedByMe: true });
+  });
+});
+
+describe("pinMessage / unpinMessage", () => {
+  test("pinMessage POSTs to the pin route and parses who/when", async () => {
+    const calls = stubFetch(() =>
+      json({
+        messageId: "m1",
+        pinnedBy: "prn_alice",
+        pinnedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    const pinned = await pinMessage("tenant_1", "c1", "m1");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/channels/c1/messages/m1/pin",
+    );
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(pinned).toEqual({
+      messageId: "m1",
+      pinnedBy: "prn_alice",
+      pinnedAt: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
+  test("unpinMessage DELETEs the same route and resolves on a 204", async () => {
+    const calls = stubFetch(() => new Response(null, { status: 204 }));
+    await unpinMessage("tenant_1", "c1", "m1");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/channels/c1/messages/m1/pin",
+    );
+    expect(calls[0]?.init?.method).toBe("DELETE");
+  });
+
+  test("unpinMessage throws a ChatApiError on a non-ok response", async () => {
+    stubFetch(() => new Response(null, { status: 404 }));
+    await expect(unpinMessage("tenant_1", "c1", "m1")).rejects.toBeInstanceOf(
+      ChatApiError,
+    );
+  });
+});
+
+describe("listPinnedMessages", () => {
+  test("fetches the channel's pins and parses each item's content plus who pinned it", async () => {
+    const calls = stubFetch(() =>
+      json({
+        items: [
+          {
+            id: "m1",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            parts: [{ kind: "text", text: "important" }],
+            sender: { name: null, address: "prn_alice@acme.example" },
+            pinnedBy: "prn_alice",
+            pinnedAt: "2026-01-01T00:01:00.000Z",
+          },
+        ],
+      }),
+    );
+    const pins = await listPinnedMessages("tenant_1", "c1");
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/channels/c1/pins");
+    expect(pins).toHaveLength(1);
+    expect(pins[0]).toMatchObject({ id: "m1", pinnedBy: "prn_alice" });
   });
 });
 
