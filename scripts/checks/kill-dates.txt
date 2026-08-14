@@ -34,7 +34,5 @@ vendor/intx/workflow | sawyer | 2026-09-05 | 1f3c7889ed856ac9c6cc4e3e46254989ed3
 vendor/intx/workflow-deploy | sawyer | 2026-09-05 | e086b51a54175fc2b54a720cfc7d7a22336cb2d83492cf9cae70c319a75265da
 vendor/intx/workflow-host | sawyer | 2026-09-05 | 3eb73fcdea17ba302b0e76d449d34d912e0290731f80fc41d2f7cf8d3145bf97
 
-patches/@corbits%2Fmailbox@0.1.0.patch | sawyer | 2026-09-05
-
 packages/folded-runs | sawyer | 2026-11-01
 
