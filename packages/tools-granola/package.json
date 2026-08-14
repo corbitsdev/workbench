@@ -1,0 +1,24 @@
+{
+  "name": "@corbits/tools-granola",
+  "private": true,
+  "description": "Fetches a Granola call note (with transcript) by id — the one Granola capability the pain-point-collateral workflow's intake step needs.",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
