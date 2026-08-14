@@ -187,6 +187,15 @@ export type RunTraceSpan = {
    * rows from this same reader once that read path is wired.
    */
   readonly authz?: AuditAuthz | null;
+  /**
+   * How this span's start/end were derived. "measured" means real
+   * wall-clock timestamps (inference_turn.startedAt/endedAt); "ordinal"
+   * means the span was positioned by turn_part.ordinal within its
+   * enclosing turn's window, not a real timestamp (see `positionInTurn`
+   * in trace-reader.ts) — an honest sequence marker, not a duration
+   * measurement.
+   */
+  readonly timingSource: "measured" | "ordinal";
 };
 
 export type RunTrace = {

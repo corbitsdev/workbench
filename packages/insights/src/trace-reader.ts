@@ -7,7 +7,7 @@
 // writer anywhere in the platform today, so it is not read here: reading
 // it would render every run's trace empty forever, the same silent gap
 // this reader replaces.
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { inferenceTurn, turnPart, workflowRun } from "@intx/db/schema";
 
@@ -25,6 +25,8 @@ function isToolPartMetadata(value: unknown): value is ToolPartMetadata {
 
 type TurnPartRow = {
   id: string;
+  turnId: string;
+  type: string;
   content: string | null;
   metadata: unknown;
   ordinal: number;
@@ -67,6 +69,7 @@ function errorSpans(
         tokens: null,
         phase: "failed",
         error: part.content,
+        timingSource: "ordinal",
       };
     });
 }
@@ -127,6 +130,7 @@ function toolCallSpans(
       // See RunTraceSpan.authz doc comment: verdicts live only in the
       // sidecar-side git audit trail, unreachable from here today.
       authz: null,
+      timingSource: "ordinal",
     });
   }
   return spans;
@@ -164,13 +168,33 @@ export function createDrizzleRunTraceReader(db: DB["db"]): RunTraceReader {
 
       const spans: RunTraceSpan[] = [];
 
+      const allParts =
+        turns.length === 0
+          ? []
+          : await db.query.turnPart.findMany({
+              where: inArray(
+                turnPart.turnId,
+                turns.map((turn) => turn.id),
+              ),
+              orderBy: asc(turnPart.ordinal),
+            });
+      const partsByTurnId = new Map<string, TurnPartRow[]>();
+      for (const part of allParts) {
+        const bucket = partsByTurnId.get(part.turnId);
+        if (bucket === undefined) {
+          partsByTurnId.set(part.turnId, [part]);
+        } else {
+          bucket.push(part);
+        }
+      }
+      for (const bucket of partsByTurnId.values()) {
+        bucket.sort((a, b) => a.ordinal - b.ordinal);
+      }
+
       for (const [index, turn] of turns.entries()) {
         const start = turn.startedAt.getTime();
         const end = turn.endedAt?.getTime() ?? Date.now();
-        const parts = await db.query.turnPart.findMany({
-          where: eq(turnPart.turnId, turn.id),
-          orderBy: asc(turnPart.ordinal),
-        });
+        const parts = partsByTurnId.get(turn.id) ?? [];
         const errorParts = parts.filter((part) => part.type === "error");
 
         spans.push({
@@ -189,6 +213,7 @@ export function createDrizzleRunTraceReader(db: DB["db"]): RunTraceReader {
                 : "awaiting",
           error:
             turn.status === "failed" ? (errorParts[0]?.content ?? null) : null,
+          timingSource: "measured",
         });
 
         spans.push(...toolCallSpans(parts, start, end));

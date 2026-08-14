@@ -21,6 +21,7 @@ function span(
     tokens: null,
     phase: "ok",
     error: null,
+    timingSource: "measured",
     ...partial,
   };
 }

@@ -76,6 +76,7 @@ export const RunTraceSpanSchema = type({
   }).or(type("null")),
   phase: "'ok' | 'awaiting' | 'failed'",
   error: "string | null",
+  timingSource: "'measured' | 'ordinal'",
 });
 
 /** Present run trace (reader mounted and run found). */
