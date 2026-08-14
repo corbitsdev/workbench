@@ -90,8 +90,16 @@ import {
 import { createEchoRoutes } from "@workbench/echo";
 import { createGitWorkflowPusher } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "@workbench/onboarding";
+import {
+  createInMemoryNotifyDispatchStore,
+  createSinkRegistry,
+} from "@corbits/notify";
 import { mountMemory } from "./memory-mount";
 import { mountArtifacts } from "./artifacts-mount";
+import {
+  createCredentialExpirySweep,
+  createDrizzleCredentialExpirySweepStore,
+} from "./credential-expiry-sweep";
 
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -173,12 +181,13 @@ export async function createHub(config: HubConfig) {
   const mailboxBus = createInMemoryMailboxEventBus();
   // Delivery adapter for `@corbits/notify` — kept at the composition root so
   // routine / approval / mention writers can inject it without the hub
-  // re-implementing mailbox writes.
-  const _mailboxDelivery = createWorkbenchMailboxDelivery({
+  // re-implementing mailbox writes. The credential-expiry sweep below is
+  // its first live caller; approval/run-failure/mention still have no
+  // writer wired to this adapter.
+  const mailboxDelivery = createWorkbenchMailboxDelivery({
     db: mailboxDb,
     bus: mailboxBus,
   });
-  void _mailboxDelivery;
   const log = getLogger(["hub", "auth"]);
 
   const auth = betterAuth({
@@ -647,6 +656,30 @@ export async function createHub(config: HubConfig) {
     launcher: routineLauncher,
   });
 
+  // Notify-to-reconnect for an OAuth-connected credential whose token
+  // expired (Hugging Face today — see docs/onboarding-huggingface-connect.md):
+  // a light periodic sweep over `@corbits/notify`'s pure
+  // `findDueCredentialExpiries`, mailing through the same delivery
+  // adapter above. `createInMemoryNotifyDispatchStore`/`createSinkRegistry()`
+  // mean external sink fan-out (Slack, email) is a no-op until a sink is
+  // registered — the mailbox row itself is what a person sees in their
+  // inbox. Requires `@corbits/mailbox`'s and `@corbits/notify`'s own
+  // migrations applied against `DATABASE_URL`, same as any other
+  // consumer of this delivery adapter.
+  const notifyHost = new URL(config.baseUrl).host;
+  const credentialExpirySweep = createCredentialExpirySweep({
+    store: createDrizzleCredentialExpirySweepStore(db),
+    notify: {
+      mail: mailboxDelivery,
+      addressing: {
+        inbox: (recipient) => `${recipient.principalId}@inbox.${notifyHost}`,
+        from: (kind) => `${kind}@notify.${notifyHost}`,
+      },
+      dispatch: createInMemoryNotifyDispatchStore(),
+      sinks: createSinkRegistry(),
+    },
+  });
+
   // Memory plane (optional): firm-memory HTTP under
   // `/api/tenants/:tenantId/memory/*`. Degrades when
   // KNOWLEDGE_DATABASE_URL / EMBED_* are unset — see memory-mount.ts.
@@ -744,6 +777,7 @@ export async function createHub(config: HubConfig) {
     close: async () => {
       chatOrchestrator.dispose();
       routineScheduler.stop();
+      credentialExpirySweep.stop();
       await insightsUsage.close();
       await closeMailbox();
       await close();
