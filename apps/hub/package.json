@@ -12,6 +12,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@chat-adapter/state-memory": "^4.35.0",
     "@corbits/agent-directory": "workspace:*",
     "@corbits/approvals": "workspace:*",
     "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
@@ -30,6 +31,7 @@
     "@corbits/presence": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/skills": "workspace:*",
+    "@corbits/slack-tag": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@intx/authz": "workspace:*",
     "@intx/crypto": "workspace:*",

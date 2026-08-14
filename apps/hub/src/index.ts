@@ -148,6 +148,7 @@ import {
 } from "@corbits/memory-hub";
 import { createSkillRoutes, createWorkflowSkillRoutes } from "@corbits/skills";
 import { mountArtifacts } from "./artifacts-mount";
+import { mountWorkbenchSlackTag } from "./slack-tag-mount";
 import {
   createCredentialExpirySweep,
   createDrizzleCredentialExpirySweepStore,
@@ -652,6 +653,24 @@ export async function createHub(config: HubConfig) {
     commands: commandRegistry,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
+  // Slack tag ingress (CL-5288 Phase 1): mounted OUTSIDE the tenant
+  // prefix and outside session auth, like the webhook ingress below —
+  // Slack is not a principal, and this route resolves its own
+  // Interchange identity per message (see `./slack-tag-mount.ts` and
+  // `@corbits/slack-tag`'s signature-verification-gated dispatch). A
+  // missing SLACK_BOT_TOKEN/SLACK_SIGNING_SECRET pair is a valid
+  // configuration — the mount is silently skipped.
+  await mountWorkbenchSlackTag({
+    app,
+    db,
+    databaseUrl: config.databaseUrl,
+    chatStore,
+    chatPlatform,
+    chatTenancy,
+    channelSubscribers,
+    channelHostInferencePreferences: chatDeps.channelHostInferencePreferences,
+    turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+  });
   // Product inbox over `@corbits/mailbox` — three groups, mark-all-read
   // (mentions + deliveries only), clear-done. The raw package surface
   // (including SSE events) mounts under `/mailbox` for hosts and tools

@@ -1,0 +1,225 @@
+// Slack tag ingress mount (CL-5288 Phase 1): the thin, env-gated glue
+// between `@corbits/slack-tag`'s composition and this hub's already-
+// running `@corbits/chat` instances. The overwhelming majority of the
+// behavior lives in the package — this module only supplies the
+// host-resident functions the package's `MountWorkbenchSlackDeps`
+// wants injected (per AGENTS.md: apps stay generic, packages own the
+// domain), plus the env-var gate.
+//
+// Absent `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET` is a valid
+// configuration, not an error: the hub runs fine with no Slack app
+// installed, and this mount is silently skipped — mirrors every other
+// optional integration mount in `./index.ts` (e.g. `mountMemory`,
+// `mountArtifacts`).
+import { eq } from "drizzle-orm";
+import type { Hono } from "hono";
+import type { DB } from "@intx/db";
+import { principal, tenant } from "@intx/db/schema";
+import { formatRunAddress } from "@intx/types";
+import { generateId } from "@intx/hub-common";
+import { getLogger } from "@intx/log";
+import { createMemoryState } from "@chat-adapter/state-memory";
+import type { AppEnv } from "@intx/hub-api";
+
+import {
+  buildChannelHostWorkflow,
+  launchAndJoinAgent,
+  presetForKind,
+  sendChannelMessage,
+  serializeChannelHostWorkflow,
+  type ChannelSubscriberRegistry,
+  type ChannelTenancyStore,
+  type ChatPlatform,
+  type ChatStore,
+  type CreateChatRoutesDeps,
+} from "@corbits/chat";
+import {
+  createAutoProvisionPrincipalResolver,
+  createDrizzleSlackChannelBindingStore,
+  mountWorkbenchSlack,
+  resolveThreadState,
+  applySlackTagMigrations,
+} from "@corbits/slack-tag";
+
+const log = getLogger(["hub", "slack-tag"]);
+
+/** The one role every auto-provisioned Slack principal is granted.
+ * Every bench mints this system role at creation (see
+ * `@corbits/chat`'s `channel-tenancy.ts`), so it always resolves. */
+const SLACK_PRINCIPAL_ROLE_NAMES = ["member"] as const;
+
+export type MountWorkbenchSlackTagDeps = {
+  readonly app: Hono<AppEnv>;
+  readonly db: DB["db"];
+  readonly databaseUrl: string;
+  readonly chatStore: Pick<
+    ChatStore,
+    | "getChannelSettings"
+    | "getBenchSettings"
+    | "createChannelSettings"
+    | "updateChannelSettings"
+  >;
+  readonly chatPlatform: ChatPlatform;
+  readonly chatTenancy: Pick<ChannelTenancyStore, "createChannelTenant">;
+  readonly channelSubscribers: ChannelSubscriberRegistry;
+  readonly channelHostInferencePreferences?: CreateChatRoutesDeps["channelHostInferencePreferences"];
+  readonly turnTimeoutMs: number;
+};
+
+export type MountedWorkbenchSlackTag = { readonly mounted: boolean };
+
+/**
+ * Reads `SLACK_WORKBENCH_TENANT_SLUG` and `SLACK_DEFAULT_AGENT_DEFINITION_ID`
+ * alongside the credential pair: which bench a Slack workspace's messages
+ * land in, and which deployed agent definition a freshly bound channel
+ * launches with, are both irreducible to this mount — there is no honest
+ * default. Set together with the credential pair, or the mount fails
+ * loudly rather than silently answering nobody.
+ */
+export async function mountWorkbenchSlackTag(
+  deps: MountWorkbenchSlackTagDeps,
+): Promise<MountedWorkbenchSlackTag> {
+  const botToken = process.env["SLACK_BOT_TOKEN"];
+  const signingSecret = process.env["SLACK_SIGNING_SECRET"];
+  if (!botToken || !signingSecret) {
+    log.info(
+      "Slack tag ingress not mounted — SLACK_BOT_TOKEN/SLACK_SIGNING_SECRET unset",
+    );
+    return { mounted: false };
+  }
+
+  const tenantSlug = process.env["SLACK_WORKBENCH_TENANT_SLUG"];
+  const definitionId = process.env["SLACK_DEFAULT_AGENT_DEFINITION_ID"];
+  if (!tenantSlug || !definitionId) {
+    throw new Error(
+      "SLACK_BOT_TOKEN/SLACK_SIGNING_SECRET are set, but SLACK_WORKBENCH_TENANT_SLUG " +
+        "and/or SLACK_DEFAULT_AGENT_DEFINITION_ID are not — both name the bench and " +
+        "agent a Slack message resolves to, and there is no honest default for either.",
+    );
+  }
+
+  const tenantRow = await deps.db.query.tenant.findFirst({
+    where: eq(tenant.slug, tenantSlug),
+  });
+  if (tenantRow === undefined) {
+    throw new Error(
+      `SLACK_WORKBENCH_TENANT_SLUG "${tenantSlug}" does not name a real tenant`,
+    );
+  }
+
+  await applySlackTagMigrations(deps.databaseUrl);
+
+  const resolvePrincipal = createAutoProvisionPrincipalResolver(
+    deps.db,
+    tenantSlug,
+    SLACK_PRINCIPAL_ROLE_NAMES,
+  );
+  const bindings = createDrizzleSlackChannelBindingStore(deps.db);
+  const state = await resolveThreadState(createMemoryState());
+
+  // `mountWorkbenchSlack` (like `corbits-tag/slack`'s own `mountSlackTag`)
+  // deliberately types its `app` param against the default Hono env: the
+  // route lives outside the hub's session auth and reads nothing from
+  // `AppEnv`'s context. The cast reflects that, not a real env mismatch.
+  const { path } = mountWorkbenchSlack(deps.app as unknown as Hono, {
+    tenantId: tenantRow.id,
+    slack: { botToken, signingSecret },
+    state,
+    bindings,
+    resolvePrincipal,
+    subscribeToChannel: deps.chatPlatform.subscribeToChannel,
+    provisionChannel: async (input) => {
+      const creatorPrincipal = await deps.db.query.principal.findFirst({
+        where: eq(principal.id, input.creatorPrincipalId),
+      });
+      if (creatorPrincipal === undefined) {
+        throw new Error(
+          `Slack-provisioned principal "${input.creatorPrincipalId}" vanished before its channel could be provisioned`,
+        );
+      }
+
+      const channelId = generateId("workflowRun");
+      const triggerAddress = formatRunAddress(channelId, tenantRow.domain);
+      const inferencePreferences =
+        (await deps.channelHostInferencePreferences?.(tenantRow.id)) ?? [];
+      const definition = serializeChannelHostWorkflow(
+        buildChannelHostWorkflow({
+          triggerAddress,
+          inferencePreferences,
+          turnTimeoutMs: deps.turnTimeoutMs,
+        }),
+      );
+
+      const channelTenant = await deps.chatTenancy.createChannelTenant({
+        parentTenantId: tenantRow.id,
+        channelId,
+        name: input.name,
+        creatorUserId: creatorPrincipal.refId,
+      });
+
+      await deps.chatPlatform.launchChannel({
+        tenantId: tenantRow.id,
+        creatorPrincipalId: input.creatorPrincipalId,
+        channelId,
+        triggerAddress,
+        definition,
+      });
+
+      const preset = presetForKind("chat");
+      const settingsRow = await deps.chatStore.createChannelSettings({
+        tenantId: tenantRow.id,
+        channelId,
+        settings: {
+          "chat/kind": "chat",
+          "chat/pinned": preset.pinned,
+          "chat/participants": [],
+          "chat/name": input.name,
+        },
+        updatedBy: input.creatorPrincipalId,
+      });
+
+      await launchAndJoinAgent(
+        {
+          store: deps.chatStore,
+          platform: deps.chatPlatform,
+          publish: deps.channelSubscribers.publish,
+        },
+        {
+          tenantId: tenantRow.id,
+          principalId: input.creatorPrincipalId,
+          channelId,
+          definitionId,
+          existingSettings: settingsRow.settings,
+        },
+      );
+
+      log.info(
+        "Provisioned channel {channelId} for tenant {tenantId} ({channelTenant})",
+        {
+          channelId,
+          tenantId: tenantRow.id,
+          channelTenant: channelTenant.tenantId,
+        },
+      );
+      return { channelId };
+    },
+    sendMessage: async (input) => {
+      const sent = await sendChannelMessage(
+        { store: deps.chatStore, platform: deps.chatPlatform },
+        {
+          tenantId: input.tenantId,
+          principalId: input.principalId,
+          channelId: input.channelId,
+          messageParts: [{ kind: "text", text: input.text }],
+        },
+      );
+      return { id: sent.id };
+    },
+  });
+
+  log.info("Slack tag ingress mounted at {path} for tenant {tenantSlug}", {
+    path,
+    tenantSlug,
+  });
+  return { mounted: true };
+}
