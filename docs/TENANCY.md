@@ -118,6 +118,18 @@ Creation helper: `createDmChannelSpec` in `@corbits/bench-ui`.
   tenant-monogram badge (`packages/chat-ui/src/timeline.tsx`) both
   render from this real signal now, never a guess from participant
   addresses.
+- `GET /channels/:id/stream` enforces `resolveChannelAccess` live, not
+  only at connect time: `bridgeChannelStream`
+  (`packages/chat/src/channel-events.ts`) re-runs the same fail-closed
+  check before every event it writes, from either the local typing/
+  settings registry or the platform's own event stream, and the moment
+  it returns "no access" it unsubscribes from both sources and closes
+  the connection. Revoking a `channel_share_member` row or a
+  `channel_share` mid-connection stops that subscriber as of the next
+  event published on the channel — live relative to the channel's own
+  traffic, not an instant kill on a channel that goes quiet (a truly
+  instant kill would need a poll/heartbeat independent of traffic,
+  which is out of scope here).
 
 **Explicit scope boundary — what this does NOT do:**
 
