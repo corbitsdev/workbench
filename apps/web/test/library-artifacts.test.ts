@@ -46,7 +46,7 @@ describe("library-artifacts", () => {
   test("detects the unconfigured-plane error message", () => {
     expect(
       isArtifactsUnavailableMessage(
-        "The hub answered 503 for /api/tenants/t/artifacts.",
+        "The server answered 503 for /api/tenants/t/artifacts.",
       ),
     ).toBe(true);
     expect(isArtifactsUnavailableMessage("network failed")).toBe(false);

@@ -141,7 +141,7 @@ describe("approve card round-trip", () => {
 
     expect(el.querySelectorAll(".chat-block-action")).toHaveLength(0);
     expect(el.textContent).toContain(
-      "Only an approver on this bench can act on this.",
+      "Only an approver on this workbench can act on this.",
     );
     expect(el.textContent).toContain("Wire $50,000 to acct_9182");
   });

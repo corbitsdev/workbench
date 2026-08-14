@@ -83,7 +83,7 @@ export function createDefaultAgentChannel(config: DefaultAgentChannelConfig) {
       if (definition === undefined) {
         return {
           kind: "error",
-          message: `No deployed "${config.title}" agent definition found for this workbench.`,
+          message: `No "${config.title}" agent found for this workbench.`,
         };
       }
       const created = await createChannel(tenantId, {

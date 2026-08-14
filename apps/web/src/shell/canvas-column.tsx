@@ -108,7 +108,7 @@ function messageAction(
 ): () => void {
   return () => {
     if (tenantId === null) {
-      toast(`Open a bench to message @${profile.handle}`);
+      toast(`Open a workbench to message @${profile.handle}`);
       return;
     }
     setPending(true);

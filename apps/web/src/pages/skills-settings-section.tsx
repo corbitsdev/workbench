@@ -268,7 +268,7 @@ export function SkillsSettingsSection({
         <RichEmptyState
           icon={<Sparkles />}
           title="No skills yet"
-          description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent definition can declare and a bench can install. There's no skill registry on the hub yet; drafts you create stay in this session only."
+          description="A skill is a named, reusable capability — instructions, tools, and guardrails packaged together — that an agent can declare and a workbench can install. There's no skill registry yet; drafts you create stay in this session only."
           actions={[
             {
               label: "New skill",

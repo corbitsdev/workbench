@@ -196,7 +196,7 @@ describe("canvas profile card Message action", () => {
       messageButton().click();
     });
 
-    expect(toastMock).toHaveBeenCalledWith("Open a bench to message @ada");
+    expect(toastMock).toHaveBeenCalledWith("Open a workbench to message @ada");
     expect(closed).toBe(false);
     expect(navigated).toEqual([]);
   });

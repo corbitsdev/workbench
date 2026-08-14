@@ -15,7 +15,7 @@ export const CHAT_STRINGS = {
   newChannelNamePlaceholder: "e.g. Launch planning",
   newChannelKindLabel: "Type",
   newChannelKindChannel: "Channel",
-  newChannelKindChannelDesc: "Pinned, for the whole bench",
+  newChannelKindChannelDesc: "Pinned, for the whole workbench",
   newChannelKindChat: "Chat",
   newChannelKindChatDesc: "A direct conversation with an agent or teammate",
   newChannelPurposeLabel: "Purpose (optional)",
@@ -27,7 +27,7 @@ export const CHAT_STRINGS = {
   newChannelNext: "Next",
   newChannelStepKindLabel: "Kind",
   newChannelStepKindGuidance:
-    "Choose a pinned channel for the whole bench, or a direct chat.",
+    "Choose a pinned channel for the whole workbench, or a direct chat.",
   newChannelStepDetailsLabel: "Details",
   newChannelStepChannelGuidance: "Name it and add an optional purpose.",
   newChannelStepChatGuidance:
@@ -42,12 +42,12 @@ export const CHAT_STRINGS = {
   newChatAgentLoadError: "Couldn't load agents to chat with",
   newChatAgentEmptyTitle: "No agents available",
   newChatAgentEmptyDescription:
-    "Deploy a workflow definition on this bench before starting a chat with it.",
+    "Add an agent to this workbench before starting a chat with it.",
   newChatPersonLabel: "Person",
   newChatPersonLoadError: "Couldn't load teammates to chat with",
   newChatPersonEmptyTitle: "No teammates available",
   newChatPersonEmptyDescription:
-    "Invite teammates to this bench before starting a direct chat.",
+    "Invite teammates to this workbench before starting a direct chat.",
   newChannelMissingAgentError:
     "Choose an agent or teammate to start this chat.",
   newChannelSelfDmError: "You can't start a direct chat with yourself.",
@@ -102,10 +102,10 @@ export const CHAT_STRINGS = {
   inviteAgentAction: "Invite agent",
   inviteAgentDialogTitle: "Invite an agent",
   inviteAgentDialogDescription:
-    "Launch one of your bench's deployed agents into this channel.",
+    "Launch one of your workbench's agents into this channel.",
   inviteAgentEmptyTitle: "No agents to invite",
   inviteAgentEmptyDescription:
-    "Deploy a workflow definition on this bench before inviting it here.",
+    "Add an agent to this workbench before inviting it here.",
   inviteAgentLoadError: "Couldn't load invitable agents",
   inviteAgentInviting: "Inviting…",
   inviteAgentInviteError: "Couldn't invite that agent — try again.",
@@ -139,7 +139,8 @@ export const CHAT_STRINGS = {
   blockApproveStatusExpired: "Expired",
   blockApproveStatusNotFound: "This approval could not be found.",
   blockApproveStatusLoadError: "Couldn't load this approval's status.",
-  blockApproveSpectatorNote: "Only an approver on this bench can act on this.",
+  blockApproveSpectatorNote:
+    "Only an approver on this workbench can act on this.",
   blockApproveUndeterminedNote:
     "Your access to act on this could not be confirmed yet — try Approve or Deny to find out.",
   blockApproveApproving: "Approving…",
@@ -189,12 +190,12 @@ export const CHAT_STRINGS = {
     "Draft only for now — purpose is not stored on the channel yet.",
   channelSettingsPinnedLabel: "Pinned",
   channelSettingsPinnedDescription:
-    "Pinned channels stay at the top for the whole bench.",
+    "Pinned channels stay at the top for the whole workbench.",
   channelSettingsContextWindowLabel: "Conversation memory",
   channelSettingsContextWindowDescription:
     "How many prior messages a mentioned agent sees as context.",
   channelSettingsUseBenchDefault: (benchDefault: number) =>
-    `Use bench default (${benchDefault})`,
+    `Use workbench default (${benchDefault})`,
   channelSettingsUseOverride: "Set a custom value for this channel",
   channelSettingsContextWindowDisabled:
     "Disabled — mentioned agents see no history",
@@ -212,7 +213,7 @@ export const CHAT_STRINGS = {
   channelSettingsAutonomyBody:
     "Per-channel autonomy overrides are not stored yet. Agents inherit the workbench default until that control lands.",
   channelSettingsAccessBody:
-    "Channel access follows workbench grants and membership. Manage role and principal grants under Workspace → Grants.",
+    "Channel access follows workbench grants and membership. Manage role and member grants under Workspace → Grants.",
   channelSettingsNotificationsLabel: "Notifications",
   channelSettingsNotifyAll: "All messages",
   channelSettingsNotifyMentions: "Mentions only",

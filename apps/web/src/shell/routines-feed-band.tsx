@@ -96,8 +96,8 @@ export function RoutinesFeedBand({
     return (
       <EmptyState
         icon={<Workflow />}
-        title="No bench selected"
-        description="Choose a bench from the rail to see routines."
+        title="No workbench selected"
+        description="Choose a workbench from the switcher to see routines."
       />
     );
   }
@@ -118,7 +118,7 @@ export function RoutinesFeedBand({
       <EmptyState
         icon={<Workflow />}
         title="Sign in required"
-        description="Sign in to see routines for this bench."
+        description="Sign in to see routines for this workbench."
       />
     );
   }

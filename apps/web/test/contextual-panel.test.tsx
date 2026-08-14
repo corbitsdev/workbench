@@ -67,9 +67,9 @@ describe("ContextualPanel", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (container.innerHTML.includes("No bench selected")) break;
+      if (container.innerHTML.includes("No workbench selected")) break;
     }
-    expect(container.innerHTML).toContain("No bench selected");
+    expect(container.innerHTML).toContain("No workbench selected");
     root.unmount();
     container.remove();
   });
@@ -127,7 +127,7 @@ describe("ContextualPanel", () => {
     }
     expect(container.innerHTML).toContain("Quiet right now");
     expect(container.innerHTML).toContain(
-      "Channels and running routines for this bench will appear here.",
+      "Channels and running routines for this workbench will appear here.",
     );
     root.unmount();
     container.remove();

@@ -78,7 +78,7 @@ async function postInbox(path: string, body: unknown = {}): Promise<void> {
   }
   if (!response.ok) {
     throw new APIMutationError(
-      `The hub answered ${response.status} for ${path}.`,
+      `The server answered ${response.status} for ${path}.`,
       response.status,
     );
   }

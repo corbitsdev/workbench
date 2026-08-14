@@ -625,7 +625,7 @@ function InsightsRunDetail({
             trace.data.spans === null ? (
               <RichEmptyState
                 title="Trace reader not mounted"
-                description="Run-trace detail is not wired on this hub yet. Spans stay absent — not shown as zeros."
+                description="Trace detail isn't available yet. Spans stay absent — not shown as zeros."
               />
             ) : null}
             {trace.kind === "ready" && spans.length > 0 ? (

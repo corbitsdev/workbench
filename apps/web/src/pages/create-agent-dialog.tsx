@@ -91,7 +91,7 @@ function fieldsFor(models: readonly CatalogModel[]): readonly IntakeField[] {
         value: model.canonicalName,
         label: model.displayName ?? model.canonicalName,
       })),
-      help: "Left unset, the bench's catalog default is used.",
+      help: "Left unset, the workbench's catalog default is used.",
     },
   ];
 }
@@ -208,7 +208,8 @@ export function CreateAgentDialog({
         <DialogHeader>
           <DialogTitle>Create agent</DialogTitle>
           <DialogDescription>
-            Define a new agent this bench can invite into a channel and launch.
+            Define a new agent this workbench can invite into a channel and
+            launch.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -229,7 +230,8 @@ export function CreateAgentDialog({
           )}
           {modelsError !== undefined && (
             <p className="mb-3 text-sm text-muted-foreground" role="status">
-              Model catalog unavailable — the agent will use the bench default.
+              Model catalog unavailable — the agent will use the workbench
+              default.
             </p>
           )}
           <IntakeForm

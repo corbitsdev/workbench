@@ -57,7 +57,7 @@ const FIELDS: readonly IntakeField[] = [
     type: "textarea",
     required: true,
     placeholder: "Instructions, tools, and guardrails this skill packages…",
-    help: "The instructions an agent definition can declare and a bench can install.",
+    help: "The instructions an agent can declare and a workbench can install.",
   },
 ];
 
@@ -127,8 +127,8 @@ export function CreateSkillDialog({
         <DialogHeader>
           <DialogTitle>Create skill</DialogTitle>
           <DialogDescription>
-            Define a reusable capability an agent can declare and a bench can
-            install.
+            Define a reusable capability an agent can declare and a workbench
+            can install.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>

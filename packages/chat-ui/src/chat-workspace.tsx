@@ -1129,8 +1129,8 @@ export function ChatWorkspace({
         <ChatWorkspaceFrame>
           <EmptyState
             icon={<MessageSquare />}
-            title="No bench yet"
-            description="Create or join a bench before chatting."
+            title="No workbench yet"
+            description="Create or join a workbench before chatting."
           />
         </ChatWorkspaceFrame>
       );
@@ -1140,7 +1140,7 @@ export function ChatWorkspace({
           <EmptyState
             icon={<MessageSquare />}
             title="Sign in to chat"
-            description="Your conversations live on a bench — sign in to open them."
+            description="Your conversations live on a workbench — sign in to open them."
           />
         </ChatWorkspaceFrame>
       );

@@ -99,7 +99,7 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
     title: "New routine",
     subtitle: "Schedule · trigger · demand",
   },
-  { id: "new-skill", title: "New skill", subtitle: "Bench capability" },
+  { id: "new-skill", title: "New skill", subtitle: "Workbench capability" },
   {
     id: "upload-artifact",
     title: "Upload artifact",
