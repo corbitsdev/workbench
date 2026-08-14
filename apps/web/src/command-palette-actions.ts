@@ -13,7 +13,6 @@
 // (killed by owner decision); "Toggle sidebar" drives the same `toggleCol2`
 // col2's own control uses (see `stage-chrome.ts`).
 
-import { createPendingDialogRequest } from "@corbits/shell-layout";
 import {
   CHANNEL_PATH_PREFIX,
   channelPath,
@@ -21,6 +20,7 @@ import {
 } from "./channel-path";
 import { ensureMyraChannel } from "./myra-channel";
 import { requestLibraryUpload } from "./library-upload";
+import { createPendingDialogRequest } from "./pending-dialog-request";
 
 export const NEW_CHANNEL_EVENT = "workbench:chat:new-channel";
 export const NEW_AGENT_EVENT = "workbench:agents:create";

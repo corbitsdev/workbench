@@ -17,26 +17,26 @@ import {
   type ReactNode,
 } from "react";
 
+import { useBench } from "../bench-context";
+import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
+import { isMyraChannelId } from "../myra-channel";
 import type { ProfileSubject } from "@corbits/chat-ui";
+import { canvasColumnAllowed, contextualPanelIsDrawer } from "./breakpoints";
+import { CanvasAvailabilityProvider } from "./canvas-availability";
 import {
-  canvasColumnAllowed,
   clearCanvasForTenantSwitch,
   clearProfileInCanvas,
-  contextualPanelIsDrawer,
-  deriveCol2Width,
   initialCanvasColumnState,
   openProfileInCanvas,
   resolveCanvasFocus,
   resolveCanvasVisibility,
+} from "./canvas-column-state";
+import {
+  deriveCol2Width,
   StageChromeProvider,
-  useShellLayoutMode,
-  type CanvasColumnState,
   type StageChrome,
-} from "@corbits/shell-layout";
-import { useBench } from "../bench-context";
-import { channelIdFromPath, channelPath, isChannelPath } from "../channel-path";
-import { isMyraChannelId } from "../myra-channel";
-import { CanvasAvailabilityProvider } from "./canvas-availability";
+} from "./stage-chrome";
+import { useShellLayoutMode } from "./use-shell-layout";
 
 export function ShellChromeProvider({
   path,
@@ -52,9 +52,7 @@ export function ShellChromeProvider({
   const canvasAllowed = canvasColumnAllowed(layoutMode);
   const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
 
-  const [canvasState, setCanvasState] = useState<
-    CanvasColumnState<ProfileSubject>
-  >(initialCanvasColumnState);
+  const [canvasState, setCanvasState] = useState(initialCanvasColumnState);
   const [userCollapsedCol2, setUserCollapsedCol2] = useState(false);
   const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
 

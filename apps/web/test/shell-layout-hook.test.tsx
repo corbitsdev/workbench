@@ -1,9 +1,9 @@
-// The first tests in this package that need a live DOM: `useShellLayoutMode`
+// The first tests in this app that need a live DOM: `useShellLayoutMode`
 // subscribes to media queries and `useShellFocusRescue` moves focus, and
 // neither behaviour exists under `renderToStaticMarkup` — effects never run
-// there. `test/dom-setup.ts` (preloaded via bunfig.toml) supplies the DOM;
-// `window.matchMedia` is stubbed here because the point is to control when a
-// query flips, which resizing a simulated viewport cannot do
+// there. `test/dom-environment.ts` (preloaded via bunfig.toml) supplies the
+// DOM; `window.matchMedia` is stubbed here because the point is to control
+// when a query flips, which resizing a simulated viewport cannot do
 // deterministically.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -14,9 +14,9 @@ import {
   COMPACT_MAX_WIDTH,
   NARROW_MAX_WIDTH,
   type ShellLayoutMode,
-} from "../src/breakpoints";
-import { rescueFocusToRail } from "../src/focus-rescue";
-import { useShellLayoutMode } from "../src/use-shell-layout";
+} from "../src/shell/breakpoints";
+import { rescueFocusToRail } from "../src/shell/focus-rescue";
+import { useShellLayoutMode } from "../src/shell/use-shell-layout";
 
 type StubQuery = {
   matches: boolean;

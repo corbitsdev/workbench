@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { loadPins, savePins, togglePin } from "./pins";
+import { loadPins, savePins, togglePin } from "../src/shell/pins";
 
 function memoryStorage(seed: Record<string, string> = {}) {
   const map = new Map(Object.entries(seed));

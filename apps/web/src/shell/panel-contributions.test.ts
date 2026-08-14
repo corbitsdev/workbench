@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import type { Channel } from "@corbits/chat-ui";
-import { resolvePanelContribution } from "@corbits/shell-layout";
 
 import { resetPendingLibraryUpload } from "../library-upload";
+import { resolvePanelContribution } from "./panel-contribution";
 import {
   assignChannelBucket,
   channelDetails,

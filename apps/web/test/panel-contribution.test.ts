@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createPanelRegistry } from "./panel-contribution";
+import { createPanelRegistry } from "../src/shell/panel-contribution";
 
 describe("createPanelRegistry", () => {
   test("resolves the first matching contribution for a path", () => {

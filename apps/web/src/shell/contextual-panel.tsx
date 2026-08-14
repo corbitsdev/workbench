@@ -10,19 +10,15 @@ import {
   SidebarPanelHeader,
   SidebarPanelPins,
 } from "@corbits/react-ui";
-import {
-  COL2_ID,
-  loadPins,
-  resolvePanelContribution,
-  useStageChrome,
-  type Pin,
-} from "@corbits/shell-layout";
 import { PanelLeft, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 
 import { ActivityBand } from "./activity-band";
 import { BenchDock } from "./docks";
+import { resolvePanelContribution } from "./panel-contribution";
 import { ensurePanelContributions } from "./panel-contributions";
+import { loadPins, type Pin } from "./pins";
+import { COL2_ID, useStageChrome } from "./stage-chrome";
 
 ensurePanelContributions();
 

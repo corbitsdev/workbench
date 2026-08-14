@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-import { COMPACT_MAX_WIDTH, NARROW_MAX_WIDTH } from "@corbits/shell-layout";
 import { AppShell } from "../src/shell/app-shell";
+import { COMPACT_MAX_WIDTH, NARROW_MAX_WIDTH } from "../src/shell/breakpoints";
 import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
 import { StageTopBar } from "../src/shell/stage-top-bar";
 import { BenchProvider } from "../src/bench-context";

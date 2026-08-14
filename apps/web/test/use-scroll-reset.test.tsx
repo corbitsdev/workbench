@@ -3,7 +3,7 @@ import { act, createElement, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { RefObject } from "react";
 
-import { useScrollReset } from "../src/use-scroll-reset";
+import { useScrollReset } from "../src/shell/use-scroll-reset";
 
 function mount(initialPath: string) {
   const container = document.createElement("div");

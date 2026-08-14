@@ -21,7 +21,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-import { useStageChrome } from "@corbits/shell-layout";
 import { AppShell } from "../src/shell/app-shell";
 import { BenchProvider } from "../src/bench-context";
 import { runActionCommand } from "../src/command-palette-actions";
@@ -31,6 +30,7 @@ import {
   useOpenProfileInCanvas,
 } from "../src/shell/canvas-availability";
 import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
+import { useStageChrome } from "../src/shell/stage-chrome";
 import { TestQueryProvider } from "./test-query-provider";
 
 const noop = () => undefined;
