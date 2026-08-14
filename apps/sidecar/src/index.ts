@@ -45,6 +45,7 @@ import {
 import {
   createDeploymentAddressRegistry,
   createMultistepDrainRouter,
+  createMultistepGrantsRouter,
   createMultistepMailRouter,
   createMultistepSignalRouter,
   createMultistepSourcesRouter,
@@ -105,6 +106,7 @@ const deploymentAddressRegistry = createDeploymentAddressRegistry();
 const multistepMailRouter = createMultistepMailRouter();
 const multistepSignalRouter = createMultistepSignalRouter();
 const multistepDrainRouter = createMultistepDrainRouter();
+const multistepGrantsRouter = createMultistepGrantsRouter();
 const multistepSourcesRouter = createMultistepSourcesRouter();
 
 const transport = createInMemoryTransport();
@@ -206,6 +208,7 @@ const orchestrator = createSidecarOrchestrator({
   mailInboundRouter: multistepMailRouter,
   signalInboundRouter: multistepSignalRouter,
   drainInboundRouter: multistepDrainRouter,
+  grantsInboundRouter: multistepGrantsRouter,
   sourcesInboundRouter: multistepSourcesRouter,
   // Install Hub-authoritative workflow-run history before a replacement
   // supervisor spawns, against the unwrapped substrate so the restore is
@@ -260,6 +263,7 @@ const orchestrator = createSidecarOrchestrator({
       multistepMailRouter,
       multistepSignalRouter,
       multistepDrainRouter,
+      multistepGrantsRouter,
       multistepSourcesRouter,
       multistepSubstrateEnv,
       publishWorkflowInferenceEvent,

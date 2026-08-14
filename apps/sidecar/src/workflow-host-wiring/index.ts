@@ -41,6 +41,7 @@ import {
 
 import type {
   MultistepDrainRouter,
+  MultistepGrantsRouter,
   MultistepMailRouter,
   MultistepSignalRouter,
   MultistepSourcesRouter,
@@ -308,6 +309,21 @@ export function createSidecarDeployRouter(deps: {
    * the wiring is plumbed.
    */
   multistepDrainRouter?: MultistepDrainRouter;
+  /**
+   * Per-deployment-address grants handler registry the sidecar
+   * hub-link's `run.grants` path consults. Both deploy branches
+   * register a handler against the deployment's mail address once
+   * `supervisor.spawn` succeeds so a hub-side `run.grants` frame writes
+   * the run's grants to `runs/<runId>/grants.json` in the deployment's
+   * workflow-run repo -- durable next to the run's events, and shipped
+   * to the hub with the repo's pack flow.
+   *
+   * Optional so tests that exercise deploys without a grants loop can
+   * omit the binding; an absent registry means inbound `run.grants`
+   * frames cannot route through the hub-link until the wiring is
+   * plumbed.
+   */
+  multistepGrantsRouter?: MultistepGrantsRouter;
   /**
    * Per-deployment-address sources-rotation handler registry. Only a
    * single-step warm deployment registers a handler (against the
@@ -742,6 +758,22 @@ export function createSidecarDeployRouter(deps: {
       deps.multistepDrainRouter?.register(spec.agentAddress, async (args) => {
         await wired.supervisor.drain({ deadlineMs: args.deadlineMs });
       });
+      // Register the grants handler so a hub `run.grants` frame writes the
+      // run's grants to `runs/<runId>/grants.json` in the deployment's
+      // workflow-run repo. The `runId` selects the per-run destination; the
+      // step-fan-out fields are inert in that mode but the shared write
+      // machinery still takes them. A write failure re-throws so the
+      // hub-link logs the durable-write failure loudly.
+      deps.multistepGrantsRouter?.register(spec.agentAddress, async (args) => {
+        await writeStepGrants({
+          repoStore: deps.repoStore,
+          deploymentId,
+          stepOrder: spec.definition.stepOrder,
+          deriveStepRepoId: stepStrategy.deriveStepRepoId,
+          grants: args.stepGrants,
+          runId: args.runId,
+        });
+      });
       // Register the sources-rotation handler ONLY for a single-step warm
       // deployment: it has one long-lived agent whose sources can be
       // swapped in place. A multi-step deployment has no single warm agent,
@@ -831,6 +863,7 @@ export function createSidecarDeployRouter(deps: {
           deps.multistepMailRouter?.unregister(spec.agentAddress);
           deps.multistepSignalRouter?.unregister(spec.agentAddress);
           deps.multistepDrainRouter?.unregister(spec.agentAddress);
+          deps.multistepGrantsRouter?.unregister(spec.agentAddress);
           // Unregister unconditionally: the sources handler was registered
           // only for a single-step deploy, but `unregister` is a no-op for
           // an address that never registered one, so a multi-step unwind
@@ -1126,6 +1159,7 @@ export function createSidecarDeployRouter(deps: {
       deps.multistepMailRouter?.unregister(frame.agentAddress);
       deps.multistepSignalRouter?.unregister(frame.agentAddress);
       deps.multistepDrainRouter?.unregister(frame.agentAddress);
+      deps.multistepGrantsRouter?.unregister(frame.agentAddress);
       // Unregister unconditionally (a no-op for a multi-step address that
       // registered no sources handler), matching the sibling routers.
       deps.multistepSourcesRouter?.unregister(frame.agentAddress);
