@@ -163,23 +163,28 @@ describe("ensureMyraChannel", () => {
     expect(isMyraChannelId("chat-1")).toBe(true);
   });
 
-  test("reuses a legacy channel-kind Myra row instead of creating a chat", async () => {
-    stubFetch((path) => {
+  test("converts a legacy channel-kind Myra row carrying the agent into an auto-responding chat", async () => {
+    const legacyWire = {
+      id: "legacy-1",
+      title: "Myra",
+      kind: "channel",
+      pinned: true,
+      participants: [{ address: "myra@wf_1.tnt_1", handle: "myra" }],
+    };
+    const calls = stubFetch((path) => {
       if (path.endsWith("/chat/channels?kind=channel")) {
-        return json({
-          items: [
-            {
-              id: "legacy-1",
-              title: "Myra",
-              kind: "channel",
-              pinned: false,
-              participants: [],
-            },
-          ],
-        });
+        return json({ items: [legacyWire] });
       }
       if (path.endsWith("/chat/channels?kind=chat")) {
         return json({ items: [] });
+      }
+      if (path.endsWith("/chat/channels/legacy-1/settings")) {
+        return json({
+          ...legacyWire,
+          kind: "chat",
+          settings: { "chat/kind": "chat" },
+          contextWindow: { value: 50, source: "inherit" },
+        });
       }
       throw new Error(`unexpected fetch: ${path}`);
     });
@@ -188,6 +193,10 @@ describe("ensureMyraChannel", () => {
 
     expect(result).toEqual({ kind: "ready", channelId: "legacy-1" });
     expect(isMyraChannelId("legacy-1")).toBe(true);
+    const patchCall = calls.find((call) => call.init?.method === "PATCH");
+    expect(JSON.parse(String(patchCall?.init?.body))).toEqual({
+      "chat/kind": "chat",
+    });
   });
 
   test("errors when no Myra definition is deployed for the tenant", async () => {

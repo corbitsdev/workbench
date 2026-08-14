@@ -1,12 +1,26 @@
 // Find-or-create a bench's 1:1 with a given deployed agent, generalizing
 // `apps/web/src/myra-channel.ts`'s original Myra-specific resolution: list
-// channel + chat kinds, reuse a title match if one exists (a legacy
-// channel-kind row included, so no bench ends up with two), otherwise
-// create a chat against the agent's deployed definition. The agent's
-// title and deployed asset name are config an app supplies — this module
-// carries no product literal of its own.
+// channel + chat kinds, reuse a chat-kind title match if one exists,
+// otherwise create a chat against the agent's deployed definition. The
+// agent's title and deployed asset name are config an app supplies — this
+// module carries no product literal of its own.
+//
+// A legacy channel-kind title match still carrying the agent is converted
+// to a chat in place (one `chat/kind` settings patch): an agent chat must
+// always auto-respond, and only `kind === "chat"` gets the unconditional
+// fan-out in `sendChannelMessage` — reusing the row as a channel left the
+// agent mention-gated and silent. A channel-kind match with no agent
+// participant is a husk that can't answer under either kind, so it is
+// left alone and the real chat is created.
 
-import { createChannel, listChannels, type Channel } from "./api";
+import { isAgentAddress } from "@corbits/chat/mentions";
+
+import {
+  createChannel,
+  listChannels,
+  patchChannelSettings,
+  type Channel,
+} from "./api";
 
 export type DefaultAgentChannelConfig = {
   readonly title: string;
@@ -70,10 +84,23 @@ export function createDefaultAgentChannel(config: DefaultAgentChannelConfig) {
         listChannels(tenantId, "channel"),
         listChannels(tenantId, "chat"),
       ]);
-      const existing = findByTitle(channels) ?? findByTitle(chats);
-      if (existing !== undefined) {
-        cachedChannelId = existing.id;
-        return { kind: "ready", channelId: existing.id };
+      const existingChat = findByTitle(chats);
+      if (existingChat !== undefined) {
+        cachedChannelId = existingChat.id;
+        return { kind: "ready", channelId: existingChat.id };
+      }
+      const legacy = findByTitle(channels);
+      if (
+        legacy !== undefined &&
+        legacy.participants.some((participant) =>
+          isAgentAddress(participant.address),
+        )
+      ) {
+        await patchChannelSettings(tenantId, legacy.id, {
+          "chat/kind": "chat",
+        });
+        cachedChannelId = legacy.id;
+        return { kind: "ready", channelId: legacy.id };
       }
       const definitions = await listDefinitions(tenantId);
       const definition = findDefinitionByAssetName(

@@ -634,6 +634,7 @@ export function getChannelSettings(
  * a channel's override back to inheriting the bench default.
  */
 export type ChannelSettingsPatch = {
+  readonly "chat/kind"?: string;
   readonly "chat/name"?: string;
   readonly "chat/purpose"?: string;
   readonly "chat/pinned"?: boolean;

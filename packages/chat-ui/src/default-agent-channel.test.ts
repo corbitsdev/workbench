@@ -282,26 +282,27 @@ describe("createDefaultAgentChannel", () => {
       assetName: "assistant",
     });
     stubFetch((path) => {
-      if (path.endsWith("/chat/channels?kind=channel")) {
+      if (path.endsWith("/chat/channels?kind=channel"))
+        return json({ items: [] });
+      if (path.endsWith("/chat/channels?kind=chat")) {
         return json({
           items: [
             {
-              id: "legacy-1",
+              id: "chat-1",
               title: "Myra",
-              kind: "channel",
+              kind: "chat",
               pinned: false,
               participants: [],
             },
           ],
         });
       }
-      if (path.endsWith("/chat/channels?kind=chat")) return json({ items: [] });
       throw new Error(`unexpected fetch: ${path}`);
     });
 
     await agent.ensure("tnt_1", async () => []);
-    expect(agent.isCachedChannelId("legacy-1")).toBe(true);
+    expect(agent.isCachedChannelId("chat-1")).toBe(true);
     agent.resetCache();
-    expect(agent.isCachedChannelId("legacy-1")).toBe(false);
+    expect(agent.isCachedChannelId("chat-1")).toBe(false);
   });
 });
