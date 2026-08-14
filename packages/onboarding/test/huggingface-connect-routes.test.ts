@@ -14,7 +14,7 @@ import { Hono } from "hono";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import type { CreateOnboardingRoutesDeps } from "../src/routes";
-import { s256Challenge } from "../src/pkce";
+import { s256Challenge } from "@workbench/connections";
 
 // Stands in for a stable `CREDENTIAL_ENCRYPTION_KEY`: a fresh cipher
 // built from these same bytes is indistinguishable, to the state store,

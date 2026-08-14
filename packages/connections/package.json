@@ -1,12 +1,13 @@
 {
-  "name": "@workbench/onboarding",
+  "name": "@workbench/connections",
   "private": true,
-  "description": "First-login provisioning for the hub: the onboarding route and the decision behind it",
+  "description": "The Connections settings surface: shared PKCE/state primitives for OAuth connect flows, the connector registry (inference providers plus tool-credential connectors), and the route factory that tests and stores a connector's credential",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./registry": "./src/registry.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -16,7 +17,6 @@
     "@intx/crypto": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/types": "workspace:*",
-    "@workbench/connections": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
     "hono": "^4.11.9"

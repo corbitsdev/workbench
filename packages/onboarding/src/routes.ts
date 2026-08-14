@@ -21,7 +21,10 @@ import { type } from "arktype";
 import { provisionPersonalTenantIfNeeded, ProvisionError } from "./provision";
 
 import { completeCredentialSetup } from "./complete-credential";
-import { createConnectStateStore, generatePKCEPair } from "./pkce";
+import {
+  createConnectStateStore,
+  generatePKCEPair,
+} from "@workbench/connections";
 import { exchangeCodeForKey, OPENROUTER_AUTH_URL } from "./openrouter-connect";
 import {
   exchangeCodeForToken as exchangeHuggingFaceCodeForToken,
@@ -64,7 +67,7 @@ export type CreateOnboardingRoutesDeps = {
   };
   /** Seals the OAuth connect state (PKCE verifier included) parked
    * between `/start` and `/callback`, so a hub restart in between
-   * doesn't strand it — see `./pkce.ts`. The same `CredentialCipher`
+   * doesn't strand it — see `@workbench/connections`' `pkce.ts`. The same `CredentialCipher`
    * every other secret-at-rest seam in the hub shares
    * (`CREDENTIAL_ENCRYPTION_KEY`, `apps/hub`'s `credentialCipherFrom`).
    * Defaults to the identity no-op cipher: fine for dev/test, never for

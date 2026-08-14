@@ -1,7 +1,7 @@
 // The mechanics of OpenRouter's registration-free PKCE connect
 // (openrouter.ai/docs — OAuth PKCE): the code-for-key exchange, on top
 // of the PKCE and single-use state primitives shared with every connect
-// flow (`./pkce.ts`). OpenRouter's flow returns a durable user-scoped
+// flow (`@workbench/connections`' `pkce.ts`). OpenRouter's flow returns a durable user-scoped
 // API key — not an expiring token — so everything after the exchange is
 // the ordinary api_key credential path. The key itself is never logged
 // and never put in a URL.
@@ -14,7 +14,7 @@ export {
   s256Challenge,
   type ConnectStateStore,
   type PKCEPair,
-} from "./pkce";
+} from "@workbench/connections";
 
 export const OPENROUTER_AUTH_URL = "https://openrouter.ai/auth";
 export const OPENROUTER_KEY_EXCHANGE_URL =
