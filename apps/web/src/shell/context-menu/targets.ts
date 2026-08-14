@@ -6,6 +6,7 @@ import type { TargetDefinition } from "@corbits/context-menu";
 
 export type ShellContextMenuTarget =
   | { readonly type: "shell" }
+  | { readonly type: "account" }
   | {
       readonly type: "channel";
       readonly id: string;
@@ -35,6 +36,10 @@ function attr(element: Element, name: string): string | null {
 // must be listed before its container.
 export const SHELL_CONTEXT_MENU_TARGETS: readonly TargetDefinition<ShellContextMenuTarget>[] =
   [
+    {
+      selector: "[data-ctx-account]",
+      resolve: () => ({ type: "account" }),
+    },
     {
       selector: "[data-ctx-profile-address]",
       resolve: (element) => {

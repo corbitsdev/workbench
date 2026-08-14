@@ -78,7 +78,6 @@ export function AppShell({
         path={path}
         onNavigate={navigate}
         user={user}
-        onSignOut={onSignOut}
         showLabels={railShowLabels(layoutMode)}
       />
       {showContextualColumn && !col2Collapsed && (
@@ -116,7 +115,7 @@ export function AppShell({
           </div>
         </>
       )}
-      <ShellContextMenu />
+      <ShellContextMenu onSignOut={onSignOut} />
     </div>
   );
 }
