@@ -62,14 +62,23 @@ at `/api/onboarding`); the wizard only navigates.
    now returns as soon as the key is proven and stored — see
    `complete-credential.ts`'s module comment for the fast/slow split,
    and `ensureSeeded` for the deploy step's new home.
-5. **The plaintext key rides forward in a sealed cookie, not a query
-   string.** Credential secrets are write-only through the hub's own
+5. **The plaintext key rides forward server-side, never to the
+   browser.** Credential secrets are write-only through the hub's own
    API, so nothing can re-fetch the key once this request ends. It is
    instead sealed (AEAD, the same `CredentialCipher` the state above
-   uses) into an HttpOnly `workbench_pending_seed` cookie
-   (`pending-seed.ts`) with a ten-minute TTL — long enough for the
-   wizard's own follow-up call, never a URL, browser history, or log
-   line.
+   uses) into a row in `@workbench/onboarding`'s own `onboarding`
+   Postgres schema (`pending-seed.ts`, `createDrizzlePendingSeedStore`)
+   keyed by `(userId, tenantId)`, with a ten-minute TTL — long enough
+   for the wizard's own follow-up call. The browser gets nothing from
+   this step: no cookie, no ciphertext, not even a token — its ordinary
+   session cookie is what scopes `/complete-setup`'s read to exactly
+   this row. (Before CL-6031 this rode forward as an HttpOnly
+   `workbench_pending_seed` cookie; moved server-side because the
+   browser had no business custodying a sealed copy of the key even
+   though it could never read it. See `pending-seed.ts`'s module
+   comment for the full rationale, including the future
+   `InferenceSource` credential-by-reference primitive that would
+   remove this store entirely.)
 6. **Back to the wizard.** Every ending 302s to
    `/onboarding?connect=openrouter&...`: `outcome=connected` with the
    bench slug (no routine list yet — that comes from step 7), or
@@ -87,7 +96,8 @@ at `/api/onboarding`); the wizard only navigates.
 7. **The wizard finishes the job.** Landing on `outcome=connected`, the
    wizard shows a brief "setting up your workbench" state and calls
    `POST /api/onboarding/complete-setup`. That route reads the pending
-   token, runs `ensureSeeded` (`seedTenant` with
+   row for the caller's own `(userId, tenantId)`, runs `ensureSeeded`
+   (`seedTenant` with
    `confirmDeployments: false`, same as before), and answers `seeded`
    with the deployed routine names once done. It answers `unseeded`
    (never an error) if there is nothing to seed with yet, and two
