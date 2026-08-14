@@ -6,6 +6,7 @@ import {
   consumePendingNewChannel,
   consumePendingNewRoutine,
   consumePendingNewSkill,
+  requestNewRoutine,
   resetPendingDialogRequests,
   runActionCommand,
 } from "./command-palette-actions";
@@ -165,5 +166,44 @@ describe("runActionCommand", () => {
     const { ctx, navigated } = context({ path: "/", tenantId: null });
     await runActionCommand("talk-to-myra", ctx);
     expect(navigated).toEqual([]);
+  });
+});
+
+// Backs the chat composer's `/run` — the same off-route-safe hop
+// `runActionCommand("new-routine", …)` uses, but callable from a caller
+// with no command-palette `ActionCommandContext` (see chat-page.tsx).
+describe("requestNewRoutine", () => {
+  test("dispatches immediately when already on Routines", () => {
+    const dispatched: string[] = [];
+    const listener = () => dispatched.push("workbench:routines:create");
+    window.addEventListener("workbench:routines:create", listener);
+    const navigated: string[] = [];
+
+    requestNewRoutine({
+      alreadyOnRoutines: true,
+      navigateToRoutines: () => navigated.push("/routines"),
+    });
+
+    window.removeEventListener("workbench:routines:create", listener);
+    expect(dispatched).toEqual(["workbench:routines:create"]);
+    expect(navigated).toEqual([]);
+    expect(consumePendingNewRoutine()).toBe(false);
+  });
+
+  test("off-route navigates and records a pending flag instead of dispatching", () => {
+    const dispatched: string[] = [];
+    const listener = () => dispatched.push("workbench:routines:create");
+    window.addEventListener("workbench:routines:create", listener);
+    const navigated: string[] = [];
+
+    requestNewRoutine({
+      alreadyOnRoutines: false,
+      navigateToRoutines: () => navigated.push("/routines"),
+    });
+
+    window.removeEventListener("workbench:routines:create", listener);
+    expect(dispatched).toEqual([]);
+    expect(navigated).toEqual(["/routines"]);
+    expect(consumePendingNewRoutine()).toBe(true);
   });
 });
