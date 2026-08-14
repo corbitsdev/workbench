@@ -323,8 +323,9 @@ async function channelInTenant(
 }
 
 /**
- * The single fail-closed gate every message/read-state/typing/stream/blob
- * route resolves through: the acting tenant either owns the channel
+ * The single fail-closed gate every
+ * message/read-state/typing/stream/blob/block-response route resolves
+ * through: the acting tenant either owns the channel
  * outright (the ordinary case, `channelInTenant`), or it's a tenant a
  * share was explicitly created for AND the acting principal was
  * explicitly added as a share member (`ChannelShareStore.isShareMember`)
@@ -1381,9 +1382,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const messageId = c.req.param("messageId");
       const blockId = c.req.param("blockId");
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
+      const ownerTenantId = access.ownerTenantId;
 
       const body = SubmitBlockResponseBody(
         await c.req.json().catch(() => undefined),
@@ -1404,7 +1412,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           : { kind: "form", values: body.values };
 
       const row = await deps.blockResponses.upsertBlockResponse({
-        tenantId: tenant.id,
+        tenantId: ownerTenantId,
         channelId,
         messageId,
         blockId,
@@ -1422,7 +1430,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // GET route below is the boundary that must never let a member read
       // *another* member's raw response on demand.
       await deps.platform.sendMail({
-        tenantId: tenant.id,
+        tenantId: ownerTenantId,
         channelId,
         principalId: principal.id,
         content: encodeParts([
@@ -1455,7 +1463,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const messageId = c.req.param("messageId");
       const blockId = c.req.param("blockId");
 
-      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+      const access = await resolveChannelAccess(
+        deps,
+        tenant.id,
+        channelId,
+        principal.id,
+      );
+      if (access === undefined) {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
@@ -1465,7 +1479,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // and this caller's alone — no other principal's raw poll choice or
       // form values is ever assembled into the response body.
       const rows = await deps.blockResponses.listBlockResponses(
-        tenant.id,
+        access.ownerTenantId,
         channelId,
         messageId,
         blockId,
