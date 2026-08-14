@@ -211,3 +211,211 @@ describe("connection state is never rendered as chrome", () => {
     harness.unmount();
   });
 });
+
+// Two-level thread model + fork affordance (CL-5908, CL-5948): a channel
+// with one depth-1 thread already open, plus the sub-thread a fork creates.
+const ROOT_THREAD = {
+  id: "thr_root",
+  kind: "root",
+  parentMessageId: null,
+  parentThreadId: null,
+  runRef: null,
+  title: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+};
+const DEPTH1_THREAD = {
+  id: "thr_1",
+  kind: "reply",
+  parentMessageId: "msg_1",
+  parentThreadId: "thr_root",
+  runRef: null,
+  title: null,
+  createdAt: "2026-01-01T00:01:00.000Z",
+};
+const DEPTH2_THREAD = {
+  id: "thr_2",
+  kind: "reply",
+  parentMessageId: "msg_2",
+  parentThreadId: "thr_1",
+  runRef: null,
+  title: null,
+  createdAt: "2026-01-01T00:02:00.000Z",
+};
+
+function stubThreadedFetch() {
+  globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+  let forked = false;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = typeof input === "string" ? input : String(input);
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    if (/\/chat\/channels\?kind=channel$/.test(path)) {
+      return json({ items: [CHANNEL_WIRE] });
+    }
+    if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
+    if (/\/chat\/channels\/[^/]+\/threads\/fork$/.test(path)) {
+      forked = true;
+      const body = JSON.parse(String(init?.body)) as {
+        parentMessageId: string;
+      };
+      return json({ ...DEPTH2_THREAD, parentMessageId: body.parentMessageId });
+    }
+    if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+      const items = forked
+        ? [ROOT_THREAD, DEPTH1_THREAD, DEPTH2_THREAD]
+        : [ROOT_THREAD, DEPTH1_THREAD];
+      return json({ rootThreadId: ROOT_THREAD.id, items });
+    }
+    if (/\/threads\/thr_root\/messages$/.test(path)) {
+      return json({
+        thread: ROOT_THREAD,
+        items: [
+          {
+            id: "msg_1",
+            createdAt: "2026-01-01T00:00:30.000Z",
+            parts: [{ kind: "text", text: "root note" }],
+            sender: { name: null, address: "prn_alice@acme.example" },
+          },
+        ],
+      });
+    }
+    if (/\/threads\/thr_1\/messages$/.test(path)) {
+      return json({
+        thread: DEPTH1_THREAD,
+        items: [
+          {
+            id: "msg_2",
+            createdAt: "2026-01-01T00:01:30.000Z",
+            parts: [{ kind: "text", text: "inside the thread" }],
+            sender: { name: null, address: "prn_alice@acme.example" },
+          },
+        ],
+      });
+    }
+    if (/\/threads\/thr_2\/messages$/.test(path)) {
+      return json({ thread: DEPTH2_THREAD, items: [] });
+    }
+    if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+      if (init?.method === "POST") {
+        return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
+      }
+      return json({ items: [] });
+    }
+    if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
+    if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+      return json({
+        ...CHANNEL_WIRE,
+        settings: {},
+        contextWindow: { value: 20, source: "inherit" },
+      });
+    }
+    if (/\/chat\/bench\/settings$/.test(path)) {
+      return json({ settings: {}, contextWindow: 20 });
+    }
+    throw new Error(`unstubbed fetch: ${path}`);
+  }) as typeof fetch;
+}
+
+describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
+  test("opening a depth-1 thread shows a two-segment breadcrumb: channel / thread", async () => {
+    stubThreadedFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    const openButton = harness.container.querySelector(
+      ".chat-thread-open",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    const breadcrumb = harness.container.querySelector(
+      ".chat-thread-breadcrumb",
+    );
+    expect(breadcrumb).not.toBeNull();
+    expect(
+      breadcrumb?.querySelectorAll(".chat-thread-breadcrumb-link"),
+    ).toHaveLength(1);
+    expect(breadcrumb?.textContent).toContain("Launch Planning");
+    harness.unmount();
+  });
+
+  test("forking a message inside a thread opens a sub-thread with a three-segment breadcrumb and an origin banner", async () => {
+    stubThreadedFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    // Open the depth-1 thread first.
+    const openButton = harness.container.querySelector(
+      ".chat-thread-open",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    // Inside the thread, every message's affordance is now Fork.
+    const forkButton = harness.container.querySelector(
+      '.chat-thread-affordance[data-thread-affordance-mode="fork"] .chat-thread-open',
+    ) as HTMLButtonElement;
+    expect(forkButton).not.toBeNull();
+    expect(forkButton.textContent).toBe("Fork");
+    await act(async () => {
+      forkButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    const breadcrumb = harness.container.querySelector(
+      ".chat-thread-breadcrumb",
+    );
+    expect(
+      breadcrumb?.querySelectorAll(".chat-thread-breadcrumb-link"),
+    ).toHaveLength(2);
+
+    expect(
+      harness.container.querySelector(".chat-thread-origin-banner"),
+    ).not.toBeNull();
+    harness.unmount();
+  });
+
+  test("the threads menu indents sub-threads under their depth-1 parent", async () => {
+    stubThreadedFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    const openButton = harness.container.querySelector(
+      ".chat-thread-open",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+    const forkButton = harness.container.querySelector(
+      '.chat-thread-affordance[data-thread-affordance-mode="fork"] .chat-thread-open',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      forkButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    const group = harness.container.querySelector(".chat-threads-menu-group");
+    expect(group).not.toBeNull();
+    expect(
+      group?.querySelector(".chat-threads-menu-item-nested"),
+    ).not.toBeNull();
+    harness.unmount();
+  });
+});

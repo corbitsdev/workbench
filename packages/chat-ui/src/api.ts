@@ -248,10 +248,15 @@ export function sendMessage(
   );
 }
 
+// `parentThreadId` is the thread this one hangs directly off: null for the
+// root thread, the root thread's id for a depth-1 thread, a depth-1
+// thread's id for a depth-2 sub-thread. Two levels, stop — see
+// `resolveThreadAnchor` in `packages/chat/src/threads.ts`.
 export const ChannelThread = type({
   id: "string",
   kind: "'root' | 'reply' | 'delivery'",
   parentMessageId: "string | null",
+  parentThreadId: "string | null",
   runRef: "string | null",
   title: "string | null",
   createdAt: "string",
@@ -290,6 +295,29 @@ export function listThreadMessages(
   return request(
     `/api/tenants/${tenantId}/chat/channels/${channelId}/threads/${threadId}/messages`,
     ThreadMessagesResponse,
+  );
+}
+
+/**
+ * A first-class fork: spawn a sub-thread rooted at any message inside a
+ * thread — something Slack doesn't have (CL-5948). Idempotent per origin
+ * message, and honors the two-level cap server-side: forking a message
+ * already inside a sub-thread creates a sibling sub-thread under that
+ * sub-thread's parent, never a third level (see `resolveThreadAnchor` in
+ * `packages/chat/src/threads.ts`).
+ */
+export function forkThread(
+  tenantId: string,
+  channelId: string,
+  parentMessageId: string,
+  title?: string,
+): Promise<ChannelThread> {
+  const body: Record<string, unknown> = { parentMessageId };
+  if (title !== undefined) body["title"] = title;
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/threads/fork`,
+    ChannelThread,
+    { method: "POST", body: JSON.stringify(body) },
   );
 }
 
