@@ -14,6 +14,7 @@ import { createChatRoutes } from "../src/routes";
 import { createInMemoryChannelShareStore } from "../src/channel-share";
 import { createInMemoryFederationTrustStore } from "../src/federation-trust";
 import { createChannelSubscriberRegistry } from "../src/channel-events";
+import { createInMemoryBlockResponseStore } from "../src/block-responses";
 import {
   buildDeps,
   createChannel,
@@ -390,5 +391,105 @@ describe("shared channel projection", () => {
     expect(afterRevocation).toBeUndefined();
 
     await reader.cancel().catch(() => undefined);
+  });
+});
+
+describe("shared channel projection — block responses", () => {
+  function responsesUrl(channelId: string, messageId: string, blockId: string) {
+    return `/channels/${channelId}/messages/${messageId}/blocks/${blockId}/responses`;
+  }
+
+  test("a projected-tenant share member can submit a poll response and read the tally without a 404", async () => {
+    const trust = createInMemoryFederationTrustStore();
+    trust.registerTenant(TENANT.id, TENANT.name);
+    trust.registerTenant(TENANT_B.id, TENANT_B.name);
+    const shares = createInMemoryChannelShareStore({ trust });
+    const blockResponses = createInMemoryBlockResponseStore();
+    const deps = buildDeps({ shares, trust, blockResponses });
+    const routes = createChatRoutes(deps);
+    const owner = mountAsTenant(routes, TENANT, "prn_alice");
+    const memberSide = mountAsTenant(routes, TENANT_B, "prn_bob");
+
+    const { body: channel } = await createChannel(owner, { kind: "channel" });
+    await trust.establishBilateralTrust(TENANT.id, TENANT_B.id);
+    await owner.request(`/channels/${channel.id}/shares`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectedTenantId: TENANT_B.id }),
+    });
+    await memberSide.request(`/channels/${channel.id}/share-members`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ principalId: "prn_bob" }),
+    });
+
+    const post = await memberSide.request(
+      responsesUrl(channel.id, "m1", "blk_poll1"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "poll", choiceIds: ["tue"] }),
+      },
+    );
+    expect(post.status).toBe(200);
+
+    const get = await memberSide.request(
+      responsesUrl(channel.id, "m1", "blk_poll1"),
+    );
+    expect(get.status).toBe(200);
+    const body = (await get.json()) as {
+      tally: Record<string, number>;
+      total: number;
+      own: unknown;
+    };
+    expect(body.tally).toEqual({ tue: 1 });
+    expect(body.own).toEqual({ kind: "poll", choiceIds: ["tue"] });
+
+    // The response is stored under the OWNING tenant, not the acting
+    // (projected) tenant — the owner can read the very same tally back.
+    const ownerGet = await owner.request(
+      responsesUrl(channel.id, "m1", "blk_poll1"),
+    );
+    const ownerBody = (await ownerGet.json()) as {
+      tally: Record<string, number>;
+    };
+    expect(ownerBody.tally).toEqual({ tue: 1 });
+    expect(
+      await blockResponses.listBlockResponses(
+        TENANT.id,
+        channel.id,
+        "m1",
+        "blk_poll1",
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("a tenant with no share still 404s on both block-response routes", async () => {
+    const trust = createInMemoryFederationTrustStore();
+    trust.registerTenant(TENANT.id, TENANT.name);
+    trust.registerTenant(TENANT_C.id, TENANT_C.name);
+    const shares = createInMemoryChannelShareStore({ trust });
+    const blockResponses = createInMemoryBlockResponseStore();
+    const deps = buildDeps({ shares, trust, blockResponses });
+    const routes = createChatRoutes(deps);
+    const owner = mountAsTenant(routes, TENANT, "prn_alice");
+    const outsider = mountAsTenant(routes, TENANT_C, "prn_carol");
+
+    const { body: channel } = await createChannel(owner, { kind: "channel" });
+
+    const post = await outsider.request(
+      responsesUrl(channel.id, "m1", "blk_poll1"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "poll", choiceIds: ["tue"] }),
+      },
+    );
+    expect(post.status).toBe(404);
+
+    const get = await outsider.request(
+      responsesUrl(channel.id, "m1", "blk_poll1"),
+    );
+    expect(get.status).toBe(404);
   });
 });
