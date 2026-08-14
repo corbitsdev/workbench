@@ -10,6 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
 import {
+  CREDENTIAL_PROVIDERS,
   submitCredential,
   testCredential,
   triggerFirstLoginProvisioning,
@@ -35,6 +36,38 @@ const signedIn: SessionState = {
   kind: "signed-in",
   user: { id: "user_1", name: "Ada", email: "ada@example.com" },
 };
+
+describe("CREDENTIAL_PROVIDERS", () => {
+  // ProviderPicker (onboarding-page.tsx) renders one card per entry here —
+  // this is the data the cards are built from, so covering it covers what
+  // actually shows up: eight cards, one per SupportedCredentialProvider,
+  // each with a distinct honest one-liner and a real key-console link.
+  test("has one card for every OpenAI-compatible relay plus the three direct providers", () => {
+    expect(CREDENTIAL_PROVIDERS.map((p) => p.id).sort()).toEqual([
+      "anthropic",
+      "deepseek",
+      "google-genai",
+      "groq",
+      "mistral",
+      "openai",
+      "opencode-zen",
+      "openrouter",
+    ]);
+  });
+
+  test("every card has a non-empty label, description, and key console link", () => {
+    for (const provider of CREDENTIAL_PROVIDERS) {
+      expect(provider.label.length).toBeGreaterThan(0);
+      expect(provider.description.length).toBeGreaterThan(0);
+      expect(provider.keyConsoleUrl).toMatch(/^https:\/\//);
+    }
+  });
+
+  test("no two cards share the same description", () => {
+    const descriptions = CREDENTIAL_PROVIDERS.map((p) => p.description);
+    expect(new Set(descriptions).size).toBe(descriptions.length);
+  });
+});
 
 describe("triggerFirstLoginProvisioning", () => {
   test("a structured error envelope becomes an error outcome, not null", async () => {

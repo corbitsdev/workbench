@@ -1789,6 +1789,12 @@ html {
   gap: 0.5rem;
 }
 
+.onboarding-provider-description {
+  margin: -0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
 /* Tasteful motion only: a soft entrance on phase change, no looping or
    attention-seeking animation, fully off under reduced motion. */
 .onboarding-phase {

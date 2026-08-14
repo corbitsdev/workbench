@@ -1,11 +1,12 @@
 // Free, fast credential checks, fake network: these tests exercise
 // `testProviderCredential` against a stub `fetch` that plays the outcomes
-// an onboarding user actually hits against each provider's list-models
-// endpoint — a key the provider accepts, one it rejects, a non-auth error
-// from the provider, and a transport failure — for each of the three
-// supported providers.
+// an onboarding user actually hits against each provider's auth-gated
+// probe endpoint — a key the provider accepts, one it rejects, a non-auth
+// error from the provider, and a transport failure — for every supported
+// provider.
 import { describe, expect, test } from "bun:test";
 import {
+  providerModelSource,
   supportedCredentialProviders,
   testProviderCredential,
   type FetchLike,
@@ -13,20 +14,56 @@ import {
 } from "../src/credential-test";
 
 describe("supportedCredentialProviders", () => {
-  test("lists Anthropic, OpenAI, and Google", () => {
+  test("lists every supported provider, including the OpenAI-compatible relays", () => {
     expect(
       supportedCredentialProviders()
         .map((p) => p.id)
         .sort(),
-    ).toEqual(["anthropic", "google-genai", "openai"]);
+    ).toEqual([
+      "anthropic",
+      "deepseek",
+      "google-genai",
+      "groq",
+      "mistral",
+      "openai",
+      "opencode-zen",
+      "openrouter",
+    ]);
+  });
+});
+
+describe("providerModelSource", () => {
+  test("maps every OpenAI-compatible relay to the shared 'openai-compatible' adapter", () => {
+    for (const provider of [
+      "openrouter",
+      "opencode-zen",
+      "groq",
+      "deepseek",
+      "mistral",
+    ] as const) {
+      expect(providerModelSource(provider).provider).toBe("openai-compatible");
+    }
+  });
+
+  test("keeps anthropic, openai, and google-genai on their own adapters", () => {
+    expect(providerModelSource("anthropic").provider).toBe("anthropic");
+    expect(providerModelSource("openai").provider).toBe("openai");
+    expect(providerModelSource("google-genai").provider).toBe("google-genai");
   });
 });
 
 describe("testProviderCredential", () => {
+  // GET-probed providers: every provider except opencode-zen, whose probe
+  // is a POST (see the dedicated describe block below) because its
+  // list-models route answers 200 to any key.
   const providers: SupportedCredentialProvider[] = [
     "anthropic",
     "openai",
     "google-genai",
+    "openrouter",
+    "groq",
+    "deepseek",
+    "mistral",
   ];
 
   // Google's list-models endpoint rejects a bad key with 400
@@ -139,7 +176,7 @@ describe("testProviderCredential", () => {
       expect(carriesKey).toBe(true);
     });
 
-    test(`${provider}: probes the provider's list-models endpoint with GET`, async () => {
+    test(`${provider}: probes the provider's auth-gated endpoint with GET`, async () => {
       let seenMethod = "";
       let seenUrl = "";
       const fetchImpl: FetchLike = async (url, init) => {
@@ -155,7 +192,106 @@ describe("testProviderCredential", () => {
       });
 
       expect(seenMethod).toBe("GET");
-      expect(seenUrl).toContain("models");
+      // OpenRouter's probe is /api/v1/key (its list-models route answers
+      // 200 to any key, so it can't prove a credential) — every other GET
+      // probe is the provider's list-models endpoint.
+      if (provider === "openrouter") {
+        expect(seenUrl).toContain("/key");
+      } else {
+        expect(seenUrl).toContain("models");
+      }
     });
   }
+});
+
+describe("testProviderCredential: opencode-zen", () => {
+  // Zen's own list-models route (like OpenRouter's) answers 200 to any
+  // key, so its probe POSTs an empty chat-completion body instead — its
+  // gateway rejects a bad key with 401 before ever validating the body,
+  // proving the key with the same "spend nothing" guarantee as a GET
+  // list-models probe.
+  test("reports ok when the key is accepted", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            type: "ModelError",
+            message: "Model undefined is not supported",
+          },
+        }),
+        { status: 400 },
+      );
+
+    const result = await testProviderCredential({
+      provider: "opencode-zen",
+      apiKey: "test-real-key",
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  test("reports the specific reason when the key is rejected", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        JSON.stringify({
+          error: { type: "AuthError", message: "Invalid API key." },
+        }),
+        { status: 401 },
+      );
+
+    const result = await testProviderCredential({
+      provider: "opencode-zen",
+      apiKey: "test-wrong-key",
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message.toLowerCase()).toContain("invalid api key");
+    }
+  });
+
+  test("probes with an empty-body POST to the chat-completions endpoint, never GET", async () => {
+    let seenMethod = "";
+    let seenUrl = "";
+    let seenBody: string | undefined;
+    const fetchImpl: FetchLike = async (url, init) => {
+      seenUrl = url;
+      seenMethod = init.method;
+      seenBody = init.body;
+      return new Response(
+        JSON.stringify({
+          error: { message: "Model undefined is not supported" },
+        }),
+        { status: 400 },
+      );
+    };
+
+    await testProviderCredential({
+      provider: "opencode-zen",
+      apiKey: "test-real-key",
+      fetchImpl,
+    });
+
+    expect(seenMethod).toBe("POST");
+    expect(seenUrl).toContain("chat/completions");
+    expect(seenBody).toBe("{}");
+  });
+
+  test("sends the real API key, never a placeholder", async () => {
+    let seenHeaders: Record<string, string> = {};
+    const fetchImpl: FetchLike = async (_url, init) => {
+      seenHeaders = Object.fromEntries(new Headers(init.headers).entries());
+      return new Response(JSON.stringify({}), { status: 400 });
+    };
+
+    await testProviderCredential({
+      provider: "opencode-zen",
+      apiKey: "test-secret-key",
+      fetchImpl,
+    });
+
+    expect(seenHeaders["authorization"]).toContain("test-secret-key");
+  });
 });

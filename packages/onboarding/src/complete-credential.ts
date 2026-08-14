@@ -1,10 +1,10 @@
 // The guided credential step of first-run: a signed-in user who reached
-// onboarding with no seed model configured picks a provider — Anthropic,
-// OpenAI, or Google — and pastes their own key. The key is proven with
-// a real, free call before anything is stored (see `@workbench/hub-client`'s
-// `testProviderCredential`, which probes that provider's own list-models
-// endpoint), and only once it's proven does this seed the caller's own
-// personal bench — the same `seedCatalog` +
+// onboarding with no seed model configured picks a provider — any of
+// `supportedCredentialProviders()` — and pastes their own key. The key is
+// proven with a real, free call before anything is stored (see
+// `@workbench/hub-client`'s `testProviderCredential`, which probes that
+// provider's own auth-gated endpoint), and only once it's proven does
+// this seed the caller's own personal bench — the same `seedCatalog` +
 // `seedTenant` the first-login hook runs when a hub-owned key is
 // configured, so a self-served key and an operator-configured one land
 // the same bench. Both plant the credential through the hub's native
@@ -82,11 +82,10 @@ async function findPersonalTenant(
  * they picked, then seeds their own personal bench with it. A bad key
  * never reaches the tenant at all — the credential test runs first and
  * short-circuits everything else. The tenant's model catalog (the
- * browsable list a channel picks a model from) is only planted for
- * Anthropic today; the other providers still get their credential
- * stored and their default routines deployed and confirmed, since
- * `DEFAULT_WORKFLOWS` picks its inference source per source, not from
- * the catalog.
+ * browsable list a channel picks a model from) is planted for whichever
+ * provider was connected, via that provider's curated seed in
+ * `CATALOG_SEEDS` — every supported provider gets one, not just
+ * Anthropic.
  */
 export async function completeCredentialSetup(
   args: CompleteCredentialArgs,
@@ -117,19 +116,14 @@ export async function completeCredentialSetup(
     "tenant response",
   );
 
-  if (args.provider === "anthropic") {
-    await runSeedCatalog({
-      api: args.api,
-      cookies: args.cookies,
-      tenantId: own.tenantId,
-      apiKey: args.apiKey,
-      log: args.log,
-    });
-  } else {
-    args.log(
-      `bench ${own.tenantSlug}: skipping the browsable model catalog for provider ${args.provider}; only Anthropic is catalogued today`,
-    );
-  }
+  await runSeedCatalog({
+    api: args.api,
+    cookies: args.cookies,
+    tenantId: own.tenantId,
+    provider: args.provider,
+    apiKey: args.apiKey,
+    log: args.log,
+  });
 
   const modelSource = providerModelSource(args.provider);
   await runSeedTenant({

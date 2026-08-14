@@ -41,7 +41,8 @@ import {
 import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
 import { CliError } from "./errors";
 import { parseAs, type ApiCall } from "./hub";
-import { catalogModel, catalogProvider } from "./catalog-seed-data";
+import { CATALOG_SEEDS } from "./catalog-seed-data";
+import type { SupportedCredentialProvider } from "./credential-test";
 
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -935,9 +936,18 @@ export type SeedCatalogArgs = {
   tenantId: string;
   log: (line: string) => void;
   /**
-   * A real Anthropic API key. When set, `seedCatalog` plants a
+   * Which provider's curated catalog seed (`CATALOG_SEEDS`) to plant.
+   * Defaults to `"anthropic"` — the operator-configured provider a plain
+   * `workbench seed` plants — so every existing caller that seeds a
+   * single hub-owned key keeps working unchanged. Onboarding's
+   * self-served credential flow always passes the provider the person
+   * actually connected.
+   */
+  provider?: SupportedCredentialProvider;
+  /**
+   * A real API key for `provider`. When set, `seedCatalog` plants a
    * credential row alongside the catalog data, making the seeded
-   * offering launchable.
+   * offerings launchable.
    */
   apiKey?: string;
   /**
@@ -951,24 +961,30 @@ export type SeedCatalogArgs = {
 };
 
 /**
- * Plants the workbench dev catalog (see `catalog-seed-data.ts`) in a
- * tenant's catalog. The catalog model row is always planted — data
+ * Plants one provider's curated catalog (see `catalog-seed-data.ts`) in a
+ * tenant's catalog. The catalog model rows are always planted — data
  * only, viewable before any credential exists. The credential, catalog
- * provider, and offering are planted only when a real `apiKey` is
- * given or `placeholderCredential` is explicitly set; without either,
- * the model is listable but nothing is launchable, and the caller is
- * told so. Idempotent: an already seeded chain is detected by name and
+ * provider, and offerings are planted only when a real `apiKey` is given
+ * or `placeholderCredential` is explicitly set; without either, the
+ * models are listable but nothing is launchable, and the caller is told
+ * so. Idempotent: an already seeded chain is detected by name and
  * skipped, never duplicated.
  */
 export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
-  const { api, cookies, tenantId, log } = args;
+  const { api, cookies, tenantId, log, provider = "anthropic" } = args;
+  const seed = CATALOG_SEEDS[provider];
 
-  const modelId = await ensureCatalogModel(
-    api,
-    cookies,
-    { tenantId, canonicalName: catalogModel.canonicalName },
-    log,
-  );
+  const modelIds: string[] = [];
+  for (const model of seed.models) {
+    modelIds.push(
+      await ensureCatalogModel(
+        api,
+        cookies,
+        { tenantId, canonicalName: model.canonicalName },
+        log,
+      ),
+    );
+  }
 
   const credentialSecret =
     args.apiKey ??
@@ -977,8 +993,8 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
       : undefined);
   if (credentialSecret === undefined) {
     log(
-      `catalog model ${catalogModel.canonicalName} seeded without a credential; ` +
-        "no channel or workflow can launch against it until ANTHROPIC_API_KEY is set and `workbench seed` is re-run",
+      `catalog models for ${seed.provider.name} seeded without a credential; ` +
+        `no channel or workflow can launch against them until a ${seed.provider.name} API key is set and the bench is re-seeded`,
     );
     return;
   }
@@ -986,7 +1002,7 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
   const providerId = await ensureProvider(
     api,
     cookies,
-    { tenantId, name: catalogProvider.name, plugin: catalogProvider.plugin },
+    { tenantId, name: seed.provider.name, plugin: seed.provider.plugin },
     log,
   );
   const credentialId = await ensureCredential(
@@ -995,7 +1011,7 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
     {
       tenantId,
       providerId,
-      name: inferenceCredentialName(catalogProvider.name),
+      name: inferenceCredentialName(seed.provider.name),
       secret: credentialSecret,
     },
     log,
@@ -1005,19 +1021,23 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
     cookies,
     {
       tenantId,
-      name: catalogProvider.name,
-      plugin: catalogProvider.plugin,
-      baseURL: catalogProvider.baseURL,
+      name: seed.provider.name,
+      plugin: seed.provider.plugin,
+      baseURL: seed.provider.baseURL,
       credentialId,
     },
     log,
   );
-  await ensureCatalogOffering(
-    api,
-    cookies,
-    { tenantId, modelId, providerId: catalogProviderId },
-    log,
-  );
+  for (const modelId of modelIds) {
+    await ensureCatalogOffering(
+      api,
+      cookies,
+      { tenantId, modelId, providerId: catalogProviderId },
+      log,
+    );
+  }
 
-  log(`catalog ready: ${catalogProvider.name}/${catalogModel.canonicalName}`);
+  log(
+    `catalog ready: ${seed.provider.name}/${seed.models.map((m) => m.canonicalName).join(", ")}`,
+  );
 }
