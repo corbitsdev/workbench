@@ -68,8 +68,8 @@ describe("mountMemory", () => {
 // DB-gated: skipped when DATABASE_URL is unreachable, matching this repo's
 // existing convention for tests that talk to a real Postgres (see
 // packages/approvals/test/needs-you.test.ts). Proves the actual cutover:
-// mounting with only DATABASE_URL (no second knowledge-plane URL) lands the
-// memory engine's tables in its own `knowledge` schema, never `public`.
+// mounting with only DATABASE_URL (no second memory-plane URL) lands the
+// memory engine's tables in its own `memory` schema, never `public`.
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
 
@@ -78,13 +78,13 @@ describeIfDb("mountMemory: schema isolation against a real database", () => {
     const postgres = (await import("postgres")).default;
     const sql = postgres(databaseUrl as string, { max: 1 });
     try {
-      await sql.unsafe(`DROP SCHEMA IF EXISTS "knowledge" CASCADE`);
+      await sql.unsafe(`DROP SCHEMA IF EXISTS "memory" CASCADE`);
     } finally {
       await sql.end();
     }
   });
 
-  test("mounts off DATABASE_URL alone and creates tables under `knowledge`, not `public`", async () => {
+  test("mounts off DATABASE_URL alone and creates tables under `memory`, not `public`", async () => {
     stashEnv();
     process.env["DATABASE_URL"] = databaseUrl;
     process.env["EMBED_BASE_URL"] = "http://localhost:9/v1";
@@ -101,11 +101,11 @@ describeIfDb("mountMemory: schema isolation against a real database", () => {
     const postgres = (await import("postgres")).default;
     const sql = postgres(databaseUrl as string, { max: 1 });
     try {
-      const knowledgeTables = await sql<{ table_name: string }[]>`
+      const memoryTables = await sql<{ table_name: string }[]>`
         SELECT table_name FROM information_schema.tables
-        WHERE table_schema = 'knowledge'
+        WHERE table_schema = 'memory'
       `;
-      expect(knowledgeTables.length).toBeGreaterThan(0);
+      expect(memoryTables.length).toBeGreaterThan(0);
 
       const publicLeaks = await sql<{ table_name: string }[]>`
         SELECT table_name FROM information_schema.tables

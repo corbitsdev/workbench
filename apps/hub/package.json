@@ -22,7 +22,7 @@
     "@corbits/inbox": "workspace:*",
     "@corbits/insights": "workspace:*",
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
-    "@corbits/memory": "github:corbitsdev/corbits-memory#800340252dc60393f017fa933c59a1c9e67e7264",
+    "@corbits/memory": "github:corbitsdev/corbits-memory#a1f8271be85be0a6afa330b4321224bc5a8b9c69",
     "@corbits/notify": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",

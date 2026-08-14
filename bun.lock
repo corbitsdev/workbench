@@ -31,7 +31,7 @@
         "@corbits/inbox": "workspace:*",
         "@corbits/insights": "workspace:*",
         "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
-        "@corbits/memory": "github:corbitsdev/corbits-memory#800340252dc60393f017fa933c59a1c9e67e7264",
+        "@corbits/memory": "github:corbitsdev/corbits-memory#a1f8271be85be0a6afa330b4321224bc5a8b9c69",
         "@corbits/notify": "workspace:*",
         "@corbits/routines": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
@@ -1149,7 +1149,7 @@
 
     "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#caa5214", { "dependencies": { "@hono/standard-validator": "0.2.3", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "@intx/mime": "^0.2.2", "@intx/types": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-caa5214", "sha512-z8DRBFgA4ukM8p29COeaMjfKZYe5jAUF4OBMiaIQFuW592+DGD/y6Ws6SjGlXmR9azkHNWh8oTzjlWlRP24vsQ=="],
 
-    "@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#8003402", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-8003402", "sha512-F1ypnvRuJLKScrm8sgknPyh4f87xeo/v5Nnm2/JyIckWiez7HZi80crTSK8S+udGBcCkr5v8F8NhB9GdwKlX7g=="],
+    "@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#a1f8271", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-a1f8271", "sha512-KK39NzEUva4JJfoJxYJ/662ZKnQAAY1POjExWzfOB1R0p4pIKcHA0dNjRVvuSIb3TUmFwJEz0r3OD7rqVrbj7A=="],
 
     "@corbits/morning-brief-workflow": ["@corbits/morning-brief-workflow@workspace:workflows/morning-brief"],
 
