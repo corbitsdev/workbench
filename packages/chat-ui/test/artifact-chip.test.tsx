@@ -57,4 +57,35 @@ describe("ArtifactChip", () => {
     expect(markup).toContain("Notes");
     expect(markup).toContain("text/plain");
   });
+
+  test("offers Open in Library when artifactId and onOpenInLibrary are both set", () => {
+    const markup = renderToStaticMarkup(
+      <ArtifactChip
+        part={filePart({ artifactId: "art_1" })}
+        onOpenInLibrary={() => {}}
+      />,
+    );
+    expect(markup).toContain('aria-label="Open in Library"');
+  });
+
+  test("has no Library affordance for a blob-only part (no artifactId)", () => {
+    const markup = renderToStaticMarkup(
+      <ArtifactChip
+        part={filePart({ blobId: "blob_1" })}
+        onOpen={() => {}}
+        onOpenInLibrary={() => {}}
+      />,
+    );
+    expect(markup).not.toContain("Open in Library");
+  });
+
+  test("has no Library affordance when onOpenInLibrary is not supplied", () => {
+    const markup = renderToStaticMarkup(
+      <ArtifactChip
+        part={filePart({ artifactId: "art_1" })}
+        onOpen={() => {}}
+      />,
+    );
+    expect(markup).not.toContain("Open in Library");
+  });
 });

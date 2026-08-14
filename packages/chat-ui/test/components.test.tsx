@@ -199,7 +199,7 @@ describe("ChannelTimeline", () => {
       <ChannelTimeline items={withFile} onOpenArtifact={() => {}} />,
     );
     expect(markup).toMatch(
-      /<button[^>]*class="chat-artifact-chip"[^>]*disabled/,
+      /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
     );
   });
 
@@ -224,7 +224,7 @@ describe("ChannelTimeline", () => {
     );
     expect(markup).toContain("matrix.csv");
     expect(markup).not.toMatch(
-      /<button[^>]*class="chat-artifact-chip"[^>]*disabled/,
+      /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
     );
   });
 
@@ -246,7 +246,7 @@ describe("ChannelTimeline", () => {
     ];
     const markup = renderToStaticMarkup(<ChannelTimeline items={withFile} />);
     expect(markup).toMatch(
-      /<button[^>]*class="chat-artifact-chip"[^>]*disabled/,
+      /<button[^>]*class="chat-artifact-chip-open"[^>]*disabled/,
     );
   });
 

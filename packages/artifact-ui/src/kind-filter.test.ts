@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import {
   artifactMatchesLibraryKindSegment,
+  libraryArtifactIdFromPath,
+  libraryArtifactPath,
   libraryKindSegmentFromPath,
 } from "./kind-filter";
 
@@ -107,5 +109,28 @@ describe("artifactMatchesLibraryKindSegment", () => {
         "unknown",
       ),
     ).toBe(false);
+  });
+});
+
+describe("libraryArtifactPath / libraryArtifactIdFromPath", () => {
+  test("round-trips an artifact id through the deep link", () => {
+    const path = libraryArtifactPath("art_1");
+    expect(path).toBe("/library/a/art_1");
+    expect(libraryArtifactIdFromPath(path)).toBe("art_1");
+  });
+
+  test("encodes and decodes ids with reserved characters", () => {
+    const path = libraryArtifactPath("art/weird id");
+    expect(libraryArtifactIdFromPath(path)).toBe("art/weird id");
+  });
+
+  test("is null for a plain kind-nav path, never mistaken for a kind segment", () => {
+    expect(libraryArtifactIdFromPath("/library/document")).toBeNull();
+    expect(libraryArtifactIdFromPath("/library")).toBeNull();
+    expect(libraryArtifactIdFromPath("/routines")).toBeNull();
+  });
+
+  test("is null when the artifact segment is empty", () => {
+    expect(libraryArtifactIdFromPath("/library/a/")).toBeNull();
   });
 });
