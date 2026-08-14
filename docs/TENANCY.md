@@ -93,6 +93,13 @@ Creation helper: `createDmChannelSpec` in `@corbits/bench-ui`.
 Document any product UX that implies "shared channel without dual
 membership" as blocked on the projection gaps below.
 
+The sidebar's per-row "shared" badge (CL-5881) is one such UX: `GET
+/channels` never sets a `sharedLabel` signal, and
+`apps/web/src/shell/panel-contributions.tsx` never renders one, because
+there is no honest per-channel "is this projected across benches" fact
+to show yet — see CL-5913 for the tracked follow-up once the
+projection gaps below close.
+
 ### Tenancy kind (bench switcher)
 
 A native tenant row carries no `kind`/`type` field, so `/api/me/principals`
