@@ -1,10 +1,22 @@
-// Default Myra channel: the product land surface. Find an existing channel
-// titled Myra (case-insensitive) or create one. Pure helpers stay free of
-// React so they unit-test without a DOM.
+// Default Myra chat: the product land surface. Find an existing Myra-titled
+// row (chat or, for a bench seeded before CL-5985, legacy channel kind) or
+// create a 1:1 chat against Myra's deployed agent definition. Pure helpers
+// stay free of React so they unit-test without a DOM.
 
 import { createChannel, listChannels, type Channel } from "@corbits/chat-ui";
+import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
+
+import { listAgentDefinitions, type AgentDefinition } from "./agents-api";
 
 export const MYRA_CHANNEL_TITLE = "Myra";
+
+/** The seeded workflow asset backing Myra (`packages/hub-client/src/seed.ts`
+ * deploys it as `assistant`, stamped with catalog displayName "Myra"). A
+ * chat's `definitionId` names this deployed definition's row id, never the
+ * asset name itself. */
+const MYRA_ASSET_NAME = WORKFLOW_CATALOG.find(
+  (entry) => entry.displayName === MYRA_CHANNEL_TITLE,
+)?.assetName;
 
 export type EnsureMyraChannelResult =
   | { readonly kind: "ready"; readonly channelId: string }
@@ -37,10 +49,21 @@ export function findMyraChannel(
   return channels.find((channel) => isMyraChannelTitle(channel.title));
 }
 
+/** Myra's deployed agent definition, matched by the seeded `assistant`
+ * asset name — never by display name, which is a UI label, not a wire
+ * identifier. */
+export function findMyraDefinition(
+  definitions: readonly AgentDefinition[],
+): AgentDefinition | undefined {
+  if (MYRA_ASSET_NAME === undefined) return undefined;
+  return definitions.find((definition) => definition.name === MYRA_ASSET_NAME);
+}
+
 /**
- * List channel + chat kinds, reuse a Myra-titled row if one exists, otherwise
- * create a multiplayer channel named Myra. Full defineAgent-per-channel seed
- * is CL-5656; this is the land path that opens stage onto a real channel.
+ * List channel + chat kinds, reuse a Myra-titled row if one exists — a
+ * legacy channel-kind Myra from a bench seeded before CL-5985 included, so
+ * no bench ever ends up with two — otherwise create a 1:1 chat against
+ * Myra's deployed agent definition.
  */
 export async function ensureMyraChannel(
   tenantId: string,
@@ -55,8 +78,17 @@ export async function ensureMyraChannel(
       cachedMyraChannelId = existing.id;
       return { kind: "ready", channelId: existing.id };
     }
+    const definitions = await listAgentDefinitions(tenantId);
+    const definition = findMyraDefinition(definitions);
+    if (definition === undefined) {
+      return {
+        kind: "error",
+        message: `No deployed "${MYRA_CHANNEL_TITLE}" agent definition found for this workbench.`,
+      };
+    }
     const created = await createChannel(tenantId, {
-      kind: "channel",
+      kind: "chat",
+      definitionId: definition.id,
       name: MYRA_CHANNEL_TITLE,
     });
     cachedMyraChannelId = created.id;
