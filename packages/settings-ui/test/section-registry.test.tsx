@@ -51,7 +51,7 @@ describe("resolveSettingsSectionGroups", () => {
           "people",
           "roles",
           "grants",
-          "credentials",
+          "connections",
           "audit",
         ],
       },

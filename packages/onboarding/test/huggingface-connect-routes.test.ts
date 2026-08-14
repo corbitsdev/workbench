@@ -16,7 +16,7 @@ import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import type { CreateOnboardingRoutesDeps } from "../src/routes";
 import { testAndPersistCredential } from "../src/complete-credential";
-import { s256Challenge } from "../src/pkce";
+import { s256Challenge } from "@workbench/connections";
 import { PENDING_SEED_COOKIE } from "../src/pending-seed";
 
 // Stands in for a stable `CREDENTIAL_ENCRYPTION_KEY`: a fresh cipher

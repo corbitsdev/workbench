@@ -20,7 +20,7 @@ import {
   generatePKCEPair,
   type ConnectStateStore,
   type PKCEPair,
-} from "./pkce";
+} from "@workbench/connections";
 
 export { createConnectStateStore, generatePKCEPair };
 export type { ConnectStateStore, PKCEPair };

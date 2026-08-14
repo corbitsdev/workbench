@@ -42,6 +42,10 @@ export {
   CredentialsTable,
   CreateCredentialDialog,
 } from "./credentials-section";
+export {
+  ConnectionsSection,
+  ConnectorCredentialDialog,
+} from "./connections-section";
 
 export {
   grantPreviewSentence,
@@ -98,6 +102,20 @@ export type {
   Provider,
   CreateCredentialInput,
 } from "./credentials-api";
+
+export {
+  ConnectionsApiError,
+  testConnectorCredential,
+  completeConnectorCredential,
+} from "./connections-api";
+
+export { connectorStatus } from "./connections-status";
+export type {
+  ConnectorStatus,
+  ConnectorStatusResult,
+} from "./connections-status";
+
+export { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
 
 export {
   contextWindowLabel,

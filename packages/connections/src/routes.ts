@@ -1,0 +1,205 @@
+// Tenant-scoped credential test-and-store for the Connections surface:
+// `POST /:connectorId/credential/test` proves a pasted api-key against
+// the connector's own probe with no storage, `POST /:connectorId/complete`
+// re-proves it (never trusting a client-side "already tested" claim,
+// mirroring `@workbench/onboarding`'s `completeCredentialSetup`) and, on
+// success, plants the credential through the same `ensureProvider` /
+// `ensureCredential` seam `seedCatalog` uses — never reimplementing
+// credential storage. Mounted inside the platform's native tenant
+// middleware (`TenantEnv`'s `tenant`/`principal` resolved before any
+// handler here runs), the same way `@corbits/webhook-triggers`'
+// management routes are.
+//
+// Only api-key connectors are servable here: an unknown connector id, or
+// a registry entry with no `probe` (oauth-pkce/oauth-code/webhook-secret,
+// display-only in this ticket), is a 404.
+import { Hono, type Context } from "hono";
+import { type } from "arktype";
+import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import {
+  createHubAPI,
+  ensureCredential,
+  ensureProvider,
+  type ApiCall,
+  type EnsureCredentialArgs,
+  type EnsureProviderArgs,
+} from "@workbench/hub-client";
+import type { ConnectorDescriptor } from "./descriptor";
+import { CONNECTOR_REGISTRY } from "./registry";
+
+const ErrorEnvelope = (code: string, message: string) => ({
+  error: { code, message },
+});
+
+const SubmitCredential = type({ apiKey: "string > 0" });
+
+function cookiesFromHeader(header: string | undefined): string[] {
+  if (!header) return [];
+  return header
+    .split(";")
+    .map((pair) => pair.trim())
+    .filter((pair) => pair.length > 0);
+}
+
+export type CreateConnectionRoutesDeps = {
+  hubUrl: string;
+  requireGrant: RequireGrant;
+  log: (line: string) => void;
+  /** Test-only override, defaulting to `CONNECTOR_REGISTRY` — lets
+   * `routes.test.ts` stub a connector's probe without hitting the real
+   * network or reaching for module mocking. */
+  registry?: Readonly<Record<string, ConnectorDescriptor>>;
+  /** Test-only override, matching `complete-credential.ts`'s `seedCatalogFn`
+   * override pattern — lets `routes.test.ts` stub credential storage
+   * without reaching for module mocking. */
+  ensureProviderFn?: (
+    api: ApiCall,
+    cookies: string[],
+    args: EnsureProviderArgs,
+    log: (line: string) => void,
+  ) => ReturnType<typeof ensureProvider>;
+  ensureCredentialFn?: (
+    api: ApiCall,
+    cookies: string[],
+    args: EnsureCredentialArgs,
+    log: (line: string) => void,
+  ) => ReturnType<typeof ensureCredential>;
+};
+
+export function createConnectionRoutes(
+  deps: CreateConnectionRoutesDeps,
+): Hono<TenantEnv> {
+  const app = new Hono<TenantEnv>();
+  const api = createHubAPI(deps.hubUrl);
+  const registry = deps.registry ?? CONNECTOR_REGISTRY;
+  const runEnsureProvider = deps.ensureProviderFn ?? ensureProvider;
+  const runEnsureCredential = deps.ensureCredentialFn ?? ensureCredential;
+
+  function findApiKeyDescriptor(connectorId: string) {
+    const descriptor = registry[connectorId];
+    if (descriptor === undefined || descriptor.probe === undefined) {
+      return undefined;
+    }
+    return descriptor;
+  }
+
+  async function parseApiKeyBody(c: Context<TenantEnv>) {
+    const body: unknown = await c.req.json().catch(() => null);
+    return SubmitCredential(body);
+  }
+
+  app.post(
+    "/:connectorId/credential/test",
+    deps.requireGrant("credential:*", "create"),
+    async (c) => {
+      const connectorId = c.req.param("connectorId");
+      const descriptor = findApiKeyDescriptor(connectorId);
+      if (descriptor === undefined || descriptor.probe === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", `Unknown connector: ${connectorId}`),
+          404,
+        );
+      }
+
+      const parsed = await parseApiKeyBody(c);
+      if (parsed instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `An API key is required: ${parsed.summary}`,
+          ),
+          400,
+        );
+      }
+
+      const result = await descriptor.probe(parsed.apiKey);
+      if (!result.ok) {
+        return c.json(ErrorEnvelope("invalid_credential", result.message), 422);
+      }
+      return c.json({ ok: true }, 200);
+    },
+  );
+
+  // The PROVIDER row is named by the connector's lowercase `id` — the
+  // canonical name `credentialBindings` resolve against via the
+  // platform's case-sensitive `resolveProviderByName` (and the same
+  // convention onboarding's inference seeding uses). `displayName` is
+  // UI-only and must never reach a provider row. The CREDENTIAL row
+  // keeps the human-facing displayName; it does not collide with
+  // onboarding's seeded `"<id>-default"` name, so reconnecting an
+  // inference provider here creates a second row rather than updating
+  // the seeded one — accepted for this ticket, not silently papered
+  // over.
+  app.post(
+    "/:connectorId/complete",
+    deps.requireGrant("credential:*", "create"),
+    async (c) => {
+      const connectorId = c.req.param("connectorId");
+      const descriptor = findApiKeyDescriptor(connectorId);
+      if (descriptor === undefined || descriptor.probe === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", `Unknown connector: ${connectorId}`),
+          404,
+        );
+      }
+
+      const parsed = await parseApiKeyBody(c);
+      if (parsed instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `An API key is required: ${parsed.summary}`,
+          ),
+          400,
+        );
+      }
+
+      const test = await descriptor.probe(parsed.apiKey);
+      if (!test.ok) {
+        return c.json(ErrorEnvelope("invalid_credential", test.message), 422);
+      }
+
+      const tenant = c.get("tenant");
+      const cookies = cookiesFromHeader(c.req.header("cookie"));
+      try {
+        const providerId = await runEnsureProvider(
+          api,
+          cookies,
+          {
+            tenantId: tenant.id,
+            name: descriptor.id,
+            plugin: descriptor.id,
+          },
+          deps.log,
+        );
+        const credentialId = await runEnsureCredential(
+          api,
+          cookies,
+          {
+            tenantId: tenant.id,
+            providerId,
+            name: descriptor.displayName,
+            secret: parsed.apiKey,
+            type: "api_key",
+          },
+          deps.log,
+        );
+        return c.json({ credentialId, status: "active" as const }, 200);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        deps.log(
+          `connection setup failed for connector ${connectorId} on tenant ${tenant.id}: ${message}`,
+        );
+        return c.json(
+          ErrorEnvelope(
+            "connection_setup_failed",
+            "The key checked out, but saving the connection failed. Try again in a moment.",
+          ),
+          500,
+        );
+      }
+    },
+  );
+
+  return app;
+}

@@ -46,6 +46,7 @@
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
+        "@workbench/connections": "workspace:*",
         "@workbench/echo": "workspace:*",
         "@workbench/hub-client": "workspace:*",
         "@workbench/onboarding": "workspace:*",
@@ -335,6 +336,22 @@
         "typescript": "catalog:",
       },
     },
+    "packages/connections": {
+      "name": "@workbench/connections",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/crypto": "workspace:*",
+        "@intx/hub-api": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@workbench/hub-client": "workspace:*",
+        "arktype": "catalog:",
+        "hono": "^4.11.9",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/context-menu": {
       "name": "@corbits/context-menu",
       "version": "0.0.1",
@@ -498,6 +515,7 @@
         "@intx/crypto": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/types": "workspace:*",
+        "@workbench/connections": "workspace:*",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
         "hono": "^4.11.9",
@@ -559,7 +577,9 @@
         "@corbits/bench-ui": "workspace:*",
         "@corbits/chat-ui": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#1c9d9ce4e7224998f2d64883ade95b8d759e74ea",
+        "@corbits/workflow-catalog": "workspace:*",
         "@intx/types": "workspace:*",
+        "@workbench/connections": "workspace:*",
         "arktype": "catalog:",
         "lucide-react": "^1.27.0",
         "react": "^19.2.0",
@@ -1565,6 +1585,8 @@
     "@vitejs/plugin-react": ["@vitejs/plugin-react@5.2.0", "", { "dependencies": { "@babel/core": "^7.29.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-rc.3", "@types/babel__core": "^7.20.5", "react-refresh": "^0.18.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0" } }, "sha512-YmKkfhOAi3wsB1PhJq5Scj3GXMn3WvtQ/JC0xoopuHoXSdmtdStOpFrYaT1kie2YgFBcIe64ROzMYRjCrYOdYw=="],
 
     "@workbench/cli": ["@workbench/cli@workspace:packages/cli"],
+
+    "@workbench/connections": ["@workbench/connections@workspace:packages/connections"],
 
     "@workbench/echo": ["@workbench/echo@workspace:packages/echo"],
 

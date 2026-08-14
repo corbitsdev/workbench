@@ -8,8 +8,8 @@ import {
   Bell,
   Bot,
   Home,
-  Key,
   List,
+  Plug,
   Shield,
   Star,
   User,
@@ -22,7 +22,7 @@ import { AgentSection } from "./agent-section";
 import { AuditSection } from "./audit-section";
 import { BenchSection } from "./bench-section";
 import { ChatSection } from "./chat-section";
-import { CredentialsSection } from "./credentials-section";
+import { ConnectionsSection } from "./connections-section";
 import { GrantsSection } from "./grants-section";
 import { NotificationsSection } from "./notifications-section";
 import { PeopleSection } from "./people-section";
@@ -104,11 +104,11 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         render: (ctx) => <GrantsSection tenantId={ctx.tenantId} />,
       },
       {
-        id: "credentials",
-        title: SETTINGS_STRINGS.credentialsSectionTitle,
-        icon: Key,
+        id: "connections",
+        title: SETTINGS_STRINGS.connectionsSectionTitle,
+        icon: Plug,
         gate: "credentials",
-        render: (ctx) => <CredentialsSection tenantId={ctx.tenantId} />,
+        render: (ctx) => <ConnectionsSection tenantId={ctx.tenantId} />,
       },
       {
         id: "audit",

@@ -37,6 +37,7 @@
     "@intx/mime": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
+    "@workbench/connections": "workspace:*",
     "@workbench/echo": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@workbench/onboarding": "workspace:*",
