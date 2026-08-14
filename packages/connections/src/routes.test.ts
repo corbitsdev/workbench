@@ -64,6 +64,41 @@ const FAKE_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> = {
     docsUrl: "https://example.test/docs",
     feedsTools: [],
   },
+  "unconfigured-oauth-connector": {
+    id: "unconfigured-oauth-connector",
+    displayName: "Unconfigured OAuth Connector",
+    authKind: "oauth-pkce",
+    credentialPlugin: "http",
+    docsUrl: "https://example.test/docs",
+    feedsTools: [],
+    oauth: {
+      authorizeUrl: "https://example.test/authorize",
+      usesPKCE: true,
+      echoesState: false,
+      deploysDefaultWorkflows: false,
+      clientId: (env) => env["unconfiguredOauthConnectorClientId"],
+      buildAuthorizeUrl: ({ callbackUrl }) =>
+        new URL(`https://example.test/authorize?redirect_uri=${callbackUrl}`),
+      exchange: async () => ({ ok: true, apiKey: "unused" }),
+    },
+  },
+  "no-client-id-needed-connector": {
+    id: "no-client-id-needed-connector",
+    displayName: "No Client Id Needed Connector",
+    authKind: "oauth-pkce",
+    credentialPlugin: "http",
+    docsUrl: "https://example.test/docs",
+    feedsTools: [],
+    oauth: {
+      authorizeUrl: "https://example.test/authorize",
+      usesPKCE: true,
+      echoesState: false,
+      deploysDefaultWorkflows: false,
+      buildAuthorizeUrl: ({ callbackUrl }) =>
+        new URL(`https://example.test/authorize?redirect_uri=${callbackUrl}`),
+      exchange: async () => ({ ok: true, apiKey: "unused" }),
+    },
+  },
 };
 
 function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {
@@ -87,6 +122,7 @@ function buildApp(
     ensureCredentialFn?: Parameters<
       typeof createConnectionRoutes
     >[0]["ensureCredentialFn"];
+    oauthEnv?: Readonly<Record<string, string | undefined>>;
   } = {},
 ) {
   const routes = createConnectionRoutes({
@@ -100,9 +136,40 @@ function buildApp(
     ...(overrides.ensureCredentialFn !== undefined
       ? { ensureCredentialFn: overrides.ensureCredentialFn }
       : {}),
+    ...(overrides.oauthEnv !== undefined
+      ? { oauthEnv: overrides.oauthEnv }
+      : {}),
   });
   return mountAs(routes);
 }
+
+describe("GET /oauth-configured", () => {
+  test("reports true for a connector needing no client id, and for one whose client id is present", async () => {
+    const app = buildApp({
+      oauthEnv: { unconfiguredOauthConnectorClientId: "configured-id" },
+    });
+    const response = await app.request("/oauth-configured");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, boolean>;
+    expect(body["no-client-id-needed-connector"]).toBe(true);
+    expect(body["unconfigured-oauth-connector"]).toBe(true);
+  });
+
+  test("reports false for a connector whose client id is absent from the env bag", async () => {
+    const app = buildApp();
+    const response = await app.request("/oauth-configured");
+    const body = (await response.json()) as Record<string, boolean>;
+    expect(body["unconfigured-oauth-connector"]).toBe(false);
+  });
+
+  test("omits api-key and display-only connectors -- only oauth-bearing entries appear", async () => {
+    const app = buildApp();
+    const response = await app.request("/oauth-configured");
+    const body = (await response.json()) as Record<string, boolean>;
+    expect(body["accepting-connector"]).toBeUndefined();
+    expect(body["display-only-connector"]).toBeUndefined();
+  });
+});
 
 describe("POST /:connectorId/credential/test", () => {
   test("unknown connector 404s", async () => {
