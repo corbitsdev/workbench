@@ -3,7 +3,7 @@
   "private": true,
   "description": "Turns one sales call transcript into one piece of targeted collateral, gated behind a single human approval before anything is finalized",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
     "workflow": {

@@ -3,7 +3,7 @@
   "private": true,
   "description": "Webhook-triggered workflow launches: an external service (e.g. Granola) posts a payload that maps to input for an existing tenant workflow definition, launched through the same folded-run path chat uses.",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

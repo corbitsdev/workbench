@@ -3,7 +3,7 @@
   "private": true,
   "description": "Workbench artifacts as an @intx/agent tool bundle: lists a tenant's Library artifacts, and the HTTP client the sanctioned workflow-artifacts surface (CL-6000) is built on",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

@@ -3,7 +3,7 @@
   "private": true,
   "description": "Single-step, mail-triggered workflow that writes a daily brief from the sender's recent activity across connected sources",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
     "workflow": {

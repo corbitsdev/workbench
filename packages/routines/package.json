@@ -3,7 +3,7 @@
   "private": true,
   "description": "The Routine domain model: named automations over workflow runs, their triggers, and run correlation",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

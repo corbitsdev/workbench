@@ -3,7 +3,7 @@
   "private": true,
   "description": "Single-page interface for the workbench: every page and route lives here, composed from the published component library, and builds to a static bundle the hub serves from its own origin (point HUB_STATIC_DIR at apps/web/dist)",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "SEE LICENSE IN ../../LICENSE.md",
   "type": "module",
   "scripts": {
     "dev": "vite",

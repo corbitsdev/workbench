@@ -3,7 +3,7 @@
   "private": true,
   "description": "The hub's native HTTP API as a typed client, plus tenant seeding: authenticate, deploy the default workflow set, and confirm every deployment answers",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

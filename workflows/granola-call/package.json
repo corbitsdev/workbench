@@ -3,7 +3,7 @@
   "private": true,
   "description": "Polls Granola for new calls and starts one call-notes run per call without a published call-notes artifact yet",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
     "workflow": {

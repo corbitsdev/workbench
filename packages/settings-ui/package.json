@@ -3,7 +3,7 @@
   "private": true,
   "description": "The settings surface's shell: a section-nav layout that packages contribute sections into, plus the Bench, Chats & channels, and Account sections shipped today",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

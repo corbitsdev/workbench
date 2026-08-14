@@ -3,7 +3,7 @@
   "private": true,
   "description": "Turns things that need a human — a parked approval, a failed run, a mention — into mail in the recipient's mailbox, and fans that mail out to registered sinks",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

@@ -3,7 +3,7 @@
   "private": true,
   "description": "Generic execution host that dials in to a hub over WebSocket and hosts whatever it is deployed",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "SEE LICENSE IN ../../LICENSE.md",
   "type": "module",
   "bin": {
     "workflow-child": "./bin/workflow-child"

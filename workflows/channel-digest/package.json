@@ -3,7 +3,7 @@
   "private": true,
   "description": "Minimal mail-triggered workflow that posts a deterministic summary line, exercising the channel-mail path at zero inference cost",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
     "workflow": {

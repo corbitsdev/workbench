@@ -3,7 +3,7 @@
   "private": true,
   "description": "GitHub search integration: a minimal REST client and an @intx/agent tool bundle exposing github_activity",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

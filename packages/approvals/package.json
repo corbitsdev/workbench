@@ -3,7 +3,7 @@
   "private": true,
   "description": "Resolves the tenant's pending approvals (Interchange's own \"needs you\" state) into a display-safe view model, and exposes it as a Hono route factory the hub mounts alongside Interchange's native approve/reject routes",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

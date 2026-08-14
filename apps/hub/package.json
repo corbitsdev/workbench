@@ -3,7 +3,7 @@
   "private": true,
   "description": "Composition root that mounts the platform API, extension routes, and the user interface on one origin",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "SEE LICENSE IN ../../LICENSE.md",
   "type": "module",
   "scripts": {
     "start": "bun src/index.ts",

@@ -3,7 +3,7 @@
   "private": true,
   "description": "Processes one Granola call end to end: raw transcript artifact, extracted working notes, then a verified, published call-notes artifact",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
     "workflow": {

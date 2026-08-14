@@ -3,7 +3,7 @@
   "private": true,
   "description": "The global right-click context-menu system: resolving a DOM event to a typed target, deciding whether a modal overlay should suppress it, and the open/position state a react-ui Menu renders from",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

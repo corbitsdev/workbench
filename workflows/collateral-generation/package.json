@@ -3,7 +3,7 @@
   "private": true,
   "description": "Drafts marketing collateral from one or more picked sources and content types, with a per-piece swipe review and one human approval on the final assembled set",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
     "workflow": {

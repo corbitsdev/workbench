@@ -3,7 +3,7 @@
   "private": true,
   "description": "Mail-triggered conversational workflow with a general-purpose assistant agent",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
     "workflow": {

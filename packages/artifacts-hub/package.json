@@ -3,7 +3,7 @@
   "private": true,
   "description": "Tenant-scoped Library HTTP surface over the mounted @corbits/artifacts engine: list, get-by-id, multipart upload, and per-kind-segment counts for the Library nav",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

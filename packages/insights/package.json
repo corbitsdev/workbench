@@ -3,7 +3,7 @@
   "private": true,
   "description": "Workbench-owned usage sink and tenant insights queries: persists per-turn token classes from the live inference event stream, exposes cost/token/activity/run-trace queries. Missing rates and pre-sink history are explicit absences, never fabricated zeros.",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

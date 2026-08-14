@@ -3,7 +3,7 @@
   "private": true,
   "description": "Turns one target website into a short list of scored Reddit opportunities, with a search-plan review and one human approval before anything is finalized",
   "version": "0.0.1",
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "LGPL-2.1-or-later",
   "type": "module",
   "corbits": {
     "workflow": {
