@@ -12,12 +12,18 @@ import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { createEnvKeyCredentialCipher } from "@intx/crypto";
+import {
+  createEnvKeyCredentialCipher,
+  createNoopCredentialCipher,
+} from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import type { CreateOnboardingRoutesDeps } from "../src/routes";
 import { testAndPersistCredential } from "../src/complete-credential";
 import { s256Challenge } from "@workbench/connections";
-import { PENDING_SEED_COOKIE } from "../src/pending-seed";
+import {
+  createInMemoryPendingSeedStore,
+  type PendingSeedStore,
+} from "../src/pending-seed";
 
 // Stands in for a stable `CREDENTIAL_ENCRYPTION_KEY`: a fresh cipher
 // built from these same bytes is indistinguishable, to the state store,
@@ -196,6 +202,9 @@ function connectRoutes(
     hubUrl: overrides.hubUrl ?? "https://bench.example.com",
     pushWorkflow: overrides.pushWorkflow ?? (async () => "pushed"),
     log: overrides.log ?? (() => undefined),
+    pendingSeedStore:
+      overrides.pendingSeedStore ??
+      createInMemoryPendingSeedStore(createNoopCredentialCipher()),
   };
   if (overrides.omitClientId !== true) {
     deps.huggingfaceClientId = overrides.huggingfaceClientId ?? "hf_client_1";
@@ -301,7 +310,11 @@ describe("GET /oauth/huggingface/callback", () => {
       userId: string;
       credentialMetadata?: Record<string, unknown>;
     }[] = [];
+    const pendingSeedStore: PendingSeedStore = createInMemoryPendingSeedStore(
+      createNoopCredentialCipher(),
+    );
     const app = connectRoutes({
+      pendingSeedStore,
       huggingfaceConnect: {
         exchange: async ({ code, codeVerifier, redirectUri, clientId }) => {
           exchanges.push({ code, codeVerifier, redirectUri, clientId });
@@ -372,11 +385,24 @@ describe("GET /oauth/huggingface/callback", () => {
     ]);
 
     // The plaintext token is carried forward for the deferred deploy
-    // step as a sealed, HttpOnly cookie — never as a redirect query
-    // parameter.
+    // step server-side, in the pending-seed store — never as a cookie
+    // (this response still clears the connect-state cookies, but never
+    // sets the pre-CL-6031 `workbench_pending_seed` one) or a redirect
+    // query parameter.
     const setCookie = response.headers.get("set-cookie") ?? "";
-    expect(setCookie).toContain(`${PENDING_SEED_COOKIE}=`);
-    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).not.toContain("workbench_pending_seed=");
+    const pending = await pendingSeedStore.read({
+      userId: "user_1",
+      tenantId: "ten_1",
+    });
+    expect(pending).toEqual({
+      userId: "user_1",
+      tenantId: "ten_1",
+      principalId: "prn_1",
+      tenantDomain: "alice-user1.bench.local",
+      provider: "huggingface",
+      apiKey: "hf_oauth_minted",
+    });
   });
 
   test("a callback whose query state disagrees with the cookie never exchanges", async () => {

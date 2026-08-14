@@ -21,7 +21,6 @@ import {
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { Hono } from "hono";
-import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { type } from "arktype";
 import {
   isFullySeeded,
@@ -44,12 +43,7 @@ import {
   type ConnectorDescriptor,
   type OAuthExchangeResult,
 } from "@workbench/connections";
-import {
-  openPendingSeed,
-  PENDING_SEED_COOKIE,
-  PENDING_SEED_TTL_MS,
-  sealPendingSeed,
-} from "./pending-seed";
+import type { PendingSeedStore } from "./pending-seed";
 import { exchangeCodeForKey } from "./openrouter-connect";
 import { exchangeCodeForToken as exchangeHuggingFaceCodeForToken } from "./huggingface-connect";
 
@@ -92,6 +86,13 @@ export type CreateOnboardingRoutesDeps = {
   };
   /** Test seam for `POST /complete-setup`'s slow-path deploy step. */
   ensureSeededFn?: typeof ensureSeeded;
+  /** Server-side custody for a just-connected credential's plaintext
+   * key between the OAuth callback and this package's own
+   * `/complete-setup` follow-up — see `./pending-seed.ts`'s module
+   * comment for why this replaced an HttpOnly cookie (CL-6031). Built
+   * from `createDrizzlePendingSeedStore(db, credentialCipher)` in
+   * production; tests inject `createInMemoryPendingSeedStore`. */
+  pendingSeedStore: PendingSeedStore;
   /** Seals the OAuth connect state (PKCE verifier included) parked
    * between `/start` and `/callback`, so a hub restart in between
    * doesn't strand it — see `@workbench/connections`' `pkce.ts`. The same `CredentialCipher`
@@ -329,12 +330,12 @@ export function createOnboardingRoutes(
   // entries. What stays here, unchanged: proving and persisting the
   // exchanged material (`testAndPersistCredential`, the fast half —
   // never a workflow deploy), the duplicate-callback recovery lookup
-  // (`recentlyConnectedCredential`, below), and sealing the pending-seed
-  // cookie the deferred `/complete-setup` deploy step reads. Every test
-  // seam this package's deps already exposed (`openrouterConnect`/
-  // `huggingfaceConnect` overrides) still works — they're threaded into
-  // the registry entries' `oauth.exchange` below.
-  const secureCookies = deps.hubUrl.startsWith("https:");
+  // (`recentlyConnectedCredential`, below), and writing the pending-seed
+  // row the deferred `/complete-setup` deploy step reads (see
+  // `./pending-seed.ts`). Every test seam this package's deps already
+  // exposed (`openrouterConnect`/`huggingfaceConnect` overrides) still
+  // works — they're threaded into the registry entries' `oauth.exchange`
+  // below.
 
   /**
    * Adapts `packages/onboarding`'s pre-CL-6028 exchange function shape
@@ -476,9 +477,11 @@ export function createOnboardingRoutes(
   }
 
   /** Runs only for a connector whose `oauth.deploysDefaultWorkflows` is
-   * true (both OpenRouter and Hugging Face) — seals the plaintext
-   * material into the pending-seed cookie `/complete-setup` reads, so
-   * the deferred workflow deploy never blocks this redirect. */
+   * true (both OpenRouter and Hugging Face) — writes the plaintext
+   * material into the pending-seed store `/complete-setup` reads, so
+   * the deferred workflow deploy never blocks this redirect. The
+   * browser gets nothing from this call: no cookie, no ciphertext, only
+   * the ordinary redirect — see `./pending-seed.ts`'s module comment. */
   async function afterConnected(args: {
     c: import("hono").Context;
     connectorId: string;
@@ -490,20 +493,13 @@ export function createOnboardingRoutes(
     tenantDomain: string;
   }): Promise<void> {
     const provider = args.connectorId as SupportedCredentialProvider;
-    const pendingSeedToken = await sealPendingSeed(credentialCipher, {
+    await deps.pendingSeedStore.put({
       userId: args.userId,
       tenantId: args.tenantId,
       principalId: args.principalId,
       tenantDomain: args.tenantDomain,
       provider,
       apiKey: args.apiKey,
-    });
-    setCookie(args.c, PENDING_SEED_COOKIE, pendingSeedToken, {
-      httpOnly: true,
-      sameSite: "Lax",
-      secure: secureCookies,
-      path: "/",
-      maxAge: Math.floor(PENDING_SEED_TTL_MS / 1000),
     });
   }
 
@@ -674,11 +670,14 @@ export function createOnboardingRoutes(
 
       const fullySeeded = await isFullySeeded(api, cookies, tenant.tenantId);
       if (fullySeeded) {
-        // A pending token has done its job once the bench reads as
+        // A pending row has done its job once the bench reads as
         // seeded — whether it was this very call's ensureSeeded run or
-        // a concurrent one that beat it there — so it must not sit in
-        // the browser, sealed key and all, for the rest of its TTL.
-        deleteCookie(c, PENDING_SEED_COOKIE, { path: "/" });
+        // a concurrent one that beat it there — so it must not linger
+        // in the store, plaintext key and all, for the rest of its TTL.
+        await deps.pendingSeedStore.clear({
+          userId: user.id,
+          tenantId: tenant.tenantId,
+        });
         return c.json(
           {
             kind: "seeded",
@@ -690,22 +689,15 @@ export function createOnboardingRoutes(
         );
       }
 
-      const pendingToken = getCookie(c, PENDING_SEED_COOKIE);
-      const pending =
-        pendingToken === undefined
-          ? undefined
-          : await openPendingSeed(credentialCipher, pendingToken, {
-              userId: user.id,
-              tenantId: tenant.tenantId,
-            });
+      // A row that fails to validate (expired, wrong user/tenant,
+      // corrupt) is cleared by `read` itself — see `./pending-seed.ts`'s
+      // `PendingSeedStore.read` doc comment — so there is nothing left
+      // to clean up here beyond the success path below.
+      const pending = await deps.pendingSeedStore.read({
+        userId: user.id,
+        tenantId: tenant.tenantId,
+      });
       if (pending === undefined) {
-        // A token was present but didn't open (expired, wrong
-        // user/tenant, corrupt) — it is dead weight either way, so it
-        // is cleared rather than left to linger out its TTL unused. A
-        // genuinely absent cookie makes this a harmless no-op.
-        if (pendingToken !== undefined) {
-          deleteCookie(c, PENDING_SEED_COOKIE, { path: "/" });
-        }
         return c.json({ kind: "unseeded" }, 200);
       }
 
@@ -720,7 +712,10 @@ export function createOnboardingRoutes(
         provider: pending.provider,
         apiKey: pending.apiKey,
       });
-      deleteCookie(c, PENDING_SEED_COOKIE, { path: "/" });
+      await deps.pendingSeedStore.clear({
+        userId: user.id,
+        tenantId: tenant.tenantId,
+      });
       return c.json(
         {
           kind: "seeded",

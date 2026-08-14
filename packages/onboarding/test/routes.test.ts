@@ -8,7 +8,17 @@ import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { createNoopCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
+import { createInMemoryPendingSeedStore } from "../src/pending-seed";
+
+// None of these tests exercise the pending-seed store — it is required
+// wiring for `createOnboardingRoutes` (see `./complete-setup-routes.test.ts`
+// and `../src/pending-seed.test.ts` for its actual coverage), so every
+// call site here gets a fresh, unused in-memory instance.
+const pendingSeedStore = createInMemoryPendingSeedStore(
+  createNoopCredentialCipher(),
+);
 
 const asUser: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set("user", { id: "user_1", email: "alice@example.com" } as never);
@@ -31,6 +41,7 @@ describe("POST /provision", () => {
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => "pushed",
       log: (line) => lines.push(line),
+      pendingSeedStore,
     });
     const app = mountAuthenticated(routes);
 
@@ -67,6 +78,7 @@ describe("POST /provision", () => {
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => "pushed",
         log: () => undefined,
+        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -103,6 +115,7 @@ describe("POST /provision", () => {
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => "pushed",
         log: () => undefined,
+        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -125,6 +138,7 @@ describe("POST /provision", () => {
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => "pushed",
       log: () => undefined,
+      pendingSeedStore,
     });
     const app = mountAuthenticated(routes);
     const named = {
@@ -160,6 +174,7 @@ describe("POST /provision", () => {
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => "pushed",
         log: () => undefined,
+        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -199,6 +214,7 @@ describe("POST /provision", () => {
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => "pushed",
         log: () => undefined,
+        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -230,6 +246,7 @@ describe("POST /provision", () => {
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => "pushed",
         log: () => undefined,
+        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -254,6 +271,7 @@ describe("POST /provision", () => {
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => "pushed",
       log: () => undefined,
+      pendingSeedStore,
     });
 
     const response = await routes.request("/provision", { method: "POST" });
@@ -272,6 +290,7 @@ describe("POST /credential/test", () => {
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => "pushed",
       log: () => undefined,
+      pendingSeedStore,
     });
 
     const response = await routes.request("/credential/test", {
@@ -295,6 +314,7 @@ describe("POST /credential/test", () => {
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => "pushed",
       log: () => undefined,
+      pendingSeedStore,
     });
     const app = mountAuthenticated(routes);
 
@@ -316,6 +336,7 @@ describe("POST /credential/test", () => {
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => "pushed",
       log: () => undefined,
+      pendingSeedStore,
     });
     const app = mountAuthenticated(routes);
 
@@ -339,6 +360,7 @@ describe("POST /complete", () => {
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => "pushed",
       log: () => undefined,
+      pendingSeedStore,
     });
 
     const response = await routes.request("/complete", {
@@ -362,6 +384,7 @@ describe("POST /complete", () => {
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => "pushed",
       log: () => undefined,
+      pendingSeedStore,
     });
     const app = mountAuthenticated(routes);
 

@@ -21,3 +21,13 @@ export type {
 } from "./openrouter-connect";
 export { createOnboardingRoutes } from "./routes";
 export type { CreateOnboardingRoutesDeps } from "./routes";
+export {
+  createDrizzlePendingSeedStore,
+  createInMemoryPendingSeedStore,
+  PENDING_SEED_TTL_MS,
+} from "./pending-seed";
+export type {
+  PendingSeed,
+  PendingSeedDb,
+  PendingSeedStore,
+} from "./pending-seed";

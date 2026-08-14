@@ -119,7 +119,10 @@ import {
   createPresenceRoutes,
 } from "@corbits/presence";
 import { createGitWorkflowPusher } from "@workbench/hub-client";
-import { createOnboardingRoutes } from "@workbench/onboarding";
+import {
+  createDrizzlePendingSeedStore,
+  createOnboardingRoutes,
+} from "@workbench/onboarding";
 import { createConnectionRoutes } from "@workbench/connections";
 import {
   createInMemoryNotifyDispatchStore,
@@ -217,14 +220,18 @@ function createStaticHandler(staticDir: string) {
 /**
  * The `CredentialCipher` (see `@intx/types`) every secret-at-rest seam
  * in this composition root shares — `webhookTriggerStore`'s signing
- * secrets, and `@workbench/onboarding`'s in-flight OAuth connect state
+ * secrets, `@workbench/onboarding`'s in-flight OAuth connect state
  * (the PKCE verifier parked between `/start` and `/callback`, sealed
- * into the state itself so it survives a restart between the two). A
- * real key (`CREDENTIAL_ENCRYPTION_KEY`) builds an AES-256-GCM cipher.
- * An unset key hard-fails boot — a self-hosting operator who forgets
- * this variable must not silently end up storing those secrets in the
- * clear — unless `ALLOW_PLAINTEXT_SECRETS` opts into the identity
- * no-op cipher with a boot warning, for dev/test only.
+ * into the state itself so it survives a restart between the two), and
+ * (since CL-6031) the same package's `pending_seed` table — a
+ * just-connected credential's plaintext key, parked server-side
+ * between the OAuth callback and the onboarding page's own
+ * `/complete-setup` follow-up (see `packages/onboarding/src/pending-seed.ts`).
+ * A real key (`CREDENTIAL_ENCRYPTION_KEY`) builds an AES-256-GCM
+ * cipher. An unset key hard-fails boot — a self-hosting operator who
+ * forgets this variable must not silently end up storing those secrets
+ * in the clear — unless `ALLOW_PLAINTEXT_SECRETS` opts into the
+ * identity no-op cipher with a boot warning, for dev/test only.
  */
 export function credentialCipherFrom(
   config: HubConfig,
@@ -235,9 +242,10 @@ export function credentialCipherFrom(
       throw new Error(
         [
           "CREDENTIAL_ENCRYPTION_KEY is not set.",
-          "It encrypts secrets at rest — webhook-trigger signing secrets and",
-          "onboarding's OAuth PKCE connect state — so the hub refuses to boot",
-          "without it. Generate one and add it to .env:",
+          "It encrypts secrets at rest — webhook-trigger signing secrets,",
+          "onboarding's OAuth PKCE connect state, and its pending-seed",
+          "table — so the hub refuses to boot without it. Generate one and",
+          "add it to .env:",
           "",
           "  openssl rand -hex 32",
           "",
@@ -247,7 +255,7 @@ export function credentialCipherFrom(
         ].join("\n"),
       );
     }
-    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets, onboarding OAuth connect state) will NOT be encrypted at rest. ALLOW_PLAINTEXT_SECRETS is set — expected in dev/test only, never for a real deployment.`;
+    log.warn`No CREDENTIAL_ENCRYPTION_KEY configured; secrets (e.g. webhook-trigger signing secrets, onboarding OAuth connect state, onboarding's pending-seed table) will NOT be encrypted at rest. ALLOW_PLAINTEXT_SECRETS is set — expected in dev/test only, never for a real deployment.`;
     return createNoopCredentialCipher();
   }
   return createEnvKeyCredentialCipher(
@@ -903,6 +911,7 @@ export async function createHub(config: HubConfig) {
     pushWorkflow: createGitWorkflowPusher(),
     log: (line) => log.info`${line}`,
     credentialCipher,
+    pendingSeedStore: createDrizzlePendingSeedStore(db, credentialCipher),
   };
   if (config.operatorTenantId !== undefined)
     onboardingDeps.operatorTenantId = config.operatorTenantId;

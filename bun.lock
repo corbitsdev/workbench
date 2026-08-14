@@ -564,7 +564,9 @@
         "@workbench/connections": "workspace:*",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
+        "postgres": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
