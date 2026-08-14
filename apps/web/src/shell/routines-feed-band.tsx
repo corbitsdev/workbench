@@ -71,6 +71,8 @@ export function routineTriggerSummary(trigger: Routine["trigger"]): string {
       return `Every ${WEEKDAY_NAMES[trigger.dayOfWeek] ?? "week"} ${clockTime(trigger.hour, trigger.minute)}`;
     case "cron":
       return `Cron ${trigger.expression}`;
+    case "webhook":
+      return "On webhook";
   }
 }
 

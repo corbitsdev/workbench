@@ -39,6 +39,8 @@ function zoneLabel(timezone: string | undefined): string {
 export function cadenceLabel(trigger: RoutineTrigger): string {
   if (trigger === null) return "Manual";
   switch (trigger.kind) {
+    case "webhook":
+      return "On webhook";
     case "interval":
       return trigger.every === 1
         ? `Every ${trigger.unit === "minutes" ? "minute" : "hour"}`
@@ -59,7 +61,7 @@ export function cadenceLabel(trigger: RoutineTrigger): string {
 
 /** Renders the closed-form presets to the same cron shape the scheduler fires against. */
 function cronExpressionForPreset(
-  trigger: Exclude<RoutineTrigger, null | { kind: "cron" }>,
+  trigger: Exclude<RoutineTrigger, null | { kind: "cron" | "webhook" }>,
 ): string {
   switch (trigger.kind) {
     case "interval":
@@ -74,15 +76,16 @@ function cronExpressionForPreset(
 }
 
 function timezoneFor(trigger: Exclude<RoutineTrigger, null>): string {
-  if (trigger.kind === "interval") return "UTC";
+  if (trigger.kind === "interval" || trigger.kind === "webhook") return "UTC";
   return trigger.timezone ?? "UTC";
 }
 
 /**
  * A best-effort next-fire estimate for display only — never fed back
  * into a launch decision, which is the scheduler's job against the real
- * clock. Returns `null` for a manual routine, or when the expression
- * has no fire inside the lookahead window.
+ * clock. Returns `null` for a manual or webhook routine (neither fires
+ * on a clock), or when the expression has no fire inside the lookahead
+ * window.
  *
  * Raw cron is estimated the same way presets are: same package, same
  * timezone semantics as the hub.
@@ -91,7 +94,7 @@ export function approximateNextRun(
   trigger: RoutineTrigger,
   now: Date,
 ): Date | null {
-  if (trigger === null) return null;
+  if (trigger === null || trigger.kind === "webhook") return null;
   try {
     const expression =
       trigger.kind === "cron"
