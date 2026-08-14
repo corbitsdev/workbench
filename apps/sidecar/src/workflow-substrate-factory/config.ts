@@ -192,6 +192,24 @@ export function parseAdapterManifest(raw: string): AdapterManifest {
  * active source, the tail the reactor's failover targets); the table's
  * arktype guarantees it is non-empty.
  */
+/**
+ * Derives the hub's plain HTTP origin from its `HUB_WS_URL` trust anchor
+ * (`ws://` -> `http://`, `wss://` -> `https://`, same host/port, no
+ * path). Used to reach the workflow-artifacts HTTP surface
+ * (`@corbits/artifacts-hub`'s `createWorkflowArtifactRoutes`, CL-6000)
+ * with the same `SIDECAR_TOKEN` the child already carries for pack-push
+ * — a second `HUB_HTTP_URL` substrate-config key would just be another
+ * name for the same origin the operator already configured once.
+ */
+export function deriveHubHttpUrl(hubWsUrl: string): string {
+  const url = new URL(hubWsUrl);
+  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+  url.pathname = "/";
+  url.search = "";
+  url.hash = "";
+  return url.origin;
+}
+
 export function createStepInferenceSourceResolver(
   table: StepInferenceSourceTable,
 ): (stepId: string) => InferenceSource[] {

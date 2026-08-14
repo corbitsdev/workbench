@@ -78,6 +78,19 @@ export interface SidecarStepBuildEnvDeps {
   /** Per-step tool-loader caps (cache + registry tarball size). */
   cache: StepToolCacheConfig;
   /**
+   * The hub's plain HTTP origin (derived from `HUB_WS_URL` via
+   * `deriveHubHttpUrl`) and the same `SIDECAR_TOKEN` bearer the child
+   * already carries for pack-push. Carried on `env` beyond `BaseEnv` so
+   * a workflow-artifacts tool bundle (`@corbits/artifact-tools`,
+   * `requires: ["hubArtifactsUrl", "sidecarToken", "address"]`) can call
+   * the sanctioned workflow-artifacts HTTP surface
+   * (`@corbits/artifacts-hub`'s `createWorkflowArtifactRoutes`, CL-6000)
+   * without ever holding a database handle. `address` is already on
+   * `env` via `mailboxAddress` below; these two widen the same surface.
+   */
+  hubArtifactsUrl: string;
+  sidecarToken: string;
+  /**
    * Adapter registry the step agent resolves inference adapters through.
    * The child builds this eagerly at boot from the validated
    * `SIDECAR_ADAPTER_MANIFEST` (built-ins merged with operator custom
@@ -266,27 +279,33 @@ export function createSidecarStepBuildEnv(
     // returned `StepEnvBase` structurally, which the buildEnv return
     // type (`StepEnvBase`) accepts (a wider object is assignable to the
     // narrower type).
-    const env: StepEnvBase & { transport: MessageTransport; address: string } =
-      {
-        // Feed the reactor the step's full ordered failover chain and pin
-        // its initial source to element 0. The reactor resolves the initial
-        // source by id and fails over forward through `sources`, so this
-        // restores cross-source failover inside the workflow-child.
-        sources,
-        defaultSource: activeSource.id,
-        storage,
-        workdir,
-        audit: storage,
-        directors: createDefaultDirectorRegistry(),
-        // Resolve inference adapters through the child's boot-built
-        // registry (built-ins + operator custom adapters), so a
-        // custom-provider step source resolves in the child the same way
-        // it does on the sidecar main path rather than hitting
-        // `createAgent`'s built-ins-only default.
-        deps: createDependencies(deps.adapters),
-        transport,
-        address: deps.mailboxAddress,
-      };
+    const env: StepEnvBase & {
+      transport: MessageTransport;
+      address: string;
+      hubArtifactsUrl: string;
+      sidecarToken: string;
+    } = {
+      // Feed the reactor the step's full ordered failover chain and pin
+      // its initial source to element 0. The reactor resolves the initial
+      // source by id and fails over forward through `sources`, so this
+      // restores cross-source failover inside the workflow-child.
+      sources,
+      defaultSource: activeSource.id,
+      storage,
+      workdir,
+      audit: storage,
+      directors: createDefaultDirectorRegistry(),
+      // Resolve inference adapters through the child's boot-built
+      // registry (built-ins + operator custom adapters), so a
+      // custom-provider step source resolves in the child the same way
+      // it does on the sidecar main path rather than hitting
+      // `createAgent`'s built-ins-only default.
+      deps: createDependencies(deps.adapters),
+      transport,
+      address: deps.mailboxAddress,
+      hubArtifactsUrl: deps.hubArtifactsUrl,
+      sidecarToken: deps.sidecarToken,
+    };
     // Carry the materialized tool runtime to the tool-bearing
     // `agentFactory` via the env's symbol-keyed slot. The step-invoker
     // adapter spreads this env (`{ ...envBase, authorize }`) before
