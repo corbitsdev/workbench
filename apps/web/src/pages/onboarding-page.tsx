@@ -33,6 +33,7 @@ import type { FormEvent, ReactNode } from "react";
 
 import { Link, useNavigate } from "../navigation";
 import {
+  completeSetup,
   CREDENTIAL_PROVIDERS,
   HUGGINGFACE_CONNECT_START_PATH,
   OPENROUTER_CONNECT_START_PATH,
@@ -83,6 +84,7 @@ type WizardState =
   | { readonly phase: "provisioning-error"; readonly message: string }
   | { readonly phase: "credential"; readonly error: string | null }
   | { readonly phase: "submitting" }
+  | { readonly phase: "finishing-setup" }
   | {
       readonly phase: "seeded";
       readonly tenantSlug: string;
@@ -118,6 +120,7 @@ function stepFor(phase: WizardState["phase"]): { step: number; label: string } {
       return { step: 1, label: "Name your workbench" };
     case "credential":
     case "submitting":
+    case "finishing-setup":
       return { step: 2, label: "Add a credential" };
     case "seeded":
     case "guidance":
@@ -243,23 +246,20 @@ function ProviderPicker({
 }
 
 /** Where the wizard starts: at the top, unless the URL carries a connect
- * round-trip's outcome (OpenRouter or Hugging Face) — a returning
- * connect lands directly on its ending (the seeded checklist, or the
- * credential step with the failure spelled out) instead of asking for a
- * name again. */
+ * round-trip's outcome (OpenRouter or Hugging Face) — a fresh connect
+ * lands on the finishing-setup phase (the OAuth callback only proved
+ * and stored the key; this page's own follow-up call is what actually
+ * deploys the default routines), and a failed round trip lands on the
+ * credential step with the failure spelled out. Either way, the mount
+ * effect below re-checks the account's real state before trusting a
+ * connect outcome carried in the URL — see its own comment. */
 function initialWizardState(): WizardState {
   if (typeof window === "undefined") return { phase: "naming" };
   const returned =
     readOpenRouterConnectReturn(window.location.search) ??
     readHuggingFaceConnectReturn(window.location.search);
   if (returned === null) return { phase: "naming" };
-  if (returned.kind === "seeded") {
-    return {
-      phase: "seeded",
-      tenantSlug: returned.tenantSlug,
-      workflows: returned.workflows,
-    };
-  }
+  if (returned.kind === "connected") return { phase: "finishing-setup" };
   return { phase: "credential", error: returned.message };
 }
 
@@ -290,6 +290,48 @@ export function OnboardingPage() {
     ) {
       window.history.replaceState(null, "", window.location.pathname);
     }
+  }, []);
+
+  // Two jobs, split by what landed the wizard here. A fresh connect
+  // (`finishing-setup`) actually finishes the job the OAuth callback
+  // deferred: `completeSetup` runs the workflow deploy the callback
+  // never ran inline. Everything else — the naming step's default
+  // landing, or a stale connect error from a duplicate callback this
+  // page never saw resolved — gets a plain read-only check instead: if
+  // the account already has a fully set-up workbench, that always wins
+  // over a URL carrying an old failure or a first-run naming prompt
+  // that no longer applies. A genuinely new or still-unseeded account
+  // is untouched by this check and keeps whatever `initialWizardState`
+  // already chose.
+  useEffect(() => {
+    if (state.phase === "finishing-setup") {
+      void completeSetup().then((outcome) => {
+        if (outcome.kind === "seeded") {
+          setState({
+            phase: "seeded",
+            tenantSlug: outcome.tenantSlug,
+            workflows: outcome.workflows,
+          });
+        } else if (outcome.kind === "unseeded") {
+          setPreSatisfied(false);
+          setSkipReason(null);
+          setResumingUnseeded(true);
+          setState({ phase: "credential", error: null });
+        } else {
+          setState({ phase: "credential", error: outcome.message });
+        }
+      });
+      return;
+    }
+    void triggerFirstLoginProvisioning().then((result) => {
+      if (result.kind === "existing-member" && result.seeded === true) {
+        setState({ phase: "guidance" });
+      }
+    });
+    // Mount-only: this reads `state.phase` exactly once, at the value
+    // `initialWizardState` produced, to decide which of the two checks
+    // above applies to this landing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const runProvisioning = useCallback((name: string) => {
@@ -395,6 +437,18 @@ export function OnboardingPage() {
         phase={state.phase}
         title="Setting up your workbench"
         subtitle="One moment."
+      >
+        <div className="onboarding-spinner" aria-hidden="true" />
+      </OnboardingPhase>
+    );
+  }
+
+  if (state.phase === "finishing-setup") {
+    return (
+      <OnboardingPhase
+        phase={state.phase}
+        title="Setting up your workbench…"
+        subtitle="Your key checked out — starting your default routines now."
       >
         <div className="onboarding-spinner" aria-hidden="true" />
       </OnboardingPhase>

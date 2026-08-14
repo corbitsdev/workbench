@@ -6,11 +6,16 @@
 
 import type { AppEnv } from "@intx/hub-api";
 import { createNoopCredentialCipher } from "@intx/crypto";
+import { CredentialResponse, paginatedSchema } from "@intx/types";
 import type { CredentialCipher } from "@intx/types";
 import {
   createHubAPI,
+  DEFAULT_WORKFLOWS,
+  inferenceCredentialName,
+  parseAs,
   supportedCredentialProviders,
   testProviderCredential,
+  type ApiCall,
   type ModelSource,
   type SupportedCredentialProvider,
   type WorkflowPusher,
@@ -18,10 +23,27 @@ import {
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { type } from "arktype";
-import { provisionPersonalTenantIfNeeded, ProvisionError } from "./provision";
+import {
+  isFullySeeded,
+  personalTenantSlug,
+  provisionPersonalTenantIfNeeded,
+  ProvisionError,
+} from "./provision";
 
-import { completeCredentialSetup } from "./complete-credential";
+import {
+  completeCredentialSetup,
+  ensureSeeded,
+  findPersonalTenant,
+  testAndPersistCredential,
+  type PersonalTenant,
+} from "./complete-credential";
 import { createConnectStateStore, generatePKCEPair } from "./pkce";
+import {
+  openPendingSeed,
+  PENDING_SEED_COOKIE,
+  PENDING_SEED_TTL_MS,
+  sealPendingSeed,
+} from "./pending-seed";
 import { exchangeCodeForKey, OPENROUTER_AUTH_URL } from "./openrouter-connect";
 import {
   exchangeCodeForToken as exchangeHuggingFaceCodeForToken,
@@ -51,7 +73,11 @@ export type CreateOnboardingRoutesDeps = {
   log: (line: string) => void;
   openrouterConnect?: {
     exchange?: typeof exchangeCodeForKey;
-    completeSetup?: typeof completeCredentialSetup;
+    /** The fast half only — proves the code-exchanged key and persists
+     * it as a credential. Never deploys a workflow; see
+     * `complete-credential.ts`'s module comment for why the callback
+     * route must never run more than this before redirecting. */
+    connectCredential?: typeof testAndPersistCredential;
   };
   /** The public OAuth app id from huggingface.co/settings/applications
    * (see docs/onboarding-huggingface-connect.md). Absent disables the
@@ -60,8 +86,10 @@ export type CreateOnboardingRoutesDeps = {
   huggingfaceClientId?: string;
   huggingfaceConnect?: {
     exchange?: typeof exchangeHuggingFaceCodeForToken;
-    completeSetup?: typeof completeCredentialSetup;
+    connectCredential?: typeof testAndPersistCredential;
   };
+  /** Test seam for `POST /complete-setup`'s slow-path deploy step. */
+  ensureSeededFn?: typeof ensureSeeded;
   /** Seals the OAuth connect state (PKCE verifier included) parked
    * between `/start` and `/callback`, so a hub restart in between
    * doesn't strand it — see `./pkce.ts`. The same `CredentialCipher`
@@ -78,6 +106,70 @@ function cookiesFromHeader(header: string | undefined): string[] {
     .split(";")
     .map((pair) => pair.trim())
     .filter((pair) => pair.length > 0);
+}
+
+/**
+ * The idempotent-duplicate-callback recovery: when a callback's own
+ * single-use state comes back already consumed, that is not on its own
+ * proof the connection failed — a browser that fires the same callback
+ * twice (a double navigation, a retried request) burns the state on its
+ * first, successful arrival and only ever sees `state_expired` on the
+ * second. Before reporting that as a failure, check whether this exact
+ * session's user already has an active credential for this provider,
+ * created recently enough that it can only be the twin of this same
+ * round trip — never a coincidence from some unrelated, older connect.
+ * A genuinely expired or wrong-session state still finds nothing here
+ * and errors honestly. This is best-effort recovery, never load-bearing
+ * for correctness: any failure reading the hub (it being briefly
+ * unreachable, a malformed response) is treated the same as "found
+ * nothing" — the caller falls back to its ordinary `state_expired`
+ * ending rather than surfacing a second, unrelated failure mode.
+ */
+async function recentlyConnectedCredential(
+  api: ApiCall,
+  cookies: string[],
+  args: {
+    userId: string;
+    userEmail: string;
+    provider: SupportedCredentialProvider;
+    withinMs: number;
+    log: (line: string) => void;
+    now?: () => number;
+  },
+): Promise<PersonalTenant | undefined> {
+  const now = args.now ?? Date.now;
+  try {
+    const expectedSlug = personalTenantSlug(args.userEmail, args.userId);
+    const tenant = await findPersonalTenant(api, cookies, expectedSlug);
+    if (!tenant) return undefined;
+
+    const listed = await api(
+      "GET",
+      `/api/tenants/${tenant.tenantId}/credentials`,
+      undefined,
+      cookies,
+    );
+    const credentials = parseAs(
+      paginatedSchema(CredentialResponse),
+      listed.data,
+      "credentials response",
+    ).data;
+    const name = inferenceCredentialName(args.provider);
+    const cutoff = now() - args.withinMs;
+    const match = credentials.find(
+      (credential) =>
+        credential.name === name &&
+        credential.status === "active" &&
+        Date.parse(credential.createdAt) >= cutoff,
+    );
+    return match ? tenant : undefined;
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    args.log(
+      `duplicate-callback recovery check failed for user ${args.userId}: ${message}`,
+    );
+    return undefined;
+  }
 }
 
 export function createOnboardingRoutes(
@@ -235,13 +327,15 @@ export function createOnboardingRoutes(
   // Every outcome — success or failure — lands back in the wizard's
   // credential phase as query parameters; the key itself never appears
   // in a URL or a log line.
+  const CONNECT_STATE_TTL_MS = 10 * 60 * 1000;
   const connectStates = createConnectStateStore({
     cipher: credentialCipher,
     provider: "openrouter",
+    ttlMs: CONNECT_STATE_TTL_MS,
   });
   const exchange = deps.openrouterConnect?.exchange ?? exchangeCodeForKey;
-  const completeConnectedSetup =
-    deps.openrouterConnect?.completeSetup ?? completeCredentialSetup;
+  const connectOpenRouterCredential =
+    deps.openrouterConnect?.connectCredential ?? testAndPersistCredential;
   const CONNECT_STATE_COOKIE = "workbench_openrouter_connect";
   const secureCookies = deps.hubUrl.startsWith("https:");
 
@@ -321,6 +415,7 @@ export function createOnboardingRoutes(
     const state = getCookie(c, CONNECT_STATE_COOKIE);
     deleteCookie(c, CONNECT_STATE_COOKIE, { path: "/" });
     const code = c.req.query("code");
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
     if (state === undefined || code === undefined || code === "") {
       return c.redirect(
         wizardRedirectPath({ outcome: "error", code: "state_expired" }),
@@ -332,6 +427,26 @@ export function createOnboardingRoutes(
       userId: user.id,
     });
     if (codeVerifier === undefined) {
+      // Not necessarily a real failure: a browser that fires this exact
+      // callback twice burns the state on its first, successful arrival
+      // and only ever sees this branch on the second. See
+      // `recentlyConnectedCredential`'s own comment.
+      const recovered = await recentlyConnectedCredential(api, cookies, {
+        userId: user.id,
+        userEmail: user.email,
+        provider: "openrouter",
+        withinMs: CONNECT_STATE_TTL_MS,
+        log: deps.log,
+      });
+      if (recovered) {
+        return c.redirect(
+          wizardRedirectPath({
+            outcome: "connected",
+            tenantSlug: recovered.tenantSlug,
+          }),
+          302,
+        );
+      }
       return c.redirect(
         wizardRedirectPath({ outcome: "error", code: "state_expired" }),
         302,
@@ -349,9 +464,13 @@ export function createOnboardingRoutes(
       );
     }
 
-    const cookies = cookiesFromHeader(c.req.header("cookie"));
     try {
-      const result = await completeConnectedSetup({
+      // The fast half only: proves the key and persists it. Deploying
+      // the default workflows against it (`ensureSeeded`) never runs in
+      // this request — it runs from `/complete-setup`, after the
+      // browser has already landed back on the wizard. See
+      // `complete-credential.ts`'s module comment.
+      const result = await connectOpenRouterCredential({
         api,
         cookies,
         hubUrl: deps.hubUrl,
@@ -377,11 +496,25 @@ export function createOnboardingRoutes(
           302,
         );
       }
+      const pendingSeedToken = await sealPendingSeed(credentialCipher, {
+        userId: user.id,
+        tenantId: result.tenantId,
+        principalId: result.principalId,
+        tenantDomain: result.tenantDomain,
+        provider: "openrouter",
+        apiKey: exchanged.key,
+      });
+      setCookie(c, PENDING_SEED_COOKIE, pendingSeedToken, {
+        httpOnly: true,
+        sameSite: "Lax",
+        secure: secureCookies,
+        path: "/",
+        maxAge: Math.floor(PENDING_SEED_TTL_MS / 1000),
+      });
       return c.redirect(
         wizardRedirectPath({
-          outcome: "seeded",
+          outcome: "connected",
           tenantSlug: result.tenantSlug,
-          workflows: result.workflows.join(","),
         }),
         302,
       );
@@ -409,11 +542,12 @@ export function createOnboardingRoutes(
   const huggingfaceConnectStates = createConnectStateStore({
     cipher: credentialCipher,
     provider: "huggingface",
+    ttlMs: CONNECT_STATE_TTL_MS,
   });
   const exchangeHuggingFace =
     deps.huggingfaceConnect?.exchange ?? exchangeHuggingFaceCodeForToken;
-  const completeHuggingFaceSetup =
-    deps.huggingfaceConnect?.completeSetup ?? completeCredentialSetup;
+  const connectHuggingFaceCredential =
+    deps.huggingfaceConnect?.connectCredential ?? testAndPersistCredential;
   const HUGGINGFACE_STATE_COOKIE = "workbench_huggingface_connect";
 
   const huggingfaceWizardRedirectPath = (
@@ -509,6 +643,7 @@ export function createOnboardingRoutes(
     deleteCookie(c, HUGGINGFACE_STATE_COOKIE, { path: "/" });
     const code = c.req.query("code");
     const queryState = c.req.query("state");
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
     // Belt and suspenders: HF echoes `state`, so a callback whose query
     // state disagrees with the cookie it arrived with is rejected before
     // the state store is even consulted, on top of the store's own
@@ -533,6 +668,25 @@ export function createOnboardingRoutes(
       userId: user.id,
     });
     if (codeVerifier === undefined) {
+      // See `recentlyConnectedCredential` — a double-fired callback burns
+      // the state on its first, successful arrival and only ever sees
+      // this branch on the second.
+      const recovered = await recentlyConnectedCredential(api, cookies, {
+        userId: user.id,
+        userEmail: user.email,
+        provider: "huggingface",
+        withinMs: CONNECT_STATE_TTL_MS,
+        log: deps.log,
+      });
+      if (recovered) {
+        return c.redirect(
+          huggingfaceWizardRedirectPath({
+            outcome: "connected",
+            tenantSlug: recovered.tenantSlug,
+          }),
+          302,
+        );
+      }
       return c.redirect(
         huggingfaceWizardRedirectPath({
           outcome: "error",
@@ -562,9 +716,9 @@ export function createOnboardingRoutes(
       );
     }
 
-    const cookies = cookiesFromHeader(c.req.header("cookie"));
     try {
-      const result = await completeHuggingFaceSetup({
+      // The fast half only — see the OpenRouter callback above.
+      const result = await connectHuggingFaceCredential({
         api,
         cookies,
         hubUrl: deps.hubUrl,
@@ -596,11 +750,25 @@ export function createOnboardingRoutes(
           302,
         );
       }
+      const pendingSeedToken = await sealPendingSeed(credentialCipher, {
+        userId: user.id,
+        tenantId: result.tenantId,
+        principalId: result.principalId,
+        tenantDomain: result.tenantDomain,
+        provider: "huggingface",
+        apiKey: exchanged.accessToken,
+      });
+      setCookie(c, PENDING_SEED_COOKIE, pendingSeedToken, {
+        httpOnly: true,
+        sameSite: "Lax",
+        secure: secureCookies,
+        path: "/",
+        maxAge: Math.floor(PENDING_SEED_TTL_MS / 1000),
+      });
       return c.redirect(
         huggingfaceWizardRedirectPath({
-          outcome: "seeded",
+          outcome: "connected",
           tenantSlug: result.tenantSlug,
-          workflows: result.workflows.join(","),
         }),
         302,
       );
@@ -725,6 +893,102 @@ export function createOnboardingRoutes(
             code: "credential_setup_failed",
             message:
               "The key checked out, but setting up your bench failed. Try again in a moment.",
+          },
+        },
+        500,
+      );
+    }
+  });
+
+  // Runs after the onboarding page lands — from a fresh connect
+  // (`outcome=connected`) or a plain reload — and drives the slow half
+  // the OAuth callback never runs: deploying the default workflows
+  // against whichever credential is already on the caller's own
+  // personal bench. Already-seeded is answered from a single read, no
+  // pending token required, so a returning fully-set-up account (or a
+  // second overlapping call once the first finishes) gets the same
+  // `seeded` answer without redoing any work. `kind: "unseeded"` (200,
+  // not an error) means there is nothing this call can do yet — no
+  // pending credential to seed with — and the caller should fall back
+  // to the ordinary credential step rather than treat it as a failure.
+  app.post("/complete-setup", async (c) => {
+    const user = c.get("user");
+    if (!user) {
+      return c.json(
+        { error: { code: "unauthorized", message: "Authentication required" } },
+        401,
+      );
+    }
+
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
+    try {
+      const expectedSlug = personalTenantSlug(user.email, user.id);
+      const tenant = await findPersonalTenant(api, cookies, expectedSlug);
+      if (!tenant) {
+        return c.json(
+          {
+            error: {
+              code: "no_personal_bench",
+              message:
+                "No personal bench was found for this account yet. Reload and try again.",
+            },
+          },
+          409,
+        );
+      }
+
+      const fullySeeded = await isFullySeeded(api, cookies, tenant.tenantId);
+      if (fullySeeded) {
+        return c.json(
+          {
+            kind: "seeded",
+            tenantSlug: tenant.tenantSlug,
+            workflows: DEFAULT_WORKFLOWS.map((workflow) => workflow.assetName),
+          },
+          200,
+        );
+      }
+
+      const pendingToken = getCookie(c, PENDING_SEED_COOKIE);
+      const pending =
+        pendingToken === undefined
+          ? undefined
+          : await openPendingSeed(credentialCipher, pendingToken, {
+              userId: user.id,
+              tenantId: tenant.tenantId,
+            });
+      if (pending === undefined) {
+        return c.json({ kind: "unseeded" }, 200);
+      }
+
+      const runEnsureSeeded = deps.ensureSeededFn ?? ensureSeeded;
+      const seeded = await runEnsureSeeded({
+        api,
+        cookies,
+        hubUrl: deps.hubUrl,
+        pushWorkflow: deps.pushWorkflow,
+        log: deps.log,
+        tenant,
+        provider: pending.provider,
+        apiKey: pending.apiKey,
+      });
+      return c.json(
+        {
+          kind: "seeded",
+          tenantSlug: tenant.tenantSlug,
+          workflows: seeded.workflows,
+        },
+        200,
+      );
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      deps.log(`complete-setup failed for user ${user.id}: ${message}`);
+      return c.json(
+        {
+          error: {
+            code: "complete_setup_failed",
+            message:
+              "Finishing your workbench setup failed. Try again in a moment.",
           },
         },
         500,

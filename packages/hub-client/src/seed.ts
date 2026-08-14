@@ -697,8 +697,11 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
 
 // The credential name a seeded inference source stores its secret
 // under; distinct from the provider name so re-runs and manual
-// inspection are never ambiguous about which is which.
-function inferenceCredentialName(providerName: string): string {
+// inspection are never ambiguous about which is which. Exported so a
+// caller that needs to find that same row later (e.g. checking whether
+// a just-connected provider's credential already exists) names it the
+// same way `seedCatalog` did, rather than re-deriving the convention.
+export function inferenceCredentialName(providerName: string): string {
   return `${providerName}-default`;
 }
 
