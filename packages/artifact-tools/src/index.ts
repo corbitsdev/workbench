@@ -1,5 +1,13 @@
 export {
   ARTIFACT_LIST_RECENT_TOOL,
-  ARTIFACT_LIST_RECENT_UNAVAILABLE_REASON,
   artifactTools,
+  type WorkflowArtifactEnv,
 } from "./tool";
+export {
+  createWorkflowArtifact,
+  listRecentWorkflowArtifacts,
+  type CreatedWorkflowArtifact,
+  type CreateWorkflowArtifactInput,
+  type RecentWorkflowArtifact,
+  type WorkflowArtifactClientConfig,
+} from "./client";

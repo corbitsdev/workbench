@@ -59,6 +59,7 @@ import {
 } from "../conversation-state";
 import { parseToolRegistries } from "../tool-materialization";
 import {
+  deriveHubHttpUrl,
   parseAdapterManifest,
   parseByteCap,
   parseStepInferenceSources,
@@ -345,6 +346,8 @@ export function createSidecarSubstrateFactory(
       cache: stepToolCache,
       adapters: childAdapterRegistry,
       toolless: false,
+      hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
+      sidecarToken: validated.SIDECAR_TOKEN,
       ...(durableConversation !== undefined ? { durableConversation } : {}),
     });
 
@@ -407,6 +410,8 @@ export function createSidecarSubstrateFactory(
       cache: stepToolCache,
       adapters: childAdapterRegistry,
       toolless: true,
+      hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
+      sidecarToken: validated.SIDECAR_TOKEN,
     });
     const bodyInvokeStep: SidecarBodyStepInvoker = (
       req,

@@ -15,9 +15,12 @@
 // resolved, posts nothing more.
 import { describe, expect, test } from "bun:test";
 import { createSidecarEmitter } from "@intx/hub-sessions";
-import { createChatOrchestrator } from "../src/chat-orchestrator";
+import {
+  createArtifactDeliveryHandler,
+  createChatOrchestrator,
+} from "../src/chat-orchestrator";
 import { parseBlock } from "../src/blocks";
-import { decodeParts } from "../src/codec";
+import { decodeParts, type MailContent } from "../src/codec";
 import type { ChannelSettingsRow } from "../src/store";
 
 function approvalRow(overrides?: {
@@ -414,5 +417,79 @@ describe("createChatOrchestrator", () => {
     expect(sentMail).toHaveLength(0);
 
     orchestrator.dispose();
+  });
+});
+
+describe("createArtifactDeliveryHandler", () => {
+  test("posts a FilePart into every member channel for a finalized turn naming a persisted artifact", async () => {
+    const sentMail: { channelId: string; content: unknown }[] = [];
+    const handler = createArtifactDeliveryHandler({
+      approvals: { findByCorrelationId: async () => null },
+      db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async (input) => {
+          sentMail.push({ channelId: input.channelId, content: input.content });
+          return { id: "mail_1", createdAt: new Date().toISOString() };
+        },
+      },
+      events: createSidecarEmitter(),
+    });
+
+    handler("run_1@ten1.workbench.test", {
+      toolCalls: [
+        {
+          isError: false,
+          result: JSON.stringify({
+            id: "art_1",
+            version: 1,
+            title: "Notes",
+            kind: "text",
+            persisted: true,
+          }),
+        },
+      ],
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sentMail).toHaveLength(1);
+    expect(sentMail[0]?.channelId).toBe("ins_channel1");
+    const decodedParts = decodeParts(sentMail[0]?.content as MailContent);
+    expect(decodedParts).toEqual([
+      {
+        kind: "file",
+        name: "Notes",
+        mediaType: "text/plain",
+        artifactId: "art_1",
+      },
+    ]);
+  });
+
+  test("sends nothing when the turn's tool calls name no persisted artifact", async () => {
+    const sentMail: unknown[] = [];
+    const handler = createArtifactDeliveryHandler({
+      approvals: { findByCorrelationId: async () => null },
+      db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        ],
+      },
+      platform: { sendMail: async () => sentMail.push(1) as never },
+      events: createSidecarEmitter(),
+    });
+
+    handler("run_1@ten1.workbench.test", {
+      toolCalls: [{ isError: false, result: "{}" }],
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sentMail).toHaveLength(0);
   });
 });

@@ -155,7 +155,10 @@ export type {
   HubChatPlatform,
 } from "./platform-adapter";
 
-export { createChatOrchestrator } from "./chat-orchestrator";
+export {
+  createArtifactDeliveryHandler,
+  createChatOrchestrator,
+} from "./chat-orchestrator";
 export type {
   ChatOrchestrator,
   ChatOrchestratorDeps,
@@ -166,3 +169,9 @@ export {
   listConnectedProviders,
 } from "./inference-preferences";
 export type { ConnectedProviderLister } from "./inference-preferences";
+
+export {
+  artifactPartsForFinalizedTurn,
+  artifactPartsForToolCall,
+} from "./artifact-delivery";
+export type { FinalizedTurnToolCall } from "./artifact-delivery";

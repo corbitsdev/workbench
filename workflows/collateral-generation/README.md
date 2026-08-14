@@ -65,37 +65,31 @@ which applies unchanged here.
 
 ## Current limits (read before deploying)
 
-Three real gaps stand between this definition and a fully live deploy,
-all platform-level, not specific to this workflow:
+One real gap stands between this definition and a fully live deploy,
+platform-level, not specific to this workflow:
 
-1. **Tool-package pins resolve only once published** (CL-5999 closed the
-   pinning gap; publishing is still an operator step). This definition
-   pins `@corbits/granola-tools` and `@corbits/linear-tools`
-   (`COLLATERAL_GENERATION_TOOL_PACKAGE_PINS`); a pin resolves at deploy
-   time once an operator publishes the package to a registry the host's
-   `toolPackageRegistries` config reaches — npmjs, or a `package-registry`
-   asset for the `@corbits` scope (see `apps/hub/src/index.ts`'s
-   `CORBITS_TOOLS_REGISTRY` wiring). `@corbits/artifact-tools` stays
-   unpinned here: its one tool still cannot reach the Library engine
-   (CL-6000), so pinning it would resolve a package whose tool answers
-   "not reachable yet" for every call.
-2. **No Library-write path from a workflow tool** (CL-6000). Tool
-   packages run in the sidecar's workflow-process child, a separate
-   process with no database handle and no authenticated hub-API path.
-   `finalize-tool.ts`'s `run` builds the exact `{ title, kind, content }`
-   payload each approved piece needs and returns them, `persisted:
-false`, rather than fabricating Library rows. The finalized pieces
-   still reach the human in the delivered chat reply — they are just not
-   yet Library artifacts with file-part chips.
-3. **No Library-read path from a workflow tool either** (same CL-6000
-   category, read side). `@corbits/artifact-tools`' `artifact_list_recent`
-   exists for the day this closes, but today it always answers "not
-   reachable yet" — so workbench artifacts are named honestly as a
-   pending source in the system prompt, alongside the wired Granola and
-   Linear sources.
+- **Tool-package pins resolve only once published** (CL-5999 closed the
+  pinning gap; publishing is still an operator step). This definition
+  pins `@corbits/granola-tools` and `@corbits/linear-tools`
+  (`COLLATERAL_GENERATION_TOOL_PACKAGE_PINS`); a pin resolves at deploy
+  time once an operator publishes the package to a registry the host's
+  `toolPackageRegistries` config reaches — npmjs, or a `package-registry`
+  asset for the `@corbits` scope (see `apps/hub/src/index.ts`'s
+  `CORBITS_TOOLS_REGISTRY` wiring). The finalize tool itself persists
+  for real (CL-6000): each approved piece writes through the
+  workflow-artifacts HTTP surface and lands in the Library with a
+  file-part chip in the channel.
 
-None of the three gaps are specific to this workflow; all are
-pre-existing platform limits this port surfaces rather than works around.
+**Library persistence and listing are both real (CL-6000).**
+`finalize-tool.ts`'s `run` persists each approved piece via
+`./artifact-client.ts` against the sanctioned workflow-artifacts HTTP
+surface, sequentially — a piece that fails to persist stops the loop and
+reports how many of the set already persisted, rather than silently
+losing them or claiming the whole batch failed. `@corbits/artifact-tools`'
+`artifact_list_recent` calls the same surface's read side, so workbench
+artifacts are a real source alongside the wired Granola and Linear ones.
+Delivered pieces carry their persisted artifact's file-part chip
+(`packages/chat/src/artifact-delivery.ts`).
 
 ## Usage
 

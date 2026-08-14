@@ -63,29 +63,30 @@ approval is real and works end-to-end there.
 
 ## Current limits (read before deploying)
 
-Two real gaps stand between this definition and a fully live deploy,
-both platform-level, not specific to this workflow:
+One real gap stands between this definition and a fully live deploy,
+platform-level, not specific to this workflow:
 
-1. **Tool-package pin resolves only once published** (CL-5999 closed the
-   pinning gap; publishing is still an operator step). This definition
-   pins `@corbits/granola-tools` (`PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS`)
-   for `granola_get_note`; the pin resolves at deploy time once an
-   operator publishes the package to a registry the host's
-   `toolPackageRegistries` config reaches — npmjs, or a `package-registry`
-   asset for the `@corbits` scope (see `apps/hub/src/index.ts`'s
-   `CORBITS_TOOLS_REGISTRY` wiring).
-2. **No Library-write path from a workflow tool.** Tool packages are
-   materialized into the sidecar's workflow-process child, a separate
-   process with no database handle and no authenticated hub-API path —
-   confirmed while porting this workflow. `finalize-tool.ts`'s `run`
-   builds the exact `{ title, kind, content }` payload
-   `@corbits/artifacts`' `artifact_create` expects and returns it,
-   `persisted: false`, rather than fabricating a Library row. The
-   finalized collateral still reaches the human, in the delivered chat
-   reply — it just is not yet a Library artifact with a file-part chip.
+- **Tool-package pin resolves only once published** (CL-5999 closed the
+  pinning gap; publishing is still an operator step). This definition
+  pins `@corbits/granola-tools` (`PAIN_POINT_COLLATERAL_TOOL_PACKAGE_PINS`)
+  for `granola_get_note`; the pin resolves at deploy time once an
+  operator publishes the package to a registry the host's
+  `toolPackageRegistries` config reaches — npmjs, or a `package-registry`
+  asset for the `@corbits` scope (see `apps/hub/src/index.ts`'s
+  `CORBITS_TOOLS_REGISTRY` wiring). The finalize tool itself persists
+  for real (CL-6000): it writes through the workflow-artifacts HTTP
+  surface and the finished collateral lands in the Library with a
+  file-part chip in the channel.
 
-Neither gap is specific to Granola or to this workflow; both are
-pre-existing platform limits this port surfaces rather than works around.
+**Library persistence is real (CL-6000).** `finalize-tool.ts`'s `run`
+persists the finalized collateral via `./artifact-client.ts` against the
+sanctioned workflow-artifacts HTTP surface
+(`@corbits/artifacts-hub`'s `createWorkflowArtifactRoutes`), authenticated
+with the sidecar's own bearer token and this run's own mailbox address —
+never a database handle. On success it returns the artifact's id/version;
+the delivery pipeline (`packages/chat/src/artifact-delivery.ts`) turns
+that into a file-part chip on the reply that finalized it. A failed
+persist surfaces as an honest tool error, never a fabricated Library row.
 
 ## Usage
 

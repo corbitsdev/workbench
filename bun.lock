@@ -179,6 +179,7 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -206,7 +207,11 @@
       "dependencies": {
         "@corbits/artifact-ui": "workspace:*",
         "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
+        "@corbits/folded-runs": "workspace:*",
+        "@intx/crypto": "workspace:*",
+        "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
+        "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
       },
       "devDependencies": {

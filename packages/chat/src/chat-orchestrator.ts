@@ -25,6 +25,10 @@ import { findFoldedRunByAddress } from "@corbits/folded-runs";
 import type { ApprovalStore, DB } from "@intx/db";
 import type { SidecarEventEmitter } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
+import {
+  artifactPartsForFinalizedTurn,
+  type FinalizedTurnToolCall,
+} from "./artifact-delivery";
 import type { ApproveBlockData } from "./blocks";
 import { encodeParts } from "./codec";
 import { parseParticipants } from "./participants";
@@ -198,6 +202,62 @@ async function postApproveBlock(
       fromChannelId: resolved.agentChannelId,
     });
   }
+}
+
+/**
+ * Posts a finalized turn's persisted-artifact tool-call results as chat
+ * `FilePart`s (CL-6000) — the delivery-side half of the sanctioned
+ * workflow-artifact path: a finalize tool persists via the
+ * workflow-artifacts HTTP surface and returns the artifact's id/title/kind
+ * in its result; this turns that into the file chip the channel sees.
+ * A turn whose tool calls name no persisted artifact sends nothing.
+ */
+async function postFinalizedTurnArtifacts(
+  deps: ChatOrchestratorDeps,
+  agentAddress: string,
+  toolCalls: readonly FinalizedTurnToolCall[],
+): Promise<void> {
+  const parts = artifactPartsForFinalizedTurn(toolCalls);
+  if (parts.length === 0) return;
+
+  const resolved = await resolveMemberChannels(deps, agentAddress);
+  if (resolved === undefined) return;
+
+  for (const channelId of resolved.channelIds) {
+    await deps.platform.sendMail({
+      tenantId: resolved.tenantId,
+      channelId,
+      content: encodeParts([...parts]),
+      fromChannelId: resolved.agentChannelId,
+    });
+  }
+}
+
+/**
+ * Builds the `onTurnFinalized` callback `createEventCollectorRegistry`
+ * accepts (`(agentAddress, turn) => void`, see
+ * `vendor/intx/hub-sessions/src/event-collector-registry.ts`). Kept as a
+ * plain function of `ChatOrchestratorDeps` rather than folded into
+ * `createChatOrchestrator` itself: the two subscribe to different event
+ * sources (the `SidecarEventEmitter`'s live `agent.event` stream vs. the
+ * event-collector registry's once-per-turn finalize callback) and the
+ * host wires them separately.
+ */
+export function createArtifactDeliveryHandler(
+  deps: ChatOrchestratorDeps,
+): (
+  agentAddress: string,
+  turn: { toolCalls: FinalizedTurnToolCall[] },
+) => void {
+  return (agentAddress, turn) => {
+    void postFinalizedTurnArtifacts(deps, agentAddress, turn.toolCalls).catch(
+      (cause: unknown) => {
+        log.error`chat orchestrator: failed to post ${agentAddress}'s finalized-turn artifacts: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`;
+      },
+    );
+  };
 }
 
 export function createChatOrchestrator(
