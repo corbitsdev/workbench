@@ -31,6 +31,17 @@ const log = getLogger(["hub", "artifacts-mount"]);
 export type MountArtifactsOptions = {
   /** Explicit database URL. Defaults to `process.env.DATABASE_URL`. */
   databaseUrl?: string;
+  /**
+   * Engine seam for tests: lets URL-resolution tests observe the mount
+   * without a live Postgres or process-wide module mocking (bun's
+   * `mock.module` swap is irreversible for later files in the same
+   * test process).
+   */
+  engine?: {
+    createArtifactDb: typeof createArtifactDb;
+    runArtifactMigrations: typeof runArtifactMigrations;
+    contentStore: ContentStore;
+  };
 };
 
 /**
@@ -51,10 +62,15 @@ export async function mountArtifacts(
     return undefined;
   }
 
-  const { db } = createArtifactDb(databaseUrl);
-  await runArtifactMigrations(db);
+  const engine = options.engine ?? {
+    createArtifactDb,
+    runArtifactMigrations,
+    contentStore: InlineContentStore,
+  };
+  const { db } = engine.createArtifactDb(databaseUrl);
+  await engine.runArtifactMigrations(db);
   log.info(
     "Artifacts engine mounted — artifacts persist as versioned rows by kind",
   );
-  return { db, contentStore: InlineContentStore };
+  return { db, contentStore: engine.contentStore };
 }

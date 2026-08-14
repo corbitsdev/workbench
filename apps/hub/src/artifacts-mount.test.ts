@@ -1,28 +1,23 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
-// `mock.module` replaces the module in bun's process-wide registry, so
-// every export must be preserved here — not just the three this file
-// overrides. Dropping the rest (as a bare replacement literal would)
-// starves any test file that runs later in the same `bun test` process
-// and imports `@corbits/artifacts` for its other exports (e.g.
-// `createFileArtifact` via `@corbits/artifacts-hub`).
-const actualArtifacts = await import("@corbits/artifacts");
+import { InlineContentStore, type ArtifactDb } from "@corbits/artifacts";
 
-// Capture the URL `createArtifactDb` is called with so we can assert
-// resolution order without talking to Postgres.
+import { mountArtifacts } from "./artifacts-mount";
+
+// URL-resolution tests observe the mount through the injected engine seam
+// instead of bun's `mock.module`, whose process-wide registry swap cannot
+// be undone for later files in the same `bun test` process (it starved
+// test/artifact-doc-persistence.test.ts of the real `createArtifactDb`).
 const createArtifactDbCalls: string[] = [];
 
-mock.module("@corbits/artifacts", () => ({
-  ...actualArtifacts,
+const stubEngine = {
   createArtifactDb: (databaseUrl: string) => {
     createArtifactDbCalls.push(databaseUrl);
-    return { db: {} };
+    return { db: {} as ArtifactDb, close: async () => undefined };
   },
   runArtifactMigrations: async () => undefined,
-  InlineContentStore: {},
-}));
-
-const { mountArtifacts } = await import("./artifacts-mount");
+  contentStore: InlineContentStore,
+};
 
 const KEYS = ["DATABASE_URL"] as const;
 type EnvKey = (typeof KEYS)[number];
@@ -53,7 +48,7 @@ afterEach(() => {
 describe("mountArtifacts URL resolution", () => {
   test("returns undefined when no URL is available", async () => {
     stashEnv();
-    const handle = await mountArtifacts();
+    const handle = await mountArtifacts({ engine: stubEngine });
     expect(handle).toBeUndefined();
     expect(createArtifactDbCalls).toEqual([]);
   });
@@ -61,7 +56,7 @@ describe("mountArtifacts URL resolution", () => {
   test("mounts against DATABASE_URL", async () => {
     stashEnv();
     process.env["DATABASE_URL"] = "postgres://localhost:5432/workbench_control";
-    const handle = await mountArtifacts();
+    const handle = await mountArtifacts({ engine: stubEngine });
     expect(handle).toBeDefined();
     expect(createArtifactDbCalls).toEqual([
       "postgres://localhost:5432/workbench_control",
@@ -73,6 +68,7 @@ describe("mountArtifacts URL resolution", () => {
     process.env["DATABASE_URL"] = "postgres://localhost:5432/control";
     const handle = await mountArtifacts({
       databaseUrl: "postgres://localhost:5432/explicit",
+      engine: stubEngine,
     });
     expect(handle).toBeDefined();
     expect(createArtifactDbCalls).toEqual([

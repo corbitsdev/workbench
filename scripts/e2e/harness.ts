@@ -284,6 +284,9 @@ export async function startHub(options: {
     // The e2e suite never configures CREDENTIAL_ENCRYPTION_KEY; opt into
     // the hub's dev/test fallback so boot doesn't hard-fail here.
     ALLOW_PLAINTEXT_SECRETS: "1",
+    // e2e accounts sign up over the wire with no mail delivery, so their
+    // emails can never verify; opt into the dev/test escape hatch.
+    ALLOW_UNVERIFIED_EMAILS: "1",
   });
   const deadline = Date.now() + 30_000;
   for (;;) {
