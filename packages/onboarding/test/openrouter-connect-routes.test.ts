@@ -11,12 +11,18 @@ import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { createEnvKeyCredentialCipher } from "@intx/crypto";
+import {
+  createEnvKeyCredentialCipher,
+  createNoopCredentialCipher,
+} from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import type { CreateOnboardingRoutesDeps } from "../src/routes";
 import { testAndPersistCredential } from "../src/complete-credential";
 import { s256Challenge } from "../src/openrouter-connect";
-import { PENDING_SEED_COOKIE } from "../src/pending-seed";
+import {
+  createInMemoryPendingSeedStore,
+  type PendingSeedStore,
+} from "../src/pending-seed";
 
 const MOCK_TIMESTAMP = "2026-01-01T00:00:00.000Z";
 
@@ -200,6 +206,9 @@ function connectRoutes(
     hubUrl: overrides.hubUrl ?? "https://bench.example.com",
     pushWorkflow: overrides.pushWorkflow ?? (async () => "pushed"),
     log: overrides.log ?? (() => undefined),
+    pendingSeedStore:
+      overrides.pendingSeedStore ??
+      createInMemoryPendingSeedStore(createNoopCredentialCipher()),
   };
   if (overrides.openrouterConnect !== undefined)
     deps.openrouterConnect = overrides.openrouterConnect;
@@ -279,7 +288,11 @@ describe("GET /oauth/openrouter/callback", () => {
       apiKey: string;
       userId: string;
     }[] = [];
+    const pendingSeedStore: PendingSeedStore = createInMemoryPendingSeedStore(
+      createNoopCredentialCipher(),
+    );
     const app = connectRoutes({
+      pendingSeedStore,
       openrouterConnect: {
         exchange: async ({ code, codeVerifier }) => {
           exchanges.push({ code, codeVerifier });
@@ -337,10 +350,24 @@ describe("GET /oauth/openrouter/callback", () => {
     ]);
 
     // The plaintext key is carried forward for the deferred deploy step
-    // as a sealed, HttpOnly cookie — never as a redirect query parameter.
+    // server-side, in the pending-seed store — never as a cookie (this
+    // response still clears the connect-state cookies, but never sets
+    // the pre-CL-6031 `workbench_pending_seed` one) or a redirect query
+    // parameter.
     const setCookie = response.headers.get("set-cookie") ?? "";
-    expect(setCookie).toContain(`${PENDING_SEED_COOKIE}=`);
-    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).not.toContain("workbench_pending_seed=");
+    const pending = await pendingSeedStore.read({
+      userId: "user_1",
+      tenantId: "ten_1",
+    });
+    expect(pending).toEqual({
+      userId: "user_1",
+      tenantId: "ten_1",
+      principalId: "prn_1",
+      tenantDomain: "alice-user1.bench.local",
+      provider: "openrouter",
+      apiKey: "sk-or-v1-minted",
+    });
   });
 
   test("a callback without the state cookie never exchanges", async () => {

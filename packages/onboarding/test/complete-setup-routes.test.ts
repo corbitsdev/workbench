@@ -5,10 +5,18 @@
 // workflow deploy call" coverage of the callback side). This is the
 // onboarding page's own follow-up call after landing, and it has to
 // answer three cases correctly: already seeded (no work, no pending
-// token needed), unseeded with nothing to seed with yet (not an error),
-// and unseeded with a just-connected credential's pending token to
+// row needed), unseeded with nothing to seed with yet (not an error),
+// and unseeded with a just-connected credential's pending row to
 // finish the job — the last case run twice at once must never
 // double-deploy.
+//
+// CL-6031 moved the pending credential off the browser: what used to
+// be a sealed HttpOnly cookie is now a row in
+// `createInMemoryPendingSeedStore` (the same store shape
+// `createDrizzlePendingSeedStore` gives Postgres — see
+// `../src/pending-seed.test.ts` for that logic's own direct coverage),
+// written by calling `store.put(...)` the way the OAuth callback would,
+// instead of round-tripping a cookie header.
 import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
@@ -17,7 +25,10 @@ import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
 import { DEFAULT_WORKFLOWS } from "@workbench/hub-client";
 import { createOnboardingRoutes } from "../src/routes";
-import { sealPendingSeed, PENDING_SEED_COOKIE } from "../src/pending-seed";
+import {
+  createInMemoryPendingSeedStore,
+  type PendingSeedStore,
+} from "../src/pending-seed";
 
 const TEST_KEY = Buffer.alloc(32, 21);
 function testCipher(): CredentialCipher {
@@ -74,16 +85,21 @@ function principalsRoute(hub: Hono) {
   );
 }
 
-async function pendingSeedCookie(cipher: CredentialCipher): Promise<string> {
-  const token = await sealPendingSeed(cipher, {
-    userId: "user_1",
-    tenantId: TENANT_ID,
-    principalId: PRINCIPAL_ID,
-    tenantDomain: TENANT_DOMAIN,
-    provider: "openrouter",
-    apiKey: "sk-or-v1-minted",
-  });
-  return `${PENDING_SEED_COOKIE}=${token}`;
+async function withPendingSeed(
+  store: PendingSeedStore,
+  args: { userId?: string; ttlMs?: number } = {},
+): Promise<void> {
+  await store.put(
+    {
+      userId: args.userId ?? "user_1",
+      tenantId: TENANT_ID,
+      principalId: PRINCIPAL_ID,
+      tenantDomain: TENANT_DOMAIN,
+      provider: "openrouter",
+      apiKey: "sk-or-v1-minted",
+    },
+    args.ttlMs !== undefined ? { ttlMs: args.ttlMs } : {},
+  );
 }
 
 describe("POST /complete-setup", () => {
@@ -95,6 +111,7 @@ describe("POST /complete-setup", () => {
         hubUrl: "https://bench.example.com",
         pushWorkflow: async () => "pushed",
         log: () => undefined,
+        pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
       }),
     );
 
@@ -117,6 +134,7 @@ describe("POST /complete-setup", () => {
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => "pushed",
           log: () => undefined,
+          pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
         }),
       );
 
@@ -132,7 +150,7 @@ describe("POST /complete-setup", () => {
     }
   });
 
-  test("an already fully seeded bench reports seeded without needing a pending token", async () => {
+  test("an already fully seeded bench reports seeded without needing a pending row", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) =>
@@ -166,6 +184,7 @@ describe("POST /complete-setup", () => {
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => "pushed",
           log: () => undefined,
+          pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
           ensureSeededFn: async () => {
             ensureSeededCalls += 1;
             return { kind: "seeded", workflows: [] };
@@ -173,8 +192,8 @@ describe("POST /complete-setup", () => {
         }),
       );
 
-      // No pending-seed cookie at all — an already-seeded bench must
-      // answer from the read alone, no pending token required.
+      // No pending-seed row at all — an already-seeded bench must
+      // answer from the read alone, no pending row required.
       const response = await app.request("/api/onboarding/complete-setup", {
         method: "POST",
       });
@@ -196,7 +215,7 @@ describe("POST /complete-setup", () => {
     }
   });
 
-  test("unseeded with no pending token reports unseeded, not an error", async () => {
+  test("unseeded with no pending row reports unseeded, not an error", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
@@ -210,6 +229,7 @@ describe("POST /complete-setup", () => {
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => "pushed",
           log: () => undefined,
+          pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
         }),
       );
 
@@ -225,7 +245,7 @@ describe("POST /complete-setup", () => {
     }
   });
 
-  test("unseeded with a valid pending token runs ensureSeeded and reports seeded", async () => {
+  test("unseeded with a valid pending row runs ensureSeeded and reports seeded", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
@@ -233,7 +253,7 @@ describe("POST /complete-setup", () => {
       c.json([]),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const cipher = testCipher();
+    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
       const ensureSeededCalls: {
         provider: string;
@@ -245,7 +265,7 @@ describe("POST /complete-setup", () => {
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => "pushed",
           log: () => undefined,
-          credentialCipher: cipher,
+          pendingSeedStore,
           ensureSeededFn: async (args) => {
             ensureSeededCalls.push({
               provider: args.provider,
@@ -256,10 +276,10 @@ describe("POST /complete-setup", () => {
           },
         }),
       );
+      await withPendingSeed(pendingSeedStore);
 
       const response = await app.request("/api/onboarding/complete-setup", {
         method: "POST",
-        headers: { cookie: await pendingSeedCookie(cipher) },
       });
 
       expect(response.status).toBe(200);
@@ -282,17 +302,20 @@ describe("POST /complete-setup", () => {
           tenant: { tenantId: TENANT_ID },
         },
       ]);
-      // The sealed key has done its job — it must not sit in the
-      // browser for the rest of its ten-minute TTL once seeding
-      // actually succeeds.
-      const setCookie = response.headers.get("set-cookie") ?? "";
-      expect(setCookie).toContain(`${PENDING_SEED_COOKIE}=;`);
+      // The pending row has done its job — it must not sit in the
+      // store for the rest of its ten-minute TTL once seeding actually
+      // succeeds.
+      const stillThere = await pendingSeedStore.read({
+        userId: "user_1",
+        tenantId: TENANT_ID,
+      });
+      expect(stillThere).toBeUndefined();
     } finally {
       server.stop(true);
     }
   });
 
-  test("an already fully seeded bench also clears a stray pending cookie, not just the freshly-run case", async () => {
+  test("an already fully seeded bench also clears a stray pending row, not just the freshly-run case", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) =>
@@ -319,38 +342,42 @@ describe("POST /complete-setup", () => {
       ),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const cipher = testCipher();
+    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => "pushed",
           log: () => undefined,
-          credentialCipher: cipher,
+          pendingSeedStore,
         }),
       );
 
-      // A concurrent call already finished seeding and its own response
-      // cleared the cookie in the browser's real cookie jar; this
-      // request just happens to still be carrying the stale header —
-      // exactly what a second in-flight request from a double effect
-      // fire would look like from the server's perspective.
+      // A concurrent call already finished seeding and its own logic
+      // cleared the row; this request just happens to have written its
+      // own pending row moments earlier — exactly what a second
+      // in-flight request from a double effect fire would look like
+      // from the server's perspective.
+      await withPendingSeed(pendingSeedStore);
+
       const response = await app.request("/api/onboarding/complete-setup", {
         method: "POST",
-        headers: { cookie: await pendingSeedCookie(cipher) },
       });
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as { kind: string };
       expect(body.kind).toBe("seeded");
-      const setCookie = response.headers.get("set-cookie") ?? "";
-      expect(setCookie).toContain(`${PENDING_SEED_COOKIE}=;`);
+      const stillThere = await pendingSeedStore.read({
+        userId: "user_1",
+        tenantId: TENANT_ID,
+      });
+      expect(stillThere).toBeUndefined();
     } finally {
       server.stop(true);
     }
   });
 
-  test("an expired pending token is cleared rather than left to linger unused", async () => {
+  test("an expired pending row is cleared rather than left to linger unused", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
@@ -358,45 +385,36 @@ describe("POST /complete-setup", () => {
       c.json([]),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const cipher = testCipher();
+    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
-      const expiredToken = await sealPendingSeed(
-        cipher,
-        {
-          userId: "user_1",
-          tenantId: TENANT_ID,
-          principalId: PRINCIPAL_ID,
-          tenantDomain: TENANT_DOMAIN,
-          provider: "openrouter",
-          apiKey: "sk-or-v1-minted",
-        },
-        { ttlMs: -1 },
-      );
+      await withPendingSeed(pendingSeedStore, { ttlMs: -1 });
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => "pushed",
           log: () => undefined,
-          credentialCipher: cipher,
+          pendingSeedStore,
         }),
       );
 
       const response = await app.request("/api/onboarding/complete-setup", {
         method: "POST",
-        headers: { cookie: `${PENDING_SEED_COOKIE}=${expiredToken}` },
       });
 
       expect(response.status).toBe(200);
       const body = (await response.json()) as { kind: string };
       expect(body.kind).toBe("unseeded");
-      const setCookie = response.headers.get("set-cookie") ?? "";
-      expect(setCookie).toContain(`${PENDING_SEED_COOKIE}=;`);
+      const stillThere = await pendingSeedStore.read({
+        userId: "user_1",
+        tenantId: TENANT_ID,
+      });
+      expect(stillThere).toBeUndefined();
     } finally {
       server.stop(true);
     }
   });
 
-  test("a pending token sealed for a different user is rejected as unseeded", async () => {
+  test("a pending row written for a different user is invisible to this session", async () => {
     const hub = new Hono();
     principalsRoute(hub);
     hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
@@ -404,23 +422,16 @@ describe("POST /complete-setup", () => {
       c.json([]),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const cipher = testCipher();
+    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
-      const token = await sealPendingSeed(cipher, {
-        userId: "someone_else",
-        tenantId: TENANT_ID,
-        principalId: PRINCIPAL_ID,
-        tenantDomain: TENANT_DOMAIN,
-        provider: "openrouter",
-        apiKey: "sk-or-v1-minted",
-      });
+      await withPendingSeed(pendingSeedStore, { userId: "someone_else" });
       let ensureSeededCalls = 0;
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => "pushed",
           log: () => undefined,
-          credentialCipher: cipher,
+          pendingSeedStore,
           ensureSeededFn: async () => {
             ensureSeededCalls += 1;
             return { kind: "seeded", workflows: [] };
@@ -430,7 +441,6 @@ describe("POST /complete-setup", () => {
 
       const response = await app.request("/api/onboarding/complete-setup", {
         method: "POST",
-        headers: { cookie: `${PENDING_SEED_COOKIE}=${token}` },
       });
 
       expect(response.status).toBe(200);
@@ -442,7 +452,7 @@ describe("POST /complete-setup", () => {
     }
   });
 
-  test("two overlapping calls reading the same pending token never double-deploy", async () => {
+  test("two overlapping calls reading the same pending row never double-deploy", async () => {
     // The concurrency guarantee the task calls for: two "finish setup"
     // requests racing (a double effect fire, a retried fetch) must both
     // land on `seeded` without planting anything twice. Runs the real
@@ -546,26 +556,24 @@ describe("POST /complete-setup", () => {
     });
 
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const cipher = testCipher();
+    const pendingSeedStore = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => "pushed",
           log: () => undefined,
-          credentialCipher: cipher,
+          pendingSeedStore,
         }),
       );
-      const cookie = await pendingSeedCookie(cipher);
+      await withPendingSeed(pendingSeedStore);
 
       const [first, second] = await Promise.all([
         app.request("/api/onboarding/complete-setup", {
           method: "POST",
-          headers: { cookie },
         }),
         app.request("/api/onboarding/complete-setup", {
           method: "POST",
-          headers: { cookie },
         }),
       ]);
 

@@ -1,17 +1,16 @@
-// The pending-seed cookie carries a just-connected credential's
-// plaintext key from the OAuth callback (fast path, never deploys) to
-// the onboarding page's follow-up request (slow path, `ensureSeeded`).
-// It must round-trip only for the exact user and tenant it was sealed
-// for, reject anything expired or tampered with, and — deliberately
-// unlike the PKCE connect state — stay redeemable more than once inside
-// its TTL, since the workflow-deploy step it feeds is itself idempotent.
+// The in-memory store exercises the same encrypt/validate/TTL logic
+// `createDrizzlePendingSeedStore` runs against Postgres (see
+// `createPendingSeedStore` in `./pending-seed.ts`) — round-trip,
+// per-provider AAD, wrong-session, expiry, and cleared-on-success all
+// have to hold regardless of which `RowAccess` backs the store.
+// `test/pending-seed-store.test.ts` DB-gates the same scenarios against
+// the real Postgres-backed store.
 import { describe, expect, test } from "bun:test";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
 import {
-  openPendingSeed,
+  createInMemoryPendingSeedStore,
   PENDING_SEED_TTL_MS,
-  sealPendingSeed,
   type PendingSeed,
 } from "./pending-seed";
 
@@ -29,115 +28,131 @@ const SEED: PendingSeed = {
   apiKey: "sk-or-v1-minted",
 };
 
-describe("sealPendingSeed / openPendingSeed", () => {
-  test("round-trips for the exact user and tenant it was sealed for", async () => {
-    const cipher = testCipher();
-    const token = await sealPendingSeed(cipher, SEED);
+describe("createInMemoryPendingSeedStore", () => {
+  test("round-trips for the exact user and tenant it was written for", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await store.put(SEED);
 
-    const opened = await openPendingSeed(cipher, token, {
-      userId: "user_1",
-      tenantId: "ten_1",
-    });
+    const read = await store.read({ userId: "user_1", tenantId: "ten_1" });
 
-    expect(opened).toEqual(SEED);
+    expect(read).toEqual(SEED);
   });
 
-  test("stays redeemable more than once inside its TTL — unlike the PKCE state, this is not single-use", async () => {
-    const cipher = testCipher();
-    const token = await sealPendingSeed(cipher, SEED);
+  test("stays readable more than once inside its TTL — unlike the PKCE state, this is not single-use", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await store.put(SEED);
 
-    const first = await openPendingSeed(cipher, token, {
-      userId: "user_1",
-      tenantId: "ten_1",
-    });
-    const second = await openPendingSeed(cipher, token, {
-      userId: "user_1",
-      tenantId: "ten_1",
-    });
+    const first = await store.read({ userId: "user_1", tenantId: "ten_1" });
+    const second = await store.read({ userId: "user_1", tenantId: "ten_1" });
 
     expect(first).toEqual(SEED);
     expect(second).toEqual(SEED);
   });
 
-  test("a token sealed for one user is worthless to another", async () => {
-    const cipher = testCipher();
-    const token = await sealPendingSeed(cipher, SEED);
+  test("a row written for one user is invisible to another", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await store.put(SEED);
 
-    const opened = await openPendingSeed(cipher, token, {
-      userId: "user_2",
-      tenantId: "ten_1",
-    });
+    const read = await store.read({ userId: "user_2", tenantId: "ten_1" });
 
-    expect(opened).toBeUndefined();
+    expect(read).toBeUndefined();
   });
 
-  test("a token sealed for one tenant is worthless against another", async () => {
-    const cipher = testCipher();
-    const token = await sealPendingSeed(cipher, SEED);
+  test("a row written for one tenant is invisible against another", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await store.put(SEED);
 
-    const opened = await openPendingSeed(cipher, token, {
+    const read = await store.read({
       userId: "user_1",
       tenantId: "ten_other",
     });
 
-    expect(opened).toBeUndefined();
+    expect(read).toBeUndefined();
   });
 
-  test("an expired token yields nothing", async () => {
+  test("an expired row reads as absent and is deleted, not merely ignored", async () => {
     let clock = 0;
-    const cipher = testCipher();
-    const token = await sealPendingSeed(cipher, SEED, { now: () => clock });
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await store.put(SEED, { now: () => clock });
 
     clock = PENDING_SEED_TTL_MS;
-    const opened = await openPendingSeed(cipher, token, {
+    const read = await store.read({
       userId: "user_1",
       tenantId: "ten_1",
       now: () => clock,
     });
+    expect(read).toBeUndefined();
 
-    expect(opened).toBeUndefined();
-  });
-
-  test("an unknown or corrupt token yields nothing", async () => {
-    const cipher = testCipher();
-    const opened = await openPendingSeed(cipher, "not-a-real-token", {
+    // Deleted, not just expired-and-skipped: a fresh read (even with
+    // the clock rewound) finds nothing, proving the row is gone.
+    const rereadEarlier = await store.read({
       userId: "user_1",
       tenantId: "ten_1",
+      now: () => 0,
     });
-
-    expect(opened).toBeUndefined();
+    expect(rereadEarlier).toBeUndefined();
   });
 
-  test("a token sealed under a different key is worthless after a key rotation", async () => {
-    const token = await sealPendingSeed(testCipher(), SEED);
+  test("a ciphertext sealed under one key is worthless after a key rotation", async () => {
+    const cipher = testCipher();
+    const aad = JSON.stringify(["onboarding-pending-seed", "openrouter"]);
+    const payload = await cipher.encrypt(
+      JSON.stringify({
+        principalId: SEED.principalId,
+        tenantDomain: SEED.tenantDomain,
+        apiKey: SEED.apiKey,
+      }),
+      aad,
+    );
+
     const rotated = createEnvKeyCredentialCipher(Buffer.alloc(32, 12));
-
-    const opened = await openPendingSeed(rotated, token, {
-      userId: "user_1",
-      tenantId: "ten_1",
-    });
-
-    expect(opened).toBeUndefined();
+    await expect(rotated.decrypt(payload, aad)).rejects.toThrow();
   });
 
-  test("round-trips for a provider other than the first tried — the open side has to find it, not just the seal side produce it", async () => {
-    const cipher = testCipher();
+  test("a fresh connect upserts over whatever pending seed came before it — one active row per (userId, tenantId)", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await store.put(SEED);
+
+    const replacement: PendingSeed = {
+      ...SEED,
+      provider: "huggingface",
+      apiKey: "hf_replaced",
+    };
+    await store.put(replacement);
+
+    const read = await store.read({ userId: "user_1", tenantId: "ten_1" });
+    expect(read).toEqual(replacement);
+  });
+
+  test("cleared on successful seed — the row is gone after clear", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await store.put(SEED);
+
+    await store.clear({ userId: "user_1", tenantId: "ten_1" });
+
+    const read = await store.read({ userId: "user_1", tenantId: "ten_1" });
+    expect(read).toBeUndefined();
+  });
+
+  test("clearing a row that was never written is a harmless no-op", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await expect(
+      store.clear({ userId: "user_1", tenantId: "ten_1" }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("round-trips for a provider other than the first — every supported provider seals and opens correctly", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
     const hfSeed: PendingSeed = { ...SEED, provider: "huggingface" };
-    const token = await sealPendingSeed(cipher, hfSeed);
+    await store.put(hfSeed);
 
-    const opened = await openPendingSeed(cipher, token, {
-      userId: "user_1",
-      tenantId: "ten_1",
-    });
+    const read = await store.read({ userId: "user_1", tenantId: "ten_1" });
 
-    expect(opened).toEqual(hfSeed);
+    expect(read).toEqual(hfSeed);
   });
 
-  test("domain separation: a token sealed for one provider's AAD cannot decrypt under another's", async () => {
+  test("domain separation: a ciphertext sealed for one provider's AAD cannot decrypt under another's", async () => {
     const cipher = testCipher();
-    // A token minted for openrouter never decrypts under huggingface's
-    // AAD — provable directly, unlike the PKCE store's per-provider
-    // instances, since `openPendingSeed` searches every provider itself.
     const openrouterAad = JSON.stringify([
       "onboarding-pending-seed",
       "openrouter",
@@ -146,44 +161,15 @@ describe("sealPendingSeed / openPendingSeed", () => {
       "onboarding-pending-seed",
       "huggingface",
     ]);
-    const token = await cipher.encrypt(
-      JSON.stringify({ ...SEED, expiresAt: Date.now() + 60_000 }),
+    const payload = await cipher.encrypt(
+      JSON.stringify({
+        principalId: SEED.principalId,
+        tenantDomain: SEED.tenantDomain,
+        apiKey: SEED.apiKey,
+      }),
       openrouterAad,
     );
 
-    await expect(cipher.decrypt(token, huggingfaceAad)).rejects.toThrow();
-    // But the real open path, which tries every provider's AAD, still
-    // finds it under the correct one.
-    const opened = await openPendingSeed(cipher, token, {
-      userId: "user_1",
-      tenantId: "ten_1",
-    });
-    expect(opened).toEqual(SEED);
-  });
-
-  test("a hand-crafted token whose payload provider disagrees with the AAD it decrypts under is rejected", async () => {
-    // Defense in depth beyond the AAD check itself: even if some future
-    // change made a cross-provider decrypt succeed, a payload claiming
-    // a different provider than the AAD it was sealed under is refused.
-    const cipher = testCipher();
-    const huggingfaceAad = JSON.stringify([
-      "onboarding-pending-seed",
-      "huggingface",
-    ]);
-    const mismatched = await cipher.encrypt(
-      JSON.stringify({
-        ...SEED,
-        provider: "openrouter",
-        expiresAt: Date.now() + 60_000,
-      }),
-      huggingfaceAad,
-    );
-
-    const opened = await openPendingSeed(cipher, mismatched, {
-      userId: "user_1",
-      tenantId: "ten_1",
-    });
-
-    expect(opened).toBeUndefined();
+    await expect(cipher.decrypt(payload, huggingfaceAad)).rejects.toThrow();
   });
 });
