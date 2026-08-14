@@ -41,6 +41,29 @@ export type PresenceStatePatch = Partial<
 
 export type PresenceRoomListener = (states: readonly PresenceState[]) => void;
 
+/** The single `Y.Text` field name every room's doc uses for co-edited
+ * content. One well-known field rather than a caller-chosen name: nothing
+ * about a room's `surface` string tells the registry what shape of
+ * document it holds, and phase 2 only ever needs one field per room. */
+export const PRESENCE_DOC_TEXT_FIELD = "content";
+
+export type PresenceDocUpdateListener = (
+  update: Uint8Array,
+  authorPrincipalId: string,
+) => void;
+
+/** What a snapshot-written notification carries — enough for the UI's
+ * honest "Saved · v12" line to compute its own relative-time label,
+ * never a pre-formatted string the registry would have to keep re-minting. */
+export interface PresenceDocSnapshotInfo {
+  readonly version: number;
+  readonly savedAt: number;
+}
+
+export type PresenceDocSnapshotListener = (
+  info: PresenceDocSnapshotInfo,
+) => void;
+
 interface Room {
   readonly key: PresenceRoomKey;
   readonly doc: Y.Doc;
@@ -48,6 +71,8 @@ interface Room {
   readonly clientIdByPrincipal: Map<string, number>;
   readonly lastSeenAtByPrincipal: Map<string, number>;
   readonly listeners: Set<PresenceRoomListener>;
+  readonly docListeners: Set<PresenceDocUpdateListener>;
+  readonly snapshotListeners: Set<PresenceDocSnapshotListener>;
 }
 
 export interface PresenceRoomRegistry {
@@ -77,6 +102,55 @@ export interface PresenceRoomRegistry {
   states(key: PresenceRoomKey): readonly PresenceState[];
   /** Drops any principal whose last heartbeat is older than `timeoutMs`, broadcasting the change. */
   sweepStale(timeoutMs: number, now?: number): void;
+
+  /**
+   * Applies a Yjs update (already decoded from the wire's base64) to the
+   * room's doc, attributing it to `authorPrincipalId` for persistence's
+   * "who wrote this snapshot" bookkeeping. Creates the room if it doesn't
+   * exist yet — mirrors `join`'s own "first call creates" behavior.
+   * Throws if `update` isn't a well-formed Yjs update; the caller (the
+   * HTTP route) is expected to turn that into a 400.
+   */
+  applyDocUpdate(
+    key: PresenceRoomKey,
+    update: Uint8Array,
+    authorPrincipalId: string,
+  ): void;
+  /** The room's full doc state, encoded as one Yjs update — what a new
+   * joiner applies locally to catch up. An empty (never-created) room
+   * encodes to a tiny valid "empty doc" update, never an error. */
+  docStateAsUpdate(key: PresenceRoomKey): Uint8Array;
+  /** The current text of the room's `PRESENCE_DOC_TEXT_FIELD` field, `""` for a room with no doc content yet. */
+  docText(key: PresenceRoomKey): string;
+  /** Seeds the room's text field with `text`, but only if it is still
+   * empty — never clobbers real content a concurrent editor already
+   * wrote. Returns whether it actually seeded anything. */
+  seedDocText(key: PresenceRoomKey, text: string): boolean;
+  /** Subscribes to every doc update applied to the room (via `applyDocUpdate`), for relaying over SSE. */
+  subscribeDocUpdates(
+    key: PresenceRoomKey,
+    listener: PresenceDocUpdateListener,
+  ): () => void;
+  /** Fires whenever any room's doc changes — the hook persistence's debounce timer schedules off. Not room-scoped: persistence watches every artifact room without knowing in advance which surfaces exist. */
+  onDocChange(
+    listener: (key: PresenceRoomKey, authorPrincipalId: string) => void,
+  ): () => void;
+  /** Fires when a room is torn down for having no members and no SSE subscribers left — persistence's cue to flush a pending snapshot immediately rather than wait out the debounce window on a doc nobody is looking at anymore. */
+  onEmpty(listener: (key: PresenceRoomKey) => void): () => void;
+
+  /**
+   * Announces that a snapshot write for the room finished — persistence
+   * calls this after `writeArtifactSnapshot` succeeds; the SSE route
+   * relays it to every connected browser as a `doc.saved` event, which is
+   * the only honest source for a "Saved · v12" line (the client itself
+   * has no way to know a debounced server-side write landed otherwise).
+   */
+  notifySnapshot(key: PresenceRoomKey, info: PresenceDocSnapshotInfo): void;
+  /** Subscribes to snapshot-written notifications for one room. */
+  subscribeSnapshots(
+    key: PresenceRoomKey,
+    listener: PresenceDocSnapshotListener,
+  ): () => void;
 }
 
 function roomKeyId(key: PresenceRoomKey): string {
@@ -85,6 +159,10 @@ function roomKeyId(key: PresenceRoomKey): string {
 
 export function createPresenceRoomRegistry(): PresenceRoomRegistry {
   const rooms = new Map<string, Room>();
+  const docChangeListeners = new Set<
+    (key: PresenceRoomKey, authorPrincipalId: string) => void
+  >();
+  const emptyListeners = new Set<(key: PresenceRoomKey) => void>();
   let nextClientId = 1;
 
   function ensureRoom(key: PresenceRoomKey): Room {
@@ -105,6 +183,8 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
         clientIdByPrincipal: new Map(),
         lastSeenAtByPrincipal: new Map(),
         listeners: new Set(),
+        docListeners: new Set(),
+        snapshotListeners: new Set(),
       };
       rooms.set(id, room);
     }
@@ -146,6 +226,12 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
 
   function destroyRoomIfEmpty(key: PresenceRoomKey, room: Room): void {
     if (room.clientIdByPrincipal.size > 0 || room.listeners.size > 0) return;
+    // Fired synchronously, before the doc is destroyed: a listener (e.g.
+    // persistence's flush-on-empty) that reads `docText`/`doc` needs it
+    // intact for the duration of this call — any `await` inside a
+    // listener naturally suspends past the destroy below, but every
+    // synchronous read within the listener still sees a live doc.
+    for (const listener of emptyListeners) listener(key);
     room.awareness.destroy();
     room.doc.destroy();
     rooms.delete(roomKeyId(key));
@@ -226,6 +312,72 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
         broadcast(room);
         destroyRoomIfEmpty(room.key, room);
       }
+    },
+
+    applyDocUpdate(key, update, authorPrincipalId) {
+      const room = ensureRoom(key);
+      Y.applyUpdate(room.doc, update, "remote");
+      for (const listener of room.docListeners) {
+        listener(update, authorPrincipalId);
+      }
+      for (const listener of docChangeListeners) {
+        listener(key, authorPrincipalId);
+      }
+    },
+
+    docStateAsUpdate(key) {
+      const room = rooms.get(roomKeyId(key));
+      return Y.encodeStateAsUpdate(room === undefined ? new Y.Doc() : room.doc);
+    },
+
+    docText(key) {
+      const room = rooms.get(roomKeyId(key));
+      if (room === undefined) return "";
+      return room.doc.getText(PRESENCE_DOC_TEXT_FIELD).toString();
+    },
+
+    seedDocText(key, text) {
+      const room = ensureRoom(key);
+      const yText = room.doc.getText(PRESENCE_DOC_TEXT_FIELD);
+      if (yText.length > 0) return false;
+      yText.insert(0, text);
+      return true;
+    },
+
+    subscribeDocUpdates(key, listener) {
+      const room = ensureRoom(key);
+      room.docListeners.add(listener);
+      return () => {
+        room.docListeners.delete(listener);
+      };
+    },
+
+    onDocChange(listener) {
+      docChangeListeners.add(listener);
+      return () => {
+        docChangeListeners.delete(listener);
+      };
+    },
+
+    onEmpty(listener) {
+      emptyListeners.add(listener);
+      return () => {
+        emptyListeners.delete(listener);
+      };
+    },
+
+    notifySnapshot(key, info) {
+      const room = rooms.get(roomKeyId(key));
+      if (room === undefined) return;
+      for (const listener of room.snapshotListeners) listener(info);
+    },
+
+    subscribeSnapshots(key, listener) {
+      const room = ensureRoom(key);
+      room.snapshotListeners.add(listener);
+      return () => {
+        room.snapshotListeners.delete(listener);
+      };
     },
   };
 }

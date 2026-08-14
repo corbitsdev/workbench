@@ -5,19 +5,26 @@
 // here runs. No new auth path: identity and tenant membership ride the
 // platform's existing session + tenant resolution, exactly like every
 // other extension mounted under `TENANT_PREFIX`.
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { type } from "arktype";
 
-import type { TenantEnv } from "@intx/hub-api";
+import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
+import { decodeBase64, encodeBase64, InvalidBase64Error } from "./base64";
 import { colorForPrincipal } from "./color";
 import {
   createPresenceRoomRegistry,
+  type PresenceRoomKey,
   type PresenceRoomRegistry,
   type PresenceState,
 } from "./room-registry";
-import { PresenceHeartbeatBody, PresenceJoinBody } from "./schema";
+import {
+  MAX_DOC_UPDATE_BYTES,
+  PresenceDocUpdateBody,
+  PresenceHeartbeatBody,
+  PresenceJoinBody,
+} from "./schema";
 
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 45_000;
 
@@ -29,6 +36,27 @@ export interface CreatePresenceRoutesDeps {
   registry?: PresenceRoomRegistry;
   heartbeatTimeoutMs?: number;
   now?: () => number;
+  /** Decoded-byte ceiling for a single `POST /update` body. */
+  maxDocUpdateBytes?: number;
+  /**
+   * Runs after a successful join, before the response's `docUpdate` is
+   * read off the registry — the seam persistence's seed-on-join hook
+   * (`createArtifactDocPersistence`) uses to populate a freshly-created
+   * artifact room's doc from the artifact's stored content before the
+   * joiner ever sees it. Optional: a bare presence room (no artifact
+   * behind it) has no seeding to do.
+   */
+  onJoin?: (key: PresenceRoomKey, principalId: string) => Promise<void> | void;
+  /**
+   * Gates `POST /update` only — join/heartbeat/leave/stream stay exactly
+   * as open as phase 1 left them (waving a cursor is not a write). A doc
+   * update is different: it mutates shared content that persistence may
+   * turn into a real artifact version, the same kind of write Library's
+   * own upload route gates behind `("asset:*", "write")`. Optional so a
+   * presence-only deployment (no doc content ever posted) doesn't have to
+   * supply a grant checker it will never exercise.
+   */
+  requireGrant?: RequireGrant;
 }
 
 /**
@@ -49,6 +77,7 @@ export function createPresenceRoutes(
   const heartbeatTimeoutMs =
     deps.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
   const now = deps.now ?? Date.now;
+  const maxDocUpdateBytes = deps.maxDocUpdateBytes ?? MAX_DOC_UPDATE_BYTES;
 
   const app = new Hono<TenantEnv>();
 
@@ -78,7 +107,9 @@ export function createPresenceRoutes(
     };
 
     const states = registry.join(key, state, now());
-    return c.json({ self: state, members: states }, 200);
+    await deps.onJoin?.(key, principal.id);
+    const docUpdate = encodeBase64(registry.docStateAsUpdate(key));
+    return c.json({ self: state, members: states, docUpdate }, 200);
   });
 
   app.post("/rooms/:surface/heartbeat", async (c) => {
@@ -111,6 +142,67 @@ export function createPresenceRoutes(
     return c.json({ members: states });
   });
 
+  const handleDocUpdate = async (
+    c: Context<TenantEnv, "/rooms/:surface/update">,
+  ) => {
+    const body = PresenceDocUpdateBody(await c.req.json().catch(() => ({})));
+    if (body instanceof type.errors) {
+      return c.json(
+        errorEnvelope("bad_request", `invalid update body: ${body.summary}`),
+        400,
+      );
+    }
+
+    let bytes: Uint8Array;
+    try {
+      bytes = decodeBase64(body.update);
+    } catch (err) {
+      if (err instanceof InvalidBase64Error) {
+        return c.json(
+          errorEnvelope("bad_request", "update is not valid base64"),
+          400,
+        );
+      }
+      throw err;
+    }
+
+    if (bytes.byteLength > maxDocUpdateBytes) {
+      return c.json(
+        errorEnvelope(
+          "payload_too_large",
+          `update exceeds the ${maxDocUpdateBytes} byte limit`,
+        ),
+        413,
+      );
+    }
+
+    const tenant = c.get("tenant");
+    const principal = c.get("principal");
+    const surface = c.req.param("surface");
+    const key = { tenantId: tenant.id, surface };
+
+    try {
+      registry.applyDocUpdate(key, bytes, principal.id);
+    } catch {
+      return c.json(
+        errorEnvelope("bad_request", "update is not a valid Yjs update"),
+        400,
+      );
+    }
+
+    return c.body(null, 202);
+  };
+
+  if (deps.requireGrant) {
+    app.post(
+      "/rooms/:surface/update",
+      deps.requireGrant("asset:*", "write"),
+      handleDocUpdate,
+    );
+  } else {
+    app.post("/rooms/:surface/update", handleDocUpdate);
+  }
+
   app.post("/rooms/:surface/leave", (c) => {
     const tenant = c.get("tenant");
     const principal = c.get("principal");
@@ -127,13 +219,33 @@ export function createPresenceRoutes(
     const key = { tenantId: tenant.id, surface };
 
     return streamSSE(c, async (stream) => {
-      let unsubscribe: () => void = () => undefined;
-      unsubscribe = registry.subscribe(key, (states) => {
+      let unsubscribePresence: () => void = () => undefined;
+      let unsubscribeDoc: () => void = () => undefined;
+      let unsubscribeSnapshots: () => void = () => undefined;
+      const teardown = () => {
+        unsubscribePresence();
+        unsubscribeDoc();
+        unsubscribeSnapshots();
+      };
+      unsubscribePresence = registry.subscribe(key, (states) => {
         stream
           .writeSSE({ event: "presence.state", data: JSON.stringify(states) })
-          .catch(() => unsubscribe());
+          .catch(teardown);
       });
-      stream.onAbort(unsubscribe);
+      unsubscribeDoc = registry.subscribeDocUpdates(key, (update) => {
+        stream
+          .writeSSE({
+            event: "doc.update",
+            data: JSON.stringify({ update: encodeBase64(update) }),
+          })
+          .catch(teardown);
+      });
+      unsubscribeSnapshots = registry.subscribeSnapshots(key, (info) => {
+        stream
+          .writeSSE({ event: "doc.saved", data: JSON.stringify(info) })
+          .catch(teardown);
+      });
+      stream.onAbort(teardown);
       await new Promise<void>(() => undefined);
     });
   });

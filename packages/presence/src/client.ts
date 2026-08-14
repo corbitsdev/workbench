@@ -5,6 +5,9 @@
 // but exposed as a plain subscribe/callback API rather than a React hook.
 // A thin hook wrapping `connectPresence` belongs in the consuming app, not
 // here — this package never depends on React.
+import * as Y from "yjs";
+
+import { decodeBase64, encodeBase64 } from "./base64";
 import type {
   PresenceCursor,
   PresenceState,
@@ -29,11 +32,14 @@ export interface PresenceEventSourceLike {
   close(): void;
 }
 
-/** The minimal `fetch` surface this module uses. */
+/** The minimal `fetch` surface this module uses. `json()` is only ever
+ * read when a `doc` is configured (to pull `docUpdate` off the join
+ * response) — a real `Response` satisfies this structurally, no cast
+ * needed. */
 export type PresenceFetch = (
   url: string,
   init: { method: string; headers: Record<string, string>; body: string },
-) => Promise<{ ok: boolean }>;
+) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
 
 export interface PresenceClientOptions {
   /** The room's base URL, e.g. `/api/tenants/tnt_1/presence/rooms/channel:chn_1`. */
@@ -42,6 +48,23 @@ export interface PresenceClientOptions {
   readonly heartbeatIntervalMs?: number;
   readonly fetchImpl?: PresenceFetch;
   readonly openEventSource?: (streamUrl: string) => PresenceEventSourceLike;
+  /**
+   * When provided, this connection speaks doc sync as well as awareness:
+   * the join response's `docUpdate` seeds it, remote `doc.update` SSE
+   * events apply into it, and its own local changes are relayed to the
+   * room's `/update` endpoint. Omit for an awareness-only connection
+   * (e.g. the channel who's-here stack, which has no doc content) — the
+   * extra machinery below only activates when a caller actually hands
+   * over a `Y.Doc` to keep in sync.
+   */
+  readonly doc?: Y.Doc;
+  /**
+   * Called for every `doc.saved` event the room's stream carries — the
+   * only honest source for a "Saved · v12" line, since a debounced
+   * server-side write finishing is not something the client can infer
+   * from anything it did locally.
+   */
+  readonly onSaved?: (info: { version: number; savedAt: number }) => void;
 }
 
 /**
@@ -83,6 +106,65 @@ function parseMembers(data: string): readonly PresenceState[] {
   }
 }
 
+/** `undefined` for anything that isn't a well-formed `{update: string}` payload — the same "parse, don't crash on a bad event" stance `parseMembers` takes. */
+function parseDocUpdateEvent(data: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(data);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "update" in parsed &&
+      typeof (parsed as { update: unknown }).update === "string"
+    ) {
+      return (parsed as { update: string }).update;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `undefined` for anything that isn't a well-formed `{version, savedAt}` payload. */
+function parseSnapshotEvent(
+  data: string,
+): { version: number; savedAt: number } | undefined {
+  try {
+    const parsed: unknown = JSON.parse(data);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "version" in parsed &&
+      "savedAt" in parsed &&
+      typeof (parsed as { version: unknown }).version === "number" &&
+      typeof (parsed as { savedAt: unknown }).savedAt === "number"
+    ) {
+      return parsed as { version: number; savedAt: number };
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function docUpdateFromJoinResponse(body: unknown): string | undefined {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "docUpdate" in body &&
+    typeof (body as { docUpdate: unknown }).docUpdate === "string"
+  ) {
+    return (body as { docUpdate: string }).docUpdate;
+  }
+  return undefined;
+}
+
+/** Origin tag stamped on every update `applyRemoteUpdate` applies, so the
+ * doc's own `update` observer (which relays local changes to the server)
+ * can tell "I made this edit" from "the server told me about someone
+ * else's edit" and skip re-posting the latter — without this, every
+ * remote update would round-trip back to the server as if it were new. */
+const REMOTE_UPDATE_ORIGIN = "presence-remote";
+
 function defaultFetch(
   ...args: Parameters<PresenceFetch>
 ): ReturnType<PresenceFetch> {
@@ -96,6 +178,7 @@ export function connectPresence(
   const openEventSource = options.openEventSource ?? defaultOpenEventSource;
   const heartbeatIntervalMs =
     options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const doc = options.doc;
 
   const listeners = new Set<(members: readonly PresenceState[]) => void>();
   let latestMembers: readonly PresenceState[] = [];
@@ -113,12 +196,54 @@ export function connectPresence(
       body: JSON.stringify(body ?? {}),
     }).catch(() => undefined);
 
-  void post("join", { displayName: options.displayName });
+  function applyRemoteUpdate(base64Update: string): void {
+    if (doc === undefined) return;
+    try {
+      Y.applyUpdate(doc, decodeBase64(base64Update), REMOTE_UPDATE_ORIGIN);
+    } catch {
+      // A malformed update is dropped rather than crashing the client;
+      // the next join/reconnect resyncs the full doc state from scratch.
+    }
+  }
+
+  let onLocalDocUpdate:
+    ((update: Uint8Array, origin: unknown) => void) | undefined;
+  if (doc !== undefined) {
+    onLocalDocUpdate = (update, origin) => {
+      if (disconnected || origin === REMOTE_UPDATE_ORIGIN) return;
+      void post("update", { update: encodeBase64(update) });
+    };
+    doc.on("update", onLocalDocUpdate);
+  }
+
+  void post("join", { displayName: options.displayName })
+    .then((response) => {
+      if (doc === undefined || response === undefined || !response.ok) {
+        return undefined;
+      }
+      return response.json();
+    })
+    .then((body) => {
+      if (body === undefined) return;
+      const docUpdate = docUpdateFromJoinResponse(body);
+      if (docUpdate !== undefined) applyRemoteUpdate(docUpdate);
+    })
+    .catch(() => undefined);
 
   const source = openEventSource(`${options.roomUrl}/stream`);
   source.addEventListener("presence.state", (event) => {
     if (disconnected) return;
     notify(parseMembers(event.data));
+  });
+  source.addEventListener("doc.update", (event) => {
+    if (disconnected) return;
+    const update = parseDocUpdateEvent(event.data);
+    if (update !== undefined) applyRemoteUpdate(update);
+  });
+  source.addEventListener("doc.saved", (event) => {
+    if (disconnected) return;
+    const info = parseSnapshotEvent(event.data);
+    if (info !== undefined) options.onSaved?.(info);
   });
 
   const heartbeatTimer = setInterval(() => {
@@ -153,6 +278,9 @@ export function connectPresence(
       clearInterval(heartbeatTimer);
       source.close();
       listeners.clear();
+      if (doc !== undefined && onLocalDocUpdate !== undefined) {
+        doc.off("update", onLocalDocUpdate);
+      }
       // Best-effort: the room drops this principal on its own heartbeat
       // timeout even if this never arrives (page unload racing the
       // request), so a failed leave is not a correctness bug.
