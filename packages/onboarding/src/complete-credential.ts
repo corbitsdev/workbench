@@ -10,6 +10,14 @@
 // the same bench. Both plant the credential through the hub's native
 // `POST /api/tenants/:id/credentials` route (see `seedCatalog`'s
 // `ensureCredential`) — this module never stores a secret itself.
+//
+// `seedTenant` runs with `confirmDeployments: false`: the probe above
+// already proved the key is valid, so there is nothing left to confirm
+// by triggering a real, billed inference call against the account the
+// user just connected — only insufficient credit or a busy sidecar for
+// a fully valid key to fail on, surfacing as a false "setup failed".
+// Deployment itself still runs (it is configuration, not inference), so
+// the bench's default workflows are genuinely usable once this returns.
 
 import { PrincipalSummary, TenantResponse, paginatedSchema } from "@intx/types";
 import {
@@ -156,6 +164,7 @@ export async function completeCredentialSetup(
     pushWorkflow: args.pushWorkflow,
     log: args.log,
     workflows: DEFAULT_WORKFLOWS,
+    confirmDeployments: false,
   });
 
   return {

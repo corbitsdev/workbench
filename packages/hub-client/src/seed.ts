@@ -566,14 +566,28 @@ export type SeedTenantArgs = {
   sleep?: (ms: number) => Promise<void>;
   runStartTimeoutMs?: number;
   runPollIntervalMs?: number;
+  /**
+   * Whether each deployment is confirmed by triggering a real mail
+   * message and waiting for a run to start. Defaults to `true` — the
+   * behavior `workbench seed` and the operator-key first-login hook
+   * rely on, where a deployment nothing ever confirmed is treated as a
+   * seed failure. A self-served connect flow (`@workbench/onboarding`'s
+   * `completeCredentialSetup`) passes `false`: the key was already
+   * proven with a free, auth-only probe before seeding started, so
+   * spending the connecting user's own (possibly credit-less) balance
+   * on a real inference call here would only re-litigate a question
+   * already answered, at the user's expense.
+   */
+  confirmDeployments?: boolean;
 };
 
 /**
- * Plants the seed grants and deploys and confirms every default
- * workflow for one already-known tenant. A caller that already holds
- * an authenticated session and a freshly created tenant (the
- * first-login provisioning hook, in particular) seeds it without
- * re-authenticating or re-resolving the tenant by slug.
+ * Plants the seed grants and deploys — and, unless told not to,
+ * confirms — every default workflow for one already-known tenant. A
+ * caller that already holds an authenticated session and a freshly
+ * created tenant (the first-login provisioning hook, in particular)
+ * seeds it without re-authenticating or re-resolving the tenant by
+ * slug.
  */
 export async function seedTenant(args: SeedTenantArgs): Promise<void> {
   const {
@@ -584,6 +598,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     model,
     log,
     workflows = DEFAULT_WORKFLOWS,
+    confirmDeployments = true,
   } = args;
   const sleep =
     args.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
@@ -649,19 +664,21 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       log,
     );
 
-    await confirmDeploymentAnswers(
-      api,
-      cookies,
-      {
-        tenantId: tenant.tenantId,
-        deploymentId,
-        assetName: workflow.assetName,
-        sleep,
-        timeoutMs,
-        intervalMs,
-      },
-      log,
-    );
+    if (confirmDeployments) {
+      await confirmDeploymentAnswers(
+        api,
+        cookies,
+        {
+          tenantId: tenant.tenantId,
+          deploymentId,
+          assetName: workflow.assetName,
+          sleep,
+          timeoutMs,
+          intervalMs,
+        },
+        log,
+      );
+    }
     confirmed += 1;
   }
 
@@ -671,7 +688,11 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       "check the failures reported above, fix them, then re-run: workbench seed",
     );
   }
-  log(`seed complete: ${confirmed} workflow(s) deployed and confirmed`);
+  log(
+    confirmDeployments
+      ? `seed complete: ${confirmed} workflow(s) deployed and confirmed`
+      : `seed complete: ${confirmed} workflow(s) deployed`,
+  );
 }
 
 // The credential name a seeded inference source stores its secret
