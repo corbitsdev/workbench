@@ -36,6 +36,7 @@ import { applyMailboxMigrations } from "../packages/inbox/src/migrations";
 import { applyInsightsMigrations } from "../packages/insights/src/migrations";
 import { applyPreferencesMigrations } from "../packages/preferences/src/migrations";
 import { applyBenchMigrations } from "../packages/bench/src/migrations";
+import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -61,6 +62,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/insights", apply: applyInsightsMigrations },
   { name: "@corbits/preferences", apply: applyPreferencesMigrations },
   { name: "@corbits/bench", apply: applyBenchMigrations },
+  { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
 ];
 
 /**
@@ -514,6 +516,7 @@ const PACKAGE_SCHEMAS = [
   "insights",
   "notify",
   "webhook_triggers",
+  "onboarding",
 ] as const;
 
 /**
