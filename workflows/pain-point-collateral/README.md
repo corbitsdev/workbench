@@ -10,10 +10,16 @@ child of CL-5987).
 One step, one agent, matching every other definition in this catalog.
 The system prompt commits it to:
 
-- **Intake**, either a pasted transcript (`transcript`) or a Granola
-  note id (`noteId`) fetched via `granola_get_note`
-  (`@corbits/granola-tools` — the same package, and the same tool
-  bundle, `@corbits/morning-brief-workflow` pins for its own
+- **Intake**: the trigger names exactly two fields, either a pasted
+  transcript (`transcript`) or a Granola note id (`noteId`). The model
+  calls `pain_point_collateral_intake` (`./src/intake-tool.ts`) first,
+  passing along whichever field it actually found — the tool
+  arktype-validates both against a strict schema (rejecting anything
+  malformed or unexpected, never passing raw JSON further into the run)
+  and reports which one, if either, carried real content. A `noteId`
+  hit is then fetched via `granola_get_note` (`@corbits/granola-tools` —
+  the same package, and the same tool bundle,
+  `@corbits/morning-brief-workflow` pins for its own
   `granola_list_recent_notes` call).
 - **Extraction**: the customer's real pain points from the transcript —
   specific problems, not generic categories.
@@ -21,11 +27,32 @@ The system prompt commits it to:
   pain point found.
 - **Finalizing**: exactly one call to `pain_point_collateral_finalize`
   (`./src/finalize-tool.ts`), gated behind a human approval.
-- **Honest failure**: one plain sentence, and stop, when there is no
-  transcript to work from or no way to reach Granola — never a
-  fabricated transcript or pain points.
+- **Honest failure**: one plain sentence, and stop, when a `noteId` was
+  given but there is no way to fetch it (no Granola tool available, or
+  the fetch fails) — never a fabricated transcript or pain points.
+- **Teaching artifact on no data**: when intake reports neither field
+  carried usable content, the run still calls
+  `pain_point_collateral_finalize` — with a title such as "No transcript
+  available", the pain point stated honestly as none found, and a body
+  naming what was checked and the concrete next step (paste a
+  transcript, or give a Granola note id). This persists a Library entry
+  and chip instead of ending in a bare, artifact-less reply.
 - **Calm denial**: one plain sentence when the collateral is not
   approved — never presented as an error.
+
+## Intake validation
+
+`pain_point_collateral_intake` (`./src/intake-tool.ts`) is the one
+place the trigger's two named fields are actually parsed against a
+schema — an arktype object type with `"+": "reject"`, so an unexpected
+field or a wrong-typed `transcript`/`noteId` comes back as an honest
+`isError: true` result rather than being silently coerced or passed
+through. It carries no `approval` declaration: unlike
+`pain_point_collateral_finalize`, it has no external side effect, only
+normalizes which of the two fields (if either) actually carried
+content. Like the finalize tool, it is a workflow-local export, not a
+`toolPackagePins` entry — see "Current limits" below for what that
+means for deploys today.
 
 ## Approval mechanics
 
