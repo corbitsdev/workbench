@@ -79,6 +79,7 @@ import type { CommandRegistry, CommandResult } from "@corbits/commands";
 import { InferenceResolutionError } from "@corbits/folded-runs";
 import type { ChannelTenancyStore } from "./channel-tenancy";
 import type { ThreadStore } from "./threads";
+import { ThreadDepthCapError } from "./threads";
 
 export type {
   ChannelActivitySummary,
@@ -808,11 +809,55 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           id: t.id,
           kind: t.kind,
           parentMessageId: t.parentMessageId,
+          parentThreadId: t.parentThreadId,
           runRef: t.runRef,
           title: t.title,
           createdAt: t.createdAt.toISOString(),
         })),
       });
+    },
+  );
+
+  app.post(
+    "/channels/:id/threads/fork",
+    deps.requireGrant(idResource("workflow-run", "id"), "write"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+      if (deps.threads === undefined) {
+        return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
+      }
+      const body = type({
+        parentMessageId: "string",
+        "title?": "string",
+      })(await c.req.json().catch(() => undefined));
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope("bad_request", `invalid body: ${body.summary}`),
+          400,
+        );
+      }
+      const thread = await deps.threads.forkThread({
+        tenantId: tenant.id,
+        channelId,
+        parentMessageId: body.parentMessageId,
+        ...(body.title !== undefined ? { title: body.title } : {}),
+      });
+      return c.json(
+        {
+          id: thread.id,
+          kind: thread.kind,
+          parentMessageId: thread.parentMessageId,
+          parentThreadId: thread.parentThreadId,
+          runRef: thread.runRef,
+          title: thread.title,
+          createdAt: thread.createdAt.toISOString(),
+        },
+        201,
+      );
     },
   );
 
@@ -861,6 +906,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           id: thread.id,
           kind: thread.kind,
           parentMessageId: thread.parentMessageId,
+          parentThreadId: thread.parentThreadId,
           runRef: thread.runRef,
           title: thread.title,
           createdAt: thread.createdAt.toISOString(),
@@ -1031,11 +1077,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           }
           targetThreadId = existing.id;
         } else if (parsed.inReplyToMessageId !== undefined) {
-          const reply = await deps.threads.openReplyThread({
-            tenantId: tenant.id,
-            channelId,
-            parentMessageId: parsed.inReplyToMessageId,
-          });
+          let reply;
+          try {
+            reply = await deps.threads.openReplyThread({
+              tenantId: tenant.id,
+              channelId,
+              parentMessageId: parsed.inReplyToMessageId,
+            });
+          } catch (cause) {
+            if (cause instanceof ThreadDepthCapError) {
+              return c.json(ErrorEnvelope("conflict", cause.message), 409);
+            }
+            throw cause;
+          }
           targetThreadId = reply.id;
         }
         await deps.threads.assignMessage({

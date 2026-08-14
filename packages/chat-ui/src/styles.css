@@ -1347,6 +1347,45 @@
   );
 }
 
+/* Sub-threads render indented under their depth-1 parent — the two-level
+   cap made visible in the menu, not just enforced server-side. */
+.chat-threads-menu-group + .chat-threads-menu-group {
+  margin-top: 0.125rem;
+}
+
+.chat-threads-menu-item-nested {
+  padding-left: 1.75rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+/* The fork's visible back-reference to its origin message (CL-5948) —
+   shown atop a sub-thread's timeline, distinct from the breadcrumb's
+   "walk back out" affordance directly above it. */
+.chat-thread-origin-banner {
+  margin: 0 0 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  background: var(
+    --muted,
+    color-mix(in srgb, var(--foreground) 5%, transparent)
+  );
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.chat-thread-origin-banner-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .chat-member-stack {
   display: flex;
   align-items: center;

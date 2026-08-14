@@ -28,6 +28,21 @@ import type { ProfileSubject } from "./profile-subject";
 import { profileSubjectFromParticipant } from "./profile-subject";
 import { CHAT_STRINGS } from "./strings";
 
+/**
+ * Which affordance a message's thread row offers:
+ * - `"reply"` (root feed) — open/create the depth-1 thread for this message
+ * - `"fork"` (inside an open thread) — spawn a sub-thread rooted at this
+ *   message, the first-class fork affordance from CL-5948 ("something
+ *   Slack doesn't have"). The two-level cap is enforced server-side; this
+ *   UI never needs to reason about depth itself.
+ *
+ * No `@corbits/context-menu` message target exists yet (see
+ * `apps/web/src/shell/context-menu/targets.ts`) — this row is the
+ * fallback surface for both actions until that seam is wired for
+ * messages.
+ */
+export type ThreadAffordanceMode = "reply" | "fork";
+
 export type CurrentUser = {
   /**
    * The signed-in principal's id. A sender address's local part IS the
@@ -342,6 +357,7 @@ function MessageParts({
   currentUser,
   showDayDivider,
   threadMeta,
+  threadAffordanceMode = "reply",
   onOpenThread,
   onOpenProfile,
   onOpenArtifact,
@@ -353,6 +369,7 @@ function MessageParts({
   readonly currentUser: CurrentUser | undefined;
   readonly showDayDivider: boolean;
   readonly threadMeta?: ThreadAffordanceMeta | undefined;
+  readonly threadAffordanceMode?: ThreadAffordanceMode;
   readonly onOpenThread?: (messageId: string) => void;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
@@ -413,6 +430,7 @@ function MessageParts({
         <ThreadAffordance
           messageId={item.id}
           meta={threadMeta}
+          mode={threadAffordanceMode}
           participants={participants}
           onOpen={() => onOpenThread(item.id)}
         />
@@ -444,11 +462,13 @@ function formatRelativeActivity(iso: string | null): string {
 function ThreadAffordance({
   messageId,
   meta,
+  mode,
   participants,
   onOpen,
 }: {
   readonly messageId: string;
   readonly meta: ThreadAffordanceMeta | undefined;
+  readonly mode: ThreadAffordanceMode;
   readonly participants: readonly ParticipantRecord[];
   readonly onOpen: () => void;
 }) {
@@ -463,13 +483,19 @@ function ThreadAffordance({
   const activity = formatRelativeActivity(meta?.lastActivityAt ?? null);
   const label =
     replyCount === 0
-      ? "Reply in thread"
+      ? mode === "fork"
+        ? CHAT_STRINGS.forkThreadAction
+        : "Reply in thread"
       : replyCount === 1
         ? "1 reply"
         : `${replyCount} replies`;
 
   return (
-    <div className="chat-thread-affordance" data-message-id={messageId}>
+    <div
+      className="chat-thread-affordance"
+      data-message-id={messageId}
+      data-thread-affordance-mode={mode}
+    >
       {initials.length > 0 ? (
         <span className="chat-thread-avatar-stack" aria-hidden="true">
           {initials.map((value, index) => (
@@ -486,7 +512,7 @@ function ThreadAffordance({
         ) : null}
       </span>
       <button type="button" className="chat-thread-open" onClick={onOpen}>
-        Open
+        {mode === "fork" ? CHAT_STRINGS.forkThreadAction : "Open"}
       </button>
     </div>
   );
@@ -497,6 +523,7 @@ export function ChannelTimeline({
   participants = [],
   currentUser,
   threadMetaByMessageId,
+  threadAffordanceMode = "reply",
   onOpenThread,
   onOpenProfile,
   onOpenArtifact,
@@ -508,6 +535,9 @@ export function ChannelTimeline({
   readonly currentUser?: CurrentUser;
   /** Reply-thread summary keyed by parent message id. */
   readonly threadMetaByMessageId?: ReadonlyMap<string, ThreadAffordanceMeta>;
+  /** `"reply"` on the channel root feed, `"fork"` inside an open thread —
+   * see `ThreadAffordanceMode`. */
+  readonly threadAffordanceMode?: ThreadAffordanceMode;
   readonly onOpenThread?: (messageId: string) => void;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
   /** Open a message's artifact chip — the host resolves where that goes
@@ -577,6 +607,7 @@ export function ChannelTimeline({
             currentUser={currentUser}
             showDayDivider={showDayDivider}
             threadMeta={threadMetaByMessageId?.get(item.id)}
+            threadAffordanceMode={threadAffordanceMode}
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
             {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
             {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}

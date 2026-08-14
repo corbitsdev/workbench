@@ -101,6 +101,9 @@ export const CHAT_STRINGS = {
   inviteAgentInviteError: "Couldn't invite that agent — try again.",
   inviteAgentConflictError: "This chat already has its agent.",
   newChannelCreateError: "Couldn't create that channel — try again.",
+  forkThreadAction: "Fork",
+  forkThreadError: "Couldn't fork that message into a thread — try again.",
+  forkThreadOriginBanner: "Forked from a message in",
   channelCreatedToast: (title: string) => `Channel created · ${title}`,
   channelRenamedToast: (title: string) => `Renamed to ${title}`,
   channelPinnedToast: (pinned: boolean, title: string) =>

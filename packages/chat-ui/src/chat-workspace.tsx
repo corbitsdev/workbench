@@ -26,6 +26,7 @@ import type { ReactNode } from "react";
 import {
   ChatApiError,
   createChannel,
+  forkThread,
   inviteAgent,
   listChannels,
   listMessages,
@@ -569,6 +570,34 @@ function ChatWorkspaceInner({
     setPendingParentMessageId(messageId);
   }
 
+  /**
+   * The fork affordance (CL-5948): any message inside an open thread can
+   * spawn a sub-thread rooted at it. Unlike the lazy root-feed reply
+   * above, a fork is created eagerly — the server resolves depth (a new
+   * depth-2 sub-thread, or a depth-cap-redirected sibling if the origin
+   * message is already inside one) so this UI never has to reason about
+   * nesting itself.
+   */
+  async function forkMessage(messageId: string) {
+    if (activeChannelId === null) return;
+    const existing = threads.find(
+      (t) => t.kind === "reply" && t.parentMessageId === messageId,
+    );
+    if (existing !== undefined) {
+      setPendingParentMessageId(null);
+      setOpenThreadId(existing.id);
+      return;
+    }
+    try {
+      const forked = await forkThread(tenantId, activeChannelId, messageId);
+      await loadThreads(activeChannelId);
+      setPendingParentMessageId(null);
+      setOpenThreadId(forked.id);
+    } catch {
+      toast(CHAT_STRINGS.forkThreadError);
+    }
+  }
+
   function closeThread() {
     setOpenThreadId(null);
     setPendingParentMessageId(null);
@@ -612,10 +641,37 @@ function ChatWorkspaceInner({
     () => threads.filter((t) => t.kind === "reply"),
     [threads],
   );
+  // Two levels, stop: a depth-1 thread hangs off the root; a depth-2
+  // sub-thread hangs off a depth-1 thread (CL-5908). Grouping threads
+  // menu items and the breadcrumb both key off this same split.
+  const depth1Threads = useMemo(
+    () => replyThreads.filter((t) => t.parentThreadId === rootThreadId),
+    [replyThreads, rootThreadId],
+  );
+  const subThreadsByParentId = useMemo(() => {
+    const map = new Map<string, ChannelThread[]>();
+    for (const t of replyThreads) {
+      if (t.parentThreadId === null || t.parentThreadId === rootThreadId) {
+        continue;
+      }
+      const list = map.get(t.parentThreadId) ?? [];
+      map.set(t.parentThreadId, [...list, t]);
+    }
+    return map;
+  }, [replyThreads, rootThreadId]);
   const openThread =
     openThreadId === null
       ? undefined
       : threads.find((t) => t.id === openThreadId);
+  // A sub-thread's breadcrumb parent segment — undefined for a depth-1
+  // thread (or no thread open at all), which breadcrumbs straight back to
+  // the channel.
+  const openThreadParent =
+    openThread?.parentThreadId !== undefined &&
+    openThread.parentThreadId !== null &&
+    openThread.parentThreadId !== rootThreadId
+      ? threads.find((t) => t.id === openThread.parentThreadId)
+      : undefined;
   const inThreadView = openThreadId !== null || pendingParentMessageId !== null;
   const threadTitle =
     openThread?.title ??
@@ -715,7 +771,30 @@ function ChatWorkspaceInner({
                     >
                       /
                     </span>
-                    <span className="chat-thread-breadcrumb-current">
+                    {openThreadParent !== undefined ? (
+                      <>
+                        <button
+                          type="button"
+                          className="chat-thread-breadcrumb-link"
+                          onClick={() => {
+                            setPendingParentMessageId(null);
+                            setOpenThreadId(openThreadParent.id);
+                          }}
+                        >
+                          {openThreadParent.title ?? "Thread"}
+                        </button>
+                        <span
+                          className="chat-thread-breadcrumb-sep"
+                          aria-hidden="true"
+                        >
+                          /
+                        </span>
+                      </>
+                    ) : null}
+                    <span
+                      className="chat-thread-breadcrumb-current"
+                      aria-current="page"
+                    >
                       {threadTitle}
                     </span>
                   </nav>
@@ -730,32 +809,55 @@ function ChatWorkspaceInner({
                 <div className="chat-channel-actions">
                   <details className="chat-threads-menu">
                     <summary className="chat-threads-menu-trigger">
-                      {replyThreads.length}{" "}
-                      {replyThreads.length === 1 ? "thread" : "threads"}
+                      {depth1Threads.length}{" "}
+                      {depth1Threads.length === 1 ? "thread" : "threads"}
                       <ChevronDown className="size-3.5 opacity-70" />
                     </summary>
                     <div className="chat-threads-menu-panel" role="menu">
-                      {replyThreads.length === 0 ? (
+                      {depth1Threads.length === 0 ? (
                         <div className="chat-threads-menu-empty">
                           No threads yet
                         </div>
                       ) : (
-                        replyThreads.map((thread) => (
-                          <button
+                        depth1Threads.map((thread) => (
+                          <div
                             key={thread.id}
-                            type="button"
-                            role="menuitem"
-                            className="chat-threads-menu-item"
-                            onClick={() => {
-                              setPendingParentMessageId(null);
-                              setOpenThreadId(thread.id);
-                            }}
+                            className="chat-threads-menu-group"
                           >
-                            {thread.title ??
-                              (thread.parentMessageId !== null
-                                ? `Reply · ${thread.parentMessageId.slice(0, 8)}`
-                                : "Thread")}
-                          </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="chat-threads-menu-item"
+                              onClick={() => {
+                                setPendingParentMessageId(null);
+                                setOpenThreadId(thread.id);
+                              }}
+                            >
+                              {thread.title ??
+                                (thread.parentMessageId !== null
+                                  ? `Reply · ${thread.parentMessageId.slice(0, 8)}`
+                                  : "Thread")}
+                            </button>
+                            {(subThreadsByParentId.get(thread.id) ?? []).map(
+                              (subThread) => (
+                                <button
+                                  key={subThread.id}
+                                  type="button"
+                                  role="menuitem"
+                                  className="chat-threads-menu-item chat-threads-menu-item-nested"
+                                  onClick={() => {
+                                    setPendingParentMessageId(null);
+                                    setOpenThreadId(subThread.id);
+                                  }}
+                                >
+                                  {subThread.title ??
+                                    (subThread.parentMessageId !== null
+                                      ? `Fork · ${subThread.parentMessageId.slice(0, 8)}`
+                                      : "Sub-thread")}
+                                </button>
+                              ),
+                            )}
+                          </div>
                         ))
                       )}
                     </div>
@@ -811,12 +913,30 @@ function ChatWorkspaceInner({
                 />
               ) : (
                 <>
+                  {openThreadParent !== undefined ? (
+                    <div className="chat-thread-origin-banner">
+                      {CHAT_STRINGS.forkThreadOriginBanner}{" "}
+                      <button
+                        type="button"
+                        className="chat-thread-origin-banner-link"
+                        onClick={() => {
+                          setPendingParentMessageId(null);
+                          setOpenThreadId(openThreadParent.id);
+                        }}
+                      >
+                        {openThreadParent.title ?? "Thread"}
+                      </button>
+                    </div>
+                  ) : null}
                   <ChannelTimeline
                     items={messagesState.items}
                     participants={activeChannel?.participants ?? []}
                     {...(currentUser !== undefined ? { currentUser } : {})}
                     threadMetaByMessageId={threadMetaByMessageId}
-                    onOpenThread={openThreadForMessage}
+                    threadAffordanceMode={inThreadView ? "fork" : "reply"}
+                    onOpenThread={
+                      inThreadView ? forkMessage : openThreadForMessage
+                    }
                     {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
                     {...(onOpenArtifact !== undefined
                       ? { onOpenArtifact }

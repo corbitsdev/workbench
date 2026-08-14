@@ -165,6 +165,15 @@ export const chatMigrations: readonly ChatMigration[] = [
         ON "block_responses" ("tenant_id", "channel_id", "message_id", "block_id");
     `,
   },
+  {
+    name: "0011_channel_threads_parent_thread_id",
+    sql: `
+      ALTER TABLE "channel_threads"
+        ADD COLUMN IF NOT EXISTS "parent_thread_id" text;
+      CREATE INDEX IF NOT EXISTS "channel_threads_parent_thread_idx"
+        ON "channel_threads" ("tenant_id", "parent_thread_id");
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named

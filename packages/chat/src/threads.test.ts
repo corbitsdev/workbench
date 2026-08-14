@@ -4,7 +4,10 @@ import {
   createDeliveryThread,
   createInMemoryThreadStore,
   resolveTargetThread,
+  resolveThreadAnchor,
+  ThreadDepthCapError,
 } from "./threads";
+import type { ChannelThread } from "./threads";
 
 describe("resolveTargetThread", () => {
   test("explicit thread wins", () => {
@@ -40,6 +43,49 @@ describe("resolveTargetThread", () => {
     expect(resolveTargetThread({ rootThreadId: "thr_root" })).toEqual({
       threadId: "thr_root",
       needsReplyOpen: false,
+    });
+  });
+});
+
+function fakeThread(overrides: Partial<ChannelThread>): ChannelThread {
+  return {
+    id: "thr_x",
+    tenantId: "t1",
+    channelId: "c1",
+    kind: "reply",
+    parentMessageId: null,
+    parentThreadId: null,
+    runRef: null,
+    title: null,
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+describe("resolveThreadAnchor", () => {
+  const root = fakeThread({ id: "thr_root", kind: "root" });
+
+  test("anchoring on the root feed opens a depth-1 thread", () => {
+    expect(resolveThreadAnchor(root, root)).toEqual({
+      parentThreadId: "thr_root",
+      blocked: false,
+    });
+  });
+
+  test("anchoring on a message already in a depth-1 thread opens a depth-2 sub-thread", () => {
+    const depth1 = fakeThread({ id: "thr_1", parentThreadId: root.id });
+    expect(resolveThreadAnchor(root, depth1)).toEqual({
+      parentThreadId: "thr_1",
+      blocked: false,
+    });
+  });
+
+  test("anchoring on a message already in a depth-2 sub-thread is blocked and redirects to the grandparent", () => {
+    const depth1 = fakeThread({ id: "thr_1", parentThreadId: root.id });
+    const depth2 = fakeThread({ id: "thr_2", parentThreadId: depth1.id });
+    expect(resolveThreadAnchor(root, depth2)).toEqual({
+      parentThreadId: "thr_1",
+      blocked: true,
     });
   });
 });
@@ -128,5 +174,135 @@ describe("in-memory ThreadStore", () => {
       "reply",
       "root",
     ]);
+  });
+
+  test("openReplyThread on a root message opens a depth-1 thread parented on root", async () => {
+    const store = createInMemoryThreadStore();
+    const root = await store.ensureRootThread("t1", "c1");
+    const thread = await store.openReplyThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_1",
+    });
+    expect(thread.parentThreadId).toBe(root.id);
+  });
+});
+
+describe("two-level thread cap (CL-5908, CL-5948)", () => {
+  test("forking a message inside a depth-1 thread opens a depth-2 sub-thread", async () => {
+    const store = createInMemoryThreadStore();
+    const depth1 = await store.openReplyThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_1",
+    });
+    await store.assignMessage({
+      tenantId: "t1",
+      channelId: "c1",
+      threadId: depth1.id,
+      messageId: "msg_2",
+    });
+    const depth2 = await store.forkThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_2",
+    });
+    expect(depth2.parentThreadId).toBe(depth1.id);
+    expect(depth2.parentMessageId).toBe("msg_2");
+  });
+
+  test("openReplyThread refuses to nest past depth 2 with an honest error", async () => {
+    const store = createInMemoryThreadStore();
+    const depth1 = await store.openReplyThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_1",
+    });
+    await store.assignMessage({
+      tenantId: "t1",
+      channelId: "c1",
+      threadId: depth1.id,
+      messageId: "msg_2",
+    });
+    const depth2 = await store.forkThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_2",
+    });
+    await store.assignMessage({
+      tenantId: "t1",
+      channelId: "c1",
+      threadId: depth2.id,
+      messageId: "msg_3",
+    });
+    await expect(
+      store.openReplyThread({
+        tenantId: "t1",
+        channelId: "c1",
+        parentMessageId: "msg_3",
+      }),
+    ).rejects.toThrow(ThreadDepthCapError);
+  });
+
+  test("forking a message inside a depth-2 sub-thread creates a sibling under the same depth-1 parent, never a third level", async () => {
+    const store = createInMemoryThreadStore();
+    const depth1 = await store.openReplyThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_1",
+    });
+    await store.assignMessage({
+      tenantId: "t1",
+      channelId: "c1",
+      threadId: depth1.id,
+      messageId: "msg_2",
+    });
+    const depth2 = await store.forkThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_2",
+    });
+    await store.assignMessage({
+      tenantId: "t1",
+      channelId: "c1",
+      threadId: depth2.id,
+      messageId: "msg_3",
+    });
+
+    const sibling = await store.forkThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_3",
+    });
+
+    expect(sibling.id).not.toBe(depth2.id);
+    expect(sibling.parentThreadId).toBe(depth1.id);
+    expect(sibling.parentMessageId).toBe("msg_3");
+  });
+
+  test("forkThread is idempotent per origin message", async () => {
+    const store = createInMemoryThreadStore();
+    const depth1 = await store.openReplyThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_1",
+    });
+    await store.assignMessage({
+      tenantId: "t1",
+      channelId: "c1",
+      threadId: depth1.id,
+      messageId: "msg_2",
+    });
+    const a = await store.forkThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_2",
+    });
+    const b = await store.forkThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_2",
+    });
+    expect(a.id).toBe(b.id);
   });
 });
