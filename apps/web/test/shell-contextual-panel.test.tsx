@@ -24,7 +24,7 @@ function renderRail(): string {
     <TestQueryProvider>
       <NavigationProvider navigate={noop}>
         <BenchProvider>
-          <Rail path="/" onNavigate={noop} user={user} onSignOut={noop} />
+          <Rail path="/" onNavigate={noop} user={user} />
         </BenchProvider>
       </NavigationProvider>
     </TestQueryProvider>,

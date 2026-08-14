@@ -21,7 +21,11 @@ import {
   SHELL_CONTEXT_MENU_TARGETS,
 } from "./targets";
 
-export function ShellContextMenu() {
+export function ShellContextMenu({
+  onSignOut,
+}: {
+  readonly onSignOut: () => void;
+}) {
   const { selectedTenantId } = useBench();
   const navigate = useNavigate();
   const openProfile = useOpenProfileInCanvas();
@@ -34,6 +38,7 @@ export function ShellContextMenu() {
     navigate,
     openProfile,
     cycleTheme: cycleMode,
+    signOut: onSignOut,
   };
 
   const resolve = useCallback(
@@ -47,7 +52,7 @@ export function ShellContextMenu() {
     },
     // `actions` is a fresh object every render; the values it closes over
     // are what actually determine the menu, so those are the real deps.
-    [selectedTenantId, navigate, openProfile, cycleMode],
+    [selectedTenantId, navigate, openProfile, cycleMode, onSignOut],
   );
 
   useDocumentContextMenuTrigger({ resolve, onOpen: show });

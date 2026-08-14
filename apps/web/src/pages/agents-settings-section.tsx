@@ -14,7 +14,6 @@ import {
   Input,
   RichEmptyState,
   SidebarItemRow,
-  Skeleton,
   formatRelativeTime,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
@@ -38,6 +37,7 @@ import {
 import { channelPath } from "../channel-path";
 import { consumePendingNewAgent } from "../command-palette-actions";
 import { tenantKeys } from "../query-client";
+import { ListSkeleton } from "../query-view";
 import { CreateAgentDialog } from "./create-agent-dialog";
 
 const DEFINITION_STATUS_TONE: Record<AgentDefinition["status"], BadgeTone> = {
@@ -290,7 +290,7 @@ export function AgentsSettingsSection({
   }
 
   if (directory.kind === "loading") {
-    return <Skeleton className="query-skeleton" />;
+    return <ListSkeleton />;
   }
   if (directory.kind === "unauthenticated") {
     return (

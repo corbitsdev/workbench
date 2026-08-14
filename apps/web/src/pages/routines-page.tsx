@@ -1650,7 +1650,7 @@ export function RoutineDetailPage({
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        <QueryView query={routine} label="this routine">
+        <QueryView query={routine} label="this routine" skeleton="detail">
           {(data) => {
             const steps = draftedStepsFromInput(data.input);
             return (
@@ -1719,7 +1719,11 @@ export function RoutineDetailPage({
               All runs & traces →
             </Button>
           </div>
-          <QueryView query={runs} label="this routine's run history">
+          <QueryView
+            query={runs}
+            label="this routine's run history"
+            skeleton="rows"
+          >
             {(items) => (
               <RunsTable
                 runs={items.slice(0, 3)}
@@ -1851,7 +1855,11 @@ export function RoutinesRoute({
     if (routines.kind !== "ready") return routines;
     const found = routines.data.find((r) => r.id === openRoutineId);
     if (found === undefined) {
-      return { kind: "error", message: "Routine not found" };
+      return {
+        kind: "error",
+        message: "Routine not found",
+        retry: invalidateRoutines,
+      };
     }
     return { kind: "ready", data: found };
   }, [openRoutineId, tenantId, routines]);

@@ -66,13 +66,11 @@ export function Rail({
   path,
   onNavigate,
   user,
-  onSignOut,
   showLabels = false,
 }: {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
   readonly user: SessionUser;
-  readonly onSignOut: () => void;
   /** Mock is icon+tooltip only; captions are opt-in for wide breakpoints. */
   readonly showLabels?: boolean;
 }) {
@@ -152,11 +150,8 @@ export function Rail({
               className="shell-rail-avatar-btn"
               aria-label={`${user.name} · Settings`}
               title={`${user.name} · Settings`}
+              data-ctx-account=""
               onClick={() => onNavigate(SETTINGS_PATH)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                onSignOut();
-              }}
             >
               <Avatar
                 initials={initialsOf(user.name)}

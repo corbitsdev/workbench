@@ -92,8 +92,10 @@ html {
   cursor: not-allowed;
 }
 
-/* Mock v2 --col2-w: 16.5rem; canvas-on tightens to --col2-w-tight 14rem;
-   --col2-w-wide 18.5rem is col2's Talk-to-Myra width (data-col2="wide"). */
+/* col2 widths: the deliberate v2 iteration on tmp/shell-morph-two-col-mock.html's
+   geometry (16.5rem base), decided in Linear — canvas-on tightens to 14rem,
+   and 18.5rem is col2's Talk-to-Myra width (data-col2="wide"). Values are
+   owner-iterated; keep them unless a new Linear decision changes them. */
 :root {
   /* Mock's zero-radius rule is app-wide, not per-component: react-ui's
      theme.css sets --radius: 0.5rem on :root, and this is the only place
@@ -102,6 +104,13 @@ html {
      (Dialog, Button, Input, …) instead of chasing rounded corners
      component by component. */
   --radius: 0;
+  /* The one non-zero radius scale in the app: dialogs/steppers stay exactly
+     zero-radius (the rule above), but chips, cards and rail affordances get
+     real rounding — every rem/px radius outside that zero set should name
+     one of these three instead of picking its own number. */
+  --ui-radius-sm: 0.25rem;
+  --ui-radius-md: 0.375rem;
+  --ui-radius-lg: 0.5rem;
   --shell-contextual-width: 16.5rem;
   --shell-contextual-width-tight: 14rem;
   --shell-contextual-width-wide: 18.5rem;
@@ -199,7 +208,7 @@ html {
   width: 1.8rem;
   height: 1.8rem;
   padding: 0;
-  border-radius: 0.45rem;
+  border-radius: var(--ui-radius-lg);
   opacity: 1;
   color: var(--muted-foreground, #8a8080);
   background: transparent;
@@ -391,7 +400,7 @@ html {
   height: 1.8rem;
   min-height: 0;
   padding: 0;
-  border-radius: 0.45rem;
+  border-radius: var(--ui-radius-lg);
   color: var(--muted-foreground, #8a8080);
   background: transparent;
 }
@@ -914,7 +923,7 @@ html {
   height: 2.5rem;
   min-width: 2.5rem;
   min-height: 2.5rem;
-  border-radius: 0.6rem;
+  border-radius: var(--ui-radius-lg);
   color: var(--shell-rail-on-brand);
   background: transparent;
   opacity: 0.78;
@@ -980,7 +989,7 @@ html {
 .shell-rail-footer-btn {
   width: 2.5rem;
   height: 2.5rem;
-  border-radius: 0.6rem;
+  border-radius: var(--ui-radius-lg);
   color: var(--shell-rail-on-brand);
   background: transparent;
   opacity: 0.78;
@@ -1444,7 +1453,7 @@ html {
   height: 28px;
   width: 28px;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--ui-radius-lg);
   color: var(--muted-foreground);
   transition: color 150ms;
 }
@@ -2056,6 +2065,39 @@ html {
   width: 100%;
 }
 
+.query-skeleton-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.query-skeleton-row {
+  height: 2.75rem;
+  width: 100%;
+}
+
+.query-skeleton-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.query-skeleton-detail-header {
+  height: 2rem;
+  width: 40%;
+}
+
+.query-skeleton-detail-line {
+  height: 1rem;
+  width: 100%;
+}
+
+.query-skeleton-detail-line--short {
+  width: 60%;
+}
+
 .stat-skeleton {
   height: 1.75rem;
   width: 3rem;
@@ -2409,13 +2451,13 @@ button.insights-stat:hover {
 .insights-timeline-fill {
   width: 70%;
   min-height: 2px;
-  background: var(--color-accent, #5b8def);
+  background: var(--shell-accent);
   border-radius: 2px 2px 0 0;
 }
 .insights-timeline-label {
   margin-top: 0.25rem;
   font-size: 0.65rem;
-  color: var(--color-muted, #888);
+  color: var(--muted-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

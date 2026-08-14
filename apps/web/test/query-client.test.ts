@@ -1,7 +1,7 @@
 // Query-key helpers and the APIQuery adapter — pure unit coverage so the
 // TanStack cutover does not depend only on page-level smoke.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
 import { toAPIQuery } from "../src/api";
 import {
@@ -45,6 +45,7 @@ describe("toAPIQuery", () => {
         data: undefined,
         isPending: true,
         fetchStatus: "fetching",
+        refetch: mock(() => undefined),
       }),
     ).toEqual({ kind: "loading" });
   });
@@ -58,21 +59,59 @@ describe("toAPIQuery", () => {
         data: undefined,
         isPending: false,
         fetchStatus: "idle",
+        refetch: mock(() => undefined),
       }),
     ).toEqual({ kind: "unauthenticated" });
   });
 
-  test("maps other errors to error messages", () => {
-    expect(
-      toAPIQuery({
-        isLoading: false,
-        isError: true,
-        error: new Error("boom"),
-        data: undefined,
-        isPending: false,
-        fetchStatus: "idle",
-      }),
-    ).toEqual({ kind: "error", message: "boom" });
+  test("maps unknown errors to plain, actionable copy — never the raw message", () => {
+    const result = toAPIQuery({
+      isLoading: false,
+      isError: true,
+      error: new Error("boom"),
+      data: undefined,
+      isPending: false,
+      fetchStatus: "idle",
+      refetch: mock(() => undefined),
+    });
+    expect(result).toEqual({
+      kind: "error",
+      message: "Something went wrong. Try again.",
+      retry: expect.any(Function),
+    });
+  });
+
+  test("maps a network failure (TypeError) to connectivity copy", () => {
+    const result = toAPIQuery({
+      isLoading: false,
+      isError: true,
+      error: new TypeError("Failed to fetch"),
+      data: undefined,
+      isPending: false,
+      fetchStatus: "idle",
+      refetch: mock(() => undefined),
+    });
+    expect(result).toEqual({
+      kind: "error",
+      message: "Can't reach the server. Check your connection.",
+      retry: expect.any(Function),
+    });
+  });
+
+  test("error's retry calls the query's own refetch", () => {
+    const refetch = mock(() => undefined);
+    const result = toAPIQuery({
+      isLoading: false,
+      isError: true,
+      error: new Error("boom"),
+      data: undefined,
+      isPending: false,
+      fetchStatus: "idle",
+      refetch,
+    });
+    if (result.kind !== "error") throw new Error("expected error kind");
+    result.retry();
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 
   test("ready when data is present", () => {
@@ -84,6 +123,7 @@ describe("toAPIQuery", () => {
         data: { ok: true },
         isPending: false,
         fetchStatus: "idle",
+        refetch: mock(() => undefined),
       }),
     ).toEqual({ kind: "ready", data: { ok: true } });
   });
@@ -97,6 +137,7 @@ describe("toAPIQuery", () => {
         data: undefined,
         isPending: true,
         fetchStatus: "idle",
+        refetch: mock(() => undefined),
       }),
     ).toEqual({ kind: "loading" });
   });

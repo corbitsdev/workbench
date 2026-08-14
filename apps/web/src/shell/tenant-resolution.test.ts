@@ -15,10 +15,14 @@ describe("tenantResolutionFromBench", () => {
   test("passes through error memberships", () => {
     expect(
       tenantResolutionFromBench({
-        memberships: { kind: "error", message: "offline" },
+        memberships: {
+          kind: "error",
+          message: "offline",
+          retry: () => undefined,
+        },
         selectedTenantId: "tnt_1",
       }),
-    ).toEqual({ kind: "error", message: "offline" });
+    ).toMatchObject({ kind: "error", message: "offline" });
   });
 
   test("ready with no selection is empty", () => {

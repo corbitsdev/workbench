@@ -21,6 +21,7 @@ export const CHAT_STRINGS = {
   newChannelPurposeLabel: "Purpose (optional)",
   newChannelPurposePlaceholder: "What is this channel for?",
   newChannelSubmit: "Create",
+  newChannelSubmitting: "Creating…",
   newChannelCancel: "Cancel",
   newChannelBack: "Back",
   newChannelNext: "Next",
@@ -61,6 +62,7 @@ export const CHAT_STRINGS = {
   composerPlaceholder:
     "Message this channel… use @ to mention an agent, / for commands",
   composerSend: "Send",
+  composerSending: "Sending…",
   composerAttach: "Attach files",
   composerAttachmentsLabel: "Selected attachments",
   composerRemoveAttachment: (name: string) => `Remove ${name}`,

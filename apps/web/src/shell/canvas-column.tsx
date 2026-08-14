@@ -93,19 +93,30 @@ export function CanvasColumn({
 
 /**
  * Open-or-create the DM with `profile` and land on it. `tenantId === null`
- * (bench not resolved yet) has nothing to message against — the button
- * stays present but no-ops rather than crashing.
+ * (bench not resolved yet) has nothing to message against — an honest toast,
+ * matching `mentionAction`'s pattern, rather than a silent no-op. The panel
+ * only closes once the DM is actually resolved: `setPending` drives the
+ * button's in-flight label so a slow create isn't mistaken for nothing
+ * having happened.
  */
 function messageAction(
   tenantId: string | null,
   profile: ProfileSubject,
   onNavigate: (path: string) => void,
+  onClose: () => void,
+  setPending: (pending: boolean) => void,
 ): () => void {
   return () => {
-    if (tenantId === null) return;
+    if (tenantId === null) {
+      toast(`Open a bench to message @${profile.handle}`);
+      return;
+    }
+    setPending(true);
     void ensureProfileDm(tenantId, profile).then((result) => {
+      setPending(false);
       if (result.kind === "ready") {
         onNavigate(channelPath(result.channelId));
+        onClose();
       } else {
         toast(result.message);
       }
@@ -171,15 +182,20 @@ function profileActions(
   onClose: () => void,
   onNavigate: (path: string) => void,
   insertIntoComposer: (text: string) => boolean,
+  messagePending: boolean,
+  setMessagePending: (pending: boolean) => void,
 ): readonly ProfileCardAction[] {
   const message: ProfileCardAction = {
     id: "message",
-    label: "Message",
+    label: messagePending ? "Messaging…" : "Message",
     tone: "primary",
-    onClick: () => {
-      messageAction(tenantId, profile, onNavigate)();
-      onClose();
-    },
+    onClick: messageAction(
+      tenantId,
+      profile,
+      onNavigate,
+      onClose,
+      setMessagePending,
+    ),
   };
   const mention: ProfileCardAction = {
     id: "mention",
@@ -300,6 +316,11 @@ function ProfileCanvasPane({
 }) {
   const { selectedTenantId, selectedPrincipalId } = useBench();
   const insertIntoComposer = useInsertIntoComposer();
+  const [messagePending, setMessagePending] = useState(false);
+  // A new subject means any in-flight "Messaging…" belonged to the last one.
+  useEffect(() => {
+    setMessagePending(false);
+  }, [profile.address]);
   const sharedChannels = useSharedChannels(
     selectedTenantId,
     selectedPrincipalId,
@@ -325,6 +346,8 @@ function ProfileCanvasPane({
           onClose,
           onNavigate,
           insertIntoComposer,
+          messagePending,
+          setMessagePending,
         )}
         sharedChannels={toProfileCardChannels(sharedChannels)}
       />

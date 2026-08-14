@@ -14,11 +14,13 @@ import {
   ExternalLink,
   Hash,
   Link as LinkIcon,
+  LogOut,
   Pencil,
   Pin,
   PinOff,
   PlayCircle,
   Search,
+  SlidersHorizontal,
   SunMoon,
   UserRound,
 } from "lucide-react";
@@ -28,6 +30,7 @@ import { channelPath } from "../../channel-path";
 import { requestChannelRename } from "../../channel-rename-events";
 import { requestOpenCommandPalette } from "../../command-palette-events";
 import { runRoutineNow } from "../../routines-api";
+import { SETTINGS_PATH } from "../../routes";
 import { inboxPathForFilter } from "../panel-contributions";
 import type { ShellContextMenuTarget } from "./targets";
 
@@ -36,6 +39,7 @@ export type ShellContextMenuActions = {
   readonly navigate: (to: string) => void;
   readonly openProfile: (subject: ProfileSubject) => void;
   readonly cycleTheme: () => void;
+  readonly signOut: () => void;
 };
 
 async function copyLink(path: string, label: string): Promise<void> {
@@ -191,6 +195,27 @@ function insightsRunMenu(
   };
 }
 
+function accountMenu(actions: ShellContextMenuActions): ContextMenu {
+  return {
+    label: "Account",
+    entries: [
+      contextMenuItem({
+        id: "settings",
+        label: "Settings",
+        icon: <SlidersHorizontal />,
+        onSelect: () => actions.navigate(SETTINGS_PATH),
+      }),
+      contextMenuSeparator,
+      contextMenuItem({
+        id: "sign-out",
+        label: "Sign out",
+        icon: <LogOut />,
+        onSelect: () => actions.signOut(),
+      }),
+    ],
+  };
+}
+
 function shellMenu(actions: ShellContextMenuActions): ContextMenu {
   return {
     label: "Workbench",
@@ -233,6 +258,8 @@ export function shellContextMenuFor(
       return inboxFilterMenu(target);
     case "insights-run":
       return insightsRunMenu(target, actions);
+    case "account":
+      return accountMenu(actions);
     case "shell":
       return shellMenu(actions);
   }
