@@ -125,26 +125,63 @@ describe("createDefaultAgentChannel", () => {
     expect(agent.isCachedChannelId("chat-1")).toBe(true);
   });
 
-  test("reuses an existing title match instead of creating a channel", async () => {
+  test("reuses an existing chat-kind title match without any settings write", async () => {
     const agent = createDefaultAgentChannel({
       title: "Myra",
       assetName: "assistant",
     });
-    stubFetch((path) => {
-      if (path.endsWith("/chat/channels?kind=channel")) {
+    const calls = stubFetch((path) => {
+      if (path.endsWith("/chat/channels?kind=channel"))
+        return json({ items: [] });
+      if (path.endsWith("/chat/channels?kind=chat")) {
         return json({
           items: [
             {
-              id: "legacy-1",
+              id: "chat-1",
               title: "Myra",
-              kind: "channel",
+              kind: "chat",
               pinned: false,
-              participants: [],
+              participants: [
+                { address: "myra@wf_1.tnt_1", handle: "myra" },
+              ],
             },
           ],
         });
       }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    const result = await agent.ensure("tnt_1", async () => []);
+
+    expect(result).toEqual({ kind: "ready", channelId: "chat-1" });
+    expect(agent.isCachedChannelId("chat-1")).toBe(true);
+    expect(calls.some((call) => call.init?.method === "PATCH")).toBe(false);
+  });
+
+  test("converts a legacy channel-kind match carrying the agent into a chat, so it auto-responds", async () => {
+    const agent = createDefaultAgentChannel({
+      title: "Myra",
+      assetName: "assistant",
+    });
+    const legacyWire = {
+      id: "legacy-1",
+      title: "Myra",
+      kind: "channel",
+      pinned: true,
+      participants: [{ address: "myra@wf_1.tnt_1", handle: "myra" }],
+    };
+    const calls = stubFetch((path) => {
+      if (path.endsWith("/chat/channels?kind=channel"))
+        return json({ items: [legacyWire] });
       if (path.endsWith("/chat/channels?kind=chat")) return json({ items: [] });
+      if (path.endsWith("/chat/channels/legacy-1/settings")) {
+        return json({
+          ...legacyWire,
+          kind: "chat",
+          settings: { "chat/kind": "chat" },
+          contextWindow: { value: 50, source: "inherit" },
+        });
+      }
       throw new Error(`unexpected fetch: ${path}`);
     });
 
@@ -152,6 +189,53 @@ describe("createDefaultAgentChannel", () => {
 
     expect(result).toEqual({ kind: "ready", channelId: "legacy-1" });
     expect(agent.isCachedChannelId("legacy-1")).toBe(true);
+    const patchCall = calls.find((call) => call.init?.method === "PATCH");
+    expect(patchCall?.path.endsWith("/chat/channels/legacy-1/settings")).toBe(
+      true,
+    );
+    expect(JSON.parse(String(patchCall?.init?.body))).toEqual({
+      "chat/kind": "chat",
+    });
+  });
+
+  test("ignores an agent-less legacy channel-kind match and creates the real chat", async () => {
+    const agent = createDefaultAgentChannel({
+      title: "Myra",
+      assetName: "assistant",
+    });
+    const calls = stubFetch((path) => {
+      if (path.endsWith("/chat/channels?kind=channel")) {
+        return json({
+          items: [
+            {
+              id: "husk-1",
+              title: "Myra",
+              kind: "channel",
+              pinned: false,
+              participants: [{ address: "sawyer", handle: "sawyer" }],
+            },
+          ],
+        });
+      }
+      if (path.endsWith("/chat/channels?kind=chat")) return json({ items: [] });
+      if (path.endsWith("/chat/channels")) {
+        return json({
+          id: "chat-2",
+          title: "Myra",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    const result = await agent.ensure("tnt_1", async () => [
+      definition("def-assistant", "assistant"),
+    ]);
+
+    expect(result).toEqual({ kind: "ready", channelId: "chat-2" });
+    expect(calls.some((call) => call.init?.method === "PATCH")).toBe(false);
   });
 
   test("errors when no definition matches the configured asset name", async () => {
