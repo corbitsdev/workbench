@@ -6,6 +6,7 @@
 // so a broken provisioning call never leaves the user silently benchless.
 
 import { type } from "arktype";
+import type { SupportedCredentialProvider } from "@workbench/hub-client/credential-test";
 
 const ProvisionResult = type({
   kind: "'existing-member' | 'provisioned' | 'needs-onboarding'",
@@ -92,17 +93,7 @@ export async function triggerFirstLoginProvisioning(
   }
 }
 
-export type CredentialProvider =
-  | "anthropic"
-  | "openai"
-  | "google-genai"
-  | "xai"
-  | "openrouter"
-  | "opencode-zen"
-  | "groq"
-  | "deepseek"
-  | "mistral"
-  | "huggingface";
+export type CredentialProvider = SupportedCredentialProvider;
 
 // The one-click paths: a plain navigation to the hub's connect route,
 // which round-trips through the provider's consent page and lands back

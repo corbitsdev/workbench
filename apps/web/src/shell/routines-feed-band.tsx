@@ -3,12 +3,13 @@
 // panel-contributions.tsx — that registry file is a hotspot many pages
 // touch, so each page-specific band gets its own module.
 //
-// The chip-to-trigger matching itself (`routineMatchesModeFilter`) lives in
-// `@corbits/routines/trigger` — a product rule about what "Scheduled" means
-// belongs with the routines domain, not this app. That subpath (not the
-// package's default export) is deliberate: the default export pulls in
-// `drizzle-orm` and `postgres` through `store.ts`, which have no business in
-// a browser bundle.
+// The chip-to-trigger matching (`routineMatchesModeFilter`) and the row's
+// cadence line (`routineCadenceSummary`) both live in
+// `@corbits/routines/trigger` — a product rule about what "Scheduled"
+// means, and about how a cadence reads, belongs with the routines domain,
+// not this app. That subpath (not the package's default export) is
+// deliberate: the default export pulls in `drizzle-orm` and `postgres`
+// through `store.ts`, which have no business in a browser bundle.
 import {
   EmptyState,
   FilterChip,
@@ -16,7 +17,10 @@ import {
   SidebarItemRow,
   Skeleton,
 } from "@corbits/react-ui";
-import { routineMatchesModeFilter } from "@corbits/routines/trigger";
+import {
+  routineCadenceSummary,
+  routineMatchesModeFilter,
+} from "@corbits/routines/trigger";
 import type { RoutineModeFilter } from "@corbits/routines/trigger";
 import { Search, Workflow } from "lucide-react";
 import { useState } from "react";
@@ -42,39 +46,8 @@ function routinePath(id: string): string {
   return `/routines/${encodeURIComponent(id)}`;
 }
 
-const WEEKDAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-] as const;
-
-function clockTime(hour: number, minute: number): string {
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-}
-
 /** One-line cadence for a routine row's detail slot (mock's schedule line). */
-export function routineTriggerSummary(trigger: Routine["trigger"]): string {
-  if (trigger === null) return "On demand";
-  switch (trigger.kind) {
-    case "interval": {
-      const unit =
-        trigger.every === 1 ? trigger.unit.replace(/s$/, "") : trigger.unit;
-      return `Every ${trigger.every} ${unit}`;
-    }
-    case "daily":
-      return `Daily ${clockTime(trigger.hour, trigger.minute)}`;
-    case "weekly":
-      return `Every ${WEEKDAY_NAMES[trigger.dayOfWeek] ?? "week"} ${clockTime(trigger.hour, trigger.minute)}`;
-    case "cron":
-      return `Cron ${trigger.expression}`;
-    case "webhook":
-      return "On webhook";
-  }
-}
+export const routineTriggerSummary = routineCadenceSummary;
 
 /**
  * What the panel should navigate to after a filter change: the currently

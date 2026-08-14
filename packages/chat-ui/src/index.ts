@@ -146,6 +146,18 @@ export { sharedChannelsWith } from "./shared-channels";
 export type { SharedChannelSummary } from "./shared-channels";
 export { findDirectChannelWith } from "./direct-channel";
 
+export {
+  createDefaultAgentChannel,
+  findChannelByTitle,
+  findDefinitionByAssetName,
+  isChannelTitleMatch,
+} from "./default-agent-channel";
+export type {
+  DefaultAgentChannel,
+  DefaultAgentChannelConfig,
+  EnsureDefaultAgentChannelResult,
+} from "./default-agent-channel";
+
 export { ArtifactChip } from "./artifact-chip";
 
 export {

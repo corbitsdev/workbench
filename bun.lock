@@ -107,6 +107,7 @@
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-slot": "^1.2.3",
         "@tanstack/react-query": "catalog:",
+        "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
         "lucide-react": "^1.27.0",
         "react": "^19.2.0",

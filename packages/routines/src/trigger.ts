@@ -191,3 +191,77 @@ export function computeNextFireAt(
     timezoneForTrigger(trigger),
   );
 }
+
+/** Cron `dayOfWeek`'s 0–6 range, spelled out — shared by every plain-
+ * language rendering of a weekly trigger. */
+export const ROUTINE_WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
+function zeroPadClock(hour: number, minute: number): string {
+  return `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
+}
+
+function zoneSuffix(timezone: string | undefined): string {
+  return timezone === undefined || timezone === "UTC" ? "UTC" : timezone;
+}
+
+/**
+ * The verbose, one-line cadence a routine's detail page shows: a full
+ * sentence, timezone spelled out for daily/weekly, in parentheses for
+ * cron. `nextCronFireAfter`'s own timezone semantics are what this reads
+ * against — the wording never encodes a schedule the scheduler wouldn't
+ * also compute.
+ */
+export function routineCadenceLabel(trigger: RoutineTriggerT): string {
+  if (trigger === null) return "Manual";
+  switch (trigger.kind) {
+    case "webhook":
+      return "On webhook";
+    case "interval":
+      return trigger.every === 1
+        ? `Every ${trigger.unit === "minutes" ? "minute" : "hour"}`
+        : `Every ${String(trigger.every)} ${trigger.unit}`;
+    case "daily":
+      return `Daily at ${zeroPadClock(trigger.hour, trigger.minute)} ${zoneSuffix(trigger.timezone)}`;
+    case "weekly":
+      return `Weekly on ${ROUTINE_WEEKDAY_NAMES[trigger.dayOfWeek]} at ${zeroPadClock(trigger.hour, trigger.minute)} ${zoneSuffix(trigger.timezone)}`;
+    case "cron": {
+      const zone =
+        trigger.timezone !== undefined && trigger.timezone !== "UTC"
+          ? ` (${trigger.timezone})`
+          : "";
+      return `Cron: ${trigger.expression}${zone}`;
+    }
+  }
+}
+
+/**
+ * The terse cadence a routine row's detail slot shows: no timezone
+ * suffix, a manual trigger reads as "On demand" rather than "Manual" —
+ * the feed's language for a routine with nothing scheduled.
+ */
+export function routineCadenceSummary(trigger: RoutineTriggerT): string {
+  if (trigger === null) return "On demand";
+  switch (trigger.kind) {
+    case "interval": {
+      const unit =
+        trigger.every === 1 ? trigger.unit.replace(/s$/, "") : trigger.unit;
+      return `Every ${String(trigger.every)} ${unit}`;
+    }
+    case "daily":
+      return `Daily ${zeroPadClock(trigger.hour, trigger.minute)}`;
+    case "weekly":
+      return `Every ${ROUTINE_WEEKDAY_NAMES[trigger.dayOfWeek] ?? "week"} ${zeroPadClock(trigger.hour, trigger.minute)}`;
+    case "cron":
+      return `Cron ${trigger.expression}`;
+    case "webhook":
+      return "On webhook";
+  }
+}
