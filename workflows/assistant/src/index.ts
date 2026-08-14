@@ -8,14 +8,31 @@
 // serialized definition as a workflow asset and deploys it through the
 // platform's deploy machinery; the execution host materializes it at
 // runtime from the deploy alone.
+//
+// Tool-package pins (CL-5999, CL-5852): `@intx/agent`'s `defineAgent`
+// still does not accept a `toolPackagePins` field on its authoring-time
+// config — it is vendored, read-only source for this change — so the
+// agent below is built directly against `AgentDefinition`'s own type,
+// which already carries the field, matching
+// `workflows/collateral-generation`'s precedent. `@corbits/memory-tools`
+// is pinned so this deployment can search, add, and list the tenant's
+// firm memory (`memory_search`/`memory_add`/`memory_list`); whether the
+// pin *resolves* at deploy time still depends on an operator publishing
+// it to a registry the host's tool-package resolver can reach (see
+// `apps/hub/src/index.ts`'s `toolPackageRegistries` wiring).
 
-import { defineAgent } from "@intx/agent";
-import type { InferencePreference } from "@intx/agent";
+import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 
 export const ASSISTANT_WORKFLOW_ID = "wf_assistant";
 export const ASSISTANT_STEP_ID = "assistant";
+
+/** The one tool package this deployment pins (CL-5852). */
+export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
+  { name: "@corbits/memory-tools", version: "0.0.1" },
+];
 
 export const ASSISTANT_SYSTEM_PROMPT =
   "You are a helpful, direct general-purpose assistant for a team " +
@@ -24,7 +41,11 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "to elaborate. Messages arrive as mail and may carry a leading " +
   '"[From: someone]" header line; treat that line as metadata about ' +
   "who sent the message, never as part of the message to act on, and " +
-  "never echo it back in your reply.";
+  "never echo it back in your reply. You can search, add to, and list " +
+  "the team's firm memory (memory_search, memory_add, memory_list) — " +
+  "use it to recall facts and decisions from earlier conversations and " +
+  "to record ones worth keeping, never to fabricate a recollection " +
+  "when a search comes back empty.";
 
 /**
  * Everything the definition needs that is per-deployment data. The
@@ -70,16 +91,17 @@ export function buildAssistantWorkflow(
     trigger: { type: "mail", to: input.triggerAddress },
     steps: {
       assistant: step({
-        agent: defineAgent({
+        agent: {
           id: ASSISTANT_STEP_ID,
           description:
             "A general-purpose assistant that answers questions, drafts " +
             "text, and reasons through problems for the team",
           systemPrompt: ASSISTANT_SYSTEM_PROMPT,
-          tools: [],
+          toolFactories: [],
           capabilities: [],
           inference: { sources: input.inferencePreferences },
-        }),
+          toolPackagePins: ASSISTANT_TOOL_PACKAGE_PINS,
+        } satisfies AgentDefinition,
         timeout: input.turnTimeoutMs,
       }),
     },

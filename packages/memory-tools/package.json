@@ -1,17 +1,10 @@
 {
-  "name": "@corbits/assistant-workflow",
+  "name": "@corbits/memory-tools",
   "private": true,
-  "description": "Mail-triggered conversational workflow with a general-purpose assistant agent",
+  "description": "Firm-memory search/add/list as an @intx/agent tool bundle for workflow definitions: calls the sanctioned workflow-memory HTTP surface (@corbits/memory-hub) with the sidecar's own bearer token and the run's own address, never a database handle or model-supplied identity",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
-  "corbits": {
-    "workflow": {
-      "assetName": "assistant",
-      "displayName": "Myra",
-      "automatable": false
-    }
-  },
   "exports": {
     ".": "./src/index.ts"
   },
@@ -22,7 +15,7 @@
   "dependencies": {
     "@intx/agent": "workspace:*",
     "@intx/types": "workspace:*",
-    "@intx/workflow": "workspace:*"
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

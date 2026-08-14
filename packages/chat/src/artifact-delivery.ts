@@ -33,15 +33,18 @@ const PersistedArtifactBatchResult = type({
   artifacts: PersistedArtifactResult.array(),
 });
 
+/** A recognized persisted-artifact result, parsed off one finalized tool call. */
+export type PersistedArtifact = {
+  readonly id: string;
+  readonly title: string;
+  readonly kind: string;
+};
+
 function mediaTypeForArtifactKind(kind: string): string {
   return kind === "text" ? "text/plain" : "application/octet-stream";
 }
 
-function filePartFor(artifact: {
-  id: string;
-  title: string;
-  kind: string;
-}): FilePart {
+function filePartFor(artifact: PersistedArtifact): FilePart {
   return {
     kind: "file",
     name: artifact.title,
@@ -53,13 +56,15 @@ function filePartFor(artifact: {
 /**
  * Parses one tool call's result for a recognized persisted-artifact
  * shape (single `{id, title, kind, persisted: true}` or batched
- * `{artifacts: [...]}`) and returns the `FilePart`s it names. An
- * errored call, unparseable JSON, or a result that matches neither
- * shape yields no parts — this never guesses.
+ * `{artifacts: [...]}`) and returns the artifacts it names. An errored
+ * call, unparseable JSON, or a result that matches neither shape yields
+ * nothing — this never guesses. Shared by the `FilePart` delivery below
+ * and by `chat-orchestrator.ts`'s memory-ingest call site (CL-5852),
+ * which needs the same `{id, title, kind}` facts.
  */
-export function artifactPartsForToolCall(
+export function persistedArtifactsForToolCall(
   toolCall: FinalizedTurnToolCall,
-): readonly FilePart[] {
+): readonly PersistedArtifact[] {
   if (toolCall.isError) return [];
 
   let parsed: unknown;
@@ -70,19 +75,31 @@ export function artifactPartsForToolCall(
   }
 
   const single = PersistedArtifactResult(parsed);
-  if (!(single instanceof type.errors)) return [filePartFor(single)];
+  if (!(single instanceof type.errors)) return [single];
 
   const batch = PersistedArtifactBatchResult(parsed);
-  if (!(batch instanceof type.errors)) {
-    return batch.artifacts.map(filePartFor);
-  }
+  if (!(batch instanceof type.errors)) return batch.artifacts;
 
   return [];
+}
+
+/** Every persisted artifact named across a finalized turn's tool calls. */
+export function persistedArtifactsForFinalizedTurn(
+  toolCalls: readonly FinalizedTurnToolCall[],
+): readonly PersistedArtifact[] {
+  return toolCalls.flatMap((call) => persistedArtifactsForToolCall(call));
+}
+
+/** One tool call's persisted artifacts as `FilePart`s. */
+export function artifactPartsForToolCall(
+  toolCall: FinalizedTurnToolCall,
+): readonly FilePart[] {
+  return persistedArtifactsForToolCall(toolCall).map(filePartFor);
 }
 
 /** Every persisted-artifact `FilePart` across a finalized turn's tool calls. */
 export function artifactPartsForFinalizedTurn(
   toolCalls: readonly FinalizedTurnToolCall[],
 ): readonly FilePart[] {
-  return toolCalls.flatMap((call) => artifactPartsForToolCall(call));
+  return persistedArtifactsForFinalizedTurn(toolCalls).map(filePartFor);
 }

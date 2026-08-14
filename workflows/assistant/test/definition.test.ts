@@ -9,6 +9,7 @@ import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 import {
   ASSISTANT_STEP_ID,
   ASSISTANT_SYSTEM_PROMPT,
+  ASSISTANT_TOOL_PACKAGE_PINS,
   ASSISTANT_WORKFLOW_ID,
   buildAssistantWorkflow,
   serializeAssistantWorkflow,
@@ -59,6 +60,14 @@ test("the agent carries the assistant prompt, the preferences, and inlines no to
   // Tools arrive as packages on the deploy, never inlined here: an
   // inline factory is a function-valued field the asset cannot carry.
   expect(agent.toolFactories).toEqual([]);
+});
+
+test("the agent pins @corbits/memory-tools (CL-5852) — a real package name, resolved at deploy time", () => {
+  const agent = assistantStep(buildAssistantWorkflow(INPUT)).agent;
+  expect(agent.toolPackagePins).toEqual(ASSISTANT_TOOL_PACKAGE_PINS);
+  expect(ASSISTANT_TOOL_PACKAGE_PINS).toEqual([
+    { name: "@corbits/memory-tools", version: "0.0.1" },
+  ]);
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {

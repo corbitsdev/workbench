@@ -22,11 +22,13 @@
 // gen-UI design's "agents can never mint these" rule.
 import { headlineFor } from "@corbits/approvals";
 import { findFoldedRunByAddress } from "@corbits/folded-runs";
+import type { Memory } from "@corbits/memory";
 import type { ApprovalStore, DB } from "@intx/db";
 import type { SidecarEventEmitter } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
 import {
   artifactPartsForFinalizedTurn,
+  persistedArtifactsForFinalizedTurn,
   type FinalizedTurnToolCall,
 } from "./artifact-delivery";
 import type { ApproveBlockData } from "./blocks";
@@ -57,6 +59,18 @@ export type ChatOrchestratorDeps = {
    * never builds a lifecycle of its own.
    */
   recordActivity?: (address: string) => void;
+  /**
+   * The mounted memory plane's in-process handle (`apps/hub/src/memory-mount.ts`'s
+   * `MemoryMountHandle.memory`) — undefined when the plane isn't mounted
+   * (no `EMBED_BASE_URL`), matching that mount's own optional contract.
+   * Two explicit, bounded call sites use it (CL-5852), never a generic
+   * event bus: `postFinalizedTurnMemoryEntries` records one entry per
+   * persisted artifact, and `postDailyTranscriptDigest` records at most
+   * one entry per channel per UTC day. Both derive `tenantId`/`principalId`
+   * from `resolveMemberChannels`' own resolved run scope, never from
+   * anything a model supplied.
+   */
+  memory?: Pick<Memory, "add">;
 };
 
 export type ChatOrchestrator = {
@@ -116,7 +130,20 @@ async function resolveMemberChannels(
   deps: ChatOrchestratorDeps,
   agentAddress: string,
 ): Promise<
-  { tenantId: string; agentChannelId: string; channelIds: string[] } | undefined
+  | {
+      tenantId: string;
+      /**
+       * The run's own principal, when it has one — null for an
+       * internal, workflow-spawned run (`workflow_run.principal_id` is
+       * nullable by design). Memory-ingest call sites treat a null
+       * principal as "nothing to attribute this to" and skip, rather
+       * than guessing an owner.
+       */
+      principalId: string | null;
+      agentChannelId: string;
+      channelIds: string[];
+    }
+  | undefined
 > {
   const run = await findFoldedRunByAddress(deps.db, agentAddress);
   if (run === undefined) {
@@ -137,6 +164,7 @@ async function resolveMemberChannels(
 
   return {
     tenantId: run.tenantId,
+    principalId: run.principalId,
     agentChannelId: run.id,
     channelIds: memberChannels.map((channel) => channel.channelId),
   };
@@ -236,6 +264,90 @@ async function postFinalizedTurnArtifacts(
 }
 
 /**
+ * Records one firm-memory entry per persisted artifact a finalized turn's
+ * tool calls named (CL-5852 M3a) — the same recognized shape
+ * `postFinalizedTurnArtifacts` above turns into file-part chips, reused
+ * here rather than re-parsed. Writes through the in-process plane handle
+ * (`deps.memory`), never the plane's tenant-session HTTP routes: this
+ * runs in the hub process, which already holds the handle `mountMemory`
+ * returned. A no-op when `deps.memory` is absent (plane not mounted) or
+ * the run has no principal to attribute the entry to — this never
+ * guesses an owner. The entry records only the artifact's own
+ * (id, title, kind) facts, never anything a model separately claimed.
+ */
+async function postFinalizedTurnMemoryEntries(
+  deps: ChatOrchestratorDeps,
+  agentAddress: string,
+  toolCalls: readonly FinalizedTurnToolCall[],
+): Promise<void> {
+  if (deps.memory === undefined) return;
+  const artifacts = persistedArtifactsForFinalizedTurn(toolCalls);
+  if (artifacts.length === 0) return;
+
+  const resolved = await resolveMemberChannels(deps, agentAddress);
+  if (resolved === undefined || resolved.principalId === null) return;
+
+  for (const artifact of artifacts) {
+    await deps.memory.add({
+      tenantId: resolved.tenantId,
+      principalId: resolved.principalId,
+      kind: "artifact",
+      content: {
+        title: artifact.title,
+        text: `Library artifact "${artifact.title}" (${artifact.kind}) was created.`,
+      },
+      attributes: { artifactId: artifact.id },
+    });
+  }
+}
+
+/**
+ * Bounded daily-channel-digest transcript ingestion (CL-5852 M3b): at
+ * most one firm-memory entry per channel per UTC day, recording that
+ * day's most recent reply as an honest, lightweight digest of channel
+ * activity — never a fabricated summary. Chosen over an "on thread
+ * completion" trigger because this repo's single-step conversational
+ * workflows (`workflows/assistant`) keep one warm agent address across
+ * an entire channel's lifetime (see that package's header comment): a
+ * "thread" never observably completes here, so there is no cheap event
+ * to hook without inventing one. A once-per-channel-per-day bound is
+ * the cheapest trigger already implied by an existing, honest concept
+ * (`workflows/channel-digest`) rather than a new event bus. The guard
+ * is process-local and resets on restart — an acceptable trade for
+ * "at most one, not zero" over exactly-once durability, matching every
+ * other idempotency guard in this file (see `postApproveBlock`'s).
+ */
+async function postDailyTranscriptDigest(
+  deps: ChatOrchestratorDeps,
+  agentAddress: string,
+  content: string,
+  ingestedChannelDays: Set<string>,
+): Promise<void> {
+  if (deps.memory === undefined) return;
+
+  const resolved = await resolveMemberChannels(deps, agentAddress);
+  if (resolved === undefined || resolved.principalId === null) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+  for (const channelId of resolved.channelIds) {
+    const key = `${channelId}:${today}`;
+    if (ingestedChannelDays.has(key)) continue;
+    ingestedChannelDays.add(key);
+
+    await deps.memory.add({
+      tenantId: resolved.tenantId,
+      principalId: resolved.principalId,
+      kind: "transcript-digest",
+      content: {
+        title: `Channel digest — ${today}`,
+        text: content,
+      },
+      attributes: { channelId },
+    });
+  }
+}
+
+/**
  * Builds the `onTurnFinalized` callback `createEventCollectorRegistry`
  * accepts (`(agentAddress, turn) => void`, see
  * `vendor/intx/hub-sessions/src/event-collector-registry.ts`). Kept as a
@@ -259,6 +371,15 @@ export function createArtifactDeliveryHandler(
         }`;
       },
     );
+    void postFinalizedTurnMemoryEntries(
+      deps,
+      agentAddress,
+      turn.toolCalls,
+    ).catch((cause: unknown) => {
+      log.error`chat orchestrator: failed to record ${agentAddress}'s finalized-turn memory entries: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`;
+    });
   };
 }
 
@@ -268,6 +389,9 @@ export function createChatOrchestrator(
   // Process-lifetime idempotency guard for `postApproveBlock` — see its own
   // doc comment for what this does and doesn't cover.
   const postedApprovalIds = new Set<string>();
+  // Process-lifetime "already ingested this channel today" guard for
+  // `postDailyTranscriptDigest` — see that function's doc comment.
+  const ingestedChannelDays = new Set<string>();
 
   const unsubscribe = deps.events.on(
     "agent.event",
@@ -282,6 +406,16 @@ export function createChatOrchestrator(
       if (content !== undefined) {
         void postReply(deps, agentAddress, content).catch((cause: unknown) => {
           log.error`chat orchestrator: failed to post ${agentAddress}'s reply: ${
+            cause instanceof Error ? cause.message : String(cause)
+          }`;
+        });
+        void postDailyTranscriptDigest(
+          deps,
+          agentAddress,
+          content,
+          ingestedChannelDays,
+        ).catch((cause: unknown) => {
+          log.error`chat orchestrator: failed to record ${agentAddress}'s daily transcript digest: ${
             cause instanceof Error ? cause.message : String(cause)
           }`;
         });
