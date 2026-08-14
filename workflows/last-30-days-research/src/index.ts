@@ -129,20 +129,20 @@ export const LAST_30_DAYS_RESEARCH_SYSTEM_PROMPT = [
     '("no source results to report for this topic") instead of ' +
     "presenting empty or padded sections as if there were real content.",
   `Finalizing: once you have written the report, call ` +
-    `\`${LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME}\` exactly once with a ` +
-    `short title (e.g. "Last 30 days: <topic>") and the full markdown ` +
-    "report as content. This call requires a human's approval before " +
-    "it completes. Always finalize, even when no wired source returned " +
-    "anything for the topic: in that case, still call " +
-    `\`${LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME}\` once with a ` +
-    'teaching title (e.g. "Last 30 days: <topic> — no results yet") ' +
-    "and content that honestly explains what it searched for, names " +
-    "the missing or unreachable connectors by id (`exa` for web " +
-    "search; `scrapecreators` would back a future Reddit source), and " +
-    "says what to do next (connect the missing credential, or try a " +
-    "narrower topic or focus). Never end a run without finalizing — a " +
-    "plain reply with no artifact is not an acceptable outcome, even " +
-    "on the no-data path.",
+    `\`${LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME}\` exactly once with ` +
+    `outcome "report", a short title (e.g. "Last 30 days: <topic>"), ` +
+    "and the full markdown report as content. This call requires a " +
+    "human's approval before it completes. Always finalize, even when " +
+    "no wired source returned anything for the topic: in that case, " +
+    `still call \`${LAST_30_DAYS_RESEARCH_FINALIZE_TOOL_NAME}\` once ` +
+    'with outcome "status-note", a teaching title (e.g. "Last 30 ' +
+    'days: <topic> — no results yet"), and content that honestly ' +
+    "explains what it searched for, names the missing or unreachable " +
+    "connectors by id (`exa` for web search; `scrapecreators` would " +
+    "back a future Reddit source), and says what to do next (connect " +
+    "the missing credential, or try a narrower topic or focus). Never " +
+    "end a run without finalizing — a plain reply with no artifact is " +
+    "not an acceptable outcome, even on the no-data path.",
   "If the finalize call succeeds, present the finalized report as " +
     "your reply exactly as written, with no commentary about the " +
     "approval mechanism itself. If the call is denied, reply with one " +
