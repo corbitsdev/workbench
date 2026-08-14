@@ -19,14 +19,21 @@ tables — how its migrations are written, tracked, and applied.
   migrations. A package's ledger stays inside the package: if it is ever
   extracted into its own repo, its migration history comes with it, with
   nothing to disentangle from the platform's.
-- **A named schema, where the package needs one of its own.** A package
-  whose tables are fully independent of the platform's `public` schema
-  (`@corbits/mailbox`, `@corbits/artifacts`, `@corbits/memory`) creates and
-  owns a schema named for itself (`mailbox`, `artifacts`, `knowledge`) rather
-  than adding tables to `public`. A package whose tables reference
-  `public.tenant` / `public.principal` by foreign key stays in `public`
-  instead — that's most packages (`@corbits/chat`, `@corbits/routines`,
-  `@corbits/notify`, `@corbits/webhook-triggers`, `@corbits/insights`).
+- **Every package owns a schema named for itself.** No package table ever
+  lives in `public` — `public` belongs to the platform's own `@intx/db`
+  schema alone. Every package creates and owns a Postgres schema named for
+  itself (`mailbox`, `artifacts`, `memory`, `chat`, `routines`, `notify`,
+  `webhook_triggers`, `insights`, …) and puts every table it owns there,
+  including its own ledger table. This holds regardless of whether a
+  package's rows carry a `tenant_id` / `principal_id` column: those are
+  plain text identifiers, not foreign keys, so a row in
+  `chat.channel_settings` refers to a platform tenant by id exactly the
+  same way whether it sits in `public` or in `chat` — the schema a table
+  lives in is never load-bearing for that reference. A package landing in
+  its own schema, never `public`, is what makes it possible to lift the
+  whole package into another Interchange application without a name
+  collision or a manual carve-out of "which public tables were actually
+  ours."
 - **Every migration is transactional.** A migration's SQL and its ledger
   `INSERT` run inside one `sql.begin(...)` transaction. If the SQL fails
   partway, nothing about that migration — not a table, not a column, not the
@@ -84,13 +91,31 @@ separate statements, so a failure between them could leave a table created
 with no ledger row to show for it. CL-6017 brought all four onto the same
 `sql.begin` pattern `@corbits/insights` already used, closing that gap.
 
+Before CL-6005, `@corbits/chat`, `@corbits/routines`, `@corbits/insights`,
+`@corbits/notify`, and `@corbits/webhook-triggers` put their tables directly
+in `public`, on the reasoning that a `tenant_id`/`principal_id` column tied
+them to the platform's own schema. CL-6005 gave each of them a schema named
+for itself instead (`chat`, `routines`, `insights`, `notify`,
+`webhook_triggers`) — those columns are plain text, never a real foreign
+key, so nothing about the reference actually required sharing `public`. Each
+package's migration set picked up one more migration for the cutover: create
+the schema, and for any table a pre-existing dev database already migrated
+into `public`, `ALTER TABLE public.<table> SET SCHEMA <package>` guarded by
+a `to_regclass` existence check so the same migration is a no-op — the table
+is simply created directly in-schema — on a fresh install that never had a
+`public` copy to move. The package's own ledger table moves the same way,
+via a guarded `ALTER TABLE ... SET SCHEMA` the migration runner performs
+before touching the ledger, so a database's already-applied history comes
+with it rather than re-running from scratch.
+
 ## Which shape to use for a new package
 
-**Transactional, self-contained** (shape 1 above), living in `public` unless
-the package's tables are fully independent of `public.tenant` /
-`public.principal`. Copy `packages/insights/src/migrations.ts`'s shape:
-a literal migration array, a package-named ledger table, and each migration
-applied inside `sql.begin`. Reach for the delegated shape only when the
-package already ships its own migration runner as part of a larger,
-independently-owned engine (a new schema, its own connection handling) —
-not as a shortcut to skip writing a ledger table.
+**Transactional, self-contained** (shape 1 above), in a Postgres schema
+named for the package. Copy `packages/insights/src/migrations.ts`'s shape:
+a `pgSchema("<name>")` in `schema.ts`, a literal migration array whose SQL
+qualifies every table/index with that schema, a package-named ledger table
+living in the same schema, and each migration applied inside `sql.begin`.
+Reach for the delegated shape only when the package already ships its own
+migration runner as part of a larger, independently-owned engine (its own
+schema, its own connection handling) — not as a shortcut to skip writing a
+ledger table.
