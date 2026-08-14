@@ -82,7 +82,7 @@ export function createPostgresUsageStore(databaseUrl: string): {
             recorded_at: Date;
           }[]
         >`
-          INSERT INTO usage_turn (
+          INSERT INTO insights.usage_turn (
             id, tenant_id, session_id, turn_id, model,
             input_tokens, cache_read_tokens, cache_write_tokens,
             output_tokens, thinking_tokens, recorded_at
@@ -134,7 +134,7 @@ export function createPostgresUsageStore(databaseUrl: string): {
           recorded_at: Date;
         }[]
       >`
-        SELECT * FROM usage_turn
+        SELECT * FROM insights.usage_turn
         WHERE tenant_id = ${tenantId}
           AND (${from ?? null}::timestamptz IS NULL OR recorded_at >= ${from ?? null})
           AND (${to ?? null}::timestamptz IS NULL OR recorded_at <= ${to ?? null})
@@ -162,7 +162,7 @@ export function createPostgresUsageStore(databaseUrl: string): {
           thinking_per_m_tok: string | number | null;
         }[]
       >`
-        SELECT * FROM model_price WHERE model = ${model} LIMIT 1
+        SELECT * FROM insights.model_price WHERE model = ${model} LIMIT 1
       `;
       const row = rows[0];
       if (row === undefined) return null;
@@ -180,7 +180,7 @@ export function createPostgresUsageStore(databaseUrl: string): {
           thinking_per_m_tok: string | number | null;
         }[]
       >`
-        SELECT * FROM model_price ORDER BY model ASC
+        SELECT * FROM insights.model_price ORDER BY model ASC
       `;
       return rows.map((row): ModelPriceRecord => ({
         model: row.model,
@@ -191,7 +191,7 @@ export function createPostgresUsageStore(databaseUrl: string): {
     async upsertPrice(price) {
       const r = price.rates;
       await sql`
-        INSERT INTO model_price (
+        INSERT INTO insights.model_price (
           model, input_per_m_tok, output_per_m_tok,
           cache_read_per_m_tok, cache_write_per_m_tok, thinking_per_m_tok
         ) VALUES (

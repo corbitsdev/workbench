@@ -23,7 +23,7 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0001_channel_settings",
     sql: `
-      CREATE TABLE IF NOT EXISTS "channel_settings" (
+      CREATE TABLE IF NOT EXISTS "chat"."channel_settings" (
         "tenant_id" text NOT NULL,
         "channel_id" text NOT NULL,
         "settings" jsonb NOT NULL,
@@ -36,7 +36,7 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0002_channel_read_state",
     sql: `
-      CREATE TABLE IF NOT EXISTS "channel_read_state" (
+      CREATE TABLE IF NOT EXISTS "chat"."channel_read_state" (
         "tenant_id" text NOT NULL,
         "channel_id" text NOT NULL,
         "principal_id" text NOT NULL,
@@ -49,7 +49,7 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0003_channel_launch",
     sql: `
-      CREATE TABLE IF NOT EXISTS "channel_launch" (
+      CREATE TABLE IF NOT EXISTS "chat"."channel_launch" (
         "tenant_id" text NOT NULL,
         "instance_id" text NOT NULL,
         "folded_body" jsonb NOT NULL,
@@ -61,14 +61,14 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0004_channel_launch_noop_inference",
     sql: `
-      ALTER TABLE "channel_launch"
+      ALTER TABLE "chat"."channel_launch"
         ADD COLUMN IF NOT EXISTS "noop_inference" boolean NOT NULL DEFAULT false;
     `,
   },
   {
     name: "0005_channel_tenancy",
     sql: `
-      CREATE TABLE IF NOT EXISTS "channel_tenancy" (
+      CREATE TABLE IF NOT EXISTS "chat"."channel_tenancy" (
         "channel_id" text NOT NULL,
         "tenant_id" text NOT NULL,
         "parent_tenant_id" text NOT NULL,
@@ -83,13 +83,13 @@ export const chatMigrations: readonly ChatMigration[] = [
     name: "0006_channel_tenancy_parent_index",
     sql: `
       CREATE INDEX IF NOT EXISTS "channel_tenancy_parent_tenant_id_idx"
-        ON "channel_tenancy" ("parent_tenant_id");
+        ON "chat"."channel_tenancy" ("parent_tenant_id");
     `,
   },
   {
     name: "0007_chat_bench_settings",
     sql: `
-      CREATE TABLE IF NOT EXISTS "chat_bench_settings" (
+      CREATE TABLE IF NOT EXISTS "chat"."chat_bench_settings" (
         "tenant_id" text NOT NULL,
         "settings" jsonb NOT NULL,
         "updated_by" text NOT NULL,
@@ -115,7 +115,7 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0008_channel_context_window_explicit_inherit",
     sql: `
-      UPDATE "channel_settings"
+      UPDATE "chat"."channel_settings"
       SET "settings" = jsonb_set("settings", '{chat/contextWindow}', 'null'::jsonb)
       WHERE NOT ("settings" ? 'chat/contextWindow');
     `,
@@ -123,7 +123,7 @@ export const chatMigrations: readonly ChatMigration[] = [
   {
     name: "0009_channel_threads",
     sql: `
-      CREATE TABLE IF NOT EXISTS "channel_threads" (
+      CREATE TABLE IF NOT EXISTS "chat"."channel_threads" (
         "id" text PRIMARY KEY,
         "tenant_id" text NOT NULL,
         "channel_id" text NOT NULL,
@@ -134,8 +134,8 @@ export const chatMigrations: readonly ChatMigration[] = [
         "created_at" timestamptz NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS "channel_threads_channel_idx"
-        ON "channel_threads" ("tenant_id", "channel_id");
-      CREATE TABLE IF NOT EXISTS "channel_thread_messages" (
+        ON "chat"."channel_threads" ("tenant_id", "channel_id");
+      CREATE TABLE IF NOT EXISTS "chat"."channel_thread_messages" (
         "tenant_id" text NOT NULL,
         "channel_id" text NOT NULL,
         "thread_id" text NOT NULL,
@@ -144,13 +144,13 @@ export const chatMigrations: readonly ChatMigration[] = [
         PRIMARY KEY ("tenant_id", "channel_id", "message_id")
       );
       CREATE INDEX IF NOT EXISTS "channel_thread_messages_thread_idx"
-        ON "channel_thread_messages" ("tenant_id", "thread_id");
+        ON "chat"."channel_thread_messages" ("tenant_id", "thread_id");
     `,
   },
   {
     name: "0010_block_responses",
     sql: `
-      CREATE TABLE IF NOT EXISTS "block_responses" (
+      CREATE TABLE IF NOT EXISTS "chat"."block_responses" (
         "tenant_id" text NOT NULL,
         "channel_id" text NOT NULL,
         "message_id" text NOT NULL,
@@ -162,16 +162,37 @@ export const chatMigrations: readonly ChatMigration[] = [
         PRIMARY KEY ("tenant_id", "channel_id", "message_id", "block_id", "principal_id")
       );
       CREATE INDEX IF NOT EXISTS "block_responses_block_idx"
-        ON "block_responses" ("tenant_id", "channel_id", "message_id", "block_id");
+        ON "chat"."block_responses" ("tenant_id", "channel_id", "message_id", "block_id");
     `,
   },
   {
     name: "0011_channel_threads_parent_thread_id",
     sql: `
-      ALTER TABLE "channel_threads"
+      ALTER TABLE "chat"."channel_threads"
         ADD COLUMN IF NOT EXISTS "parent_thread_id" text;
       CREATE INDEX IF NOT EXISTS "channel_threads_parent_thread_idx"
-        ON "channel_threads" ("tenant_id", "parent_thread_id");
+        ON "chat"."channel_threads" ("tenant_id", "parent_thread_id");
+    `,
+  },
+  {
+    name: "0012_move_tables_to_chat_schema",
+    sql: `
+      DO $$
+      DECLARE
+        table_name text;
+      BEGIN
+        FOREACH table_name IN ARRAY ARRAY[
+          'channel_settings', 'channel_read_state', 'channel_launch',
+          'channel_tenancy', 'chat_bench_settings', 'channel_threads',
+          'channel_thread_messages', 'block_responses'
+        ]
+        LOOP
+          IF to_regclass('public.' || table_name) IS NOT NULL
+             AND to_regclass('chat.' || table_name) IS NULL THEN
+            EXECUTE format('ALTER TABLE public.%I SET SCHEMA chat', table_name);
+          END IF;
+        END LOOP;
+      END $$;
     `,
   },
 ];
@@ -180,11 +201,17 @@ export const chatMigrations: readonly ChatMigration[] = [
 // distinctly from the platform's setup ledger (`workbench_setup_migration`,
 // in scripts/db-setup.ts) and from any drizzle journal, so extracting
 // @corbits/chat out of this repo never has to disentangle its history
-// from the platform's.
+// from the platform's. Lives in the package's own `chat` schema, like
+// every other table it owns.
+const SCHEMA = "chat";
 const LEDGER_TABLE = "chat_migrations";
 
 function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+function quoteQualified(schema: string, name: string): string {
+  return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
 }
 
 export interface ApplyChatMigrationsReport {
@@ -204,12 +231,25 @@ export async function applyChatMigrations(
 ): Promise<ApplyChatMigrationsReport> {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
+    await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
+
+    // Pre-existing dev DBs from before this package had its own schema
+    // carry the ledger in `public` — move it in place so its history
+    // (which migrations already ran) comes with it. A fresh install
+    // never has a `public` ledger, so this is a no-op there.
     await sql.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(LEDGER_TABLE)} (` +
+      `DO $$ BEGIN IF to_regclass('public.${LEDGER_TABLE}') IS NOT NULL ` +
+        `AND to_regclass('${SCHEMA}.${LEDGER_TABLE}') IS NULL THEN ` +
+        `ALTER TABLE "public".${quoteIdentifier(LEDGER_TABLE)} SET SCHEMA ${quoteIdentifier(SCHEMA)}; ` +
+        `END IF; END $$;`,
+    );
+
+    await sql.unsafe(
+      `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
         `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
     );
     const rows = await sql.unsafe(
-      `SELECT name FROM ${quoteIdentifier(LEDGER_TABLE)}`,
+      `SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`,
     );
     const alreadyApplied = new Set(rows.map((row) => String(row["name"])));
     const applied: string[] = [];
@@ -219,7 +259,7 @@ export async function applyChatMigrations(
         await sql.begin(async (tx) => {
           await tx.unsafe(migration.sql);
           await tx.unsafe(
-            `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
+            `INSERT INTO ${quoteQualified(SCHEMA, LEDGER_TABLE)} (name) VALUES ($1)`,
             [migration.name],
           );
         });

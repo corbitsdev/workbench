@@ -97,7 +97,7 @@ describeIfDb(
         expect(created.secret).toBe("the-plaintext-secret");
 
         const [rawRow] =
-          await sql`select secret from webhook_trigger where id = ${created.id}`;
+          await sql`select secret from webhook_triggers.webhook_trigger where id = ${created.id}`;
         expect(rawRow?.["secret"]).not.toBe("the-plaintext-secret");
         expect(String(rawRow?.["secret"])).toContain("enc:");
 
@@ -136,7 +136,7 @@ describeIfDb(
         expect(rotated?.secret).toBe("rotated-secret");
 
         const [rawRow] =
-          await sql`select secret from webhook_trigger where id = ${created.id}`;
+          await sql`select secret from webhook_triggers.webhook_trigger where id = ${created.id}`;
         expect(rawRow?.["secret"]).not.toBe("rotated-secret");
 
         const fetched = await store.get(TENANT_ID, created.id);
@@ -166,7 +166,7 @@ describeIfDb(
         });
 
         const [rawRow] =
-          await sql`select secret from webhook_trigger where id = ${created.id}`;
+          await sql`select secret from webhook_triggers.webhook_trigger where id = ${created.id}`;
         expect(rawRow?.["secret"]).toBe("plain-secret");
 
         const fetched = await store.get(TENANT_ID, created.id);

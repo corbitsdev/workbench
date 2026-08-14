@@ -16,7 +16,7 @@ export const routineMigrations: readonly RoutineMigration[] = [
   {
     name: "0001_routine",
     sql: `
-      CREATE TABLE IF NOT EXISTS "routine" (
+      CREATE TABLE IF NOT EXISTS "routines"."routine" (
         "id" text PRIMARY KEY,
         "tenant_id" text NOT NULL,
         "name" text NOT NULL,
@@ -33,9 +33,9 @@ export const routineMigrations: readonly RoutineMigration[] = [
         "created_at" timestamptz NOT NULL DEFAULT now(),
         "updated_at" timestamptz NOT NULL DEFAULT now()
       );
-      CREATE INDEX IF NOT EXISTS "routine_next_fire_at_idx" ON "routine" ("next_fire_at") WHERE "enabled" AND "next_fire_at" IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS "routine_next_fire_at_idx" ON "routines"."routine" ("next_fire_at") WHERE "enabled" AND "next_fire_at" IS NOT NULL;
 
-      CREATE TABLE IF NOT EXISTS "routine_run" (
+      CREATE TABLE IF NOT EXISTS "routines"."routine_run" (
         "tenant_id" text NOT NULL,
         "routine_id" text NOT NULL,
         "run_id" text NOT NULL,
@@ -48,18 +48,18 @@ export const routineMigrations: readonly RoutineMigration[] = [
   {
     name: "0002_failure_tracking",
     sql: `
-      ALTER TABLE "routine"
+      ALTER TABLE "routines"."routine"
         ADD COLUMN IF NOT EXISTS "consecutive_failures" integer NOT NULL DEFAULT 0;
-      ALTER TABLE "routine"
+      ALTER TABLE "routines"."routine"
         ADD COLUMN IF NOT EXISTS "dead_lettered_at" timestamptz;
-      ALTER TABLE "routine_run"
+      ALTER TABLE "routines"."routine_run"
         ADD COLUMN IF NOT EXISTS "error" text;
     `,
   },
   {
     name: "0003_routine_draft",
     sql: `
-      CREATE TABLE IF NOT EXISTS "routine_draft" (
+      CREATE TABLE IF NOT EXISTS "routines"."routine_draft" (
         "id" text PRIMARY KEY,
         "tenant_id" text NOT NULL,
         "prompt" text NOT NULL,
@@ -77,7 +77,24 @@ export const routineMigrations: readonly RoutineMigration[] = [
         "updated_at" timestamptz NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS "routine_draft_tenant_idx"
-        ON "routine_draft" ("tenant_id", "status");
+        ON "routines"."routine_draft" ("tenant_id", "status");
+    `,
+  },
+  {
+    name: "0004_move_tables_to_routines_schema",
+    sql: `
+      DO $$
+      DECLARE
+        table_name text;
+      BEGIN
+        FOREACH table_name IN ARRAY ARRAY['routine', 'routine_run', 'routine_draft']
+        LOOP
+          IF to_regclass('public.' || table_name) IS NOT NULL
+             AND to_regclass('routines.' || table_name) IS NULL THEN
+            EXECUTE format('ALTER TABLE public.%I SET SCHEMA routines', table_name);
+          END IF;
+        END LOOP;
+      END $$;
     `,
   },
 ];
@@ -85,11 +102,17 @@ export const routineMigrations: readonly RoutineMigration[] = [
 // Named distinctly from the platform's setup ledger and from any
 // drizzle journal, so extracting @corbits/routines out of this repo
 // never has to disentangle its history from the platform's or from
-// @corbits/chat's own `chat_migrations` ledger.
+// @corbits/chat's own `chat_migrations` ledger. Lives in the package's
+// own `routines` schema, like every other table it owns.
+const SCHEMA = "routines";
 const LEDGER_TABLE = "routine_migrations";
 
 function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+function quoteQualified(schema: string, name: string): string {
+  return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
 }
 
 export interface ApplyRoutineMigrationsReport {
@@ -108,12 +131,25 @@ export async function applyRoutineMigrations(
 ): Promise<ApplyRoutineMigrationsReport> {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
+    await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
+
+    // Pre-existing dev DBs from before this package had its own schema
+    // carry the ledger in `public` — move it in place so its history
+    // (which migrations already ran) comes with it. A fresh install
+    // never has a `public` ledger, so this is a no-op there.
     await sql.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(LEDGER_TABLE)} (` +
+      `DO $$ BEGIN IF to_regclass('public.${LEDGER_TABLE}') IS NOT NULL ` +
+        `AND to_regclass('${SCHEMA}.${LEDGER_TABLE}') IS NULL THEN ` +
+        `ALTER TABLE "public".${quoteIdentifier(LEDGER_TABLE)} SET SCHEMA ${quoteIdentifier(SCHEMA)}; ` +
+        `END IF; END $$;`,
+    );
+
+    await sql.unsafe(
+      `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
         `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
     );
     const rows = await sql.unsafe(
-      `SELECT name FROM ${quoteIdentifier(LEDGER_TABLE)}`,
+      `SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`,
     );
     const alreadyApplied = new Set(rows.map((row) => String(row["name"])));
     const applied: string[] = [];
@@ -123,7 +159,7 @@ export async function applyRoutineMigrations(
         await sql.begin(async (tx) => {
           await tx.unsafe(migration.sql);
           await tx.unsafe(
-            `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
+            `INSERT INTO ${quoteQualified(SCHEMA, LEDGER_TABLE)} (name) VALUES ($1)`,
             [migration.name],
           );
         });

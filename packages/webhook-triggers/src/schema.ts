@@ -1,16 +1,17 @@
 // The one product table `@corbits/webhook-triggers` owns: a trigger
-// row per external-webhook-to-workflow binding. Tenancy semantics
-// (membership, principals, grants) stay native platform schema under
-// vendor/intx/db; this table holds only this package's own state,
-// keyed by tenant.
+// row per external-webhook-to-workflow binding. It lives in its own
+// `webhook_triggers` Postgres schema, fully siloed from the platform's
+// `public` schema — see docs/package-migrations.md.
 //
 // The signing secret is encrypted at rest via Interchange's
 // `CredentialCipher` seam — see `./store.ts` for the encrypt/decrypt
 // wiring and `./signature.ts` for the security-model note on what that
 // does and does not close.
-import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, pgSchema, text, timestamp } from "drizzle-orm/pg-core";
 
-export const webhookTrigger = pgTable("webhook_trigger", {
+export const webhookTriggersSchema = pgSchema("webhook_triggers");
+
+export const webhookTrigger = webhookTriggersSchema.table("webhook_trigger", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),

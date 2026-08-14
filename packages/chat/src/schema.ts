@@ -1,17 +1,21 @@
 // Product tables @corbits/chat owns (see scripts/checks/no-product-tenancy
 // ALLOWLIST): channel_settings, channel_read_state, channel_launch, and
-// channel_tenancy. Tenancy-shaped platform state — membership, principals,
-// grants — stays native under vendor/intx/db; these tables hold only chat's
-// own state, keyed by tenant.
+// channel_tenancy. These tables live in their own `chat` Postgres schema,
+// fully siloed from the platform's `public` schema — see
+// docs/package-migrations.md. `tenantId`/`principalId` are plain text
+// identifiers, not foreign keys, so referencing platform tenant/principal
+// ids works identically from a named schema.
 import {
   boolean,
   index,
   jsonb,
-  pgTable,
+  pgSchema,
   primaryKey,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
+
+export const chatSchema = pgSchema("chat");
 
 /**
  * Settings for a single channel, record-as-truth: `settings` is a
@@ -19,7 +23,7 @@ import {
  * rather than a column per setting, so new settings never require a
  * migration.
  */
-export const channelSettings = pgTable(
+export const channelSettings = chatSchema.table(
   "channel_settings",
   {
     tenantId: text("tenant_id").notNull(),
@@ -41,7 +45,7 @@ export const channelSettings = pgTable(
  * `resolveContextWindow` in `./channel-settings.ts` for how the two are
  * folded into one effective value.
  */
-export const chatBenchSettings = pgTable("chat_bench_settings", {
+export const chatBenchSettings = chatSchema.table("chat_bench_settings", {
   tenantId: text("tenant_id").primaryKey(),
   settings: jsonb("settings").notNull(),
   updatedBy: text("updated_by").notNull(),
@@ -55,7 +59,7 @@ export const chatBenchSettings = pgTable("chat_bench_settings", {
  * since both are principals on the platform. `channelId` is the
  * workflow-run/instance id that identifies the channel.
  */
-export const channelReadState = pgTable(
+export const channelReadState = chatSchema.table(
   "channel_read_state",
   {
     tenantId: text("tenant_id").notNull(),
@@ -81,7 +85,7 @@ export const channelReadState = pgTable(
  * a workflow.json), so this row is the single wake-time source for
  * both launch kinds.
  */
-export const channelLaunch = pgTable("channel_launch", {
+export const channelLaunch = chatSchema.table("channel_launch", {
   tenantId: text("tenant_id").notNull(),
   instanceId: text("instance_id").primaryKey(),
   foldedBody: jsonb("folded_body").notNull(),
@@ -110,7 +114,7 @@ export const channelLaunch = pgTable("channel_launch", {
  * `tenantId` is unique: a channel tenant is minted for exactly one
  * channel, never shared.
  */
-export const channelTenancy = pgTable("channel_tenancy", {
+export const channelTenancy = chatSchema.table("channel_tenancy", {
   channelId: text("channel_id").primaryKey(),
   tenantId: text("tenant_id").notNull().unique(),
   parentTenantId: text("parent_tenant_id").notNull(),
@@ -127,7 +131,7 @@ export const channelTenancy = pgTable("channel_tenancy", {
  * themselves still live in platform mail — this table is workbench
  * thread identity only (see `./threads.ts`).
  */
-export const channelThreads = pgTable(
+export const channelThreads = chatSchema.table(
   "channel_threads",
   {
     id: text("id").primaryKey(),
@@ -160,7 +164,7 @@ export const channelThreads = pgTable(
  * Membership of a platform mail message id in a thread. A message
  * belongs to exactly one thread (root feed by default).
  */
-export const channelThreadMessages = pgTable(
+export const channelThreadMessages = chatSchema.table(
   "channel_thread_messages",
   {
     tenantId: text("tenant_id").notNull(),
@@ -189,7 +193,7 @@ export const channelThreadMessages = pgTable(
  * `messageId`: the block this row answers is the one in *this specific*
  * message, never any other message that happens to reuse the same id.
  */
-export const blockResponses = pgTable(
+export const blockResponses = chatSchema.table(
   "block_responses",
   {
     tenantId: text("tenant_id").notNull(),

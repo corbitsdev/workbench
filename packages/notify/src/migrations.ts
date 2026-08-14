@@ -14,7 +14,7 @@ export const notifyMigrations: readonly NotifyMigration[] = [
   {
     name: "0001_notify_dispatch",
     sql: `
-      CREATE TABLE IF NOT EXISTS "notify_dispatch" (
+      CREATE TABLE IF NOT EXISTS "notify"."notify_dispatch" (
         "id" text PRIMARY KEY,
         "mailbox_row_id" text NOT NULL,
         "tenant_id" text NOT NULL,
@@ -30,15 +30,32 @@ export const notifyMigrations: readonly NotifyMigration[] = [
           UNIQUE ("mailbox_row_id", "sink_name")
       );
       CREATE INDEX IF NOT EXISTS "notify_dispatch_due_idx"
-        ON "notify_dispatch" ("status", "next_attempt_at");
+        ON "notify"."notify_dispatch" ("status", "next_attempt_at");
+    `,
+  },
+  {
+    name: "0002_move_tables_to_notify_schema",
+    sql: `
+      DO $$
+      BEGIN
+        IF to_regclass('public.notify_dispatch') IS NOT NULL
+           AND to_regclass('notify.notify_dispatch') IS NULL THEN
+          ALTER TABLE public.notify_dispatch SET SCHEMA notify;
+        END IF;
+      END $$;
     `,
   },
 ];
 
+const SCHEMA = "notify";
 const LEDGER_TABLE = "notify_migrations";
 
 function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+function quoteQualified(schema: string, name: string): string {
+  return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
 }
 
 export interface ApplyNotifyMigrationsReport {
@@ -56,12 +73,25 @@ export async function applyNotifyMigrations(
 ): Promise<ApplyNotifyMigrationsReport> {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
+    await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
+
+    // Pre-existing dev DBs from before this package had its own schema
+    // carry the ledger in `public` — move it in place so its history
+    // (which migrations already ran) comes with it. A fresh install
+    // never has a `public` ledger, so this is a no-op there.
     await sql.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(LEDGER_TABLE)} (` +
+      `DO $$ BEGIN IF to_regclass('public.${LEDGER_TABLE}') IS NOT NULL ` +
+        `AND to_regclass('${SCHEMA}.${LEDGER_TABLE}') IS NULL THEN ` +
+        `ALTER TABLE "public".${quoteIdentifier(LEDGER_TABLE)} SET SCHEMA ${quoteIdentifier(SCHEMA)}; ` +
+        `END IF; END $$;`,
+    );
+
+    await sql.unsafe(
+      `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
         `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
     );
     const rows = await sql.unsafe(
-      `SELECT name FROM ${quoteIdentifier(LEDGER_TABLE)}`,
+      `SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`,
     );
     const alreadyApplied = new Set(rows.map((row) => String(row["name"])));
     const applied: string[] = [];
@@ -71,7 +101,7 @@ export async function applyNotifyMigrations(
         await sql.begin(async (tx) => {
           await tx.unsafe(migration.sql);
           await tx.unsafe(
-            `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
+            `INSERT INTO ${quoteQualified(SCHEMA, LEDGER_TABLE)} (name) VALUES ($1)`,
             [migration.name],
           );
         });
