@@ -990,7 +990,7 @@ function CreateRoutineDialog({
                         </div>
                       ) : null}
                       {definition.exampleOutput !== "" ? (
-                        <span className="whitespace-pre-line text-[10px] text-[var(--ui-fg-muted)]">
+                        <span className="line-clamp-2 whitespace-pre-line text-[11px] text-[var(--ui-fg-muted)]">
                           {definition.exampleOutput}
                         </span>
                       ) : null}
@@ -1051,6 +1051,15 @@ function CreateRoutineDialog({
 
           {step === 2 && path === "catalog" ? (
             <>
+              {selectedDefinition !== null &&
+              selectedDefinition.exampleOutput !== "" ? (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium">Example output</span>
+                  <span className="whitespace-pre-line rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] p-2 text-xs text-[var(--ui-fg-muted)]">
+                    {selectedDefinition.exampleOutput}
+                  </span>
+                </div>
+              ) : null}
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs font-medium">When</span>
                 <div className="flex gap-1">

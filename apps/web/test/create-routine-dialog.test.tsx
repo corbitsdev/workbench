@@ -170,6 +170,37 @@ describe("CreateRoutineDialog stepper", () => {
     expect(document.body.textContent).toContain("Describe it to an agent");
   });
 
+  test("picker cards clamp exampleOutput to two lines", async () => {
+    await openDialog();
+
+    const card = cardWithTitle("Researcher");
+    const teaser = card?.querySelector(".line-clamp-2");
+    expect(teaser?.textContent).toBe("Research summary, three sources cited.");
+  });
+
+  test("the Configure step shows the full, unclamped example output for the picked workflow", async () => {
+    await openDialog();
+
+    act(() => {
+      cardWithTitle("Summarizer")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain("Example output");
+    expect(document.body.textContent).toContain(
+      "A three-paragraph summary of the source document.",
+    );
+    const exampleNode = [...document.body.querySelectorAll("span")].find(
+      (span) =>
+        span.textContent ===
+        "A three-paragraph summary of the source document.",
+    );
+    expect(exampleNode?.className).not.toContain("line-clamp");
+  });
+
   test("Next advances through Configure to Confirm for a catalog pick", async () => {
     await openDialog();
 
