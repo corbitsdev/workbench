@@ -7,7 +7,7 @@
 // plus the concerns that are chat's own: `channel_launch` persistence,
 // asset naming, invitable listing, and participant/fromChannelId
 // send semantics.
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, max, or } from "drizzle-orm";
 import { createAgentLifecycle } from "@corbits/agent-lifecycle";
 import {
   createCryptoProviderCache,
@@ -28,14 +28,17 @@ import {
 import type { FoldedBody } from "@intx/workflow-deploy";
 import type { DB } from "@intx/db";
 import {
+  agentSession,
   sessionMail,
   tenant as tenantTable,
   workflowDefinition,
+  workflowRun,
 } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { extractPartByPath } from "@intx/mime";
 import { channelLaunch } from "./schema";
+import { summarizeChannelActivity } from "./channel-activity";
 import {
   CHANNEL_HOST_ASSET_NAME_PREFIX,
   channelHostAssetName,
@@ -474,6 +477,113 @@ export function createHubChatPlatform(
         sessionId,
         ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
       });
+    },
+
+    async listChannelActivity(input) {
+      if (input.channels.length === 0) return {};
+
+      // Bulk channelId -> sessionId, mirroring `resolveFoldedRunSessionId`'s
+      // per-run resolution (run -> its principal's `agent_session`,
+      // `includeEnded: true` so a channel whose host session already ended
+      // still reports its mail) but in two `inArray` round trips total
+      // instead of one `findFoldedRunById` + `resolveRunSessionId` pair per
+      // channel.
+      const channelIds = input.channels.map((c) => c.channelId);
+      const runRows = await deps.db
+        .select({ id: workflowRun.id, principalId: workflowRun.principalId })
+        .from(workflowRun)
+        .where(inArray(workflowRun.id, channelIds));
+
+      const principalIds = runRows
+        .map((row) => row.principalId)
+        .filter((id): id is string => id !== null);
+      const sessionRows =
+        principalIds.length === 0
+          ? []
+          : await deps.db
+              .select({
+                id: agentSession.id,
+                principalId: agentSession.principalId,
+              })
+              .from(agentSession)
+              .where(inArray(agentSession.principalId, principalIds))
+              .orderBy(asc(agentSession.createdAt));
+
+      // "One session per run principal" is the same invariant
+      // `resolveRunSessionId` documents; the ordered scan plus
+      // set-if-absent below is the bulk form of its own asc + limit(1).
+      const sessionIdByPrincipal = new Map<string, string>();
+      for (const row of sessionRows) {
+        if (!sessionIdByPrincipal.has(row.principalId)) {
+          sessionIdByPrincipal.set(row.principalId, row.id);
+        }
+      }
+
+      const channelSessionIds = new Map<string, string>();
+      for (const run of runRows) {
+        if (run.principalId === null) continue;
+        const sessionId = sessionIdByPrincipal.get(run.principalId);
+        if (sessionId !== undefined) channelSessionIds.set(run.id, sessionId);
+      }
+
+      const sessionIds = [...new Set(channelSessionIds.values())];
+      if (sessionIds.length === 0) return {};
+
+      const latestBySession = await deps.db
+        .select({
+          sessionId: sessionMail.sessionId,
+          lastActivityAt: max(sessionMail.createdAt),
+        })
+        .from(sessionMail)
+        .where(inArray(sessionMail.sessionId, sessionIds))
+        .groupBy(sessionMail.sessionId);
+
+      const cutoffBySessionId = new Map<string, string>();
+      for (const channel of input.channels) {
+        const sessionId = channelSessionIds.get(channel.channelId);
+        if (sessionId === undefined) continue;
+        cutoffBySessionId.set(
+          sessionId,
+          channel.sinceCreatedAt ?? new Date(0).toISOString(),
+        );
+      }
+
+      // One grouped COUNT, gated by each session's own cutoff via an
+      // OR of per-session conditions rather than a query per channel —
+      // the composite `session_mail_session_id_created_at_idx` backs
+      // every branch.
+      const unreadConditions = [...cutoffBySessionId].map(
+        ([sessionId, cutoff]) =>
+          and(
+            eq(sessionMail.sessionId, sessionId),
+            gt(sessionMail.createdAt, new Date(cutoff)),
+          ),
+      );
+      const unreadBySession =
+        unreadConditions.length === 0
+          ? []
+          : await deps.db
+              .select({
+                sessionId: sessionMail.sessionId,
+                unreadCount: count(),
+              })
+              .from(sessionMail)
+              .where(or(...unreadConditions))
+              .groupBy(sessionMail.sessionId);
+
+      return summarizeChannelActivity(
+        channelSessionIds,
+        latestBySession
+          .filter(
+            (row): row is { sessionId: string; lastActivityAt: Date } =>
+              row.lastActivityAt !== null,
+          )
+          .map((row) => ({
+            sessionId: row.sessionId,
+            lastActivityAt: row.lastActivityAt.toISOString(),
+          })),
+        unreadBySession,
+      );
     },
 
     async fetchBlob(channelId, blobId): Promise<string | Uint8Array> {

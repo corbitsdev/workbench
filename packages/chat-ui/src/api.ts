@@ -44,6 +44,14 @@ const ChannelWire = type({
   pinned: "boolean",
   participants: "unknown[]",
   "legacy?": "boolean",
+  // Row signals `GET /channels` annotates when it can resolve a
+  // channel's mailbox (see `packages/chat/src/routes.ts`): absent,
+  // never a fabricated zero, for a channel whose session isn't
+  // resolvable yet. `unreadCount` is the one exception — 0 is itself
+  // the honest "nothing unread" answer once a mailbox is resolved.
+  "unreadCount?": "number",
+  "lastActivityAt?": "string",
+  "live?": "boolean",
 });
 
 const Channel = ChannelWire.pipe((wire) => ({

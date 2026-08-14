@@ -68,6 +68,7 @@ export type { ParticipantRecord } from "./participants";
 export { createChatRoutes } from "./routes";
 export type { CreateChatRoutesDeps } from "./routes";
 export type {
+  ChannelActivitySummary,
   ChannelEvents,
   ChannelLauncher,
   ChannelMail,

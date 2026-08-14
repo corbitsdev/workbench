@@ -7,6 +7,7 @@ import { resolvePanelContribution } from "./panel-contribution";
 import {
   assignChannelBucket,
   channelDetails,
+  channelRowSignals,
   ensurePanelContributions,
   panelRenamePayload,
   panelRowMenuLabels,
@@ -61,6 +62,42 @@ describe("channel details panel contribution", () => {
 
   test("reflects a pinned channel", () => {
     expect(channelDetails({ ...baseChannel, pinned: true }).pinned).toBe(true);
+  });
+});
+
+describe("channelRowSignals", () => {
+  test("renders nothing when the wire carries no activity fields", () => {
+    expect(channelRowSignals(baseChannel, false)).toEqual({});
+  });
+
+  test("carries live, a formatted time, and the unread count when present", () => {
+    const channel: Channel = {
+      ...baseChannel,
+      unreadCount: 3,
+      lastActivityAt: new Date().toISOString(),
+      live: true,
+    };
+    const signals = channelRowSignals(channel, false);
+    expect(signals.unread).toBe(3);
+    expect(signals.live).toBe(true);
+    expect(signals.time).not.toBe("");
+    expect(signals.time).toBeDefined();
+  });
+
+  test("forces the unread count to 0 for the open channel, without waiting on a refetch", () => {
+    const channel: Channel = { ...baseChannel, unreadCount: 5 };
+    expect(channelRowSignals(channel, true).unread).toBe(0);
+    expect(channelRowSignals(channel, false).unread).toBe(5);
+  });
+
+  test("a channel with unreadCount: 0 (fully read) never shows a badge", () => {
+    const channel: Channel = { ...baseChannel, unreadCount: 0 };
+    expect(channelRowSignals(channel, false).unread).toBe(0);
+  });
+
+  test("never invents sharedLabel — cross-bench projection isn't real yet (CL-5913)", () => {
+    const channel: Channel = { ...baseChannel, unreadCount: 1 };
+    expect(channelRowSignals(channel, false).sharedLabel).toBeUndefined();
   });
 });
 

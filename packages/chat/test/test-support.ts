@@ -132,6 +132,30 @@ export function fakePlatform(
       const items = mailByChannel.get(input.channelId) ?? [];
       return { items: [...items].reverse() };
     },
+    async listChannelActivity(input) {
+      const result: Record<
+        string,
+        { lastActivityAt?: string; unreadCount: number }
+      > = {};
+      for (const channel of input.channels) {
+        const items = mailByChannel.get(channel.channelId) ?? [];
+        if (items.length === 0) {
+          result[channel.channelId] = { unreadCount: 0 };
+          continue;
+        }
+        const lastActivityAt = items[items.length - 1]?.createdAt;
+        const unreadCount = items.filter(
+          (item) =>
+            channel.sinceCreatedAt === undefined ||
+            item.createdAt > channel.sinceCreatedAt,
+        ).length;
+        result[channel.channelId] =
+          lastActivityAt === undefined
+            ? { unreadCount }
+            : { unreadCount, lastActivityAt };
+      }
+      return result;
+    },
     async fetchBlob() {
       return "";
     },

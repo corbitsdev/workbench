@@ -3,6 +3,7 @@
 
 import {
   EmptyState,
+  formatRelativeTime,
   Input,
   Menu,
   MenuContent,
@@ -102,10 +103,14 @@ export function channelDetails(
 }
 
 /**
- * Optional row signals the mock shows (shared / live / time / unread). The
- * channel wire today only carries id/title/kind/pinned/participants — so these
- * stay undefined until the list API grows them. Render only when present; never
- * invent counts or timestamps.
+ * Optional row signals the mock shows (shared / live / time / unread).
+ * `GET /channels` now carries `unreadCount`/`lastActivityAt`/`live` when a
+ * channel's mailbox could be resolved (see `packages/chat/src/routes.ts`);
+ * `sharedLabel` stays permanently unset — cross-bench channel projection is
+ * documented as not-yet-real (CL-5913, `docs/TENANCY.md`'s "Shared channels"
+ * section), so this omits the badge honestly rather than guessing at it from
+ * participant addresses. Render only when present; never invent counts or
+ * timestamps.
  */
 type ChannelRowSignals = {
   readonly sharedLabel?: string;
@@ -113,6 +118,30 @@ type ChannelRowSignals = {
   readonly time?: string;
   readonly unread?: number;
 };
+
+/**
+ * The signals one row shows, pure so the "open channel never shows a stale
+ * unread badge" rule is testable without rendering. `isOpen` reflects the
+ * badge clearing the instant a channel opens: `chat-workspace.tsx` fires
+ * `putReadState` as soon as the root feed loads, but the panel's own list
+ * fetch is bench-scoped and doesn't refetch on navigation (see
+ * `bench-activity.ts`), so the open row's count is forced to 0 locally
+ * rather than waiting on a round trip that isn't coming.
+ */
+export function channelRowSignals(
+  channel: Pick<Channel, "unreadCount" | "lastActivityAt" | "live">,
+  isOpen: boolean,
+): ChannelRowSignals {
+  return {
+    ...(channel.live !== undefined ? { live: channel.live } : {}),
+    ...(channel.lastActivityAt !== undefined
+      ? { time: formatRelativeTime(channel.lastActivityAt) }
+      : {}),
+    ...(channel.unreadCount !== undefined
+      ? { unread: isOpen ? 0 : channel.unreadCount }
+      : {}),
+  };
+}
 
 /**
  * One channel row in the panel list — mock-dense nav row: avatar stack, name,
@@ -426,6 +455,7 @@ function ChannelsBand({
                   active={channel.id === activeId}
                   tenantId={tenantId}
                   onSelect={() => onNavigate(channelPath(channel.id))}
+                  signals={channelRowSignals(channel, channel.id === activeId)}
                 />
               ))}
             </div>
@@ -576,6 +606,7 @@ function LiveActivityBand({
               active={channel.id === activeId}
               tenantId={tenantId}
               onSelect={() => onNavigate(`${channelPath(channel.id)}`)}
+              signals={channelRowSignals(channel, channel.id === activeId)}
             />
           ))}
         </div>
@@ -590,6 +621,7 @@ function LiveActivityBand({
               active={channel.id === activeId}
               tenantId={tenantId}
               onSelect={() => onNavigate(`${channelPath(channel.id)}`)}
+              signals={channelRowSignals(channel, channel.id === activeId)}
             />
           ))}
         </div>

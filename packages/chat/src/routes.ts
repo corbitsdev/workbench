@@ -53,6 +53,7 @@ import {
   validateBenchSettingsPatch,
   validateSettingsPatch,
 } from "./channel-settings";
+import { isRecentlyActive } from "./channel-activity";
 import {
   joinHumanParticipant,
   launchAndJoinAgent,
@@ -75,6 +76,7 @@ import type { ChannelTenancyStore } from "./channel-tenancy";
 import type { ThreadStore } from "./threads";
 
 export type {
+  ChannelActivitySummary,
   ChannelEvents,
   ChannelLauncher,
   ChannelMail,
@@ -684,12 +686,54 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const links = await Promise.all(
         rows.map((row) => deps.tenancy.getChannelTenancy(row.channelId)),
       );
+
+      // Row signals (unread badge, live dot, relative time) in two bulk
+      // calls covering every row — never one per channel. The caller's
+      // own read cursors come from `channel_read_state` (chat's own
+      // table); the mail-backed activity itself is the platform port's
+      // concern (`listChannelActivity`), since messages live in
+      // platform mail, not a chat-owned table.
+      const principal = c.get("principal");
+      const readStates = await deps.store.listReadStates(
+        tenant.id,
+        rows.map((row) => row.channelId),
+        principal.id,
+      );
+      const cursorByChannelId = new Map(
+        readStates.map((state) => [
+          state.channelId,
+          state.lastSeenCreatedAt.toISOString(),
+        ]),
+      );
+      const activityByChannelId = await deps.platform.listChannelActivity({
+        tenantId: tenant.id,
+        channels: rows.map((row) => {
+          const sinceCreatedAt = cursorByChannelId.get(row.channelId);
+          return sinceCreatedAt === undefined
+            ? { channelId: row.channelId }
+            : { channelId: row.channelId, sinceCreatedAt };
+        }),
+      });
+
       return c.json({
         items: rows.map((row, index) => {
           const link = links[index];
-          return link !== undefined
-            ? withTenancy(channelView(row), link)
-            : { ...channelView(row), tenancy: null, legacy: true };
+          const view =
+            link !== undefined
+              ? withTenancy(channelView(row), link)
+              : { ...channelView(row), tenancy: null, legacy: true };
+          const activity = activityByChannelId[row.channelId];
+          if (activity === undefined) return view;
+          return {
+            ...view,
+            unreadCount: activity.unreadCount,
+            ...(activity.lastActivityAt !== undefined
+              ? {
+                  lastActivityAt: activity.lastActivityAt,
+                  live: isRecentlyActive(activity.lastActivityAt),
+                }
+              : {}),
+          };
         }),
       });
     },
