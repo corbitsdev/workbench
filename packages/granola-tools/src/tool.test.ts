@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
+import type { CredentialCapability, MediatedCredential } from "@intx/types";
 
 import {
   GRANOLA_GET_NOTE_TOOL,
@@ -20,35 +21,67 @@ const GET_NOTE_CALL: ToolCall = {
   arguments: { noteId: "note_1" },
 };
 
-function fakeEnv(granolaApiKey: string | undefined): GranolaEnv {
-  return { granolaApiKey } as unknown as GranolaEnv;
+/**
+ * A fake `credentials` capability mirroring the platform's own
+ * `createCredentialCapability`/`createHttpCredentialProvider` shape: a
+ * bound `secret` resolves to a mediated `fetch` that injects a bearer
+ * header and delegates to `globalThis.fetch`; an unbound handle throws,
+ * matching the real gate's "no credential is bound to handle" failure.
+ */
+function fakeCredentials(secret: string | undefined): CredentialCapability {
+  return {
+    resolve(handle: string): Promise<MediatedCredential> {
+      if (secret === undefined) {
+        return Promise.reject(
+          new Error(`no credential is bound to handle "${handle}"`),
+        );
+      }
+      return Promise.resolve({
+        kind: "http",
+        fetch: (input, init) => {
+          const headers = new Headers(init?.headers);
+          headers.set("authorization", `Bearer ${secret}`);
+          return fetch(input as string | URL, { ...init, headers });
+        },
+        dispose: () => {},
+      });
+    },
+  };
+}
+
+function fakeEnv(credentials: CredentialCapability | undefined): GranolaEnv {
+  return { credentials } as unknown as GranolaEnv;
 }
 
 test("declares both the granola_list_recent_notes and granola_get_note tools", () => {
-  const bundle = granolaTools(fakeEnv("key"));
+  const bundle = granolaTools(fakeEnv(fakeCredentials("key")));
   expect(bundle.definitions.map((d) => d.name)).toEqual([
     GRANOLA_LIST_RECENT_NOTES_TOOL,
     GRANOLA_GET_NOTE_TOOL,
   ]);
 });
 
-test("degrades to a non-throwing 'not connected' error when no credential is set", async () => {
+test("degrades to a non-throwing 'not connected' error when no credential is bound", async () => {
+  const bundle = granolaTools(fakeEnv(fakeCredentials(undefined)));
+  const result = await bundle.run(CALL, new AbortController().signal);
+  expect(result.isError).toBe(true);
+  expect(result.content).toMatch(/not connected/i);
+});
+
+test("degrades the same way when the step carries no credentials capability at all", async () => {
   const bundle = granolaTools(fakeEnv(undefined));
   const result = await bundle.run(CALL, new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/not connected/i);
 });
 
-test("degrades the same way for an empty-string credential", async () => {
-  const bundle = granolaTools(fakeEnv(""));
-  const result = await bundle.run(CALL, new AbortController().signal);
-  expect(result.isError).toBe(true);
-});
-
 test("returns the notes as JSON content on a successful call", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    expect((init?.headers as Headers | undefined)?.get("authorization")).toBe(
+      "Bearer key",
+    );
+    return new Response(
       JSON.stringify({
         notes: [
           {
@@ -59,9 +92,10 @@ test("returns the notes as JSON content on a successful call", async () => {
         ],
       }),
       { status: 200 },
-    )) as unknown as typeof fetch;
+    );
+  }) as unknown as typeof fetch;
   try {
-    const bundle = granolaTools(fakeEnv("key"));
+    const bundle = granolaTools(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(CALL, new AbortController().signal);
     expect(result.isError).toBeUndefined();
     expect(JSON.parse(result.content as string)).toEqual({
@@ -83,7 +117,7 @@ test("degrades to an error result (never throws) when the underlying call fails"
   globalThis.fetch = (async () =>
     new Response("nope", { status: 500 })) as unknown as typeof fetch;
   try {
-    const bundle = granolaTools(fakeEnv("key"));
+    const bundle = granolaTools(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(CALL, new AbortController().signal);
     expect(result.isError).toBe(true);
   } finally {
@@ -91,8 +125,8 @@ test("degrades to an error result (never throws) when the underlying call fails"
   }
 });
 
-test("granola_get_note degrades to a non-throwing 'not connected' error when no credential is set", async () => {
-  const bundle = granolaTools(fakeEnv(undefined));
+test("granola_get_note degrades to a non-throwing 'not connected' error when no credential is bound", async () => {
+  const bundle = granolaTools(fakeEnv(fakeCredentials(undefined)));
   const result = await bundle.run(GET_NOTE_CALL, new AbortController().signal);
   expect(result.isError).toBe(true);
   expect(result.content).toMatch(/not connected/i);
@@ -106,7 +140,7 @@ test("granola_get_note rejects a missing noteId without calling the network", as
     return new Response("{}", { status: 200 });
   }) as unknown as typeof fetch;
   try {
-    const bundle = granolaTools(fakeEnv("key"));
+    const bundle = granolaTools(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(
       { id: "call_3", name: GRANOLA_GET_NOTE_TOOL, arguments: {} },
       new AbortController().signal,
@@ -132,7 +166,7 @@ test("granola_get_note returns the note as JSON content on a successful call", a
       { status: 200 },
     )) as unknown as typeof fetch;
   try {
-    const bundle = granolaTools(fakeEnv("key"));
+    const bundle = granolaTools(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(
       GET_NOTE_CALL,
       new AbortController().signal,
@@ -153,7 +187,7 @@ test("granola_get_note degrades to an error result (never throws) when the under
   globalThis.fetch = (async () =>
     new Response("nope", { status: 500 })) as unknown as typeof fetch;
   try {
-    const bundle = granolaTools(fakeEnv("key"));
+    const bundle = granolaTools(fakeEnv(fakeCredentials("key")));
     const result = await bundle.run(
       GET_NOTE_CALL,
       new AbortController().signal,
