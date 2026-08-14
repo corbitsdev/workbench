@@ -553,6 +553,67 @@ describe("the OpenRouter connect card", () => {
     }
   });
 
+  test("a connected return falls back to the credential phase, not a dead end, when completeSetup reports unseeded", async () => {
+    // The degraded-but-correct path: the pending-seed cookie can be
+    // missing (a loser duplicate-callback response the browser never
+    // applied, a cookie that already expired) even though the
+    // credential itself connected fine. `completeSetup` answers
+    // `unseeded` — not an error — and the wizard must land somewhere a
+    // person can actually finish from, never stuck on the spinner or a
+    // blank state.
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/complete-setup") {
+        return json({ kind: "unseeded" });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    window.history.replaceState(
+      null,
+      "",
+      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={noop}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      // Lands back on the credential step, reading as unfinished — the
+      // same "finish setting up" copy a returning bench_unseeded member
+      // gets — with no error banner and no pre-satisfied skip option,
+      // since nothing here actually proved a working key is in place.
+      expect(container.textContent).toContain(
+        "Finish setting up your workbench",
+      );
+      expect(container.textContent).not.toContain(
+        "A working key is already in place",
+      );
+      expect(container.textContent).not.toContain("That key didn't work");
+      // Still offers the one-click connect and the paste-a-key form —
+      // never a dead end.
+      expect(container.textContent).toContain("Connect with OpenRouter");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
   test("a stale connect error is superseded when the account turns out to already be fully seeded", async () => {
     // The belt to the idempotent-duplicate-callback fix's suspenders: a
     // browser landing on the credential phase's stale `state_expired`

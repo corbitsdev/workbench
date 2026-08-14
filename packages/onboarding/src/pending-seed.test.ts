@@ -119,4 +119,71 @@ describe("sealPendingSeed / openPendingSeed", () => {
 
     expect(opened).toBeUndefined();
   });
+
+  test("round-trips for a provider other than the first tried — the open side has to find it, not just the seal side produce it", async () => {
+    const cipher = testCipher();
+    const hfSeed: PendingSeed = { ...SEED, provider: "huggingface" };
+    const token = await sealPendingSeed(cipher, hfSeed);
+
+    const opened = await openPendingSeed(cipher, token, {
+      userId: "user_1",
+      tenantId: "ten_1",
+    });
+
+    expect(opened).toEqual(hfSeed);
+  });
+
+  test("domain separation: a token sealed for one provider's AAD cannot decrypt under another's", async () => {
+    const cipher = testCipher();
+    // A token minted for openrouter never decrypts under huggingface's
+    // AAD — provable directly, unlike the PKCE store's per-provider
+    // instances, since `openPendingSeed` searches every provider itself.
+    const openrouterAad = JSON.stringify([
+      "onboarding-pending-seed",
+      "openrouter",
+    ]);
+    const huggingfaceAad = JSON.stringify([
+      "onboarding-pending-seed",
+      "huggingface",
+    ]);
+    const token = await cipher.encrypt(
+      JSON.stringify({ ...SEED, expiresAt: Date.now() + 60_000 }),
+      openrouterAad,
+    );
+
+    await expect(cipher.decrypt(token, huggingfaceAad)).rejects.toThrow();
+    // But the real open path, which tries every provider's AAD, still
+    // finds it under the correct one.
+    const opened = await openPendingSeed(cipher, token, {
+      userId: "user_1",
+      tenantId: "ten_1",
+    });
+    expect(opened).toEqual(SEED);
+  });
+
+  test("a hand-crafted token whose payload provider disagrees with the AAD it decrypts under is rejected", async () => {
+    // Defense in depth beyond the AAD check itself: even if some future
+    // change made a cross-provider decrypt succeed, a payload claiming
+    // a different provider than the AAD it was sealed under is refused.
+    const cipher = testCipher();
+    const huggingfaceAad = JSON.stringify([
+      "onboarding-pending-seed",
+      "huggingface",
+    ]);
+    const mismatched = await cipher.encrypt(
+      JSON.stringify({
+        ...SEED,
+        provider: "openrouter",
+        expiresAt: Date.now() + 60_000,
+      }),
+      huggingfaceAad,
+    );
+
+    const opened = await openPendingSeed(cipher, mismatched, {
+      userId: "user_1",
+      tenantId: "ten_1",
+    });
+
+    expect(opened).toBeUndefined();
+  });
 });

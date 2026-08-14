@@ -280,6 +280,115 @@ describe("POST /complete-setup", () => {
           tenant: { tenantId: TENANT_ID },
         },
       ]);
+      // The sealed key has done its job — it must not sit in the
+      // browser for the rest of its ten-minute TTL once seeding
+      // actually succeeds.
+      const setCookie = response.headers.get("set-cookie") ?? "";
+      expect(setCookie).toContain(`${PENDING_SEED_COOKIE}=;`);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("an already fully seeded bench also clears a stray pending cookie, not just the freshly-run case", async () => {
+    const hub = new Hono();
+    principalsRoute(hub);
+    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) =>
+      c.json(
+        DEFAULT_WORKFLOWS.map((workflow, index) => ({
+          id: `ast_${index}`,
+          tenantId: TENANT_ID,
+          kind: "workflow",
+          name: workflow.assetName,
+          displayName: workflow.displayName,
+          creatorPrincipalId: PRINCIPAL_ID,
+          createdAt: TIMESTAMP,
+          updatedAt: TIMESTAMP,
+          origin: { tenantId: TENANT_ID, direct: true },
+        })),
+      ),
+    );
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
+      c.json(
+        DEFAULT_WORKFLOWS.map((_workflow, index) => ({
+          definitionAssetId: `ast_${index}`,
+          status: "active",
+        })),
+      ),
+    );
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    const cipher = testCipher();
+    try {
+      const app = mountAuthenticated(
+        createOnboardingRoutes({
+          hubUrl: `http://localhost:${server.port}`,
+          pushWorkflow: async () => "pushed",
+          log: () => undefined,
+          credentialCipher: cipher,
+        }),
+      );
+
+      // A concurrent call already finished seeding and its own response
+      // cleared the cookie in the browser's real cookie jar; this
+      // request just happens to still be carrying the stale header —
+      // exactly what a second in-flight request from a double effect
+      // fire would look like from the server's perspective.
+      const response = await app.request("/api/onboarding/complete-setup", {
+        method: "POST",
+        headers: { cookie: await pendingSeedCookie(cipher) },
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { kind: string };
+      expect(body.kind).toBe("seeded");
+      const setCookie = response.headers.get("set-cookie") ?? "";
+      expect(setCookie).toContain(`${PENDING_SEED_COOKIE}=;`);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("an expired pending token is cleared rather than left to linger unused", async () => {
+    const hub = new Hono();
+    principalsRoute(hub);
+    hub.get(`/api/tenants/${TENANT_ID}/assets`, (c) => c.json([]));
+    hub.get(`/api/tenants/${TENANT_ID}/workflows/deployments`, (c) =>
+      c.json([]),
+    );
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    const cipher = testCipher();
+    try {
+      const expiredToken = await sealPendingSeed(
+        cipher,
+        {
+          userId: "user_1",
+          tenantId: TENANT_ID,
+          principalId: PRINCIPAL_ID,
+          tenantDomain: TENANT_DOMAIN,
+          provider: "openrouter",
+          apiKey: "sk-or-v1-minted",
+        },
+        { ttlMs: -1 },
+      );
+      const app = mountAuthenticated(
+        createOnboardingRoutes({
+          hubUrl: `http://localhost:${server.port}`,
+          pushWorkflow: async () => "pushed",
+          log: () => undefined,
+          credentialCipher: cipher,
+        }),
+      );
+
+      const response = await app.request("/api/onboarding/complete-setup", {
+        method: "POST",
+        headers: { cookie: `${PENDING_SEED_COOKIE}=${expiredToken}` },
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { kind: string };
+      expect(body.kind).toBe("unseeded");
+      const setCookie = response.headers.get("set-cookie") ?? "";
+      expect(setCookie).toContain(`${PENDING_SEED_COOKIE}=;`);
     } finally {
       server.stop(true);
     }
