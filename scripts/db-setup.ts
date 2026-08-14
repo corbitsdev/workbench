@@ -490,11 +490,24 @@ export async function setupDatabase(
   }
 }
 
+// `@corbits/mailbox` keeps its tables in a schema of its own (see
+// packages/inbox/src/migrations.ts) rather than the platform's, so a reset
+// that only drops `schema` would leave the mail plane behind: the next
+// `bun run dev`/`workbench reset` would boot against fresh `tenant`/
+// `principal` rows while `mailbox.principal_mail`/`mailbox.mailbox` still
+// held the old ones (and, once the old FKs are cascaded away, orphaned
+// rows the package's `CREATE TABLE IF NOT EXISTS` migration would never
+// revisit). Always dropped alongside the target schema so a reset is a
+// true clean slate for every installed package's tables, not only the
+// platform's.
+const MAILBOX_SCHEMA = "mailbox";
+
 /**
  * Drop the target schema and everything in it (platform tables, auth
- * tables, and the setup ledger). A missing database is a no-op: there
- * is nothing to drop. Pair with setupDatabase for a from-scratch
- * rebuild; the e2e harness does exactly that.
+ * tables, and the setup ledger), plus `@corbits/mailbox`'s own schema. A
+ * missing database is a no-op: there is nothing to drop. Pair with
+ * setupDatabase for a from-scratch rebuild; the e2e harness does exactly
+ * that.
  */
 export async function resetSchema(
   databaseUrl: string,
@@ -523,6 +536,7 @@ export async function resetSchema(
   }
   await probe.end();
   await intxDb.dropSchema(target, { schema });
+  await intxDb.dropSchema(target, { schema: MAILBOX_SCHEMA });
 }
 
 // --- command-line entry ----------------------------------------------
