@@ -4,6 +4,7 @@ import {
   channelIdFromPath,
   channelPath,
   channelSettingsPath,
+  channelSettingsSectionFromPath,
   isChannelPath,
   isChannelSettingsPath,
 } from "./channel-path";
@@ -36,14 +37,37 @@ describe("channel settings path helpers", () => {
     expect(channelSettingsPath("ch_1")).toBe("/c/ch_1/settings");
   });
 
+  test("builds a section-scoped settings path", () => {
+    expect(channelSettingsPath("ch_1", "members")).toBe(
+      "/c/ch_1/settings/members",
+    );
+  });
+
   test("channelIdFromPath resolves ids under /settings", () => {
     expect(channelIdFromPath("/c/ch_1/settings")).toBe("ch_1");
     expect(channelIdFromPath("/chat/ch_1/settings")).toBe("ch_1");
   });
 
-  test("isChannelSettingsPath is true only for the /settings sub-path", () => {
+  test("channelIdFromPath resolves ids under a section-scoped /settings path", () => {
+    expect(channelIdFromPath("/c/ch_1/settings/members")).toBe("ch_1");
+    expect(channelIdFromPath("/chat/ch_1/settings/agents")).toBe("ch_1");
+  });
+
+  test("isChannelSettingsPath is true for /settings and /settings/:section", () => {
     expect(isChannelSettingsPath("/c/ch_1/settings")).toBe(true);
+    expect(isChannelSettingsPath("/c/ch_1/settings/members")).toBe(true);
     expect(isChannelSettingsPath("/c/ch_1")).toBe(false);
     expect(isChannelSettingsPath("/c")).toBe(false);
+  });
+
+  test("channelSettingsSectionFromPath extracts the trailing section segment", () => {
+    expect(channelSettingsSectionFromPath("/c/ch_1/settings/members")).toBe(
+      "members",
+    );
+    expect(channelSettingsSectionFromPath("/chat/ch_1/settings/agents")).toBe(
+      "agents",
+    );
+    expect(channelSettingsSectionFromPath("/c/ch_1/settings")).toBeUndefined();
+    expect(channelSettingsSectionFromPath("/c/ch_1")).toBeUndefined();
   });
 });

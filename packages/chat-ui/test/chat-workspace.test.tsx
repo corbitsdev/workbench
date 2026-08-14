@@ -161,6 +161,72 @@ describe("ChatWorkspace settings surface", () => {
     expect(settingsOpenChanges).toEqual([false]);
     harness.unmount();
   });
+
+  test("a controlled settingsSection renders that tab active, not General", async () => {
+    stubFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      settingsOpen: true,
+      settingsSection: "members",
+    });
+    await harness.settle();
+
+    const activeItem = harness.container.querySelector(
+      '.channel-settings-nav-item[aria-current="page"]',
+    );
+    expect(activeItem?.textContent).toBe("Members");
+    harness.unmount();
+  });
+
+  test("clicking a different tab reports the new section, not just local UI state", async () => {
+    stubFetch();
+    const sectionChanges: string[] = [];
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      settingsOpen: true,
+      settingsSection: "general",
+      onSettingsSectionChange: (section: string) =>
+        sectionChanges.push(section),
+    });
+    await harness.settle();
+
+    const items = Array.from(
+      harness.container.querySelectorAll(".channel-settings-nav-item"),
+    );
+    const membersItem = items.find((el) => el.textContent === "Members") as
+      | HTMLButtonElement
+      | undefined;
+    expect(membersItem).not.toBeUndefined();
+    act(() => membersItem?.click());
+    await harness.settle();
+
+    expect(sectionChanges).toEqual(["members"]);
+    harness.unmount();
+  });
+
+  test("the gear button opens settings on the General section", async () => {
+    stubFetch();
+    const opens: (string | undefined)[] = [];
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      settingsOpen: false,
+      onSettingsOpenChange: (_open: boolean, section?: string) =>
+        opens.push(section),
+    });
+    await harness.settle();
+
+    const gearButton = harness.container.querySelector(
+      'button[aria-label="Channel settings"]',
+    ) as HTMLButtonElement;
+    act(() => gearButton.click());
+    await harness.settle();
+
+    expect(opens).toEqual(["general"]);
+    harness.unmount();
+  });
 });
 
 describe("connection state is never rendered as chrome", () => {
@@ -477,11 +543,15 @@ describe("composer slash commands — each wired command's real action", () => {
   test("/agents opens channel settings straight to the Agents section", async () => {
     stubFetch();
     const settingsOpenChanges: boolean[] = [];
+    const sectionsOpened: (string | undefined)[] = [];
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
       settingsOpen: false,
-      onSettingsOpenChange: (open: boolean) => settingsOpenChanges.push(open),
+      onSettingsOpenChange: (open: boolean, section?: string) => {
+        settingsOpenChanges.push(open);
+        sectionsOpened.push(section);
+      },
     });
     await harness.settle();
 
@@ -490,6 +560,7 @@ describe("composer slash commands — each wired command's real action", () => {
     await harness.settle();
 
     expect(settingsOpenChanges).toEqual([true]);
+    expect(sectionsOpened).toEqual(["agents"]);
     harness.unmount();
   });
 
