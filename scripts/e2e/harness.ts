@@ -225,6 +225,9 @@ export async function startHub(options: {
     SESSION_SECRET: options.sessionSecret,
     HUB_DATA_DIR: options.dataDir,
     HUB_STATIC_DIR: "public",
+    // The e2e suite never configures CREDENTIAL_ENCRYPTION_KEY; opt into
+    // the hub's dev/test fallback so boot doesn't hard-fail here.
+    ALLOW_PLAINTEXT_SECRETS: "1",
   });
   const deadline = Date.now() + 30_000;
   for (;;) {

@@ -82,7 +82,10 @@ const HubEnv = type({
     "Hugging Face public OAuth app client id (huggingface.co/settings/applications, no secret — see docs/onboarding-huggingface-connect.md); optional, enables the onboarding wizard's Hugging Face connect card",
   ),
   "CREDENTIAL_ENCRYPTION_KEY?": type(/^[0-9a-fA-F]{64}$/).describe(
-    "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) encrypting secrets at rest through Interchange's CredentialCipher seam — currently webhook-trigger signing secrets; optional in dev/test (secrets fall back to an unencrypted no-op cipher with a boot warning) but should be set for any real deployment",
+    "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) encrypting secrets at rest through Interchange's CredentialCipher seam — webhook-trigger signing secrets and onboarding's OAuth PKCE connect state; boot fails without it unless ALLOW_PLAINTEXT_SECRETS opts into dev/test's unencrypted fallback",
+  ),
+  "ALLOW_PLAINTEXT_SECRETS?": type("'1' | 'true'").describe(
+    "dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY, storing secrets at rest unencrypted with a boot warning; never set this for a real deployment",
   ),
 });
 
@@ -129,6 +132,8 @@ export type HubConfig = {
   >;
   readonly huggingfaceOAuthClientId?: string;
   readonly credentialEncryptionKeyHex?: string;
+  /** Dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY. */
+  readonly allowPlaintextSecrets: boolean;
 };
 
 type ParsedHubEnv = typeof HubEnv.infer;
@@ -233,6 +238,7 @@ export function readHubConfig(
     socialProviders,
     signupMode: parsed.WORKBENCH_SIGNUP ?? "closed",
     allowedEmailDomains,
+    allowPlaintextSecrets: parsed.ALLOW_PLAINTEXT_SECRETS !== undefined,
     signupRateLimit: {
       windowSeconds: parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS
         ? Number(parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS)
