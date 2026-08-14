@@ -97,16 +97,11 @@ in `public`, on the reasoning that a `tenant_id`/`principal_id` column tied
 them to the platform's own schema. CL-6005 gave each of them a schema named
 for itself instead (`chat`, `routines`, `insights`, `notify`,
 `webhook_triggers`) — those columns are plain text, never a real foreign
-key, so nothing about the reference actually required sharing `public`. Each
-package's migration set picked up one more migration for the cutover: create
-the schema, and for any table a pre-existing dev database already migrated
-into `public`, `ALTER TABLE public.<table> SET SCHEMA <package>` guarded by
-a `to_regclass` existence check so the same migration is a no-op — the table
-is simply created directly in-schema — on a fresh install that never had a
-`public` copy to move. The package's own ledger table moves the same way,
-via a guarded `ALTER TABLE ... SET SCHEMA` the migration runner performs
-before touching the ledger, so a database's already-applied history comes
-with it rather than re-running from scratch.
+key, so nothing about the reference actually required sharing `public`.
+Schema changes like this are hard cutovers, not data-preserving migrations:
+pre-GA there is nothing to migrate, and an existing dev database picks up
+the new schema by running `workbench reset` rather than by an in-place
+`ALTER TABLE ... SET SCHEMA`.
 
 ## Which shape to use for a new package
 
