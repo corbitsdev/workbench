@@ -19,6 +19,7 @@
     "@intx/crypto": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
+    "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9"
   },
