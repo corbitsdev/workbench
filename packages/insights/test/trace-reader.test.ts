@@ -260,6 +260,7 @@ describeIfDb("createDrizzleRunTraceReader", () => {
         phase: "ok",
         durationMs: 5000,
         error: null,
+        timingSource: "measured",
       });
       expect(turnSpan?.start).toBe(startedAt.getTime());
       expect(turnSpan?.end).toBe(endedAt.getTime());
@@ -272,13 +273,162 @@ describeIfDb("createDrizzleRunTraceReader", () => {
         // Documented gap: authz verdicts are not reachable from the
         // hub's Postgres-only composition root today.
         authz: null,
+        timingSource: "ordinal",
       });
 
       const errorSpan = trace?.spans.find((s) => s.kind === "error");
       expect(errorSpan).toMatchObject({
         phase: "failed",
         error: "boom",
+        timingSource: "ordinal",
       });
+    } finally {
+      await close();
+    }
+  });
+
+  test("batches turn_part reads across turns without cross-turn bleeding", async () => {
+    const { db, close } = createDB(dbConfigFromUrl(scratchUrl));
+    try {
+      const definitionId = generateId("workflowDefinition");
+      const runId = generateId("workflowRun");
+      const sessionId = generateId("session");
+      const firstTurnId = generateId("inferenceTurn");
+      const secondTurnId = generateId("inferenceTurn");
+
+      const firstStart = new Date("2026-08-02T00:00:00.000Z");
+      const firstEnd = new Date("2026-08-02T00:00:05.000Z");
+      const secondStart = new Date("2026-08-02T00:00:10.000Z");
+      const secondEnd = new Date("2026-08-02T00:00:15.000Z");
+
+      await db.insert(schema.workflowDefinition).values({
+        id: definitionId,
+        tenantId,
+        name: "Two-turn workflow",
+      });
+      await db.insert(schema.workflowRun).values({
+        id: runId,
+        definitionId,
+        tenantId,
+        status: "running",
+        createdAt: firstStart,
+      });
+      const principalId = generateId("principal");
+      await db.insert(schema.principal).values({
+        id: principalId,
+        tenantId,
+        kind: "agent",
+        refId: "not-a-real-agent-instance",
+        status: "active",
+      });
+      await db.insert(schema.agentSession).values({
+        id: sessionId,
+        tenantId,
+        agentId: definitionId,
+        principalId,
+        status: "active",
+      });
+      await db.insert(schema.inferenceTurn).values([
+        {
+          id: firstTurnId,
+          sessionId,
+          runId,
+          tenantId,
+          model: "noop-model",
+          status: "completed",
+          startedAt: firstStart,
+          endedAt: firstEnd,
+        },
+        {
+          id: secondTurnId,
+          sessionId,
+          runId,
+          tenantId,
+          model: "noop-model",
+          status: "completed",
+          startedAt: secondStart,
+          endedAt: secondEnd,
+        },
+      ]);
+      await db.insert(schema.turnPart).values([
+        {
+          id: generateId("turnPart"),
+          turnId: firstTurnId,
+          sessionId,
+          type: "tool",
+          content: null,
+          metadata: {
+            kind: "call",
+            callId: "first-call",
+            name: "first-tool",
+            arguments: {},
+          },
+          ordinal: 2,
+        },
+        {
+          id: generateId("turnPart"),
+          turnId: firstTurnId,
+          sessionId,
+          type: "tool",
+          content: null,
+          metadata: {
+            kind: "result",
+            callId: "first-call",
+            content: "ok",
+            isError: false,
+          },
+          ordinal: 1,
+        },
+        {
+          id: generateId("turnPart"),
+          turnId: secondTurnId,
+          sessionId,
+          type: "tool",
+          content: null,
+          metadata: {
+            kind: "call",
+            callId: "second-call",
+            name: "second-tool",
+            arguments: {},
+          },
+          ordinal: 1,
+        },
+        {
+          id: generateId("turnPart"),
+          turnId: secondTurnId,
+          sessionId,
+          type: "tool",
+          content: null,
+          metadata: {
+            kind: "result",
+            callId: "second-call",
+            content: "ok",
+            isError: false,
+          },
+          ordinal: 2,
+        },
+      ]);
+
+      const reader = createDrizzleRunTraceReader(db);
+      const trace = await reader.getTrace(tenantId, runId);
+      expect(trace).not.toBeNull();
+
+      const toolSpans = trace?.spans.filter((s) => s.kind === "tool") ?? [];
+      expect(toolSpans).toHaveLength(2);
+
+      const firstToolSpan = toolSpans.find((s) => s.label === "first-tool");
+      const secondToolSpan = toolSpans.find((s) => s.label === "second-tool");
+      expect(firstToolSpan).toMatchObject({ phase: "ok" });
+      expect(secondToolSpan).toMatchObject({ phase: "ok" });
+
+      // Each tool span is positioned within its own turn's window, never
+      // bleeding into the other turn's [start, end] range.
+      expect(firstToolSpan?.start).toBeGreaterThanOrEqual(firstStart.getTime());
+      expect(firstToolSpan?.start).toBeLessThanOrEqual(firstEnd.getTime());
+      expect(secondToolSpan?.start).toBeGreaterThanOrEqual(
+        secondStart.getTime(),
+      );
+      expect(secondToolSpan?.start).toBeLessThanOrEqual(secondEnd.getTime());
     } finally {
       await close();
     }
