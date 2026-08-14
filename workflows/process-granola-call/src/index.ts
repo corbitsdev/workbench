@@ -36,6 +36,7 @@ import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
+import type { CredentialBinding } from "@intx/types";
 
 export const PROCESS_GRANOLA_CALL_WORKFLOW_ID = "wf_process_granola_call";
 export const PROCESS_GRANOLA_CALL_STEP_ID = "process-granola-call";
@@ -61,6 +62,22 @@ export const PROCESS_GRANOLA_CALL_SYSTEM_PROMPT =
 /** Tool packages this definition pins (CL-5999); see the header comment. */
 export const PROCESS_GRANOLA_CALL_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
   [{ name: "@corbits/granola-tools", version: "0.0.1" }];
+
+/**
+ * Binds `@corbits/granola-tools`' declared "granola" handle to a
+ * tenant-owned Granola credential (CL-6028); see
+ * `workflows/granola-call/src/index.ts`'s sibling constant for the full
+ * rationale.
+ */
+export const PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS: readonly CredentialBinding[] =
+  [
+    {
+      package: "@corbits/granola-tools",
+      handle: "granola",
+      provider: "granola",
+      locator: "tenant",
+    },
+  ];
 
 /**
  * Everything the definition needs that is per-deployment data. The
@@ -107,6 +124,7 @@ export function buildProcessGranolaCallWorkflow(
   return defineWorkflow({
     id: PROCESS_GRANOLA_CALL_WORKFLOW_ID,
     trigger: { type: "mail", to: input.triggerAddress },
+    credentialBindings: PROCESS_GRANOLA_CALL_CREDENTIAL_BINDINGS,
     steps: {
       [PROCESS_GRANOLA_CALL_STEP_ID]: step({
         agent: {

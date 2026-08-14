@@ -29,6 +29,7 @@ import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
+import type { CredentialBinding } from "@intx/types";
 
 export const MORNING_BRIEF_WORKFLOW_ID = "wf_morning_brief";
 export const MORNING_BRIEF_STEP_ID = "morning-brief";
@@ -68,6 +69,27 @@ export const MORNING_BRIEF_PENDING_SOURCES = ["Attio", "Vercel"] as const;
 export const MORNING_BRIEF_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/granola-tools", version: "0.0.1" },
   { name: "@corbits/linear-tools", version: "0.0.1" },
+];
+
+/**
+ * Binds `@corbits/granola-tools`' and `@corbits/linear-tools`' declared
+ * handles to their tenant-owned credentials (CL-6028); see
+ * `workflows/granola-call/src/index.ts`'s sibling constant for the full
+ * rationale.
+ */
+export const MORNING_BRIEF_CREDENTIAL_BINDINGS: readonly CredentialBinding[] = [
+  {
+    package: "@corbits/granola-tools",
+    handle: "granola",
+    provider: "granola",
+    locator: "tenant",
+  },
+  {
+    package: "@corbits/linear-tools",
+    handle: "linear",
+    provider: "linear",
+    locator: "tenant",
+  },
 ];
 
 export const MORNING_BRIEF_SYSTEM_PROMPT = [
@@ -140,6 +162,7 @@ export function buildMorningBriefWorkflow(
   return defineWorkflow({
     id: MORNING_BRIEF_WORKFLOW_ID,
     trigger: { type: "mail", to: input.triggerAddress },
+    credentialBindings: MORNING_BRIEF_CREDENTIAL_BINDINGS,
     steps: {
       "morning-brief": step({
         agent: {
