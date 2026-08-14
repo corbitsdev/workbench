@@ -158,6 +158,60 @@ test("run reports a partial failure honestly, naming how many pieces already per
   }
 });
 
+test("run persists a single teaching piece the same way as any other piece (the no-data path reuses this tool, not a second one)", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ data: { id: "art_1", version: 1 } }), {
+      status: 201,
+    })) as unknown as typeof fetch;
+
+  try {
+    const bundle = COLLATERAL_GENERATION_FINALIZE_TOOL(testEnv());
+    const result = await bundle.run(
+      {
+        id: "call_1",
+        name: COLLATERAL_GENERATION_FINALIZE_TOOL_NAME,
+        arguments: {
+          pieces: [
+            {
+              title: "Nothing to draft from",
+              contentType: "status-note",
+              content:
+                "Tried Granola call notes, Linear issues, and pasted " +
+                "text; none were reachable or provided. Reply with a " +
+                "note id, confirm the source is connected, or paste " +
+                "text directly to try again.",
+            },
+          ],
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(String(result.content)) as {
+      artifacts: {
+        id: string;
+        version: number;
+        title: string;
+        kind: string;
+        persisted: boolean;
+      }[];
+    };
+    expect(parsed.artifacts).toEqual([
+      {
+        id: "art_1",
+        version: 1,
+        title: "Nothing to draft from",
+        kind: "status-note",
+        persisted: true,
+      },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("run rejects an empty pieces array without throwing", async () => {
   const bundle = COLLATERAL_GENERATION_FINALIZE_TOOL(testEnv());
   const result = await bundle.run(
