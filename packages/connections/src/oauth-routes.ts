@@ -46,6 +46,94 @@ function cookiesFromHeader(header: string | undefined): string[] {
     .filter((pair) => pair.length > 0);
 }
 
+/**
+ * The two return surfaces this wave's callers actually mount at
+ * (`apps/web`'s onboarding wizard and the settings Connections page) —
+ * a deliberately closed default. A caller that needs a third surface
+ * passes its own `returnPathAllowlist`, naming it explicitly, rather
+ * than this factory silently accepting any path-shaped string. See
+ * `sanitizeReturnPath`'s own header for why an allowlist and not just
+ * shape validation.
+ */
+export const DEFAULT_RETURN_PATH_ALLOWLIST: readonly string[] = [
+  "/onboarding",
+  "/settings/",
+];
+
+/**
+ * Turns an untrusted `?return=` hint (or the cookie that carries it
+ * across the redirect) into a same-origin path this factory will
+ * actually redirect to, or `defaultReturnPath` on anything that isn't
+ * obviously one. This is a redirect target read straight off the
+ * request before authentication runs (the signed_out/not_configured/
+ * rate_limited early exits all redirect using it), so it is validated
+ * before ANY branch — including the ones that never reach a real
+ * connect flow — ever builds a `Location` header from it.
+ *
+ * Shape checks alone (single leading slash, no backslash, no embedded
+ * scheme) stop the classic open-redirect payloads
+ * (`https://evil.com`, `//evil.com`, `/\evil.com`, `%2F%2Fevil.com`
+ * after decoding) but still leave the door open to any same-origin
+ * path an attacker picks — which is enough for a phishing-adjacent
+ * redirect even without leaving the origin. The prefix allowlist below
+ * closes that: only the return surfaces this factory's callers
+ * actually mount at are ever honored, everything else falls back to
+ * `defaultReturnPath` exactly as an absent `?return=` would.
+ *
+ * Failure is always silent — a malformed or malicious hint never
+ * surfaces as an error page, only as a fallback to the default path,
+ * matching how an absent `?return=` already behaves.
+ */
+export function sanitizeReturnPath(
+  raw: string | undefined,
+  defaultReturnPath: string,
+  allowlist: readonly string[],
+): string {
+  if (raw === undefined || raw === "") return defaultReturnPath;
+
+  // Defense in depth against double-encoding: the query string and the
+  // cookie value are each already decoded once by the layer that read
+  // them (Hono's query parser, Hono's cookie parser), so a value that
+  // still contains percent-encoding here was encoded twice by whoever
+  // sent it. Decoding once more, if it changes anything, re-runs every
+  // check below against what the value actually resolves to rather than
+  // trusting a still-encoded payload to look safe.
+  let candidate = raw;
+  try {
+    const decodedOnceMore = decodeURIComponent(candidate);
+    if (decodedOnceMore !== candidate) candidate = decodedOnceMore;
+  } catch {
+    return defaultReturnPath;
+  }
+
+  // CR/LF first, regardless of what the rest of the value looks like —
+  // a header/response-splitting payload can otherwise ride along inside
+  // an otherwise-allowlisted-looking prefix (e.g. "/onboarding\r\n...").
+  if (/[\r\n]/.test(candidate)) return defaultReturnPath;
+
+  // The browser's own backslash-as-forward-slash normalization means
+  // "/\evil.com" reaches evil.com exactly like "//evil.com" would.
+  if (candidate.includes("\\")) return defaultReturnPath;
+
+  // Exactly one leading slash: rejects both a bare host/scheme-relative
+  // value ("evil.com", "https://evil.com" — caught by the missing
+  // leading slash) and a protocol-relative one ("//evil.com").
+  if (!candidate.startsWith("/") || candidate.startsWith("//")) {
+    return defaultReturnPath;
+  }
+
+  // Belt and suspenders against any embedded absolute URL a parser
+  // downstream might resolve against ("/x?next=https://evil.com" is
+  // fine as a *query value* elsewhere, but never as this redirect
+  // target itself).
+  if (candidate.includes("://")) return defaultReturnPath;
+
+  const allowed = allowlist.some(
+    (prefix) => candidate === prefix || candidate.startsWith(prefix),
+  );
+  return allowed ? candidate : defaultReturnPath;
+}
+
 export type OAuthStoreOutcome =
   | {
       readonly kind: "connected";
@@ -106,8 +194,14 @@ export type CreateOAuthConnectRoutesDeps = {
     principalId: string;
     tenantDomain: string;
   }) => Promise<void>;
-  /** Where a caller lands when no `?return=` was given on `/start`. */
+  /** Where a caller lands when no `?return=` was given on `/start`, or
+   * when the given one fails `sanitizeReturnPath`. */
   readonly defaultReturnPath?: string;
+  /** Prefixes a `?return=` hint must match to be honored at all —
+   * defaults to `DEFAULT_RETURN_PATH_ALLOWLIST`. See
+   * `sanitizeReturnPath`'s header for why shape validation alone isn't
+   * enough. */
+  readonly returnPathAllowlist?: readonly string[];
 };
 
 const CONNECT_STATE_TTL_MS = 10 * 60 * 1000;
@@ -120,6 +214,8 @@ export function createOAuthConnectRoutes(
   const registry = deps.registry ?? CONNECTOR_REGISTRY;
   const oauthEnv = deps.oauthEnv ?? {};
   const defaultReturnPath = deps.defaultReturnPath ?? "/onboarding";
+  const returnPathAllowlist =
+    deps.returnPathAllowlist ?? DEFAULT_RETURN_PATH_ALLOWLIST;
   const secureCookies = deps.hubUrl.startsWith("https:");
 
   const stateStores = new Map<
@@ -183,7 +279,11 @@ export function createOAuthConnectRoutes(
       );
     }
 
-    const returnPath = c.req.query("return") ?? defaultReturnPath;
+    const returnPath = sanitizeReturnPath(
+      c.req.query("return"),
+      defaultReturnPath,
+      returnPathAllowlist,
+    );
     const user = c.get("user");
     if (!user) {
       return c.redirect(
@@ -277,8 +377,17 @@ export function createOAuthConnectRoutes(
       );
     }
 
-    const returnPath =
-      getCookie(c, returnCookieName(connectorId)) ?? defaultReturnPath;
+    // The cookie is never trusted any more than the query param was at
+    // /start -- it is still attacker-influenced input (this same
+    // handler wrote it, but only after /start's own sanitization; this
+    // second pass is defense in depth, not redundant, against anything
+    // that could tamper with or replay a cookie carrying a value /start
+    // never actually produced).
+    const returnPath = sanitizeReturnPath(
+      getCookie(c, returnCookieName(connectorId)),
+      defaultReturnPath,
+      returnPathAllowlist,
+    );
     deleteCookie(c, returnCookieName(connectorId), { path: "/" });
 
     const user = c.get("user");

@@ -33,6 +33,8 @@ export {
 } from "./routes";
 export {
   createOAuthConnectRoutes,
+  DEFAULT_RETURN_PATH_ALLOWLIST,
+  sanitizeReturnPath,
   type CreateOAuthConnectRoutesDeps,
   type OAuthStoreOutcome,
 } from "./oauth-routes";
