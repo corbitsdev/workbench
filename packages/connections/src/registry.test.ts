@@ -33,7 +33,7 @@ describe("CONNECTOR_REGISTRY", () => {
     }
   });
 
-  test("includes the four new tool connectors with the right feedsTools", () => {
+  test("includes the five tool connectors with the right feedsTools", () => {
     expect(CONNECTOR_REGISTRY["granola"]?.feedsTools).toEqual([
       "@corbits/granola-tools",
     ]);
@@ -49,6 +49,9 @@ describe("CONNECTOR_REGISTRY", () => {
     expect(CONNECTOR_REGISTRY["linear"]?.feedsTools).toEqual([
       "@corbits/linear-tools",
     ]);
+    expect(CONNECTOR_REGISTRY["github"]?.feedsTools).toEqual([
+      "@corbits/github-tools",
+    ]);
   });
 });
 
@@ -59,12 +62,23 @@ describe("connectorDescriptors", () => {
     );
   });
 
-  test("linear mediates through the raw-authorization plugin; every other api-key connector uses http", () => {
+  test("each connector mediates through the header plugin its API actually expects", () => {
     expect(CONNECTOR_REGISTRY["linear"]?.credentialPlugin).toBe(
       "http-raw-authorization",
     );
+    expect(CONNECTOR_REGISTRY["exa"]?.credentialPlugin).toBe(
+      "http-x-api-key",
+    );
+    expect(CONNECTOR_REGISTRY["scrapecreators"]?.credentialPlugin).toBe(
+      "http-x-api-key",
+    );
+    const bearerConnectors = new Set([
+      "linear",
+      "exa",
+      "scrapecreators",
+    ]);
     for (const [id, descriptor] of Object.entries(CONNECTOR_REGISTRY)) {
-      if (id === "linear") continue;
+      if (bearerConnectors.has(id)) continue;
       expect(descriptor.credentialPlugin).toBe("http");
     }
   });
