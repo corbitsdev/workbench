@@ -56,21 +56,26 @@ export type StatusReportArgs = typeof StatusReportArgs.infer;
 
 export type ArtifactPayload = {
   title: string;
-  kind: "text";
+  kind: "status-note";
   content: string;
 };
 
 /**
  * The payload `createWorkflowArtifact` persists (`{ title, kind,
  * content }`). Every line is drawn from `args` — nothing here is
- * invented sample data.
+ * invented sample data. `kind` is always `"status-note"` — this tool
+ * only ever produces a teaching/status report, never a real deliverable,
+ * so there is no competing shape to distinguish it from, but the value
+ * still matches the same convention every other workflow's teaching
+ * payload uses, so the Library's kind badge reads consistently across
+ * the whole catalog.
  */
 export function buildStatusArtifactPayload(
   args: StatusReportArgs,
 ): ArtifactPayload {
   return {
     title: "Granola call notes: nothing new to process",
-    kind: "text",
+    kind: "status-note",
     content:
       "This run started no process-granola-call children.\n\n" +
       `Why\n${args.reason}\n\n` +
