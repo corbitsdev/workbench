@@ -23,6 +23,34 @@ describe("channelSettingsSections", () => {
     ]);
   });
 
+  test("a DM chat additionally trims Agents — no agent participant, nothing to invite", () => {
+    expect(channelSettingsSections("chat", true).map((s) => s.id)).toEqual([
+      "general",
+      "access",
+      "notifications",
+    ]);
+  });
+
+  test("an agent chat keeps Agents when isDm is explicitly false", () => {
+    expect(channelSettingsSections("chat", false).map((s) => s.id)).toEqual([
+      "general",
+      "agents",
+      "access",
+      "notifications",
+    ]);
+  });
+
+  test("isDm is ignored for a channel — Agents stays regardless", () => {
+    expect(channelSettingsSections("channel", true).map((s) => s.id)).toEqual([
+      "general",
+      "members",
+      "agents",
+      "access",
+      "notifications",
+      "danger",
+    ]);
+  });
+
   test("groups sections Shared / Personal / Danger for the nav", () => {
     const groups = channelSettingsSections("channel").map((s) => s.group);
     expect(groups).toEqual([

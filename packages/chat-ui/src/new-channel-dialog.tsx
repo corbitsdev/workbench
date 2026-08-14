@@ -1,9 +1,10 @@
 // The "new channel"/"new chat" affordance, behind a small centered dialog
 // triggered from the sidebar. A channel is name-only; a chat additionally
-// requires picking exactly one agent (a radio list of the tenant's
-// invitable definitions, by name only — the definition id stays internal)
-// since a chat's agent is fixed at creation and can never be invited into
-// afterward.
+// requires picking exactly one counterpart — an agent (a radio list of the
+// tenant's invitable definitions, by name only — the definition id stays
+// internal) or a bench member (a radio list of the bench's people, sourced
+// the same way Settings → People is) — since a chat's counterpart is fixed
+// at creation and can never be invited into afterward.
 
 import {
   Button,
@@ -17,6 +18,7 @@ import {
   EmptyState,
   Input,
   Skeleton,
+  Tabs,
 } from "@corbits/react-ui";
 import { CircleAlert, Users } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -36,43 +38,94 @@ import { CHAT_STRINGS } from "./strings";
 // chat (and its id) exists yet.
 const NEW_CHAT_PLACEHOLDER_CHANNEL_ID = "new";
 
+/**
+ * A bench member a chat's counterpart can be — the same People listing
+ * Settings → People renders, reduced to the two fields this dialog needs.
+ * `chat-ui` owns no session or tenancy client of its own (see
+ * `chat-workspace.tsx`'s module note), so this is injected via
+ * `listMembers`, the same host-props pattern `ChatWorkspace` already uses
+ * for `currentUser`/`tenant`.
+ */
+export interface PersonOption {
+  readonly id: string;
+  readonly displayName: string;
+}
+
 type AgentListState =
   | { readonly kind: "loading" }
   | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "ready"; readonly items: readonly InvitableDefinition[] };
 
+type PersonListState =
+  | { readonly kind: "loading" }
+  | { readonly kind: "error"; readonly message: string }
+  | { readonly kind: "ready"; readonly items: readonly PersonOption[] };
+
+type CounterpartTab = "agent" | "person";
+
+/**
+ * A chat's counterpart — exactly one agent or one bench member, never
+ * both. The person branch carries `displayName` along so the payload can
+ * default the chat's title to it without a second server round trip (see
+ * `newChannelPayload`) — the server has no identity resolution of its own
+ * to fall back on for a person the way it does an agent's definition name.
+ */
+export type ChatCounterpart =
+  | { readonly kind: "agent"; readonly definitionId: string }
+  | {
+      readonly kind: "person";
+      readonly principalId: string;
+      readonly displayName: string;
+    };
+
 /**
  * Whether the form has enough to submit: a channel needs a name; a chat
- * needs an agent picked (its name is optional — the server falls back to
- * the agent's handle).
+ * needs a counterpart picked (its name is optional — the server falls back
+ * to the agent's handle, and this dialog itself always supplies a person's
+ * display name as the fallback title — see `newChannelPayload`).
  */
 export function canSubmitNewChannel(
   kind: ChannelKind,
   name: string,
-  definitionId: string | null,
+  counterpart: ChatCounterpart | null,
 ): boolean {
-  return kind === "channel" ? name.trim().length > 0 : definitionId !== null;
+  return kind === "channel" ? name.trim().length > 0 : counterpart !== null;
 }
 
 /**
  * The exact `CreateChannelInput` this form would submit, or `null` if it
- * isn't ready to (mirrors `canSubmitNewChannel`). A chat's name is only
- * ever sent when the person actually typed one — the client never guesses
- * a name on the agent's behalf; that fallback is the server's to make.
+ * isn't ready to (mirrors `canSubmitNewChannel`). A channel's name is only
+ * ever sent when the person actually typed one. An agent chat's name is the
+ * same — the client never guesses a name on the agent's behalf, that
+ * fallback is the server's to make. A person chat is different: this
+ * dialog already knows the chosen member's display name (it fetched the
+ * list to render), so it always sends a title, defaulting to that name
+ * rather than leaving the server to fall back to the bare principal id.
  */
 export function newChannelPayload(
   kind: ChannelKind,
   name: string,
-  definitionId: string | null,
+  counterpart: ChatCounterpart | null,
 ): CreateChannelInput | null {
   const trimmed = name.trim();
   if (kind === "channel") {
     return trimmed.length === 0 ? null : { kind: "channel", name: trimmed };
   }
-  if (definitionId === null) return null;
-  return trimmed.length === 0
-    ? { kind: "chat", definitionId }
-    : { kind: "chat", definitionId, name: trimmed };
+  if (counterpart === null) return null;
+  if (counterpart.kind === "agent") {
+    return trimmed.length === 0
+      ? { kind: "chat", definitionId: counterpart.definitionId }
+      : {
+          kind: "chat",
+          definitionId: counterpart.definitionId,
+          name: trimmed,
+        };
+  }
+  return {
+    kind: "chat",
+    principalId: counterpart.principalId,
+    name: trimmed.length === 0 ? counterpart.displayName : trimmed,
+  };
 }
 
 export function NewChannelDialog({
@@ -83,6 +136,8 @@ export function NewChannelDialog({
   submitting,
   error = null,
   initialKind = "channel",
+  listMembers,
+  currentUserPrincipalId,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -92,12 +147,28 @@ export function NewChannelDialog({
   readonly error?: string | null;
   /** Which kind the radio starts on — a bench with only chats, say, could open this straight to "chat". */
   readonly initialKind?: ChannelKind;
+  /**
+   * The bench's people, sourced the same way Settings → People is —
+   * host-supplied, since this package resolves neither sessions nor
+   * tenancy. Omitted entirely, the People tab does not render at all: a
+   * host that hasn't wired a member directory yet gets the agent-only
+   * dialog this always used to be, never a tab that silently fails to load.
+   */
+  readonly listMembers?: (tenantId: string) => Promise<readonly PersonOption[]>;
+  /** Excluded from the People list — starting a direct chat with yourself
+   * is refused by the server (409), so this dialog never offers it. */
+  readonly currentUserPrincipalId?: string;
 }) {
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [kind, setKind] = useState<ChannelKind>(initialKind);
+  const [counterpartTab, setCounterpartTab] = useState<CounterpartTab>("agent");
   const [definitionId, setDefinitionId] = useState<string | null>(null);
+  const [personId, setPersonId] = useState<string | null>(null);
   const [agentState, setAgentState] = useState<AgentListState>({
+    kind: "loading",
+  });
+  const [personState, setPersonState] = useState<PersonListState>({
     kind: "loading",
   });
 
@@ -105,11 +176,13 @@ export function NewChannelDialog({
     setName("");
     setPurpose("");
     setKind(initialKind);
+    setCounterpartTab("agent");
     setDefinitionId(null);
+    setPersonId(null);
   }
 
   useEffect(() => {
-    if (!open || kind !== "chat") return;
+    if (!open || kind !== "chat" || counterpartTab !== "agent") return;
     let cancelled = false;
     setAgentState({ kind: "loading" });
     listInvitableDefinitions(tenantId, NEW_CHAT_PLACEHOLDER_CHANNEL_ID)
@@ -127,12 +200,69 @@ export function NewChannelDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, kind, tenantId]);
+  }, [open, kind, counterpartTab, tenantId]);
 
-  const canSubmit = canSubmitNewChannel(kind, name, definitionId);
+  useEffect(() => {
+    if (
+      !open ||
+      kind !== "chat" ||
+      counterpartTab !== "person" ||
+      listMembers === undefined
+    ) {
+      return;
+    }
+    let cancelled = false;
+    setPersonState({ kind: "loading" });
+    listMembers(tenantId)
+      .then((items) => {
+        if (!cancelled) {
+          setPersonState({
+            kind: "ready",
+            items: items.filter(
+              (person) => person.id !== currentUserPrincipalId,
+            ),
+          });
+        }
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setPersonState({
+            kind: "error",
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    open,
+    kind,
+    counterpartTab,
+    listMembers,
+    tenantId,
+    currentUserPrincipalId,
+  ]);
+
+  const counterpart: ChatCounterpart | null =
+    counterpartTab === "agent"
+      ? definitionId !== null
+        ? { kind: "agent", definitionId }
+        : null
+      : personState.kind === "ready" && personId !== null
+        ? {
+            kind: "person",
+            principalId: personId,
+            displayName:
+              personState.items.find((person) => person.id === personId)
+                ?.displayName ?? personId,
+          }
+        : null;
+
+  const canSubmit = canSubmitNewChannel(kind, name, counterpart);
 
   function handleSubmit() {
-    const payload = newChannelPayload(kind, name, definitionId);
+    const payload = newChannelPayload(kind, name, counterpart);
     if (payload !== null) onCreate(payload);
   }
 
@@ -202,43 +332,54 @@ export function NewChannelDialog({
               </div>
             </div>
             {kind === "chat" ? (
-              <fieldset
+              <div
                 className="chat-form-field"
-                data-testid="new-chat-agent-picker"
+                data-testid="new-chat-counterpart-picker"
               >
-                <legend>{CHAT_STRINGS.newChatAgentLabel}</legend>
-                {agentState.kind === "loading" ? (
-                  <Skeleton className="query-skeleton" />
-                ) : agentState.kind === "error" ? (
-                  <EmptyState
-                    icon={<CircleAlert />}
-                    title={CHAT_STRINGS.newChatAgentLoadError}
-                    description={agentState.message}
-                  />
-                ) : agentState.items.length === 0 ? (
-                  <EmptyState
-                    icon={<Users />}
-                    title={CHAT_STRINGS.newChatAgentEmptyTitle}
-                    description={CHAT_STRINGS.newChatAgentEmptyDescription}
-                  />
+                {listMembers !== undefined ? (
+                  <Tabs<CounterpartTab>
+                    tabs={[
+                      {
+                        id: "agent",
+                        label: CHAT_STRINGS.newChatCounterpartTabAgent,
+                      },
+                      {
+                        id: "person",
+                        label: CHAT_STRINGS.newChatCounterpartTabPerson,
+                      },
+                    ]}
+                    active={counterpartTab}
+                    onChange={setCounterpartTab}
+                    label={CHAT_STRINGS.newChatDialogTitle}
+                    variant="enclosed"
+                  >
+                    {(active) =>
+                      active === "agent" ? (
+                        <AgentPicker
+                          state={agentState}
+                          selectedId={definitionId}
+                          onSelect={setDefinitionId}
+                        />
+                      ) : (
+                        <PersonPicker
+                          state={personState}
+                          selectedId={personId}
+                          onSelect={setPersonId}
+                        />
+                      )
+                    }
+                  </Tabs>
                 ) : (
-                  agentState.items.map((definition) => (
-                    <label
-                      key={definition.id}
-                      className="chat-radio-option"
-                      data-testid="new-chat-agent-option"
-                    >
-                      <input
-                        type="radio"
-                        name="agent"
-                        checked={definitionId === definition.id}
-                        onChange={() => setDefinitionId(definition.id)}
-                      />
-                      {definition.name}
-                    </label>
-                  ))
+                  <fieldset data-testid="new-chat-agent-picker">
+                    <legend>{CHAT_STRINGS.newChatAgentLabel}</legend>
+                    <AgentPicker
+                      state={agentState}
+                      selectedId={definitionId}
+                      onSelect={setDefinitionId}
+                    />
+                  </fieldset>
                 )}
-              </fieldset>
+              </div>
             ) : null}
             <label className="chat-form-field">
               <span>
@@ -293,5 +434,103 @@ export function NewChannelDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function AgentPicker({
+  state,
+  selectedId,
+  onSelect,
+}: {
+  readonly state: AgentListState;
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string) => void;
+}) {
+  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
+  if (state.kind === "error") {
+    return (
+      <EmptyState
+        icon={<CircleAlert />}
+        title={CHAT_STRINGS.newChatAgentLoadError}
+        description={state.message}
+      />
+    );
+  }
+  if (state.items.length === 0) {
+    return (
+      <EmptyState
+        icon={<Users />}
+        title={CHAT_STRINGS.newChatAgentEmptyTitle}
+        description={CHAT_STRINGS.newChatAgentEmptyDescription}
+      />
+    );
+  }
+  return (
+    <>
+      {state.items.map((definition) => (
+        <label
+          key={definition.id}
+          className="chat-radio-option"
+          data-testid="new-chat-agent-option"
+        >
+          <input
+            type="radio"
+            name="counterpart-agent"
+            checked={selectedId === definition.id}
+            onChange={() => onSelect(definition.id)}
+          />
+          {definition.name}
+        </label>
+      ))}
+    </>
+  );
+}
+
+function PersonPicker({
+  state,
+  selectedId,
+  onSelect,
+}: {
+  readonly state: PersonListState;
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string) => void;
+}) {
+  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
+  if (state.kind === "error") {
+    return (
+      <EmptyState
+        icon={<CircleAlert />}
+        title={CHAT_STRINGS.newChatPersonLoadError}
+        description={state.message}
+      />
+    );
+  }
+  if (state.items.length === 0) {
+    return (
+      <EmptyState
+        icon={<Users />}
+        title={CHAT_STRINGS.newChatPersonEmptyTitle}
+        description={CHAT_STRINGS.newChatPersonEmptyDescription}
+      />
+    );
+  }
+  return (
+    <>
+      {state.items.map((person) => (
+        <label
+          key={person.id}
+          className="chat-radio-option"
+          data-testid="new-chat-person-option"
+        >
+          <input
+            type="radio"
+            name="counterpart-person"
+            checked={selectedId === person.id}
+            onChange={() => onSelect(person.id)}
+          />
+          {person.displayName}
+        </label>
+      ))}
+    </>
   );
 }
