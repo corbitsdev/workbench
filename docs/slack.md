@@ -94,6 +94,28 @@ are declined with an explanation posted back to the thread.
 4. **Invite the bot** into whichever Slack channels should talk to
    workbench, and mention it.
 
+## Phase 1 limitations
+
+- **Thread state is in-memory and does not survive a hub restart.**
+  `corbits-tag/slack`'s own bookkeeping — in-flight thinking-indicator
+  placeholders, message dedup, and which threads the bot is subscribed to
+  — is held in a `createMemoryState()` adapter (see
+  `apps/hub/src/slack-tag-mount.ts` and `packages/slack-tag/src/thread-state.ts`),
+  not a durable one. A hub restart mid-flight drops any pending
+  thinking-indicator placeholders (they are simply never retracted or
+  replaced) and forgets ambient-thread subscriptions, so a Slack thread the
+  bot had joined stops receiving unmentioned follow-ups until it is
+  @-mentioned again. `SlackChannelBindingStore` (the Slack-channel-to-
+  workbench-channel binding itself) is unaffected — that is a separate,
+  durably stored record. A Postgres-backed `StateAdapter` for this thread
+  state is Phase 2 follow-up work, not yet built.
+- **Channel ingress only — no DMs.** The Slack app requests no
+  `im:history`/`mpim:history` scopes and subscribes to no `message.im`/
+  `message.mpim` events, since the package's whole authorization model
+  rests on the bench owner having chosen to install the app into a
+  channel — a DM bypasses that gate entirely. `dispatchWorkbenchSlackEvent`
+  also declines any DM-sourced event defensively, in case one ever arrives.
+
 ## Where this lives
 
 - `packages/slack-tag` — the mount composition: principal resolution,

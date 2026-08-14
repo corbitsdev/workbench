@@ -62,6 +62,22 @@ const log = getLogger(["slack-tag", "dispatch"]);
 const DEFAULT_BOT_NAME = "workbench";
 const DEFAULT_REPLY_WAIT_MS = 60_000;
 
+/**
+ * Belt-and-suspenders against a DM ever reaching dispatch: the manifest no
+ * longer requests `im:history`/`mpim:history` or subscribes to
+ * `message.im`/`message.mpim` (channel trust is the whole authz model here,
+ * and a DM has no bench owner who chose to install the app there), but a
+ * misconfigured Slack app or a stale event from Slack must not be trusted
+ * to honor that. Slack channel ids are typed by their leading letter — `D`
+ * is always a direct message.
+ */
+const DM_DECLINED_MESSAGE =
+  "I only work in channels the bench owner has added me to — DMs aren't supported.";
+
+function isDirectMessageChannel(slackChannelId: string): boolean {
+  return slackChannelId.startsWith("D");
+}
+
 export type SendMessage = (input: {
   readonly tenantId: string;
   readonly channelId: string;
@@ -129,20 +145,24 @@ export async function dispatchWorkbenchSlackEvent(
   event: TagEvent,
   thread: TagThread,
 ): Promise<void> {
-  const resolution = await deps.resolvePrincipal(
-    authorIdentityFrom(event.author),
-  );
-  if (!resolution.ok) {
-    await thread.post(UNRESOLVED_MESSAGE[resolution.reason]);
-    return;
-  }
-
   const slackChannelId = slackChannelIdFromThreadId(event.threadId);
   if (slackChannelId === undefined) {
     log.error(
       "Could not recover a Slack channel id from thread id {threadId}",
       { threadId: event.threadId },
     );
+    return;
+  }
+  if (isDirectMessageChannel(slackChannelId)) {
+    await thread.post(DM_DECLINED_MESSAGE);
+    return;
+  }
+
+  const resolution = await deps.resolvePrincipal(
+    authorIdentityFrom(event.author),
+  );
+  if (!resolution.ok) {
+    await thread.post(UNRESOLVED_MESSAGE[resolution.reason]);
     return;
   }
 

@@ -31,8 +31,6 @@ oauth_config:
       - channels:history
       - chat:write
       - groups:history
-      - im:history
-      - mpim:history
       - users:read
       - users:read.email
 settings:
@@ -42,8 +40,6 @@ settings:
       - app_mention
       - message.channels
       - message.groups
-      - message.im
-      - message.mpim
   interactivity:
     is_enabled: true
     request_url: ${PLACEHOLDER}${WEBHOOK_PATH}

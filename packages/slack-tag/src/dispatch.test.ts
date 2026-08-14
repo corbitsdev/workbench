@@ -297,4 +297,42 @@ describe("dispatchWorkbenchSlackEvent", () => {
     await dispatchWorkbenchSlackEvent(deps, fakeEvent(), thread);
     expect(thread.posts).toEqual([]);
   });
+
+  test("declines a DM-sourced event before resolving a principal or touching chat", async () => {
+    let resolveCalls = 0;
+    let provisionCalls = 0;
+    let sendCalls = 0;
+    const deps = baseDeps({
+      resolvePrincipal: async () => {
+        resolveCalls += 1;
+        return {
+          ok: true,
+          principal: {
+            principalId: "prn_1",
+            tenantId: "tenant_1",
+            userId: "usr_1",
+            email: "alice@example.com",
+          },
+        };
+      },
+      provisionChannel: async () => {
+        provisionCalls += 1;
+        return { channelId: "should_not_happen" };
+      },
+      sendMessage: async () => {
+        sendCalls += 1;
+        return { id: "should_not_happen" };
+      },
+    });
+
+    const thread = fakeThread();
+    const event = fakeEvent({ threadId: "D1:1721800000.000100" });
+    await dispatchWorkbenchSlackEvent(deps, event, thread);
+
+    expect(resolveCalls).toBe(0);
+    expect(provisionCalls).toBe(0);
+    expect(sendCalls).toBe(0);
+    expect(thread.posts).toHaveLength(1);
+    expect(thread.posts[0]).toMatch(/DM/);
+  });
 });
