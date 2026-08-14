@@ -137,6 +137,15 @@ export type MoveChannelTenancyOutcome =
   | { readonly kind: "forbidden" }
   | { readonly kind: "no_tenancy" };
 
+/** The subset of a native `principal` row a person-DM's counterpart
+ * check needs — never the full row, since nothing else here has a
+ * reason to touch identity fields (`refId`, timestamps). */
+export interface TenantPrincipal {
+  readonly id: string;
+  readonly kind: "user" | "agent" | "workflow";
+  readonly status: "active" | "suspended" | "invited" | "deactivated";
+}
+
 export interface ChannelTenancyStore {
   /**
    * Mints a native tenant as `input.channelId`'s own tenancy, parented
@@ -210,6 +219,24 @@ export interface ChannelTenancyStore {
    * it.
    */
   compensateChannelTenant(tenantId: string): Promise<void>;
+
+  /**
+   * The native `principal` row for `principalId` within `tenantId`,
+   * or `undefined` when no such principal exists there — the
+   * validation a person-DM chat's `POST /channels` runs before
+   * minting the second participant, so a stale or cross-tenant
+   * `principalId` fails closed with an ordinary 400 rather than
+   * silently seeding a participant record nothing backs. Reads the
+   * native `principal` table directly, the same table this store's
+   * own mint seeds an owner row into (see `createChannelTenant`) —
+   * not a channel-tenancy concept on its own, but colocated here
+   * since this is the one store in the package already holding a
+   * `db` handle onto native tenancy tables.
+   */
+  getTenantPrincipal(
+    tenantId: string,
+    principalId: string,
+  ): Promise<TenantPrincipal | undefined>;
 }
 
 export interface ChannelTenancyAuthzDeps {
@@ -553,6 +580,21 @@ export function createDrizzleChannelTenancyStore<
         await tx.delete(tenant).where(eq(tenant.id, tenantId));
       });
     },
+
+    async getTenantPrincipal(tenantId, principalId) {
+      const [row] = await db
+        .select({
+          id: principal.id,
+          kind: principal.kind,
+          status: principal.status,
+        })
+        .from(principal)
+        .where(
+          and(eq(principal.tenantId, tenantId), eq(principal.id, principalId)),
+        )
+        .limit(1);
+      return row as TenantPrincipal | undefined;
+    },
   };
 }
 
@@ -563,23 +605,28 @@ export function createDrizzleChannelTenancyStore<
  * no native-schema writes — the two stores share only their public
  * contract, exercised by `test/channel-tenancy.test.ts`.
  *
- * The two extra methods below `ChannelTenancyStore` declares
- * (`registerExistingTenant`, `grantManageInTenant`) are test-support
- * only: `registerExistingTenant` takes an optional parent so a unit
- * test can build an arbitrary tenant hierarchy without a database.
- * Together they let a test stand up "a real tenant the caller has no
- * standing in", "a real tenant the caller manages", and a cyclic
- * hierarchy, exercising `moveChannelTenancy`'s destination-check
+ * The three extra methods below `ChannelTenancyStore` declares
+ * (`registerExistingTenant`, `grantManageInTenant`, `registerPrincipal`)
+ * are test-support only: `registerExistingTenant` takes an optional
+ * parent so a unit test can build an arbitrary tenant hierarchy without
+ * a database. Together they let a test stand up "a real tenant the
+ * caller has no standing in", "a real tenant the caller manages", and a
+ * cyclic hierarchy, exercising `moveChannelTenancy`'s destination-check
  * outcomes (`"destination_not_found"`, `"cycle"`, `"forbidden"`,
- * `"moved"`).
+ * `"moved"`). `registerPrincipal` does the same for `getTenantPrincipal`
+ * — standing up a fake native `principal` row without a database.
  */
 export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
   registerExistingTenant(tenantId: string, parentTenantId?: string): void;
   grantManageInTenant(refId: string, tenantId: string): void;
+  registerPrincipal(tenantId: string, principal: TenantPrincipal): void;
 } {
   const byChannelId = new Map<string, ChannelTenancyRow>();
   const existingTenants = new Set<string>();
   const manageGrants = new Set<string>();
+  const principalsByKey = new Map<string, TenantPrincipal>();
+  const principalKey = (tenantId: string, principalId: string) =>
+    `${tenantId}::${principalId}`;
   // Mirrors the drizzle store's `tenant.parentId`: every tenant this
   // store knows of maps to its parent, or `undefined` for a root. Kept
   // separately from `byChannelId` because a destination tenant in a
@@ -680,6 +727,17 @@ export function createInMemoryChannelTenancyStore(): ChannelTenancyStore & {
 
     grantManageInTenant(refId, tenantId) {
       manageGrants.add(manageGrantKey(refId, tenantId));
+    },
+
+    registerPrincipal(tenantId, principalRow) {
+      principalsByKey.set(
+        principalKey(tenantId, principalRow.id),
+        principalRow,
+      );
+    },
+
+    async getTenantPrincipal(tenantId, principalId) {
+      return principalsByKey.get(principalKey(tenantId, principalId));
     },
 
     // Mirrors the drizzle store's fold of the destination check into

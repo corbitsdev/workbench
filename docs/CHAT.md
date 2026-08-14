@@ -87,6 +87,51 @@ router answers the address a message came from — a principal address has
 no mailbox to answer into, but the channel's address is the mailbox every
 participant already reads.
 
+## Chats and direct messages (DMs)
+
+`kind: "chat"` is a direct thread with exactly one counterpart, fixed at
+creation and never changed afterward (`POST /channels/:id/invite` 409s a
+chat, whichever kind of counterpart it has). The counterpart is chosen at
+`POST /channels` time, one of:
+
+- **An agent** — `{ kind: "chat", definitionId }`. The named definition is
+  launched and joined as the chat's one participant, exactly as
+  `POST /channels/:id/invite` joins one into a channel (`launchAndJoinAgent`
+  in `packages/chat/src/channel-service.ts`, shared by both paths).
+- **A person** — `{ kind: "chat", principalId }`. This is a **DM**: a
+  two-member channel tenancy whose second participant is an existing bench
+  member, added directly with no instance to launch
+  (`joinHumanParticipant`, the human-counterpart analog of
+  `launchAndJoinAgent`) — a human participant reads the channel's own
+  timeline directly, so there is no mailbox to stand up, only the
+  participant record and a `channel.member-joined` audit event on the
+  channel's own timeline.
+
+Exactly one of `definitionId`/`principalId` may be present; a `principalId`
+is validated before anything is minted — it must name a real, active
+`"user"`-kind principal in the calling tenant, and it can never equal the
+caller's own principal id (`409 conflict`, "you cannot start a direct chat
+with yourself"). Both counterpart kinds are optional on `name`: an agent
+chat falls back to the agent's own handle, and a person chat falls back to
+the same handle its one participant record carries — in practice always the
+member's display name, since `@corbits/chat-ui`'s new-chat dialog already
+has it (from the same listing Settings → People renders) and sends it as
+`name` whenever the person creating the chat didn't type a custom title.
+
+**There is no `dm: true` wire flag.** A DM is recognized the same way
+everywhere it matters — `kind === "chat"` plus the absence of an
+agent-shaped participant address (`isAgentAddress` in
+`packages/chat/src/mentions.ts`, which is simply "does this participant's
+address contain `@`" — a human participant's address is its bare principal
+id). The host app's sidebar buckets a DM this way already
+(`assignChannelBucket` in `apps/web/src/shell/panel-contributions.tsx`), and
+`@corbits/chat-ui`'s channel-settings surface trims its Agents section the
+same way (`channelSettingsSections(kind, isDm)` in
+`packages/chat-ui/src/channel-settings/model.ts` — a DM has no agent to
+invite, so the section has nothing to show; Members and Danger zone are
+already trimmed for every 1:1 chat, agent or person). One derivation, no
+second signal to keep in sync.
+
 ## The reply bridge
 
 An invited agent's reply is not something it posts back into the channel on
@@ -137,23 +182,23 @@ no per-channel editor, since a channel's override belongs to the channel.
 `@corbits/chat` mounts one router, under a tenant-scoped prefix, with the
 following routes:
 
-| Method & path                  | What it does                                                                       |
-| ------------------------------ | ---------------------------------------------------------------------------------- |
-| `POST /channels`               | Mints the channel's own tenant, launches its host, and writes its initial settings |
-| `GET /channels`                | Lists the tenant's channels, optionally filtered by kind                           |
-| `GET /channels/:id/messages`   | Reads the channel's timeline, decoded into parts, paginated by cursor              |
-| `POST /channels/:id/messages`  | Posts a message, fanning a copy to every @mentioned agent participant              |
-| `GET /channels/:id/invitable`  | Lists the tenant's deployed definitions that can be invited into a channel         |
-| `POST /channels/:id/invite`    | Launches a definition into the channel and adds it as a participant                |
-| `POST /channels/:id/move`      | Re-parents a channel's own tenant to a different bench                             |
-| `GET /channels/:id/settings`   | Reads a channel's settings, including its resolved context window                  |
-| `PATCH /channels/:id/settings` | Updates settings, recording each change as a timeline event                        |
-| `GET /channels/:id/read-state` | Reads the calling principal's last-seen cursor for the channel                     |
-| `PUT /channels/:id/read-state` | Advances the calling principal's last-seen cursor                                  |
-| `POST /channels/:id/typing`    | Publishes an ephemeral typing indicator to the channel's live stream               |
-| `GET /channels/:id/stream`     | Server-Sent Events stream of live channel activity                                 |
-| `GET /bench/settings`          | Reads the tenant's bench-wide chat defaults                                        |
-| `PATCH /bench/settings`        | Updates the tenant's bench-wide chat defaults                                      |
+| Method & path                  | What it does                                                                                                                                                                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /channels`               | Mints the channel's own tenant, launches its host, writes its initial settings, and — for a chat — joins its one counterpart (an agent or a person; see [Chats and direct messages](#chats-and-direct-messages-dms)) |
+| `GET /channels`                | Lists the tenant's channels, optionally filtered by kind                                                                                                                                                             |
+| `GET /channels/:id/messages`   | Reads the channel's timeline, decoded into parts, paginated by cursor                                                                                                                                                |
+| `POST /channels/:id/messages`  | Posts a message, fanning a copy to every @mentioned agent participant                                                                                                                                                |
+| `GET /channels/:id/invitable`  | Lists the tenant's deployed definitions that can be invited into a channel                                                                                                                                           |
+| `POST /channels/:id/invite`    | Launches a definition into the channel and adds it as a participant                                                                                                                                                  |
+| `POST /channels/:id/move`      | Re-parents a channel's own tenant to a different bench                                                                                                                                                               |
+| `GET /channels/:id/settings`   | Reads a channel's settings, including its resolved context window                                                                                                                                                    |
+| `PATCH /channels/:id/settings` | Updates settings, recording each change as a timeline event                                                                                                                                                          |
+| `GET /channels/:id/read-state` | Reads the calling principal's last-seen cursor for the channel                                                                                                                                                       |
+| `PUT /channels/:id/read-state` | Advances the calling principal's last-seen cursor                                                                                                                                                                    |
+| `POST /channels/:id/typing`    | Publishes an ephemeral typing indicator to the channel's live stream                                                                                                                                                 |
+| `GET /channels/:id/stream`     | Server-Sent Events stream of live channel activity                                                                                                                                                                   |
+| `GET /bench/settings`          | Reads the tenant's bench-wide chat defaults                                                                                                                                                                          |
+| `PATCH /bench/settings`        | Updates the tenant's bench-wide chat defaults                                                                                                                                                                        |
 
 Every route runs behind the hub's tenant-scoped middleware, so the calling
 tenant and principal are always resolved before a handler runs; principals
@@ -219,6 +264,7 @@ already in `invite-agent-dialog.tsx` rather than duplicating it.
 
 ```tsx
 import { ChatWorkspace } from "@corbits/chat-ui";
+import { listPrincipals } from "@corbits/settings-ui";
 
 <ChatWorkspace
   tenant={tenant}
@@ -230,12 +276,28 @@ import { ChatWorkspace } from "@corbits/chat-ui";
     navigate(open ? `/chat/${channelId}/settings` : `/chat/${channelId}`)
   }
   onOpenArtifact={(part) => navigate("/library")}
+  listMembers={async (tenantId) => {
+    const principals = await listPrincipals(tenantId);
+    return principals
+      .filter((p) => p.kind === "user" && p.status === "active")
+      .map((p) => ({ id: p.id, displayName: p.displayName }));
+  }}
 />;
 ```
 
 `ChatWorkspace` talks to `@corbits/chat`'s HTTP surface directly — a host
 does not hand it a client or re-derive its API calls, only tell it where to
 send them and who is asking.
+
+`listMembers` is what puts a People tab beside the new-chat dialog's
+existing Agents tab: `@corbits/chat-ui` resolves no session or tenancy of
+its own (see the module note atop `chat-workspace.tsx`), so the bench's
+people come from the host, the same way `tenant` and `currentUser` do —
+`@workbench/web` sources it from `@corbits/settings-ui`'s `listPrincipals`,
+the same call Settings → People renders from. Omitted entirely, the dialog
+falls back to exactly the agent-only picker it has always been — a host
+that hasn't wired a member directory yet never gets a tab that silently
+fails to load.
 
 The timeline adds a day divider between messages from different calendar
 days, and renders a `file` part as a clickable artifact chip once it

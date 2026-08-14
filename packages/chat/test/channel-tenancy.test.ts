@@ -313,3 +313,26 @@ test("moveChannelTenancy reports no tenancy for a channel with no tenancy link, 
   });
   expect(outcome).toEqual({ kind: "no_tenancy" });
 });
+
+test("getTenantPrincipal returns a registered principal scoped to its tenant", async () => {
+  const tenancy = createInMemoryChannelTenancyStore();
+  tenancy.registerPrincipal("tnt_bench_a", {
+    id: "prn_bob",
+    kind: "user",
+    status: "active",
+  });
+
+  expect(await tenancy.getTenantPrincipal("tnt_bench_a", "prn_bob")).toEqual({
+    id: "prn_bob",
+    kind: "user",
+    status: "active",
+  });
+  // Same principal id, wrong tenant — not found.
+  expect(
+    await tenancy.getTenantPrincipal("tnt_bench_b", "prn_bob"),
+  ).toBeUndefined();
+  // Unregistered principal id — not found.
+  expect(
+    await tenancy.getTenantPrincipal("tnt_bench_a", "prn_ghost"),
+  ).toBeUndefined();
+});

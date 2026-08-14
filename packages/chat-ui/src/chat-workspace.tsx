@@ -49,6 +49,7 @@ import type { ComposerSendPayload } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
+import type { PersonOption } from "./new-channel-dialog";
 import { CHAT_STRINGS } from "./strings";
 import { AgentBadge, ChannelTimeline } from "./timeline";
 import type { CurrentUser, ThreadAffordanceMeta } from "./timeline";
@@ -199,6 +200,7 @@ function ChatWorkspaceInner({
   onOpenArtifact,
   approvalActions,
   headerLeading,
+  listMembers,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
@@ -214,6 +216,10 @@ function ChatWorkspaceInner({
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly approvalActions?: ApprovalActions;
   readonly headerLeading?: ReactNode;
+  /** The bench's people, for the new-chat dialog's People tab — see
+   * `NewChannelDialog`'s own prop note. Host-supplied, the same way
+   * `currentUser`/`tenant` are. */
+  readonly listMembers?: (tenantId: string) => Promise<readonly PersonOption[]>;
 }) {
   const [channelsRefresh, setChannelsRefresh] = useState(0);
   const { state: channelsState, reload: reloadChannels } = useChannelLists(
@@ -622,6 +628,10 @@ function ChatWorkspaceInner({
           tenantId={tenantId}
           submitting={creating}
           error={createChannelError}
+          {...(listMembers !== undefined ? { listMembers } : {})}
+          {...(currentUser !== undefined
+            ? { currentUserPrincipalId: currentUser.principalId }
+            : {})}
         />
         <InviteAgentDialog
           open={inviteDialogOpen}
@@ -814,6 +824,10 @@ function ChatWorkspaceInner({
         tenantId={tenantId}
         submitting={creating}
         error={createChannelError}
+        {...(listMembers !== undefined ? { listMembers } : {})}
+        {...(currentUser !== undefined
+          ? { currentUserPrincipalId: currentUser.principalId }
+          : {})}
       />
       {activeChannelId !== null ? (
         <InviteAgentDialog
@@ -843,6 +857,7 @@ export function ChatWorkspace({
   onOpenArtifact,
   approvalActions,
   headerLeading,
+  listMembers,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -873,6 +888,13 @@ export function ChatWorkspace({
    * shell's single col2 toggle, so chat carries the same top-bar chrome as
    * every other stage surface. */
   readonly headerLeading?: ReactNode;
+  /**
+   * The bench's people — the same source Settings → People renders from
+   * — so the new-chat dialog can offer "chat with a teammate" alongside
+   * "chat with an agent". Host-supplied, the same way `tenant` is; omitted
+   * entirely, the dialog's People tab does not render at all.
+   */
+  readonly listMembers?: (tenantId: string) => Promise<readonly PersonOption[]>;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -892,6 +914,7 @@ export function ChatWorkspace({
           {...(approvalActions !== undefined ? { approvalActions } : {})}
           {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
           {...(headerLeading !== undefined ? { headerLeading } : {})}
+          {...(listMembers !== undefined ? { listMembers } : {})}
         />
       );
     case "empty":

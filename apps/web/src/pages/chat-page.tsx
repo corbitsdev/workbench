@@ -4,8 +4,9 @@
 // this workspace.
 
 import { ChatWorkspace } from "@corbits/chat-ui";
+import { listPrincipals } from "@corbits/settings-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { createChatApprovalActions } from "../approval-actions";
 import { useBench } from "../bench-context";
@@ -45,6 +46,20 @@ export function ChatPage({
     [tenantId, queryClient],
   );
 
+  // The new-chat dialog's People tab: the same bench-membership listing
+  // Settings → People renders from (`listPrincipals`), reduced to what a
+  // counterpart picker needs and restricted to active human members — an
+  // "agent" or "workflow" kind principal, or one that is suspended,
+  // invited, or deactivated, is never a valid direct-chat counterpart
+  // (the server's own `POST /channels` validation agrees; see
+  // `packages/chat/src/routes.ts`).
+  const listMembers = useCallback(async (memberTenantId: string) => {
+    const principals = await listPrincipals(memberTenantId);
+    return principals
+      .filter((p) => p.kind === "user" && p.status === "active")
+      .map((p) => ({ id: p.id, displayName: p.displayName }));
+  }, []);
+
   // A chat file part only carries a blob id today — Library artifacts have
   // no stored link back to it, so the chip can only send the reader to the
   // Library at large. A real per-artifact deep link (and opening in canvas
@@ -81,6 +96,7 @@ export function ChatPage({
       }}
       onOpenArtifact={openArtifact}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
+      listMembers={listMembers}
     />
   );
 }

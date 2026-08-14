@@ -9,6 +9,7 @@
 // what the panel already rendered.
 
 import { EmptyState, Skeleton, toast } from "@corbits/react-ui";
+import { isAgentAddress } from "@corbits/chat/mentions";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -115,8 +116,19 @@ export function ChannelSettingsSurface({
     };
   }, [tenantId, channelId]);
 
+  // A DM (owner decision: "a DM = a two-member channel tenancy with a
+  // trimmed settings surface") is a chat carrying no agent-shaped
+  // participant address — the same derivation the host app's sidebar
+  // uses to bucket it (`assignChannelBucket`), so this trims Agents
+  // without a second signal to keep in sync.
+  const isDm =
+    state.kind === "ready" &&
+    !state.data.participants.some((participant) =>
+      isAgentAddress(participant.address),
+    );
   const sections = channelSettingsSections(
     state.kind === "ready" ? state.data.kind : "channel",
+    isDm,
   );
   const firstSection = sections[0];
   if (firstSection === undefined) {

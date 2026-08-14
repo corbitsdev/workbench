@@ -138,6 +138,94 @@ export async function launchAndJoinAgent(
   };
 }
 
+export type JoinHumanParticipantDeps = {
+  readonly store: Pick<ChatStore, "updateChannelSettings">;
+  readonly platform: Pick<ChannelMail, "sendMail">;
+  readonly publish: (channelId: string, event: ChatChannelEvent) => void;
+};
+
+export type JoinHumanParticipantInput = {
+  readonly tenantId: string;
+  /** The creator/inviter — whoever's action is causing the join, and
+   * who `updateChannelSettings` records as `updatedBy`. */
+  readonly principalId: string;
+  readonly channelId: string;
+  /** The bench member being added as the chat's second participant —
+   * already validated by the caller (see `routes.ts`'s create handler)
+   * to name a real, active, non-self principal in this tenant. */
+  readonly memberPrincipalId: string;
+  /** The participant record's `handle` — a human has no settings-held
+   * name to derive one from the way an invited agent's definition
+   * does, so the caller (the create route, which already has the
+   * chosen member's display name from the request body) supplies it
+   * directly. */
+  readonly memberHandle: string;
+  readonly existingSettings: Record<string, unknown>;
+};
+
+export type JoinHumanParticipantResult = {
+  readonly address: string;
+  readonly handle: string;
+  readonly settings: Record<string, unknown>;
+};
+
+/**
+ * The human-counterpart analog of `launchAndJoinAgent`: adds a bench
+ * member directly as a chat's second participant, with no instance to
+ * launch — a human participant reads the channel's own timeline
+ * directly (see `mentions.ts`'s `isAgentAddress` note), so there is no
+ * mailbox to stand up, only the participant record and an audit event
+ * on the channel's own timeline. The participant's `address` is the
+ * bare principal id (no "@"), which is exactly what marks it as
+ * non-agent everywhere else in the package (`isAgentAddress`,
+ * `mentionedParticipants`, the DM sidebar bucket in the host app).
+ */
+export async function joinHumanParticipant(
+  deps: JoinHumanParticipantDeps,
+  input: JoinHumanParticipantInput,
+): Promise<JoinHumanParticipantResult> {
+  const participants = participantsOf(input.existingSettings);
+  const row = await deps.store.updateChannelSettings({
+    tenantId: input.tenantId,
+    channelId: input.channelId,
+    settings: {
+      ...input.existingSettings,
+      "chat/participants": addParticipant(
+        participants,
+        input.memberPrincipalId,
+        input.memberHandle,
+      ),
+    },
+    updatedBy: input.principalId,
+  });
+
+  const joinEvent: PartType = {
+    kind: "event",
+    event: "channel.member-joined",
+    data: {
+      principalId: input.memberPrincipalId,
+      invitedBy: input.principalId,
+    },
+  };
+  await deps.platform.sendMail({
+    tenantId: input.tenantId,
+    channelId: input.channelId,
+    principalId: input.principalId,
+    content: encodeParts([joinEvent]),
+  });
+
+  deps.publish(input.channelId, {
+    type: "chat.settings",
+    data: { updatedBy: input.principalId, settings: row.settings },
+  });
+
+  return {
+    address: input.memberPrincipalId,
+    handle: input.memberHandle,
+    settings: row.settings,
+  };
+}
+
 export type StartWorkflowCommandDeps = {
   readonly store: Pick<
     ChatStore,

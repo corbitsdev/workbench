@@ -20,9 +20,18 @@ export type ChannelSettingsSection = {
  * Members and Danger zone so the surface stays short (owner decision /
  * mock) — the same trim `channelSettingsTabs` applied before this file's
  * restructure.
+ *
+ * `isDm` additionally trims Agents: a DM (owner decision — "a DM = a
+ * two-member channel tenancy with a trimmed settings surface") has no
+ * agent participant and no agent to ever invite (its counterpart is
+ * fixed at creation, exactly like an agent chat's is), so the section
+ * — and the invite-agent affordance it renders — has nothing to show.
+ * Defaults to `false` so every existing call site (agent chats,
+ * channels) keeps exactly the section list it already had.
  */
 export function channelSettingsSections(
   channelKind: string,
+  isDm = false,
 ): readonly ChannelSettingsSection[] {
   const sections: ChannelSettingsSection[] = [
     {
@@ -38,12 +47,14 @@ export function channelSettingsSections(
       group: "shared",
     });
   }
-  sections.push(
-    {
+  if (!(channelKind === "chat" && isDm)) {
+    sections.push({
       id: "agents",
       label: CHAT_STRINGS.channelSettingsSectionAgents,
       group: "shared",
-    },
+    });
+  }
+  sections.push(
     {
       id: "access",
       label: CHAT_STRINGS.channelSettingsSectionAccess,
