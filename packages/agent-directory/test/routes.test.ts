@@ -157,6 +157,18 @@ async function post(app: Hono<TenantEnv>, body: unknown): Promise<Response> {
   });
 }
 
+async function put(
+  app: Hono<TenantEnv>,
+  path: string,
+  body: unknown,
+): Promise<Response> {
+  return app.request(path, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 test("a malformed body is rejected with a field-scoped 400", async () => {
   const app = buildApp(fakeAssetService());
   const response = await post(app, {
@@ -226,4 +238,238 @@ test("an unrelated asset-service failure is not swallowed as a conflict", async 
   // route re-throws instead of misclassifying every asset-service
   // failure as a handle conflict.
   expect(response.status).toBe(500);
+});
+
+// A minimal db fake for the straight-through create path (no duplicate-asset
+// recovery in play): `query.workflowDefinition.findFirst` is called exactly
+// once, for the final read-back, so it can answer unconditionally — unlike
+// `fakeDb()` above, whose call-count switch exists only to serve the
+// duplicate-recovery tests, none of which reach this point.
+function fakeCreateDb(): DB["db"] {
+  return {
+    query: {
+      workflowDefinition: {
+        findFirst: async () => ({
+          id: "def_new",
+          tenantId: TENANT.id,
+          name: "Research Buddy",
+          description: null,
+          currentVersion: "1",
+          status: "deployed",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      },
+    },
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () =>
+            Promise.resolve([
+              {
+                tenantId: TENANT.id,
+                creatorPrincipalId: null,
+                name: "research-buddy",
+                displayName: "Research Buddy",
+              },
+            ]),
+        }),
+      }),
+    }),
+    insert: () => ({
+      values: () => {
+        const chain: Record<string, unknown> = {
+          onConflictDoNothing: () => chain,
+          returning: () => Promise.resolve([{ id: "def_new" }]),
+          then: (onFulfilled: unknown) =>
+            Promise.resolve([]).then(onFulfilled as never),
+        };
+        return chain;
+      },
+    }),
+  } as unknown as DB["db"];
+}
+
+test("a create request with skills writes skills.json alongside workflow.json in one commit", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      createAsset: () =>
+        Promise.resolve({
+          id: "ast_1",
+          tenantId: TENANT.id,
+          kind: "workflow" as const,
+          name: "research-buddy",
+          displayName: "Research Buddy",
+          creatorPrincipalId: PRINCIPAL.id,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeCreateDb(),
+  );
+  const response = await post(app, {
+    name: "Research Buddy",
+    handle: "research-buddy",
+    systemPrompt: "You are a careful research assistant.",
+    skills: ["web-research", "long-form-write"],
+  });
+  expect(response.status).toBe(201);
+  expect(writtenFiles).toBeDefined();
+  expect(writtenFiles?.["workflow.json"]).toBeDefined();
+  expect(JSON.parse(writtenFiles?.["skills.json"] as string)).toEqual({
+    skills: ["web-research", "long-form-write"],
+  });
+  const body = (await response.json()) as { skills: readonly string[] };
+  expect(body.skills).toEqual(["web-research", "long-form-write"]);
+});
+
+test("a create request without skills writes an empty skills.json", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      createAsset: () =>
+        Promise.resolve({
+          id: "ast_1",
+          tenantId: TENANT.id,
+          kind: "workflow" as const,
+          name: "research-buddy",
+          displayName: "Research Buddy",
+          creatorPrincipalId: PRINCIPAL.id,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeCreateDb(),
+  );
+  const response = await post(app, {
+    name: "Research Buddy",
+    handle: "research-buddy",
+    systemPrompt: "You are a careful research assistant.",
+  });
+  expect(response.status).toBe(201);
+  expect(JSON.parse(writtenFiles?.["skills.json"] as string)).toEqual({
+    skills: [],
+  });
+});
+
+function fakeSkillsDb(
+  row: { id: string; assetId: string | null } | undefined,
+): DB["db"] {
+  return {
+    query: {
+      workflowDefinition: {
+        findFirst: async () =>
+          row === undefined
+            ? undefined
+            : {
+                id: row.id,
+                tenantId: TENANT.id,
+                assetId: row.assetId,
+                name: "Research Buddy",
+              },
+      },
+    },
+  } as unknown as DB["db"];
+}
+
+test("GET /skills returns an empty list for a definition with no skills.json", async () => {
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () =>
+        Promise.reject(new AssetServiceError("not_found", "no skills.json")),
+    }),
+    fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
+  );
+  const response = await app.request("/skills?ids=def_1");
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as {
+    skills: Record<string, readonly string[]>;
+  };
+  expect(body.skills).toEqual({ def_1: [] });
+});
+
+test("GET /skills returns the parsed skill list when skills.json exists", async () => {
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () =>
+        Promise.resolve(
+          new TextEncoder().encode(
+            JSON.stringify({ skills: ["web-research"] }),
+          ),
+        ),
+    }),
+    fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
+  );
+  const response = await app.request("/skills?ids=def_1");
+  const body = (await response.json()) as {
+    skills: Record<string, readonly string[]>;
+  };
+  expect(body.skills).toEqual({ def_1: ["web-research"] });
+});
+
+test("GET /skills omits unknown definition ids from the map rather than erroring", async () => {
+  const app = buildApp(fakeAssetService(), fakeSkillsDb(undefined));
+  const response = await app.request("/skills?ids=def_missing");
+  const body = (await response.json()) as {
+    skills: Record<string, readonly string[]>;
+  };
+  expect(body.skills).toEqual({});
+});
+
+test("PUT /:definitionId/skills replaces the skill set with a single skills.json commit", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
+  );
+  const response = await put(app, "/def_1/skills", {
+    skills: ["long-form-write"],
+  });
+  expect(response.status).toBe(200);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(["skills.json"]);
+  expect(JSON.parse(writtenFiles?.["skills.json"] as string)).toEqual({
+    skills: ["long-form-write"],
+  });
+  const body = (await response.json()) as { skills: readonly string[] };
+  expect(body.skills).toEqual(["long-form-write"]);
+});
+
+test("PUT /:definitionId/skills 404s for an unknown definition", async () => {
+  const app = buildApp(fakeAssetService(), fakeSkillsDb(undefined));
+  const response = await put(app, "/def_missing/skills", { skills: [] });
+  expect(response.status).toBe(404);
+});
+
+test("PUT /:definitionId/skills rejects a duplicate skill name with a 400", async () => {
+  const app = buildApp(
+    fakeAssetService(),
+    fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
+  );
+  const response = await put(app, "/def_1/skills", {
+    skills: ["Web research", "Web research"],
+  });
+  expect(response.status).toBe(400);
+});
+
+test("PUT /:definitionId/skills rejects a blank skill name with a 400", async () => {
+  const app = buildApp(
+    fakeAssetService(),
+    fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
+  );
+  const response = await put(app, "/def_1/skills", { skills: ["   "] });
+  expect(response.status).toBe(400);
 });
