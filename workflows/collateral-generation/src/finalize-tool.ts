@@ -24,22 +24,26 @@
 // human approves it. See that file's header comment for the full
 // suspend/resume account, which applies unchanged here.
 //
-// Known platform gap (same as pain-point-collateral, tracked as CL-6000):
-// no workflow tool package in this repo can reach the hub's database or
-// its authenticated HTTP API today, so `run` below cannot call
-// `@corbits/artifacts`' `artifact_create` and persist a Library row per
-// piece yet. It builds the exact payload each call needs and returns them,
-// `persisted: false`, so wiring the real calls in is a one-line loop the
-// moment that path lands, not a redesign.
+// Persistence (CL-6000): `run` below persists each piece via
+// `createWorkflowArtifact` (`./artifact-client.ts`, duplicated from
+// `@corbits/artifact-tools`' client rather than imported — see that
+// file's header for why this installable-data package never imports
+// another `@corbits/*` package) against the sanctioned workflow-artifacts
+// HTTP surface, sequentially. A piece that fails to persist stops the
+// loop and reports how many of the set already persisted rather than
+// silently losing them or claiming the whole batch failed — an approval
+// covers "finalize the whole set", so a partial failure is surfaced
+// honestly rather than hidden.
 
 import { type } from "arktype";
-import { defineTool } from "@intx/agent";
+import { defineTool, type BaseEnv } from "@intx/agent";
+import { createWorkflowArtifact } from "./artifact-client";
 
 export const COLLATERAL_GENERATION_FINALIZE_TOOL_NAME =
   "collateral_generation_finalize";
 
 export const COLLATERAL_GENERATION_FINALIZE_DESCRIPTION =
-  "Finalizes the full set of human-approved collateral pieces from one run, pending a single human approval, and prepares each as a Library artifact.";
+  "Finalizes the full set of human-approved collateral pieces from one run, pending a single human approval, and persists each as a Library artifact.";
 
 const CollateralPiece = type({
   /** Short, human-facing title. */
@@ -64,10 +68,10 @@ export type ArtifactPayload = {
 };
 
 /**
- * The payload `@corbits/artifacts`' `artifact_create` tool expects
- * (`{ title, kind, content }`) for one piece — `kind` carries the
- * content-type id, matching the OG's convention of using the content
- * type as the artifact's kind.
+ * The payload `createWorkflowArtifact` persists (`{ title, kind,
+ * content }`) for one piece — `kind` carries the content-type id,
+ * matching the OG's convention of using the content type as the
+ * artifact's kind.
  */
 export function buildArtifactPayloads(
   args: FinalizeArgs,
@@ -80,19 +84,31 @@ export function buildArtifactPayloads(
 }
 
 /**
- * `defineTool`'s env-DI factory shape. This tool needs nothing beyond
- * `BaseEnv`, so `requires` is empty.
+ * The env this tool needs beyond `BaseEnv`: the sanctioned
+ * workflow-artifacts credential trio, populated for every workflow step
+ * (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`) — the same
+ * three keys `@corbits/artifact-tools`' read-side bundle declares.
  */
-export const COLLATERAL_GENERATION_FINALIZE_TOOL = defineTool({
+export interface WorkflowArtifactEnv extends BaseEnv {
+  readonly hubArtifactsUrl: string;
+  readonly sidecarToken: string;
+  readonly address: string;
+}
+
+/**
+ * `defineTool`'s env-DI factory shape. Needs the sanctioned
+ * workflow-artifacts credential trio beyond `BaseEnv`.
+ */
+export const COLLATERAL_GENERATION_FINALIZE_TOOL = defineTool<WorkflowArtifactEnv>({
   id: "@corbits/workflow-collateral-generation/finalize",
-  requires: [],
+  requires: ["hubArtifactsUrl", "sidecarToken", "address"],
   definitions: [
     {
       name: COLLATERAL_GENERATION_FINALIZE_TOOL_NAME,
       approval: "ask",
     },
   ],
-  factory: () => ({
+  factory: (env) => ({
     definitions: [
       {
         name: COLLATERAL_GENERATION_FINALIZE_TOOL_NAME,
@@ -134,18 +150,44 @@ export const COLLATERAL_GENERATION_FINALIZE_TOOL = defineTool({
         };
       }
       const artifacts = buildArtifactPayloads(parsed);
+      const persisted: {
+        id: string;
+        version: number;
+        title: string;
+        kind: string;
+        persisted: true;
+      }[] = [];
+      for (const artifact of artifacts) {
+        try {
+          const created = await createWorkflowArtifact(
+            {
+              hubArtifactsUrl: env.hubArtifactsUrl,
+              sidecarToken: env.sidecarToken,
+              runAddress: env.address,
+            },
+            artifact,
+          );
+          persisted.push({
+            id: created.id,
+            version: created.version,
+            title: artifact.title,
+            kind: artifact.kind,
+            persisted: true,
+          });
+        } catch (err) {
+          return {
+            callId: call.id,
+            isError: true,
+            content: `Failed to persist "${artifact.title}" as a Library artifact after persisting ${persisted.length} of ${artifacts.length} piece(s): ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          };
+        }
+      }
       return {
         callId: call.id,
         isError: false,
-        content: JSON.stringify({
-          artifacts: artifacts.map((artifact) => ({
-            title: artifact.title,
-            content: artifact.content,
-            persisted: false,
-            persistedReason:
-              "workflow tool packages cannot reach the Library engine yet; see this file's header comment",
-          })),
-        }),
+        content: JSON.stringify({ artifacts: persisted }),
       };
     },
   }),

@@ -23,28 +23,27 @@
 // `PAIN_POINT_COLLATERAL_SYSTEM_PROMPT`) turns into a calm, plain
 // terminal reply rather than an error.
 //
-// Known platform gap (read before wiring this into a live deploy): no
-// workflow tool package in this repo can reach the hub's database or
-// its authenticated HTTP API today — tool packages are materialized
-// into the sidecar's workflow-process child, a separate process with no
-// DB handle and no hub-service credential path (confirmed while porting
-// this workflow; the same category of gap CL-5998's
-// `@corbits/granola-call-workflow` README documents for its own missing
-// spawn-child and tool-pin capabilities). So `run` below cannot actually
-// call `@corbits/artifacts`' `artifact_create` and persist a Library
-// row yet. It builds the exact payload that call needs
-// (`buildArtifactPayload`) and returns it, `persisted: false`, so the
-// moment that service-credential path lands, wiring the real call in is
-// a one-line change here, not a redesign.
+// Persistence (CL-6000): `run` below calls `createWorkflowArtifact`
+// (`./artifact-client.ts`, duplicated from `@corbits/artifact-tools`'
+// client rather than imported — see that file's header for why this
+// installable-data package never imports another `@corbits/*` package)
+// against the sanctioned workflow-artifacts HTTP surface — authenticated
+// with the sidecar's own bearer token and this run's own mailbox
+// address, both already present on `env`, never a database handle. A
+// successful call returns the persisted artifact's id/version so the
+// delivery pipeline can reference it with a file part
+// (`packages/chat/src/artifact-delivery.ts`); a failed call surfaces as
+// an honest `isError: true` result rather than a fabricated success.
 
 import { type } from "arktype";
-import { defineTool } from "@intx/agent";
+import { defineTool, type BaseEnv } from "@intx/agent";
+import { createWorkflowArtifact } from "./artifact-client";
 
 export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME =
   "pain_point_collateral_finalize";
 
 export const PAIN_POINT_COLLATERAL_FINALIZE_DESCRIPTION =
-  "Finalizes one piece of pain-point sales collateral, pending human approval, and prepares it as a Library artifact.";
+  "Finalizes one piece of pain-point sales collateral, pending human approval, and persists it as a Library artifact.";
 
 const FinalizeArgs = type({
   /** Short, human-facing title. Doubles as the inbox/approve-card headline. */
@@ -64,10 +63,9 @@ export type ArtifactPayload = {
 };
 
 /**
- * The payload `@corbits/artifacts`' `artifact_create` tool expects
- * (`{ title, kind, content }`). Built here so the eventual real call is
- * a straight pass-through of this object, not a payload assembled at
- * the call site.
+ * The payload `createWorkflowArtifact` persists (`{ title, kind,
+ * content }`). Built here so the persist call is a straight pass-through
+ * of this object, not a payload assembled at the call site.
  */
 export function buildArtifactPayload(args: FinalizeArgs): ArtifactPayload {
   return {
@@ -78,19 +76,31 @@ export function buildArtifactPayload(args: FinalizeArgs): ArtifactPayload {
 }
 
 /**
- * `defineTool`'s env-DI factory shape. This tool needs nothing beyond
- * `BaseEnv`, so `requires` is empty.
+ * The env this tool needs beyond `BaseEnv`: the sanctioned
+ * workflow-artifacts credential trio, populated for every workflow step
+ * (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`) — the same
+ * three keys `@corbits/artifact-tools`' read-side bundle declares.
  */
-export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL = defineTool({
+export interface WorkflowArtifactEnv extends BaseEnv {
+  readonly hubArtifactsUrl: string;
+  readonly sidecarToken: string;
+  readonly address: string;
+}
+
+/**
+ * `defineTool`'s env-DI factory shape. Needs the sanctioned
+ * workflow-artifacts credential trio beyond `BaseEnv`.
+ */
+export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL = defineTool<WorkflowArtifactEnv>({
   id: "@corbits/workflow-pain-point-collateral/finalize",
-  requires: [],
+  requires: ["hubArtifactsUrl", "sidecarToken", "address"],
   definitions: [
     {
       name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
       approval: "ask",
     },
   ],
-  factory: () => ({
+  factory: (env) => ({
     definitions: [
       {
         name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
@@ -116,17 +126,35 @@ export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL = defineTool({
         };
       }
       const artifact = buildArtifactPayload(parsed);
-      return {
-        callId: call.id,
-        isError: false,
-        content: JSON.stringify({
-          title: artifact.title,
-          content: artifact.content,
-          persisted: false,
-          persistedReason:
-            "workflow tool packages cannot reach the Library engine yet; see this file's header comment",
-        }),
-      };
+      try {
+        const created = await createWorkflowArtifact(
+          {
+            hubArtifactsUrl: env.hubArtifactsUrl,
+            sidecarToken: env.sidecarToken,
+            runAddress: env.address,
+          },
+          artifact,
+        );
+        return {
+          callId: call.id,
+          isError: false,
+          content: JSON.stringify({
+            id: created.id,
+            version: created.version,
+            title: artifact.title,
+            kind: artifact.kind,
+            persisted: true,
+          }),
+        };
+      } catch (err) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: `Failed to persist "${artifact.title}" as a Library artifact: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        };
+      }
     },
   }),
 });

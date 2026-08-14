@@ -65,32 +65,26 @@ which applies unchanged here.
 
 ## Current limits (read before deploying)
 
-Three real gaps stand between this definition and a fully live deploy,
-all platform-level, not specific to this workflow:
+One real gap stands between this definition and a fully live deploy,
+platform-level, not specific to this workflow:
 
-1. **No tool-package pin** (CL-5999). No production workflow builder in
-   this repo threads a caller-supplied `toolPackagePins` onto a built
-   definition yet. Until it lands, this definition ships with
-   `tools: []`; `@corbits/granola-tools`, `@corbits/linear-tools`, and
-   `@corbits/artifact-tools` all exist, are tested, and are ready to wire
-   in the moment pinning is built.
-2. **No Library-write path from a workflow tool** (CL-6000). Tool
-   packages run in the sidecar's workflow-process child, a separate
-   process with no database handle and no authenticated hub-API path.
-   `finalize-tool.ts`'s `run` builds the exact `{ title, kind, content }`
-   payload each approved piece needs and returns them, `persisted:
-false`, rather than fabricating Library rows. The finalized pieces
-   still reach the human in the delivered chat reply — they are just not
-   yet Library artifacts with file-part chips.
-3. **No Library-read path from a workflow tool either** (same CL-6000
-   category, read side). `@corbits/artifact-tools`' `artifact_list_recent`
-   exists for the day this closes, but today it always answers "not
-   reachable yet" — so workbench artifacts are named honestly as a
-   pending source in the system prompt, alongside the wired Granola and
-   Linear sources.
+- **No tool-package pin** (CL-5999). No production workflow builder in
+  this repo threads a caller-supplied `toolPackagePins` onto a built
+  definition yet. Until it lands, this definition ships with
+  `tools: []`; `@corbits/granola-tools`, `@corbits/linear-tools`, and
+  `@corbits/artifact-tools` all exist, are tested, and are ready to wire
+  in the moment pinning is built.
 
-None of the three gaps are specific to this workflow; all are
-pre-existing platform limits this port surfaces rather than works around.
+**Library persistence and listing are both real (CL-6000).**
+`finalize-tool.ts`'s `run` persists each approved piece via
+`./artifact-client.ts` against the sanctioned workflow-artifacts HTTP
+surface, sequentially — a piece that fails to persist stops the loop and
+reports how many of the set already persisted, rather than silently
+losing them or claiming the whole batch failed. `@corbits/artifact-tools`'
+`artifact_list_recent` calls the same surface's read side, so workbench
+artifacts are a real source alongside the wired Granola and Linear ones.
+Delivered pieces carry their persisted artifact's file-part chip
+(`packages/chat/src/artifact-delivery.ts`).
 
 ## Usage
 

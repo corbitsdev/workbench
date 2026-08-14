@@ -120,11 +120,11 @@ export const COLLATERAL_CONTENT_TYPES = [
 ] as const;
 
 /** Sources this deployment can actually reach today, each backed by a
- * real, pinnable tool package. Workbench artifacts have no reachable
- * tool package yet — `@corbits/artifact-tools` exists and is pinnable
- * the moment CL-5999's tool-pin gap closes, but its one tool still
- * cannot reach the Library engine itself (CL-6000) — so it is named
- * honestly as "not connected" here rather than silently omitted. */
+ * real, pinnable tool package. Workbench artifacts reach the Library
+ * engine for real now (CL-6000) but still have no way to land on a
+ * deployed definition — `@corbits/artifact-tools` is pinnable the moment
+ * CL-5999's tool-pin gap closes — so it is named honestly as "not
+ * connected" here rather than silently omitted. */
 export const COLLATERAL_GENERATION_WIRED_SOURCES = [
   "Granola call notes",
   "Linear issues",
