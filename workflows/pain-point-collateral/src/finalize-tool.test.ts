@@ -27,8 +27,9 @@ test("requires the sanctioned workflow-artifacts env keys", () => {
   ]);
 });
 
-test("buildArtifactPayload folds the targeted pain point into the artifact body", () => {
+test("buildArtifactPayload marks real collateral as a text artifact and folds the targeted pain point into the body", () => {
   const payload = buildArtifactPayload({
+    outcome: "collateral",
     title: "Faster onboarding for Acme Corp",
     painPoint: "Onboarding takes six weeks",
     content: "Our platform cuts onboarding to two weeks by...",
@@ -38,6 +39,21 @@ test("buildArtifactPayload folds the targeted pain point into the artifact body"
     kind: "text",
     content:
       "Targets: Onboarding takes six weeks\n\nOur platform cuts onboarding to two weeks by...",
+  });
+});
+
+test("buildArtifactPayload marks a no-data teaching payload as status-note, not text", () => {
+  const payload = buildArtifactPayload({
+    outcome: "status-note",
+    title: "No transcript available",
+    painPoint: "none found",
+    content: "Neither the transcript nor noteId field carried content.",
+  });
+  expect(payload).toEqual({
+    title: "No transcript available",
+    kind: "status-note",
+    content:
+      "Targets: none found\n\nNeither the transcript nor noteId field carried content.",
   });
 });
 
@@ -63,6 +79,7 @@ test("run persists the artifact on real invocation (i.e. after approval re-dispa
         id: "call_1",
         name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
         arguments: {
+          outcome: "collateral",
           title: "Faster onboarding for Acme Corp",
           painPoint: "Onboarding takes six weeks",
           content: "Our platform cuts onboarding to two weeks by...",
@@ -91,6 +108,41 @@ test("run persists the artifact on real invocation (i.e. after approval re-dispa
   }
 });
 
+test("run persists a teaching payload on the no-data path with a status-note kind, distinct from real collateral", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ data: { id: "art_2", version: 1 } }), {
+      status: 201,
+    })) as unknown as typeof fetch;
+
+  try {
+    const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+    const result = await bundle.run(
+      {
+        id: "call_2",
+        name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+        arguments: {
+          outcome: "status-note",
+          title: "No transcript available",
+          painPoint: "none found",
+          content: "Neither the transcript nor noteId field carried content.",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(String(result.content)) as {
+      persisted: boolean;
+      kind: string;
+    };
+    expect(parsed.persisted).toBe(true);
+    expect(parsed.kind).toBe("status-note");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("run returns an honest error result when persistence fails, never fabricating persisted: true", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
@@ -103,6 +155,7 @@ test("run returns an honest error result when persistence fails, never fabricati
         id: "call_1",
         name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
         arguments: {
+          outcome: "collateral",
           title: "Faster onboarding for Acme Corp",
           painPoint: "Onboarding takes six weeks",
           content: "Our platform cuts onboarding to two weeks by...",
@@ -125,6 +178,25 @@ test("run rejects malformed arguments without throwing", async () => {
       id: "call_1",
       name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
       arguments: {},
+    },
+    new AbortController().signal,
+  );
+  expect(result.isError).toBe(true);
+  expect(result.content).toContain("Invalid arguments");
+});
+
+test("run rejects an outcome value outside the two structural kinds", async () => {
+  const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());
+  const result = await bundle.run(
+    {
+      id: "call_1",
+      name: PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME,
+      arguments: {
+        outcome: "draft",
+        title: "Faster onboarding for Acme Corp",
+        painPoint: "Onboarding takes six weeks",
+        content: "Our platform cuts onboarding to two weeks by...",
+      },
     },
     new AbortController().signal,
   );
