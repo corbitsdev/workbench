@@ -5,19 +5,28 @@
 // here runs. No new auth path: identity and tenant membership ride the
 // platform's existing session + tenant resolution, exactly like every
 // other extension mounted under `TENANT_PREFIX`.
-import { Hono } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { streamSSE } from "hono/streaming";
 import { type } from "arktype";
 
-import type { TenantEnv } from "@intx/hub-api";
+import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
+import { artifactIdForSurface } from "./artifact-persistence";
+import { decodeBase64, encodeBase64, InvalidBase64Error } from "./base64";
 import { colorForPrincipal } from "./color";
 import {
   createPresenceRoomRegistry,
+  type PresenceRoomKey,
   type PresenceRoomRegistry,
   type PresenceState,
 } from "./room-registry";
-import { PresenceHeartbeatBody, PresenceJoinBody } from "./schema";
+import {
+  MAX_DOC_UPDATE_BYTES,
+  maxBase64LengthFor,
+  PresenceDocUpdateBody,
+  PresenceHeartbeatBody,
+  PresenceJoinBody,
+} from "./schema";
 
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 45_000;
 
@@ -29,6 +38,41 @@ export interface CreatePresenceRoutesDeps {
   registry?: PresenceRoomRegistry;
   heartbeatTimeoutMs?: number;
   now?: () => number;
+  /** Decoded-byte ceiling for a single `POST /update` body. */
+  maxDocUpdateBytes?: number;
+  /**
+   * Runs after a successful join, before the response's `docUpdate` is
+   * read off the registry — the seam persistence's seed-on-join hook
+   * (`createArtifactDocPersistence`) uses to populate a freshly-created
+   * artifact room's doc from the artifact's stored content before the
+   * joiner ever sees it. Optional: a bare presence room (no artifact
+   * behind it) has no seeding to do.
+   */
+  onJoin?: (key: PresenceRoomKey, principalId: string) => Promise<void> | void;
+  /**
+   * Gates every doc-carrying surface's `POST /rooms/:surface/join`,
+   * `GET /rooms/:surface/stream` (read — a room's join response and SSE
+   * stream can both carry real document text) and
+   * `POST /rooms/:surface/update` (write). REQUIRED, not optional: phase
+   * 1's "waving a cursor isn't a write" argument for leaving join/stream
+   * ungated stopped holding the moment join's response and the SSE
+   * stream started carrying document content a principal might not have
+   * read access to — the same `("asset:*", "read"/"write")` grant
+   * Library's own artifact routes already check. A presence-only surface
+   * (never doc-carrying — e.g. a channel's who's-here stack) stays
+   * exactly as ungated as phase 1 left it regardless; see
+   * `isDocCarryingSurface`.
+   */
+  requireGrant: RequireGrant;
+  /**
+   * Whether `surface` carries doc content that needs a grant check on
+   * join/stream/update. Defaults to the `artifact:<id>` convention
+   * `artifact-persistence.ts` already owns, so a channel's who's-here
+   * surface (never `artifact:...`) stays ungated without every caller
+   * having to know or repeat that convention. Override only for a
+   * deployment that names its doc-carrying surfaces differently.
+   */
+  isDocCarryingSurface?: (surface: string) => boolean;
 }
 
 /**
@@ -43,16 +87,49 @@ export interface CreatePresenceRoutesDeps {
  * needs.
  */
 export function createPresenceRoutes(
-  deps: CreatePresenceRoutesDeps = {},
+  deps: CreatePresenceRoutesDeps,
 ): Hono<TenantEnv> {
   const registry = deps.registry ?? createPresenceRoomRegistry();
   const heartbeatTimeoutMs =
     deps.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
   const now = deps.now ?? Date.now;
+  const maxDocUpdateBytes = deps.maxDocUpdateBytes ?? MAX_DOC_UPDATE_BYTES;
+  const maxBase64UpdateLength = maxBase64LengthFor(maxDocUpdateBytes);
+  const isDocCarryingSurface =
+    deps.isDocCarryingSurface ??
+    ((surface: string) => artifactIdForSurface(surface) !== null);
 
   const app = new Hono<TenantEnv>();
 
-  app.post("/rooms/:surface/join", async (c) => {
+  /**
+   * Wraps `requireGrant(action)` so it only ever runs for a surface
+   * `isDocCarryingSurface` says actually carries doc content — a
+   * presence-only surface (e.g. `channel:<id>`) passes straight through,
+   * exactly as ungated as phase 1 left it.
+   */
+  function gateDocCarryingSurface(
+    action: "read" | "write",
+  ): MiddlewareHandler<TenantEnv> {
+    const grantMiddleware = deps.requireGrant("asset:*", action);
+    return (c, next) => {
+      const surface = c.req.param("surface");
+      if (surface === undefined || !isDocCarryingSurface(surface)) {
+        return next();
+      }
+      // Returned, not just awaited: a grant middleware that denies short
+      // -circuits by returning a `Response` (e.g. `c.json(..., 403)`)
+      // rather than calling `next()` — Hono's own dispatcher only
+      // recognizes that as "the response is ready" if this wrapper hands
+      // that same return value back up the chain instead of discarding
+      // it.
+      return grantMiddleware(c, next);
+    };
+  }
+
+  const readGate = gateDocCarryingSurface("read");
+  const writeGate = gateDocCarryingSurface("write");
+
+  app.post("/rooms/:surface/join", readGate, async (c) => {
     const body = PresenceJoinBody(await c.req.json().catch(() => ({})));
     if (body instanceof type.errors) {
       return c.json(
@@ -78,7 +155,9 @@ export function createPresenceRoutes(
     };
 
     const states = registry.join(key, state, now());
-    return c.json({ self: state, members: states }, 200);
+    await deps.onJoin?.(key, principal.id);
+    const docUpdate = encodeBase64(registry.docStateAsUpdate(key));
+    return c.json({ self: state, members: states, docUpdate }, 200);
   });
 
   app.post("/rooms/:surface/heartbeat", async (c) => {
@@ -111,6 +190,78 @@ export function createPresenceRoutes(
     return c.json({ members: states });
   });
 
+  app.post(
+    "/rooms/:surface/update",
+    writeGate,
+    async (c: Context<TenantEnv, "/rooms/:surface/update">) => {
+      const body = PresenceDocUpdateBody(await c.req.json().catch(() => ({})));
+      if (body instanceof type.errors) {
+        return c.json(
+          errorEnvelope("bad_request", `invalid update body: ${body.summary}`),
+          400,
+        );
+      }
+
+      // Rejected by STRING length first, before ever decoding: an
+      // oversize base64 payload is refused by a cheap `.length` check
+      // rather than first paying the cost of decoding it into a
+      // `Uint8Array` only to discard it once the byte-length check below
+      // would have caught it anyway.
+      if (body.update.length > maxBase64UpdateLength) {
+        return c.json(
+          errorEnvelope(
+            "payload_too_large",
+            `update exceeds the ${maxDocUpdateBytes} byte limit`,
+          ),
+          413,
+        );
+      }
+
+      let bytes: Uint8Array;
+      try {
+        bytes = decodeBase64(body.update);
+      } catch (err) {
+        if (err instanceof InvalidBase64Error) {
+          return c.json(
+            errorEnvelope("bad_request", "update is not valid base64"),
+            400,
+          );
+        }
+        throw err;
+      }
+
+      // Belt-and-suspenders: the string-length bound above is a
+      // necessary-but-not-exact ceiling (padding/whitespace can shift
+      // the true decoded size within a few bytes), so the decoded byte
+      // count is still checked directly before it ever reaches Yjs.
+      if (bytes.byteLength > maxDocUpdateBytes) {
+        return c.json(
+          errorEnvelope(
+            "payload_too_large",
+            `update exceeds the ${maxDocUpdateBytes} byte limit`,
+          ),
+          413,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const surface = c.req.param("surface");
+      const key = { tenantId: tenant.id, surface };
+
+      try {
+        registry.applyDocUpdate(key, bytes, principal.id);
+      } catch {
+        return c.json(
+          errorEnvelope("bad_request", "update is not a valid Yjs update"),
+          400,
+        );
+      }
+
+      return c.body(null, 202);
+    },
+  );
+
   app.post("/rooms/:surface/leave", (c) => {
     const tenant = c.get("tenant");
     const principal = c.get("principal");
@@ -121,19 +272,39 @@ export function createPresenceRoutes(
     return c.body(null, 202);
   });
 
-  app.get("/rooms/:surface/stream", (c) => {
+  app.get("/rooms/:surface/stream", readGate, (c) => {
     const tenant = c.get("tenant");
     const surface = c.req.param("surface");
     const key = { tenantId: tenant.id, surface };
 
     return streamSSE(c, async (stream) => {
-      let unsubscribe: () => void = () => undefined;
-      unsubscribe = registry.subscribe(key, (states) => {
+      let unsubscribePresence: () => void = () => undefined;
+      let unsubscribeDoc: () => void = () => undefined;
+      let unsubscribeSnapshots: () => void = () => undefined;
+      const teardown = () => {
+        unsubscribePresence();
+        unsubscribeDoc();
+        unsubscribeSnapshots();
+      };
+      unsubscribePresence = registry.subscribe(key, (states) => {
         stream
           .writeSSE({ event: "presence.state", data: JSON.stringify(states) })
-          .catch(() => unsubscribe());
+          .catch(teardown);
       });
-      stream.onAbort(unsubscribe);
+      unsubscribeDoc = registry.subscribeDocUpdates(key, (update) => {
+        stream
+          .writeSSE({
+            event: "doc.update",
+            data: JSON.stringify({ update: encodeBase64(update) }),
+          })
+          .catch(teardown);
+      });
+      unsubscribeSnapshots = registry.subscribeSnapshots(key, (info) => {
+        stream
+          .writeSSE({ event: "doc.saved", data: JSON.stringify(info) })
+          .catch(teardown);
+      });
+      stream.onAbort(teardown);
       await new Promise<void>(() => undefined);
     });
   });

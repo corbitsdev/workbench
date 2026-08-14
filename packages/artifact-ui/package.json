@@ -17,7 +17,8 @@
     "@corbits/react-ui": "github:corbitsdev/react-ui#0627774e9d333486596ca72eb713ff7bd1b75614",
     "arktype": "catalog:",
     "lucide-react": "^1.27.0",
-    "react": "^19.2.0"
+    "react": "^19.2.0",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

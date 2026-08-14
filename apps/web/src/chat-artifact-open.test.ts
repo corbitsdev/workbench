@@ -83,6 +83,7 @@ describe("artifactContentFromDetail", () => {
       title: "Q3 report",
       rendererKind: "doc",
       content: "# Q3\nGrowth is up.",
+      canEdit: true,
     });
   });
 
@@ -92,6 +93,13 @@ describe("artifactContentFromDetail", () => {
     );
     expect(content.rendererKind).toBe("sheet");
     expect(content.content).toBe("a,b");
+  });
+
+  test("a non-text kind is never marked editable — only 'doc' co-edits", () => {
+    const content = artifactContentFromDetail(
+      artifactDetail({ kind: "csv-export", title: "Signups", content: "a,b" }),
+    );
+    expect(content.canEdit).toBe(false);
   });
 });
 

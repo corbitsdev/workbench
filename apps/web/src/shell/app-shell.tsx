@@ -11,7 +11,9 @@
 // `ShellChromeProvider` owns them above both and this component only reads
 // them through the same hooks page code already uses.
 
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import * as Y from "yjs";
+import type { ArtifactSaveState } from "@corbits/artifact-ui";
 
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
@@ -58,14 +60,66 @@ export function AppShell({
   const canvasProfile = useCanvasColumnProfile();
   const canvasArtifact = useCanvasColumnArtifact();
   const canvasFocus = useCanvasColumnFocus();
-  const tenantId = useBench().selectedTenantId;
+  const { selectedTenantId: tenantId, selectedPrincipalId: viewerPrincipalId } =
+    useBench();
+
+  // A text-kind artifact's shared `Y.Doc` (CL-5958 phase 2): one instance
+  // per artifact id, torn down and replaced the moment the open artifact
+  // changes so a stale doc from a previous artifact can never leak into a
+  // newly opened one. Non-"doc" kinds never get one — there's nothing to
+  // co-edit, so `usePresenceRoom` connects awareness-only for them, same
+  // as phase 1.
+  const [artifactDoc, setArtifactDoc] = useState<Y.Doc | null>(null);
+  const [artifactSaveState, setArtifactSaveState] = useState<ArtifactSaveState>(
+    { kind: "read-only" },
+  );
+  const artifactDocForId = useRef<string | null>(null);
+  useEffect(() => {
+    if (canvasArtifact === null || canvasArtifact.rendererKind !== "doc") {
+      artifactDocForId.current = null;
+      setArtifactDoc(null);
+      setArtifactSaveState({ kind: "read-only" });
+      return;
+    }
+    if (artifactDocForId.current === canvasArtifact.id) return;
+    artifactDocForId.current = canvasArtifact.id;
+    setArtifactDoc(new Y.Doc());
+    setArtifactSaveState(
+      canvasArtifact.canEdit === true
+        ? { kind: "unsaved" }
+        : { kind: "read-only" },
+    );
+  }, [canvasArtifact]);
+
   // Co-viewers of the open artifact, if any — see canvas-column.tsx's own
   // `PresenceCursor` doc for why this stays plain data across the
   // package boundary.
   const artifactPresence = usePresenceRoom(
     tenantId,
     canvasArtifact === null ? null : `artifact:${canvasArtifact.id}`,
+    undefined,
+    artifactDoc === null
+      ? undefined
+      : {
+          doc: artifactDoc,
+          onSaved: (info) =>
+            setArtifactSaveState({
+              kind: "saved",
+              version: info.version,
+              savedAt: info.savedAt,
+            }),
+        },
   );
+  const editingCoworkers = artifactPresence.members
+    .filter(
+      (member) =>
+        member.typing === true && member.principalId !== viewerPrincipalId,
+    )
+    .map((member) => member.displayName);
+  const artifactSaveStateWithEditors: ArtifactSaveState =
+    canvasArtifact?.canEdit === true && editingCoworkers.length > 0
+      ? { kind: "editing", by: editingCoworkers }
+      : artifactSaveState;
   const closeCanvas = useCloseCanvas();
   const toggleCanvasFocus = useToggleCanvasFocus();
   const showContextualColumn = contextualPanelVisible(layoutMode);
@@ -116,6 +170,9 @@ export function AppShell({
               y: member.cursor?.y ?? 0,
             }))}
           onCursorMove={artifactPresence.publishCursor}
+          {...(artifactDoc !== null ? { artifactDoc } : {})}
+          artifactSaveState={artifactSaveStateWithEditors}
+          onArtifactTyping={artifactPresence.publishTyping}
         />
       )}
       {contextualAsDrawer && (

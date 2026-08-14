@@ -22,11 +22,16 @@ import type { CanvasArtifactContent } from "./shell/canvas-column-state";
 export function artifactContentFromDetail(
   detail: ArtifactDetail,
 ): CanvasArtifactContent {
+  const rendererKind = resolveArtifactRendererKind(detail);
   return {
     id: detail.id,
     title: detail.title,
-    rendererKind: resolveArtifactRendererKind(detail),
+    rendererKind,
     content: detail.content,
+    // Text-kind Library artifacts are co-editable (CL-5958 phase 2); the
+    // presence `/update` route's own write-grant check is the real gate
+    // — this only decides which pane a capable viewer sees.
+    canEdit: rendererKind === "doc",
   };
 }
 

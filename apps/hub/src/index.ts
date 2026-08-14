@@ -106,6 +106,7 @@ import {
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
 import { createNeedsYouRoutes } from "@corbits/approvals";
+import { getArtifact, writeArtifactVersion } from "@corbits/artifacts";
 import {
   createArtifactDbStore,
   createArtifactRoutes,
@@ -117,8 +118,10 @@ import {
 } from "@corbits/artifacts-hub";
 import { createEchoRoutes } from "@workbench/echo";
 import {
+  createArtifactDocPersistence,
   createPresenceRoomRegistry,
   createPresenceRoutes,
+  type PresenceRoomKey,
 } from "@corbits/presence";
 import { createGitWorkflowPusher, createHubAPI } from "@workbench/hub-client";
 import {
@@ -452,15 +455,23 @@ export async function createHub(config: HubConfig) {
   // One in-process presence room registry for this process, constructed
   // here in the composition root — the same pattern `channelSubscribers`
   // above uses. Presence rooms are ephemeral and process-local by design
-  // (see `@corbits/presence`'s docs/presence.md), so there is only ever
-  // one consumer today (the routes below); the registry is still built
-  // here rather than inside `createPresenceRoutes` itself so a future
-  // second consumer (e.g. a co-editing doc sync path) can share it the
-  // same way `startWorkflowCommand` shares `channelSubscribers`.
-  app.route(
-    `${TENANT_PREFIX}/presence`,
-    createPresenceRoutes({ registry: createPresenceRoomRegistry() }),
-  );
+  // (see `@corbits/presence`'s docs/presence.md); the registry is built
+  // here rather than inside `createPresenceRoutes` itself so the
+  // co-editing doc-persistence wiring below (which needs the artifacts
+  // engine, mounted further down once its own DB handle resolves) can
+  // share the exact same registry the routes below serve traffic
+  // through — the same way `startWorkflowCommand` shares
+  // `channelSubscribers`.
+  const presenceRoomRegistry = createPresenceRoomRegistry();
+  // Indirection so the join route can call into artifact-doc seeding
+  // before the artifacts engine (mounted later, once its DB handle is
+  // known) exists. `createPresenceRoutes` is constructed once, here, so
+  // its `onJoin` hook has to be a stable function that reads whatever
+  // `artifactSeedOnJoin` currently points to — `undefined` (a no-op)
+  // until the artifacts mount below assigns it, or forever if the
+  // artifacts plane never mounts.
+  let artifactSeedOnJoin:
+    ((key: PresenceRoomKey, principalId: string) => Promise<void>) | undefined;
 
   // The "needs you" list: the same `approval:*`/"resolve" grant Interchange's
   // own approve/reject routes require, layered with the agent/bench names
@@ -486,6 +497,22 @@ export async function createHub(config: HubConfig) {
   const chatConditionRegistry: ConditionRegistry = {
     time_window: timeWindowEvaluator,
   };
+  // Mounted here (not up with the registry construction above) because
+  // its `/update` route's grant gate needs `chatGrantStore`/
+  // `chatConditionRegistry`, which don't exist yet up there — the same
+  // reason `artifactSeedOnJoin`'s indirection exists, just for a
+  // dependency that's ready sooner.
+  app.route(
+    `${TENANT_PREFIX}/presence`,
+    createPresenceRoutes({
+      registry: presenceRoomRegistry,
+      onJoin: (key, principalId) => artifactSeedOnJoin?.(key, principalId),
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
   // Memory plane (optional): firm-memory HTTP under
   // `/api/tenants/:tenantId/memory/*`, same `DATABASE_URL` as the control
   // plane, isolated in its own `memory` schema. Degrades when EMBED_* is
@@ -1062,6 +1089,44 @@ export async function createHub(config: HubConfig) {
         }),
       }),
     );
+
+    // Co-editing persistence (CL-5958 phase 2): debounced snapshots of a
+    // presence room's Y.Text into a real artifact version, layered on top
+    // of the presence registry mounted above without changing its own
+    // "ephemeral, no storage" default. `writeArtifactVersion`/`getArtifact`
+    // are the engine's own versioned-row seam — the same one a workflow's
+    // artifact revision goes through — so a co-edited text artifact's
+    // history reads identically to any other revision. `anonymousIdentity`
+    // is not used here: `writeArtifactVersion` only needs a `{tenantId,
+    // principalId}` scope, not a resolved `Identity`.
+    const artifactDb = artifactsHandle.db;
+    const artifactPersistence = createArtifactDocPersistence({
+      registry: presenceRoomRegistry,
+      loadArtifactContent: async (tenantId, artifactId) => {
+        const row = await getArtifact(artifactDb, artifactId);
+        if (row === null || row.tenantId !== tenantId) return null;
+        return row.content;
+      },
+      writeArtifactSnapshot: async (
+        tenantId,
+        artifactId,
+        authorPrincipalId,
+        content,
+      ) => {
+        const written = await writeArtifactVersion(artifactDb, {
+          scope: { tenantId, principalId: authorPrincipalId },
+          artifactId,
+          content,
+        });
+        return { version: written.version };
+      },
+      onSnapshotError: (key, error) => {
+        log.warn(
+          `Co-editing snapshot failed for ${key.tenantId}/${key.surface}: ${error}`,
+        );
+      },
+    });
+    artifactSeedOnJoin = artifactPersistence.seedOnJoin;
   } else {
     log.info("Artifacts handle unavailable (degraded mode)");
     app.route(

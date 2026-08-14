@@ -201,3 +201,161 @@ describe("canvas profile card Message action", () => {
     expect(navigated).toEqual([]);
   });
 });
+
+describe("canvas artifact pane: co-editing (CL-5958 phase 2)", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    globalThis.fetch = routeFetch as typeof fetch;
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    globalThis.fetch = realFetch;
+    window.localStorage.clear();
+  });
+
+  async function renderArtifact(props: {
+    readonly artifact: {
+      readonly id: string;
+      readonly title: string;
+      readonly rendererKind: "doc" | "sheet" | "pdf" | "unsupported";
+      readonly content: string;
+      readonly canEdit?: boolean;
+    };
+    readonly artifactDoc?: import("yjs").Doc;
+  }): Promise<void> {
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={noop}>
+            <BenchProvider>
+              <CanvasColumn
+                open
+                profile={null}
+                artifact={props.artifact}
+                focus={false}
+                onClose={noop}
+                onToggleFocus={noop}
+                onNavigate={noop}
+                {...(props.artifactDoc !== undefined
+                  ? { artifactDoc: props.artifactDoc }
+                  : {})}
+              />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+  }
+
+  test("a non-'doc' kind never renders the text editor, even with canEdit and a doc", async () => {
+    const Y = await import("yjs");
+    const doc = new Y.Doc();
+    doc.getText("content").insert(0, "sheet content");
+    await renderArtifact({
+      artifact: {
+        id: "art_1",
+        title: "Numbers",
+        rendererKind: "sheet",
+        content: "a,b\n1,2",
+        canEdit: true,
+      },
+      artifactDoc: doc,
+    });
+
+    expect(container.querySelector("textarea")).toBeNull();
+  });
+
+  test("a 'doc' artifact with canEdit and a synced doc renders an editable textarea bound to the Y.Text", async () => {
+    const Y = await import("yjs");
+    const doc = new Y.Doc();
+    doc.getText("content").insert(0, "shared draft");
+    await renderArtifact({
+      artifact: {
+        id: "art_2",
+        title: "Notes",
+        rendererKind: "doc",
+        content: "stale fetch content",
+        canEdit: true,
+      },
+      artifactDoc: doc,
+    });
+
+    const textarea = container.querySelector("textarea");
+    expect(textarea).not.toBeNull();
+    expect(textarea?.value).toBe("shared draft");
+    expect(textarea?.hasAttribute("readonly")).toBe(false);
+  });
+
+  test("a 'doc' artifact without canEdit renders the same textarea, but readonly and live-updating", async () => {
+    const Y = await import("yjs");
+    const doc = new Y.Doc();
+    doc.getText("content").insert(0, "live from co-editors");
+    await renderArtifact({
+      artifact: {
+        id: "art_3",
+        title: "Notes",
+        rendererKind: "doc",
+        content: "stale fetch content",
+        canEdit: false,
+      },
+      artifactDoc: doc,
+    });
+
+    const textarea = container.querySelector("textarea");
+    expect(textarea).not.toBeNull();
+    expect(textarea?.value).toBe("live from co-editors");
+    expect(textarea?.hasAttribute("readonly")).toBe(true);
+  });
+
+  test("typing in the editable textarea applies the diff to the shared Y.Text", async () => {
+    const Y = await import("yjs");
+    const doc = new Y.Doc();
+    doc.getText("content").insert(0, "hello");
+    await renderArtifact({
+      artifact: {
+        id: "art_4",
+        title: "Notes",
+        rendererKind: "doc",
+        content: "hello",
+        canEdit: true,
+      },
+      artifactDoc: doc,
+    });
+
+    const textarea = container.querySelector("textarea");
+    if (textarea === null) throw new Error("textarea not found");
+
+    await act(async () => {
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      nativeSetter?.call(textarea, "hello world");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(doc.getText("content").toString()).toBe("hello world");
+  });
+
+  test("a 'doc' artifact with no synced doc yet falls back to the static read-only renderer", async () => {
+    await renderArtifact({
+      artifact: {
+        id: "art_5",
+        title: "Notes",
+        rendererKind: "doc",
+        content: "fetched content",
+        canEdit: true,
+      },
+    });
+
+    expect(container.querySelector("textarea")).toBeNull();
+    expect(container.textContent).toContain("fetched content");
+  });
+});

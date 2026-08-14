@@ -14,13 +14,22 @@ import type { ArtifactRendererKind } from "@corbits/artifact-ui";
 /** The canvas's typed-artifact pane: a title, the already-resolved
  * renderer selection (see `@corbits/artifact-ui`'s `resolveArtifactRendererKind`
  * / `resolveRendererKindFromMediaType`), and the content string those
- * renderers read. Read-only in this phase — no version or edit state. */
+ * renderers read.
+ *
+ * `canEdit` (CL-5958 phase 2) opts a text-kind ("doc") artifact into
+ * `ArtifactTextEditor` instead of the read-only `ArtifactRenderer` —
+ * defaults to `false`/absent so every existing caller keeps rendering
+ * read-only with zero behavior change. The presence `/update` route's own
+ * `asset:*`/"write" grant check is the real security boundary regardless
+ * of this flag; `canEdit` only decides which component a capable viewer
+ * sees, never whether a write actually lands. */
 export type CanvasArtifactContent = {
   readonly id: string;
   readonly title: string;
   readonly rendererKind: ArtifactRendererKind;
   readonly content: string;
   readonly unavailableReason?: string;
+  readonly canEdit?: boolean;
 };
 
 export type CanvasColumnState = {
