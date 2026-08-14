@@ -13,7 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
     "react": "^19.2.0"
   },
   "devDependencies": {

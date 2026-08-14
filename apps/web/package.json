@@ -23,7 +23,7 @@
     "@corbits/routines": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
-    "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
     "@intx/types": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",

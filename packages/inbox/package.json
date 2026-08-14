@@ -13,7 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#ab72ee3ec8d386d3143734399ea21cf6ba4be446",
+    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
     "@corbits/notify": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "arktype": "catalog:",

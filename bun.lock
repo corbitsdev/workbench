@@ -30,7 +30,7 @@
         "@corbits/folded-runs": "workspace:*",
         "@corbits/inbox": "workspace:*",
         "@corbits/insights": "workspace:*",
-        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#ab72ee3ec8d386d3143734399ea21cf6ba4be446",
+        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
         "@corbits/memory": "github:corbitsdev/corbits-memory#800340252dc60393f017fa933c59a1c9e67e7264",
         "@corbits/notify": "workspace:*",
         "@corbits/routines": "workspace:*",
@@ -99,7 +99,7 @@
         "@corbits/command-palette": "workspace:*",
         "@corbits/context-menu": "workspace:*",
         "@corbits/insights": "workspace:*",
-        "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+        "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
         "@corbits/routines": "workspace:*",
         "@corbits/settings-ui": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
@@ -189,7 +189,7 @@
       "name": "@corbits/artifact-ui",
       "version": "0.0.1",
       "dependencies": {
-        "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+        "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
         "arktype": "catalog:",
         "react": "^19.2.0",
       },
@@ -217,7 +217,7 @@
       "name": "@corbits/bench-ui",
       "version": "0.0.1",
       "dependencies": {
-        "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+        "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "lucide-react": "^1.27.0",
@@ -265,7 +265,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/chat": "workspace:*",
-        "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+        "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
         "arktype": "catalog:",
         "lucide-react": "^1.27.0",
         "react": "^19.2.0",
@@ -327,7 +327,7 @@
       "name": "@corbits/context-menu",
       "version": "0.0.1",
       "dependencies": {
-        "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+        "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
         "react": "^19.2.0",
       },
       "devDependencies": {
@@ -406,7 +406,7 @@
       "name": "@corbits/inbox",
       "version": "0.0.1",
       "dependencies": {
-        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#ab72ee3ec8d386d3143734399ea21cf6ba4be446",
+        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
         "@corbits/notify": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "arktype": "catalog:",
@@ -502,7 +502,7 @@
       "dependencies": {
         "@corbits/bench-ui": "workspace:*",
         "@corbits/chat-ui": "workspace:*",
-        "@corbits/react-ui": "github:corbitsdev/react-ui#2e039d28f8a9a7afc26b3db9b0df5cd017a1c3b4",
+        "@corbits/react-ui": "github:corbitsdev/react-ui#fe973ba",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "lucide-react": "^1.27.0",
@@ -934,9 +934,6 @@
     "@corbits/react-ui",
     "@corbits/mailbox",
   ],
-  "patchedDependencies": {
-    "@corbits/mailbox@github:corbitsdev/corbits-mailbox#ab72ee3": "patches/@corbits%2Fmailbox@0.1.0.patch",
-  },
   "overrides": {
     "arktype": "^2.2.0",
   },
@@ -1064,7 +1061,7 @@
 
     "@corbits/linear-tools": ["@corbits/linear-tools@workspace:packages/linear-tools"],
 
-    "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#ab72ee3", { "dependencies": { "@hono/standard-validator": "0.2.3", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "@intx/mime": "^0.2.2", "@intx/types": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-ab72ee3", "sha512-KM0YH5rJifmOH55WtwNcqRJa64Kq4ej2iTBn+0t8rb+8sLKqFR8uxecrfVnah4mC0NpIVfnG+8pt0rFnbEciDA=="],
+    "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#caa5214", { "dependencies": { "@hono/standard-validator": "0.2.3", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "@intx/mime": "^0.2.2", "@intx/types": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-caa5214", "sha512-z8DRBFgA4ukM8p29COeaMjfKZYe5jAUF4OBMiaIQFuW592+DGD/y6Ws6SjGlXmR9azkHNWh8oTzjlWlRP24vsQ=="],
 
     "@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#8003402", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-8003402", "sha512-F1ypnvRuJLKScrm8sgknPyh4f87xeo/v5Nnm2/JyIckWiez7HZi80crTSK8S+udGBcCkr5v8F8NhB9GdwKlX7g=="],
 
@@ -1076,7 +1073,7 @@
 
     "@corbits/process-granola-call-workflow": ["@corbits/process-granola-call-workflow@workspace:workflows/process-granola-call"],
 
-    "@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#2e039d2", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-2e039d2", "sha512-V4rA8V9+3BIQdmWNekAAPL+aVtaW7XJnsh97YJa26f0R7Oosmq7xc5Ax52KrE20I1XlD+YWQ7UpY9HX+S0+6XA=="],
+    "@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#fe973ba", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-fe973ba", "sha512-rfMu9cm8+7CRBBzbj7XhJbtDildIDXyYjX90Dh9xRDvtUxXMxoPxHJdKJfk/TRe9fRMYHJMRePz+iyYuDB5aDA=="],
 
     "@corbits/routines": ["@corbits/routines@workspace:packages/routines"],
 
@@ -1958,14 +1955,6 @@
 
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
-    "@corbits/bench-ui/@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#2e039d2", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-2e039d2", "sha512-V4rA8V9+3BIQdmWNekAAPL+aVtaW7XJnsh97YJa26f0R7Oosmq7xc5Ax52KrE20I1XlD+YWQ7UpY9HX+S0+6XA=="],
-
-    "@corbits/chat-ui/@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#2e039d2", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-2e039d2", "sha512-V4rA8V9+3BIQdmWNekAAPL+aVtaW7XJnsh97YJa26f0R7Oosmq7xc5Ax52KrE20I1XlD+YWQ7UpY9HX+S0+6XA=="],
-
-    "@corbits/context-menu/@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#2e039d2", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-2e039d2", "sha512-V4rA8V9+3BIQdmWNekAAPL+aVtaW7XJnsh97YJa26f0R7Oosmq7xc5Ax52KrE20I1XlD+YWQ7UpY9HX+S0+6XA=="],
-
-    "@corbits/settings-ui/@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#2e039d2", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-2e039d2", "sha512-V4rA8V9+3BIQdmWNekAAPL+aVtaW7XJnsh97YJa26f0R7Oosmq7xc5Ax52KrE20I1XlD+YWQ7UpY9HX+S0+6XA=="],
-
     "@esbuild-kit/core-utils/esbuild": ["esbuild@0.18.20", "", { "optionalDependencies": { "@esbuild/android-arm": "0.18.20", "@esbuild/android-arm64": "0.18.20", "@esbuild/android-x64": "0.18.20", "@esbuild/darwin-arm64": "0.18.20", "@esbuild/darwin-x64": "0.18.20", "@esbuild/freebsd-arm64": "0.18.20", "@esbuild/freebsd-x64": "0.18.20", "@esbuild/linux-arm": "0.18.20", "@esbuild/linux-arm64": "0.18.20", "@esbuild/linux-ia32": "0.18.20", "@esbuild/linux-loong64": "0.18.20", "@esbuild/linux-mips64el": "0.18.20", "@esbuild/linux-ppc64": "0.18.20", "@esbuild/linux-riscv64": "0.18.20", "@esbuild/linux-s390x": "0.18.20", "@esbuild/linux-x64": "0.18.20", "@esbuild/netbsd-x64": "0.18.20", "@esbuild/openbsd-x64": "0.18.20", "@esbuild/sunos-x64": "0.18.20", "@esbuild/win32-arm64": "0.18.20", "@esbuild/win32-ia32": "0.18.20", "@esbuild/win32-x64": "0.18.20" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-ceqxoedUrcayh7Y7ZX6NdbbDzGROiyVBgC4PriJThBKSVPWnnFHZAkfI1lJT8QFkOwH4qOS2SJkS4wvpGl8BpA=="],
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
@@ -1985,8 +1974,6 @@
     "@tailwindcss/oxide-wasm32-wasi/tslib": ["tslib@2.8.1", "", { "bundled": true }, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.6", "", {}, "sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw=="],
-
-    "@workbench/web/@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#2e039d2", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-2e039d2", "sha512-V4rA8V9+3BIQdmWNekAAPL+aVtaW7XJnsh97YJa26f0R7Oosmq7xc5Ax52KrE20I1XlD+YWQ7UpY9HX+S0+6XA=="],
 
     "cacache/lru-cache": ["lru-cache@11.5.2", "", {}, "sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g=="],
 
