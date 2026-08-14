@@ -1,0 +1,31 @@
+{
+  "name": "@corbits/collateral-generation-workflow",
+  "private": true,
+  "description": "Drafts marketing collateral from one or more picked sources and content types, with a per-piece swipe review and one human approval on the final assembled set",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "type": "module",
+  "corbits": {
+    "workflow": {
+      "assetName": "collateral-generation",
+      "displayName": "Collateral generation",
+      "automatable": false
+    }
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/workflow": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -36,6 +36,13 @@ describe("workflow catalog", () => {
     );
   });
 
+  test("does not mark collateral-generation automatable — on-demand only, gated behind its final approval", () => {
+    expect(isAutomatableWorkflowName("collateral-generation")).toBe(false);
+    expect(workflowDisplayName("collateral-generation")).toBe(
+      "Collateral generation",
+    );
+  });
+
   test("rejects agent handles and channel-host names as automatable", () => {
     expect(isAutomatableWorkflowName("my-researcher")).toBe(false);
     expect(isAutomatableWorkflowName("channel-host-abc")).toBe(false);
