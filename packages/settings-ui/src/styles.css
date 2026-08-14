@@ -372,6 +372,16 @@
   padding-top: 0.25rem;
 }
 
+.settings-connection-card-muted {
+  opacity: 0.75;
+}
+
+.settings-connection-card-hint {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+
 .settings-connections-advanced {
   border-top: 1px solid var(--border);
   padding-top: 0.75rem;

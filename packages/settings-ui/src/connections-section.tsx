@@ -31,6 +31,7 @@ import { useEffect, useState } from "react";
 
 import {
   completeConnectorCredential,
+  fetchOAuthConfigured,
   testConnectorCredential,
 } from "./connections-api";
 import { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
@@ -76,6 +77,7 @@ function oauthStartHref(connectorId: string): string {
 type ConnectionsData = {
   readonly credentials: readonly Credential[];
   readonly providers: readonly Provider[];
+  readonly oauthConfigured: Readonly<Record<string, boolean>>;
 };
 
 export function ConnectionsSection({
@@ -101,10 +103,17 @@ export function ConnectionsSection({
     if (tenantId === null) return;
     let cancelled = false;
     setState({ kind: "loading" });
-    Promise.all([listCredentials(tenantId), listProviders(tenantId)])
-      .then(([credentials, providers]) => {
+    Promise.all([
+      listCredentials(tenantId),
+      listProviders(tenantId),
+      fetchOAuthConfigured(tenantId),
+    ])
+      .then(([credentials, providers, oauthConfigured]) => {
         if (!cancelled)
-          setState({ kind: "ready", data: { credentials, providers } });
+          setState({
+            kind: "ready",
+            data: { credentials, providers, oauthConfigured },
+          });
       })
       .catch((cause: unknown) => {
         if (!cancelled)
@@ -229,6 +238,10 @@ export function ConnectionsSection({
               state.data.credentials,
               state.data.providers,
             )}
+            // Absent from the map reads as "not configured" — the
+            // conservative default: never render a live Connect button
+            // on data this section failed to positively confirm.
+            configured={state.data.oauthConfigured[card.id] ?? false}
             onDisconnect={handleDisconnect}
           />
         ))}
@@ -361,12 +374,38 @@ function ConnectorCard({
 function OAuthConnectorCardView({
   card,
   statusResult,
+  configured,
   onDisconnect,
 }: {
   readonly card: OAuthConnectorCard;
   readonly statusResult: ConnectorStatusResult;
+  /** Whether an operator has registered this connector's OAuth app
+   * (a client id present server-side) — distinct from `statusResult`,
+   * which is about whether *this tenant* has connected, not whether
+   * connecting is even possible yet. */
+  readonly configured: boolean;
   readonly onDisconnect: (credential: Credential) => void;
 }) {
+  // An unconfigured connector never gets a live Connect button, even
+  // when this tenant already holds a (now-orphaned) credential for it —
+  // there is no OAuth app to round-trip through until an operator
+  // registers one, so the muted state wins regardless of `statusResult`.
+  if (!configured) {
+    return (
+      <div className="settings-connection-card settings-connection-card-muted">
+        <span className="settings-connection-card-title">
+          {card.displayName}
+        </span>
+        <Badge tone="neutral">
+          {SETTINGS_STRINGS.connectionsStatusNotConfigured}
+        </Badge>
+        <p className="settings-connection-card-hint">
+          {SETTINGS_STRINGS.connectionsNotConfiguredHint}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="settings-connection-card">
       <span className="settings-connection-card-title">{card.displayName}</span>

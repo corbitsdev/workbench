@@ -228,6 +228,9 @@ export const SETTINGS_STRINGS = {
   connectionsStatusNotConnected: "Not connected",
   connectionsStatusConnected: "Connected",
   connectionsStatusNeedsAttention: "Needs attention",
+  connectionsStatusNotConfigured: "Not configured",
+  connectionsNotConfiguredHint:
+    "An operator needs to register an OAuth app for this connector before anyone can connect it.",
   connectionsConnectAction: "Connect",
   connectionsReconnectAction: "Reconnect",
   connectionsDisconnectAction: "Disconnect",

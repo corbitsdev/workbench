@@ -64,6 +64,11 @@ export type CreateConnectionRoutesDeps = {
     args: EnsureCredentialArgs,
     log: (line: string) => void,
   ) => ReturnType<typeof ensureCredential>;
+  /** The env bag an oauth-pkce/oauth-code descriptor's `oauth.clientId(env)`
+   * reads a registered app id from (e.g. `{huggingfaceClientId}`) — the
+   * same bag `createOAuthConnectRoutes` reads, so `GET /oauth-configured`
+   * reports exactly what the connect flow itself would decide. */
+  oauthEnv?: Readonly<Record<string, string | undefined>>;
 };
 
 export function createConnectionRoutes(
@@ -74,6 +79,28 @@ export function createConnectionRoutes(
   const registry = deps.registry ?? CONNECTOR_REGISTRY;
   const runEnsureProvider = deps.ensureProviderFn ?? ensureProvider;
   const runEnsureCredential = deps.ensureCredentialFn ?? ensureCredential;
+
+  // Lets a settings-ui OAuth card tell "not configured" (an operator
+  // hasn't registered this connector's OAuth app yet) apart from "not
+  // connected" (configured, just not connected by this tenant) before
+  // ever rendering a Connect button — see this route's own header. Read
+  // access only; no `apiKey`/state to leak, so it needs no stronger a
+  // grant than the rest of this tenant-scoped surface already requires.
+  app.get(
+    "/oauth-configured",
+    deps.requireGrant("credential:*", "create"),
+    (c) => {
+      const oauthEnv = deps.oauthEnv ?? {};
+      const configured: Record<string, boolean> = {};
+      for (const [id, descriptor] of Object.entries(registry)) {
+        if (descriptor.oauth === undefined) continue;
+        configured[id] =
+          descriptor.oauth.clientId === undefined ||
+          descriptor.oauth.clientId(oauthEnv) !== undefined;
+      }
+      return c.json(configured, 200);
+    },
+  );
 
   function findApiKeyDescriptor(connectorId: string) {
     const descriptor = registry[connectorId];
