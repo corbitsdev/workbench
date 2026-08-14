@@ -26,7 +26,7 @@ import {
   type SpawnOpts,
   type SubprocessSpawner,
 } from "@intx/workflow-host";
-import { hexEncode } from "@intx/types";
+import { hexEncode, isRunAddress } from "@intx/types";
 import {
   parseInferenceEvent,
   type CryptoProvider,
@@ -1236,6 +1236,17 @@ export function createSidecarDeployRouter(deps: {
           const derived = deriveDeploymentId(record.agentAddress);
           if (derived !== deploymentId) {
             logger.warn`skipping workflow deployment restore: ${record.agentAddress} derives slug ${derived}, not its directory ${deploymentId}`;
+            continue;
+          }
+
+          // A record whose address the platform's own parser rejects is
+          // permanently unrestorable — it predates the current run-address
+          // scheme (e.g. legacy "ins_" prefixes) and no later boot can ever
+          // revive it. Unlike transient failures (kept for retry next boot),
+          // these are pruned so they stop warning on every startup.
+          if (!isRunAddress(record.agentAddress)) {
+            await deleteWorkflowDeploymentRecord(dataDir, deploymentId);
+            logger.info`Pruned unrestorable workflow deployment record ${deploymentId} (legacy address ${record.agentAddress})`;
             continue;
           }
 
