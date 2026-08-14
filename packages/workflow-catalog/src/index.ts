@@ -59,6 +59,11 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     displayName: "Pain-point collateral",
     automatable: false,
   },
+  {
+    assetName: "collateral-generation",
+    displayName: "Collateral generation",
+    automatable: false,
+  },
 ];
 
 const byAssetName = new Map(
