@@ -46,6 +46,15 @@ export const PAIN_POINT_COLLATERAL_FINALIZE_DESCRIPTION =
   "Finalizes one piece of pain-point sales collateral, pending human approval, and persists it as a Library artifact.";
 
 const FinalizeArgs = type({
+  /**
+   * Which of the two shapes this call is: `"collateral"` for a real,
+   * drafted piece; `"status-note"` for the no-data path's teaching
+   * payload. This is what fixes the persisted artifact's `kind` — the
+   * model names the outcome, but never supplies `kind` directly, so a
+   * run can never accidentally (or by prompt drift) mislabel a teaching
+   * payload as real collateral or vice versa.
+   */
+  outcome: "'collateral'|'status-note'",
   /** Short, human-facing title. Doubles as the inbox/approve-card headline. */
   title: "string > 0",
   /** The customer pain point this piece targets, verbatim from the transcript. */
@@ -58,19 +67,20 @@ export type FinalizeArgs = typeof FinalizeArgs.infer;
 
 export type ArtifactPayload = {
   title: string;
-  kind: "text";
+  kind: "text" | "status-note";
   content: string;
 };
 
 /**
  * The payload `createWorkflowArtifact` persists (`{ title, kind,
  * content }`). Built here so the persist call is a straight pass-through
- * of this object, not a payload assembled at the call site.
+ * of this object, not a payload assembled at the call site. `kind` comes
+ * from `args.outcome`, never from free-text the model could drift on.
  */
 export function buildArtifactPayload(args: FinalizeArgs): ArtifactPayload {
   return {
     title: args.title,
-    kind: "text",
+    kind: args.outcome === "status-note" ? "status-note" : "text",
     content: `Targets: ${args.painPoint}\n\n${args.content}`,
   };
 }
@@ -109,11 +119,12 @@ export const PAIN_POINT_COLLATERAL_FINALIZE_TOOL =
           inputSchema: {
             type: "object",
             properties: {
+              outcome: { type: "string", enum: ["collateral", "status-note"] },
               title: { type: "string" },
               painPoint: { type: "string" },
               content: { type: "string" },
             },
-            required: ["title", "painPoint", "content"],
+            required: ["outcome", "title", "painPoint", "content"],
           },
         },
       ],

@@ -75,21 +75,21 @@ export const PAIN_POINT_COLLATERAL_SYSTEM_PROMPT =
   "available, or the fetch fails — say so plainly in one sentence and " +
   'stop. If it reports `"none"`, or the transcript you end up with is ' +
   `still empty, call \`${PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME}\` ` +
-  "with a teaching payload instead of stopping silently: a title such " +
-  'as "No transcript available", the pain point stated honestly as ' +
-  "none found, and a body naming what was checked (both the " +
-  "`transcript` and `noteId` trigger fields), that neither carried " +
-  "usable content, and the concrete next step — reply with a pasted " +
-  "transcript, or with a Granola call's note id. Never invent a " +
-  "transcript, pain points, or collateral content.\n\n" +
+  'with outcome "status-note" and a teaching payload instead of ' +
+  'stopping silently: a title such as "No transcript available", the ' +
+  "pain point stated honestly as none found, and a body naming what " +
+  "was checked (both the `transcript` and `noteId` trigger fields), " +
+  "that neither carried usable content, and the concrete next step — " +
+  "reply with a pasted transcript, or with a Granola call's note id. " +
+  "Never invent a transcript, pain points, or collateral content.\n\n" +
   "Extraction: from the transcript, identify the customer's real pain " +
   "points — specific problems they described, not generic categories.\n\n" +
   "Drafting: draft one piece of collateral that speaks directly to the " +
   "most significant pain point you found.\n\n" +
   `Finalizing: call \`${PAIN_POINT_COLLATERAL_FINALIZE_TOOL_NAME}\` ` +
-  "exactly once, with a short title, the exact pain point you are " +
-  "targeting, and the drafted collateral body. This call requires a " +
-  "human's approval before it completes.\n\n" +
+  'exactly once, with outcome "collateral", a short title, the exact ' +
+  "pain point you are targeting, and the drafted collateral body. " +
+  "This call requires a human's approval before it completes.\n\n" +
   "If the call succeeds, present the finalized collateral as your " +
   "reply — the title, then the body, clearly formatted — with no " +
   "commentary about the approval mechanism itself. If the call is " +
