@@ -97,8 +97,8 @@ Creation helper: `createDmChannelSpec` in `@corbits/bench-ui`.
 - `channel_share` records that a projection exists; `channel_share_member`
   records who, on the projected side, can actually see it.
   `packages/chat/src/routes.ts`'s `resolveChannelAccess` is the one
-  fail-closed gate every message/read-state/typing/stream/blob route
-  resolves through: no share row → not found; a share row but the
+  fail-closed gate every message/read-state/typing/stream/blob/block-response
+  route resolves through: no share row → not found; a share row but the
   caller's principal was never added as a member → also not found — a
   third tenant with no share, and a projected tenant's principal nobody
   added, are both indistinguishable from "channel doesn't exist" to the
