@@ -201,8 +201,15 @@ export const COLLATERAL_GENERATION_SYSTEM_PROMPT = [
     "did load; never fail the whole run because one source is " +
     "unavailable, and never fabricate content for a source you could " +
     "not reach. If nothing you can reach yields any content and no " +
-    "pasted text was given either, say plainly that you have nothing " +
-    "to draft from and stop — never invent source material.",
+    "pasted text was given either, you have nothing to draft from: " +
+    `call ${COLLATERAL_GENERATION_FINALIZE_TOOL_NAME} with a single ` +
+    'teaching piece — title "Nothing to draft from", content type ' +
+    '"status-note", and a body naming exactly which sources you tried, ' +
+    "which were unreachable or not picked, and the concrete next step " +
+    "(paste text directly, supply a reachable note id or issue, or " +
+    "confirm the source is connected) — so a record of the attempt " +
+    "still lands in the Library instead of a bare reply with no " +
+    "artifact at all. Never invent source material.",
 
   "Drafting: draft one piece per picked content type, each grounded " +
     "only in the gathered source material, following that type's " +
