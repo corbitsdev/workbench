@@ -322,6 +322,7 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProviderCard[] = [
 
 const CredentialSeeded = type({
   kind: "'seeded'",
+  "tenantId?": "string",
   tenantSlug: "string",
   workflows: "string[]",
 });
@@ -329,6 +330,11 @@ const CredentialSeeded = type({
 export type CredentialOutcome =
   | {
       readonly kind: "seeded";
+      /** Absent only for a response older than this field existing --
+       * every current `/complete` response carries it. Consumers (the
+       * onboarding wizard's optional "Connect your tools" phase) treat
+       * a missing id as "skip that phase," never as an error. */
+      readonly tenantId?: string;
       readonly tenantSlug: string;
       readonly workflows: string[];
     }
@@ -432,6 +438,7 @@ export async function submitCredential(
     }
     return {
       kind: "seeded",
+      ...(parsed.tenantId !== undefined ? { tenantId: parsed.tenantId } : {}),
       tenantSlug: parsed.tenantSlug,
       workflows: parsed.workflows,
     };
@@ -445,6 +452,7 @@ export async function submitCredential(
 
 const CompleteSetupResult = type({
   kind: "'seeded' | 'unseeded'",
+  "tenantId?": "string",
   "tenantSlug?": "string",
   "workflows?": "string[]",
 });
@@ -452,6 +460,8 @@ const CompleteSetupResult = type({
 export type CompleteSetupOutcome =
   | {
       readonly kind: "seeded";
+      /** See `CredentialOutcome`'s own note on this field. */
+      readonly tenantId?: string;
       readonly tenantSlug: string;
       readonly workflows: string[];
     }
@@ -500,6 +510,7 @@ export async function completeSetup(): Promise<CompleteSetupOutcome> {
     }
     return {
       kind: "seeded",
+      ...(parsed.tenantId !== undefined ? { tenantId: parsed.tenantId } : {}),
       tenantSlug: parsed.tenantSlug,
       workflows: parsed.workflows,
     };

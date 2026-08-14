@@ -682,6 +682,7 @@ export function createOnboardingRoutes(
         return c.json(
           {
             kind: "seeded",
+            tenantId: tenant.tenantId,
             tenantSlug: tenant.tenantSlug,
             workflows: DEFAULT_WORKFLOWS.map((workflow) => workflow.assetName),
           },
@@ -723,6 +724,7 @@ export function createOnboardingRoutes(
       return c.json(
         {
           kind: "seeded",
+          tenantId: tenant.tenantId,
           tenantSlug: tenant.tenantSlug,
           workflows: seeded.workflows,
         },
