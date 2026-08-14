@@ -36,15 +36,15 @@ export type CatalogFields = {
 export function withCatalogFields<T extends { readonly name: string }>(
   definitions: readonly T[],
 ): readonly (T & CatalogFields)[] {
-  return definitions.map((definition) => {
-    const entry = workflowCatalogEntry(definition.name);
+  return definitions.map((workflow) => {
+    const entry = workflowCatalogEntry(workflow.name);
     if (entry === undefined) {
       throw new Error(
-        `No workflow-catalog entry for automatable definition "${definition.name}".`,
+        `No workflow-catalog entry for automatable workflow "${workflow.name}".`,
       );
     }
     return {
-      ...definition,
+      ...workflow,
       whatItDoes: entry.whatItDoes,
       requiredConnections: entry.requiredConnections,
       exampleOutput: entry.exampleOutput,
