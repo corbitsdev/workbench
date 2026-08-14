@@ -107,6 +107,16 @@ describe("workflow catalog", () => {
     }
   });
 
+  test("every exampleOutput is a single capitalized readout fragment with no trailing period", () => {
+    for (const entry of WORKFLOW_CATALOG) {
+      expect(entry.exampleOutput).not.toContain("\n");
+      expect(entry.exampleOutput.endsWith(".")).toBe(false);
+      expect(entry.exampleOutput[0]).toBe(
+        entry.exampleOutput[0]?.toUpperCase(),
+      );
+    }
+  });
+
   test("every requiredConnections id names a real connector in the registry", () => {
     const knownConnectorIds = new Set(Object.keys(CONNECTOR_REGISTRY));
     for (const entry of WORKFLOW_CATALOG) {

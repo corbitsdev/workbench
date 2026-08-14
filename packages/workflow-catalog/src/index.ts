@@ -19,7 +19,8 @@ export type WorkflowCatalogEntry = {
    * workflows with no external connector dependency.
    */
   readonly requiredConnections: readonly string[];
-  /** A 2-3 line honest sample of what a run actually produces. */
+  /** A short, honest one-line readout of what a run actually produces —
+   * capitalized, no trailing period, same shape across every entry. */
   readonly exampleOutput: string;
   /** A short, honestly-hedged hint — never fabricated precision. */
   readonly typicalDuration: string;
@@ -38,7 +39,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Replies with the exact text it received — a wiring check for the mail-triggered contract, not a real assistant.",
     requiredConnections: [],
-    exampleOutput: "You: Testing 1 2 3\nEcho: Testing 1 2 3",
+    exampleOutput: "Echoed back: Testing 1 2 3",
     typicalDuration: "a few seconds",
   },
   {
@@ -48,8 +49,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "A general-purpose assistant for the workspace — answers questions, drafts text, and reasons through problems in conversation.",
     requiredConnections: [],
-    exampleOutput:
-      "You: Draft a short reply declining this meeting.\nMyra: Here's a short, polite decline you can send as-is...",
+    exampleOutput: "Drafted a short, polite decline you can send as-is",
     typicalDuration: "varies with the conversation",
   },
   {
@@ -59,7 +59,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Completes immediately on every trigger with no real reply — a lightweight target for testing scheduling and mail triggers.",
     requiredConnections: [],
-    exampleOutput: "Run completed at the trigger time. No reply content.",
+    exampleOutput: "Completed at the trigger time, no reply content",
     typicalDuration: "a few seconds",
   },
   {
@@ -79,8 +79,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Polls Granola for recent calls and starts one process-granola-call run per call that doesn't yet have published notes.",
     requiredConnections: ["granola"],
-    exampleOutput:
-      "Checked the last 10 calls. Started process-granola-call runs for 2 new calls; the rest already had published notes.",
+    exampleOutput: "Checked 10 calls, started 2 new process-granola-call runs",
     typicalDuration: "a few seconds",
   },
   {
@@ -91,7 +90,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       "Fetches one call's transcript and publishes five-section working notes — Participants, Summary, Pain points, Decisions, Action items — grounded in the transcript.",
     requiredConnections: ["granola"],
     exampleOutput:
-      "Participants: Jamie (Acme), Priya (sales)\nSummary: Renewal discussion, pricing questions raised.\nAction items: Send updated quote by Friday.",
+      "Participants, summary, and action items from the call transcript",
     typicalDuration: "1-2 minutes",
   },
   {
@@ -101,8 +100,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Pulls the sender's recent Granola calls and Linear issues and writes a three-section daily brief: what happened, what needs attention, and suggested next actions.",
     requiredConnections: ["granola", "linear"],
-    exampleOutput:
-      "## What happened\n2 calls logged, 3 issues updated.\n## What needs attention today\nCLI-142 is blocked on review.",
+    exampleOutput: "2 calls logged, 3 issues updated, CLI-142 blocked on review",
     typicalDuration: "under a minute",
   },
   {
@@ -112,8 +110,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Extracts a customer's real pain points from a call transcript and drafts one piece of targeted collateral, held for approval before it's finalized.",
     requiredConnections: ["granola"],
-    exampleOutput:
-      'Draft: "Slow onboarding is costing you deals" — a one-pager targeting the onboarding-speed pain point raised on the call.',
+    exampleOutput: "Drafted a one-pager on the onboarding-speed pain point",
     typicalDuration: "a few minutes, plus the time to approve",
   },
   {
@@ -123,8 +120,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Drafts marketing collateral across picked content types from Granola notes, Linear issues, or pasted text, with a swipe review on every draft and one approval on the final set.",
     requiredConnections: ["granola", "linear"],
-    exampleOutput:
-      "3 drafts ready for review: a LinkedIn post, a short blog, and a Twitter thread — swipe Good/Bad/Regenerate on each.",
+    exampleOutput: "3 drafts ready to review: LinkedIn post, blog, Twitter thread",
     typicalDuration: "several minutes, plus review and approval time",
   },
   {
@@ -134,8 +130,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Scores Reddit posts as outreach opportunities for a target website, after a review of the search plan and one approval on the final list.",
     requiredConnections: ["scrapecreators"],
-    exampleOutput:
-      "Ranked 6 opportunities, 2 scored 5/5 — explicit buying signals in r/smallbusiness and r/SaaS.",
+    exampleOutput: "Ranked 6 opportunities, 2 scored 5/5 on buying signals",
     typicalDuration: "a few minutes, plus review and approval time",
   },
   {
@@ -145,8 +140,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Researches a topic over the last 30 days across web search and GitHub, and writes a cited report with sourced findings.",
     requiredConnections: ["exa"],
-    exampleOutput:
-      "## Overview\nActivity picked up mid-month.\n## Key findings\nThree new competing launches, each cited to its source.",
+    exampleOutput: "Cited report: 3 new competing launches this month",
     typicalDuration: "1-2 minutes",
   },
 ];
