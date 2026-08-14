@@ -52,10 +52,9 @@ function testEnv(): WorkflowArtifactEnv {
 test("run persists the artifact on real invocation (i.e. after approval re-dispatches the call) and reports it persisted", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
-    new Response(
-      JSON.stringify({ data: { id: "art_1", version: 1 } }),
-      { status: 201 },
-    )) as unknown as typeof fetch;
+    new Response(JSON.stringify({ data: { id: "art_1", version: 1 } }), {
+      status: 201,
+    })) as unknown as typeof fetch;
 
   try {
     const bundle = PAIN_POINT_COLLATERAL_FINALIZE_TOOL(testEnv());

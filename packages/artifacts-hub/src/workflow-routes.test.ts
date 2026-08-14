@@ -19,7 +19,10 @@ const GOOD_TOKEN = "sidecar-token";
 const GOOD_ADDRESS = "run_1@workflow";
 
 function fakeStore(overrides: Partial<WorkflowArtifactRoutesStore> = {}) {
-  const created: { scope: ResolvedWorkflowRunScope; input: CreateWorkflowArtifactInput }[] = [];
+  const created: {
+    scope: ResolvedWorkflowRunScope;
+    input: CreateWorkflowArtifactInput;
+  }[] = [];
   const store: WorkflowArtifactRoutesStore = {
     async create(scope, input) {
       created.push({ scope, input });
@@ -82,7 +85,10 @@ describe("POST / (create)", () => {
     const body = (await res.json()) as { data: CreatedWorkflowArtifact };
     expect(body.data).toEqual({ id: "art_1", version: 1 });
     expect(created).toEqual([
-      { scope: SCOPE, input: { title: "Notes", kind: "text", content: "hello" } },
+      {
+        scope: SCOPE,
+        input: { title: "Notes", kind: "text", content: "hello" },
+      },
     ]);
   });
 

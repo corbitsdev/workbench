@@ -43,7 +43,11 @@ async function runArtifactListRecent(
       },
       limit !== undefined ? { limit } : {},
     );
-    return { callId: call.id, isError: false, content: JSON.stringify({ artifacts }) };
+    return {
+      callId: call.id,
+      isError: false,
+      content: JSON.stringify({ artifacts }),
+    };
   } catch (err) {
     return {
       callId: call.id,

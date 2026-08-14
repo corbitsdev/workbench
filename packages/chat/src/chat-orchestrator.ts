@@ -161,7 +161,10 @@ async function postFinalizedTurnArtifacts(
  */
 export function createArtifactDeliveryHandler(
   deps: ChatOrchestratorDeps,
-): (agentAddress: string, turn: { toolCalls: FinalizedTurnToolCall[] }) => void {
+): (
+  agentAddress: string,
+  turn: { toolCalls: FinalizedTurnToolCall[] },
+) => void {
   return (agentAddress, turn) => {
     void postFinalizedTurnArtifacts(deps, agentAddress, turn.toolCalls).catch(
       (cause: unknown) => {

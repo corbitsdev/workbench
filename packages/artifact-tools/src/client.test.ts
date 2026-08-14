@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 
-import {
-  createWorkflowArtifact,
-  listRecentWorkflowArtifacts,
-} from "./client";
+import { createWorkflowArtifact, listRecentWorkflowArtifacts } from "./client";
 
 const CONFIG = {
   hubArtifactsUrl: "https://hub.example.com",
@@ -30,9 +27,7 @@ test("createWorkflowArtifact posts to the workflow-artifacts endpoint and return
   );
 
   expect(result).toEqual({ id: "art_1", version: 1 });
-  expect(captured.url).toBe(
-    "https://hub.example.com/api/workflow-artifacts/",
-  );
+  expect(captured.url).toBe("https://hub.example.com/api/workflow-artifacts/");
   const headers = captured.init?.headers as Record<string, string>;
   expect(headers["authorization"]).toBe("Bearer sc-token");
   expect(headers["x-workflow-run-address"]).toBe("run_1@workflow");

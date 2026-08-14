@@ -23,7 +23,7 @@ describe("ArtifactChip", () => {
     const markup = renderToStaticMarkup(
       <ArtifactChip part={filePart({ data: "aGVsbG8=" })} />,
     );
-    expect(markup).toContain("disabled=\"\"");
+    expect(markup).toContain('disabled=""');
   });
 
   test("is openable when artifactId is set and onOpen is supplied", () => {
@@ -33,24 +33,21 @@ describe("ArtifactChip", () => {
         onOpen={() => {}}
       />,
     );
-    expect(markup).not.toContain("disabled=\"\"");
+    expect(markup).not.toContain('disabled=""');
   });
 
   test("is openable when blobId is set and onOpen is supplied", () => {
     const markup = renderToStaticMarkup(
-      <ArtifactChip
-        part={filePart({ blobId: "blob_1" })}
-        onOpen={() => {}}
-      />,
+      <ArtifactChip part={filePart({ blobId: "blob_1" })} onOpen={() => {}} />,
     );
-    expect(markup).not.toContain("disabled=\"\"");
+    expect(markup).not.toContain('disabled=""');
   });
 
   test("stays disabled when artifactId is set but no onOpen is supplied", () => {
     const markup = renderToStaticMarkup(
       <ArtifactChip part={filePart({ artifactId: "art_1" })} />,
     );
-    expect(markup).toContain("disabled=\"\"");
+    expect(markup).toContain('disabled=""');
   });
 
   test("renders the file name and media type", () => {

@@ -58,9 +58,7 @@ export const FilePart = type({
   // `artifactId` is set.
   if (part.artifactId !== undefined) {
     if (hasBlobId && hasData) {
-      return ctx.reject(
-        "`blobId` and `data` cannot both be set on a FilePart",
-      );
+      return ctx.reject("`blobId` and `data` cannot both be set on a FilePart");
     }
     return true;
   }

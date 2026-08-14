@@ -93,9 +93,14 @@ export function createWorkflowArtifactDbStore(
       return { id: row.id, version: row.version };
     },
     async listRecent(scope, limit) {
-      const result = await listArtifacts(db, anonymousIdentity, scope.tenantId, {
-        limit,
-      });
+      const result = await listArtifacts(
+        db,
+        anonymousIdentity,
+        scope.tenantId,
+        {
+          limit,
+        },
+      );
       return result.rows.map(serializeArtifactListItem);
     },
   };

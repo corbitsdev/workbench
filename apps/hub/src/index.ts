@@ -239,13 +239,16 @@ export async function createHub(config: HubConfig) {
   // `createEventCollectorRegistry` construction time, before those
   // deps exist, so this indirection ref is set once they do and every
   // call before that point is a harmless no-op.
-  let artifactDeliveryHandler:
-    | ((agentAddress: string, turn: { toolCalls: FinalizedTurnToolCall[] }) => void)
-    | undefined;
+  const artifactDeliveryHandlerRef: {
+    current?: (
+      agentAddress: string,
+      turn: { toolCalls: FinalizedTurnToolCall[] },
+    ) => void;
+  } = {};
   const eventCollectors = createEventCollectorRegistry({
     db,
     onTurnFinalized: (agentAddress, turn) =>
-      artifactDeliveryHandler?.(agentAddress, turn),
+      artifactDeliveryHandlerRef.current?.(agentAddress, turn),
   });
   createHubSessionOrchestrator({
     events: sidecarRouter.events,
@@ -415,7 +418,7 @@ export async function createHub(config: HubConfig) {
   });
   // Now that `chatStore`/`chatPlatform` exist, arm the finalized-turn
   // artifact-delivery ref declared beside `eventCollectors` above.
-  artifactDeliveryHandler = createArtifactDeliveryHandler({
+  artifactDeliveryHandlerRef.current = createArtifactDeliveryHandler({
     db,
     store: chatStore,
     platform: chatPlatform,

@@ -32,8 +32,20 @@ describe("artifactPartsForToolCall", () => {
       isError: false,
       result: JSON.stringify({
         artifacts: [
-          { id: "art_1", version: 1, title: "A", kind: "linkedin-post", persisted: true },
-          { id: "art_2", version: 1, title: "B", kind: "text", persisted: true },
+          {
+            id: "art_1",
+            version: 1,
+            title: "A",
+            kind: "linkedin-post",
+            persisted: true,
+          },
+          {
+            id: "art_2",
+            version: 1,
+            title: "B",
+            kind: "text",
+            persisted: true,
+          },
         ],
       }),
     });
