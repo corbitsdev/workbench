@@ -7,7 +7,11 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 
-import { createCleanupHarness, type SpawnedApp } from "./harness.ts";
+import {
+  createCleanupHarness,
+  runCleanups,
+  type SpawnedApp,
+} from "./harness.ts";
 
 describe("createCleanupHarness", () => {
   test("tempDir mkdtemps a real directory named with its prefix", async () => {
@@ -41,5 +45,23 @@ describe("createCleanupHarness", () => {
     };
     track(app);
     expect(stopped).toBe(false);
+  });
+
+  test("a throwing cleanup does not abort the rest; first failure rethrows", async () => {
+    const ran: string[] = [];
+    const cleanups: Array<() => Promise<void> | void> = [
+      () => {
+        ran.push("first-registered");
+      },
+      () => {
+        throw new Error("boom");
+      },
+      () => {
+        ran.push("last-registered");
+      },
+    ];
+    await expect(runCleanups(cleanups)).rejects.toThrow("boom");
+    expect(ran).toEqual(["last-registered", "first-registered"]);
+    expect(cleanups).toHaveLength(0);
   });
 });

@@ -84,6 +84,26 @@ export async function hop<T>(name: string, run: () => Promise<T>): Promise<T> {
  * same guarantee every e2e suite used to hand-roll with its own
  * `cleanups` array and `try`/`finally`.
  */
+/**
+ * LIFO sweep over registered cleanups. Every cleanup runs even when an
+ * earlier one throws — a failing hub.stop() must not leak the temp dirs
+ * registered before it. The first failure still surfaces (rethrown after
+ * the sweep).
+ */
+export async function runCleanups(
+  cleanups: Array<() => Promise<void> | void>,
+): Promise<void> {
+  let firstFailure: unknown;
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    try {
+      await cleanup();
+    } catch (cause) {
+      firstFailure ??= cause;
+    }
+  }
+  if (firstFailure !== undefined) throw firstFailure;
+}
+
 export function createCleanupHarness(): {
   tempDir(prefix: string): Promise<string>;
   track(app: SpawnedApp): void;
@@ -91,7 +111,7 @@ export function createCleanupHarness(): {
   const cleanups: (() => Promise<void>)[] = [];
 
   afterAll(async () => {
-    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+    await runCleanups(cleanups);
   });
 
   return {
