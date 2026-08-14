@@ -23,6 +23,7 @@ import {
 import { createAgentDefinitionRoutes } from "@corbits/agent-directory";
 
 import {
+  createArtifactDeliveryHandler,
   createChannelTenancyRoutes,
   createChatOrchestrator,
   createChatRoutes,
@@ -32,6 +33,7 @@ import {
   createHubChatPlatform,
   createNoopInferenceRoutes,
   startWorkflowCommand,
+  type FinalizedTurnToolCall,
 } from "@corbits/chat";
 import { createCryptoProviderCache } from "@corbits/folded-runs";
 import {
@@ -86,6 +88,10 @@ import {
   createArtifactDbStore,
   createArtifactRoutes,
   createUnavailableArtifactRoutes,
+  createUnavailableWorkflowArtifactRoutes,
+  createWorkflowArtifactDbStore,
+  createWorkflowArtifactRoutes,
+  createWorkflowRunAuthenticator,
 } from "@corbits/artifacts-hub";
 import { createEchoRoutes } from "@workbench/echo";
 import { createGitWorkflowPusher } from "@workbench/hub-client";
@@ -226,7 +232,21 @@ export async function createHub(config: HubConfig) {
     authenticateSidecar: createSidecarTokenAuthenticator({ db }),
     lookups,
   });
-  const eventCollectors = createEventCollectorRegistry({ db });
+  // A finalized turn's persisted-artifact tool-call results become
+  // delivery file parts (CL-6000) via `createArtifactDeliveryHandler`,
+  // built once `chatStore`/`chatPlatform` exist further down this
+  // composition. `onTurnFinalized` itself must be supplied at
+  // `createEventCollectorRegistry` construction time, before those
+  // deps exist, so this indirection ref is set once they do and every
+  // call before that point is a harmless no-op.
+  let artifactDeliveryHandler:
+    | ((agentAddress: string, turn: { toolCalls: FinalizedTurnToolCall[] }) => void)
+    | undefined;
+  const eventCollectors = createEventCollectorRegistry({
+    db,
+    onTurnFinalized: (agentAddress, turn) =>
+      artifactDeliveryHandler?.(agentAddress, turn),
+  });
   createHubSessionOrchestrator({
     events: sidecarRouter.events,
     router: sidecarRouter,
@@ -392,6 +412,14 @@ export async function createHub(config: HubConfig) {
     platform: chatPlatform,
     events: sidecarRouter.events,
     recordActivity: chatPlatform.recordActivity,
+  });
+  // Now that `chatStore`/`chatPlatform` exist, arm the finalized-turn
+  // artifact-delivery ref declared beside `eventCollectors` above.
+  artifactDeliveryHandler = createArtifactDeliveryHandler({
+    db,
+    store: chatStore,
+    platform: chatPlatform,
+    events: sidecarRouter.events,
   });
   // The "/name args" and "@name args" command registry: every tenant's
   // invitable workflow definitions, exposed as commands by
@@ -754,6 +782,27 @@ export async function createHub(config: HubConfig) {
           conditionRegistry: chatConditionRegistry,
         }),
       ),
+    );
+  }
+
+  // The sanctioned path for a workflow run to persist and read Library
+  // artifacts (CL-6000): mounted OUTSIDE `TENANT_PREFIX` since a
+  // workflow-process child has no browser session — every request here
+  // authenticates via `createWorkflowRunAuthenticator` (the sidecar's own
+  // bearer token plus the run's own address) against this hub's own
+  // control-plane `db`, never the artifacts engine's db.
+  if (artifactsHandle !== undefined) {
+    app.route(
+      "/api/workflow-artifacts",
+      createWorkflowArtifactRoutes({
+        authenticator: createWorkflowRunAuthenticator({ db }),
+        store: createWorkflowArtifactDbStore(artifactsHandle.db),
+      }),
+    );
+  } else {
+    app.route(
+      "/api/workflow-artifacts",
+      createUnavailableWorkflowArtifactRoutes(),
     );
   }
 
