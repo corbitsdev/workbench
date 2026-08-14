@@ -91,7 +91,7 @@ const ReadState = type({
   "lastSeenId?": "string | null",
 });
 
-// The shape `GET /api/tenants/:t/workflows/instances` returns: a run, one row
+// The shape `GET /api/tenants/:t/workflows/deployments` returns: a run, one row
 // per definition executing in the bench. It carries no display name — only
 // the id and the asset id its definition was hydrated from — so the mention
 // popover derives a readable label from `definitionAssetId` (see
@@ -306,7 +306,10 @@ export function putReadState(
 }
 
 export function listRuns(tenantId: string): Promise<readonly Run[]> {
-  return request(`/api/tenants/${tenantId}/workflows/instances`, RunsResponse);
+  return request(
+    `/api/tenants/${tenantId}/workflows/deployments`,
+    RunsResponse,
+  );
 }
 
 export function listInvitableDefinitions(

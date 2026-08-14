@@ -374,13 +374,13 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return {
           status: 201,
@@ -563,13 +563,13 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return {
           status: 201,
@@ -683,7 +683,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
@@ -813,13 +813,13 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return { status: 200, data: [], cookies: [] };
       }
       if (
         method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/instances`
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
         return {
           status: 201,

@@ -265,7 +265,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         res = await api(
           hub.baseUrl,
           "POST",
-          `/api/tenants/${tenantId}/workflows/instances`,
+          `/api/tenants/${tenantId}/workflows/deployments`,
           body,
           user.cookies,
         );
@@ -290,7 +290,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       const listed = await api(
         hub.baseUrl,
         "GET",
-        `/api/tenants/${tenantId}/workflows/instances`,
+        `/api/tenants/${tenantId}/workflows/deployments`,
         undefined,
         user.cookies,
       );

@@ -427,7 +427,7 @@ async function ensureDeployment(
 ): Promise<string> {
   const listed = await api(
     "GET",
-    `/api/tenants/${args.tenantId}/workflows/instances`,
+    `/api/tenants/${args.tenantId}/workflows/deployments`,
     undefined,
     cookies,
   );
@@ -448,7 +448,7 @@ async function ensureDeployment(
 
   const deployed = await api(
     "POST",
-    `/api/tenants/${args.tenantId}/workflows/instances`,
+    `/api/tenants/${args.tenantId}/workflows/deployments`,
     {
       assetId: args.assetId,
       sources: [
