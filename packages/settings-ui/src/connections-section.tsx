@@ -454,7 +454,7 @@ function OAuthConnectorCardView({
         <span className="settings-connection-card-title">
           {card.displayName}
         </span>
-        <Badge tone="neutral">
+        <Badge tone="warning">
           {SETTINGS_STRINGS.connectionsStatusNotConfigured}
         </Badge>
         <p className="settings-connection-card-hint">
@@ -535,6 +535,7 @@ export function ConnectorCredentialDialog({
   // The exact string that was tested must be the exact string being
   // saved — any edit after a successful test invalidates it.
   const canSave = testedKey !== null && testedKey === apiKey && !saving;
+  const keyChangedSinceTest = testedKey !== null && testedKey !== apiKey;
 
   function handleTest() {
     if (descriptor === null) return;
@@ -642,6 +643,11 @@ export function ConnectorCredentialDialog({
               role={testMessage.kind === "error" ? "alert" : undefined}
             >
               {testMessage.text}
+            </p>
+          )}
+          {testMessage === null && keyChangedSinceTest && (
+            <p className="settings-inline-hint">
+              {SETTINGS_STRINGS.connectionsKeyChangedHint}
             </p>
           )}
           {saveError !== null && (
