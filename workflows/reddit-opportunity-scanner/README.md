@@ -155,4 +155,4 @@ package's README for its credential requirement).
 See [`workflows/README.md`](../README.md#status-note) for what
 registration/automatable/seeded mean — this one is `automatable: false`
 because its mid-run approval gate is a poor fit for unattended
-scheduling, per CL-5994's own outcome checklist.
+scheduling, per its original outcome checklist.

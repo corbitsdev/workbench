@@ -69,7 +69,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     whatItDoes:
       "Relays a scheduler-computed digest line straight into a channel, unchanged — the digest content itself comes entirely from its trigger.",
     requiredConnections: [],
-    exampleOutput: "12 messages since yesterday · last post 9:41am",
+    exampleOutput: "Digest of 12 messages since yesterday · last post 9:41am",
     typicalDuration: "a few seconds",
   },
   {
@@ -101,7 +101,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       "Pulls the sender's recent Granola calls and Linear issues and writes a three-section daily brief: what happened, what needs attention, and suggested next actions.",
     requiredConnections: ["granola", "linear"],
     exampleOutput:
-      "2 calls logged, 3 issues updated, CLI-142 blocked on review",
+      "Brief covering 2 calls, 3 issue updates, one blocked review",
     typicalDuration: "under a minute",
   },
   {
@@ -122,7 +122,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       "Drafts marketing collateral across picked content types from Granola notes, Linear issues, or pasted text, with a swipe review on every draft and one approval on the final set.",
     requiredConnections: ["granola", "linear"],
     exampleOutput:
-      "3 drafts ready to review: LinkedIn post, blog, Twitter thread",
+      "Drafts ready to review: LinkedIn post, blog, Twitter thread",
     typicalDuration: "several minutes, plus review and approval time",
   },
   {
