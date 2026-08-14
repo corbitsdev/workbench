@@ -186,8 +186,6 @@ export const CHAT_STRINGS = {
   channelSettingsNameLabel: "Name",
   channelSettingsPurposeLabel: "Purpose",
   channelSettingsPurposePlaceholder: "What is this channel for?",
-  channelSettingsPurposeHint:
-    "Draft only for now — purpose is not stored on the channel yet.",
   channelSettingsPinnedLabel: "Pinned",
   channelSettingsPinnedDescription:
     "Pinned channels stay at the top for the whole workbench.",

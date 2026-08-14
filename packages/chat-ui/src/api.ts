@@ -510,14 +510,16 @@ export function getChannelSettings(
 }
 
 /**
- * A `chat/*`-namespaced settings patch: name, pinned, and context-window
- * edits all go through this one function, matching the single `PATCH
- * /channels/:id/settings` route in `packages/chat/src/routes.ts` that
- * accepts any subset of them in one body. `chat/contextWindow: null` clears
+ * A `chat/*`-namespaced settings patch: name, purpose, pinned, and
+ * context-window edits all go through this one function, matching the
+ * single `PATCH /channels/:id/settings` route in
+ * `packages/chat/src/routes.ts` that accepts any subset of them in one
+ * body. `chat/contextWindow: null` clears
  * a channel's override back to inheriting the bench default.
  */
 export type ChannelSettingsPatch = {
   readonly "chat/name"?: string;
+  readonly "chat/purpose"?: string;
   readonly "chat/pinned"?: boolean;
   readonly "chat/contextWindow"?: number | null;
 };

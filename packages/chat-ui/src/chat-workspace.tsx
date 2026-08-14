@@ -32,6 +32,7 @@ import {
   listMessages,
   listThreadMessages,
   listThreads,
+  patchChannelSettings,
   putReadState,
   sendMessage,
   channelStreamUrl,
@@ -251,7 +252,9 @@ function ChatWorkspaceInner({
   readonly settingsSection?: ChannelSettingsSectionId;
   /** Fired when the user switches tabs while the settings surface is
    * already open, so the host can reflect it in the URL. */
-  readonly onSettingsSectionChange?: (section: ChannelSettingsSectionId) => void;
+  readonly onSettingsSectionChange?: (
+    section: ChannelSettingsSectionId,
+  ) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
   readonly approvalActions?: ApprovalActions;
@@ -541,11 +544,28 @@ function ChatWorkspaceInner({
     refreshUnlessUnauthorized,
   );
 
-  async function handleCreateChannel(input: CreateChannelInput) {
+  async function handleCreateChannel(
+    input: CreateChannelInput,
+    purpose?: string,
+  ) {
     setCreating(true);
     setCreateChannelError(null);
     try {
       const created = await createChannel(tenantId, input);
+      // `POST /channels` carries no purpose field (see
+      // `NewChannelDialog`'s `onCreate` doc comment) — persisted with a
+      // follow-up settings PATCH once the channel exists. Best-effort: the
+      // channel itself was already created successfully, so a failure to
+      // save its purpose shouldn't surface as a channel-creation error.
+      if (purpose !== undefined) {
+        try {
+          await patchChannelSettings(tenantId, created.id, {
+            "chat/purpose": purpose,
+          });
+        } catch {
+          // best-effort, see comment above
+        }
+      }
       setDialogOpen(false);
       setChannelsRefresh((value) => value + 1);
       setActiveChannelId(created.id);
@@ -759,7 +779,9 @@ function ChatWorkspaceInner({
         <NewChannelDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}
-          onCreate={(input) => void handleCreateChannel(input)}
+          onCreate={(input, purpose) =>
+            void handleCreateChannel(input, purpose)
+          }
           tenantId={tenantId}
           submitting={creating}
           error={createChannelError}
@@ -1050,7 +1072,7 @@ function ChatWorkspaceInner({
       <NewChannelDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        onCreate={(input) => void handleCreateChannel(input)}
+        onCreate={(input, purpose) => void handleCreateChannel(input, purpose)}
         tenantId={tenantId}
         submitting={creating}
         error={createChannelError}
@@ -1125,7 +1147,9 @@ export function ChatWorkspace({
   readonly settingsSection?: ChannelSettingsSectionId;
   /** Fired when the user switches tabs while the settings surface is
    * already open, so the host can reflect it in the URL. */
-  readonly onSettingsSectionChange?: (section: ChannelSettingsSectionId) => void;
+  readonly onSettingsSectionChange?: (
+    section: ChannelSettingsSectionId,
+  ) => void;
   /** Open a message's artifact chip — see `ChannelTimeline`'s `onOpenArtifact`. */
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   /** The chip's "Open in Library" affordance — see `ChannelTimeline`'s

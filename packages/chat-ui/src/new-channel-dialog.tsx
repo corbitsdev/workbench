@@ -148,7 +148,15 @@ export function NewChannelDialog({
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  readonly onCreate: (input: CreateChannelInput) => void;
+  /**
+   * `purpose` is only passed for a channel that was given one — a chat has
+   * no purpose field at all, and an empty channel purpose is the same as
+   * not typing one. `POST /channels` doesn't accept a `purpose` field (see
+   * `packages/chat/src/routes.ts`), so a caller that wants it persisted
+   * follows up with a `chat/purpose` settings PATCH once the channel
+   * exists — see `ChatWorkspace.handleCreateChannel`.
+   */
+  readonly onCreate: (input: CreateChannelInput, purpose?: string) => void;
   readonly tenantId: string;
   readonly submitting: boolean;
   readonly error?: string | null;
@@ -283,7 +291,14 @@ export function NewChannelDialog({
 
   function handleSubmit() {
     const payload = newChannelPayload(kind, name, counterpart);
-    if (payload !== null) onCreate(payload);
+    if (payload === null) return;
+    const trimmedPurpose = purpose.trim();
+    onCreate(
+      payload,
+      kind === "channel" && trimmedPurpose.length > 0
+        ? trimmedPurpose
+        : undefined,
+    );
   }
 
   const stepperSteps: readonly DialogStepperStep[] = [

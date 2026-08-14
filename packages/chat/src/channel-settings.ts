@@ -24,6 +24,7 @@ const PatchSettingsBody = type("Record<string, unknown>");
 export const ChatNamespaceSchemas: Readonly<Record<string, Type<unknown>>> = {
   "chat/kind": type("string"),
   "chat/name": type("string"),
+  "chat/purpose": type("string"),
   "chat/pinned": type("boolean"),
   "chat/participants": ParticipantsSetting,
   "chat/contextWindow": type("number | null"),

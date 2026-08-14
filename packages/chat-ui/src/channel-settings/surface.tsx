@@ -3,10 +3,10 @@
 // breadcrumb back to the channel, a left nav grouped Shared / Personal /
 // Danger zone, and the active section's panel on the right. Never a dialog.
 //
-// Save still PATCHes name, pin, and context window (the General section's
-// fields); the other sections' field gaps (who-can-post, retention, role
-// selects, per-channel grants) are separate tickets — this only re-houses
-// what the panel already rendered.
+// Save still PATCHes name, purpose, pin, and context window (the General
+// section's fields); the other sections' field gaps (who-can-post,
+// retention, role selects, per-channel grants) are separate tickets — this
+// only re-houses what the panel already rendered.
 
 import { EmptyState, Skeleton, toast } from "@corbits/react-ui";
 import { isAgentAddress } from "@corbits/chat/mentions";
@@ -104,7 +104,9 @@ export function ChannelSettingsSurface({
       .then(([settings, bench]) => {
         if (cancelled) return;
         const control = contextWindowControlState(settings.contextWindow);
+        const storedPurpose = settings.settings["chat/purpose"];
         setName(settings.title);
+        setPurpose(typeof storedPurpose === "string" ? storedPurpose : "");
         setPinned(settings.pinned);
         setContextWindowMode(control.mode);
         setContextWindowInput(String(control.displayValue));
@@ -159,6 +161,7 @@ export function ChannelSettingsSurface({
     setSaveError(null);
     patchChannelSettings(tenantId, channelId, {
       "chat/name": name.trim().length > 0 ? name.trim() : state.data.title,
+      "chat/purpose": purpose,
       "chat/pinned": pinned,
       "chat/contextWindow": contextWindowPatchValue(
         contextWindowMode,

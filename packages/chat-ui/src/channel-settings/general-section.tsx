@@ -1,6 +1,5 @@
 // General section: identity (name, purpose) and behavior (pinned, context
-// window). Purpose is draft-only UI until its store lands — see
-// CHAT_STRINGS.channelSettingsPurposeHint.
+// window).
 
 import { Input, Switch } from "@corbits/react-ui";
 
@@ -52,9 +51,6 @@ export function GeneralSection({
           placeholder={CHAT_STRINGS.channelSettingsPurposePlaceholder}
           rows={2}
         />
-        <span className="chat-settings-field-hint">
-          {CHAT_STRINGS.channelSettingsPurposeHint}
-        </span>
       </label>
       <label className="chat-settings-field chat-settings-field-inline">
         <span>{CHAT_STRINGS.channelSettingsPinnedLabel}</span>
