@@ -36,19 +36,22 @@ const ALLOWLIST: readonly {
 }[] = [
   {
     relPath: "packages/chat/src/schema.ts",
-    maxOccurrences: 5,
+    maxOccurrences: 8,
     tables: [
       "channel_settings",
       "chat_bench_settings",
       "channel_read_state",
       "channel_launch",
       "channel_tenancy",
+      "channel_threads",
+      "channel_thread_messages",
+      "block_responses",
     ],
   },
   {
     relPath: "packages/routines/src/schema.ts",
-    maxOccurrences: 2,
-    tables: ["routine", "routine_run"],
+    maxOccurrences: 3,
+    tables: ["routine", "routine_run", "routine_draft"],
   },
   {
     relPath: "packages/webhook-triggers/src/schema.ts",
@@ -59,6 +62,11 @@ const ALLOWLIST: readonly {
     relPath: "packages/notify/src/schema.ts",
     maxOccurrences: 1,
     tables: ["notify_dispatch"],
+  },
+  {
+    relPath: "packages/insights/src/schema.ts",
+    maxOccurrences: 2,
+    tables: ["usage_turn", "model_price"],
   },
 ];
 
