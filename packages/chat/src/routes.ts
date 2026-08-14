@@ -67,6 +67,7 @@ import {
 import {
   bridgeChannelStream,
   createChannelSubscriberRegistry,
+  type ChannelSubscriberRegistry,
 } from "./channel-events";
 import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
@@ -151,9 +152,23 @@ export type CreateChatRoutesDeps = {
    * wants the command system wires this the same way it wires
    * `channelHostInferencePreferences`, by injecting a fully-composed
    * registry (its workflow-command plugin already bound to this same
-   * `platform`).
+   * `publish`, via `channelSubscribers.publish` below — a
+   * command-started workflow's channel event then reaches the same
+   * live SSE stream an ordinary invite does).
    */
   commands?: CommandRegistry;
+  /**
+   * The SSE subscriber registry this router's `/channels/:id/stream`
+   * route bridges onto (see `./channel-events.ts`). Defaults to a
+   * fresh, router-scoped registry when omitted — the original
+   * behavior, still correct for a caller with no other consumer of
+   * live channel events. A composition root that also drives channel
+   * events from outside this router (the hub's command dispatch path
+   * publishing a workflow-started event, for instance) constructs one
+   * registry itself and passes it here *and* to that other consumer,
+   * so both sides fan out through the same subscriber set.
+   */
+  channelSubscribers?: ChannelSubscriberRegistry;
 };
 
 const log = getLogger(["chat", "routes"]);
@@ -369,7 +384,7 @@ function withTenancy(
 
 export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
-  const registry = createChannelSubscriberRegistry();
+  const registry = deps.channelSubscribers ?? createChannelSubscriberRegistry();
   const publish = registry.publish;
 
   app.post(
