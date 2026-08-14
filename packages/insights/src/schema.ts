@@ -3,22 +3,27 @@
 // deliberately drops it — this package is the product sink that
 // persists those events so Insights can query real numbers.
 //
-// Tenancy (membership, principals, grants) stays in platform schema;
-// these tables hold only insights state, keyed by tenant.
+// These tables live in their own `insights` Postgres schema, fully
+// siloed from the platform's `public` schema — see
+// docs/package-migrations.md. `tenantId` is a plain text identifier,
+// not a foreign key, so referencing platform tenant/principal ids
+// works identically from a named schema.
 import {
   integer,
   numeric,
-  pgTable,
+  pgSchema,
   text,
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+export const insightsSchema = pgSchema("insights");
+
 /**
  * One row per model-turn of inference usage. `turnId` is unique so a
  * collector restart can re-deliver the same event without double-counting.
  */
-export const usageTurn = pgTable(
+export const usageTurn = insightsSchema.table(
   "usage_turn",
   {
     id: text("id").primaryKey(),
@@ -45,7 +50,7 @@ export type UsageTurnRow = typeof usageTurn.$inferSelect;
  * known" — cost queries must return absent for that class, never a
  * fabricated zero.
  */
-export const modelPrice = pgTable("model_price", {
+export const modelPrice = insightsSchema.table("model_price", {
   model: text("model").primaryKey(),
   /** USD per 1M input tokens. Null = no rate. */
   inputPerMTok: numeric("input_per_m_tok"),

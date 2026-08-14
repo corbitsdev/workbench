@@ -24,7 +24,7 @@ export const webhookTriggersMigrations: readonly WebhookTriggersMigration[] = [
   {
     name: "0001_webhook_trigger",
     sql: `
-      CREATE TABLE IF NOT EXISTS "webhook_trigger" (
+      CREATE TABLE IF NOT EXISTS "webhook_triggers"."webhook_trigger" (
         "id" text PRIMARY KEY,
         "tenant_id" text NOT NULL,
         "name" text NOT NULL,
@@ -42,7 +42,19 @@ export const webhookTriggersMigrations: readonly WebhookTriggersMigration[] = [
     name: "0002_webhook_trigger_tenant_index",
     sql: `
       CREATE INDEX IF NOT EXISTS "webhook_trigger_tenant_id_idx"
-        ON "webhook_trigger" ("tenant_id");
+        ON "webhook_triggers"."webhook_trigger" ("tenant_id");
+    `,
+  },
+  {
+    name: "0003_move_tables_to_webhook_triggers_schema",
+    sql: `
+      DO $$
+      BEGIN
+        IF to_regclass('public.webhook_trigger') IS NOT NULL
+           AND to_regclass('webhook_triggers.webhook_trigger') IS NULL THEN
+          ALTER TABLE public.webhook_trigger SET SCHEMA webhook_triggers;
+        END IF;
+      END $$;
     `,
   },
 ];
@@ -50,11 +62,17 @@ export const webhookTriggersMigrations: readonly WebhookTriggersMigration[] = [
 // Bookkeeping table for this package's own migrations. Named
 // distinctly from the platform's setup ledger and from any drizzle
 // journal, so extracting `@corbits/webhook-triggers` out of this repo
-// never has to disentangle its history from the platform's.
+// never has to disentangle its history from the platform's. Lives in
+// the package's own `webhook_triggers` schema, like the table it owns.
+const SCHEMA = "webhook_triggers";
 const LEDGER_TABLE = "webhook_triggers_migrations";
 
 function quoteIdentifier(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+function quoteQualified(schema: string, name: string): string {
+  return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
 }
 
 export interface ApplyWebhookTriggersMigrationsReport {
@@ -74,12 +92,25 @@ export async function applyWebhookTriggersMigrations(
 ): Promise<ApplyWebhookTriggersMigrationsReport> {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
+    await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
+
+    // Pre-existing dev DBs from before this package had its own schema
+    // carry the ledger in `public` — move it in place so its history
+    // (which migrations already ran) comes with it. A fresh install
+    // never has a `public` ledger, so this is a no-op there.
     await sql.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(LEDGER_TABLE)} (` +
+      `DO $$ BEGIN IF to_regclass('public.${LEDGER_TABLE}') IS NOT NULL ` +
+        `AND to_regclass('${SCHEMA}.${LEDGER_TABLE}') IS NULL THEN ` +
+        `ALTER TABLE "public".${quoteIdentifier(LEDGER_TABLE)} SET SCHEMA ${quoteIdentifier(SCHEMA)}; ` +
+        `END IF; END $$;`,
+    );
+
+    await sql.unsafe(
+      `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
         `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
     );
     const rows = await sql.unsafe(
-      `SELECT name FROM ${quoteIdentifier(LEDGER_TABLE)}`,
+      `SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`,
     );
     const alreadyApplied = new Set(rows.map((row) => String(row["name"])));
     const applied: string[] = [];
@@ -89,7 +120,7 @@ export async function applyWebhookTriggersMigrations(
         await sql.begin(async (tx) => {
           await tx.unsafe(migration.sql);
           await tx.unsafe(
-            `INSERT INTO ${quoteIdentifier(LEDGER_TABLE)} (name) VALUES ($1)`,
+            `INSERT INTO ${quoteQualified(SCHEMA, LEDGER_TABLE)} (name) VALUES ($1)`,
             [migration.name],
           );
         });

@@ -27,7 +27,12 @@ import {
 } from "./lib/repo";
 
 const SCAN_DIRS = ["apps", "packages", "workflows"];
-const PGTABLE_CALL_PATTERN = /\bpgTable\s*\(/g;
+// Matches the plain `pgTable(...)` builder and `xyzSchema.table(...)` —
+// the form every package now uses to declare tables inside its own named
+// Postgres schema (see docs/package-migrations.md). Both are drizzle table
+// declarations and both count toward a file's allowlisted occurrences;
+// only the declaration style differs.
+const PGTABLE_CALL_PATTERN = /\bpgTable\s*\(|\b\w+Schema\.table\s*\(/g;
 
 const ALLOWLIST: readonly {
   relPath: string;

@@ -1,10 +1,14 @@
 // The one product table this package owns: bookkeeping for one attempt
 // stream per (mail row, sink). It is deliberately not an event bus — the
 // durable fact is always the mail row itself, and a row here only records
-// whether a copy of that mail made it to one external place yet.
-import { index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+// whether a copy of that mail made it to one external place yet. Lives
+// in its own `notify` Postgres schema, fully siloed from the platform's
+// `public` schema — see docs/package-migrations.md.
+import { index, integer, pgSchema, text, timestamp } from "drizzle-orm/pg-core";
 
-export const notifyDispatch = pgTable(
+export const notifySchema = pgSchema("notify");
+
+export const notifyDispatch = notifySchema.table(
   "notify_dispatch",
   {
     id: text("id").primaryKey(),
