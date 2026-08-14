@@ -856,6 +856,36 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     },
   );
 
+  // A `FilePart`'s `blobId` (see `./parts.ts`) has no stored link to a
+  // Library artifact — chat attachments and Library artifacts are two
+  // separate stores today (`CL-5938`). This is the client's only read path
+  // to a persisted attachment's bytes: base64 so binary attachments round-
+  // trip through JSON exactly like text ones, leaving MIME interpretation
+  // to the caller, which already has it from the message `Part`.
+  app.get(
+    "/channels/:id/blobs/:blobId",
+    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      const blobId = c.req.param("blobId");
+      if (!(await channelInTenant(deps.store, tenant.id, channelId))) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+      let blob: string | Uint8Array;
+      try {
+        blob = await deps.platform.fetchBlob(channelId, blobId);
+      } catch {
+        return c.json(ErrorEnvelope("not_found", "blob not found"), 404);
+      }
+      const contentBase64 =
+        typeof blob === "string"
+          ? Buffer.from(blob, "utf-8").toString("base64")
+          : Buffer.from(blob).toString("base64");
+      return c.json({ contentBase64 });
+    },
+  );
+
   app.post(
     "/channels/:id/messages",
     deps.requireGrant(idResource("workflow-run", "id"), "write"),
