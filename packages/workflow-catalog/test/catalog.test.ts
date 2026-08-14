@@ -50,6 +50,13 @@ describe("workflow catalog", () => {
     );
   });
 
+  test("does not mark last-30-days-research automatable — on-demand only, gated behind a human-supplied topic per run", () => {
+    expect(isAutomatableWorkflowName("last-30-days-research")).toBe(false);
+    expect(workflowDisplayName("last-30-days-research")).toBe(
+      "Last 30 days research report",
+    );
+  });
+
   test("rejects agent handles and channel-host names as automatable", () => {
     expect(isAutomatableWorkflowName("my-researcher")).toBe(false);
     expect(isAutomatableWorkflowName("channel-host-abc")).toBe(false);
