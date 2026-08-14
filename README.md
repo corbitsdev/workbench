@@ -134,5 +134,7 @@ Conventions and agent guidance: [AGENTS.md](AGENTS.md). Contributions:
 
 ## License
 
-GPLv2 with the [AI Exception](GPLv2-AI-Exception.md) — see
-[LICENSE.md](LICENSE.md).
+The application (`apps/` and the rest of this repo) is GPLv2 with the
+[AI Exception](GPLv2-AI-Exception.md) — see [LICENSE.md](LICENSE.md).
+Libraries under `packages/` and `workflows/` are each licensed
+LGPL-2.1-or-later, with the license text alongside their source.

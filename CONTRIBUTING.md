@@ -5,8 +5,9 @@ Thanks for your interest in Corbits Workbench.
 ## Before you start
 
 - Contributions are accepted under the terms of the
-  [Contributor License Agreement](CLA.md) and the project license
-  ([GPLv2 with AI Exception](LICENSE.md)).
+  [Contributor License Agreement](CLA.md) and the project license: the
+  application ([GPLv2 with AI Exception](LICENSE.md)), or LGPL-2.1-or-later
+  for contributions to a library under `packages/` or `workflows/`.
 - Read [AGENTS.md](AGENTS.md) — the ground rules there apply to human and
   agent contributors alike.
 
