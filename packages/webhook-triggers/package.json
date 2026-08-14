@@ -27,6 +27,7 @@
     "postgres": "catalog:"
   },
   "devDependencies": {
+    "@intx/crypto": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }
