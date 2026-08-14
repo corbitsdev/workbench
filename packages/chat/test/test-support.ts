@@ -50,6 +50,10 @@ export function fakePlatform(
       creatorPrincipalId: string;
       definitionId: string;
     }) => Promise<{ instanceId: string; address: string }>;
+    fetchBlob?: (
+      channelId: string,
+      blobId: string,
+    ) => Promise<string | Uint8Array>;
   } = {},
 ): ChatPlatform & {
   sentMail: {
@@ -132,7 +136,9 @@ export function fakePlatform(
       const items = mailByChannel.get(input.channelId) ?? [];
       return { items: [...items].reverse() };
     },
-    async fetchBlob() {
+    async fetchBlob(channelId, blobId) {
+      if (opts.fetchBlob !== undefined)
+        return opts.fetchBlob(channelId, blobId);
       return "";
     },
     subscribeToChannel() {
