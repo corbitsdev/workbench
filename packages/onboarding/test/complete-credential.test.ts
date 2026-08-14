@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { ApiCall, WorkflowPusher } from "@workbench/hub-client";
-import { completeCredentialSetup } from "../src/complete-credential";
+import {
+  completeCredentialSetup,
+  ensureSeeded,
+  testAndPersistCredential,
+} from "../src/complete-credential";
 
 // A key that clears the free probe never needs to prove itself again
 // with a billed call: seedTenant must run with confirmDeployments:
@@ -1009,5 +1013,314 @@ describe("completeCredentialSetup", () => {
     expect(seedCatalogCalls).toEqual([
       expect.objectContaining({ credentialType: "api_key" }),
     ]);
+  });
+});
+
+describe("testAndPersistCredential (the fast half)", () => {
+  test("proves and persists the key, but never deploys a workflow", async () => {
+    let seedTenantCalled = false;
+    const seedCatalogCalls: unknown[] = [];
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      // Any workflow-shaped call proves this half reached past its
+      // remit — `testAndPersistCredential` should never touch these.
+      if (path.includes("/workflows/") || path.endsWith("/assets")) {
+        throw new Error(`unexpected workflow-shaped call: ${method} ${path}`);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await testAndPersistCredential({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "anthropic",
+      apiKey: "sk-ant-good",
+      pushWorkflow: async () => {
+        seedTenantCalled = true;
+        return "pushed";
+      },
+      log: collector().log,
+      testCredential: async () => ({ ok: true }),
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "connected",
+      tenantId: TENANT_ID,
+      tenantSlug: TENANT_SLUG,
+      principalId: PRINCIPAL_ID,
+      tenantDomain: "alice-user1.bench.local",
+    });
+    expect(seedCatalogCalls).toHaveLength(1);
+    expect(seedTenantCalled).toBe(false);
+  });
+
+  test("an invalid key never touches the tenant", async () => {
+    let apiCalls = 0;
+    const api: ApiCall = async () => {
+      apiCalls += 1;
+      throw new Error("unexpected call with an invalid credential");
+    };
+
+    const result = await testAndPersistCredential({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "anthropic",
+      apiKey: "sk-ant-bad",
+      pushWorkflow: noopPush,
+      log: collector().log,
+      testCredential: async () => ({ ok: false, message: "invalid x-api-key" }),
+    });
+
+    expect(result).toEqual({
+      kind: "invalid-credential",
+      message: "invalid x-api-key",
+    });
+    expect(apiCalls).toBe(0);
+  });
+
+  test("a valid key with no personal bench yet is reported, not guessed at", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await testAndPersistCredential({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "anthropic",
+      apiKey: "sk-ant-good",
+      pushWorkflow: noopPush,
+      log: collector().log,
+      testCredential: async () => ({ ok: true }),
+    });
+
+    expect(result).toEqual({ kind: "no-personal-bench" });
+  });
+});
+
+describe("ensureSeeded (the slow half)", () => {
+  const TENANT: {
+    tenantId: string;
+    tenantSlug: string;
+    principalId: string;
+    tenantDomain: string;
+  } = {
+    tenantId: TENANT_ID,
+    tenantSlug: TENANT_SLUG,
+    principalId: PRINCIPAL_ID,
+    tenantDomain: "alice-user1.bench.local",
+  };
+
+  test("deploys every default workflow against the connected provider's own model, unconfirmed", async () => {
+    const seedTenantCalls: {
+      model: { provider: string; model: string };
+      confirmDeployments?: boolean;
+    }[] = [];
+
+    const result = await ensureSeeded({
+      api: (async () => {
+        throw new Error(
+          "the real api must not be called — seedTenantFn is stubbed",
+        );
+      }) as ApiCall,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      pushWorkflow: noopPush,
+      log: collector().log,
+      tenant: TENANT,
+      provider: "anthropic",
+      apiKey: "sk-ant-good",
+      seedTenantFn: async (args) => {
+        seedTenantCalls.push(args as never);
+      },
+    });
+
+    expect(result).toEqual({
+      kind: "seeded",
+      workflows: ["echo", "assistant", "channel-digest"],
+    });
+    expectNoConfirmation(seedTenantCalls);
+    expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
+  });
+
+  test("two overlapping calls for the same tenant never double-deploy — the same 409-then-list tolerance seedTenant already has", async () => {
+    const TIMESTAMP = "2026-01-01T00:00:00.000Z";
+    type Row = { name: string; id: string };
+    const grants: { resource: string; action: string }[] = [];
+    const assets: Row[] = [];
+    const deployments: { definitionAssetId: string; id: string }[] = [];
+    let assetCreatePosts = 0;
+    let deploymentCreatePosts = 0;
+
+    const api: ApiCall = async (method, path, body) => {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: grants.map((g, index) => ({
+              id: `grt_${index}`,
+              tenantId: TENANT_ID,
+              resource: g.resource,
+              action: g.action,
+              effect: "allow",
+              principalId: PRINCIPAL_ID,
+              origin: "creator",
+              createdAt: TIMESTAMP,
+              updatedAt: TIMESTAMP,
+            })),
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        const g = body as { resource: string; action: string };
+        grants.push({ resource: g.resource, action: g.action });
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
+        const name = (body as { name: string }).name;
+        const existing = assets.find((a) => a.name === name);
+        if (existing) return { status: 409, data: {}, cookies: [] };
+        assetCreatePosts += 1;
+        const id = `ast_${name}`;
+        assets.push({ name, id });
+        return {
+          status: 201,
+          data: {
+            id,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name,
+            displayName: name,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return {
+          status: 200,
+          data: assets.map((a) => ({
+            id: a.id,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: a.name,
+            displayName: a.name,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+            origin: { tenantId: TENANT_ID, direct: true },
+          })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/git-tokens`
+      ) {
+        return {
+          status: 201,
+          data: { id: "tok_1", secret: "s3cret" },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return {
+          status: 200,
+          data: deployments.map((d) => ({
+            id: d.id,
+            tenantId: TENANT_ID,
+            definitionAssetId: d.definitionAssetId,
+            status: "active",
+            createdAt: TIMESTAMP,
+          })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        deploymentCreatePosts += 1;
+        const assetId = (body as { assetId: string }).assetId;
+        const id = `dep_${assetId}`;
+        deployments.push({ definitionAssetId: assetId, id });
+        return {
+          status: 201,
+          data: {
+            id,
+            tenantId: TENANT_ID,
+            definitionAssetId: assetId,
+            status: "active",
+            createdAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const runEnsureSeeded = () =>
+      ensureSeeded({
+        api,
+        cookies: ["session=abc"],
+        hubUrl: "http://localhost:3000",
+        pushWorkflow: noopPush,
+        log: collector().log,
+        tenant: TENANT,
+        provider: "anthropic",
+        apiKey: "sk-ant-good",
+      });
+
+    // Two overlapping calls, exactly like two concurrent
+    // `/complete-setup` requests reading the same still-valid pending
+    // token, running back to back against the same stateful fake hub.
+    const [first, second] = await Promise.all([
+      runEnsureSeeded(),
+      runEnsureSeeded(),
+    ]);
+
+    expect(first.kind).toBe("seeded");
+    expect(second.kind).toBe("seeded");
+    expect(assetCreatePosts).toBe(3);
+    expect(deploymentCreatePosts).toBe(3);
+    expect(assets.length).toBe(3);
+    expect(deployments.length).toBe(3);
   });
 });

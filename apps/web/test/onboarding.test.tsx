@@ -380,21 +380,20 @@ describe("readOpenRouterConnectReturn", () => {
     expect(readOpenRouterConnectReturn("?foo=bar")).toBeNull();
   });
 
-  test("a seeded return carries the bench and its confirmed routines", () => {
+  test("a connected return carries the bench, with no routine list yet — that comes from completeSetup", () => {
     expect(
       readOpenRouterConnectReturn(
-        "?connect=openrouter&outcome=seeded&tenantSlug=ada-user1&workflows=echo,assistant",
+        "?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
       ),
     ).toEqual({
-      kind: "seeded",
+      kind: "connected",
       tenantSlug: "ada-user1",
-      workflows: ["echo", "assistant"],
     });
   });
 
-  test("a seeded return missing its details is an error, never a fabricated success", () => {
+  test("a connected return missing its details is an error, never a fabricated success", () => {
     const result = readOpenRouterConnectReturn(
-      "?connect=openrouter&outcome=seeded",
+      "?connect=openrouter&outcome=connected",
     );
     expect(result?.kind).toBe("error");
   });
@@ -408,13 +407,15 @@ describe("readOpenRouterConnectReturn", () => {
       expect(result.message).toContain("did not hand back a key");
   });
 
-  test("a rate-limited start maps to its own copy", () => {
+  test("a rate-limited start explains OpenRouter limits key creation, not internal vocabulary", () => {
     const result = readOpenRouterConnectReturn(
       "?connect=openrouter&outcome=error&code=rate_limited",
     );
     expect(result?.kind).toBe("error");
-    if (result?.kind === "error")
-      expect(result.message).toContain("Wait a moment");
+    if (result?.kind === "error") {
+      expect(result.message).toContain("limits how often it can mint");
+      expect(result.message).toContain("Wait a minute");
+    }
   });
 
   test("an unknown failure code still reads as a failure", () => {
@@ -431,19 +432,18 @@ describe("readHuggingFaceConnectReturn", () => {
   test("an unrelated query string, including an OpenRouter one, is nobody's outcome", () => {
     expect(readHuggingFaceConnectReturn("")).toBeNull();
     expect(
-      readHuggingFaceConnectReturn("?connect=openrouter&outcome=seeded"),
+      readHuggingFaceConnectReturn("?connect=openrouter&outcome=connected"),
     ).toBeNull();
   });
 
-  test("a seeded return carries the bench and its confirmed routines", () => {
+  test("a connected return carries the bench, with no routine list yet — that comes from completeSetup", () => {
     expect(
       readHuggingFaceConnectReturn(
-        "?connect=huggingface&outcome=seeded&tenantSlug=ada-user1&workflows=echo,assistant",
+        "?connect=huggingface&outcome=connected&tenantSlug=ada-user1",
       ),
     ).toEqual({
-      kind: "seeded",
+      kind: "connected",
       tenantSlug: "ada-user1",
-      workflows: ["echo", "assistant"],
     });
   });
 
@@ -490,14 +490,115 @@ describe("the OpenRouter connect card", () => {
     expect(markup).toContain("took too long");
   });
 
-  test("a seeded connect return lands on the running-routines ending", () => {
+  test("a connected return shows the finishing-setup progress state, not a fabricated done checklist", () => {
+    // Before `completeSetup` resolves, the wizard must never claim the
+    // routines already ran — that was the bug this split fixes: the
+    // OAuth callback only proved and stored the key, so the checklist
+    // showing "confirmed running" before the deploy step even started
+    // would be a lie.
     const markup = renderOnboardingAt(
-      "/onboarding?connect=openrouter&outcome=seeded&tenantSlug=ada-user1&workflows=echo,assistant",
+      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
     );
 
-    expect(markup).toContain("Your first routines are running");
-    expect(markup).toContain("Echo routine");
-    expect(markup).toContain("Myra routine");
+    expect(markup).toContain("Setting up your workbench");
+    expect(markup).not.toContain("Your first routines are running");
+  });
+
+  test("a connected return finishes setup and lands on the running-routines ending once completeSetup reports seeded", async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/complete-setup") {
+        return json({
+          kind: "seeded",
+          tenantSlug: "ada-user1",
+          workflows: ["echo", "assistant"],
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    window.history.replaceState(
+      null,
+      "",
+      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={noop}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      expect(container.textContent).toContain(
+        "Your first routines are running",
+      );
+      expect(container.textContent).toContain("Echo routine");
+      expect(container.textContent).toContain("Myra routine");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  test("a stale connect error is superseded when the account turns out to already be fully seeded", async () => {
+    // The belt to the idempotent-duplicate-callback fix's suspenders: a
+    // browser landing on the credential phase's stale `state_expired`
+    // error must not stay stuck there once a real check shows the
+    // connect actually succeeded — it lands on the same finished state
+    // as a fresh connect would.
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/provision") {
+        return json({ kind: "existing-member", seeded: true });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    window.history.replaceState(
+      null,
+      "",
+      "/onboarding?connect=openrouter&outcome=error&code=state_expired",
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={noop}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      expect(container.textContent).toContain("Your workbench is ready");
+      expect(container.textContent).toContain("Meet Myra");
+      expect(container.textContent).not.toContain("took too long");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      window.history.replaceState(null, "", "/");
+    }
   });
 });
 
@@ -608,14 +709,62 @@ describe("the Hugging Face connect card", () => {
     expect(markup).toContain("Paste a token instead");
   });
 
-  test("a seeded connect return lands on the running-routines ending", () => {
+  test("a connected return shows the finishing-setup progress state, not a fabricated done checklist", () => {
     const markup = renderOnboardingAt(
-      "/onboarding?connect=huggingface&outcome=seeded&tenantSlug=ada-user1&workflows=echo,assistant",
+      "/onboarding?connect=huggingface&outcome=connected&tenantSlug=ada-user1",
     );
 
-    expect(markup).toContain("Your first routines are running");
-    expect(markup).toContain("Echo routine");
-    expect(markup).toContain("Myra routine");
+    expect(markup).toContain("Setting up your workbench");
+    expect(markup).not.toContain("Your first routines are running");
+  });
+
+  test("a connected return finishes setup and lands on the running-routines ending once completeSetup reports seeded", async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/complete-setup") {
+        return json({
+          kind: "seeded",
+          tenantSlug: "ada-user1",
+          workflows: ["echo", "assistant"],
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    window.history.replaceState(
+      null,
+      "",
+      "/onboarding?connect=huggingface&outcome=connected&tenantSlug=ada-user1",
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={noop}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      expect(container.textContent).toContain(
+        "Your first routines are running",
+      );
+      expect(container.textContent).toContain("Echo routine");
+      expect(container.textContent).toContain("Myra routine");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      window.history.replaceState(null, "", "/");
+    }
   });
 });
 
