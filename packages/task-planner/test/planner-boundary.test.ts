@@ -76,11 +76,18 @@ describe("{create} branch no longer bypasses the REST boundary's bounds", () => 
     const spec = parseTaskSpec(
       JSON.stringify({
         kind: "task",
-        create: { name: "n", systemPrompt: huge, toolPackagePins: [], skills: [] },
+        create: {
+          name: "n",
+          systemPrompt: huge,
+          toolPackagePins: [],
+          skills: [],
+        },
         refinedOutcome: "do it",
       }),
     );
-    expect(() => validateTaskSpecAgainstInventory(spec, inventory)).not.toThrow();
+    expect(() =>
+      validateTaskSpecAgainstInventory(spec, inventory),
+    ).not.toThrow();
 
     const rest = CreateAgentDefinitionInput({
       name: "n",
@@ -101,11 +108,18 @@ describe("{create} branch no longer bypasses the REST boundary's bounds", () => 
     const spec = parseTaskSpec(
       JSON.stringify({
         kind: "task",
-        create: { name: "   ", systemPrompt: "   ", toolPackagePins: [], skills: [] },
+        create: {
+          name: "   ",
+          systemPrompt: "   ",
+          toolPackagePins: [],
+          skills: [],
+        },
         refinedOutcome: "do it",
       }),
     );
-    expect(() => validateTaskSpecAgainstInventory(spec, inventory)).not.toThrow();
+    expect(() =>
+      validateTaskSpecAgainstInventory(spec, inventory),
+    ).not.toThrow();
 
     const rest = CreateAgentDefinitionInput({
       name: "   ",
@@ -135,7 +149,9 @@ describe("{create} branch no longer bypasses the REST boundary's bounds", () => 
         refinedOutcome: "do it",
       }),
     );
-    expect(() => validateTaskSpecAgainstInventory(spec, inventory)).not.toThrow();
+    expect(() =>
+      validateTaskSpecAgainstInventory(spec, inventory),
+    ).not.toThrow();
 
     const rest = CreateAgentDefinitionInput({
       name: "n",
@@ -160,7 +176,10 @@ describe("{create} branch no longer bypasses the REST boundary's bounds", () => 
         create: {
           name: "n",
           systemPrompt: "p",
-          toolPackagePins: Array.from({ length: 10_000 }, () => "@corbits/granola-tools"),
+          toolPackagePins: Array.from(
+            { length: 10_000 },
+            () => "@corbits/granola-tools",
+          ),
           skills: [],
         },
         refinedOutcome: "do it",
@@ -169,7 +188,9 @@ describe("{create} branch no longer bypasses the REST boundary's bounds", () => 
     // Out-of-scope for inventory validation (a repeated in-inventory name
     // isn't an out-of-inventory reference), so this still passes — the
     // cardinality/dedup bound is `spawnFromTaskSpec`'s own, proven below.
-    expect(() => validateTaskSpecAgainstInventory(spec, inventory)).not.toThrow();
+    expect(() =>
+      validateTaskSpecAgainstInventory(spec, inventory),
+    ).not.toThrow();
 
     expect(
       spawnFromTaskSpec(neverCalledDeps(), {
@@ -192,11 +213,19 @@ describe("the planner's agent inventory filter excludes channel hosts", () => {
   test("a channel host offered in the inventory still validates as a {use} target (validation is inventory-driven, not name-driven)", () => {
     const withHost: PlannerInventory = {
       ...inventory,
-      agents: [{ id: "wfd_host", name: `run-${"a".repeat(32)}`, displayName: "host" }],
+      agents: [
+        { id: "wfd_host", name: `run-${"a".repeat(32)}`, displayName: "host" },
+      ],
     };
     const spec = parseTaskSpec(
-      JSON.stringify({ kind: "task", use: "wfd_host", refinedOutcome: "do it" }),
+      JSON.stringify({
+        kind: "task",
+        use: "wfd_host",
+        refinedOutcome: "do it",
+      }),
     );
-    expect(() => validateTaskSpecAgainstInventory(spec, withHost)).not.toThrow();
+    expect(() =>
+      validateTaskSpecAgainstInventory(spec, withHost),
+    ).not.toThrow();
   });
 });

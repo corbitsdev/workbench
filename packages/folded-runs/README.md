@@ -73,10 +73,10 @@ or a host-specific package such as `@corbits/chat`.
   package shares.
 - For `runOneShotFoldedPrompt` specifically: `events: SidecarEventEmitter`,
   `cryptoProviders: CryptoProviderCache`, a required `undeploy: (address,
-  reason) => Promise<void>` (the host's own termination primitive — e.g.
+reason) => Promise<void>` (the host's own termination primitive — e.g.
   `apps/hub`'s `sidecarRouter.sendAgentUndeploy`), and an optional
   `lifecycle?: Pick<AgentLifecycle, "track" | "recordActivity" |
-  "untrack">` for idle-sleep bookkeeping shared with the rest of the
+"untrack">` for idle-sleep bookkeeping shared with the rest of the
   process's launched runs.
 
 ## What this package never imports

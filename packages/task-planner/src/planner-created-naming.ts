@@ -28,7 +28,8 @@ export function plannerCreatedDefinitionHandle(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   const suffix = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
-  const maxSlugLength = 63 - PLANNER_CREATED_HANDLE_PREFIX.length - 1 - suffix.length;
+  const maxSlugLength =
+    63 - PLANNER_CREATED_HANDLE_PREFIX.length - 1 - suffix.length;
   const truncated = (slug === "" ? "agent" : slug)
     .slice(0, Math.max(maxSlugLength, 1))
     .replace(/-+$/g, "");

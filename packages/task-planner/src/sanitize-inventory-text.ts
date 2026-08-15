@@ -14,6 +14,9 @@
  * untrusted description can't pad the prompt with an oversized,
  * multi-line block of imperative text. */
 export function sanitizeInventoryText(raw: string, maxLen: number): string {
-  const singleLine = raw.replace(/[\r\n\t\p{Cc}]+/gu, " ").replace(/\s+/g, " ").trim();
+  const singleLine = raw
+    .replace(/[\r\n\t\p{Cc}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return singleLine.length > maxLen ? singleLine.slice(0, maxLen) : singleLine;
 }

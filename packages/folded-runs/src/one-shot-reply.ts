@@ -159,7 +159,8 @@ export async function runOneShotFoldedPrompt(
   const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
 
   const launchRun = deps.launchFoldedRun ?? launchFoldedRunDefault;
-  const sendMail = deps.sendFoldedMailWithRetry ?? sendFoldedMailWithRetryDefault;
+  const sendMail =
+    deps.sendFoldedMailWithRetry ?? sendFoldedMailWithRetryDefault;
 
   const launched = await launchRun(deps.foldedRuns, {
     tenantId: input.tenantId,

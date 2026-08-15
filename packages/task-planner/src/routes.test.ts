@@ -137,8 +137,7 @@ describe("POST /", () => {
     ],
     [
       "SkillRegistryError",
-      () =>
-        new SkillRegistryError("not_found", "No skill named \"unknown\""),
+      () => new SkillRegistryError("not_found", 'No skill named "unknown"'),
     ],
   ])("%s maps to a plain-language 422", async (_name, makeError) => {
     const deps = buildDeps({

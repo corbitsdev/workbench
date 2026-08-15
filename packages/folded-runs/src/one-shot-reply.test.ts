@@ -18,6 +18,14 @@ import {
   FoldedRunTimedOutError,
 } from "./one-shot-reply";
 
+/** Asserts a fake's call list recorded at least one call and returns the
+ * first — avoids a non-null assertion at every `calls[0]` read below. */
+function firstCall<T>(calls: readonly T[]): T {
+  const [call] = calls;
+  if (call === undefined) throw new Error("expected at least one call");
+  return call;
+}
+
 const AGENT_WORKFLOW_JSON = {
   id: "wfd_planner",
   stepOrder: ["agent"],
@@ -73,7 +81,7 @@ function createFakeEmitter() {
  * emit fake sidecar events for that exact address without needing to
  * predict the real (randomly generated) instance id. */
 function createFakeLaunch() {
-  const calls: Array<{ triggerAddress: string; instanceId: string }> = [];
+  const calls: { triggerAddress: string; instanceId: string }[] = [];
   return {
     calls,
     launchFoldedRun: async (
@@ -91,13 +99,13 @@ function createFakeLaunch() {
 
 /** A fake `sendFoldedMailWithRetry`: records every call and either
  * succeeds, returns an `!ok` result, or throws — controlled per test. */
-function createFakeSend(
-  behavior: "ok" | "not-ok" | "throws" = "ok",
-): {
+function createFakeSend(behavior: "ok" | "not-ok" | "throws" = "ok"): {
   calls: number;
   sendFoldedMailWithRetry: (
     ...args: unknown[]
-  ) => Promise<{ ok: true; mail: unknown } | { ok: false; error: Error; attempts: number }>;
+  ) => Promise<
+    { ok: true; mail: unknown } | { ok: false; error: Error; attempts: number }
+  >;
 } {
   let calls = 0;
   return {
@@ -126,7 +134,7 @@ function createFakeSend(
 
 /** A tiny fake `undeploy` port recording every call it received. */
 function createFakeUndeploy() {
-  const calls: Array<{ address: string; reason: string }> = [];
+  const calls: { address: string; reason: string }[] = [];
   return {
     calls,
     undeploy: async (address: string, reason: string) => {
@@ -213,7 +221,7 @@ describe("runOneShotFoldedPrompt", () => {
 
     // Let the async launch+send chain settle before emitting events.
     await new Promise((r) => setTimeout(r, 10));
-    const triggerAddress = launchCalls[0]!.triggerAddress;
+    const triggerAddress = firstCall(launchCalls).triggerAddress;
     expect(triggerAddress).toBeTruthy();
 
     fake.emit("agent.event", {
@@ -235,7 +243,7 @@ describe("runOneShotFoldedPrompt", () => {
 
     const result = await promise;
     expect(result.content).toBe("Hello world");
-    expect(result.runId).toBe(launchCalls[0]!.instanceId);
+    expect(result.runId).toBe(firstCall(launchCalls).instanceId);
     expect(launchCalls).toHaveLength(1);
     expect(fakeSend.calls).toBe(1);
     expect(fake.listenerCount("agent.event")).toBe(0);
@@ -262,7 +270,7 @@ describe("runOneShotFoldedPrompt", () => {
 
     const promise = runOneShotFoldedPrompt(deps, INPUT);
     await new Promise((r) => setTimeout(r, 10));
-    const triggerAddress = launchCalls[0]!.triggerAddress;
+    const triggerAddress = firstCall(launchCalls).triggerAddress;
 
     fake.emit("agent.event", {
       agentAddress: triggerAddress,
@@ -334,7 +342,7 @@ describe("send-path throw (not an !ok result)", () => {
       caught = err;
     }
     const elapsed = Date.now() - started;
-    const triggerAddress = launchCalls[0]!.triggerAddress;
+    const triggerAddress = firstCall(launchCalls).triggerAddress;
 
     // The real cause propagates directly, well before the timeout.
     expect(caught).toBeInstanceOf(Error);
@@ -364,7 +372,7 @@ describe("timeout tears the launched run down", () => {
     await expect(
       runOneShotFoldedPrompt(deps, { ...INPUT, timeoutMs: 100 }),
     ).rejects.toBeInstanceOf(FoldedRunTimedOutError);
-    const triggerAddress = launchCalls[0]!.triggerAddress;
+    const triggerAddress = firstCall(launchCalls).triggerAddress;
 
     // A run WAS launched (workflow_run row + deployed sidecar instance)...
     expect(launchCalls).toHaveLength(1);

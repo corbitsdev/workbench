@@ -1391,10 +1391,7 @@ export async function createHub(config: HubConfig) {
             // directly (the standalone, non-middleware primitive
             // `createRequireGrant`'s own middleware wraps) since this
             // is not a route boundary.
-            requireDefinitionCreateGrant: async ({
-              tenantId,
-              principalId,
-            }) => {
+            requireDefinitionCreateGrant: async ({ tenantId, principalId }) => {
               const result = await authorize(
                 chatGrantStore,
                 principalId,

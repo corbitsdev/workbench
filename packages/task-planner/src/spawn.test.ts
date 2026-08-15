@@ -205,7 +205,9 @@ const GRANOLA_BINDING = {
 };
 
 const INVENTORY = {
-  agents: [{ id: "wfd_agent", name: "incident-bot", displayName: "Incident bot" }],
+  agents: [
+    { id: "wfd_agent", name: "incident-bot", displayName: "Incident bot" },
+  ],
   toolPackages: [
     {
       name: "@corbits/granola-tools",

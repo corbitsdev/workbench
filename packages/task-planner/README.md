@@ -117,8 +117,8 @@ tenantId)` is provided as the production implementation: it queries
   "current tenant's Myra" foreign key anywhere else to join through.
 - `OneShotRunnerDeps` (`foldedRuns: FoldedRunsDeps`, `events:
 SidecarEventEmitter`, `cryptoProviders: CryptoProviderCache`, `undeploy:
-  (address, reason) => Promise<void>`, `lifecycle?:
-  Pick<AgentLifecycle, "track" | "recordActivity" | "untrack">`) — the same
+(address, reason) => Promise<void>`, `lifecycle?:
+Pick<AgentLifecycle, "track" | "recordActivity" | "untrack">`) — the same
   `foldedRuns`/`events`/`cryptoProviders` deps `@corbits/tasks`' launcher
   and orchestrator already take, plus the raw termination port a one-shot
   run tears itself down through the moment it settles (it has no further
