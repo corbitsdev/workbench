@@ -39,7 +39,7 @@ import {
 import { channelPath } from "../channel-path";
 import { consumePendingNewAgent } from "../command-palette-actions";
 import { tenantKeys } from "../query-client";
-import { ListSkeleton } from "../query-view";
+import { ListSkeleton } from "@corbits/api-query";
 import { AgentSkillsPicker } from "./agent-skills-picker";
 import { CreateAgentDialog } from "./create-agent-dialog";
 

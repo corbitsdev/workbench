@@ -19,8 +19,10 @@ import {
 import type { IntakeField } from "@corbits/react-ui";
 import { useState } from "react";
 
+import { ApiQueryError } from "@corbits/api-query";
+
 import type { CatalogModel } from "../agents-api";
-import { AgentDirectoryError, createAgentDefinition } from "../agents-api";
+import { createAgentDefinition } from "../agents-api";
 import type { AgentDefinition } from "../agents-api";
 import { AgentSkillsPicker } from "./agent-skills-picker";
 
@@ -198,7 +200,7 @@ export function CreateAgentDialog({
       onCreated(created);
     } catch (cause) {
       setSubmitError(
-        cause instanceof AgentDirectoryError
+        cause instanceof ApiQueryError
           ? cause.message
           : "Could not create the agent.",
       );

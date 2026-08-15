@@ -17,9 +17,9 @@ import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
 
-import type { APIQuery } from "./api";
-import { toAPIQuery } from "./api";
-import { UnauthenticatedError, tenantKeys } from "./query-client";
+import type { APIQuery } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
+import { tenantKeys } from "./query-client";
 
 export type AgentDefinition = typeof WorkflowDefinitionResponse.infer;
 export type AgentInstance = typeof WorkflowRunResponse.infer;
@@ -35,15 +35,6 @@ const ModelsPage = paginatedSchema(ModelResponse);
 // worked around.
 const PAGE_LIMIT = 100;
 
-export class AgentDirectoryError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-  }
-}
-
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
 async function getJSON<T>(path: string, schema: Validator<T>): Promise<T> {
@@ -51,22 +42,22 @@ async function getJSON<T>(path: string, schema: Validator<T>): Promise<T> {
   try {
     response = await fetch(path, { headers: { accept: "application/json" } });
   } catch (cause) {
-    throw new AgentDirectoryError(
+    throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
   if (response.status === 401) {
-    throw new AgentDirectoryError("Not signed in.", 401);
+    throw new ApiQueryError("Not signed in.", 401);
   }
   if (!response.ok) {
-    throw new AgentDirectoryError(
+    throw new ApiQueryError(
       `The server answered ${response.status} for ${path}.`,
       response.status,
     );
   }
   const parsed = schema(await response.json().catch(() => undefined));
   if (parsed instanceof type.errors) {
-    throw new AgentDirectoryError(
+    throw new ApiQueryError(
       `Unexpected response shape from ${path}: ${parsed.summary}`,
     );
   }
@@ -89,7 +80,7 @@ async function postJSON<T>(
       body: JSON.stringify(body),
     });
   } catch (cause) {
-    throw new AgentDirectoryError(
+    throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
@@ -100,11 +91,11 @@ async function postJSON<T>(
       envelope instanceof type.errors
         ? `The server answered ${response.status} for ${path}.`
         : envelope.error.message;
-    throw new AgentDirectoryError(message, response.status);
+    throw new ApiQueryError(message, response.status);
   }
   const parsed = schema(json);
   if (parsed instanceof type.errors) {
-    throw new AgentDirectoryError(
+    throw new ApiQueryError(
       `Unexpected response shape from ${path}: ${parsed.summary}`,
     );
   }
@@ -281,7 +272,7 @@ export function useAgentDirectory(
       try {
         return await loadAgentDirectory(tenantId);
       } catch (cause) {
-        if (cause instanceof AgentDirectoryError && cause.status === 401) {
+        if (cause instanceof ApiQueryError && cause.status === 401) {
           throw new UnauthenticatedError();
         }
         throw cause;

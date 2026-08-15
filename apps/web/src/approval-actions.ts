@@ -9,13 +9,9 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApprovalActions, ApprovalDecisionResult } from "@corbits/chat-ui";
+import { ApiQueryError } from "@corbits/api-query";
 
-import {
-  APIMutationError,
-  approveApproval,
-  getApprovalNeedsYou,
-  rejectApproval,
-} from "./api";
+import { approveApproval, getApprovalNeedsYou, rejectApproval } from "./api";
 import type { Approval } from "./api";
 import { tenantKeys } from "./query-client";
 
@@ -65,7 +61,7 @@ export function createChatApprovalActions(
       invalidate();
       return { kind: "resolved", status };
     } catch (cause) {
-      if (cause instanceof APIMutationError) {
+      if (cause instanceof ApiQueryError) {
         if (cause.status === 403) {
           return { kind: "forbidden", message: forbiddenMessage };
         }

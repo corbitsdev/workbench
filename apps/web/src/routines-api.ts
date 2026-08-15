@@ -17,9 +17,8 @@ import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
 import { workflowDisplayName } from "@corbits/workflow-catalog";
-import type { APIQuery } from "./api";
-import { toAPIQuery } from "./api";
-import { UnauthenticatedError } from "./query-client";
+import type { APIQuery } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
 import { purposeDefinitions, withCatalogFields } from "./purpose-definitions";
 import type { CatalogFields } from "./purpose-definitions";
 
@@ -142,15 +141,6 @@ export type CreateDraftInput = {
   readonly scope: "personal" | "bench";
 };
 
-export class RoutinesApiError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-  }
-}
-
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
 async function request<T>(
@@ -165,12 +155,12 @@ async function request<T>(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new RoutinesApiError(
+    throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
   if (response.status === 401) {
-    throw new RoutinesApiError(`Not signed in for ${path}.`, 401);
+    throw new ApiQueryError(`Not signed in for ${path}.`, 401);
   }
   if (!response.ok) {
     const detail = await response
@@ -179,7 +169,7 @@ async function request<T>(
         (body: { error?: { message?: string } }) => body.error?.message ?? "",
       )
       .catch(() => "");
-    throw new RoutinesApiError(
+    throw new ApiQueryError(
       `The server answered ${response.status} for ${path}.${detail === "" ? "" : ` ${detail}`}`,
       response.status,
     );
@@ -188,7 +178,7 @@ async function request<T>(
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
-    throw new RoutinesApiError(
+    throw new ApiQueryError(
       `Unexpected response shape from ${path}: ${parsed.summary}`,
     );
   }
@@ -340,7 +330,7 @@ export function useTenantQuery<T>(
       try {
         return await fetcher();
       } catch (cause) {
-        if (cause instanceof RoutinesApiError && cause.status === 401) {
+        if (cause instanceof ApiQueryError && cause.status === 401) {
           throw new UnauthenticatedError();
         }
         throw cause;

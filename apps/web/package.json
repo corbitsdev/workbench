@@ -13,6 +13,7 @@
     "test": "bun test ./src ./test"
   },
   "dependencies": {
+    "@corbits/api-query": "workspace:*",
     "@corbits/artifact-ui": "workspace:*",
     "@corbits/bench-ui": "workspace:*",
     "@corbits/chat": "workspace:*",

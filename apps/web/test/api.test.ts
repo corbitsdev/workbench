@@ -7,7 +7,9 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { APIMutationError, approveApproval, rejectApproval } from "../src/api";
+import { ApiQueryError } from "@corbits/api-query";
+
+import { approveApproval, rejectApproval } from "../src/api";
 
 const realFetch = globalThis.fetch;
 
@@ -61,10 +63,10 @@ describe("approveApproval", () => {
     });
   });
 
-  test("throws an APIMutationError on a non-2xx response", async () => {
+  test("throws an ApiQueryError on a non-2xx response", async () => {
     stubFetch(() => json({ error: { code: "already_resolved" } }, 409));
     await expect(approveApproval("tnt_1", "apr_1")).rejects.toBeInstanceOf(
-      APIMutationError,
+      ApiQueryError,
     );
   });
 });

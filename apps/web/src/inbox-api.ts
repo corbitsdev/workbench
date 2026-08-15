@@ -3,7 +3,7 @@
 
 import { type } from "arktype";
 
-import { APIMutationError } from "./api";
+import { ApiQueryError } from "@corbits/api-query";
 
 export const InboxItemSchema = type({
   id: "string",
@@ -72,12 +72,12 @@ async function postInbox(path: string, body: unknown = {}): Promise<void> {
       body: JSON.stringify(body),
     });
   } catch (cause) {
-    throw new APIMutationError(
+    throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
   if (!response.ok) {
-    throw new APIMutationError(
+    throw new ApiQueryError(
       `The server answered ${response.status} for ${path}.`,
       response.status,
     );

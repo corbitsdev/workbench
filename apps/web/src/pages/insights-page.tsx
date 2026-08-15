@@ -60,7 +60,7 @@ import {
   purposeRunsForInsights,
 } from "../insights-stats";
 import { useNavigate } from "../navigation";
-import { SignedOutNotice } from "../query-view";
+import { SignedOutNotice } from "@corbits/api-query";
 import { tenantKeys } from "../query-client";
 import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
