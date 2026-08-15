@@ -38,6 +38,8 @@ import { createConnectStateStore, generatePKCEPair } from "./pkce";
 import type { ConnectorDescriptor } from "./descriptor";
 import { CONNECTOR_REGISTRY } from "./registry";
 
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
 function cookiesFromHeader(header: string | undefined): string[] {
   if (!header) return [];
   return header
@@ -353,12 +355,12 @@ export function createOAuthConnectRoutes(
       c.req.path.replace(/\/start$/, "/callback"),
       deps.hubUrl,
     ).toString();
-    const authUrl = descriptor.oauth.buildAuthorizeUrl({
-      callbackUrl,
-      state,
-      ...(pkce !== undefined ? { codeChallenge: pkce.codeChallenge } : {}),
-      ...(clientId !== undefined ? { clientId } : {}),
-    });
+    const authorizeUrlArgs: Mutable<
+      Parameters<typeof descriptor.oauth.buildAuthorizeUrl>[0]
+    > = { callbackUrl, state };
+    if (pkce !== undefined) authorizeUrlArgs.codeChallenge = pkce.codeChallenge;
+    if (clientId !== undefined) authorizeUrlArgs.clientId = clientId;
+    const authUrl = descriptor.oauth.buildAuthorizeUrl(authorizeUrlArgs);
     return c.redirect(authUrl.toString(), 302);
   });
 
@@ -472,12 +474,15 @@ export function createOAuthConnectRoutes(
     }
 
     const callbackUrl = new URL(c.req.path, deps.hubUrl).toString();
-    const exchanged = await descriptor.oauth.exchange({
+    const exchangeArgs: Mutable<
+      Parameters<typeof descriptor.oauth.exchange>[0]
+    > = {
       code,
-      ...(descriptor.oauth.usesPKCE ? { codeVerifier } : {}),
       redirectUri: callbackUrl,
-      ...(clientId !== undefined ? { clientId } : {}),
-    });
+    };
+    if (descriptor.oauth.usesPKCE) exchangeArgs.codeVerifier = codeVerifier;
+    if (clientId !== undefined) exchangeArgs.clientId = clientId;
+    const exchanged = await descriptor.oauth.exchange(exchangeArgs);
     if (!exchanged.ok) {
       deps.log(
         `${connectorId} connect for user ${user.id}: code exchange failed: ${exchanged.message}`,
@@ -492,16 +497,20 @@ export function createOAuthConnectRoutes(
     }
 
     try {
-      const result = await deps.connectCredential({
+      const connectCredentialArgs: Parameters<
+        typeof deps.connectCredential
+      >[0] = {
         connectorId,
         userId: user.id,
         userEmail: user.email,
         cookies,
         apiKey: exchanged.apiKey,
-        ...(exchanged.expiresAt !== undefined
-          ? { credentialMetadata: { expiresAt: exchanged.expiresAt } }
-          : {}),
-      });
+      };
+      if (exchanged.expiresAt !== undefined)
+        connectCredentialArgs.credentialMetadata = {
+          expiresAt: exchanged.expiresAt,
+        };
+      const result = await deps.connectCredential(connectCredentialArgs);
       if (result.kind === "invalid-credential") {
         deps.log(
           `${connectorId} connect for user ${user.id}: exchanged material failed its probe: ${result.message}`,

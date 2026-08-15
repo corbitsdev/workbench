@@ -346,14 +346,20 @@ export async function testProviderCredential(
   const doFetch = args.fetchImpl ?? fetch;
   const probe = config.buildProbeRequest(args.apiKey);
 
+  const requestInitBase = {
+    method: probe.method ?? "GET",
+    headers: new Headers(probe.headers),
+    signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+  };
+
   let response: Response;
   try {
-    response = await doFetch(probe.url, {
-      method: probe.method ?? "GET",
-      headers: new Headers(probe.headers),
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-      ...(probe.body !== undefined ? { body: probe.body } : {}),
-    });
+    response = await doFetch(
+      probe.url,
+      probe.body !== undefined
+        ? { ...requestInitBase, body: probe.body }
+        : requestInitBase,
+    );
   } catch (cause) {
     return {
       ok: false,

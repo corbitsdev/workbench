@@ -183,11 +183,18 @@ export function createArtifactDbStore(
   return {
     async list(tenantId, opts) {
       const cursor = parseCursor(opts.cursor ?? undefined);
-      const result = await listArtifacts(db, anonymousIdentity, tenantId, {
-        limit: opts.limit,
-        ...(cursor !== undefined ? { cursor } : {}),
-        ...(opts.query !== null ? { query: opts.query } : {}),
-      });
+      const withCursor =
+        cursor !== undefined
+          ? { limit: opts.limit, cursor }
+          : { limit: opts.limit };
+      const filters =
+        opts.query !== null ? { ...withCursor, query: opts.query } : withCursor;
+      const result = await listArtifacts(
+        db,
+        anonymousIdentity,
+        tenantId,
+        filters,
+      );
       return {
         data: result.rows.map(serializeArtifactListItem),
         nextCursor: result.nextCursor,

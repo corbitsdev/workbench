@@ -51,13 +51,15 @@ export function createCommandRoutes(
     async (c) => {
       const tenant = c.get("tenant");
       const commands = await deps.registry.listCommands(tenant.id);
-      const items: CommandListing[] = commands.map((command) => ({
-        name: command.name,
-        description: command.description,
-        ...(command.argumentHint !== undefined
-          ? { argumentHint: command.argumentHint }
-          : {}),
-      }));
+      const items: CommandListing[] = commands.map((command) => {
+        const listing = {
+          name: command.name,
+          description: command.description,
+        };
+        return command.argumentHint !== undefined
+          ? { ...listing, argumentHint: command.argumentHint }
+          : listing;
+      });
       return c.json({ items });
     },
   );

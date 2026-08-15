@@ -29,17 +29,19 @@ export type UsageSinkDeps = {
 export function createUsageSink(deps: UsageSinkDeps) {
   return {
     async handle(event: UsageEvent): Promise<"inserted" | "duplicate"> {
-      const result = await deps.store.insertUsage({
+      const baseInsert = {
         id: deps.generateId(),
         tenantId: event.tenantId,
         sessionId: event.sessionId,
         turnId: event.turnId,
         model: event.model,
         tokens: event.tokens,
-        ...(event.recordedAt === undefined
-          ? {}
-          : { recordedAt: event.recordedAt }),
-      });
+      };
+      const result = await deps.store.insertUsage(
+        event.recordedAt === undefined
+          ? baseInsert
+          : { ...baseInsert, recordedAt: event.recordedAt },
+      );
       return result === null ? "duplicate" : "inserted";
     },
   };

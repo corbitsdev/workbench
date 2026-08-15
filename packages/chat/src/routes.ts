@@ -442,12 +442,10 @@ async function resolveMessageSenderTenant(
       )
     ) {
       const name = await deps.trust?.getTenantName(share.projectedTenantId);
-      return {
-        tenantId: share.projectedTenantId,
-        ...(name !== undefined
-          ? { tenantName: name, tenantMonogram: monogramFromName(name) }
-          : {}),
-      };
+      const base = { tenantId: share.projectedTenantId };
+      return name !== undefined
+        ? { ...base, tenantName: name, tenantMonogram: monogramFromName(name) }
+        : base;
     }
   }
   return undefined;
@@ -525,13 +523,19 @@ async function enrichWithReactionsAndPins<T extends WireMessageItem>(
   if (reactionsByMessage === undefined && pinnedIds === undefined) {
     return items;
   }
-  return items.map((item) => ({
-    ...item,
-    ...(reactionsByMessage !== undefined
-      ? { reactions: reactionsByMessage.get(item.id) ?? [] }
-      : {}),
-    ...(pinnedIds !== undefined ? { pinned: pinnedIds.has(item.id) } : {}),
-  }));
+  return items.map((item) => {
+    const result: T & {
+      reactions?: readonly ReactionSummary[];
+      pinned?: boolean;
+    } = { ...item };
+    if (reactionsByMessage !== undefined) {
+      result.reactions = reactionsByMessage.get(item.id) ?? [];
+    }
+    if (pinnedIds !== undefined) {
+      result.pinned = pinnedIds.has(item.id);
+    }
+    return result;
+  });
 }
 
 /**
@@ -790,12 +794,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         (acc, address) => addParticipant(acc, address, localPartOf(address)),
         [],
       );
-      const settings: Record<string, unknown> = {
+      const baseSettings = {
         "chat/kind": body.kind,
         "chat/pinned": preset.pinned,
         "chat/participants": initialParticipants,
-        ...(chatTitle !== undefined ? { "chat/name": chatTitle } : {}),
       };
+      const settings: Record<string, unknown> =
+        chatTitle !== undefined
+          ? { ...baseSettings, "chat/name": chatTitle }
+          : baseSettings;
 
       const row = await deps.store.createChannelSettings({
         tenantId: tenant.id,
@@ -1036,16 +1043,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             : { ...channelView(row), tenancy: null, legacy: true };
         const activity = activityByChannelId[row.channelId];
         if (activity === undefined) return view;
-        return {
-          ...view,
-          unreadCount: activity.unreadCount,
-          ...(activity.lastActivityAt !== undefined
-            ? {
-                lastActivityAt: activity.lastActivityAt,
-                live: isRecentlyActive(activity.lastActivityAt),
-              }
-            : {}),
-        };
+        const withUnread = { ...view, unreadCount: activity.unreadCount };
+        return activity.lastActivityAt !== undefined
+          ? {
+              ...withUnread,
+              lastActivityAt: activity.lastActivityAt,
+              live: isRecentlyActive(activity.lastActivityAt),
+            }
+          : withUnread;
       });
 
       // Channels a sibling tenant projected into this one (CL-5882) —
@@ -1157,12 +1162,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           400,
         );
       }
-      const thread = await deps.threads.forkThread({
+      const forkParams = {
         tenantId: tenant.id,
         channelId,
         parentMessageId: body.parentMessageId,
-        ...(body.title !== undefined ? { title: body.title } : {}),
-      });
+      };
+      const thread = await deps.threads.forkThread(
+        body.title !== undefined
+          ? { ...forkParams, title: body.title }
+          : forkParams,
+      );
       return c.json(
         {
           id: thread.id,
@@ -1262,12 +1271,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           400,
         );
       }
-      const thread = await deps.threads.createDeliveryThread({
+      const deliveryParams = {
         tenantId: tenant.id,
         channelId,
         runRef: body.runRef,
-        ...(body.title !== undefined ? { title: body.title } : {}),
-      });
+      };
+      const thread = await deps.threads.createDeliveryThread(
+        body.title !== undefined
+          ? { ...deliveryParams, title: body.title }
+          : deliveryParams,
+      );
       return c.json(
         {
           id: thread.id,
@@ -1300,11 +1313,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
-      const listed = await deps.platform.listMail({
-        tenantId: access.ownerTenantId,
-        channelId,
-        ...(cursor !== undefined ? { cursor } : {}),
-      });
+      const listMailParams = { tenantId: access.ownerTenantId, channelId };
+      const listed = await deps.platform.listMail(
+        cursor !== undefined ? { ...listMailParams, cursor } : listMailParams,
+      );
 
       const items = await Promise.all(
         listed.items.map(async (item) => {
@@ -1329,18 +1341,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }),
       );
 
-      return c.json({
-        items: await enrichWithReactionsAndPins(
-          deps,
-          access.ownerTenantId,
-          channelId,
-          principal.id,
-          items,
-        ),
-        ...(listed.nextCursor !== undefined
-          ? { nextCursor: listed.nextCursor }
-          : {}),
-      });
+      const responseItems = await enrichWithReactionsAndPins(
+        deps,
+        access.ownerTenantId,
+        channelId,
+        principal.id,
+        items,
+      );
+      return c.json(
+        listed.nextCursor !== undefined
+          ? { items: responseItems, nextCursor: listed.nextCursor }
+          : { items: responseItems },
+      );
     },
   );
 
@@ -2203,17 +2215,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           const targetName = await deps.trust?.getTenantName(
             body.projectedTenantId,
           );
-          const sharedContext =
-            deps.trust !== undefined
-              ? {
-                  sharedContext: {
-                    ...(viaParent !== undefined ? { viaParent } : {}),
-                    ...(targetName !== undefined
-                      ? { targetTenantName: targetName }
-                      : {}),
-                  },
-                }
-              : {};
+          let sharedContext: Record<string, unknown> = {};
+          if (deps.trust !== undefined) {
+            const inner: Record<string, unknown> = {};
+            if (viaParent !== undefined) inner.viaParent = viaParent;
+            if (targetName !== undefined) inner.targetTenantName = targetName;
+            sharedContext = { sharedContext: inner };
+          }
           return c.json(
             {
               owningTenantId: outcome.row.owningTenantId,
@@ -2482,14 +2490,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const merged: Record<string, unknown> = {
         ...existing.settings,
         ...patch,
-        ...(patch["chat/participants"] !== undefined
-          ? {
-              "chat/participants": parseParticipants(
-                patch["chat/participants"],
-              ),
-            }
-          : {}),
       };
+      if (patch["chat/participants"] !== undefined) {
+        merged["chat/participants"] = parseParticipants(
+          patch["chat/participants"],
+        );
+      }
       // The settings record itself is the durable source of truth; it
       // is updated before anything else here fires, so a failure
       // below never leaves the record unwritten and the audit trail
@@ -2512,17 +2518,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         ),
         settings: existing.settings,
       };
-      const controlPayload: ChannelControlPayload = {
+      const controlPayloadBase: ChannelControlPayload = {
         namespace: CHANNEL_CONTROL_NAMESPACE,
         settings: patch,
-        ...(patch["chat/participants"] !== undefined
+      };
+      const controlPayload: ChannelControlPayload =
+        patch["chat/participants"] !== undefined
           ? {
+              ...controlPayloadBase,
               participants: parseParticipants(patch["chat/participants"]).map(
                 (participant) => participant.address,
               ),
             }
-          : {}),
-      };
+          : controlPayloadBase;
       const { events } = applyControlPayload(
         priorState,
         controlPayload,

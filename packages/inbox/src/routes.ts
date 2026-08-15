@@ -75,16 +75,22 @@ async function listAllOpen(
   const out: InboxItem[] = [];
   let cursor: MailboxListCursor | undefined;
   for (;;) {
-    const page = await listUserMailbox(db, {
+    const listOpts = {
       tenantId: scope.tenantId,
       principalId: scope.principalId,
       // "all" = not trashed, not archived — the product's open inbox.
-      view: "all",
+      view: "all" as const,
       limit: BULK_PAGE_LIMIT,
       priorities: WORKBENCH_INBOX_PRIORITIES,
-      ...(cursor !== undefined ? { cursor } : {}),
-      ...(filter !== undefined ? { filter } : {}),
-    });
+    };
+    const listOptsWithCursor =
+      cursor !== undefined ? { ...listOpts, cursor } : listOpts;
+    const page = await listUserMailbox(
+      db,
+      filter !== undefined
+        ? { ...listOptsWithCursor, filter }
+        : listOptsWithCursor,
+    );
     for (const message of page.items) {
       out.push(projectInboxItem(message));
     }
@@ -209,19 +215,25 @@ export function createInboxRoutes(
       cursor = decoded;
     }
 
-    const page = await listUserMailbox(db, {
+    const listMailboxOpts = {
       tenantId: tenant.id,
       principalId: principal.id,
-      view: "all",
+      view: "all" as const,
       limit,
       priorities: WORKBENCH_INBOX_PRIORITIES,
-      ...(cursor !== undefined ? { cursor } : {}),
-      ...(Object.keys(filter).length > 0 ? { filter } : {}),
-    });
+    };
+    const listMailboxOptsWithCursor =
+      cursor !== undefined ? { ...listMailboxOpts, cursor } : listMailboxOpts;
+    const page = await listUserMailbox(
+      db,
+      Object.keys(filter).length > 0
+        ? { ...listMailboxOptsWithCursor, filter }
+        : listMailboxOptsWithCursor,
+    );
 
     return c.json({
       items: page.items.map(projectInboxItem),
-      ...(page.nextCursor !== undefined ? { nextCursor: page.nextCursor } : {}),
+      nextCursor: page.nextCursor,
     });
   });
 
@@ -326,7 +338,7 @@ export function createInboxRoutes(
     );
     return c.json({
       ok: true,
-      ...(until !== undefined ? { until } : {}),
+      until,
     });
   });
 

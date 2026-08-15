@@ -146,16 +146,15 @@ export async function runSeed(
       "ANTHROPIC_API_KEY is not set; the tenant catalog is seeded with data only — no credential is planted, so channels and workflows cannot launch until you set it and re-run: workbench seed",
     );
   }
-  await seedCatalog({
+  const seedCatalogArgs: Parameters<typeof seedCatalog>[0] = {
     api,
     cookies,
     tenantId: tenant.tenantId,
     log,
-    ...(config.anthropicApiKeyConfigured
-      ? { apiKey: config.modelSource.apiKey }
-      : {}),
-    ...(deps.placeholderCredential === true
-      ? { placeholderCredential: true }
-      : {}),
-  });
+  };
+  if (config.anthropicApiKeyConfigured)
+    seedCatalogArgs.apiKey = config.modelSource.apiKey;
+  if (deps.placeholderCredential === true)
+    seedCatalogArgs.placeholderCredential = true;
+  await seedCatalog(seedCatalogArgs);
 }

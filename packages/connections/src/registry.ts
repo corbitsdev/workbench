@@ -148,15 +148,14 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
           redirectUri,
           clientId,
         });
-        return result.ok
+        if (!result.ok) return result;
+        return result.expiresAt !== undefined
           ? {
               ok: true,
               apiKey: result.accessToken,
-              ...(result.expiresAt !== undefined
-                ? { expiresAt: result.expiresAt }
-                : {}),
+              expiresAt: result.expiresAt,
             }
-          : result;
+          : { ok: true, apiKey: result.accessToken };
       },
     },
   };

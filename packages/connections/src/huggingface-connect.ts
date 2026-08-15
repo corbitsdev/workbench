@@ -113,11 +113,11 @@ export async function exchangeCodeForToken(
       message: "Hugging Face's exchange response did not carry an access token",
     };
   }
-  return {
-    ok: true,
-    accessToken: parsed.access_token,
-    ...(parsed.expires_in !== undefined
-      ? { expiresAt: new Date(now() + parsed.expires_in * 1000).toISOString() }
-      : {}),
-  };
+  return parsed.expires_in !== undefined
+    ? {
+        ok: true,
+        accessToken: parsed.access_token,
+        expiresAt: new Date(now() + parsed.expires_in * 1000).toISOString(),
+      }
+    : { ok: true, accessToken: parsed.access_token };
 }

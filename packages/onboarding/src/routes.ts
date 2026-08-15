@@ -403,15 +403,10 @@ export function createOnboardingRoutes(
         redirectUri: args.redirectUri,
         clientId: args.clientId,
       });
-      return result.ok
-        ? {
-            ok: true,
-            apiKey: result.accessToken,
-            ...(result.expiresAt !== undefined
-              ? { expiresAt: result.expiresAt }
-              : {}),
-          }
-        : result;
+      if (!result.ok) return result;
+      return result.expiresAt !== undefined
+        ? { ok: true, apiKey: result.accessToken, expiresAt: result.expiresAt }
+        : { ok: true, apiKey: result.accessToken };
     };
   }
 
@@ -464,7 +459,7 @@ export function createOnboardingRoutes(
           testAndPersistCredential)
         : (deps.huggingfaceConnect?.connectCredential ??
           testAndPersistCredential);
-    return impl({
+    const connectCredentialArgs = {
       api,
       cookies: args.cookies,
       hubUrl: deps.hubUrl,
@@ -474,10 +469,15 @@ export function createOnboardingRoutes(
       apiKey: args.apiKey,
       pushWorkflow: deps.pushWorkflow,
       log: deps.log,
-      ...(args.credentialMetadata !== undefined
-        ? { credentialMetadata: args.credentialMetadata }
-        : {}),
-    });
+    };
+    return impl(
+      args.credentialMetadata !== undefined
+        ? {
+            ...connectCredentialArgs,
+            credentialMetadata: args.credentialMetadata,
+          }
+        : connectCredentialArgs,
+    );
   }
 
   async function recentlyConnected(args: {

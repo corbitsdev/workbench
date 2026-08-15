@@ -19,6 +19,8 @@ import {
 import type { CreateOAuthConnectRoutesDeps } from "./oauth-routes";
 import type { ConnectorDescriptor } from "./descriptor";
 
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
 /** The exact payloads a live reviewer reproduced an open redirect with,
  * plus one that should keep working. Shared between the unit tests
  * below and the route-level regression tests, so the two never drift
@@ -90,7 +92,7 @@ function connectRoutes(
     widget: fakeDescriptor(),
   },
 ): Hono<AppEnv> {
-  const deps: CreateOAuthConnectRoutesDeps = {
+  const deps: Mutable<CreateOAuthConnectRoutesDeps> = {
     hubUrl: overrides.hubUrl ?? "https://bench.example.com",
     log: overrides.log ?? (() => undefined),
     credentialCipher:
@@ -105,19 +107,14 @@ function connectRoutes(
         principalId: "prn_1",
         tenantDomain: "widget-tenant.bench.local",
       })),
-    ...(overrides.oauthEnv !== undefined
-      ? { oauthEnv: overrides.oauthEnv }
-      : {}),
-    ...(overrides.recentlyConnected !== undefined
-      ? { recentlyConnected: overrides.recentlyConnected }
-      : {}),
-    ...(overrides.afterConnected !== undefined
-      ? { afterConnected: overrides.afterConnected }
-      : {}),
-    ...(overrides.defaultReturnPath !== undefined
-      ? { defaultReturnPath: overrides.defaultReturnPath }
-      : {}),
   };
+  if (overrides.oauthEnv !== undefined) deps.oauthEnv = overrides.oauthEnv;
+  if (overrides.recentlyConnected !== undefined)
+    deps.recentlyConnected = overrides.recentlyConnected;
+  if (overrides.afterConnected !== undefined)
+    deps.afterConnected = overrides.afterConnected;
+  if (overrides.defaultReturnPath !== undefined)
+    deps.defaultReturnPath = overrides.defaultReturnPath;
   return mountAuthenticated(createOAuthConnectRoutes(deps));
 }
 

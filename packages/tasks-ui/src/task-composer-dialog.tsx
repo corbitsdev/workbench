@@ -130,13 +130,12 @@ export function TaskComposerDialog({
   function handleSubmit() {
     if (!canSubmit || submitting) return;
     if (definitionId === null) return;
-    onCreate({
-      definitionId,
-      prompt: prompt.trim(),
-      ...(modelPreference.trim().length > 0
-        ? { modelPreference: modelPreference.trim() }
-        : {}),
-    });
+    const base = { definitionId, prompt: prompt.trim() };
+    onCreate(
+      modelPreference.trim().length > 0
+        ? { ...base, modelPreference: modelPreference.trim() }
+        : base,
+    );
   }
 
   return (

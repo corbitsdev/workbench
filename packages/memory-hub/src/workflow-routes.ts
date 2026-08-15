@@ -135,21 +135,28 @@ export function createWorkflowMemoryStore(
 ): WorkflowMemoryRoutesStore {
   return {
     async search(scope, input) {
-      return memory.search({
+      const base = {
         principalId: scope.principalId,
         tenantId: scope.tenantId,
         query: input.query,
-        ...(input.limit !== undefined ? { limit: input.limit } : {}),
-        ...(input.kinds !== undefined ? { kinds: input.kinds } : {}),
-      });
+      };
+      const withLimit =
+        input.limit !== undefined ? { ...base, limit: input.limit } : base;
+      const params =
+        input.kinds !== undefined
+          ? { ...withLimit, kinds: input.kinds }
+          : withLimit;
+      return memory.search(params);
     },
     async add(scope, input) {
-      const result = await memory.add({
+      const base = {
         principalId: scope.principalId,
         tenantId: scope.tenantId,
         content: { title: input.title, text: input.text },
-        ...(input.kind !== undefined ? { kind: input.kind } : {}),
-      });
+      };
+      const params =
+        input.kind !== undefined ? { ...base, kind: input.kind } : base;
+      const result = await memory.add(params);
       return { documentId: result.documentId, versionId: result.versionId };
     },
     async list(scope, limit) {
@@ -213,11 +220,16 @@ export function createWorkflowMemoryRoutes(
         400,
       );
     }
-    const result = await deps.store.search(c.get("workflowRunScope"), {
+    const searchInput = {
       query: parsed.query,
       limit: parsed.limit ?? DEFAULT_SEARCH_LIMIT,
-      ...(parsed.kinds !== undefined ? { kinds: parsed.kinds } : {}),
-    });
+    };
+    const result = await deps.store.search(
+      c.get("workflowRunScope"),
+      parsed.kinds !== undefined
+        ? { ...searchInput, kinds: parsed.kinds }
+        : searchInput,
+    );
     return c.json({ data: result });
   });
 
@@ -273,11 +285,11 @@ export function createWorkflowMemoryRoutes(
     // unvalidated keys, so a caller-supplied `tenantId`/`principalId` in
     // the body must never ride through to the store — attribution comes
     // only from the authenticated `workflowRunScope` above.
-    const added = await deps.store.add(scope, {
-      title: parsed.title,
-      text: parsed.text,
-      ...(parsed.kind !== undefined ? { kind: parsed.kind } : {}),
-    });
+    const addInput = { title: parsed.title, text: parsed.text };
+    const added = await deps.store.add(
+      scope,
+      parsed.kind !== undefined ? { ...addInput, kind: parsed.kind } : addInput,
+    );
     return c.json({ data: added }, 201);
   });
 

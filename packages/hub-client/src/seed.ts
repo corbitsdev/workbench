@@ -868,7 +868,7 @@ export async function ensureCredential(
       name: args.name,
       type: args.type,
       secret: args.secret,
-      ...(args.metadata !== undefined ? { metadata: args.metadata } : {}),
+      metadata: args.metadata,
     },
     cookies,
   );
@@ -923,7 +923,7 @@ export async function ensureCredential(
       {
         secret: args.secret,
         status: "active",
-        ...(args.metadata !== undefined ? { metadata: args.metadata } : {}),
+        metadata: args.metadata,
       },
       cookies,
     );
@@ -1180,19 +1180,19 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
     { tenantId, name: seed.provider.name, plugin: seed.provider.plugin },
     log,
   );
+  const baseCredentialArgs = {
+    tenantId,
+    providerId,
+    name: inferenceCredentialName(seed.provider.name),
+    secret: credentialSecret,
+    type: args.credentialType ?? ("api_key" as const),
+  };
   const credentialId = await ensureCredential(
     api,
     cookies,
-    {
-      tenantId,
-      providerId,
-      name: inferenceCredentialName(seed.provider.name),
-      secret: credentialSecret,
-      type: args.credentialType ?? "api_key",
-      ...(args.credentialMetadata !== undefined
-        ? { metadata: args.credentialMetadata }
-        : {}),
-    },
+    args.credentialMetadata !== undefined
+      ? { ...baseCredentialArgs, metadata: args.credentialMetadata }
+      : baseCredentialArgs,
     log,
   );
   const catalogProviderId = await ensureCatalogProvider(

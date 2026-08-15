@@ -89,28 +89,28 @@ export async function assembleRoutineDraftInventory(
   ]);
 
   return {
-    workflows: workflows.map((workflow) => ({
-      ...workflow,
-      ...(workflow.description !== undefined
+    workflows: workflows.map((workflow) =>
+      workflow.description !== undefined
         ? {
+            ...workflow,
             description: sanitizeInventoryText(
               workflow.description,
               MAX_DESCRIPTION_LENGTH,
             ),
           }
-        : {}),
-    })),
-    agents: agents.map((agent) => ({
-      ...agent,
-      ...(agent.description !== undefined
+        : { ...workflow },
+    ),
+    agents: agents.map((agent) =>
+      agent.description !== undefined
         ? {
+            ...agent,
             description: sanitizeInventoryText(
               agent.description,
               MAX_DESCRIPTION_LENGTH,
             ),
           }
-        : {}),
-    })),
+        : { ...agent },
+    ),
   };
 }
 
@@ -358,17 +358,19 @@ export function createMyraRoutineDrafting(
       const parsed = parseRoutineDraftReply(reply.content);
       validateRoutineDraftReplyAgainstInventory(parsed, inventory);
 
-      return {
-        steps: parsed.steps,
-        ...(parsed.name !== undefined ? { name: parsed.name } : {}),
-        trigger: parsed.cadence,
-        ...(parsed.definitionId !== undefined
-          ? { definitionId: parsed.definitionId }
-          : {}),
-        ...(parsed.triggerInput !== undefined
-          ? { autonomy: { triggerInput: parsed.triggerInput } }
-          : {}),
-      };
+      const base = { steps: parsed.steps, trigger: parsed.cadence };
+      const withName =
+        parsed.name !== undefined ? { ...base, name: parsed.name } : base;
+      const withDefinitionId =
+        parsed.definitionId !== undefined
+          ? { ...withName, definitionId: parsed.definitionId }
+          : withName;
+      return parsed.triggerInput !== undefined
+        ? {
+            ...withDefinitionId,
+            autonomy: { triggerInput: parsed.triggerInput },
+          }
+        : withDefinitionId;
     },
   };
 }

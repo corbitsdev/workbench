@@ -34,6 +34,7 @@ import {
 import {
   deliverTaskResultMail,
   type NotifyDeliveryDeps,
+  type TaskResultNotification,
 } from "@corbits/notify";
 import type { DB } from "@intx/db";
 import { workflowDefinition } from "@intx/db/schema";
@@ -41,7 +42,7 @@ import type { SidecarEventEmitter } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
 
 import { advanceChain, type ChainDeps } from "./chain";
-import type { TaskStore } from "./store";
+import type { SettleLegInput, TaskStore } from "./store";
 
 const log = getLogger(["tasks", "orchestrator"]);
 
@@ -161,7 +162,7 @@ export function createTaskOrchestrator(
     );
     const elapsedMs = completedAt.getTime() - record.createdAt.getTime();
 
-    const report = await deliverTaskResultMail(deps.notify, {
+    const resultEvent: TaskResultNotification = {
       kind: "task-result",
       tenantId: record.tenantId,
       taskId: record.id,
@@ -169,15 +170,16 @@ export function createTaskOrchestrator(
       stepCount: completed.stepCount,
       agentName,
       status: taskStatus,
-      ...(replyText !== undefined ? { replyText } : {}),
-      ...(errorMessage !== undefined ? { errorMessage } : {}),
       elapsedMs,
       artifacts: [...artifacts],
       recipients: [
         { tenantId: record.tenantId, principalId: record.principalId },
       ],
       createdAt: completedAt.toISOString(),
-    });
+    };
+    if (replyText !== undefined) resultEvent.replyText = replyText;
+    if (errorMessage !== undefined) resultEvent.errorMessage = errorMessage;
+    const report = await deliverTaskResultMail(deps.notify, resultEvent);
 
     const mailId = report.deliveredMailboxRowIds[0];
     if (mailId !== undefined) {
@@ -218,13 +220,17 @@ export function createTaskOrchestrator(
     // redelivered terminal event, not just its last one.
     const settledAt = new Date();
     const legStatus = status === "completed" ? "done" : "failed";
-    const settledLeg = await deps.store.settleLeg({
+    const settleLegBase: Omit<SettleLegInput, "errorMessage"> = {
       tenantId: leg.tenantId,
       legId: leg.id,
       status: legStatus,
-      ...(errorMessage !== undefined ? { errorMessage } : {}),
       settledAt,
-    });
+    };
+    const settleLegInput: SettleLegInput =
+      errorMessage !== undefined
+        ? { ...settleLegBase, errorMessage }
+        : settleLegBase;
+    const settledLeg = await deps.store.settleLeg(settleLegInput);
     if (settledLeg === null) return;
 
     if (legStatus === "failed") {

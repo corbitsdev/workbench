@@ -144,10 +144,11 @@ function asSteps(raw: unknown): DraftedStep[] {
   for (const item of raw) {
     const parsed = DraftedStepSchema(item);
     if (parsed instanceof type.errors) continue;
-    out.push({
-      title: parsed.title,
-      ...(parsed.detail !== undefined ? { detail: parsed.detail } : {}),
-    });
+    out.push(
+      parsed.detail !== undefined
+        ? { title: parsed.title, detail: parsed.detail }
+        : { title: parsed.title },
+    );
   }
   return out;
 }

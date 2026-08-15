@@ -67,16 +67,17 @@ export async function tickRoutineScheduler(
     // error, just the atomic claim doing its job.
     if (claimed === undefined) continue;
     try {
-      await fireScheduledRoutine(
-        {
-          store: deps.store,
-          launcher: deps.launcher,
-          ...(deps.deliveryChannelRequired !== undefined
-            ? { deliveryChannelRequired: deps.deliveryChannelRequired }
-            : {}),
-        },
-        { tenantId: claimed.tenantId, routine: claimed },
-      );
+      const fireDeps: Parameters<typeof fireScheduledRoutine>[0] = {
+        store: deps.store,
+        launcher: deps.launcher,
+      };
+      if (deps.deliveryChannelRequired !== undefined) {
+        fireDeps.deliveryChannelRequired = deps.deliveryChannelRequired;
+      }
+      await fireScheduledRoutine(fireDeps, {
+        tenantId: claimed.tenantId,
+        routine: claimed,
+      });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       log.error`scheduled fire of routine ${claimed.id} failed: ${reason}`;

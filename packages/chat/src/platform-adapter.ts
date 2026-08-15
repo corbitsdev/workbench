@@ -181,23 +181,29 @@ export function createHubChatPlatform(
   // time this closure is called). `undefined` when `deps.lifecycle` is
   // unset, matching today's behavior exactly: nothing is tracked, no
   // sweep runs, `sendMail` never calls `ensureAwake`.
+  function buildLifecycle(
+    lifecycleDeps: NonNullable<CreateHubChatPlatformDeps["lifecycle"]>,
+  ) {
+    const base = {
+      idleSleepMs: lifecycleDeps.idleSleepMs,
+      isRoutable: (address: string) =>
+        deps.sidecarRouter.getRoutableAddresses().includes(address),
+      undeploy: (address: string, reason: string) =>
+        deps.sidecarRouter.sendAgentUndeploy(address, reason),
+      wake: wakeByAddress,
+      isBusy: (address: string) =>
+        typeof deps.eventCollectors.getCurrentTurnId(address) === "string",
+      log: getLogger(["chat", "lifecycle"]),
+    };
+    return createAgentLifecycle(
+      lifecycleDeps.sweepIntervalMs !== undefined
+        ? { ...base, sweepIntervalMs: lifecycleDeps.sweepIntervalMs }
+        : base,
+    );
+  }
+
   const lifecycle =
-    deps.lifecycle !== undefined
-      ? createAgentLifecycle({
-          idleSleepMs: deps.lifecycle.idleSleepMs,
-          ...(deps.lifecycle.sweepIntervalMs !== undefined
-            ? { sweepIntervalMs: deps.lifecycle.sweepIntervalMs }
-            : {}),
-          isRoutable: (address) =>
-            deps.sidecarRouter.getRoutableAddresses().includes(address),
-          undeploy: (address, reason) =>
-            deps.sidecarRouter.sendAgentUndeploy(address, reason),
-          wake: wakeByAddress,
-          isBusy: (address) =>
-            typeof deps.eventCollectors.getCurrentTurnId(address) === "string",
-          log: getLogger(["chat", "lifecycle"]),
-        })
-      : undefined;
+    deps.lifecycle !== undefined ? buildLifecycle(deps.lifecycle) : undefined;
 
   async function wakeByAddress(address: string): Promise<void> {
     const run = await findFoldedRunByAddress(deps.db, address);
@@ -222,21 +228,25 @@ export function createHubChatPlatform(
         `channel_launch row for instance "${run.id}" carries an invalid folded body: ${parsedFoldedBody.summary}`,
       );
     }
-    await wakeFoldedRun(foldedRunsDeps, {
+    const wakeParams = {
       tenantId: launchRow.tenantId,
       instanceId: run.id,
       triggerAddress: run.address,
       principalId: run.principalId,
       foldedBody: parsedFoldedBody,
-      ...(launchRow.noopInference
+    };
+    await wakeFoldedRun(
+      foldedRunsDeps,
+      launchRow.noopInference
         ? {
+            ...wakeParams,
             sources: noopSourcesOverride(
               deps.noopInferenceBaseUrl,
               parsedFoldedBody,
             ),
           }
-        : {}),
-    });
+        : wakeParams,
+    );
   }
 
   const platform: ChatPlatform = {
@@ -389,13 +399,12 @@ export function createHubChatPlatform(
       });
       return rows
         .filter((row) => !isChannelHostDefinitionName(row.name))
-        .map((row) => ({
-          id: row.id,
-          name: row.name,
-          ...(typeof row.description === "string" && row.description !== ""
-            ? { description: row.description }
-            : {}),
-        }));
+        .map((row) => {
+          const base = { id: row.id, name: row.name };
+          return typeof row.description === "string" && row.description !== ""
+            ? { ...base, description: row.description }
+            : base;
+        });
     },
 
     async resolveDefinitionIdByAddress(address): Promise<string | undefined> {
@@ -487,19 +496,25 @@ export function createHubChatPlatform(
         }),
       );
 
-      const sent = await sendFoldedMail(foldedRunsDeps, {
+      const sendMailBase = {
         tenantId: input.tenantId,
         sessionId,
         agentAddress: run.address,
         from,
         domain,
         content: input.content.content,
-        ...(attachments !== undefined ? { attachments } : {}),
-        ...(input.content.replyTo !== undefined
-          ? { replyTo: input.content.replyTo }
-          : {}),
         cryptoProvider,
-      });
+      };
+      const withAttachments =
+        attachments !== undefined
+          ? { ...sendMailBase, attachments }
+          : sendMailBase;
+      const sent = await sendFoldedMail(
+        foldedRunsDeps,
+        input.content.replyTo !== undefined
+          ? { ...withAttachments, replyTo: input.content.replyTo }
+          : withAttachments,
+      );
 
       lifecycle?.recordActivity(run.address);
       if (originAddress !== undefined) lifecycle?.recordActivity(originAddress);
@@ -513,11 +528,13 @@ export function createHubChatPlatform(
         throw new Error(`No channel run for "${input.channelId}"`);
       }
       const sessionId = await resolveFoldedRunSessionId(deps.db, run);
-      return listFoldedMail(foldedRunsDeps, {
-        tenantId: input.tenantId,
-        sessionId,
-        ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
-      });
+      const listMailBase = { tenantId: input.tenantId, sessionId };
+      return listFoldedMail(
+        foldedRunsDeps,
+        input.cursor !== undefined
+          ? { ...listMailBase, cursor: input.cursor }
+          : listMailBase,
+      );
     },
 
     async listChannelActivity(input) {

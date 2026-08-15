@@ -395,12 +395,13 @@ export function createSidecarSpawnSuspendableChild(
         if (park.parkKind === "approval") {
           events.push({
             kind: "park",
-            park: {
-              correlationId: park.correlationId,
-              ...(park.approvalSnapshot !== undefined
-                ? { approvalSnapshot: park.approvalSnapshot }
-                : {}),
-            },
+            park:
+              park.approvalSnapshot !== undefined
+                ? {
+                    correlationId: park.correlationId,
+                    approvalSnapshot: park.approvalSnapshot,
+                  }
+                : { correlationId: park.correlationId },
           });
         } else {
           events.push({

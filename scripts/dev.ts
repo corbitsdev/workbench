@@ -160,19 +160,21 @@ function sidecarEnv(config: HubConfig, token: string): Record<string, string> {
 // Each command IS the final long-running process — never a `bun run`
 // script wrapper. Killing a wrapper leaves its grandchild running, which
 // is exactly how orphaned hubs end up squatting the port after Ctrl-C.
+const hubApp: App = {
+  label: "hub",
+  dir: join(repoRoot, "apps", "hub"),
+  command: ["bun", "--watch", "--env-file=../../.env", "src/index.ts"],
+};
+// Zero-edit local bootstrap: when the operator has not set a signup
+// mode, open it so seedDevAccount can create alice. Production hub
+// still defaults closed when this script is not the launcher.
+// Explicit WORKBENCH_SIGNUP in .env always wins (bun loads env-file).
+if (process.env["WORKBENCH_SIGNUP"] === undefined) {
+  hubApp.env = { WORKBENCH_SIGNUP: "open" };
+}
+
 const apps: App[] = [
-  {
-    label: "hub",
-    dir: join(repoRoot, "apps", "hub"),
-    command: ["bun", "--watch", "--env-file=../../.env", "src/index.ts"],
-    // Zero-edit local bootstrap: when the operator has not set a signup
-    // mode, open it so seedDevAccount can create alice. Production hub
-    // still defaults closed when this script is not the launcher.
-    // Explicit WORKBENCH_SIGNUP in .env always wins (bun loads env-file).
-    ...(process.env["WORKBENCH_SIGNUP"] === undefined
-      ? { env: { WORKBENCH_SIGNUP: "open" } }
-      : {}),
-  },
+  hubApp,
   {
     label: "sidecar",
     dir: join(repoRoot, "apps", "sidecar"),

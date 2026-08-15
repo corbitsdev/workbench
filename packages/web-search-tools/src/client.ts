@@ -60,14 +60,18 @@ function normalizeResult(
 ): WebSearchResult | null {
   const url = result.url ?? "";
   if (url.length === 0) return null;
-  const item: WebSearchResult = {
+  const base = {
     url,
     title: result.title ?? "",
     publishedAt: result.publishedDate ?? retrievedAt,
-    source: "web",
-    ...(result.author !== undefined ? { author: result.author } : {}),
-    ...(result.publishedDate === undefined ? { provenance: "degraded" } : {}),
+    source: "web" as const,
   };
+  const withAuthor =
+    result.author !== undefined ? { ...base, author: result.author } : base;
+  const item: WebSearchResult =
+    result.publishedDate === undefined
+      ? { ...withAuthor, provenance: "degraded" as const }
+      : withAuthor;
   return item;
 }
 
@@ -82,12 +86,14 @@ export async function searchWeb(
 ): Promise<readonly WebSearchResult[]> {
   const doFetch = config.fetchImpl ?? fetch;
   const url = new URL("/search", config.baseUrl ?? DEFAULT_BASE_URL);
+  const baseHeaders = { "content-type": "application/json" };
+  const headers =
+    config.apiKey !== undefined
+      ? { ...baseHeaders, "x-api-key": config.apiKey }
+      : baseHeaders;
   const response = await doFetch(url, {
     method: "POST",
-    headers: {
-      ...(config.apiKey !== undefined ? { "x-api-key": config.apiKey } : {}),
-      "content-type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       query: params.query,
       numResults: clampNumResults(params.numResults),

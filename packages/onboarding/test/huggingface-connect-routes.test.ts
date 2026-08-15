@@ -325,14 +325,16 @@ describe("GET /oauth/huggingface/callback", () => {
           };
         },
         connectCredential: async (args) => {
-          connections.push({
+          const connection = {
             provider: args.provider,
             apiKey: args.apiKey,
             userId: args.userId,
-            ...(args.credentialMetadata !== undefined
-              ? { credentialMetadata: args.credentialMetadata }
-              : {}),
-          });
+          };
+          connections.push(
+            args.credentialMetadata !== undefined
+              ? { ...connection, credentialMetadata: args.credentialMetadata }
+              : connection,
+          );
           return {
             kind: "connected",
             tenantId: "ten_1",

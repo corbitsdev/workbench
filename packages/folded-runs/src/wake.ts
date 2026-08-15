@@ -38,7 +38,7 @@ export async function wakeFoldedRun(
     principalId: params.principalId,
   });
 
-  await deployAtHead(deps, {
+  const deployAtHeadParams = {
     tenantId: params.tenantId,
     instanceId: params.instanceId,
     triggerAddress: params.triggerAddress,
@@ -46,6 +46,11 @@ export async function wakeFoldedRun(
     sessionId,
     foldedBody: params.foldedBody,
     launchLabel: "the woken instance",
-    ...(params.sources !== undefined ? { sources: params.sources } : {}),
-  });
+  };
+  await deployAtHead(
+    deps,
+    params.sources !== undefined
+      ? { ...deployAtHeadParams, sources: params.sources }
+      : deployAtHeadParams,
+  );
 }

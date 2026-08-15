@@ -53,17 +53,18 @@ function depsFor(args: {
     void store.upsertPolicy(tenantId, policy);
   }
 
-  return {
+  const deps: TenantCreateGuardDeps = {
     store,
     resolveCallerRoleNames: args.resolveCallerRoleNames ?? noMembership,
     envSignupMode: args.envSignupMode ?? "closed",
     envAllowedDomains: [],
     allowUnverifiedEmails: false,
-    ...(args.operatorTenantId !== undefined
-      ? { operatorTenantId: args.operatorTenantId }
-      : {}),
     getSessionUser: async () => args.user,
   };
+  if (args.operatorTenantId !== undefined) {
+    deps.operatorTenantId = args.operatorTenantId;
+  }
+  return deps;
 }
 
 describe("guardedHubApp — bypass shape A: unauthenticated caller", () => {

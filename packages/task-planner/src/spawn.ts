@@ -176,15 +176,17 @@ function validateCreateBounds(
 ): { readonly handle: string } {
   const handle = plannerCreatedDefinitionHandle(create.name);
 
-  const restShape = CreateAgentDefinitionInput({
+  const restShapeBase = {
     name: create.name,
     handle,
     systemPrompt: create.systemPrompt,
     skills: create.skills,
-    ...(create.modelPreference !== undefined
-      ? { model: create.modelPreference }
-      : {}),
-  });
+  };
+  const restShape = CreateAgentDefinitionInput(
+    create.modelPreference !== undefined
+      ? { ...restShapeBase, model: create.modelPreference }
+      : restShapeBase,
+  );
   if (restShape instanceof type.errors) {
     throw new PlannerCreateBoundsViolationError(restShape.summary);
   }
@@ -271,7 +273,7 @@ async function deployChainSteps(
         legs.push({ definitionId: step.definitionId, prompt: step.prompt });
         continue;
       }
-      const deployed = await deps.deployAgentDefinition({
+      const deployAgentDefinitionInput = {
         tenantId: input.tenantId,
         principalId: input.principalId,
         name: step.create.name,
@@ -280,18 +282,22 @@ async function deployChainSteps(
         toolPackagePins: step.create.toolPackagePins,
         skills: step.create.skills,
         credentialBindings: step.credentialBindings,
-        ...(step.create.modelPreference !== undefined
-          ? { model: step.create.modelPreference }
-          : {}),
-      });
+      };
+      const deployed = await deps.deployAgentDefinition(
+        step.create.modelPreference !== undefined
+          ? {
+              ...deployAgentDefinitionInput,
+              model: step.create.modelPreference,
+            }
+          : deployAgentDefinitionInput,
+      );
       deployedDefinitionIds.push(deployed.definitionId);
-      legs.push({
-        definitionId: deployed.definitionId,
-        prompt: step.prompt,
-        ...(step.create.modelPreference !== undefined
-          ? { modelPreference: step.create.modelPreference }
-          : {}),
-      });
+      const leg = { definitionId: deployed.definitionId, prompt: step.prompt };
+      legs.push(
+        step.create.modelPreference !== undefined
+          ? { ...leg, modelPreference: step.create.modelPreference }
+          : leg,
+      );
     }
     return legs;
   } catch (err) {
@@ -340,20 +346,23 @@ async function spawnChainFromTaskSpec(
     throw new Error("a chain spec produced zero legs");
   }
 
-  const record = await launchTask(deps.taskLauncherDeps, {
+  const launchTaskInput = {
     tenantId: input.tenantId,
     principalId: input.principalId,
     definitionId: first.definitionId,
     prompt: first.prompt,
-    ...(first.modelPreference !== undefined
-      ? { modelPreference: first.modelPreference }
-      : {}),
     followOn: followOn.map((leg): TaskLegSpec => ({
       definitionId: leg.definitionId,
       prompt: leg.prompt,
       modelPreference: leg.modelPreference ?? null,
     })),
-  });
+  };
+  const record = await launchTask(
+    deps.taskLauncherDeps,
+    first.modelPreference !== undefined
+      ? { ...launchTaskInput, modelPreference: first.modelPreference }
+      : launchTaskInput,
+  );
 
   await deps.store.linkPlannerRun({
     tenantId: input.tenantId,
@@ -383,7 +392,7 @@ async function spawnSingleTaskFromTaskSpec(
             create.toolPackagePins,
             input.inventory,
           );
-          const deployed = await deps.deployAgentDefinition({
+          const deployAgentDefinitionInput = {
             tenantId: input.tenantId,
             principalId: input.principalId,
             name: create.name,
@@ -392,22 +401,27 @@ async function spawnSingleTaskFromTaskSpec(
             toolPackagePins: create.toolPackagePins,
             skills: create.skills,
             credentialBindings,
-            ...(create.modelPreference !== undefined
-              ? { model: create.modelPreference }
-              : {}),
-          });
+          };
+          const deployed = await deps.deployAgentDefinition(
+            create.modelPreference !== undefined
+              ? { ...deployAgentDefinitionInput, model: create.modelPreference }
+              : deployAgentDefinitionInput,
+          );
           return deployed.definitionId;
         })();
 
-  const record = await launchTask(deps.taskLauncherDeps, {
+  const launchTaskInput = {
     tenantId: input.tenantId,
     principalId: input.principalId,
     definitionId,
     prompt: spec.refinedOutcome,
-    ...("create" in spec && spec.create.modelPreference !== undefined
-      ? { modelPreference: spec.create.modelPreference }
-      : {}),
-  });
+  };
+  const record = await launchTask(
+    deps.taskLauncherDeps,
+    "create" in spec && spec.create.modelPreference !== undefined
+      ? { ...launchTaskInput, modelPreference: spec.create.modelPreference }
+      : launchTaskInput,
+  );
 
   await deps.store.linkPlannerRun({
     tenantId: input.tenantId,

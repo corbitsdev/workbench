@@ -66,16 +66,12 @@ async function runGitHubActivity(
   const days = call.arguments["days"];
   const limit = call.arguments["limit"];
   try {
-    const items = await searchGitHubActivity(
-      {
-        ...(credential !== null ? { fetchImpl: credential.fetchImpl } : {}),
-      },
-      {
-        query,
-        ...(typeof days === "number" ? { days } : {}),
-        ...(typeof limit === "number" ? { limit } : {}),
-      },
-    );
+    const clientConfig =
+      credential !== null ? { fetchImpl: credential.fetchImpl } : {};
+    const withDays = typeof days === "number" ? { query, days } : { query };
+    const params =
+      typeof limit === "number" ? { ...withDays, limit } : withDays;
+    const items = await searchGitHubActivity(clientConfig, params);
     return { callId: call.id, content: JSON.stringify({ items }) };
   } catch (err) {
     return {

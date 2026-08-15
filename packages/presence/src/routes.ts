@@ -19,6 +19,7 @@ import {
   type PresenceRoomKey,
   type PresenceRoomRegistry,
   type PresenceState,
+  type PresenceStatePatch,
 } from "./room-registry";
 import {
   MAX_DOC_UPDATE_BYTES,
@@ -146,13 +147,13 @@ export function createPresenceRoutes(
 
     registry.sweepStale(heartbeatTimeoutMs, now());
 
-    const state: PresenceState = {
+    let state: PresenceState = {
       principalId: principal.id,
       displayName: body.displayName ?? user?.name ?? principal.id,
       color: colorForPrincipal(principal.id),
-      ...(body.cursor !== undefined ? { cursor: body.cursor } : {}),
-      ...(body.typing !== undefined ? { typing: body.typing } : {}),
     };
+    if (body.cursor !== undefined) state = { ...state, cursor: body.cursor };
+    if (body.typing !== undefined) state = { ...state, typing: body.typing };
 
     const states = registry.join(key, state, now());
     await deps.onJoin?.(key, principal.id);
@@ -176,10 +177,9 @@ export function createPresenceRoutes(
 
     registry.sweepStale(heartbeatTimeoutMs, now());
 
-    const patch = {
-      ...(body.cursor !== undefined ? { cursor: body.cursor } : {}),
-      ...(body.typing !== undefined ? { typing: body.typing } : {}),
-    };
+    let patch: PresenceStatePatch = {};
+    if (body.cursor !== undefined) patch = { ...patch, cursor: body.cursor };
+    if (body.typing !== undefined) patch = { ...patch, typing: body.typing };
     const states = registry.heartbeat(key, principal.id, patch, now());
     if (states === undefined) {
       return c.json(
