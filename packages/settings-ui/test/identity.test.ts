@@ -3,7 +3,11 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { principalLabel } from "../src/identity";
+import {
+  PRINCIPAL_KIND_LABEL,
+  PRINCIPAL_KIND_ORDER,
+  principalLabel,
+} from "../src/identity";
 
 describe("principalLabel", () => {
   test("passes through an already-humane display name unchanged", () => {
@@ -41,5 +45,16 @@ describe("principalLabel", () => {
     expect(result.label).not.toContain("(");
     expect(result.label).not.toContain(")");
     expect(result.label).toBe("Alice 0ufqkxuy Localhost");
+  });
+});
+
+// CL-6077: a principal picker that shows only a name, never its kind, is
+// kind-blind — a workflow's machine principal can read identically to a
+// person's account. Every picker groups or annotates by this shared label.
+describe("PRINCIPAL_KIND_LABEL", () => {
+  test("covers every kind in PRINCIPAL_KIND_ORDER with a distinct, honest label", () => {
+    const labels = PRINCIPAL_KIND_ORDER.map((kind) => PRINCIPAL_KIND_LABEL[kind]);
+    expect(labels).toEqual(["user", "agent", "workflow"]);
+    expect(new Set(labels).size).toBe(labels.length);
   });
 });
