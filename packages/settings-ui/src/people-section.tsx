@@ -1,7 +1,10 @@
-// The "People" settings section: every principal on this bench, with
-// invite/suspend/reactivate/remove actions over the native
-// `/api/tenants/:tenantId/principals` and `/members/invite` routes. Never
-// renders a raw principal id or a raw agent refId — see `identity.ts`.
+// The "People" settings section: every human (`kind: "user"`) principal on
+// this bench, with invite/suspend/reactivate/remove actions over the native
+// `/api/tenants/:tenantId/principals` and `/members/invite` routes. Agent
+// and workflow principals are machine identities, not people to manage
+// here — Roles/Grants sections list every kind since those assign to
+// machines too. Never renders a raw principal id or a raw agent refId — see
+// `identity.ts`.
 
 import {
   Badge,
@@ -78,7 +81,11 @@ export function PeopleSection({
     setState({ kind: "loading" });
     listPrincipals(tenantId)
       .then((principals) => {
-        if (!cancelled) setState({ kind: "ready", data: principals });
+        if (!cancelled)
+          setState({
+            kind: "ready",
+            data: principals.filter((p) => p.kind === "user"),
+          });
       })
       .catch((cause: unknown) => {
         if (!cancelled)
