@@ -586,6 +586,154 @@ test("PUT /:definitionId/skills rejects a blank skill name with a 400", async ()
   expect(response.status).toBe(400);
 });
 
+/** A db fake for the instructions read/write routes: `findFirst` answers
+ * the tenant-scoped lookup, and `update` records every `.set(...)` call
+ * (in call order) rather than asserting a real drizzle round-trip — the
+ * route's own choice of table/predicate is what a test here should
+ * catch, not drizzle's chain semantics. */
+function fakeInstructionsDb(
+  row: { id: string; assetId: string | null; name: string } | undefined,
+): DB["db"] & { readonly updateCalls: readonly unknown[] } {
+  const updateCalls: unknown[] = [];
+  return {
+    query: {
+      workflowDefinition: {
+        findFirst: async () =>
+          row === undefined
+            ? undefined
+            : {
+                id: row.id,
+                tenantId: TENANT.id,
+                assetId: row.assetId,
+                name: row.name,
+                description: null,
+              },
+      },
+    },
+    update: () => ({
+      set: (values: unknown) => {
+        updateCalls.push(values);
+        return { where: async () => undefined };
+      },
+    }),
+    updateCalls,
+  } as unknown as DB["db"] & { readonly updateCalls: readonly unknown[] };
+}
+
+test("GET /:definitionId returns the agent's display name and system prompt", async () => {
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () =>
+        Promise.resolve(
+          storedDefinitionBytes("You are a careful research assistant."),
+        ),
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await app.request("/def_1");
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as {
+    name: string;
+    systemPrompt: string;
+  };
+  expect(body.name).toBe("research-buddy");
+  expect(body.systemPrompt).toBe("You are a careful research assistant.");
+});
+
+test("GET /:definitionId 404s for an unknown definition", async () => {
+  const app = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  const response = await app.request("/def_missing");
+  expect(response.status).toBe(404);
+});
+
+test("PUT /:definitionId writes the new system prompt in a single workflow.json commit", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const db = fakeInstructionsDb({
+    id: "def_1",
+    assetId: "ast_1",
+    name: "research-buddy",
+  });
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () =>
+        Promise.resolve(
+          storedDefinitionBytes("You are a careful research assistant."),
+        ),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    db,
+  );
+  const response = await put(app, "/def_1", {
+    name: "Research Buddy",
+    systemPrompt: "You are now a blunt, no-nonsense researcher.",
+  });
+  expect(response.status).toBe(200);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(promptFrom(writtenFiles?.["workflow.json"] as string)).toBe(
+    "You are now a blunt, no-nonsense researcher.",
+  );
+  expect(db.updateCalls).toEqual([
+    { description: "Research Buddy", updatedAt: expect.any(Date) },
+    { displayName: "Research Buddy", updatedAt: expect.any(Date) },
+  ]);
+  const body = (await response.json()) as {
+    name: string;
+    systemPrompt: string;
+  };
+  expect(body).toEqual({
+    name: "Research Buddy",
+    systemPrompt: "You are now a blunt, no-nonsense researcher.",
+  });
+});
+
+test("PUT /:definitionId 404s for an unknown definition", async () => {
+  const app = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  const response = await put(app, "/def_missing", {
+    name: "Research Buddy",
+    systemPrompt: "hello",
+  });
+  expect(response.status).toBe(404);
+});
+
+test("PUT /:definitionId rejects a blank display name with a 400", async () => {
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await put(app, "/def_1", {
+    name: "   ",
+    systemPrompt: "hello",
+  });
+  expect(response.status).toBe(400);
+});
+
+test("PUT /:definitionId rejects a blank system prompt with a 400", async () => {
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await put(app, "/def_1", {
+    name: "Research Buddy",
+    systemPrompt: "   ",
+  });
+  expect(response.status).toBe(400);
+});
+
 test("a create request indexes its pinned skills into the stored system prompt", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const app = buildApp(

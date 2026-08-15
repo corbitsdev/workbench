@@ -419,6 +419,75 @@ describe("POST /channels/:id/invite", () => {
   });
 });
 
+describe("GET /channels/:id/agent", () => {
+  test("resolves the channel's agent participant back to its definition id", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        resolveDefinitionIdByAddress: async (address) =>
+          address === "ins_invited1@acme.example" ? "wfd_echo" : undefined,
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    const response = await app.request(`/channels/${channel.id}/agent`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      address: string;
+      handle: string;
+      definitionId: string;
+    };
+    expect(body.address).toBe("ins_invited1@acme.example");
+    expect(body.definitionId).toBe("wfd_echo");
+  });
+
+  test("404s for a channel with no agent participant", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Quiet",
+    });
+
+    const response = await app.request(`/channels/${channel.id}/agent`);
+    expect(response.status).toBe(404);
+  });
+
+  test("404s for an unknown channel", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+    const response = await app.request(`/channels/ins_missing/agent`);
+    expect(response.status).toBe(404);
+  });
+
+  test("404s when the participant's address no longer resolves to a definition", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        resolveDefinitionIdByAddress: async () => undefined,
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    const response = await app.request(`/channels/${channel.id}/agent`);
+    expect(response.status).toBe(404);
+  });
+});
+
 describe("GET /channels", () => {
   test("filters by kind", async () => {
     const deps = buildDeps();

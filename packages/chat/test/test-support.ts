@@ -54,6 +54,9 @@ export function fakePlatform(
       channelId: string,
       blobId: string,
     ) => Promise<string | Uint8Array>;
+    resolveDefinitionIdByAddress?: (
+      address: string,
+    ) => Promise<string | undefined>;
   } = {},
 ): ChatPlatform & {
   sentMail: {
@@ -102,6 +105,12 @@ export function fakePlatform(
     },
     async listInvitableDefinitions() {
       return opts.invitable ?? [];
+    },
+    async resolveDefinitionIdByAddress(address) {
+      if (opts.resolveDefinitionIdByAddress !== undefined) {
+        return opts.resolveDefinitionIdByAddress(address);
+      }
+      return undefined;
     },
     async sendMail(input) {
       sentMail.push({
