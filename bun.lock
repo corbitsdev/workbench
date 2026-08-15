@@ -104,6 +104,8 @@
       "name": "@workbench/web",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/agent-directory": "workspace:*",
+        "@corbits/api-query": "workspace:*",
         "@corbits/artifact-ui": "workspace:*",
         "@corbits/bench-ui": "workspace:*",
         "@corbits/chat": "workspace:*",
@@ -163,6 +165,7 @@
       "name": "@corbits/agent-directory",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/chat": "workspace:*",
         "@corbits/skills": "workspace:*",
         "@intx/agent": "workspace:*",
         "@intx/db": "workspace:*",
@@ -186,6 +189,22 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/api-query": {
+      "name": "@corbits/api-query",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/react-ui": "github:corbitsdev/react-ui#0627774e9d333486596ca72eb713ff7bd1b75614",
+        "lucide-react": "^1.27.0",
+        "react": "^19.2.0",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/react": "^19.2.2",
+        "@types/react-dom": "^19.2.1",
+        "react-dom": "^19.2.0",
         "typescript": "catalog:",
       },
     },
@@ -1341,6 +1360,8 @@
     "@corbits/agent-directory": ["@corbits/agent-directory@workspace:packages/agent-directory"],
 
     "@corbits/agent-lifecycle": ["@corbits/agent-lifecycle@workspace:packages/agent-lifecycle"],
+
+    "@corbits/api-query": ["@corbits/api-query@workspace:packages/api-query"],
 
     "@corbits/approvals": ["@corbits/approvals@workspace:packages/approvals"],
 

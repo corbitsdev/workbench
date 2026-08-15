@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import type { AgentDefinition, AgentInstance } from "../src/agents-api";
 import {
   definitionsById,
   filterDefinitions,
@@ -8,38 +7,29 @@ import {
   isOrphanedInstance,
   purposeAgentDefinitions,
   purposeAgentInstances,
-} from "../src/agents-directory";
+} from "./client";
 
-const researcher: AgentDefinition = {
+const researcher = {
   id: "wfd_1",
-  tenantId: "tenant_1",
   name: "Researcher",
   description: "Answers research questions",
-  currentVersion: "1",
-  status: "deployed",
-  createdAt: "2026-08-05T11:00:00.000Z",
-  updatedAt: "2026-08-05T11:00:00.000Z",
 };
 
-const channelHostDefinition: AgentDefinition = {
+const channelHostDefinition = {
   ...researcher,
   id: "wfd_2",
   name: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   description: null,
 };
 
-const instance: AgentInstance = {
+const instance = {
   id: "ins_1",
   definitionId: "wfd_1",
   definitionName: "Researcher",
-  tenantId: "tenant_1",
   address: "ins_1@acme.localhost",
-  status: "running",
-  createdAt: "2026-08-05T11:00:00.000Z",
-  updatedAt: "2026-08-05T11:00:00.000Z",
 };
 
-const channelHostInstance: AgentInstance = {
+const channelHostInstance = {
   ...instance,
   id: "ins_2",
   definitionId: "wfd_2",
@@ -53,7 +43,7 @@ describe("purposeAgentDefinitions", () => {
   });
 });
 
-const invitedAgentInstance: AgentInstance = {
+const invitedAgentInstance = {
   ...instance,
   id: "ins_3",
   definitionId: "wfd_1",
@@ -146,7 +136,7 @@ describe("orphan detection", () => {
 
   test("an instance whose definition is absent is orphaned", () => {
     const byId = definitionsById([researcher]);
-    const orphan: AgentInstance = { ...instance, definitionId: "wfd_gone" };
+    const orphan = { ...instance, definitionId: "wfd_gone" };
     expect(isOrphanedInstance(orphan, byId)).toBe(true);
   });
 });

@@ -35,6 +35,7 @@ import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownUp, FileStack, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { QueryView } from "@corbits/api-query";
 
 import {
   ArtifactDetailSchema,
@@ -49,7 +50,6 @@ import {
 } from "../library-upload";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
-import { QueryView } from "../query-view";
 import {
   artifactUploadToast,
   isArtifactsUnavailableMessage,

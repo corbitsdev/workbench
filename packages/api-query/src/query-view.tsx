@@ -6,13 +6,13 @@ import { Button, EmptyState, Skeleton } from "@corbits/react-ui";
 import { CircleAlert, Lock } from "lucide-react";
 import type { ReactNode } from "react";
 
-import type { APIQuery } from "./api";
+import type { APIQuery } from "./envelope";
 
 /** Which shape a loading `QueryView` should hint at, close enough to the
  * real content's footprint to keep layout shift small — not a skeleton
- * framework, just the handful of shapes this app's surfaces actually need.
- * `"block"` (the default) is the old one-size fixed placeholder, kept for
- * surfaces that are neither a list nor a single record. */
+ * framework, just the handful of shapes host pages actually need. `"block"`
+ * (the default) is a fixed placeholder for surfaces that are neither a list
+ * nor a single record. */
 export type QuerySkeletonVariant = "block" | "rows" | "detail";
 
 /** A handful of list-row placeholders, sized near a real row. */

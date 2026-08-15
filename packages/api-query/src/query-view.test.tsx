@@ -1,13 +1,13 @@
-// QueryView is the app-wide translation of loading/unauthenticated/error/
-// ready — every page's failure copy and recovery affordance flow through
-// here, so this suite is the one place asserting a failed query never
-// strands a person with raw error text and nothing to do about it.
+// QueryView is the shared translation of loading/unauthenticated/error/
+// ready — every host page's failure copy and recovery affordance flow
+// through here, so this suite is the one place asserting a failed query
+// never strands a person with raw error text and nothing to do about it.
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { APIQuery } from "../src/api";
-import { QueryView, SignedOutNotice } from "../src/query-view";
+import type { APIQuery } from "./envelope";
+import { QueryView, SignedOutNotice } from "./query-view";
 
 function render(query: APIQuery<string>): string {
   return renderToStaticMarkup(

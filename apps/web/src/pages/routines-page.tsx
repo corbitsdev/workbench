@@ -48,14 +48,15 @@ import { Clock, Plus, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { APIQuery } from "@corbits/api-query";
+import { QueryView } from "@corbits/api-query";
 
 import { useAPIQuery, RunsSchema } from "../api";
-import type { APIQuery, WorkflowRun } from "../api";
+import type { WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
 import { consumePendingNewRoutine } from "../command-palette-actions";
 import { tenantKeys } from "../query-client";
-import { QueryView } from "../query-view";
 import { cadenceLabel } from "../routine-trigger";
 import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
 import {

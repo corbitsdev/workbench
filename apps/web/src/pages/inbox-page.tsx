@@ -15,8 +15,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import { QueryView, SignedOutNotice } from "@corbits/api-query";
+
 import { approveApproval, rejectApproval, useAPIQuery } from "../api";
-import type { APIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
 import {
@@ -38,7 +40,6 @@ import {
   type InboxItem,
   type InboxItemDetail,
 } from "../inbox-api";
-import { QueryView, SignedOutNotice } from "../query-view";
 import { inboxFilterFromPath } from "../shell/panel-contributions";
 import { StageTopBar } from "../shell/stage-top-bar";
 

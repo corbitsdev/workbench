@@ -1,0 +1,27 @@
+{
+  "name": "@corbits/api-query",
+  "private": true,
+  "description": "The shared hub-query envelope (loading/unauthenticated/error/ready) and its QueryView renderer, so every page reports a fetch the same way",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/react-ui": "github:corbitsdev/react-ui#0627774e9d333486596ca72eb713ff7bd1b75614",
+    "lucide-react": "^1.27.0",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "react-dom": "^19.2.0",
+    "typescript": "catalog:"
+  }
+}

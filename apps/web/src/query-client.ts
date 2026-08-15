@@ -4,14 +4,7 @@
 
 import { QueryClient } from "@tanstack/react-query";
 
-/** Thrown from queryFns on HTTP 401 so the client can stop retrying and the
- * APIQuery adapter can map to `kind: "unauthenticated"`. */
-export class UnauthenticatedError extends Error {
-  constructor(message = "unauthenticated") {
-    super(message);
-    this.name = "UnauthenticatedError";
-  }
-}
+import { UnauthenticatedError } from "@corbits/api-query";
 
 export function createAppQueryClient(): QueryClient {
   return new QueryClient({

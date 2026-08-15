@@ -31,6 +31,8 @@ import type { ApprovalRequest } from "@corbits/react-ui";
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { APIQuery } from "@corbits/api-query";
+import { QueryView } from "@corbits/api-query";
 
 import {
   approveApproval,
@@ -38,10 +40,9 @@ import {
   NeedsYouSchema,
   useAPIQuery,
 } from "../api";
-import type { APIQuery, NeedsYouItem } from "../api";
+import type { NeedsYouItem } from "../api";
 import { useBench } from "../bench-context";
 import { tenantKeys } from "../query-client";
-import { QueryView } from "../query-view";
 
 export function ActivityBand() {
   const { selectedTenantId } = useBench();

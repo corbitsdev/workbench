@@ -34,12 +34,9 @@ import {
   type OverallUsage,
 } from "@corbits/insights/client";
 
-import {
-  RunsSchema,
-  useAPIQuery,
-  type APIQuery,
-  type WorkflowRun,
-} from "../api";
+import { SignedOutNotice, type APIQuery } from "@corbits/api-query";
+
+import { RunsSchema, useAPIQuery, type WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
 import {
   ActivityResponseSchema,
@@ -60,7 +57,6 @@ import {
   purposeRunsForInsights,
 } from "../insights-stats";
 import { useNavigate } from "../navigation";
-import { SignedOutNotice } from "../query-view";
 import { tenantKeys } from "../query-client";
 import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
 import { listRoutines, useTenantQuery, type Routine } from "../routines-api";

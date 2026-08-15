@@ -1,0 +1,80 @@
+// The hub-query envelope: every page's data fetch reports exactly one of
+// these four outcomes, so a page never has to invent its own notion of
+// "still loading" vs. "no session" vs. "failed". `toAPIQuery` adapts any
+// TanStack-Query-shaped result onto it; `QueryView` (./query-view) renders
+// it. Both halves are framework-agnostic about the fetch itself — neither
+// imports `@tanstack/react-query` — so a host wires its own query hook to
+// this contract instead of the package assuming one.
+
+export type APIQuery<T> =
+  | { readonly kind: "loading" }
+  | { readonly kind: "unauthenticated" }
+  | {
+      readonly kind: "error";
+      readonly message: string;
+      readonly retry: () => void;
+    }
+  | { readonly kind: "ready"; readonly data: T };
+
+/** Thrown from a queryFn on HTTP 401 so a host's retry policy can stop
+ * retrying and `toAPIQuery` can map the failure to `kind: "unauthenticated"`. */
+export class UnauthenticatedError extends Error {
+  constructor(message = "unauthenticated") {
+    super(message);
+    this.name = "UnauthenticatedError";
+  }
+}
+
+/** The one HTTP-query error shape every hub request throws: a human message
+ * plus the response status when one exists (absent for network failures). */
+export class ApiQueryError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Human copy for a failed query, kept plain and actionable — the technical
+ * detail (status codes, hub URLs, schema mismatches) stays in `console` /
+ * devtools for debugging, never in the primary line a person reads.
+ */
+export function describeQueryError(error: unknown): string {
+  if (error instanceof TypeError) {
+    return "Can't reach the server. Check your connection.";
+  }
+  return "Something went wrong. Try again.";
+}
+
+/**
+ * Map a TanStack-Query-shaped result onto `APIQuery`. `isLoading` (pending +
+ * fetching) is the loading state — bare `isPending` would flash skeletons
+ * when cached data exists.
+ */
+export function toAPIQuery<T>(result: {
+  readonly isLoading: boolean;
+  readonly isError: boolean;
+  readonly error: unknown;
+  readonly data: T | undefined;
+  readonly isPending: boolean;
+  readonly fetchStatus: "fetching" | "paused" | "idle";
+  readonly refetch: () => void;
+}): APIQuery<T> {
+  if (result.isLoading) return { kind: "loading" };
+  if (result.isError) {
+    if (result.error instanceof UnauthenticatedError) {
+      return { kind: "unauthenticated" };
+    }
+    return {
+      kind: "error",
+      message: describeQueryError(result.error),
+      retry: result.refetch,
+    };
+  }
+  if (result.data !== undefined) return { kind: "ready", data: result.data };
+  // Disabled queries (empty path, unresolved tenant) have no data and are not
+  // fetching — still report loading so callers that gate on "ready" stay quiet.
+  return { kind: "loading" };
+}

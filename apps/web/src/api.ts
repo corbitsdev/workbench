@@ -15,7 +15,13 @@ import { useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
-import { UnauthenticatedError, pathToQueryKey } from "./query-client";
+import type { APIQuery } from "@corbits/api-query";
+import {
+  ApiQueryError,
+  UnauthenticatedError,
+  toAPIQuery,
+} from "@corbits/api-query";
+import { pathToQueryKey } from "./query-client";
 
 export const ProfileSchema = UserProfile;
 export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
@@ -132,61 +138,8 @@ type Paginated<T> = { data: T[]; nextCursor: string | null };
 export type PrincipalsPage = Paginated<Principal>;
 export type RunsPage = Paginated<WorkflowRun>;
 
-export type APIQuery<T> =
-  | { readonly kind: "loading" }
-  | { readonly kind: "unauthenticated" }
-  | {
-      readonly kind: "error";
-      readonly message: string;
-      readonly retry: () => void;
-    }
-  | { readonly kind: "ready"; readonly data: T };
-
 /** An arktype schema, seen as the validating call every `Type` provides. */
 type Validator<T> = (data: unknown) => T | ArkErrors;
-
-/**
- * Human copy for a failed query, kept plain and actionable — the technical
- * detail (status codes, hub URLs, schema mismatches) stays in `console` /
- * devtools for debugging, never in the primary line a person reads.
- */
-export function describeQueryError(error: unknown): string {
-  if (error instanceof TypeError) {
-    return "Can't reach the server. Check your connection.";
-  }
-  return "Something went wrong. Try again.";
-}
-
-/**
- * Map a TanStack Query result onto the APIQuery discriminant pages already
- * render through QueryView. `isLoading` (pending + fetching) is the loading
- * state — bare `isPending` would flash skeletons when cached data exists.
- */
-export function toAPIQuery<T>(result: {
-  readonly isLoading: boolean;
-  readonly isError: boolean;
-  readonly error: unknown;
-  readonly data: T | undefined;
-  readonly isPending: boolean;
-  readonly fetchStatus: "fetching" | "paused" | "idle";
-  readonly refetch: () => void;
-}): APIQuery<T> {
-  if (result.isLoading) return { kind: "loading" };
-  if (result.isError) {
-    if (result.error instanceof UnauthenticatedError) {
-      return { kind: "unauthenticated" };
-    }
-    return {
-      kind: "error",
-      message: describeQueryError(result.error),
-      retry: result.refetch,
-    };
-  }
-  if (result.data !== undefined) return { kind: "ready", data: result.data };
-  // Disabled queries (empty path, unresolved tenant) have no data and are not
-  // fetching — still report loading so callers that gate on "ready" stay quiet.
-  return { kind: "loading" };
-}
 
 /**
  * Fetches one hub endpoint and reports exactly what happened: loading, no
@@ -227,15 +180,6 @@ export function useAPIQuery<T>(
   return toAPIQuery(result);
 }
 
-export class APIMutationError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-  }
-}
-
 /**
  * A one-shot POST against a hub route, parsed the same way `useAPIQuery`
  * parses its GETs: loud on a non-2xx status and on a response shape that
@@ -254,19 +198,19 @@ async function postJSON<T>(
       body: JSON.stringify(body),
     });
   } catch (cause) {
-    throw new APIMutationError(
+    throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
   if (!response.ok) {
-    throw new APIMutationError(
+    throw new ApiQueryError(
       `The server answered ${response.status} for ${path}.`,
       response.status,
     );
   }
   const parsed = schema(await response.json());
   if (parsed instanceof type.errors) {
-    throw new APIMutationError(
+    throw new ApiQueryError(
       `Unexpected response shape from ${path}: ${parsed.summary}`,
     );
   }

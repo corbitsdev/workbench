@@ -12,8 +12,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+
 import { PrincipalsSchema, useAPIQuery } from "./api";
-import type { APIQuery, Principal, PrincipalsPage } from "./api";
+import type { Principal, PrincipalsPage } from "./api";
 import { meKeys, tenantKeys } from "./query-client";
 
 const STORAGE_KEY = "workbench.selectedTenantId";

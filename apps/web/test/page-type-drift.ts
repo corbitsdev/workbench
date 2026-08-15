@@ -4,7 +4,8 @@
 // below stop compiling.
 
 import { WorkflowRunSummary, paginatedSchema } from "@intx/types";
-import type { APIQuery, RunsPage, WorkflowRun } from "../src/api";
+import type { APIQuery } from "@corbits/api-query";
+import type { RunsPage, WorkflowRun } from "../src/api";
 
 const _schema = paginatedSchema(WorkflowRunSummary);
 type Inferred = typeof _schema.infer;

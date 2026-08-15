@@ -8,7 +8,7 @@ import {
   type OverallUsage,
 } from "@corbits/insights/client";
 
-import type { APIQuery } from "../src/api";
+import type { APIQuery } from "@corbits/api-query";
 import { BenchProvider } from "../src/bench-context";
 import { type RunTrace, type ToolCall } from "../src/insights-api";
 import { NavigationProvider } from "../src/navigation";
