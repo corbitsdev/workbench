@@ -32,7 +32,11 @@ import type { GrantEffect, GrantOrigin } from "@intx/types";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { principalLabel } from "./identity";
+import {
+  PRINCIPAL_KIND_LABEL,
+  PRINCIPAL_KIND_ORDER,
+  principalLabel,
+} from "./identity";
 import {
   expiryIsoFromPreset,
   expiryLabelFromPreset,
@@ -40,7 +44,12 @@ import {
 } from "./grant-preview";
 import { KindCards } from "./kind-cards";
 import { errorMessage, type LoadState } from "./load-state";
-import { GRANT_ACTIONS, GRANT_RESOURCES } from "./resource-vocabulary";
+import {
+  GRANT_ACTIONS,
+  GRANT_RESOURCES,
+  GRANT_RESOURCE_LABEL,
+  type GrantResource,
+} from "./resource-vocabulary";
 import { SETTINGS_STRINGS } from "./strings";
 import {
   createGrant,
@@ -59,6 +68,19 @@ const EFFECT_TONE: Record<GrantEffect, "success" | "danger" | "info"> = {
   deny: "danger",
   ask: "info",
 };
+
+function resourceLabel(resource: string): string {
+  return (
+    GRANT_RESOURCE_LABEL[resource as GrantResource] ?? resource
+  );
+}
+
+/** "Alice Anderson — person": a picker that can't group by kind (a native
+ * `FilterBar`'s flat option list) still names the kind, so a workflow's
+ * machine principal never reads as indistinguishable from a person. */
+function principalFilterLabel(principal: Principal): string {
+  return `${principalLabel(principal.displayName).label} — ${PRINCIPAL_KIND_LABEL[principal.kind]}`;
+}
 
 type GrantsData = {
   readonly grants: readonly Grant[];
@@ -231,7 +253,7 @@ function GrantsFilterBar({
           value: filters.principalId ?? null,
           options: principals.map((principal) => ({
             value: principal.id,
-            label: principalLabel(principal.displayName).label,
+            label: principalFilterLabel(principal),
           })),
         },
         {
@@ -248,7 +270,7 @@ function GrantsFilterBar({
           value: filters.resource ?? null,
           options: GRANT_RESOURCES.map((resource) => ({
             value: resource,
-            label: resource,
+            label: resourceLabel(resource),
           })),
         },
         {
@@ -307,11 +329,9 @@ export function GrantsTable({
               {grant.roleName ?? grant.principalName ?? "—"}
             </TableCell>
             <TableCell>
-              <code>{grant.resource}</code>
+              <span title={grant.resource}>{resourceLabel(grant.resource)}</span>
             </TableCell>
-            <TableCell>
-              <code>{grant.action}</code>
-            </TableCell>
+            <TableCell>{grant.action}</TableCell>
             <TableCell>
               <Badge tone={EFFECT_TONE[grant.effect]}>{grant.effect}</Badge>
             </TableCell>
@@ -375,10 +395,15 @@ export function CreateGrantDialog({
   const targetOptions = useMemo(
     () =>
       targetType === "role"
-        ? roles.map((role) => ({ id: role.id, label: role.name }))
+        ? roles.map((role) => ({
+            id: role.id,
+            label: role.name,
+            kind: undefined,
+          }))
         : principals.map((principal) => ({
             id: principal.id,
             label: principalLabel(principal.displayName).label,
+            kind: principal.kind,
           })),
     [targetType, roles, principals],
   );
@@ -387,7 +412,7 @@ export function CreateGrantDialog({
     targetOptions.find((option) => option.id === targetId)?.label ?? null;
   const preview = grantPreviewSentence({
     targetLabel,
-    resource,
+    resource: resourceLabel(resource),
     action,
     effect,
     expiresLabel: expiryLabelFromPreset(expiryPreset),
@@ -439,24 +464,32 @@ export function CreateGrantDialog({
               }
             }}
           >
-            <label className="settings-form-field">
+            <div className="settings-form-field">
               <span>{SETTINGS_STRINGS.grantsTargetTypeLabel}</span>
-              <select
-                className="settings-select"
+              <KindCards
+                label={SETTINGS_STRINGS.grantsTargetTypeLabel}
+                columns={2}
                 value={targetType}
-                onChange={(event) => {
-                  setTargetType(event.target.value as "role" | "principal");
+                onChange={(id) => {
+                  setTargetType(id as "role" | "principal");
                   setTargetId("");
                 }}
-              >
-                <option value="role">
-                  {SETTINGS_STRINGS.grantsTargetTypeRole}
-                </option>
-                <option value="principal">
-                  {SETTINGS_STRINGS.grantsTargetTypePrincipal}
-                </option>
-              </select>
-            </label>
+                options={[
+                  {
+                    id: "role",
+                    title: SETTINGS_STRINGS.grantsTargetTypeRole,
+                    description:
+                      SETTINGS_STRINGS.grantsTargetTypeRoleDescription,
+                  },
+                  {
+                    id: "principal",
+                    title: SETTINGS_STRINGS.grantsTargetTypePrincipal,
+                    description:
+                      SETTINGS_STRINGS.grantsTargetTypePrincipalDescription,
+                  },
+                ]}
+              />
+            </div>
             <label className="settings-form-field">
               <span>{SETTINGS_STRINGS.grantsTargetLabel}</span>
               <select
@@ -466,27 +499,43 @@ export function CreateGrantDialog({
                 autoFocus
               >
                 <option value="">—</option>
-                {targetOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
+                {targetType === "role"
+                  ? targetOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))
+                  : PRINCIPAL_KIND_ORDER.map((kind) => {
+                      const kindOptions = targetOptions.filter(
+                        (option) => option.kind === kind,
+                      );
+                      if (kindOptions.length === 0) return null;
+                      return (
+                        <optgroup key={kind} label={PRINCIPAL_KIND_LABEL[kind]}>
+                          {kindOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
               </select>
             </label>
-            <label className="settings-form-field">
+            <div className="settings-form-field">
               <span>{SETTINGS_STRINGS.grantsResourceLabel}</span>
-              <select
-                className="settings-select"
+              <KindCards
+                label={SETTINGS_STRINGS.grantsResourceLabel}
+                columns={3}
                 value={resource}
-                onChange={(event) => setResource(event.target.value)}
-              >
-                {GRANT_RESOURCES.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onChange={setResource}
+                options={GRANT_RESOURCES.map((value) => ({
+                  id: value,
+                  title: GRANT_RESOURCE_LABEL[value],
+                  description: value,
+                }))}
+              />
+            </div>
             <label className="settings-form-field">
               <span>{SETTINGS_STRINGS.grantsActionLabel}</span>
               <select

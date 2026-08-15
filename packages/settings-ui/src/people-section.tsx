@@ -31,7 +31,7 @@ import {
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { principalLabel } from "./identity";
+import { PRINCIPAL_KIND_LABEL, principalLabel } from "./identity";
 import { AccessPolicyBlock } from "./access-policy";
 import { errorMessage, type LoadState } from "./load-state";
 
@@ -46,12 +46,6 @@ import {
 } from "./tenancy-api";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const KIND_LABEL: Record<Principal["kind"], string> = {
-  user: SETTINGS_STRINGS.peopleKindUser,
-  agent: SETTINGS_STRINGS.peopleKindAgent,
-  workflow: SETTINGS_STRINGS.peopleKindWorkflow,
-};
 
 const STATUS_TONE: Record<Principal["status"], "success" | "info" | "neutral"> =
   {
@@ -232,7 +226,7 @@ export function PeopleTable({
                   <span className="settings-member-email"> {person.email}</span>
                 ) : null}
               </TableCell>
-              <TableCell>{KIND_LABEL[person.kind]}</TableCell>
+              <TableCell>{PRINCIPAL_KIND_LABEL[person.kind]}</TableCell>
               <TableCell>
                 <Badge tone={STATUS_TONE[person.status]}>{person.status}</Badge>
               </TableCell>

@@ -28,7 +28,7 @@ import {
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { principalLabel } from "./identity";
+import { PRINCIPAL_KIND_LABEL, PRINCIPAL_KIND_ORDER, principalLabel } from "./identity";
 import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 import {
@@ -323,11 +323,21 @@ export function RoleAssignments({
             onChange={(event) => setPrincipalId(event.target.value)}
           >
             <option value="">—</option>
-            {principals.map((principal) => (
-              <option key={principal.id} value={principal.id}>
-                {principalLabel(principal.displayName).label}
-              </option>
-            ))}
+            {PRINCIPAL_KIND_ORDER.map((kind) => {
+              const kindPrincipals = principals.filter(
+                (principal) => principal.kind === kind,
+              );
+              if (kindPrincipals.length === 0) return null;
+              return (
+                <optgroup key={kind} label={PRINCIPAL_KIND_LABEL[kind]}>
+                  {kindPrincipals.map((principal) => (
+                    <option key={principal.id} value={principal.id}>
+                      {principalLabel(principal.displayName).label}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
         </label>
         <label className="settings-form-field">
