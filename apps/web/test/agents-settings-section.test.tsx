@@ -139,6 +139,56 @@ describe("AgentsSettingsSection", () => {
     expect(navigated).toContain("/settings/agents/wfd_1");
   });
 
+  test("clicking Start chat twice reopens the same channel instead of minting a second one", async () => {
+    // `POST /channels` with a `definitionId` is find-or-create server-side
+    // (CL-6070): the same agent picked twice reopens its existing chat.
+    // This locks in that the client's blind POST-and-navigate still lands
+    // on one channel id across repeated clicks rather than assuming the
+    // server always mints fresh.
+    const realFetch = globalThis.fetch;
+    const calls: RequestInit[] = [];
+    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init ?? {});
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: "chan_1",
+            title: "Researcher",
+            kind: "chat",
+            pinned: false,
+            participants: [],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    }) as typeof fetch;
+
+    const navigated: string[] = [];
+    try {
+      const el = await mount(directoryData, {
+        entityId: "wfd_1",
+        navigate: (to) => navigated.push(to),
+      });
+      const startChat = Array.from(el.querySelectorAll("button")).find(
+        (button) =>
+          button.getAttribute("aria-label") === "Start chat with this agent",
+      );
+      expect(startChat).toBeDefined();
+
+      await act(async () => {
+        startChat?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await act(async () => {
+        startChat?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+
+      expect(calls).toHaveLength(2);
+      expect(navigated).toEqual(["/c/chan_1", "/c/chan_1"]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
   test("no agents yet shows the create-oriented empty state", async () => {
     const el = await mount({
       tenantId: "tenant_1",
