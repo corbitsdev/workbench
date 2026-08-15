@@ -165,6 +165,78 @@ describe("createTaskOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  test("a redelivered terminal event delivers exactly once", async () => {
+    // A sidecar reconnect can replay the same `message.run.ended`
+    // frame, back to back on one tick, before the first async delivery
+    // has resolved — the synchronous claim (and, past it, the
+    // conditional completeTask) must collapse both to one mail.
+    const events = createSidecarEmitter();
+    const store = createMemoryTaskStore();
+    await seedRunningTask(store);
+    const notify = fakeNotify();
+
+    const orchestrator = createTaskOrchestrator({
+      db: createFakeDb(
+        { id: "run_1", tenantId: "tnt_1", principalId: "prn_alice" },
+        { name: "Incident Summarizer" },
+      ),
+      store,
+      events,
+      notify: notify.deps,
+    });
+
+    const terminal = {
+      agentAddress: "run_1@tnt1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        seq: 1,
+        data: { status: "completed" },
+      },
+    };
+    events.emit("agent.event", terminal);
+    events.emit("agent.event", terminal);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(notify.delivered).toHaveLength(1);
+    expect((await store.getTask("tnt_1", "task_1"))?.status).toBe("done");
+
+    orchestrator.dispose();
+  });
+
+  test("a redelivered terminal event's mail keys on the task alone, never the tick", async () => {
+    const events = createSidecarEmitter();
+    const store = createMemoryTaskStore();
+    await seedRunningTask(store);
+    const notify = fakeNotify();
+
+    const orchestrator = createTaskOrchestrator({
+      db: createFakeDb(
+        { id: "run_1", tenantId: "tnt_1", principalId: "prn_alice" },
+        { name: "Incident Summarizer" },
+      ),
+      store,
+      events,
+      notify: notify.deps,
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "run_1@tnt1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        seq: 1,
+        data: { status: "completed" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(notify.delivered[0]?.[0]?.externalId).toBe("task-result:task_1");
+
+    orchestrator.dispose();
+  });
+
   test("an address with no matching task is ignored", async () => {
     const events = createSidecarEmitter();
     const store = createMemoryTaskStore();

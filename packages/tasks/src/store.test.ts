@@ -93,7 +93,7 @@ describe("createMemoryTaskStore", () => {
     expect(items.map((item) => item.id)).toEqual(["task_2", "task_1"]);
   });
 
-  test("completeTask flips status, stamps resultMailId and completedAt", async () => {
+  test("completeTask flips a running task and stamps completedAt", async () => {
     const store = createMemoryTaskStore();
     await store.createTask({
       id: "task_1",
@@ -109,12 +109,38 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_A,
       id: "task_1",
       status: "done",
-      resultMailId: "mail_1",
     });
 
     expect(completed?.status).toBe("done");
-    expect(completed?.resultMailId).toBe("mail_1");
     expect(completed?.completedAt).not.toBeNull();
+  });
+
+  test("completeTask is winner-takes-all: a second flip of the same task loses", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+    });
+
+    const first = await store.completeTask({
+      tenantId: TENANT_A,
+      id: "task_1",
+      status: "done",
+    });
+    const second = await store.completeTask({
+      tenantId: TENANT_A,
+      id: "task_1",
+      status: "failed",
+    });
+
+    expect(first?.status).toBe("done");
+    expect(second).toBeNull();
+    expect((await store.getTask(TENANT_A, "task_1"))?.status).toBe("done");
   });
 
   test("completeTask returns null for an unknown task or wrong tenant", async () => {
@@ -134,7 +160,6 @@ describe("createMemoryTaskStore", () => {
         tenantId: TENANT_B,
         id: "task_1",
         status: "failed",
-        resultMailId: null,
       }),
     ).toBeNull();
     expect(
@@ -142,8 +167,35 @@ describe("createMemoryTaskStore", () => {
         tenantId: TENANT_A,
         id: "task_missing",
         status: "failed",
-        resultMailId: null,
       }),
     ).toBeNull();
+  });
+
+  test("recordResultMail stamps the delivered mail id onto a completed task", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+    });
+    await store.completeTask({
+      tenantId: TENANT_A,
+      id: "task_1",
+      status: "done",
+    });
+
+    await store.recordResultMail({
+      tenantId: TENANT_A,
+      id: "task_1",
+      resultMailId: "mail_1",
+    });
+
+    const record = await store.getTask(TENANT_A, "task_1");
+    expect(record?.resultMailId).toBe("mail_1");
+    expect(record?.status).toBe("done");
   });
 });

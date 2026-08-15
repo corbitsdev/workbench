@@ -44,8 +44,8 @@ import {
   createNoopInferenceRoutes,
   listConnectedProviders,
   startWorkflowCommand,
-  type FinalizedTurnToolCall,
 } from "@corbits/chat";
+import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { createCryptoProviderCache } from "@corbits/folded-runs";
 import {
   createInboxRoutes,
@@ -635,6 +635,13 @@ export async function createHub(config: HubConfig) {
     }),
   );
 
+  // The one "is this a conversational agent?" ruling, shared by every
+  // picker that offers agents to a person — chat's invite/new-chat
+  // pickers and the task composer alike: automatable catalog workflows
+  // (routines material) belong in neither.
+  const isConversationalAgentDefinition = (definition: { name: string }) =>
+    !isAutomatableWorkflowName(definition.name);
+
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
     store: chatStore,
     platform: chatPlatform,
@@ -648,10 +655,7 @@ export async function createHub(config: HubConfig) {
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
     }),
-    // The chat pickers offer conversational agents only: automatable
-    // catalog workflows (routines material) never belong in a chat.
-    isInvitableDefinition: (definition) =>
-      !isAutomatableWorkflowName(definition.name),
+    isInvitableDefinition: isConversationalAgentDefinition,
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
     // Derived per tenant, per channel creation, from that tenant's own
     // connected catalog providers (see `@corbits/chat`'s
@@ -1048,11 +1052,16 @@ export async function createHub(config: HubConfig) {
       typeof eventCollectors.getCurrentTurnId(address) === "string",
     log: getLogger(["tasks", "lifecycle"]),
   });
-  // The task picker offers the same conversational agents chat's
-  // invite picker does: not an automatable catalog workflow (routines
-  // material never belongs in either picker).
-  const isTaskableDefinition = (definition: { name: string }) =>
-    !isAutomatableWorkflowName(definition.name);
+  const taskNotifyDeps = {
+    mail: mailboxDelivery,
+    addressing: {
+      inbox: (recipient: { principalId: string }) =>
+        `${recipient.principalId}@inbox.${notifyHost}`,
+      from: (kind: string) => `${kind}@notify.${notifyHost}`,
+    },
+    dispatch: createInMemoryNotifyDispatchStore(),
+    sinks: createSinkRegistry(),
+  };
   const taskLauncherDeps = {
     db,
     store: taskStore,
@@ -1064,22 +1073,15 @@ export async function createHub(config: HubConfig) {
       eventCollectors,
     },
     cryptoProviders: createCryptoProviderCache(),
-    isTaskableDefinition,
+    notify: taskNotifyDeps,
+    isTaskableDefinition: isConversationalAgentDefinition,
     lifecycle: taskLifecycle,
   };
   const taskOrchestrator = createTaskOrchestrator({
     db,
     store: taskStore,
     events: sidecarRouter.events,
-    notify: {
-      mail: mailboxDelivery,
-      addressing: {
-        inbox: (recipient) => `${recipient.principalId}@inbox.${notifyHost}`,
-        from: (kind) => `${kind}@notify.${notifyHost}`,
-      },
-      dispatch: createInMemoryNotifyDispatchStore(),
-      sinks: createSinkRegistry(),
-    },
+    notify: taskNotifyDeps,
     recordActivity: (address) => taskLifecycle.recordActivity(address),
   });
   const chatFinalizedTurnHandler = artifactDeliveryHandlerRef.current;
@@ -1324,6 +1326,8 @@ export async function createHub(config: HubConfig) {
     db,
     close: async () => {
       chatOrchestrator.dispose();
+      taskOrchestrator.dispose();
+      taskLifecycle.stop();
       routineScheduler.stop();
       credentialExpirySweep.stop();
       await insightsUsage.close();

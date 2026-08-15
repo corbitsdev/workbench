@@ -88,11 +88,28 @@ describeIfDb("createDrizzleTaskStore", () => {
         tenantId: TENANT_A,
         id: "task_1",
         status: "done",
-        resultMailId: "mail_1",
       });
       expect(completed?.status).toBe("done");
-      expect(completed?.resultMailId).toBe("mail_1");
       expect(completed?.completedAt).not.toBeNull();
+
+      // Winner-takes-all: the conditional UPDATE only matches a
+      // still-running row, so a redelivered terminal event loses.
+      const secondFlip = await store.completeTask({
+        tenantId: TENANT_A,
+        id: "task_1",
+        status: "failed",
+      });
+      expect(secondFlip).toBeNull();
+      expect((await store.getTask(TENANT_A, "task_1"))?.status).toBe("done");
+
+      await store.recordResultMail({
+        tenantId: TENANT_A,
+        id: "task_1",
+        resultMailId: "mail_1",
+      });
+      expect((await store.getTask(TENANT_A, "task_1"))?.resultMailId).toBe(
+        "mail_1",
+      );
 
       const listed = await store.listTasks(TENANT_A);
       expect(listed.map((item) => item.id)).toEqual(["task_1"]);

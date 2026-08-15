@@ -50,8 +50,13 @@ export interface CompleteTaskInput {
   readonly tenantId: string;
   readonly id: string;
   readonly status: Extract<TaskStatus, "done" | "failed">;
-  readonly resultMailId: string | null;
   readonly completedAt?: Date;
+}
+
+export interface RecordResultMailInput {
+  readonly tenantId: string;
+  readonly id: string;
+  readonly resultMailId: string;
 }
 
 export interface TaskStore {
@@ -59,7 +64,16 @@ export interface TaskStore {
   getTask(tenantId: string, id: string): Promise<TaskRecord | null>;
   getTaskByRunId(runId: string): Promise<TaskRecord | null>;
   listTasks(tenantId: string): Promise<readonly TaskRecord[]>;
+  /**
+   * Flips a still-`running` task to its terminal status — conditionally,
+   * winner-takes-all: the update only matches `status = 'running'`, so
+   * of two racing callers (a redelivered terminal event, a second host
+   * process) exactly one gets the row back and the loser gets `null`.
+   * Only the winner may deliver the result mail.
+   */
   completeTask(input: CompleteTaskInput): Promise<TaskRecord | null>;
+  /** Stamps the delivered inbox mail id onto an already-completed task. */
+  recordResultMail(input: RecordResultMailInput): Promise<void>;
 }
 
 function toRecord(row: typeof task.$inferSelect): TaskRecord {
@@ -139,12 +153,24 @@ export function createDrizzleTaskStore<TSchema extends Record<string, unknown>>(
         .update(task)
         .set({
           status: input.status,
-          resultMailId: input.resultMailId,
           completedAt,
         })
-        .where(and(eq(task.tenantId, input.tenantId), eq(task.id, input.id)))
+        .where(
+          and(
+            eq(task.tenantId, input.tenantId),
+            eq(task.id, input.id),
+            eq(task.status, "running"),
+          ),
+        )
         .returning();
       return row === undefined ? null : toRecord(row);
+    },
+
+    async recordResultMail(input) {
+      await db
+        .update(task)
+        .set({ resultMailId: input.resultMailId })
+        .where(and(eq(task.tenantId, input.tenantId), eq(task.id, input.id)));
     },
   };
 }
@@ -200,17 +226,26 @@ export function createMemoryTaskStore(): TaskStore {
 
     async completeTask(input) {
       const record = tasks.get(input.id);
-      if (record === undefined || record.tenantId !== input.tenantId) {
+      if (
+        record === undefined ||
+        record.tenantId !== input.tenantId ||
+        record.status !== "running"
+      ) {
         return null;
       }
       const updated: TaskRecord = {
         ...record,
         status: input.status,
-        resultMailId: input.resultMailId,
         completedAt: input.completedAt ?? new Date(),
       };
       tasks.set(record.id, updated);
       return updated;
+    },
+
+    async recordResultMail(input) {
+      const record = tasks.get(input.id);
+      if (record === undefined || record.tenantId !== input.tenantId) return;
+      tasks.set(record.id, { ...record, resultMailId: input.resultMailId });
     },
   };
 }

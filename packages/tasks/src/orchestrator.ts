@@ -21,13 +21,16 @@
 // the host wires this orchestrator's `handleFinalizedTurn` into that
 // callback alongside chat's own handler (see apps/hub/src/index.ts).
 import { and, eq } from "drizzle-orm";
-import { findFoldedRunByAddress } from "@corbits/folded-runs";
-
+import {
+  connectorReplyContent,
+  findFoldedRunByAddress,
+  messageRunEnded,
+} from "@corbits/folded-runs";
 import {
   persistedArtifactsForFinalizedTurn,
   type FinalizedTurnToolCall,
   type PersistedArtifact,
-} from "@corbits/chat";
+} from "@corbits/turn-artifacts";
 import {
   deliverTaskResultMail,
   type NotifyDeliveryDeps,
@@ -62,40 +65,6 @@ export type TaskOrchestrator = {
   ): void;
 };
 
-function connectorReplyContent(event: unknown): string | undefined {
-  if (
-    typeof event !== "object" ||
-    event === null ||
-    (event as { type?: unknown }).type !== "connector.reply"
-  ) {
-    return undefined;
-  }
-  const content = (event as { data?: { content?: unknown } }).data?.content;
-  return typeof content === "string" && content !== "" ? content : undefined;
-}
-
-function runEndedStatus(
-  event: unknown,
-):
-  | { status: "completed" | "failed"; errorMessage: string | undefined }
-  | undefined {
-  if (
-    typeof event !== "object" ||
-    event === null ||
-    (event as { type?: unknown }).type !== "message.run.ended"
-  ) {
-    return undefined;
-  }
-  const data = (
-    event as { data?: { status?: unknown; error?: { message?: unknown } } }
-  ).data;
-  if (data?.status !== "completed" && data?.status !== "failed")
-    return undefined;
-  const errorMessage =
-    typeof data.error?.message === "string" ? data.error.message : undefined;
-  return { status: data.status, errorMessage };
-}
-
 async function resolveAgentName(
   db: DB["db"],
   tenantId: string,
@@ -127,6 +96,18 @@ export function createTaskOrchestrator(
     string,
     readonly FinalizedTurnToolCall[]
   >();
+  // Synchronous claim against a redelivered terminal event (sidecar
+  // reconnect replaying the frame, two frames landing on one tick) —
+  // the same add-before-any-await shape `chat-orchestrator.ts`'s
+  // `postApproveBlock` uses for its approval ids. Keyed by the agent's
+  // address, the one identity the event carries synchronously; an
+  // address maps 1:1 onto its folded run (`workflowRun.address` is the
+  // run's own column), so this is a per-run claim. The claim releases
+  // on "not a task after all" and on a failed delivery (so a genuine
+  // redelivery can retry), and holds forever on success — the
+  // conditional `completeTask` below is the durable guard; this set
+  // only closes the in-flight race the store can't see.
+  const claimedAddresses = new Set<string>();
 
   async function deliverTerminalTask(
     agentAddress: string,
@@ -134,10 +115,32 @@ export function createTaskOrchestrator(
     errorMessage: string | undefined,
   ): Promise<void> {
     const run = await findFoldedRunByAddress(deps.db, agentAddress);
-    if (run === undefined || run.principalId === null) return;
+    if (run === undefined || run.principalId === null) {
+      claimedAddresses.delete(agentAddress);
+      return;
+    }
 
     const record = await deps.store.getTaskByRunId(run.id);
-    if (record === null || record.status !== "running") return;
+    if (record === null) {
+      claimedAddresses.delete(agentAddress);
+      return;
+    }
+
+    const completedAt = new Date();
+    const taskStatus = status === "completed" ? "done" : "failed";
+    // Flip status FIRST, conditionally on still being "running" — the
+    // store-level winner-takes-all guard (an UPDATE ... WHERE
+    // status='running' in the drizzle store). Only the caller that won
+    // the flip delivers mail, so a redelivered terminal event that
+    // slipped past the in-memory claim (a second hub process, a claim
+    // released by an earlier transient failure) can never double-mail.
+    const completed = await deps.store.completeTask({
+      tenantId: record.tenantId,
+      id: record.id,
+      status: taskStatus,
+      completedAt,
+    });
+    if (completed === null) return;
 
     const toolCalls = finalizedToolCallsByAddress.get(agentAddress) ?? [];
     const artifacts = artifactsForNotification(
@@ -152,9 +155,7 @@ export function createTaskOrchestrator(
       record.tenantId,
       record.definitionId,
     );
-    const completedAt = new Date();
     const elapsedMs = completedAt.getTime() - record.createdAt.getTime();
-    const taskStatus = status === "completed" ? "done" : "failed";
 
     const report = await deliverTaskResultMail(deps.notify, {
       kind: "task-result",
@@ -173,13 +174,14 @@ export function createTaskOrchestrator(
       createdAt: completedAt.toISOString(),
     });
 
-    await deps.store.completeTask({
-      tenantId: record.tenantId,
-      id: record.id,
-      status: taskStatus,
-      resultMailId: report.deliveredMailboxRowIds[0] ?? null,
-      completedAt,
-    });
+    const mailId = report.deliveredMailboxRowIds[0];
+    if (mailId !== undefined) {
+      await deps.store.recordResultMail({
+        tenantId: record.tenantId,
+        id: record.id,
+        resultMailId: mailId,
+      });
+    }
   }
 
   const unsubscribe = deps.events.on(
@@ -193,14 +195,17 @@ export function createTaskOrchestrator(
         return;
       }
 
-      const ended = runEndedStatus(event);
+      const ended = messageRunEnded(event);
       if (ended === undefined) return;
+      if (claimedAddresses.has(agentAddress)) return;
+      claimedAddresses.add(agentAddress);
 
       void deliverTerminalTask(
         agentAddress,
         ended.status,
         ended.errorMessage,
       ).catch((cause: unknown) => {
+        claimedAddresses.delete(agentAddress);
         log.error`task orchestrator: failed to deliver ${agentAddress}'s task result: ${
           cause instanceof Error ? cause.message : String(cause)
         }`;

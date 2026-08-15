@@ -230,7 +230,7 @@ describe("deliverNotification", () => {
     expect(written[0]?.body).toContain("All clear, no action needed.");
     expect(written[0]?.body).toContain("3m 12s");
     expect(written[0]?.body).toContain("Postmortem draft");
-    expect(written[0]?.externalId).toBe("task_1:2026-08-14T10:00:00.000Z");
+    expect(written[0]?.externalId).toBe("task-result:task_1");
     expect(written[0]?.refs).toContainEqual({ kind: "task", id: "task_1" });
     expect(written[0]?.refs).toContainEqual({ kind: "run", id: "run_1" });
     expect(written[0]?.refs).toContainEqual({

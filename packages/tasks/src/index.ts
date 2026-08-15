@@ -16,12 +16,14 @@ export {
   createMemoryTaskStore,
   type CompleteTaskInput,
   type CreateTaskInput,
+  type RecordResultMailInput,
   type TaskDb,
   type TaskRecord,
   type TaskStore,
 } from "./store";
 export {
   launchTask,
+  PROMPT_DELIVERY_FAILED_MESSAGE,
   TaskDefinitionNotFoundError,
   TaskDefinitionNotLaunchableError,
   TaskDefinitionNotTaskableError,

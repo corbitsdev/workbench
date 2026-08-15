@@ -13,7 +13,13 @@ same idle-sleep lifecycle chat already uses.
   launched task: `id, tenantId, principalId, definitionId, prompt,
 modelPreference, status, runId, resultMailId, createdAt, completedAt`. Own
   Postgres schema (`tasks`), own migration ledger — see
-  `docs/package-migrations.md`.
+  `docs/package-migrations.md`. The task id is hand-prefixed (`task_` +
+  16 hex bytes) because `@intx/hub-common`'s `generateId` has no "task"
+  kind — [Intx gap] CL-6056 tracks adding one. **Phase-3 note:** `runId`
+  is a unique column today — one task, one run. Task _chains_ (phase 3)
+  break that cardinality; they need a `task_run` join table (task →
+  ordered runs) and a migration off the unique index before any chain
+  work starts.
 - **`TaskStore`** (`./src/store.ts`) — `createDrizzleTaskStore` (production)
   and `createMemoryTaskStore` (tests/local smoke), same interface.
 - **`launchTask`** (`./src/launcher.ts`) — the launch primitive. Looks up the
@@ -21,9 +27,12 @@ modelPreference, status, runId, resultMailId, createdAt, completedAt`. Own
   `launchInvite` exactly, minus every channel/participant/settings concern),
   calls `launchFoldedRun` with `persistExtra` writing the task row in the
   same transaction as the run's principal/session/run rows, then sends the
-  prompt as the opening mail via `sendFoldedMail`. **No channel is ever
-  created** — a task-launched run has no `channel_settings` row, so it can
-  never appear in a chat sidebar or channel listing (see
+  prompt as the opening mail via `sendFoldedMailWithRetry`. An opening
+  prompt that still fails after every retry never throws over the
+  already-committed run: the task settles as `failed` with an honest
+  Inbox item, and the caller gets the failed record back. **No channel is
+  ever created** — a task-launched run has no `channel_settings` row, so it
+  can never appear in a chat sidebar or channel listing (see
   `packages/tasks/test/task-not-in-channel-list.drizzle.test.ts`, the
   negative test that proves this).
 - **`createTaskOrchestrator`** (`./src/orchestrator.ts`) — built once by the
@@ -34,16 +43,26 @@ modelPreference, status, runId, resultMailId, createdAt, completedAt`. Own
   store (so it never fights over events with the chat orchestrator, which is
   also subscribed to the same stream and simply finds no task for its own
   addresses). On the run's terminal `message.run.ended` bracket close it
-  delivers one Inbox item — reply text (cached from the last
-  `connector.reply`) plus artifact chips (from `handleFinalizedTurn`, wired
-  the same way chat wires `createArtifactDeliveryHandler`) — and flips the
-  task to `done` or `failed`.
+  flips the task to `done` or `failed` FIRST — a synchronous in-process
+  claim plus the store's conditional `WHERE status = 'running'` flip make
+  redelivered terminal events (sidecar reconnect replays) collapse to
+  exactly one delivery — then writes one Inbox item: reply text (cached
+  from the last `connector.reply`) plus artifact chips (from
+  `handleFinalizedTurn`, wired the same way chat wires
+  `createArtifactDeliveryHandler`). The notification's dedupe key is
+  `task-result:{taskId}`, stable across delivery attempts.
 - **`createTaskRoutes`** (`./src/routes.ts`) — `POST /`, `GET /`, `GET /:id`,
   tenant-scoped, `requireGrant`-gated exactly like every other package's
-  routes. The create route depends on an injected `launch` port rather than
-  calling `launchTask` directly, mirroring how chat's routes depend on
-  `platform.launchInvite` rather than folded-runs primitives — this keeps
-  the route layer testable with a plain stub, no database.
+  routes — and deliberately tighter than the grant alone: **tasks are
+  personal.** A prompt is private to whoever wrote it, so list and detail
+  filter to the requesting principal's own tasks; a same-workbench
+  colleague's task reads as absent (404), never forbidden. The create route
+  depends on an injected `launch` port rather than calling `launchTask`
+  directly, mirroring how chat's routes depend on `platform.launchInvite`
+  rather than folded-runs primitives — this keeps the route layer testable
+  with a plain stub, no database. Error copy at this boundary is plain
+  language for the person who clicked "Start task"; the technical detail
+  goes to the server log.
 
 ## What the host must inject
 
@@ -58,16 +77,18 @@ modelPreference, status, runId, resultMailId, createdAt, completedAt`. Own
   its opening mail, so this cache never grows unboundedly per task the way
   chat's per-channel cache does across a channel's lifetime).
 - `isTaskableDefinition` — the host's verdict on which deployed definitions
-  belong in the task picker. In `apps/hub` this is the same composed rule
-  chat's `isInvitableDefinition` already uses: not a channel-host anchor
-  (`!isChannelHostDefinitionName`) and not an automatable workflow-catalog
-  entry (`!isAutomatableWorkflowName`).
+  belong in the task picker. In `apps/hub` this is literally the same
+  predicate chat's `isInvitableDefinition` is wired to
+  (`isConversationalAgentDefinition`: not an automatable workflow-catalog
+  entry; the platform side already excludes channel-host anchors).
 - `lifecycle` (optional) — the same `AgentLifecycle` instance chat's
   platform adapter drives, so a task-launched run's idle-sleep clock is
   shared with every other folded run in the process.
-- `notify: NotifyDeliveryDeps` (for the orchestrator) — the same
-  `mailboxDelivery`/`addressing`/`dispatch`/`sinks` bundle
-  `credentialExpirySweep` already uses in `apps/hub/src/index.ts`.
+- `notify: NotifyDeliveryDeps` (for the launcher AND the orchestrator) —
+  the same `mailboxDelivery`/`addressing`/`dispatch`/`sinks` bundle
+  `credentialExpirySweep` already uses in `apps/hub/src/index.ts`. The
+  launcher needs it for the prompt-delivery-failed settle; the
+  orchestrator for every terminal result.
 - `requireGrant` (for the routes) — the same `createRequireGrant(...)`
   factory every other tenant-scoped route package takes.
 
@@ -77,27 +98,24 @@ modelPreference, status, runId, resultMailId, createdAt, completedAt`. Own
   (credential resolution, launch, session orchestration, ID generation)
   arrives through `@corbits/folded-runs` and `@intx/*` published surfaces,
   the same seam `@corbits/chat` uses.
+- **Not `@corbits/chat`.** The one thing tasks and chat genuinely share —
+  recognizing persisted Library artifacts in a finalized turn — lives in
+  `@corbits/turn-artifacts`, which both depend on; the shared
+  `agent.event` recognizers (`connectorReplyContent`, `messageRunEnded`)
+  live in `@corbits/folded-runs`, which both already build on.
 - No channel/participant/settings machinery. A task is not a chat channel
   with one participant; it is a bare folded run.
 
-## Known gap: launch-time model override
+## Model preference
 
-A task's `modelPreference` is recorded on the row and offered in the UI
-(when the tenant's dynamic model catalog — `GET
-/tenants/:id/catalog/models` — offers more than the empty set), but **it
-does not currently change which model the run actually uses.**
-`launchFoldedRun` → `deployAtHead` resolves a run's inference source via
-`resolveDefinitionSources` (`vendor/intx/hub-api`), which is explicit that
-"a run's inference source comes from its definition resolved against the
-tenant catalog — never from the request body." The only override path
-(`SourcesOverride`) bypasses catalog-based credential resolution entirely —
-exactly what chat's noop channel-host path uses, and exactly the kind of
-credential-resolution reimplementation `AGENTS.md` forbids for anything
-that ought to be a real run. Until Interchange exposes a per-launch model
-preference (the currently-always-`{}` `invokerPreferences` knob on
-`resolveDefinitionSources` looks like the intended seam), a task always
-launches against its definition's own baked-in catalog default, exactly
-like `launchInvite` does today.
+A task's `modelPreference` is a real per-launch pin, not a stored wish:
+the launcher rebuilds the launch body with the picked catalog model in
+its `model` field, and `launchFoldedRun` → `deployAtHead` resolves that
+model against the tenant catalog (`resolveDefinitionSources`'
+`fallbackModel`) with the same credential-ownership checks a
+definition's own declared model gets — never a `SourcesOverride`, which
+would bypass the catalog. No preference means the definition's baked-in
+model, exactly like `launchInvite`.
 
 ## Lifecycle visibility: delivered on completion only
 

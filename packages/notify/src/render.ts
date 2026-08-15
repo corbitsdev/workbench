@@ -128,5 +128,9 @@ export function notificationExternalId(event: NotificationEvent): string {
   if (event.kind === "run-failure") return `${event.runId}:${event.createdAt}`;
   if (event.kind === "credential-expired") return event.credentialId;
   if (event.kind === "mention") return `${event.threadId}:${event.createdAt}`;
-  return `${event.taskId}:${event.createdAt}`;
+  // A task reaches its terminal state exactly once — keying on the task
+  // alone (no timestamp) makes a redelivered terminal event's mail
+  // collapse in the mailbox's own externalId dedupe instead of
+  // minting a fresh identity per delivery attempt.
+  return `task-result:${event.taskId}`;
 }

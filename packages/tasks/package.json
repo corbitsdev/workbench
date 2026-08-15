@@ -15,9 +15,9 @@
   },
   "dependencies": {
     "@corbits/agent-lifecycle": "workspace:*",
-    "@corbits/chat": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
     "@corbits/notify": "workspace:*",
+    "@corbits/turn-artifacts": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",

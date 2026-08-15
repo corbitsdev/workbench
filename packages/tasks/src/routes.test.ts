@@ -168,6 +168,38 @@ describe("POST /", () => {
 });
 
 describe("GET / and GET /:id", () => {
+  test("tasks are personal: a same-workbench colleague's task reads as absent", async () => {
+    // Deliberate scope tightening past the tenant-wide grant: a
+    // prompt is private to whoever wrote it, so another principal in
+    // the SAME tenant sees neither the row in the list nor the detail
+    // (404, not 403 — the response must not leak that it exists).
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT.id,
+      principalId: "prn_alice",
+      definitionId: "wfd_agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+    });
+
+    const asBob = mountAs(createTaskRoutes(buildDeps({ store })), "prn_bob");
+
+    const list = await asBob.request("/");
+    const listBody = (await list.json()) as { items: { id: string }[] };
+    expect(listBody.items).toEqual([]);
+
+    const detail = await asBob.request("/task_1");
+    expect(detail.status).toBe(404);
+
+    const asAlice = mountAs(
+      createTaskRoutes(buildDeps({ store })),
+      "prn_alice",
+    );
+    expect((await asAlice.request("/task_1")).status).toBe(200);
+  });
+
   test("lists and fetches a tenant's own tasks only", async () => {
     const store = createMemoryTaskStore();
     await store.createTask({
