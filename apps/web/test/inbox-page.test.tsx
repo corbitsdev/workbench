@@ -194,6 +194,30 @@ function makeRouteFetch(
 
 const routeFetch = makeRouteFetch([taskResultItem]);
 
+/** Same routing as `makeRouteFetch`, but `/planner` answers with a bare
+ * 500 and no error envelope — `dispatchPlanner`'s fallback message embeds
+ * the raw request path (`request to /api/tenants/.../planner failed with
+ * 500`), the exact shape the inbox task-start error must never render
+ * verbatim. */
+function makeFailingPlannerRouteFetch(): (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response> {
+  const base = makeRouteFetch([taskResultItem]);
+  return (input, init) => {
+    const url = String(input);
+    if (url.includes("/planner")) {
+      return Promise.resolve(
+        new Response("", {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return base(input, init);
+  };
+}
+
 describe("inbox top bar", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -535,5 +559,78 @@ describe("inbox top bar", () => {
     expect(
       window.localStorage.getItem("workbench.tasks.mru-agent:tnt_1"),
     ).toBeNull();
+  });
+
+  test("a failed task start shows plain copy, never the raw request path — for an Error and for a non-Error alike", async () => {
+    globalThis.fetch = makeFailingPlannerRouteFetch() as typeof fetch;
+
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={noop}>
+            <BenchProvider>
+              <InboxPage path="/inbox" navigate={noop} />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (container.innerHTML.includes("need action")) break;
+    }
+
+    const newTaskButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "New task",
+    );
+    if (newTaskButton === undefined)
+      throw new Error("New task button not rendered");
+    await act(async () => {
+      newTaskButton.click();
+    });
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (document.body.textContent?.includes("Let Myra choose") === true)
+        break;
+    }
+
+    const textarea = document.body.querySelector("textarea");
+    if (textarea === null) throw new Error("prompt textarea not rendered");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(textarea, "Summarize the last incident");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const submitButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Start task",
+    );
+    if (submitButton === undefined)
+      throw new Error("Start task button not rendered");
+    await act(async () => {
+      submitButton.click();
+    });
+
+    let alert: Element | null = null;
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      alert = document.body.querySelector('[role="alert"]');
+      if (alert !== null) break;
+    }
+    if (alert === null) throw new Error("task error alert not rendered");
+    expect(alert.textContent).toBe(
+      "Something went wrong starting that task. Try again.",
+    );
+    expect(alert.textContent).not.toMatch(/\/api\//);
+    expect(alert.textContent).not.toContain("tnt_1");
   });
 });
