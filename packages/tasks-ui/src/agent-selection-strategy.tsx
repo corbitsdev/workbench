@@ -111,8 +111,14 @@ export function createManualAgentSelectionStrategy(
         />
       );
     }
+    // No role="radiogroup" here — the fieldset/legend "Agent" that hosts
+    // this strategy in task-composer-dialog.tsx already provides the
+    // group semantics; a second ARIA group nested inside it would be
+    // redundant. Mirrors new-channel-dialog.tsx's AgentPicker, which
+    // wraps nothing at all — this div exists only for the visual gap
+    // between stacked options.
     return (
-      <div role="radiogroup" aria-label="Agent" className="tasks-radio-group">
+      <div className="tasks-radio-group">
         {state.items.map((agent) => (
           <label
             key={agent.id}
@@ -126,9 +132,12 @@ export function createManualAgentSelectionStrategy(
               onChange={() => onSelect(agent.id)}
             />
             <span className="tasks-radio-option-text">
-              <span className="tasks-radio-option-title">
-                {agent.description ?? agent.name}
-              </span>
+              <span className="tasks-radio-option-title">{agent.name}</span>
+              {agent.description !== undefined ? (
+                <span className="tasks-radio-option-desc">
+                  {agent.description}
+                </span>
+              ) : null}
             </span>
           </label>
         ))}

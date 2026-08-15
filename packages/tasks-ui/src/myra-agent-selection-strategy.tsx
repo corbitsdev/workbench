@@ -103,11 +103,12 @@ export function createMyraAgentSelectionStrategy(
 
     return (
       <>
-        <div
-          role="radiogroup"
-          aria-label="Agent selection mode"
-          className="tasks-radio-group"
-        >
+        {/* No role="radiogroup" here — the fieldset/legend "Agent" that
+            hosts this strategy in task-composer-dialog.tsx already
+            provides the group semantics; a second ARIA group nested
+            inside it would be redundant. This div exists only for the
+            visual gap between the two stacked options. */}
+        <div className="tasks-radio-group">
           <label
             className="tasks-radio-option"
             data-testid="new-task-agent-option"
@@ -138,6 +139,9 @@ export function createMyraAgentSelectionStrategy(
             <span className="tasks-radio-option-text">
               <span className="tasks-radio-option-title">
                 Choose an agent yourself
+              </span>
+              <span className="tasks-radio-option-desc">
+                Pick from your agents and set the prompt yourself.
               </span>
             </span>
           </label>

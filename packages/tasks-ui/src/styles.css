@@ -36,9 +36,10 @@
   color: var(--muted-foreground);
 }
 
+/* Matches .settings-field-hint / .chat-settings-field-hint. */
 .tasks-field-hint {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--muted-foreground);
 }
 
@@ -48,16 +49,28 @@
   gap: 0.5rem;
 }
 
+/* min-height clears the 40px hit-area floor even for a single-line
+   option (no description) — padding alone on a flex-start row doesn't
+   guarantee it once the description span is empty. */
 .tasks-radio-option {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.25rem;
   font-size: 0.875rem;
+  cursor: pointer;
 }
 
 .tasks-radio-option input[type="radio"] {
   margin-top: 0.2rem;
   flex-shrink: 0;
+}
+
+.tasks-radio-option:has(input:focus-visible) {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: -2px;
+  border-radius: var(--radius, 0.375rem);
 }
 
 .tasks-radio-option-text {
@@ -66,13 +79,19 @@
   gap: 0.1rem;
 }
 
+/* Matches .chat-kind-card-title / .settings-kind-card-title /
+   .bench-kind-card-title. */
 .tasks-radio-option-title {
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--foreground);
 }
 
+/* Matches .chat-kind-card-desc / .settings-kind-card-desc /
+   .bench-kind-card-desc. */
 .tasks-radio-option-desc {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
   color: var(--muted-foreground);
 }
 
@@ -88,15 +107,27 @@
   color: var(--foreground);
 }
 
+.tasks-textarea:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: -2px;
+}
+
+/* Matches .settings-select: height 2.25rem, padding 0 0.75rem. */
 .tasks-select {
   width: 100%;
+  height: 2.25rem;
   border-radius: var(--radius, 0.375rem);
   border: 1px solid var(--input);
   background: var(--card);
-  padding: 0.4rem 0.6rem;
+  padding: 0 0.75rem;
   font: inherit;
   font-size: 0.875rem;
   color: var(--foreground);
+}
+
+.tasks-select:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: -2px;
 }
 
 .tasks-dialog-error {
@@ -121,4 +152,9 @@
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.tasks-link-button:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: 2px;
 }
