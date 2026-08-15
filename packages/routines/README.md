@@ -65,6 +65,45 @@ Mounted under a tenant prefix, matching the platform's own
 - `GET /routines/:id/runs` — run history
 - `POST /routines/:id/run` — run now
 
+## `/client` subpath contract
+
+`@corbits/routines/client` (`src/client.ts`) is the browser-safe half of
+this package: the wire schemas, tenant-scoped HTTP path builders, and pure
+toast copy a UI over routines routes needs, plus a re-export of the
+`/trigger` and `/cron` subpaths' cadence/validation surface so a browser
+caller has one import for the whole client contract. Kept apart from the
+root export so a browser bundle never pulls in `drizzle-orm`, `postgres`,
+or `@intx/hub-api` (those stay in `store.ts` / `routes.ts` / `migrations.ts`)
+— see `client.test.ts`.
+
+**Owns:**
+
+- `Routine`, `RoutineRun`, `RoutineDraft`, `DraftedStep` — arktype wire
+  schemas (and their inferred types) for every shape `routes.ts` returns.
+- `CreateRoutineInput`, `UpdateRoutineInput`, `CreateDraftInput` — request
+  body types.
+- `routinesPath`, `routinePath`, `routineRunNowPath`, `routineRunsPath`,
+  `routineDraftsPath`, `routineDraftPath`, `routineDraftApprovePath`,
+  `routineDraftDiscardPath` — the tenant-scoped path builders for every
+  route in `routes.ts`.
+- `routineCreatedToast`, `routineRunStartedToast` — the confirmation copy
+  a create/run-now flow shows.
+- Re-exported from `./trigger`: `RoutineTrigger`, `RoutineTriggerT`,
+  `computeNextFireAt`, `cronExpressionForTrigger`, `routineCadenceLabel`,
+  `routineCadenceSummary`, `routineMatchesModeFilter`,
+  `routineTriggerCategory`, `ROUTINE_WEEKDAY_NAMES`, `timezoneForTrigger`,
+  `RoutineModeFilter`; and from `./cron`: `isValidCronExpression`,
+  `isValidTimeZone`.
+
+**A host injects:** the actual fetch — its own request function that hits
+these paths and validates the response against these schemas (see
+`apps/web/src/routines-api.ts`), and `@intx/hub-api`'s own
+`/workflows/definitions` listing for the create-flow picker, which is
+native to the platform, not this package.
+
+**Never imports:** no `drizzle-orm`, `postgres`, or `@intx/hub-api` — no
+Drizzle table, `RoutineStore`, or Hono route reaches this module.
+
 ## Install
 
 Like `@corbits/chat`, this package owns its own migrations
