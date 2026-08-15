@@ -543,11 +543,16 @@ function DefinitionRunTable({
 export function InsightsRunsHistory({
   runs,
   loading,
+  nextCursor,
   onOpenRun,
   onBack,
 }: {
   readonly runs: readonly InsightsRun[];
   readonly loading: boolean;
+  /** The feed's own `nextCursor` (from `insightsTopLevelRunsPath`'s
+   * `limit=100` fetch) — non-null means more runs exist than were fetched,
+   * so the view says so instead of silently truncating at 100. */
+  readonly nextCursor: string | null;
   readonly onOpenRun: (id: string) => void;
   readonly onBack: () => void;
 }) {
@@ -578,17 +583,24 @@ export function InsightsRunsHistory({
                 description="When a routine or purpose workflow fires, it shows up here."
               />
             ) : (
-              <div className="insights-grid">
-                {groups.map((group) => (
-                  <DefinitionRunTable
-                    key={group.definitionId}
-                    definitionId={group.definitionId}
-                    definitionName={group.definitionName}
-                    runs={group.runs}
-                    onOpenRun={onOpenRun}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="insights-grid">
+                  {groups.map((group) => (
+                    <DefinitionRunTable
+                      key={group.definitionId}
+                      definitionId={group.definitionId}
+                      definitionName={group.definitionName}
+                      runs={group.runs}
+                      onOpenRun={onOpenRun}
+                    />
+                  ))}
+                </div>
+                {nextCursor !== null ? (
+                  <p className="insights-note">
+                    Showing the 100 most recent runs.
+                  </p>
+                ) : null}
+              </>
             )}
           </div>
         </PageShell>
@@ -602,6 +614,10 @@ export function InsightsRunsHistory({
 // as future scope; this renders `legs` as a flat ordered sequence and
 // assumes there is exactly one "next" leg per position, same as the route
 // this reads from (`GET /tasks/:id/legs` in packages/tasks/src/routes.ts).
+// The strip reflects the legs query's own cache — up to 30s stale, or
+// refreshed on window refocus (see `createAppQueryClient` in
+// `../query-client.ts`) — not a live subscription; for a chain that is
+// actively progressing that's a deliberate read-mostly trade-off, not a bug.
 function TaskChainStrip({
   legs,
   currentRunId,
@@ -670,6 +686,7 @@ export function InsightsRunDetail({
   run,
   trace,
   chainLegs,
+  chainLookupFailed = false,
   onOpenRun,
   onBack,
 }: {
@@ -681,6 +698,11 @@ export function InsightsRunDetail({
    * legs are still passed through — the strip itself hides for
    * `legs.length <= 1` so a chain-less run renders unchanged. */
   readonly chainLegs: readonly TaskLeg[] | null;
+  /** True when the by-run chain-context lookup failed for a reason other
+   * than "this run has no owning task" (a genuine 404, the quiet no-op) —
+   * a 500 or a network failure. Never silently omitted: renders a small
+   * honest note instead of just leaving the strip out. */
+  readonly chainLookupFailed?: boolean;
   readonly onOpenRun: (runId: string) => void;
   readonly onBack: () => void;
 }) {
@@ -712,6 +734,11 @@ export function InsightsRunDetail({
                 currentRunId={runId}
                 onOpenRun={onOpenRun}
               />
+            ) : null}
+            {chainLookupFailed ? (
+              <p className="insights-note">
+                Couldn't check this run's task context.
+              </p>
             ) : null}
             <div className="insights-stat-row">
               {/* Owner is not carried by WorkflowRunResponse yet — dash, not
@@ -811,7 +838,10 @@ export function InsightsPage({
   readonly summary: APIQuery<OverallUsage>;
   readonly activity: APIQuery<readonly DayActivity[]>;
   readonly byTool: APIQuery<readonly ToolCall[]>;
-  readonly runs: APIQuery<{ data: readonly InsightsRun[] }>;
+  readonly runs: APIQuery<{
+    data: readonly InsightsRun[];
+    nextCursor: string | null;
+  }>;
   readonly routines: APIQuery<readonly Routine[]>;
   /** Stable 7-day window created once per route mount. */
   readonly range: InsightsRange;
@@ -857,6 +887,7 @@ export function InsightsPage({
   const byModelData = summaryData.byModel;
   const byToolData = byTool.kind === "ready" ? byTool.data : [];
   const runsData = runs.kind === "ready" ? runs.data.data : [];
+  const runsNextCursor = runs.kind === "ready" ? runs.data.nextCursor : null;
   const routinesData = routines.kind === "ready" ? routines.data : [];
 
   if (mode === "run" && runId !== null) {
@@ -878,6 +909,7 @@ export function InsightsPage({
       <InsightsRunsHistory
         runs={runsData}
         loading={runs.kind === "loading"}
+        nextCursor={runsNextCursor}
         onOpenRun={(id) => navigate(`/insights/runs/${encodeURIComponent(id)}`)}
         onBack={() => navigate("/insights")}
       />
@@ -927,7 +959,7 @@ export function InsightsPage({
   );
 }
 
-function InsightsRunDetailRoute({
+export function InsightsRunDetailRoute({
   runId,
   run,
   tenantId,
@@ -946,16 +978,21 @@ function InsightsRunDetailRoute({
   );
 
   // Chain context (CL-5626): resolve the owning task from this run, then
-  // its legs, so a run reached from a task/inbox link shows its chain.
-  // A run with no owning task 404s the by-run lookup — that lands here as
-  // `kind: "error"`, task stays null, and the legs query never enables, so
-  // this quietly renders as the plain single-run view instead of surfacing
-  // an error for what is simply "not a chained run."
+  // its legs, so a run reached from a task/inbox link shows its chain. A
+  // run with no owning task 404s the by-run lookup — `shouldRetryQuery`
+  // (`../query-client.ts`) never retries a 404, so that's a stable, cheap
+  // answer, not a transient failure: task stays null, the legs query never
+  // enables, and this quietly renders the plain single-run view for what is
+  // simply "not a chained run." Any OTHER failure (500, network) is a real
+  // problem and must say so, not disappear the same way — see
+  // `chainLookupFailed` below.
   const taskByRun = useAPIQuery(
     tenantId === null ? "" : insightsTaskByRunPath(tenantId, runId),
     TaskResponseSchema,
   );
   const task = taskByRun.kind === "ready" ? taskByRun.data.item : null;
+  const chainLookupFailed =
+    taskByRun.kind === "error" && taskByRun.status !== 404;
   const legsQuery = useAPIQuery(
     tenantId === null || task === null || task.stepCount <= 1
       ? ""
@@ -970,6 +1007,7 @@ function InsightsRunDetailRoute({
       run={run}
       trace={trace}
       chainLegs={chainLegs}
+      chainLookupFailed={chainLookupFailed}
       onOpenRun={onOpenRun}
       onBack={onBack}
     />
@@ -1035,7 +1073,10 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     selectedTenantId === null
       ? ({ kind: "ready", data: [] as unknown as T } as APIQuery<T>)
       : q;
-  const runsForPage: APIQuery<{ data: readonly InsightsRun[] }> =
+  const runsForPage: APIQuery<{
+    data: readonly InsightsRun[];
+    nextCursor: string | null;
+  }> =
     selectedTenantId === null
       ? { kind: "ready", data: { data: [], nextCursor: null } }
       : runs;
