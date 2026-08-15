@@ -1,9 +1,36 @@
 import { describe, expect, test } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
 
-import { pathToQueryKey, tenantKeys } from "./query-client";
+import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
+
+import { pathToQueryKey, shouldRetryQuery, tenantKeys } from "./query-client";
 
 const TENANT = "tenant_1";
+
+describe("shouldRetryQuery", () => {
+  test("never retries once unauthenticated", () => {
+    expect(shouldRetryQuery(0, new UnauthenticatedError())).toBe(false);
+  });
+
+  test("never retries a definitive 404", () => {
+    expect(shouldRetryQuery(0, new ApiQueryError("not found", 404))).toBe(
+      false,
+    );
+  });
+
+  test("retries other statuses up to 3 attempts", () => {
+    const error = new ApiQueryError("server exploded", 500);
+    expect(shouldRetryQuery(0, error)).toBe(true);
+    expect(shouldRetryQuery(2, error)).toBe(true);
+    expect(shouldRetryQuery(3, error)).toBe(false);
+  });
+
+  test("retries a network failure with no status up to 3 attempts", () => {
+    const error = new ApiQueryError("network down");
+    expect(shouldRetryQuery(0, error)).toBe(true);
+    expect(shouldRetryQuery(3, error)).toBe(false);
+  });
+});
 
 describe("pathToQueryKey", () => {
   test("maps the artifacts list under the artifacts key family", () => {
