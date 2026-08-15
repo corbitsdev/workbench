@@ -207,6 +207,30 @@ describe("groupRunsByDefinition", () => {
   test("an empty feed groups to nothing", () => {
     expect(groupRunsByDefinition([])).toEqual([]);
   });
+
+  test("uses the newest run's name, not input-array-first, when a definition was renamed", () => {
+    // Old run (chronologically oldest) appears FIRST in the input array,
+    // simulating an unsorted/out-of-order feed. Newer run (renamed) is second.
+    const groups = groupRunsByDefinition([
+      run({
+        id: "old",
+        status: "deployed",
+        definitionId: "wfd_a",
+        definitionName: "Old Name",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      run({
+        id: "new",
+        status: "deployed",
+        definitionId: "wfd_a",
+        definitionName: "New Name",
+        createdAt: "2026-01-05T00:00:00.000Z",
+      }),
+    ]);
+    expect(groups[0]?.runs.map((r) => r.id)).toEqual(["new", "old"]);
+    // The group header should reflect the current (newest) name.
+    expect(groups[0]?.definitionName).toBe("New Name");
+  });
 });
 
 describe("legDurationMs", () => {
