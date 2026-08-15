@@ -199,7 +199,7 @@ function SkillDetailView({
 
       <Section
         title="Version history"
-        description="Every commit on this skill's asset. Restore re-commits an older version as the current one."
+        description="Every saved version of this skill. Restore makes an older version the current one."
       >
         <Table>
           <TableHeader>
