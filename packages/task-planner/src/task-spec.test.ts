@@ -12,7 +12,18 @@ const INVENTORY: PlannerInventory = {
   agents: [
     { id: "wfd_summarizer", name: "summarizer", displayName: "Summarizer" },
   ],
-  toolPackages: [{ name: "@corbits/granola-tools", connectorId: "granola" }],
+  toolPackages: [
+    {
+      name: "@corbits/granola-tools",
+      connectorId: "granola",
+      credentialBinding: {
+        package: "@corbits/granola-tools",
+        handle: "granola",
+        provider: "granola",
+        locator: "tenant",
+      },
+    },
+  ],
   skills: [{ name: "incident-review", description: "Reviews incidents" }],
   memoryAvailable: true,
   models: [{ canonicalName: "anthropic/claude-sonnet-5" }],
@@ -22,11 +33,13 @@ describe("parseTaskSpec", () => {
   test("parses an in-inventory {use} reply", () => {
     const spec = parseTaskSpec(
       JSON.stringify({
+        kind: "task",
         use: "wfd_summarizer",
         refinedOutcome: "Summarize the doc",
       }),
     );
     expect(spec).toEqual({
+      kind: "task",
       use: "wfd_summarizer",
       refinedOutcome: "Summarize the doc",
     });
@@ -35,6 +48,7 @@ describe("parseTaskSpec", () => {
   test("parses an in-inventory {create} reply", () => {
     const spec = parseTaskSpec(
       JSON.stringify({
+        kind: "task",
         create: {
           name: "Incident bot",
           systemPrompt: "You review incidents.",
@@ -82,7 +96,7 @@ describe("validateTaskSpecAgainstInventory", () => {
   test("an in-inventory {use} spec passes", () => {
     expect(() =>
       validateTaskSpecAgainstInventory(
-        { use: "wfd_summarizer", refinedOutcome: "Summarize" },
+        { kind: "task", use: "wfd_summarizer", refinedOutcome: "Summarize" },
         INVENTORY,
       ),
     ).not.toThrow();
@@ -92,6 +106,7 @@ describe("validateTaskSpecAgainstInventory", () => {
     expect(() =>
       validateTaskSpecAgainstInventory(
         {
+          kind: "task",
           create: {
             name: "Incident bot",
             systemPrompt: "You review incidents.",
@@ -109,7 +124,7 @@ describe("validateTaskSpecAgainstInventory", () => {
   test("an out-of-inventory agent id fails closed", () => {
     expect(() =>
       validateTaskSpecAgainstInventory(
-        { use: "wfd_unknown", refinedOutcome: "Summarize" },
+        { kind: "task", use: "wfd_unknown", refinedOutcome: "Summarize" },
         INVENTORY,
       ),
     ).toThrow(PlannerReferenceOutOfInventoryError);
@@ -119,6 +134,7 @@ describe("validateTaskSpecAgainstInventory", () => {
     expect(() =>
       validateTaskSpecAgainstInventory(
         {
+          kind: "task",
           create: {
             name: "Bot",
             systemPrompt: "Prompt.",
@@ -136,6 +152,7 @@ describe("validateTaskSpecAgainstInventory", () => {
     expect(() =>
       validateTaskSpecAgainstInventory(
         {
+          kind: "task",
           create: {
             name: "Bot",
             systemPrompt: "Prompt.",
@@ -153,6 +170,7 @@ describe("validateTaskSpecAgainstInventory", () => {
     expect(() =>
       validateTaskSpecAgainstInventory(
         {
+          kind: "task",
           create: {
             name: "Bot",
             systemPrompt: "Prompt.",

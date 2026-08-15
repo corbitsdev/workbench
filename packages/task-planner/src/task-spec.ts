@@ -10,10 +10,12 @@ import { type } from "arktype";
 import type { PlannerInventory } from "./inventory";
 
 export const TaskSpec = type({
+  kind: "'task'",
   use: "string > 0",
   refinedOutcome: "string > 0",
 }).or(
   type({
+    kind: "'task'",
     create: {
       name: "string > 0",
       systemPrompt: "string > 0",

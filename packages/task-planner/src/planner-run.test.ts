@@ -19,7 +19,18 @@ const INVENTORY_SOURCES: InventorySources = {
     ];
   },
   async listUsableToolPackages() {
-    return [{ name: "@corbits/granola-tools", connectorId: "granola" }];
+    return [
+      {
+        name: "@corbits/granola-tools",
+        connectorId: "granola",
+        credentialBinding: {
+          package: "@corbits/granola-tools",
+          handle: "granola",
+          provider: "granola",
+          locator: "tenant",
+        },
+      },
+    ];
   },
   async listSkills() {
     return [{ name: "incident-review" }];
@@ -36,6 +47,7 @@ function buildDeps(overrides: Partial<PlannerRunDeps> = {}): PlannerRunDeps {
     runner: {
       run: async () => ({
         content: JSON.stringify({
+          kind: "task",
           use: "wfd_summarizer",
           refinedOutcome: "Summarize the doc",
         }),
@@ -58,6 +70,7 @@ describe("runPlanner", () => {
   test("a valid in-inventory {use} reply succeeds", async () => {
     const result = await runPlanner(buildDeps(), INPUT);
     expect(result.spec).toEqual({
+      kind: "task",
       use: "wfd_summarizer",
       refinedOutcome: "Summarize the doc",
     });
@@ -70,6 +83,7 @@ describe("runPlanner", () => {
       runner: {
         run: async () => ({
           content: JSON.stringify({
+            kind: "task",
             create: {
               name: "Incident bot",
               systemPrompt: "You review incidents.",
@@ -92,6 +106,7 @@ describe("runPlanner", () => {
       runner: {
         run: async () => ({
           content: JSON.stringify({
+            kind: "task",
             use: "wfd_unknown",
             refinedOutcome: "Summarize the doc",
           }),
