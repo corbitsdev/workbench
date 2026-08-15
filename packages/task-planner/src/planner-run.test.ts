@@ -10,7 +10,7 @@ import {
   PlannerReferenceOutOfInventoryError,
   PlannerReplyUnparseableError,
 } from "./task-spec";
-import { PlannerRunTimedOutError } from "./one-shot-reply";
+import { FoldedRunTimedOutError } from "@corbits/folded-runs";
 
 const INVENTORY_SOURCES: InventorySources = {
   async listConversationalAgents() {
@@ -117,12 +117,12 @@ describe("runPlanner", () => {
     const deps = buildDeps({
       runner: {
         run: async () => {
-          throw new PlannerRunTimedOutError(60_000);
+          throw new FoldedRunTimedOutError(60_000);
         },
       },
     });
     await expect(runPlanner(deps, INPUT)).rejects.toBeInstanceOf(
-      PlannerRunTimedOutError,
+      FoldedRunTimedOutError,
     );
   });
 

@@ -6,7 +6,7 @@ import type { MiddlewareHandler } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 
 import { PlannerMyraUnavailableError } from "./planner-run";
-import { PlannerRunTimedOutError } from "./one-shot-reply";
+import { FoldedRunTimedOutError } from "@corbits/folded-runs";
 import { PlannerReferenceOutOfInventoryError } from "./task-spec";
 import {
   createPlannerRoutes,
@@ -129,7 +129,7 @@ describe("POST /", () => {
       "PlannerMyraUnavailableError",
       () => new PlannerMyraUnavailableError("tnt_1", "no deployed Myra"),
     ],
-    ["PlannerRunTimedOutError", () => new PlannerRunTimedOutError(60_000)],
+    ["FoldedRunTimedOutError", () => new FoldedRunTimedOutError(60_000)],
     [
       "PlannerReferenceOutOfInventoryError",
       () => new PlannerReferenceOutOfInventoryError("use", "wfd_unknown"),

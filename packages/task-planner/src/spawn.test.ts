@@ -12,15 +12,16 @@
 // are mocked directly here (rather than exercised for real, the way
 // `launcher.test.ts` does it) because `mock.module` replaces a module
 // in bun's process-wide registry for every test file in the same `bun
-// test` invocation, including ones — `one-shot-reply.test.ts` in this
-// same package — that mock the very same module with a different fake
-// before this file's own imports ever run (bun loads every test
-// file's top-level module graph before running any file's tests, so a
-// later `afterAll` restore in that file cannot undo the effect on
-// modules this file already resolved against). Rather than depend on
-// file load order, this file pins its own fake for the one call shape
-// `launchTask` needs (call `persistExtra` inside the fake db's
-// transaction, report success) — deliberately not the real
+// test` invocation, including ones in other packages — e.g.
+// `packages/folded-runs/src/one-shot-reply.test.ts` — that mock the
+// same module's internals with a different fake before this file's
+// own imports ever run (bun loads every test file's top-level module
+// graph before running any file's tests, so a later `afterAll`
+// restore in that file cannot undo the effect on modules this file
+// already resolved against). Rather than depend on file load order,
+// this file pins its own fake for the one call shape `launchTask`
+// needs (call `persistExtra` inside the fake db's transaction, report
+// success) — deliberately not the real
 // `deployAtHead`/`resolveDefinitionSources` path, since that path is
 // already covered by `packages/tasks/test/launcher.test.ts`.
 import { describe, expect, mock, test } from "bun:test";
