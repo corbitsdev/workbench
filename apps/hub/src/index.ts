@@ -19,9 +19,9 @@ import {
   createNoopCredentialCipher,
   generateKeyPair,
 } from "@intx/crypto";
-import { timeWindowEvaluator } from "@intx/authz";
+import { authorize, timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
-import type { CredentialCipher } from "@intx/types";
+import type { CredentialBinding, CredentialCipher } from "@intx/types";
 import {
   createApp,
   createRequireGrant,
@@ -53,6 +53,7 @@ import {
   createDrizzleThreadStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
+  isChannelHostDefinitionName,
   listConnectedProviders,
   startWorkflowCommand,
 } from "@corbits/chat";
@@ -116,6 +117,8 @@ import {
 import {
   createPlannerRoutes,
   dispatchWithPlanner,
+  isPlannerCreatedDefinitionName,
+  PlannerDefinitionGrantDeniedError,
   resolveMyraDefinitionIdFromDb,
   runOneShotFoldedPrompt,
   type InventoryAgent,
@@ -663,11 +666,33 @@ export async function createHub(config: HubConfig) {
   );
 
   // The one "is this a conversational agent?" ruling, shared by every
-  // picker that offers agents to a person — chat's invite/new-chat
-  // pickers and the task composer alike: automatable catalog workflows
-  // (routines material) belong in neither.
+  // picker that offers agents to a person AND every taskability gate —
+  // chat's invite/new-chat pickers, the task composer, and task-planner's
+  // {use} target validation alike: automatable catalog workflows
+  // (routines material) and channel-host anchor definitions (chat's own
+  // plumbing, never a person-facing agent) belong in neither.
   const isConversationalAgentDefinition = (definition: { name: string }) =>
-    !isAutomatableWorkflowName(definition.name);
+    !isAutomatableWorkflowName(definition.name) &&
+    !isChannelHostDefinitionName(definition.name);
+
+  // A second, narrower ruling layered on top of the taskability gate
+  // above, for LISTING/PICKER surfaces only — never for taskability
+  // itself. A planner-created agent (CL-6051's `{create}` branch, see
+  // `@corbits/task-planner`'s `planner-created-naming.ts`) exists for
+  // exactly one task; it must stay fully launchable (`spawnFromTaskSpec`
+  // calls `launchTask` against the definition it just created) but must
+  // never clutter a picker meant for agents a person deliberately keeps
+  // around. Wired into every picker surface: chat's invite/new-chat
+  // dialogs (`chatDeps.isInvitableDefinition` below) and the planner's
+  // own inventory (`listMyraConversationalAgents` below) — the manual
+  // task composer's picker (`apps/web`'s
+  // `listTenantInvitableDefinitions`) calls the same chat route, so it
+  // inherits this for free. `@corbits/agent-directory` has no listing
+  // route of its own today (only create/read-skills/update-skills), so
+  // there is no third surface to thread this through there yet.
+  const isPickerListableDefinition = (definition: { name: string }) =>
+    isConversationalAgentDefinition(definition) &&
+    !isPlannerCreatedDefinitionName(definition.name);
 
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
     store: chatStore,
@@ -682,7 +707,7 @@ export async function createHub(config: HubConfig) {
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
     }),
-    isInvitableDefinition: isConversationalAgentDefinition,
+    isInvitableDefinition: isPickerListableDefinition,
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
     // Derived per tenant, per channel creation, from that tenant's own
     // connected catalog providers (see `@corbits/chat`'s
@@ -1147,7 +1172,7 @@ export async function createHub(config: HubConfig) {
       ),
     });
     return rows
-      .filter((row) => isConversationalAgentDefinition(row))
+      .filter((row) => isPickerListableDefinition(row))
       .map((row) => ({
         id: row.id,
         name: row.name,
@@ -1165,11 +1190,30 @@ export async function createHub(config: HubConfig) {
       const descriptor = CONNECTOR_REGISTRY[connectorId];
       if (descriptor === undefined) continue;
       for (const toolPackageName of descriptor.feedsTools) {
-        entries.push({ name: toolPackageName, connectorId: descriptor.id });
+        // This listing is already scoped to connections registry ∩
+        // tenant credentials that exist (`listConnectedProviders`), so
+        // every entry it returns necessarily has a live credential —
+        // the binding mirrors `workflows/granola-call`'s
+        // `GRANOLA_CALL_CREDENTIAL_BINDINGS` exactly: `handle`/`provider`
+        // both equal the connector id.
+        entries.push({
+          name: toolPackageName,
+          connectorId: descriptor.id,
+          credentialBinding: {
+            package: toolPackageName,
+            handle: descriptor.id,
+            provider: descriptor.id,
+            locator: "tenant",
+          },
+        });
       }
     }
     if (memoryHandle !== undefined) {
-      entries.push({ name: memoryToolPackageName, connectorId: "memory" });
+      entries.push({
+        name: memoryToolPackageName,
+        connectorId: "memory",
+        credentialBinding: null,
+      });
     }
     return entries;
   }
@@ -1201,19 +1245,6 @@ export async function createHub(config: HubConfig) {
   // reads back from.
   const PLANNER_AGENT_DEFINITION_ASSET_PATH = "workflow.json";
 
-  function slugifyAgentHandle(name: string): string {
-    const base = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    // A random suffix rather than the create-route's duplicate-asset
-    // retry/409 dance: a planner-created handle is never shown to a
-    // person to retype, so collision recovery has no UI to serve — a
-    // random suffix makes collision practically impossible instead.
-    const suffix = generateId("workflowDefinition").slice(-8);
-    return `${base === "" ? "agent" : base}-${suffix}`;
-  }
-
   /**
    * Wraps the same sequence `@corbits/agent-directory`'s `POST /`
    * handler runs (`buildAgentDefinitionWorkflow` → `reindexPinnedSkills`
@@ -1229,9 +1260,11 @@ export async function createHub(config: HubConfig) {
     readonly tenantId: string;
     readonly principalId: string;
     readonly name: string;
+    readonly handle: string;
     readonly systemPrompt: string;
     readonly toolPackagePins: readonly string[];
     readonly skills: readonly string[];
+    readonly credentialBindings: readonly CredentialBinding[];
     readonly model?: string;
   }): Promise<{ readonly definitionId: string }> {
     const tenantRow = await db.query.tenant.findFirst({
@@ -1241,7 +1274,7 @@ export async function createHub(config: HubConfig) {
       throw new Error(`No tenant "${input.tenantId}"`);
     }
 
-    const handle = slugifyAgentHandle(input.name);
+    const handle = input.handle;
     const skillEntries =
       input.skills.length > 0
         ? await skills.skillIndex.resolve(
@@ -1264,6 +1297,9 @@ export async function createHub(config: HubConfig) {
               version: "*",
             })),
           }
+        : {}),
+      ...(input.credentialBindings.length > 0
+        ? { credentialBindings: input.credentialBindings }
         : {}),
     });
     const workflowJson = reindexPinnedSkills(
@@ -1346,6 +1382,31 @@ export async function createHub(config: HubConfig) {
             taskLauncherDeps,
             store: taskStore,
             deployAgentDefinition,
+            // The `{create}` branch's own grant, checked deep inside
+            // `dispatch` rather than at route-middleware time — the
+            // definitional plan (`{use}` vs `{create}`) is only known
+            // after Myra's reply resolves. Same `chatGrantStore`/
+            // `chatConditionRegistry` every other `requireGrant` call
+            // site in this file uses, called through `authorize`
+            // directly (the standalone, non-middleware primitive
+            // `createRequireGrant`'s own middleware wraps) since this
+            // is not a route boundary.
+            requireDefinitionCreateGrant: async ({
+              tenantId,
+              principalId,
+            }) => {
+              const result = await authorize(
+                chatGrantStore,
+                principalId,
+                tenantId,
+                "workflow-definition:*",
+                "create",
+                chatConditionRegistry,
+              );
+              if (result.effect !== "allow") {
+                throw new PlannerDefinitionGrantDeniedError(principalId);
+              }
+            },
           },
           input,
         ),

@@ -19,6 +19,11 @@
 // directly ("memory is available" is a fact worth stating plainly,
 // not left for the model to infer from a tool package name).
 
+import type { CredentialBinding } from "@intx/types";
+import { sanitizeInventoryText } from "./sanitize-inventory-text";
+
+const MAX_DESCRIPTION_LENGTH = 200;
+
 export type InventoryAgent = {
   readonly id: string;
   readonly name: string;
@@ -29,6 +34,13 @@ export type InventoryAgent = {
 export type InventoryToolPackage = {
   readonly name: string;
   readonly connectorId: string;
+  /** The credential a `{create}` definition pinning this tool package
+   * must be granted for the pin to work at runtime — the same
+   * `CredentialBinding` shape `workflows/granola-call`'s
+   * `GRANOLA_CALL_CREDENTIAL_BINDINGS` uses (CL-6028). `null` for a
+   * tool package that needs no per-tenant credential (e.g. the memory
+   * tool package). */
+  readonly credentialBinding: CredentialBinding | null;
 };
 
 export type InventorySkill = {
@@ -85,9 +97,29 @@ export async function assembleInventory(
   ]);
 
   return {
-    agents,
+    agents: agents.map((agent) => ({
+      ...agent,
+      ...(agent.description !== undefined
+        ? {
+            description: sanitizeInventoryText(
+              agent.description,
+              MAX_DESCRIPTION_LENGTH,
+            ),
+          }
+        : {}),
+    })),
     toolPackages,
-    skills,
+    skills: skills.map((skill) => ({
+      ...skill,
+      ...(skill.description !== undefined
+        ? {
+            description: sanitizeInventoryText(
+              skill.description,
+              MAX_DESCRIPTION_LENGTH,
+            ),
+          }
+        : {}),
+    })),
     memoryAvailable: sources.memoryAvailable,
     models,
   };

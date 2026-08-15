@@ -13,7 +13,9 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/agent-directory": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
+    "@corbits/skills": "workspace:*",
     "@corbits/tasks": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@intx/db": "workspace:*",
@@ -28,6 +30,7 @@
     "hono": "^4.11.9"
   },
   "devDependencies": {
+    "@corbits/chat": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

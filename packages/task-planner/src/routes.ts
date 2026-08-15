@@ -21,6 +21,12 @@ import {
   PlannerReferenceOutOfInventoryError,
   PlannerReplyUnparseableError,
 } from "./task-spec";
+import {
+  PlannerCreateBoundsViolationError,
+  PlannerCredentialBindingUnavailableError,
+  PlannerDefinitionGrantDeniedError,
+} from "./spawn";
+import { SkillRegistryError } from "@corbits/skills";
 import type { TaskRecord } from "@corbits/tasks";
 import type { PlannerInventory } from "./inventory";
 
@@ -65,18 +71,27 @@ export type CreatePlannerRoutesDeps = {
 
 /** Every fail-closed error this package's planning path can throw —
  * Myra unresolvable, the run timing out or failing, an unparseable
- * reply, an out-of-inventory reference — reads as the same honest
- * "couldn't plan" 422 to the person who typed the outcome. Anything
- * else (a `launchTask` error from the dispatch's spawn half, an
- * unexpected throw) is a platform fault, not a planning failure, and
- * is re-thrown for the host's own error handling to surface. */
+ * reply, an out-of-inventory reference, a `{create}` plan that
+ * violated a create-agent bound, a denied `workflow-definition:*`
+ * `create` grant, an unresolvable skill pin, or a tool pin with no
+ * working credential — reads as the same honest "couldn't plan" 422
+ * to the person who typed the outcome: from their point of view it is
+ * still "Myra's plan didn't work out," never a REST-shaped bad request
+ * they authored themselves. Anything else (a `launchTask` error from
+ * the dispatch's spawn half, an unexpected throw) is a platform fault,
+ * not a planning failure, and is re-thrown for the host's own error
+ * handling to surface. */
 function isPlanningFailure(err: unknown): boolean {
   return (
     err instanceof PlannerMyraUnavailableError ||
     err instanceof FoldedRunTimedOutError ||
     err instanceof FoldedRunFailedError ||
     err instanceof PlannerReplyUnparseableError ||
-    err instanceof PlannerReferenceOutOfInventoryError
+    err instanceof PlannerReferenceOutOfInventoryError ||
+    err instanceof PlannerCreateBoundsViolationError ||
+    err instanceof PlannerCredentialBindingUnavailableError ||
+    err instanceof PlannerDefinitionGrantDeniedError ||
+    err instanceof SkillRegistryError
   );
 }
 
@@ -84,6 +99,13 @@ export function createPlannerRoutes(
   deps: CreatePlannerRoutesDeps,
 ): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
+
+  // A person can't have two "Let Myra choose" runs racing at once — a
+  // plain-language 409-ish rejection of a same-principal concurrent
+  // second request, released in a `finally` once the first settles.
+  // This is single-principal-in-flight only; broader per-tenant rate
+  // limiting is tracked separately as CL-5285.
+  const inFlightPrincipals = new Set<string>();
 
   app.post("/", deps.requireGrant("task:*", "create"), async (c) => {
     const body = CreatePlanBody(await c.req.json().catch(() => undefined));
@@ -99,6 +121,17 @@ export function createPlannerRoutes(
 
     const tenant = c.get("tenant");
     const principal = c.get("principal");
+
+    if (inFlightPrincipals.has(principal.id)) {
+      return c.json(
+        ErrorEnvelope(
+          "dispatch_in_progress",
+          "Myra is already working on your last request.",
+        ),
+        409,
+      );
+    }
+    inFlightPrincipals.add(principal.id);
 
     try {
       const result = await deps.dispatch({
@@ -121,6 +154,8 @@ export function createPlannerRoutes(
         );
       }
       throw err;
+    } finally {
+      inFlightPrincipals.delete(principal.id);
     }
   });
 

@@ -8,6 +8,7 @@ import type { TenantEnv } from "@intx/hub-api";
 import { PlannerMyraUnavailableError } from "./planner-run";
 import { FoldedRunTimedOutError } from "@corbits/folded-runs";
 import { PlannerReferenceOutOfInventoryError } from "./task-spec";
+import { SkillRegistryError } from "@corbits/skills";
 import {
   createPlannerRoutes,
   type CreatePlannerRoutesDeps,
@@ -134,6 +135,11 @@ describe("POST /", () => {
       "PlannerReferenceOutOfInventoryError",
       () => new PlannerReferenceOutOfInventoryError("use", "wfd_unknown"),
     ],
+    [
+      "SkillRegistryError",
+      () =>
+        new SkillRegistryError("not_found", "No skill named \"unknown\""),
+    ],
   ])("%s maps to a plain-language 422", async (_name, makeError) => {
     const deps = buildDeps({
       dispatch: async () => {
@@ -154,6 +160,56 @@ describe("POST /", () => {
     };
     expect(body.error.code).toBe("planning_failed");
     expect(body.error.message).not.toContain("wfd_unknown");
+  });
+
+  test("a second concurrent request from the same principal is rejected while the first is in flight, and a later request succeeds once it settles", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let dispatchCalls = 0;
+    const deps = buildDeps({
+      dispatch: async () => {
+        dispatchCalls += 1;
+        if (dispatchCalls === 1) {
+          await firstGate;
+        }
+        return RESULT;
+      },
+    });
+    const app = mountAs(createPlannerRoutes(deps), "prn_alice");
+
+    const firstRequest = app.request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ outcome: "Summarize the doc" }),
+    });
+    // Let the first request's handler actually start (and register itself
+    // as in-flight) before firing the second.
+    await Promise.resolve();
+
+    const secondResponse = await app.request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ outcome: "Summarize something else" }),
+    });
+    expect(secondResponse.status).toBe(409);
+    const secondBody = (await secondResponse.json()) as {
+      error: { code: string };
+    };
+    expect(secondBody.error.code).toBe("dispatch_in_progress");
+
+    releaseFirst?.();
+    const firstResponse = await firstRequest;
+    expect(firstResponse.status).toBe(201);
+
+    const thirdResponse = await app.request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ outcome: "Summarize a third doc" }),
+    });
+    expect(thirdResponse.status).toBe(201);
+    expect(dispatchCalls).toBe(2);
   });
 
   test("an unexpected error is rethrown, not swallowed into a 422", async () => {

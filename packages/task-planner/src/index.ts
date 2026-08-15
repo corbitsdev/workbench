@@ -38,9 +38,16 @@ export {
 } from "./planner-run";
 export {
   spawnFromTaskSpec,
+  PlannerCreateBoundsViolationError,
+  PlannerCredentialBindingUnavailableError,
+  PlannerDefinitionGrantDeniedError,
   type SpawnDeps,
   type SpawnFromTaskSpecInput,
 } from "./spawn";
+export {
+  plannerCreatedDefinitionHandle,
+  isPlannerCreatedDefinitionName,
+} from "./planner-created-naming";
 export {
   createPlannerRoutes,
   type CreatePlannerRoutesDeps,
@@ -72,6 +79,7 @@ export async function dispatchWithPlanner(
     principalId: input.principalId,
     spec,
     plannerRunId,
+    inventory,
   });
   return { task, plannerRunId, inventory };
 }

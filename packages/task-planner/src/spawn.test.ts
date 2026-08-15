@@ -27,6 +27,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { task as taskTable } from "@corbits/tasks";
 import type { TaskRecord, TaskStore } from "@corbits/tasks";
+import type { SpawnDeps } from "./spawn";
 
 const actualFoldedRuns = await import("@corbits/folded-runs");
 
@@ -196,11 +197,37 @@ function createTaskLauncherDeps(db: ReturnType<typeof createFakeDb>) {
   };
 }
 
+const GRANOLA_BINDING = {
+  package: "@corbits/granola-tools",
+  handle: "granola",
+  provider: "granola",
+  locator: "tenant" as const,
+};
+
+const INVENTORY = {
+  agents: [{ id: "wfd_agent", name: "incident-bot", displayName: "Incident bot" }],
+  toolPackages: [
+    {
+      name: "@corbits/granola-tools",
+      connectorId: "granola",
+      credentialBinding: GRANOLA_BINDING,
+    },
+  ],
+  skills: [{ name: "incident-review" }],
+  memoryAvailable: false,
+  models: [{ canonicalName: "anthropic/claude-sonnet-5" }],
+};
+
 const INPUT_BASE = {
   tenantId: "tnt_1",
   principalId: "prn_alice",
   plannerRunId: "wfr_planner_1",
+  inventory: INVENTORY,
 };
+
+function allowDefinitionCreateGrant() {
+  return mock(async () => undefined);
+}
 
 describe("spawnFromTaskSpec", () => {
   test("{use} branch launches directly against the named agent and links the planner run", async () => {
@@ -215,10 +242,15 @@ describe("spawnFromTaskSpec", () => {
         taskLauncherDeps: createTaskLauncherDeps(db) as never,
         store,
         deployAgentDefinition,
+        requireDefinitionCreateGrant: allowDefinitionCreateGrant(),
       },
       {
         ...INPUT_BASE,
-        spec: { use: "wfd_agent", refinedOutcome: "Summarize the incident" },
+        spec: {
+          kind: "task",
+          use: "wfd_agent",
+          refinedOutcome: "Summarize the incident",
+        },
       },
     );
 
@@ -233,19 +265,24 @@ describe("spawnFromTaskSpec", () => {
   test("{create} branch deploys a new definition first, then launches against it, then links the planner run", async () => {
     const db = createFakeDb();
     const store = storeOverInserts(db);
-    const deployAgentDefinition = mock(async () => ({
-      definitionId: "wfd_agent",
-    }));
+    const deployAgentDefinition = mock(
+      async (_input: Parameters<SpawnDeps["deployAgentDefinition"]>[0]) => ({
+        definitionId: "wfd_agent",
+      }),
+    );
 
+    const requireDefinitionCreateGrant = allowDefinitionCreateGrant();
     const record = await spawnFromTaskSpec(
       {
         taskLauncherDeps: createTaskLauncherDeps(db) as never,
         store,
         deployAgentDefinition,
+        requireDefinitionCreateGrant,
       },
       {
         ...INPUT_BASE,
         spec: {
+          kind: "task",
           create: {
             name: "Incident bot",
             systemPrompt: "You review incidents.",
@@ -258,8 +295,13 @@ describe("spawnFromTaskSpec", () => {
       },
     );
 
+    expect(requireDefinitionCreateGrant).toHaveBeenCalledWith({
+      tenantId: "tnt_1",
+      principalId: "prn_alice",
+    });
     expect(deployAgentDefinition).toHaveBeenCalledTimes(1);
-    expect(deployAgentDefinition).toHaveBeenCalledWith({
+    const [call] = deployAgentDefinition.mock.calls;
+    expect(call?.[0]).toMatchObject({
       tenantId: "tnt_1",
       principalId: "prn_alice",
       name: "Incident bot",
@@ -267,7 +309,9 @@ describe("spawnFromTaskSpec", () => {
       toolPackagePins: ["@corbits/granola-tools"],
       skills: ["incident-review"],
       model: "anthropic/claude-sonnet-5",
+      credentialBindings: [GRANOLA_BINDING],
     });
+    expect(call?.[0]?.handle).toMatch(/^myra-task-incident-bot-[0-9a-f]{8}$/);
     expect(record.definitionId).toBe("wfd_agent");
     expect(record.plannerRunId).toBe("wfr_planner_1");
 

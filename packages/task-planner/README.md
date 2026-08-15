@@ -28,7 +28,14 @@ plan is dispatched exactly like a manually-launched task.
   validated-shape spec makes — an agent id, tool package names, skill
   names, a model name — actually appears in the inventory that was offered,
   throwing `PlannerReferenceOutOfInventoryError` on the first violation.
-  Neither function partially trusts a near-miss.
+  Neither function partially trusts a near-miss. `kind: "task"` is a
+  discriminant reserved for CL-5917 (routine chains, not yet built) to add
+  a `"chain"` variant additively — the validation/dispatch PATTERN this
+  package proves out is what CL-5917 reuses, never this schema directly; a
+  chain is a materially different shape (an ordered sequence of
+  `TaskSpec`-like steps, not one), so `kind` exists to let a future union
+  branch land without reshaping this one, not to imply the schema itself
+  is meant to grow into chains.
 - **The one-shot reply wrapper** now lives in `@corbits/folded-runs`
   (`packages/folded-runs/src/one-shot-reply.ts`) — `runOneShotFoldedPrompt`
   launches a folded run, sends one prompt, and resolves a promise with the
@@ -53,12 +60,32 @@ plan is dispatched exactly like a manually-launched task.
 - **Spawn dispatch** (`./src/spawn.ts`) — `spawnFromTaskSpec` dispatches a
   validated `TaskSpec` exactly the way a manually-launched task is
   dispatched: `{use}` calls `@corbits/tasks`' `launchTask` directly;
-  `{create}` deploys a brand-new agent definition first (via the
-  host-injected `deployAgentDefinition`, which wraps
-  `@corbits/agent-directory`'s sanctioned deploy path) and then launches
-  against the result. Both branches link the launched task back to the
-  planner run that chose its agent (`TaskStore.linkPlannerRun`) before
-  returning. Any `launchTask` failure propagates unchanged.
+  `{create}` first re-validates `spec.create` through
+  `@corbits/agent-directory`'s own `CreateAgentDefinitionInput` bounds
+  (plus this package's own `toolPackagePins` cardinality+dedup bound,
+  `./src/create-bounds.ts` — the REST boundary has no field for that
+  pin), checks a `workflow-definition:*`/`create` grant
+  (`requireDefinitionCreateGrant`), resolves each pin's `CredentialBinding`
+  from the same inventory the plan was validated against, and only then
+  deploys a brand-new agent definition (via the host-injected
+  `deployAgentDefinition`, which wraps `@corbits/agent-directory`'s
+  sanctioned deploy path) before launching against the result. Both
+  branches link the launched task back to the planner run that chose its
+  agent (`TaskStore.linkPlannerRun`) before returning. Any `launchTask`
+  failure propagates unchanged.
+- **Planner-created agent naming** (`./src/planner-created-naming.ts`) —
+  every `{create}`-branch definition deploys under a
+  `myra-task-<slug>-<8hex>` handle. `isPlannerCreatedDefinitionName` is
+  excluded from LISTING/PICKER surfaces only — chat's invite/new-chat
+  pickers and this package's own `listConversationalAgents` inventory
+  source (both composed with the base taskability predicate as
+  `isPickerListableDefinition` in `apps/hub/src/index.ts`) — and NEVER
+  from the taskability/launchability gate itself: a planner-created
+  agent exists for exactly one task and must stay fully launchable
+  (`spawnFromTaskSpec` immediately launches against the definition it
+  just created), so it is invisible in every picker while remaining
+  reachable through the task record it belongs to — "View run", not a
+  picker entry.
 - **`createPlannerRoutes`** (`./src/routes.ts`) — `POST /`, tenant-scoped,
   `requireGrant`-gated, personal to the requesting principal (a planning
   prompt is a person's own, exactly like a task prompt). Depends on an
@@ -101,8 +128,17 @@ SidecarEventEmitter`, `cryptoProviders: CryptoProviderCache`, `undeploy:
   `@corbits/agent-directory`'s sanctioned deploy path
   (`buildAgentDefinitionWorkflow` → `AssetService.createAsset` +
   `populateAsset` → `ensureWorkflowDefinitionForAsset`, plus
-  `reindexPinnedSkills` when skills are present). This package never
-  reimplements that path in parallel.
+  `reindexPinnedSkills` when skills are present). Takes the handle
+  `spawnFromTaskSpec` already derived (via `plannerCreatedDefinitionHandle`)
+  and the `CredentialBinding[]` it already resolved from the inventory —
+  never derives either itself. This package never reimplements that path
+  in parallel.
+- `requireDefinitionCreateGrant({tenantId, principalId})` — checked only
+  on the `{create}` branch, before `deployAgentDefinition`; the
+  production implementation calls `@intx/authz`'s `authorize` directly
+  against `workflow-definition:*`/`create`, the same grant store and
+  condition registry every other `requireGrant` call site in
+  `apps/hub/src/index.ts` uses.
 - `taskLauncherDeps: TaskLauncherDeps` and `store: TaskStore` — the same
   objects `@corbits/tasks` itself takes, unchanged.
 - `requireGrant` (for the routes) — the same `createRequireGrant(...)`

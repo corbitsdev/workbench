@@ -15,6 +15,7 @@ import { defineAgent } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
+import type { CredentialBinding } from "@intx/types";
 import {
   withAvailableSkills,
   type PinnedSkillIndexEntry,
@@ -172,6 +173,17 @@ export interface AgentDefinitionWorkflowInput {
    * post-hoc for skills.
    */
   readonly toolPackagePins?: readonly ToolPackagePin[];
+  /**
+   * Credential bindings the deployed definition carries at the workflow
+   * level — the same `CredentialBinding[]` shape and the same
+   * `defineWorkflow({ credentialBindings, ... })` field
+   * `workflows/granola-call` pins through (CL-6028's pattern). Additive:
+   * undeclared or empty behaves exactly like a definition built before
+   * this field existed. Required for a `toolPackagePins` entry whose
+   * tool needs a live credential to do anything at runtime — a pin with
+   * no matching binding is inert.
+   */
+  readonly credentialBindings?: readonly CredentialBinding[];
 }
 
 /**
@@ -212,6 +224,10 @@ export function buildAgentDefinitionWorkflow(
   return defineWorkflow({
     id: `wf_agent_${input.handle}`,
     trigger: { type: "mail", to: `${input.handle}@${input.tenantDomain}` },
+    ...(input.credentialBindings !== undefined &&
+    input.credentialBindings.length > 0
+      ? { credentialBindings: input.credentialBindings }
+      : {}),
     steps: {
       [AGENT_DEFINITION_STEP_ID]: step({
         agent:
