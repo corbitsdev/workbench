@@ -574,6 +574,11 @@ const PACKAGE_SCHEMAS = [
   "webhook_triggers",
   "onboarding",
   "access_policy",
+  "bench",
+  "preferences",
+  "skills",
+  "slack_tag",
+  "tasks",
 ] as const;
 
 /**
