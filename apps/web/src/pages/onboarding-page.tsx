@@ -58,21 +58,21 @@ import { OnboardingLayout } from "../onboarding/onboarding-layout";
 const GUIDANCE_CARDS = [
   {
     icon: <MessageSquare />,
-    title: "Spaces and chats",
+    title: "Chats",
     description:
-      "Spaces are for group conversations with your team and agents; chats are your 1:1s. Your starter chat is ready — head there to send your first message.",
+      "Chats are where you talk with your team and agents — 1:1 or as a group. Your starter chat is ready — head there to send your first message.",
   },
   {
     icon: <Bot />,
     title: "Routines",
     description:
-      "A routine is a workflow an agent runs on your behalf — scheduled, triggered, or kicked off right from a space. Your workbench ships with a couple of starter routines already running.",
+      "A routine is a workflow an agent runs on your behalf — scheduled, triggered, or kicked off right from a chat. Your workbench ships with a couple of starter routines already running.",
   },
   {
     icon: <AtSign />,
     title: "@mention an agent",
     description:
-      "Type @ in any space or chat to bring an agent into the conversation — it reads the thread and replies inline, just like a teammate would.",
+      "Type @ in any chat to bring an agent into the conversation — it reads the thread and replies inline, just like a teammate would.",
   },
 ] as const;
 
