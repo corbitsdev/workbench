@@ -7,23 +7,37 @@
 // together, per "apps stay generic; packages own the domain": the domain
 // logic (what a folded run is, how a routine fires) lives in those
 // packages, and this adapter is pure composition.
+//
+// After launch, a non-empty stored `input` (the stepper-collected
+// topic/focus a routine's creator recorded) is delivered as the run's
+// first inbound mail via `sendFoldedMail` — the same seam
+// `@corbits/webhook-triggers`' `launchWebhookTrigger` uses for its own
+// rendered input. Both "run now" and a scheduled fire land here (see
+// `@corbits/routines`' `launchAndCorrelate`), so this one call covers
+// both; a webhook-triggered routine's fire never reaches this adapter at
+// all (`launchWebhookTrigger` launches directly), so its own input
+// delivery is that package's concern, not this one's.
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import {
+  domainOf,
   launchFoldedRun,
   readDefinitionJSON,
   readFoldedBody,
+  sendFoldedMail,
+  type CryptoProviderCache,
   type FoldedRunsDeps,
 } from "@corbits/folded-runs";
 import { generateId } from "@intx/hub-common";
 import { formatRunAddress } from "@intx/types";
 import type { AssetService } from "@intx/hub-sessions";
-import type { RoutineLauncher } from "@corbits/routines";
+import { renderRoutineInput, type RoutineLauncher } from "@corbits/routines";
 
 export type CreateHubRoutineLauncherDeps = FoldedRunsDeps & {
   db: DB["db"];
   assetService: AssetService;
+  cryptoProviderCache: CryptoProviderCache;
 };
 
 /**
@@ -75,7 +89,7 @@ export function createHubRoutineLauncher(
       const instanceId = generateId("workflowRun");
       const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
 
-      await launchFoldedRun(deps, {
+      const launched = await launchFoldedRun(deps, {
         tenantId: input.tenantId,
         instanceId,
         triggerAddress,
@@ -83,6 +97,22 @@ export function createHubRoutineLauncher(
         foldedBody,
         launchLabel: "a routine",
       });
+
+      // Empty/absent stored input keeps prior behavior: no mail, the
+      // agent starts from its system prompt alone.
+      const content = renderRoutineInput(input.input);
+      if (content !== "") {
+        const cryptoProvider = await deps.cryptoProviderCache.get(instanceId);
+        await sendFoldedMail(deps, {
+          tenantId: input.tenantId,
+          sessionId: launched.sessionId,
+          agentAddress: triggerAddress,
+          from: `${input.principalId}@${tenantRow.domain}`,
+          domain: domainOf(triggerAddress),
+          content,
+          cryptoProvider,
+        });
+      }
 
       return { runId: instanceId };
     },

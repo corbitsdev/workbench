@@ -911,12 +911,14 @@ export async function createHub(config: HubConfig) {
   const routineGrantStore = createGrantStore(db);
   const routineStore = createDrizzleRoutineStore(db);
   const routineDraftStore = createDrizzleDraftStore(db);
+  const routineCryptoProviders = createCryptoProviderCache();
   const routineLauncher = createHubRoutineLauncher({
     db,
     sessionService,
     assetService,
     sidecarRouter,
     eventCollectors,
+    cryptoProviderCache: routineCryptoProviders,
   });
   // Routines routes own their `/routines` and `/routine-drafts` prefixes, so
   // mount at the tenant root (same pattern as a package that ships absolute
