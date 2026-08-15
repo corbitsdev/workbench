@@ -3,7 +3,7 @@
 // packages/notify/test/migrations.test.ts.
 //
 // The load-bearing case here is the cutover from one-run-per-task to
-// many: a task written before `0003_task_leg` existed carries its run
+// many: a task written before `0004_task_leg` existed carries its run
 // on the `task` row alone, and must read back through the leg-aware
 // store afterwards with exactly the run it always had.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -24,7 +24,7 @@ function scratchUrlFor(e2eUrl: string): string {
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
 
-const LEG_MIGRATION = "0003_task_leg";
+const LEG_MIGRATION = "0004_task_leg";
 
 describeIfDb("applyTasksMigrations", () => {
   const scratchUrl = scratchUrlFor(
@@ -81,17 +81,20 @@ describeIfDb("applyTasksMigrations", () => {
 
       await client.unsafe(
         `INSERT INTO "tasks"."task" ` +
-          `("id", "tenant_id", "principal_id", "definition_id", "prompt", ` +
+          `("id", "tenant_id", "principal_id", "definition_id", "agent_name", "prompt", ` +
           `"model_preference", "status", "run_id", "result_mail_id", "completed_at") ` +
           `VALUES ` +
-          `('task_old_done', 'tnt_1', 'prn_ada', 'wfd_agent', 'Summarize it.', ` +
+          `('task_old_done', 'tnt_1', 'prn_ada', 'wfd_agent', 'Agent', 'Summarize it.', ` +
           `NULL, 'done', 'run_old_done', 'mail_1', now()), ` +
-          `('task_old_running', 'tnt_1', 'prn_ada', 'wfd_agent', 'Keep going.', ` +
+          `('task_old_running', 'tnt_1', 'prn_ada', 'wfd_agent', 'Agent', 'Keep going.', ` +
           `'claude-sonnet-5', 'running', 'run_old_running', NULL, NULL)`,
       );
 
       const report = await applyTasksMigrations(scratchUrl);
-      expect(report.applied).toEqual([LEG_MIGRATION]);
+      expect(report.applied).toEqual([
+        LEG_MIGRATION,
+        "0005_task_leg_started_at",
+      ]);
 
       const store = createDrizzleTaskStore(drizzle(client));
 

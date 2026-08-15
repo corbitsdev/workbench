@@ -61,6 +61,7 @@ async function seedClaimedLeg(store: TaskStore) {
     tenantId: TENANT,
     principalId: "prn_alice",
     definitionId: "wfd_researcher",
+    agentName: "Researcher",
     prompt: "Research the outage.",
     modelPreference: null,
     runId: "run_leg0",
