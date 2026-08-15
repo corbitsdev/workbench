@@ -1,6 +1,10 @@
 // `useBenchActivity` is the second column's one data source: it refetches
 // on bench changes, not on route changes, and reports "empty" rather than
-// fetching anything when there is no bench selected yet.
+// fetching anything when there is no bench selected yet. Every listing it
+// reads goes through the shared `tenantKeys` factories (see
+// `../src/query-client.ts`), so this hook's two mounts (`ChannelsBand` and
+// `LiveActivityBand`) share one cache rather than each firing its own
+// fetch — proven end to end in `fetch-dedupe.test.tsx`.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -8,6 +12,7 @@ import { createRoot, type Root } from "react-dom/client";
 
 import { useBenchActivity } from "../src/shell/bench-activity";
 import type { BenchActivityQuery } from "../src/shell/bench-activity";
+import { TestQueryProvider } from "./test-query-provider";
 
 const realFetch = globalThis.fetch;
 
@@ -25,6 +30,7 @@ function stubTenantFetch(
   calls: string[],
   data: {
     readonly channels?: readonly unknown[];
+    readonly chats?: readonly unknown[];
     readonly runs?: readonly unknown[];
     readonly tasks?: readonly unknown[];
   } = {},
@@ -36,6 +42,8 @@ function stubTenantFetch(
       return Promise.resolve(json({ data: data.runs ?? [], nextCursor: null }));
     if (path.includes("/tasks"))
       return Promise.resolve(json({ items: data.tasks ?? [] }));
+    if (path.includes("kind=chat"))
+      return Promise.resolve(json({ items: data.chats ?? [] }));
     return Promise.resolve(json({ items: data.channels ?? [] }));
   }) as typeof fetch;
 }
@@ -54,9 +62,21 @@ async function mountHook(tenantId: string | null): Promise<{
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<Probe tenantId={tenantId} />);
+    root.render(
+      <TestQueryProvider>
+        <Probe tenantId={tenantId} />
+      </TestQueryProvider>,
+    );
   });
   return { latest: () => latest, root, container };
+}
+
+async function settle() {
+  for (let i = 0; i < 20; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
 }
 
 describe("useBenchActivity", () => {
@@ -74,10 +94,7 @@ describe("useBenchActivity", () => {
     const calls: string[] = [];
     stubTenantFetch(calls);
     const { latest, root, container } = await mountHook("tnt_1");
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await settle();
     expect(latest()).toEqual({
       kind: "ready",
       channels: [],
@@ -85,12 +102,10 @@ describe("useBenchActivity", () => {
       routines: [],
       workingTasks: [],
     });
-    // One all-kinds channels fetch (no kind= param), split client-side.
-    expect(
-      calls.some(
-        (path) => path.includes("/chat/channels") && !path.includes("kind="),
-      ),
-    ).toBe(true);
+    // Per-kind channel fetches — the shared query key each listing surface
+    // subscribes to (see `tenantKeys.channels`).
+    expect(calls.some((path) => path.includes("kind=channel"))).toBe(true);
+    expect(calls.some((path) => path.includes("kind=chat"))).toBe(true);
     expect(calls.some((path) => path.includes("/top-level-runs"))).toBe(true);
     expect(calls.some((path) => path.includes("/tasks"))).toBe(true);
     root.unmount();
@@ -110,6 +125,8 @@ describe("useBenchActivity", () => {
             { address: "run_invited1@tnt1.example", handle: "echo" },
           ],
         },
+      ],
+      chats: [
         {
           id: "run_chat1",
           title: "echo",
@@ -137,10 +154,7 @@ describe("useBenchActivity", () => {
       ],
     });
     const { latest, root, container } = await mountHook("tnt_1");
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await settle();
     const state = latest();
     if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
     expect(state.channels.map((c) => c.id)).toEqual(["run_host1"]);
@@ -185,10 +199,7 @@ describe("useBenchActivity", () => {
       ],
     });
     const { latest, root, container } = await mountHook("tnt_1");
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await settle();
     const state = latest();
     if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
     // A planner-created agent (wfd_myra_task_1) never appears in

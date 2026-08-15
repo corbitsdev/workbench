@@ -5,6 +5,8 @@
 import { QueryClient } from "@tanstack/react-query";
 
 import { UnauthenticatedError } from "@corbits/api-query";
+import { channelsQueryKey } from "@corbits/chat-ui";
+import type { ChannelKind } from "@corbits/chat-ui";
 
 export function createAppQueryClient(): QueryClient {
   return new QueryClient({
@@ -56,6 +58,17 @@ export const tenantKeys = {
    * subtrees — share one cached probe instead of each firing its own. */
   settingsAccess: (tenantId: string, principalId: string) =>
     ["tenant", tenantId, "settings-access", principalId] as const,
+  /** Delegates to `@corbits/chat-ui`'s own key builder — that package owns
+   * both the channels endpoint and `ChannelKind`, so this is the one array
+   * shape every channel-listing surface (bench-activity, command palette,
+   * the Routines picker, `ChatWorkspace`'s own sidebar) keys against,
+   * rather than each side of the app/package boundary keeping its own copy
+   * of the literal that could drift apart. */
+  channels: (tenantId: string, kind: ChannelKind) =>
+    channelsQueryKey(tenantId, kind),
+  tasks: (tenantId: string) => ["tenant", tenantId, "tasks"] as const,
+  topLevelRuns: (tenantId: string) =>
+    ["tenant", tenantId, "top-level-runs"] as const,
 };
 
 /**

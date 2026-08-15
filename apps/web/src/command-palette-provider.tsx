@@ -16,6 +16,7 @@ import {
   type RecentEntry,
 } from "@corbits/command-palette";
 import { useStageChrome } from "@corbits/shell-layout";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { listAgentDefinitions } from "./agents-api";
@@ -65,6 +66,7 @@ export function CommandPaletteProvider({
   readonly navigate: Navigate;
 }) {
   const { selectedTenantId } = useBench();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [recents, setRecents] = useState<readonly RecentEntry[]>([]);
@@ -91,11 +93,19 @@ export function CommandPaletteProvider({
     [recentsStore],
   );
 
+  // Reads through `queryClient` at the shared `tenantKeys.channels` key
+  // (rather than calling `listChannels` directly) so a re-search — every
+  // debounced keystroke re-invokes this — and the bare `#` scope view below
+  // both reuse one cached fetch with every other channel-listing surface in
+  // the shell, instead of each one issuing its own request.
   const listChannelsForSearch = useCallback(async () => {
     if (selectedTenantId === null) return [];
-    const result = await listChannels(selectedTenantId, "channel");
+    const result = await queryClient.ensureQueryData({
+      queryKey: tenantKeys.channels(selectedTenantId, "channel"),
+      queryFn: () => listChannels(selectedTenantId, "channel"),
+    });
     return result.map((channel) => ({ id: channel.id, name: channel.title }));
-  }, [selectedTenantId]);
+  }, [selectedTenantId, queryClient]);
 
   // Workflow runs are what the Routines page lists today. The group is labeled
   // "Runs" (truthful source) and navigates to `/routines/:id` — never the dead

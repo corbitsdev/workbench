@@ -14,13 +14,18 @@ import {
   toast,
 } from "@corbits/react-ui";
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { CHAT_STRINGS, patchChannelSettings } from "@corbits/chat-ui";
+import {
+  CHAT_STRINGS,
+  channelsQueryKeyPrefix,
+  patchChannelSettings,
+} from "@corbits/chat-ui";
 import type { Channel } from "@corbits/chat-ui";
 import {
   registerPanelContribution,
   type PanelRenderContext,
 } from "@corbits/shell-layout";
 import { WorkingTaskRow } from "@corbits/tasks-ui";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
   Hash,
@@ -167,6 +172,7 @@ function ChannelPanelRow({
   readonly onSelect: () => void;
   readonly signals?: ChannelRowSignals;
 }) {
+  const queryClient = useQueryClient();
   const [title, setTitle] = useState(channel.title);
   // The channel prop only reconciles on bench change, so the effective
   // pinned state lives here: without it a second toggle would re-send and
@@ -199,6 +205,9 @@ function ChannelPanelRow({
       await patchChannelSettings(tenantId, channel.id, {
         "chat/name": payload,
       });
+      void queryClient.invalidateQueries({
+        queryKey: channelsQueryKeyPrefix(tenantId),
+      });
       toast(CHAT_STRINGS.channelRenamedToast(payload));
     } catch {
       // Revert the optimistic title on failure; the band will refetch on the
@@ -222,6 +231,9 @@ function ChannelPanelRow({
     try {
       await patchChannelSettings(tenantId, channel.id, {
         "chat/pinned": next,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: channelsQueryKeyPrefix(tenantId),
       });
       setPinned(next);
       toast(CHAT_STRINGS.channelPinnedToast(next, title));
@@ -564,7 +576,7 @@ function InboxFiltersBand({
   );
 }
 
-function LiveActivityBand({
+export function LiveActivityBand({
   path,
   onNavigate,
 }: {

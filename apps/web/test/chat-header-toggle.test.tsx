@@ -10,6 +10,8 @@ import { createRoot, type Root } from "react-dom/client";
 
 import { ChatWorkspace } from "@corbits/chat-ui";
 
+import { TestQueryProvider } from "./test-query-provider";
+
 const realFetch = globalThis.fetch;
 const realEventSource = globalThis.EventSource;
 
@@ -90,11 +92,13 @@ describe("ChatWorkspace headerLeading", () => {
       new Promise<Response>(() => {})) as typeof fetch;
     await act(async () => {
       root.render(
-        <ChatWorkspace
-          tenant={{ kind: "ready", tenantId: "tnt_1" }}
-          channelId="ch_1"
-          headerLeading={leading}
-        />,
+        <TestQueryProvider>
+          <ChatWorkspace
+            tenant={{ kind: "ready", tenantId: "tnt_1" }}
+            channelId="ch_1"
+            headerLeading={leading}
+          />
+        </TestQueryProvider>,
       );
     });
     const header = container.querySelector(".chat-channel-header");
@@ -108,11 +112,13 @@ describe("ChatWorkspace headerLeading", () => {
     globalThis.fetch = routeFetch as typeof fetch;
     await act(async () => {
       root.render(
-        <ChatWorkspace
-          tenant={{ kind: "ready", tenantId: "tnt_1" }}
-          channelId="ch_1"
-          headerLeading={leading}
-        />,
+        <TestQueryProvider>
+          <ChatWorkspace
+            tenant={{ kind: "ready", tenantId: "tnt_1" }}
+            channelId="ch_1"
+            headerLeading={leading}
+          />
+        </TestQueryProvider>,
       );
     });
     for (let i = 0; i < 20; i++) {

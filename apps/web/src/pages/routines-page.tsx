@@ -2269,8 +2269,8 @@ export function RoutinesRoute({
 
   const channelsQuery = useTenantQuery(
     tenantId === null
-      ? (["tenant", "none", "channels-for-routines"] as const)
-      : (["tenant", tenantId, "channels-for-routines"] as const),
+      ? tenantKeys.channels("none", "channel")
+      : tenantKeys.channels(tenantId, "channel"),
     tenantId !== null,
     () => listChannels(tenantId ?? "", "channel"),
   );

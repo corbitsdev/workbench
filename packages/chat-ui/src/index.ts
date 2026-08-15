@@ -91,6 +91,8 @@ export {
   ChatApiError,
   listChannels,
   listAllChannels,
+  channelsQueryKey,
+  channelsQueryKeyPrefix,
   createChannel,
   listMessages,
   sendMessage,

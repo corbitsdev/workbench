@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const realFetch = globalThis.fetch;
 const realEventSource = globalThis.EventSource;
@@ -73,8 +74,17 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root: Root = createRoot(container);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
+  });
   act(() => {
-    root.render(createElement(ChatWorkspace, props));
+    root.render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(ChatWorkspace, props),
+      ),
+    );
   });
   return {
     container,
