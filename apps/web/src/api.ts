@@ -16,7 +16,11 @@ import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
 import type { APIQuery } from "@corbits/api-query";
-import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
+import {
+  ApiQueryError,
+  UnauthenticatedError,
+  toAPIQuery,
+} from "@corbits/api-query";
 import { pathToQueryKey } from "./query-client";
 
 export type { APIQuery } from "@corbits/api-query";

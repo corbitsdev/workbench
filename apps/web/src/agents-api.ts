@@ -18,7 +18,11 @@ import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
 
 import type { APIQuery } from "@corbits/api-query";
-import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
+import {
+  ApiQueryError,
+  UnauthenticatedError,
+  toAPIQuery,
+} from "@corbits/api-query";
 import { tenantKeys } from "./query-client";
 
 export type AgentDefinition = typeof WorkflowDefinitionResponse.infer;

@@ -1,6 +1,11 @@
 import { describe, expect, mock, test } from "bun:test";
 
-import { ApiQueryError, describeQueryError, toAPIQuery, UnauthenticatedError } from "./envelope";
+import {
+  ApiQueryError,
+  describeQueryError,
+  toAPIQuery,
+  UnauthenticatedError,
+} from "./envelope";
 
 describe("ApiQueryError", () => {
   test("carries an optional status", () => {

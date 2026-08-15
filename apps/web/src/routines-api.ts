@@ -18,7 +18,11 @@ import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
 import { workflowDisplayName } from "@corbits/workflow-catalog";
 import type { APIQuery } from "@corbits/api-query";
-import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@corbits/api-query";
+import {
+  ApiQueryError,
+  UnauthenticatedError,
+  toAPIQuery,
+} from "@corbits/api-query";
 import { purposeDefinitions, withCatalogFields } from "./purpose-definitions";
 import type { CatalogFields } from "./purpose-definitions";
 
