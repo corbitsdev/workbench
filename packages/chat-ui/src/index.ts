@@ -90,6 +90,7 @@ export {
   MessageSender,
   ChatApiError,
   listChannels,
+  listAllChannels,
   createChannel,
   listMessages,
   sendMessage,
@@ -152,6 +153,8 @@ export type {
 } from "./channel-settings";
 export { profileSubjectFromParticipant } from "./profile-subject";
 export type { ProfileSubject } from "./profile-subject";
+
+export { foldedRunIdsFromChannels } from "./folded-run-ids";
 
 export { sharedChannelsWith } from "./shared-channels";
 export type { SharedChannelSummary } from "./shared-channels";

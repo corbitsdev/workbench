@@ -228,6 +228,22 @@ export function listChannels(
   );
 }
 
+/**
+ * Every channel a tenant holds, of any kind — `kind` is optional
+ * server-side (`packages/chat/src/routes.ts`'s `GET /channels`), and
+ * channel kinds are open-ended (`packages/chat/src/kinds.ts`), so this
+ * omits the query param entirely rather than hardcoding the two kinds
+ * this UI has bespoke handling for. Used where the caller needs the
+ * complete channel-host/participant surface regardless of kind — e.g.
+ * computing the tenant's folded-run id set (see `folded-run-ids.ts`).
+ */
+export function listAllChannels(tenantId: string): Promise<readonly Channel[]> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels`,
+    ChannelsResponse,
+  ).then((page) => page.items);
+}
+
 // A chat is a direct thread with exactly one counterpart, picked at
 // creation and fixed for its lifetime: either an agent (`definitionId`)
 // or a bench member (`principalId`) — never both. The name is optional

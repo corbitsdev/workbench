@@ -9,8 +9,22 @@ import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
 
 import type { WorkflowRun } from "./api";
 
+/**
+ * `foldedRunIds` additionally excludes invited-agent chat runs, which
+ * self-anchor like a real deployment (see `packages/folded-runs/src/
+ * launch.ts`) and launch under a real `definitionId`
+ * `isChannelHostDefinitionName` never catches. Defaults to an empty set
+ * for a route this filter runs over that never surfaces self-anchored
+ * folded runs in the first place (e.g. `/me/workflows/runs`, which
+ * selects `anchorRunId IS NULL`).
+ */
 export function purposeRuns(
   runs: readonly WorkflowRun[],
+  foldedRunIds: ReadonlySet<string> = new Set(),
 ): readonly WorkflowRun[] {
-  return runs.filter((run) => !isChannelHostDefinitionName(run.definitionName));
+  return runs.filter(
+    (run) =>
+      !isChannelHostDefinitionName(run.definitionName) &&
+      !foldedRunIds.has(run.id),
+  );
 }

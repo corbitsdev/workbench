@@ -442,12 +442,13 @@ export function AgentsSettingsSection({
   }
 
   const definitions = purposeAgentDefinitions(directory.data.definitions);
-  const instances = purposeAgentInstances(directory.data.instances).map(
-    (instance) => ({
-      ...instance,
-      orphaned: isOrphanedInstance(instance, definitionsById(definitions)),
-    }),
-  );
+  const instances = purposeAgentInstances(
+    directory.data.instances,
+    directory.data.foldedRunIds,
+  ).map((instance) => ({
+    ...instance,
+    orphaned: isOrphanedInstance(instance, definitionsById(definitions)),
+  }));
   const instancesByDefinition = new Map<
     string,
     (AgentInstance & { readonly orphaned: boolean })[]
