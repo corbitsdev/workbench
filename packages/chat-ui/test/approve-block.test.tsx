@@ -123,7 +123,7 @@ describe("approve card round-trip", () => {
     const backend = fakeBackend("pending", true);
     const el = await mount(backend.actions);
 
-    const buttons = el.querySelectorAll(".chat-block-action");
+    const buttons = el.querySelectorAll(".chat-block-actions button");
     expect(buttons).toHaveLength(2);
     expect((buttons[0] as HTMLButtonElement).disabled).toBe(false);
     expect((buttons[1] as HTMLButtonElement).disabled).toBe(false);
@@ -139,7 +139,7 @@ describe("approve card round-trip", () => {
   test("pending + spectator: status and platform detail shown, no buttons", async () => {
     const el = await mount(fakeBackend("pending", false).actions);
 
-    expect(el.querySelectorAll(".chat-block-action")).toHaveLength(0);
+    expect(el.querySelectorAll(".chat-block-actions button")).toHaveLength(0);
     expect(el.textContent).toContain(
       "Only an approver on this workbench can act on this.",
     );
@@ -174,7 +174,7 @@ describe("approve card round-trip", () => {
       }),
     );
 
-    const buttons = el.querySelectorAll(".chat-block-action");
+    const buttons = el.querySelectorAll(".chat-block-actions button");
     expect(buttons).toHaveLength(2);
     expect((buttons[0] as HTMLButtonElement).disabled).toBe(false);
 
@@ -207,14 +207,14 @@ describe("approve card round-trip", () => {
     const el = await mount(actions);
 
     const approveButton = el.querySelector(
-      ".chat-block-action[data-primary]",
+      ".chat-block-actions button",
     ) as HTMLButtonElement;
     await act(async () => {
       approveButton.click();
     });
 
     expect(invalidated).toBe(true);
-    expect(el.querySelectorAll(".chat-block-action")).toHaveLength(0);
+    expect(el.querySelectorAll(".chat-block-actions button")).toHaveLength(0);
     expect(el.textContent).toContain("Approved");
   });
 
@@ -232,7 +232,7 @@ describe("approve card round-trip", () => {
     );
 
     const approveButton = el.querySelector(
-      ".chat-block-action[data-primary]",
+      ".chat-block-actions button",
     ) as HTMLButtonElement;
     await act(async () => {
       approveButton.click();
@@ -241,7 +241,7 @@ describe("approve card round-trip", () => {
     expect(el.textContent).toContain("Couldn't reach the approval");
     expect(el.textContent).not.toContain("Approved");
     // Buttons remain — the re-read still says pending, not silently resolved.
-    expect(el.querySelectorAll(".chat-block-action")).toHaveLength(2);
+    expect(el.querySelectorAll(".chat-block-actions button")).toHaveLength(2);
   });
 
   test("read-then-act race: a conflict re-fetches and renders the resolved state, buttons gone", async () => {
@@ -272,14 +272,14 @@ describe("approve card round-trip", () => {
     const el = await mount(actions);
 
     const approveButton = el.querySelector(
-      ".chat-block-action[data-primary]",
+      ".chat-block-actions button",
     ) as HTMLButtonElement;
     await act(async () => {
       approveButton.click();
     });
 
     expect(reads).toBe(2);
-    expect(el.querySelectorAll(".chat-block-action")).toHaveLength(0);
+    expect(el.querySelectorAll(".chat-block-actions button")).toHaveLength(0);
     expect(el.textContent).toContain("Approved");
     expect(el.textContent).toContain(
       "Someone else already resolved this while you were deciding.",
@@ -289,7 +289,7 @@ describe("approve card round-trip", () => {
   test("an already-resolved approval renders calmly with no buttons", async () => {
     const el = await mount(fakeBackend("rejected", true).actions);
 
-    expect(el.querySelectorAll(".chat-block-action")).toHaveLength(0);
+    expect(el.querySelectorAll(".chat-block-actions button")).toHaveLength(0);
     expect(el.textContent).toContain("Denied");
   });
 });

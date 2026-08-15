@@ -690,26 +690,6 @@
   margin-top: 0.75rem;
 }
 
-.chat-block-action {
-  border: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-  padding: 0.3rem 0.7rem;
-  font: inherit;
-  font-size: 0.8125rem;
-  color: var(--foreground);
-}
-
-.chat-block-action[data-primary="true"] {
-  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-}
-
-.chat-block-action:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .chat-block-risk {
   display: inline-flex;
   align-items: center;
@@ -1937,6 +1917,28 @@
 
 .dialog-stepper-segment[data-filled="true"] {
   background: var(--shell-accent, var(--primary));
+}
+
+/* An optional step gets a dashed rail regardless of fill state — visually
+   honest that it's skippable, not just labeled so. */
+.dialog-stepper-segment[data-optional="true"] {
+  background: repeating-linear-gradient(
+    to right,
+    var(--border) 0,
+    var(--border) 3px,
+    transparent 3px,
+    transparent 6px
+  );
+}
+
+.dialog-stepper-segment[data-optional="true"][data-filled="true"] {
+  background: repeating-linear-gradient(
+    to right,
+    var(--shell-accent, var(--primary)) 0,
+    var(--shell-accent, var(--primary)) 3px,
+    transparent 3px,
+    transparent 6px
+  );
 }
 
 @media (prefers-reduced-motion: reduce) {

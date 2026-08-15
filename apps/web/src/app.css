@@ -1242,18 +1242,6 @@ html {
   white-space: nowrap;
 }
 
-/* Mock .shared-badge — only rendered when shared metadata exists. */
-.shell-ch-shared-badge {
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--info, #1f5fa8);
-  background: color-mix(in srgb, var(--info, #1f5fa8) 10%, transparent);
-  padding: 0.1rem 0.3rem;
-  flex-shrink: 0;
-}
-
 /* Mock .live — activity pulse; only when live signal exists and no unread. */
 .shell-ch-live {
   width: 0.4rem;
@@ -1285,20 +1273,6 @@ html {
 .shell-ch-time {
   font-size: 0.66rem;
   color: var(--muted-foreground, var(--ui-fg-muted));
-}
-
-/* Mock .badge — unread count; only when count > 0. */
-.shell-ch-badge {
-  min-width: 1.15rem;
-  height: 1.15rem;
-  padding: 0 0.3rem;
-  border-radius: 0;
-  background: var(--primary, #e98428);
-  color: var(--primary-foreground, #2b2627);
-  font-size: 0.62rem;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
 }
 
 .shell-ch-row-wrap {
@@ -1794,67 +1768,6 @@ html {
 
   .onboarding-panel {
     display: block;
-  }
-}
-
-/* Restrained progress affordance: an uppercase step label over a thin
-   segmented rail, filled in brand orange as the wizard advances — the
-   direct replacement for the numbered-circle stepper. */
-.onboarding-progress {
-  margin-bottom: 2rem;
-}
-
-.onboarding-progress-label {
-  margin: 0 0 0.625rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-
-.onboarding-progress-track {
-  display: flex;
-  gap: 0.375rem;
-}
-
-.onboarding-progress-segment {
-  height: 3px;
-  flex: 1;
-  border-radius: 0;
-  background: var(--border);
-  transition: background-color 0.3s ease;
-}
-
-.onboarding-progress-segment[data-filled="true"] {
-  background: var(--shell-accent, #e98428);
-}
-
-/* The one step that never gates progress gets a dashed rail regardless of
-   fill state — visually honest that it's skippable, not just labeled so. */
-.onboarding-progress-segment[data-optional="true"] {
-  background: repeating-linear-gradient(
-    to right,
-    var(--border) 0,
-    var(--border) 3px,
-    transparent 3px,
-    transparent 6px
-  );
-}
-
-.onboarding-progress-segment[data-optional="true"][data-filled="true"] {
-  background: repeating-linear-gradient(
-    to right,
-    var(--shell-accent, #e98428) 0,
-    var(--shell-accent, #e98428) 3px,
-    transparent 3px,
-    transparent 6px
-  );
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .onboarding-progress-segment {
-    transition: none;
   }
 }
 

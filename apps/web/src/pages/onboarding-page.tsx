@@ -20,6 +20,8 @@ import {
   ProviderMark,
 } from "@corbits/react-ui";
 import type { ChecklistStep } from "@corbits/react-ui";
+import { DialogStepper } from "@corbits/chat-ui";
+import type { DialogStepperStep } from "@corbits/chat-ui";
 import {
   ConnectorCardGrid,
   listCredentials,
@@ -52,7 +54,6 @@ import {
 } from "../onboarding";
 import type { CredentialProvider, CredentialProviderCard } from "../onboarding";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
-import { OnboardingProgress } from "../onboarding/onboarding-progress";
 
 const GUIDANCE_CARDS = [
   {
@@ -230,28 +231,32 @@ function GuidanceCards() {
   );
 }
 
-const TOTAL_STEPS = 4;
 /** "Connect your tools" is the only step the wizard lets you skip — see
  * ConnectToolsGrid's doc comment. */
-const OPTIONAL_STEP = 3;
+const ONBOARDING_STEPS: readonly DialogStepperStep[] = [
+  { label: "Name your workbench" },
+  { label: "Add a credential" },
+  { label: "Connect your tools", optional: true },
+  { label: "Run your first routine" },
+];
 
 /** Which of the four questions a given wizard phase belongs to — the
  * progress rail's only job, decoupled from the phase's own render. */
-function stepFor(phase: WizardState["phase"]): { step: number; label: string } {
+function stepFor(phase: WizardState["phase"]): number {
   switch (phase) {
     case "naming":
     case "provisioning":
     case "provisioning-error":
-      return { step: 1, label: "Name your workbench" };
+      return 1;
     case "credential":
     case "submitting":
     case "finishing-setup":
-      return { step: 2, label: "Add a credential" };
+      return 2;
     case "connect-tools":
-      return { step: 3, label: "Connect your tools" };
+      return 3;
     case "seeded":
     case "guidance":
-      return { step: 4, label: "Run your first routine" };
+      return 4;
   }
 }
 
@@ -271,16 +276,11 @@ function OnboardingPhase({
   readonly subtitle?: ReactNode;
   readonly children: ReactNode;
 }) {
-  const { step, label } = stepFor(phase);
+  const step = stepFor(phase);
   return (
     <OnboardingLayout>
       <div className="onboarding-phase" key={title}>
-        <OnboardingProgress
-          step={step}
-          totalSteps={TOTAL_STEPS}
-          label={label}
-          optionalStep={OPTIONAL_STEP}
-        />
+        <DialogStepper step={step} steps={ONBOARDING_STEPS} />
         <h1 className="onboarding-title">{title}</h1>
         {subtitle !== undefined && (
           <p className="onboarding-subtitle">{subtitle}</p>

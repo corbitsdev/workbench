@@ -4,6 +4,7 @@
 // top-left. Col2's collapse control lives on col2 itself (see
 // contextual-panel.tsx) — this bar carries no toggle of its own.
 
+import { Button } from "@corbits/react-ui";
 import { Fragment, type ReactNode } from "react";
 
 export function StageTopBar({
@@ -52,9 +53,15 @@ export function StageCrumbs({
             </span>
           ) : null}
           {crumb.onSelect !== undefined ? (
-            <button type="button" onClick={crumb.onSelect}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-auto p-0"
+              onClick={crumb.onSelect}
+            >
               {crumb.label}
-            </button>
+            </Button>
           ) : (
             <span aria-current="page">{crumb.label}</span>
           )}

@@ -7,6 +7,7 @@
 // Read-only phase (CL-5938): no editing affordances here at all — the
 // multiplayer-editing half is CL-5958's substrate to build on top of this.
 
+import { CsvTable } from "@corbits/react-ui";
 import { FileQuestion } from "lucide-react";
 import type { ArtifactRendererKind } from "./renderer-kind";
 
@@ -87,86 +88,11 @@ function DocRenderer({ content }: { readonly content: string }) {
   );
 }
 
-/** Small state-machine CSV split: handles quoted fields (`"a,b"`) and
- * escaped quotes (`""`) without pulling in a parser dependency. */
-function parseCsv(content: string): readonly (readonly string[])[] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let inQuotes = false;
-  for (let i = 0; i < content.length; i += 1) {
-    const ch = content[i];
-    if (inQuotes) {
-      if (ch === '"' && content[i + 1] === '"') {
-        field += '"';
-        i += 1;
-      } else if (ch === '"') {
-        inQuotes = false;
-      } else {
-        field += ch;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ",") {
-      row.push(field);
-      field = "";
-    } else if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && content[i + 1] === "\n") i += 1;
-      row.push(field);
-      field = "";
-      rows.push(row);
-      row = [];
-    } else {
-      field += ch;
-    }
-  }
-  if (field !== "" || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows.filter((r) => !(r.length === 1 && r[0] === ""));
-}
-
 function SheetRenderer({ content }: { readonly content: string }) {
   if (content === "") {
     return <EmptyContent message="This sheet has no rows yet." />;
   }
-  const rows = parseCsv(content);
-  if (rows.length === 0) {
-    return <EmptyContent message="This sheet has no rows yet." />;
-  }
-  const [header, ...body] = rows;
-  return (
-    <div className="overflow-auto">
-      <table className="w-full border-collapse text-xs">
-        <thead>
-          <tr>
-            {header?.map((cell, index) => (
-              <th
-                key={index}
-                className="border border-border bg-muted px-2 py-1 text-left font-semibold"
-              >
-                {cell}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {body.map((r, ri) => (
-            <tr key={ri}>
-              {r.map((cell, ci) => (
-                <td key={ci} className="border border-border px-2 py-1">
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <CsvTable text={content} caption="Sheet contents" />;
 }
 
 /** No PDF-rendering dependency is in scope for this phase — a page-styled

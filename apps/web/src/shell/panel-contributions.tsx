@@ -2,6 +2,7 @@
 // the shell so matchers are on the registry before first render.
 
 import {
+  Badge,
   EmptyState,
   formatRelativeTime,
   Input,
@@ -300,9 +301,9 @@ function ChannelPanelRow({
           <span className="shell-ch-name-row">
             <span className="shell-ch-name">{displayTitle}</span>
             {sharedLabel !== undefined && sharedLabel !== "" ? (
-              <span className="shell-ch-shared-badge" title={sharedLabel}>
+              <Badge tone="shared" title={sharedLabel}>
                 shared
-              </span>
+              </Badge>
             ) : null}
             {/* Mock: live pulse only when no unread badge. */}
             {live === true && !hasUnread ? (
@@ -314,7 +315,7 @@ function ChannelPanelRow({
           {time !== undefined && time !== "" ? (
             <span className="shell-ch-time">{time}</span>
           ) : null}
-          {hasUnread ? <span className="shell-ch-badge">{unread}</span> : null}
+          {hasUnread ? <Badge tone="accent">{unread}</Badge> : null}
         </span>
       </button>
       <div className="shell-ch-row-menu">

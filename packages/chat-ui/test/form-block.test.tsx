@@ -157,7 +157,9 @@ describe("form card round-trip", () => {
       (el.querySelector("form") as HTMLFormElement).requestSubmit();
     });
 
-    const editButton = [...el.querySelectorAll(".chat-block-action")].find(
+    const editButton = [
+      ...el.querySelectorAll(".chat-block-actions button"),
+    ].find(
       (button) => button.textContent === "Edit response",
     ) as HTMLButtonElement;
     await act(async () => {
