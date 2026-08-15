@@ -79,6 +79,40 @@ export async function sendFoldedMail(
   return { id: mailId, createdAt: now.toISOString() };
 }
 
+/** `sendFoldedMailWithRetry`'s default bound: one initial attempt plus two retries. */
+export const DEFAULT_SEND_FOLDED_MAIL_ATTEMPTS = 3;
+
+export type SendFoldedMailAttemptResult =
+  | { ok: true; mail: SentFoldedMail }
+  | { ok: false; error: unknown; attempts: number };
+
+/**
+ * `sendFoldedMail`, retried a bounded number of times against a
+ * transient failure (a sidecar hiccup, a momentary DB blip), and never
+ * throwing — a caller mid-launch (a routine fire, a webhook delivery)
+ * has already committed a real run; a first-turn mail that still fails
+ * after every retry must not un-launch that run or hide it from
+ * correlation. The caller decides what "still failed" means for it
+ * (log with the run's own id, surface a delivery-failed marker, ...);
+ * this function only bounds the retry and reports the outcome.
+ */
+export async function sendFoldedMailWithRetry(
+  deps: Pick<FoldedRunsDeps, "db" | "sessionService" | "sidecarRouter">,
+  params: SendFoldedMailParams,
+  maxAttempts: number = DEFAULT_SEND_FOLDED_MAIL_ATTEMPTS,
+): Promise<SendFoldedMailAttemptResult> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const mail = await sendFoldedMail(deps, params);
+      return { ok: true, mail };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  return { ok: false, error: lastError, attempts: maxAttempts };
+}
+
 function encodeCursor(createdAt: Date, id: string): string {
   return Buffer.from(
     JSON.stringify({ createdAt: createdAt.toISOString(), id }),
