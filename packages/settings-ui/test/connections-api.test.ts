@@ -66,6 +66,20 @@ describe("fetchOAuthConfigured", () => {
       ConnectionsApiError,
     );
   });
+
+  test("falls back to a path-free message when the body has no envelope", async () => {
+    stubFetch(() => json(undefined, 401));
+    try {
+      await fetchOAuthConfigured("tnt_1");
+      throw new Error("expected fetchOAuthConfigured to reject");
+    } catch (cause) {
+      expect(cause).toBeInstanceOf(ConnectionsApiError);
+      expect((cause as Error).message).toBe(
+        "The server answered 401 while loading connection status.",
+      );
+      expect((cause as Error).message).not.toContain("/api/");
+    }
+  });
 });
 
 describe("testConnectorCredential", () => {
