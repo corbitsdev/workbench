@@ -1350,6 +1350,31 @@ export async function createHub(config: HubConfig) {
     return { definitionId };
   }
 
+  /**
+   * A chain spawn's cleanup half: flips a definition `deployAgentDefinition`
+   * just deployed to `workflowDefinition`'s own `"stopped"` status, so a
+   * step later in the same chain failing to validate or deploy never
+   * leaves an orphaned agent nothing will ever launch. Scoped to
+   * `tenantId` + `definitionId` like every other definition write in
+   * this file; no asset/materialization cleanup, since a `"stopped"`
+   * definition is already excluded from every launch/taskability path
+   * `deployAgentDefinition` itself feeds.
+   */
+  async function undeployAgentDefinition(input: {
+    readonly tenantId: string;
+    readonly definitionId: string;
+  }): Promise<void> {
+    await db
+      .update(workflowDefinition)
+      .set({ status: "stopped" })
+      .where(
+        and(
+          eq(workflowDefinition.tenantId, input.tenantId),
+          eq(workflowDefinition.id, input.definitionId),
+        ),
+      );
+  }
+
   // A separate `CryptoProviderCache` from the task launcher's own
   // (`taskLauncherDeps.cryptoProviders`): a planning run's instance id
   // is never a real task's, but the cache is keyed by instance id
@@ -1396,6 +1421,7 @@ export async function createHub(config: HubConfig) {
             taskLauncherDeps,
             store: taskStore,
             deployAgentDefinition,
+            undeployAgentDefinition,
             // The `{create}` branch's own grant, checked deep inside
             // `dispatch` rather than at route-middleware time — the
             // definitional plan (`{use}` vs `{create}`) is only known

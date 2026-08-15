@@ -50,8 +50,11 @@ mock.module("@corbits/folded-runs", () => ({
   }),
 }));
 
-const { spawnFromTaskSpec, PlannerCredentialBindingUnavailableError } =
-  await import("./spawn");
+const {
+  spawnFromTaskSpec,
+  PlannerCredentialBindingUnavailableError,
+  PlannerCreateBoundsViolationError,
+} = await import("./spawn");
 
 const AGENT_WORKFLOW_JSON = {
   id: "wfd_agent",
@@ -271,6 +274,12 @@ function allowDefinitionCreateGrant() {
   return mock(async () => undefined);
 }
 
+function neverCalledUndeploy() {
+  return mock(() => {
+    throw new Error("undeployAgentDefinition should never be reached");
+  });
+}
+
 describe("spawnFromTaskSpec", () => {
   test("{use} branch launches directly against the named agent and links the planner run", async () => {
     const db = createFakeDb();
@@ -285,6 +294,7 @@ describe("spawnFromTaskSpec", () => {
         store,
         deployAgentDefinition,
         requireDefinitionCreateGrant: allowDefinitionCreateGrant(),
+        undeployAgentDefinition: neverCalledUndeploy(),
       },
       {
         ...INPUT_BASE,
@@ -320,6 +330,7 @@ describe("spawnFromTaskSpec", () => {
         store,
         deployAgentDefinition,
         requireDefinitionCreateGrant,
+        undeployAgentDefinition: neverCalledUndeploy(),
       },
       {
         ...INPUT_BASE,
@@ -376,6 +387,7 @@ describe("spawnFromTaskSpec", () => {
           store,
           deployAgentDefinition,
           requireDefinitionCreateGrant,
+          undeployAgentDefinition: neverCalledUndeploy(),
         },
         {
           ...INPUT_BASE,
@@ -396,6 +408,237 @@ describe("spawnFromTaskSpec", () => {
         },
       ),
     ).rejects.toBeInstanceOf(PlannerCredentialBindingUnavailableError);
+
+    expect(deployAgentDefinition).not.toHaveBeenCalled();
+    expect(await store.listTasks("tnt_1")).toEqual([]);
+  });
+});
+
+describe("spawnFromTaskSpec — chain", () => {
+  test("a chain spawns ONE task, resolving/deploying every step up front, launching only leg 1", async () => {
+    const db = createFakeDb();
+    const store = storeOverInserts(db);
+    const deployAgentDefinition = mock(async () => ({
+      definitionId: "wfd_drafter",
+    }));
+    const requireDefinitionCreateGrant = allowDefinitionCreateGrant();
+
+    const record = await spawnFromTaskSpec(
+      {
+        taskLauncherDeps: createTaskLauncherDeps(db) as never,
+        store,
+        deployAgentDefinition,
+        requireDefinitionCreateGrant,
+        undeployAgentDefinition: neverCalledUndeploy(),
+      },
+      {
+        ...INPUT_BASE,
+        spec: {
+          kind: "chain",
+          steps: [
+            { use: "wfd_agent", refinedOutcome: "Research the outage" },
+            {
+              create: {
+                name: "Drafter",
+                systemPrompt: "You draft memos.",
+                toolPackagePins: [],
+                skills: [],
+              },
+              refinedOutcome: "Draft a memo about the research",
+            },
+            { use: "wfd_reviewer", refinedOutcome: "Review the memo" },
+          ],
+        },
+      },
+    );
+
+    expect(record.definitionId).toBe("wfd_agent");
+    expect(record.stepCount).toBe(3);
+    expect(record.runIds).toHaveLength(1);
+    expect(record.plannerRunId).toBe("wfr_planner_1");
+    expect(deployAgentDefinition).toHaveBeenCalledTimes(1);
+    expect(requireDefinitionCreateGrant).toHaveBeenCalledTimes(1);
+
+    const legs = await store.listLegs("tnt_1", record.id);
+    expect(legs.map((leg) => leg.definitionId)).toEqual([
+      "wfd_agent",
+      "wfd_drafter",
+      "wfd_reviewer",
+    ]);
+    expect(legs.map((leg) => leg.prompt)).toEqual([
+      "Research the outage",
+      "Draft a memo about the research",
+      "Review the memo",
+    ]);
+    expect(legs[0]?.status).toBe("running");
+    expect(legs[0]?.runId).toBe(record.runId);
+    expect(legs[0]?.startedAt).not.toBeNull();
+    expect(legs[1]?.status).toBe("pending");
+    expect(legs[1]?.runId).toBeNull();
+    expect(legs[2]?.status).toBe("pending");
+    expect(legs[2]?.runId).toBeNull();
+
+    const stored = await store.getTask("tnt_1", record.id);
+    expect(stored?.plannerRunId).toBe("wfr_planner_1");
+  });
+
+  test("the create-grant is checked exactly once for a chain with multiple {create} steps", async () => {
+    const db = createFakeDb();
+    const store = storeOverInserts(db);
+    let deployCalls = 0;
+    const deployAgentDefinition = mock(async () => {
+      deployCalls += 1;
+      return { definitionId: `wfd_created_${String(deployCalls)}` };
+    });
+    const requireDefinitionCreateGrant = allowDefinitionCreateGrant();
+
+    await spawnFromTaskSpec(
+      {
+        taskLauncherDeps: createTaskLauncherDeps(db) as never,
+        store,
+        deployAgentDefinition,
+        requireDefinitionCreateGrant,
+        undeployAgentDefinition: neverCalledUndeploy(),
+      },
+      {
+        ...INPUT_BASE,
+        spec: {
+          kind: "chain",
+          steps: [
+            {
+              create: {
+                name: "Researcher",
+                systemPrompt: "You research.",
+                toolPackagePins: [],
+                skills: [],
+              },
+              refinedOutcome: "Research the outage",
+            },
+            { use: "wfd_agent", refinedOutcome: "Summarize the research" },
+            {
+              create: {
+                name: "Drafter",
+                systemPrompt: "You draft memos.",
+                toolPackagePins: [],
+                skills: [],
+              },
+              refinedOutcome: "Draft a memo",
+            },
+          ],
+        },
+      },
+    );
+
+    expect(requireDefinitionCreateGrant).toHaveBeenCalledTimes(1);
+    expect(deployAgentDefinition).toHaveBeenCalledTimes(2);
+  });
+
+  test("a failing middle step aborts the whole spawn and undeploys every definition already deployed — no partial chains", async () => {
+    const db = createFakeDb();
+    const store = storeOverInserts(db);
+    let deployCalls = 0;
+    const deployAgentDefinition = mock(async () => {
+      deployCalls += 1;
+      if (deployCalls === 2) {
+        throw new Error("agent-directory is unavailable");
+      }
+      return { definitionId: `wfd_created_${String(deployCalls)}` };
+    });
+    const requireDefinitionCreateGrant = allowDefinitionCreateGrant();
+    const undeployAgentDefinition = mock(async () => undefined);
+
+    await expect(
+      spawnFromTaskSpec(
+        {
+          taskLauncherDeps: createTaskLauncherDeps(db) as never,
+          store,
+          deployAgentDefinition,
+          requireDefinitionCreateGrant,
+          undeployAgentDefinition,
+        },
+        {
+          ...INPUT_BASE,
+          spec: {
+            kind: "chain",
+            steps: [
+              {
+                create: {
+                  name: "Researcher",
+                  systemPrompt: "You research.",
+                  toolPackagePins: [],
+                  skills: [],
+                },
+                refinedOutcome: "Research the outage",
+              },
+              {
+                create: {
+                  name: "Drafter",
+                  systemPrompt: "You draft memos.",
+                  toolPackagePins: [],
+                  skills: [],
+                },
+                refinedOutcome: "Draft a memo",
+              },
+              {
+                create: {
+                  name: "Reviewer",
+                  systemPrompt: "You review memos.",
+                  toolPackagePins: [],
+                  skills: [],
+                },
+                refinedOutcome: "Review the memo",
+              },
+            ],
+          },
+        },
+      ),
+    ).rejects.toThrow("agent-directory is unavailable");
+
+    expect(deployAgentDefinition).toHaveBeenCalledTimes(2);
+    expect(undeployAgentDefinition).toHaveBeenCalledTimes(1);
+    expect(undeployAgentDefinition).toHaveBeenCalledWith({
+      tenantId: "tnt_1",
+      definitionId: "wfd_created_1",
+    });
+    expect(await store.listTasks("tnt_1")).toEqual([]);
+  });
+
+  test("a {create} step violating create bounds fails closed before any step deploys", async () => {
+    const db = createFakeDb();
+    const store = storeOverInserts(db);
+    const deployAgentDefinition = mock(async () => ({
+      definitionId: "wfd_never",
+    }));
+
+    await expect(
+      spawnFromTaskSpec(
+        {
+          taskLauncherDeps: createTaskLauncherDeps(db) as never,
+          store,
+          deployAgentDefinition,
+          requireDefinitionCreateGrant: allowDefinitionCreateGrant(),
+          undeployAgentDefinition: neverCalledUndeploy(),
+        },
+        {
+          ...INPUT_BASE,
+          spec: {
+            kind: "chain",
+            steps: [
+              { use: "wfd_agent", refinedOutcome: "Research the outage" },
+              {
+                create: {
+                  name: "   ",
+                  systemPrompt: "   ",
+                  toolPackagePins: [],
+                  skills: [],
+                },
+                refinedOutcome: "Draft a memo",
+              },
+            ],
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(PlannerCreateBoundsViolationError);
 
     expect(deployAgentDefinition).not.toHaveBeenCalled();
     expect(await store.listTasks("tnt_1")).toEqual([]);
