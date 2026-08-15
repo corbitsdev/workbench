@@ -1,10 +1,12 @@
 export {
   createTask,
+  dispatchPlanner,
   getTask,
   listCatalogModels,
   listTasks,
   TasksApiError,
   type CatalogModel,
+  type PlannerTask,
   type Task,
 } from "./api";
 export { canSubmitTask, TaskComposerDialog } from "./task-composer-dialog";
