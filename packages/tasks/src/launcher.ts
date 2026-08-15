@@ -34,8 +34,8 @@ import { formatRunAddress } from "@intx/types";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { FoldedBody } from "@intx/workflow-deploy";
 
-import { task } from "./schema";
-import type { TaskStore } from "./store";
+import { task, taskLeg } from "./schema";
+import { taskLegLaunchRows, type TaskLegSpec, type TaskStore } from "./store";
 
 const log = getLogger(["tasks", "launcher"]);
 
@@ -63,6 +63,15 @@ export class TaskDefinitionNotTaskableError extends Error {
         "automation or plumbing definition, not a conversational agent)",
     );
     this.name = "TaskDefinitionNotTaskableError";
+  }
+}
+
+/** The leg's launch claim was taken by someone else (or already
+ * settled) between claiming it and committing its run. */
+export class TaskLegClaimLostError extends Error {
+  constructor(legId: string) {
+    super(`Leg "${legId}" is no longer claimed for launch`);
+    this.name = "TaskLegClaimLostError";
   }
 }
 
@@ -95,12 +104,29 @@ export type LaunchTaskInput = {
   readonly definitionId: string;
   readonly prompt: string;
   readonly modelPreference?: string;
+  /**
+   * Agents this task hands its work on to after the first, in order.
+   * Absent or empty means a single-agent task — the shape every task
+   * had before chains existed.
+   */
+  readonly followOn?: readonly TaskLegSpec[];
 };
 
-export async function launchTask(
+/**
+ * Everything a launch needs from the tenant's own rows, resolved once
+ * and shared by the opening leg and every hand-off after it. Throws
+ * the same fail-closed error classes whichever leg asked, so a
+ * hand-off to a since-undeployed agent fails as loudly as a first
+ * launch would.
+ */
+async function resolveLaunchTarget(
   deps: TaskLauncherDeps,
-  input: LaunchTaskInput,
-) {
+  input: { tenantId: string; definitionId: string; modelPreference?: string },
+): Promise<{
+  definitionRow: { id: string; name: string };
+  domain: string;
+  foldedBody: FoldedBody;
+}> {
   const definitionRow = await deps.db.query.workflowDefinition.findFirst({
     where: and(
       eq(workflowDefinition.id, input.definitionId),
@@ -158,28 +184,120 @@ export async function launchTask(
     model: input.modelPreference ?? definitionBody.model,
   };
 
-  const instanceId = generateId("workflowRun");
-  const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
-  // Hand-rolled prefix: `@intx/hub-common`'s `generateId` has no "task"
-  // kind, and its PREFIXES map is closed — [Intx gap] CL-6056 tracks
-  // adding one. Same 16-byte hex body `generateId` mints.
-  const taskId = `task_${crypto.randomUUID().replace(/-/g, "")}`;
-  const createdAt = new Date();
+  return {
+    definitionRow: { id: definitionRow.id, name: definitionRow.name },
+    domain: tenantRow.domain,
+    foldedBody,
+  };
+}
+
+type LaunchRunInput = {
+  readonly tenantId: string;
+  readonly principalId: string;
+  readonly definitionId: string;
+  readonly prompt: string;
+  readonly modelPreference?: string;
+  readonly domain: string;
+  readonly foldedBody: FoldedBody;
+  readonly instanceId: string;
+  /** Keys this launch's signing provider — the task id for an opening
+   * leg, the leg id for a hand-off. */
+  readonly cryptoKey: string;
+  readonly persistExtra: (
+    tx: Parameters<
+      NonNullable<Parameters<typeof launchFoldedRun>[1]["persistExtra"]>
+    >[0],
+  ) => Promise<void>;
+};
+
+type LaunchRunOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly attempts: number; readonly error: unknown };
+
+/**
+ * The launch core one leg needs: write the run rows (plus the caller's
+ * own row, atomically), deploy, then send the opening prompt. The
+ * prompt send is reported rather than thrown, because the run and the
+ * caller's row are already committed by the time it runs — each caller
+ * decides how to settle that honestly.
+ */
+async function launchRun(
+  deps: TaskLauncherDeps,
+  input: LaunchRunInput,
+): Promise<LaunchRunOutcome> {
+  const triggerAddress = formatRunAddress(input.instanceId, input.domain);
 
   const launched = await launchFoldedRun(deps.foldedRuns, {
     tenantId: input.tenantId,
-    instanceId,
+    instanceId: input.instanceId,
     triggerAddress,
     definitionId: input.definitionId,
-    foldedBody,
+    foldedBody: input.foldedBody,
     launchLabel: "the task agent",
+    persistExtra: input.persistExtra,
+  });
+
+  deps.lifecycle?.track(triggerAddress);
+  deps.lifecycle?.recordActivity(triggerAddress);
+
+  const cryptoProvider: CryptoProvider = await deps.cryptoProviders.get(
+    input.cryptoKey,
+  );
+
+  const sent = await sendFoldedMailWithRetry(deps.foldedRuns, {
+    tenantId: input.tenantId,
+    sessionId: launched.sessionId,
+    agentAddress: triggerAddress,
+    from: `${input.principalId}@${input.domain}`,
+    domain: input.domain,
+    content: input.prompt,
+    cryptoProvider,
+  });
+
+  if (!sent.ok) {
+    return { ok: false, attempts: sent.attempts, error: sent.error };
+  }
+
+  deps.lifecycle?.recordActivity(triggerAddress);
+  return { ok: true };
+}
+
+// Hand-rolled prefix: `@intx/hub-common`'s `generateId` has no "task"
+// kind, and its PREFIXES map is closed — [Intx gap] CL-6056 tracks
+// adding one. Same 16-byte hex body `generateId` mints.
+function mintTaskId(): string {
+  return `task_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+export async function launchTask(
+  deps: TaskLauncherDeps,
+  input: LaunchTaskInput,
+) {
+  const target = await resolveLaunchTarget(deps, input);
+  const instanceId = generateId("workflowRun");
+  const taskId = mintTaskId();
+  const createdAt = new Date();
+  const followOn = input.followOn ?? [];
+
+  const outcome = await launchRun(deps, {
+    tenantId: input.tenantId,
+    principalId: input.principalId,
+    definitionId: input.definitionId,
+    prompt: input.prompt,
+    ...(input.modelPreference !== undefined
+      ? { modelPreference: input.modelPreference }
+      : {}),
+    domain: target.domain,
+    foldedBody: target.foldedBody,
+    instanceId,
+    cryptoKey: taskId,
     persistExtra: async (tx) => {
       await tx.insert(task).values({
         id: taskId,
         tenantId: input.tenantId,
         principalId: input.principalId,
         definitionId: input.definitionId,
-        agentName: definitionRow.name,
+        agentName: target.definitionRow.name,
         prompt: input.prompt,
         modelPreference: input.modelPreference ?? null,
         status: "running",
@@ -188,34 +306,37 @@ export async function launchTask(
         createdAt,
         completedAt: null,
       });
+      await tx.insert(taskLeg).values(
+        taskLegLaunchRows(
+          {
+            id: taskId,
+            tenantId: input.tenantId,
+            principalId: input.principalId,
+            definitionId: input.definitionId,
+            agentName: target.definitionRow.name,
+            prompt: input.prompt,
+            modelPreference: input.modelPreference ?? null,
+            runId: instanceId,
+            followOn,
+          },
+          createdAt,
+        ),
+      );
     },
   });
 
-  deps.lifecycle?.track(triggerAddress);
-  deps.lifecycle?.recordActivity(triggerAddress);
-
-  const cryptoProvider: CryptoProvider = await deps.cryptoProviders.get(taskId);
-
-  const sent = await sendFoldedMailWithRetry(deps.foldedRuns, {
-    tenantId: input.tenantId,
-    sessionId: launched.sessionId,
-    agentAddress: triggerAddress,
-    from: `${input.principalId}@${tenantRow.domain}`,
-    domain: tenantRow.domain,
-    content: input.prompt,
-    cryptoProvider,
-  });
-
-  if (!sent.ok) {
-    // The run and the task row are already committed — throwing here
-    // would 422 the request while leaving a promptless "running"
-    // zombie behind. Settle the task honestly instead: flip it to
-    // failed, tell the person in their Inbox, and return the failed
-    // record so the caller sees exactly what the store now says.
+  if (!outcome.ok) {
+    // The run, the task row and its legs are already committed —
+    // throwing here would 422 the request while leaving a promptless
+    // "running" zombie behind. Settle the task honestly instead: flip
+    // it to failed, tell the person in their Inbox, and return the
+    // failed record so the caller sees exactly what the store now says.
     log.error`task ${taskId}: opening prompt failed after ${String(
-      sent.attempts,
+      outcome.attempts,
     )} attempts: ${
-      sent.error instanceof Error ? sent.error.message : String(sent.error)
+      outcome.error instanceof Error
+        ? outcome.error.message
+        : String(outcome.error)
     }`;
     const completedAt = new Date();
     await deps.store.completeTask({
@@ -228,8 +349,9 @@ export async function launchTask(
       kind: "task-result",
       tenantId: input.tenantId,
       taskId,
-      runId: instanceId,
-      agentName: definitionRow.name,
+      runIds: [instanceId],
+      stepCount: followOn.length + 1,
+      agentName: target.definitionRow.name,
       status: "failed",
       errorMessage: PROMPT_DELIVERY_FAILED_MESSAGE,
       elapsedMs: completedAt.getTime() - createdAt.getTime(),
@@ -254,11 +376,101 @@ export async function launchTask(
     return failed;
   }
 
-  deps.lifecycle?.recordActivity(triggerAddress);
-
   const record = await deps.store.getTaskByRunId(instanceId);
   if (record === null) {
     throw new Error(`task "${taskId}" was not persisted by its own launch`);
   }
   return record;
+}
+
+export type LaunchTaskLegInput = {
+  readonly tenantId: string;
+  readonly principalId: string;
+  readonly legId: string;
+  readonly definitionId: string;
+  readonly prompt: string;
+  readonly modelPreference: string | null;
+};
+
+/**
+ * Launches one hand-off leg of an already-running task. Two writes, in
+ * this order, because they answer two different questions:
+ *
+ *   - the run id is stamped inside the launch transaction, while the
+ *     leg is still `dispatching` — a crash between committing the run
+ *     and recording it would leave the leg claimable again, and the
+ *     redelivered claim would launch a SECOND agent for work the first
+ *     one is already doing;
+ *   - the leg only becomes `running` after the opening prompt has been
+ *     delivered. Until then the agent has been created but told
+ *     nothing, so the leg stays in the one state the chain's failure
+ *     path can settle — a leg marked `running` on the strength of a
+ *     send that then failed would sit there forever, and the person
+ *     would be told their work stopped at an agent that never ran.
+ *
+ * Both writes are conditional on `status = 'dispatching'`, the same
+ * winner-takes-all guard the task's own terminal flip uses.
+ */
+export async function launchTaskLeg(
+  deps: TaskLauncherDeps,
+  input: LaunchTaskLegInput,
+): Promise<string> {
+  const target = await resolveLaunchTarget(deps, {
+    tenantId: input.tenantId,
+    definitionId: input.definitionId,
+    ...(input.modelPreference !== null
+      ? { modelPreference: input.modelPreference }
+      : {}),
+  });
+  const instanceId = generateId("workflowRun");
+
+  const outcome = await launchRun(deps, {
+    tenantId: input.tenantId,
+    principalId: input.principalId,
+    definitionId: input.definitionId,
+    prompt: input.prompt,
+    ...(input.modelPreference !== null
+      ? { modelPreference: input.modelPreference }
+      : {}),
+    domain: target.domain,
+    foldedBody: target.foldedBody,
+    instanceId,
+    cryptoKey: input.legId,
+    persistExtra: async (tx) => {
+      const stamped = await tx
+        .update(taskLeg)
+        .set({ runId: instanceId })
+        .where(
+          and(
+            eq(taskLeg.id, input.legId),
+            eq(taskLeg.tenantId, input.tenantId),
+            eq(taskLeg.status, "dispatching"),
+          ),
+        )
+        .returning();
+      if (stamped.length === 0) {
+        throw new TaskLegClaimLostError(input.legId);
+      }
+    },
+  });
+
+  if (!outcome.ok) {
+    throw new Error(
+      `the next agent's instructions couldn't be delivered after ` +
+        `${String(outcome.attempts)} attempts: ${
+          outcome.error instanceof Error
+            ? outcome.error.message
+            : String(outcome.error)
+        }`,
+      { cause: outcome.error },
+    );
+  }
+
+  const started = await deps.store.confirmLegDelivery({
+    tenantId: input.tenantId,
+    legId: input.legId,
+  });
+  if (started === null) throw new TaskLegClaimLostError(input.legId);
+
+  return instanceId;
 }

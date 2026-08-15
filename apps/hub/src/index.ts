@@ -113,9 +113,11 @@ import {
 import { createAgentLifecycle } from "@corbits/agent-lifecycle";
 import {
   createDrizzleTaskStore,
+  createStuckLegSweep,
   createTaskOrchestrator,
   createTaskRoutes,
   launchTask,
+  launchTaskLeg,
 } from "@corbits/tasks";
 import {
   createPlannerRoutes,
@@ -1141,6 +1143,15 @@ export async function createHub(config: HubConfig) {
     events: sidecarRouter.events,
     notify: taskNotifyDeps,
     recordActivity: (address) => taskLifecycle.recordActivity(address),
+    launchLeg: (input) => launchTaskLeg(taskLauncherDeps, input),
+  });
+  // A hand-off claimed by a process that died has no one left to
+  // redeliver it, so a periodic pass gives up on it and tells the
+  // person — same shape `credentialExpirySweep` above uses.
+  const stuckLegSweep = createStuckLegSweep({
+    db,
+    store: taskStore,
+    notify: taskNotifyDeps,
   });
   const chatFinalizedTurnHandler = artifactDeliveryHandlerRef.current;
   artifactDeliveryHandlerRef.current = (agentAddress, turn) => {
@@ -1660,6 +1671,7 @@ export async function createHub(config: HubConfig) {
       chatOrchestrator.dispose();
       taskOrchestrator.dispose();
       taskLifecycle.stop();
+      stuckLegSweep.stop();
       routineScheduler.stop();
       credentialExpirySweep.stop();
       await insightsUsage.close();

@@ -67,6 +67,10 @@ function fakeNotify(): {
   };
 }
 
+const neverHandsOn = async (): Promise<string> => {
+  throw new Error("a single-agent task must never hand its work on");
+};
+
 async function seedRunningTask(
   store: ReturnType<typeof createMemoryTaskStore>,
 ): Promise<TaskRecord> {
@@ -97,6 +101,7 @@ describe("createTaskOrchestrator", () => {
       store,
       events,
       notify: notify.deps,
+      launchLeg: neverHandsOn,
     });
 
     events.emit("agent.event", {
@@ -145,6 +150,7 @@ describe("createTaskOrchestrator", () => {
       store,
       events,
       notify: notify.deps,
+      launchLeg: neverHandsOn,
     });
 
     events.emit("agent.event", {
@@ -184,6 +190,7 @@ describe("createTaskOrchestrator", () => {
       store,
       events,
       notify: notify.deps,
+      launchLeg: neverHandsOn,
     });
 
     const terminal = {
@@ -220,6 +227,7 @@ describe("createTaskOrchestrator", () => {
       store,
       events,
       notify: notify.deps,
+      launchLeg: neverHandsOn,
     });
 
     events.emit("agent.event", {
@@ -248,6 +256,7 @@ describe("createTaskOrchestrator", () => {
       store,
       events,
       notify: notify.deps,
+      launchLeg: neverHandsOn,
     });
 
     events.emit("agent.event", {
@@ -266,6 +275,211 @@ describe("createTaskOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  test("a chained task stays running until its final agent finishes", async () => {
+    const events = createSidecarEmitter();
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: "tnt_1",
+      principalId: "prn_alice",
+      definitionId: "wfd_agent",
+      agentName: "Agent",
+      prompt: "Draft the release notes.",
+      modelPreference: null,
+      runId: "run_1",
+      followOn: [
+        {
+          definitionId: "wfd_editor",
+          prompt: "Edit the draft.",
+          modelPreference: null,
+        },
+      ],
+    });
+    const notify = fakeNotify();
+    const runsByAddress: Record<string, string> = {
+      "run_1@tnt1.workbench.test": "run_1",
+      "run_2@tnt1.workbench.test": "run_2",
+    };
+
+    let currentAddress = "run_1@tnt1.workbench.test";
+    const orchestrator = createTaskOrchestrator({
+      db: {
+        query: {
+          workflowRun: {
+            findFirst: async () => ({
+              id: runsByAddress[currentAddress] ?? "run_1",
+              tenantId: "tnt_1",
+              principalId: "prn_alice",
+            }),
+          },
+          workflowDefinition: { findFirst: async () => ({ name: "Editor" }) },
+        },
+      } as never,
+      store,
+      events,
+      notify: notify.deps,
+      // Mirrors `launchTaskLeg`: the run is recorded first, and the leg
+      // only starts once its prompt has been delivered.
+      launchLeg: async (input) => {
+        await store.recordLegRun({
+          tenantId: input.tenantId,
+          legId: input.legId,
+          runId: "run_2",
+        });
+        await store.confirmLegDelivery({
+          tenantId: input.tenantId,
+          legId: input.legId,
+        });
+        return "run_2";
+      },
+    });
+
+    events.emit("agent.event", {
+      agentAddress: currentAddress,
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        seq: 1,
+        data: { status: "completed" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // First leg done, second leg dispatched: nothing has been mailed
+    // and the task is still running.
+    expect(notify.delivered).toHaveLength(0);
+    expect((await store.getTask("tnt_1", "task_1"))?.status).toBe("running");
+    expect((await store.listLegs("tnt_1", "task_1"))[1]?.runId).toBe("run_2");
+
+    currentAddress = "run_2@tnt1.workbench.test";
+    events.emit("agent.event", {
+      agentAddress: currentAddress,
+      sessionId: "ses_2",
+      event: {
+        type: "message.run.ended",
+        seq: 1,
+        data: { status: "completed" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(notify.delivered).toHaveLength(1);
+    const done = await store.getTask("tnt_1", "task_1");
+    expect(done?.status).toBe("done");
+    expect(done?.runIds).toEqual(["run_1", "run_2"]);
+
+    orchestrator.dispose();
+  });
+
+  test("a mid-chain failure fails the task rather than reporting it done", async () => {
+    const events = createSidecarEmitter();
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: "tnt_1",
+      principalId: "prn_alice",
+      definitionId: "wfd_agent",
+      agentName: "Agent",
+      prompt: "Draft the release notes.",
+      modelPreference: null,
+      runId: "run_1",
+      followOn: [
+        {
+          definitionId: "wfd_editor",
+          prompt: "Edit the draft.",
+          modelPreference: null,
+        },
+      ],
+    });
+    const notify = fakeNotify();
+
+    const orchestrator = createTaskOrchestrator({
+      db: createFakeDb(
+        { id: "run_1", tenantId: "tnt_1", principalId: "prn_alice" },
+        { name: "Release Notes Writer" },
+      ),
+      store,
+      events,
+      notify: notify.deps,
+      launchLeg: neverHandsOn,
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "run_1@tnt1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        seq: 1,
+        data: { status: "failed", error: { message: "the model refused" } },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const failed = await store.getTask("tnt_1", "task_1");
+    expect(failed?.status).toBe("failed");
+    expect(notify.delivered).toHaveLength(1);
+    const legs = await store.listLegs("tnt_1", "task_1");
+    expect(legs[0]?.status).toBe("failed");
+    // The agent that never ran is not reported as having done anything.
+    expect(legs[1]?.status).toBe("pending");
+    expect(failed?.runIds).toEqual(["run_1"]);
+
+    orchestrator.dispose();
+  });
+
+  test("a hand-off that cannot start the next agent fails the task", async () => {
+    const events = createSidecarEmitter();
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: "tnt_1",
+      principalId: "prn_alice",
+      definitionId: "wfd_agent",
+      agentName: "Agent",
+      prompt: "Draft the release notes.",
+      modelPreference: null,
+      runId: "run_1",
+      followOn: [
+        {
+          definitionId: "wfd_editor",
+          prompt: "Edit the draft.",
+          modelPreference: null,
+        },
+      ],
+    });
+    const notify = fakeNotify();
+
+    const orchestrator = createTaskOrchestrator({
+      db: createFakeDb(
+        { id: "run_1", tenantId: "tnt_1", principalId: "prn_alice" },
+        { name: "Release Notes Writer" },
+      ),
+      store,
+      events,
+      notify: notify.deps,
+      launchLeg: async () => {
+        throw new Error("that agent is no longer available");
+      },
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "run_1@tnt1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        seq: 1,
+        data: { status: "completed" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect((await store.getTask("tnt_1", "task_1"))?.status).toBe("failed");
+    expect(notify.delivered).toHaveLength(1);
+    expect((await store.listLegs("tnt_1", "task_1"))[1]?.status).toBe("failed");
+
+    orchestrator.dispose();
+  });
+
   test("dispose stops the subscription", async () => {
     const events = createSidecarEmitter();
     const store = createMemoryTaskStore();
@@ -280,6 +494,7 @@ describe("createTaskOrchestrator", () => {
       store,
       events,
       notify: notify.deps,
+      launchLeg: neverHandsOn,
     });
     orchestrator.dispose();
 
