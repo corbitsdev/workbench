@@ -16,7 +16,7 @@
   "dependencies": {
     "@corbits/bench-ui": "workspace:*",
     "@corbits/chat-ui": "workspace:*",
-    "@corbits/react-ui": "github:corbitsdev/react-ui#0627774e9d333486596ca72eb713ff7bd1b75614",
+    "@corbits/react-ui": "github:corbitsdev/react-ui#07828a052dd9082a98f23977d5d33119580093c9",
     "@corbits/workflow-catalog": "workspace:*",
     "@intx/types": "workspace:*",
     "@workbench/connections": "workspace:*",
