@@ -13,6 +13,7 @@ export {
   PlannerReferenceOutOfInventoryError,
   PlannerReplyUnparseableError,
   TaskSpec,
+  TaskStep,
 } from "./task-spec";
 // Re-exported from `@corbits/folded-runs` (where `runOneShotFoldedPrompt`
 // now lives, CL-6051 finding 12) rather than dropped: this package's own
