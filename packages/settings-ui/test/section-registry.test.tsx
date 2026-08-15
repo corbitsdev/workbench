@@ -36,14 +36,14 @@ function ids(groups: ReturnType<typeof resolveSettingsSectionGroups>) {
 describe("resolveSettingsSectionGroups", () => {
   test("Personal is always full; gated Workspace sections are absent, not disabled", () => {
     expect(ids(resolveSettingsSectionGroups(denied))).toEqual([
-      { id: "personal", sections: ["agent", "chat", "account"] },
+      { id: "personal", sections: ["chat", "account"] },
       { id: "workspace", sections: ["bench", "audit"] },
     ]);
   });
 
   test("an allowed gate adds its section in registry order", () => {
     expect(ids(resolveSettingsSectionGroups(allowed))).toEqual([
-      { id: "personal", sections: ["agent", "chat", "account"] },
+      { id: "personal", sections: ["chat", "account"] },
       {
         id: "workspace",
         sections: [
@@ -66,9 +66,20 @@ describe("resolveSettingsSectionGroups", () => {
       credentials: "denied",
     };
     expect(ids(resolveSettingsSectionGroups(loading))).toEqual([
-      { id: "personal", sections: ["agent", "chat", "account"] },
+      { id: "personal", sections: ["chat", "account"] },
       { id: "workspace", sections: ["bench", "grants", "audit"] },
     ]);
+  });
+
+  test("never registers the personal agent section — no preference store exists to back it yet", () => {
+    for (const access of [denied, allowed]) {
+      const personal = resolveSettingsSectionGroups(access).find(
+        (group) => group.id === "personal",
+      );
+      expect(personal?.sections.map((section) => section.id)).not.toContain(
+        "agent",
+      );
+    }
   });
 
   test("every section carries a leading icon for a host's own nav", () => {
@@ -92,7 +103,7 @@ describe("insertWorkspaceSections", () => {
       extra,
     );
     expect(ids(groups)).toEqual([
-      { id: "personal", sections: ["agent", "chat", "account"] },
+      { id: "personal", sections: ["chat", "account"] },
       { id: "workspace", sections: ["bench", "agents", "skills", "audit"] },
     ]);
   });
@@ -104,7 +115,6 @@ describe("insertWorkspaceSections", () => {
     );
     const personal = groups.find((group) => group.id === "personal");
     expect(personal?.sections.map((section) => section.id)).toEqual([
-      "agent",
       "chat",
       "account",
     ]);
