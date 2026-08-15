@@ -1,14 +1,12 @@
 // Settings · Skills, over the workbench's real skill registry
 // (`@corbits/skills`, via `../skills-api.ts`). This replaced the
 // session-local store CL-5991 shipped: a skill now lives in a native
-// `kind:"skill"` hub asset, its version history is that asset's git
-// history, and a draft is a pending row on the same registry rather than
-// something that vanishes with the browser tab.
+// `kind:"skill"` hub asset the moment it is created, and its version
+// history is that asset's git history.
 //
-// Three states a skill can be in, all visible here:
-//   pending  — a draft exists; publishing turns it into a real skill
-//   private  — published, visible only to the person who wrote it
-//   shared   — published and shared with the whole workbench
+// Two states a skill can be in, both visible here:
+//   private  — visible only to the person who wrote it (the default)
+//   shared   — visible to the whole workbench
 //
 // There is no external catalog: skills are authored in this workbench.
 // "Share with workbench" and "Make private" are the two directions of
@@ -35,29 +33,27 @@ import { useCallback, useEffect, useState } from "react";
 
 import { consumePendingNewSkill } from "../command-palette-actions";
 import {
-  createSkillDraft,
-  discardSkillDraft,
-  listSkillDrafts,
+  createSkill,
   listSkills,
   listSkillVersions,
   loadSkill,
-  publishSkillDraft,
   restoreSkillVersion,
   setSkillScope,
   type PinnedByEntry,
   type SkillDetail,
-  type SkillDraft,
   type SkillSummary,
   type SkillVersion,
 } from "../skills-api";
-import { CreateSkillDialog, type SkillDraftInput } from "./create-skill-dialog";
+import {
+  CreateSkillDialog,
+  type SkillCreateInput,
+} from "./create-skill-dialog";
 
 type RegistryState =
   | { readonly status: "loading" }
   | {
       readonly status: "ready";
       readonly skills: readonly SkillSummary[];
-      readonly drafts: readonly SkillDraft[];
     }
   | { readonly status: "error"; readonly message: string };
 
@@ -281,17 +277,13 @@ export function SkillsSettingsSection({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(entityId ?? null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     if (tenantId === null) return;
     setState({ status: "loading" });
     try {
-      const [skills, drafts] = await Promise.all([
-        listSkills(tenantId),
-        listSkillDrafts(tenantId),
-      ]);
-      setState({ status: "ready", skills, drafts });
+      const skills = await listSkills(tenantId);
+      setState({ status: "ready", skills });
     } catch (cause) {
       setState({ status: "error", message: messageOf(cause) });
     }
@@ -321,46 +313,19 @@ export function SkillsSettingsSection({
     );
   }
 
-  async function handleDrafted(draft: SkillDraftInput) {
+  async function handleCreate(input: SkillCreateInput) {
     if (tenantId === null) return;
-    setActionError(null);
-    try {
-      await createSkillDraft(tenantId, draft);
-      setCreateOpen(false);
-      await reload();
-    } catch (cause) {
-      setActionError(messageOf(cause));
-    }
-  }
-
-  async function handlePublish(name: string) {
-    if (tenantId === null) return;
-    setActionError(null);
-    try {
-      await publishSkillDraft(tenantId, name, "private");
-      await reload();
-      select(name);
-    } catch (cause) {
-      setActionError(messageOf(cause));
-    }
-  }
-
-  async function handleDiscard(name: string) {
-    if (tenantId === null) return;
-    setActionError(null);
-    try {
-      await discardSkillDraft(tenantId, name);
-      await reload();
-    } catch (cause) {
-      setActionError(messageOf(cause));
-    }
+    const skill = await createSkill(tenantId, input);
+    setCreateOpen(false);
+    await reload();
+    select(skill.name);
   }
 
   const createDialog = (
     <CreateSkillDialog
       open={createOpen}
       onOpenChange={setCreateOpen}
-      onDrafted={(draft) => void handleDrafted(draft)}
+      onCreate={handleCreate}
     />
   );
 
@@ -384,13 +349,6 @@ export function SkillsSettingsSection({
     );
   }
 
-  const errorNote =
-    actionError === null ? null : (
-      <p className="text-sm text-danger-foreground" role="alert">
-        {actionError}
-      </p>
-    );
-
   if (selected !== null) {
     return (
       <div className="flex flex-col gap-4">
@@ -399,7 +357,6 @@ export function SkillsSettingsSection({
             All skills
           </Button>
         </div>
-        {errorNote}
         <SkillDetailView
           tenantId={tenantId}
           name={selected}
@@ -411,12 +368,11 @@ export function SkillsSettingsSection({
     );
   }
 
-  const { skills, drafts } = state;
+  const { skills } = state;
 
-  if (skills.length === 0 && drafts.length === 0) {
+  if (skills.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        {errorNote}
         <RichEmptyState
           icon={<Sparkles />}
           title="No skills yet"
@@ -460,48 +416,6 @@ export function SkillsSettingsSection({
           <Plus /> New skill
         </Button>
       </div>
-      {errorNote}
-
-      {drafts.length > 0 && (
-        <Section
-          title="Pending"
-          description="Drafts nobody else can see yet. Publishing adds the skill to this workbench's registry."
-        >
-          <div className="flex flex-col gap-1">
-            {drafts.map((draft) => (
-              <SidebarItemRow
-                key={draft.assetId}
-                leading={<Sparkles />}
-                name={
-                  <span className="panel-row-copy">
-                    <strong>{draft.name}</strong>
-                    <span>{draft.description}</span>
-                  </span>
-                }
-                meta={
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void handleDiscard(draft.name)}
-                    >
-                      Discard
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => void handlePublish(draft.name)}
-                    >
-                      Publish
-                    </Button>
-                  </div>
-                }
-              />
-            ))}
-          </div>
-        </Section>
-      )}
 
       {filtered.length === 0 ? (
         <EmptyState

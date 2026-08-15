@@ -28,12 +28,10 @@ export {
   type PinnedSkillIndexEntry,
 } from "./prompt";
 export {
-  DRAFT_ASSET_NAME_PREFIX,
   SkillRegistryError,
   createSkillRegistry,
   type CreateSkillRegistryDeps,
   type SkillDetail,
-  type SkillDraftSummary,
   type SkillRegistry,
   type SkillRegistryErrorReason,
   type SkillSummary,

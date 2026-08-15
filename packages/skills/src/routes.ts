@@ -25,13 +25,12 @@ export type PinnedByResolver = {
   >;
 };
 
-const CreateDraftBody = type({
+const CreateSkillBody = type({
   name: "string",
   description: "string",
   body: "string",
+  scope: skillAccessScopeSchema,
 });
-
-const PublishDraftBody = type({ scope: skillAccessScopeSchema });
 
 const RestoreBody = type({ commitSha: "string > 0" });
 
@@ -90,50 +89,22 @@ export function createSkillRoutes({
     return c.json({ skills });
   });
 
-  app.get("/drafts", requireGrant("asset:*", "read"), async (c) => {
-    return c.json({ drafts: await registry.listDrafts(caller(c)) });
-  });
-
-  app.post("/drafts", requireGrant("asset:*", "create"), async (c) => {
-    const body = CreateDraftBody(await c.req.json().catch(() => undefined));
+  app.post("/", requireGrant("asset:*", "create"), async (c) => {
+    const body = CreateSkillBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid skill draft: ${body.summary}`),
+        errorEnvelope("bad_request", `invalid skill: ${body.summary}`),
         400,
       );
     }
-    const draft = await registry.createDraft(caller(c), {
+    const skill = await registry.create(caller(c), {
       name: body.name,
       description: body.description,
       body: body.body,
+      scope: body.scope,
     });
-    return c.json({ draft }, 201);
+    return c.json({ skill }, 201);
   });
-
-  app.delete("/drafts/:name", requireGrant("asset:*", "create"), async (c) => {
-    await registry.discardDraft(caller(c), c.req.param("name"));
-    return c.body(null, 204);
-  });
-
-  app.post(
-    "/drafts/:name/publish",
-    requireGrant("asset:*", "create"),
-    async (c) => {
-      const body = PublishDraftBody(await c.req.json().catch(() => undefined));
-      if (body instanceof type.errors) {
-        return c.json(
-          errorEnvelope("bad_request", `invalid publish: ${body.summary}`),
-          400,
-        );
-      }
-      const skill = await registry.publishDraft(
-        caller(c),
-        c.req.param("name"),
-        body.scope,
-      );
-      return c.json({ skill }, 201);
-    },
-  );
 
   app.get("/:name", requireGrant("asset:*", "read"), async (c) => {
     const name = c.req.param("name");

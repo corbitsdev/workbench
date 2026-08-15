@@ -5,8 +5,8 @@
 // as undefined leaking into the page.
 //
 // This replaced the session-local skill store CL-5991 shipped: there is
-// exactly one registry now, and a "draft" is a pending row on it rather
-// than something that lives only in a browser tab.
+// exactly one registry now, and creating a skill writes it directly —
+// there is no pending draft stage.
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
@@ -48,23 +48,13 @@ const SkillVersion = type({
 });
 export type SkillVersion = typeof SkillVersion.infer;
 
-const SkillDraft = type({
-  assetId: "string",
-  name: "string",
-  description: "string",
-  updatedAtIso: "string",
-});
-export type SkillDraft = typeof SkillDraft.infer;
-
 const SkillListResponse = type({ skills: SkillSummary.array() });
-const SkillDraftListResponse = type({ drafts: SkillDraft.array() });
 const SkillDetailResponse = type({
   skill: SkillDetail,
   pinnedBy: PinnedByEntry.array(),
 });
 const SkillVersionsResponse = type({ versions: SkillVersion.array() });
 const SkillResponse = type({ skill: SkillSummary });
-const SkillDraftResponse = type({ draft: SkillDraft });
 
 const ErrorEnvelope = type({ error: { message: "string" } });
 
@@ -123,14 +113,6 @@ export function listSkills(
   );
 }
 
-export function listSkillDrafts(
-  tenantId: string,
-): Promise<readonly SkillDraft[]> {
-  return request(`${base(tenantId)}/drafts`, SkillDraftListResponse).then(
-    (page) => page.drafts,
-  );
-}
-
 export function loadSkill(
   tenantId: string,
   name: string,
@@ -154,45 +136,25 @@ export function listSkillVersions(
   ).then((page) => page.versions);
 }
 
-export function createSkillDraft(
+const DEFAULT_CREATE_SCOPE: SkillScope = "private";
+
+/**
+ * Creates a skill directly as a native `kind:"skill"` asset — no pending
+ * draft stage. New skills start private; sharing is the separate
+ * `setSkillScope` toggle below.
+ */
+export function createSkill(
   tenantId: string,
   input: {
     readonly name: string;
     readonly description: string;
     readonly body: string;
   },
-): Promise<SkillDraft> {
-  return request(`${base(tenantId)}/drafts`, SkillDraftResponse, {
-    method: "POST",
-    body: input,
-  }).then((page) => page.draft);
-}
-
-export function discardSkillDraft(
-  tenantId: string,
-  name: string,
-): Promise<void> {
-  return request<void>(
-    `${base(tenantId)}/drafts/${encodeURIComponent(name)}`,
-    (data): void => {
-      if (data !== undefined) {
-        throw new Error("expected an empty response body");
-      }
-    },
-    { method: "DELETE" },
-  );
-}
-
-export function publishSkillDraft(
-  tenantId: string,
-  name: string,
-  scope: SkillScope,
 ): Promise<SkillSummary> {
-  return request(
-    `${base(tenantId)}/drafts/${encodeURIComponent(name)}/publish`,
-    SkillResponse,
-    { method: "POST", body: { scope } },
-  ).then((page) => page.skill);
+  return request(base(tenantId), SkillResponse, {
+    method: "POST",
+    body: { ...input, scope: DEFAULT_CREATE_SCOPE },
+  }).then((page) => page.skill);
 }
 
 export function restoreSkillVersion(

@@ -1,22 +1,7 @@
-// The skill registry. One surface, one store: every skill — draft or
-// published — is a native `kind:"skill"` hub asset carrying a single
-// `<name>/SKILL.md`, and every version of it is a commit on that asset's
-// default ref.
-//
-// Drafts. The hub's asset kinds are a closed set
-// (`vendor/intx/hub-api/src/routes/assets.ts`'s `KIND_VALUES`:
-// agent-state, skill, package-registry, workflow) and vendored code is
-// never edited here, so there is no `skill-draft` kind to create. A
-// draft is instead a real `kind:"skill"` asset whose asset name carries
-// the `draft-` prefix, and its existence IS the pending state: a
-// prefixed asset never appears in `list`/`search`/`load`, and it carries
-// no `skill_access` row at all, so nothing can read it but its own
-// author's draft surface. Publishing creates the canonical asset,
-// commits the draft's SKILL.md into it, writes the access row, and only
-// then drops the draft asset — so a crash mid-publish leaves the draft
-// standing (still pending, retryable) rather than a half-published skill.
-// The `draft-` prefix is therefore reserved: a skill may not be named
-// into it.
+// The skill registry. One surface, one store: every skill is a native
+// `kind:"skill"` hub asset carrying a single `<name>/SKILL.md`, and every
+// version of it is a commit on that asset's default ref. Creating a skill
+// creates that asset directly — there is no intermediate pending state.
 import {
   canAdministerSkill,
   isSkillVisibleTo,
@@ -34,8 +19,6 @@ import {
   SkillContentError,
 } from "./skill-md";
 import { type } from "arktype";
-
-export const DRAFT_ASSET_NAME_PREFIX = "draft-";
 
 export type SkillRegistryErrorReason =
   "not_found" | "forbidden" | "conflict" | "invalid";
@@ -60,13 +43,6 @@ export type SkillSummary = {
 
 export type SkillDetail = SkillSummary & { readonly body: string };
 
-export type SkillDraftSummary = {
-  readonly assetId: string;
-  readonly name: string;
-  readonly description: string;
-  readonly updatedAtIso: string;
-};
-
 export type SkillVersion = SkillCommit & { readonly current: boolean };
 
 export type SkillRegistry = {
@@ -84,20 +60,14 @@ export type SkillRegistry = {
     name: string,
     scope: SkillAccessScope,
   ): Promise<SkillSummary>;
-  listDrafts(caller: SkillCaller): Promise<readonly SkillDraftSummary[]>;
-  createDraft(
+  create(
     caller: SkillCaller,
     input: {
       readonly name: string;
       readonly description: string;
       readonly body: string;
+      readonly scope: SkillAccessScope;
     },
-  ): Promise<SkillDraftSummary>;
-  discardDraft(caller: SkillCaller, name: string): Promise<void>;
-  publishDraft(
-    caller: SkillCaller,
-    name: string,
-    scope: SkillAccessScope,
   ): Promise<SkillSummary>;
 };
 
@@ -106,22 +76,12 @@ export type CreateSkillRegistryDeps = {
   access: SkillAccessStore;
 };
 
-function draftAssetName(skillName: string): string {
-  return `${DRAFT_ASSET_NAME_PREFIX}${skillName}`;
-}
-
 function assertSkillName(raw: string): string {
   const parsed = skillNameSchema(raw);
   if (parsed instanceof type.errors) {
     throw new SkillRegistryError(
       "invalid",
       `skill name ${JSON.stringify(raw)} is invalid: ${parsed.summary}`,
-    );
-  }
-  if (parsed.startsWith(DRAFT_ASSET_NAME_PREFIX)) {
-    throw new SkillRegistryError(
-      "invalid",
-      `skill name ${JSON.stringify(raw)} is reserved: the "${DRAFT_ASSET_NAME_PREFIX}" prefix marks a pending draft`,
     );
   }
   return parsed;
@@ -317,31 +277,9 @@ export function createSkillRegistry(
       return summary;
     },
 
-    async listDrafts(caller) {
-      const assetRows = await assets.listForTenant(caller.tenantId);
-      const drafts: SkillDraftSummary[] = [];
-      for (const assetRow of assetRows) {
-        if (!assetRow.name.startsWith(DRAFT_ASSET_NAME_PREFIX)) continue;
-        if (assetRow.creatorPrincipalId !== caller.principalId) continue;
-        const skillName = assetRow.name.slice(DRAFT_ASSET_NAME_PREFIX.length);
-        const contents = await assets.readSkillMd({
-          assetId: assetRow.id,
-          skillName,
-        });
-        if (contents === null) continue;
-        const parsed = parseSkillMd(contents);
-        drafts.push({
-          assetId: assetRow.id,
-          name: parsed.name,
-          description: parsed.description,
-          updatedAtIso: assetRow.updatedAt.toISOString(),
-        });
-      }
-      return drafts.sort((a, b) => a.name.localeCompare(b.name));
-    },
-
-    async createDraft(caller, input) {
+    async create(caller, input) {
       const name = assertSkillName(input.name);
+      const parsedScope = assertScope(input.scope);
       let contents: string;
       try {
         contents = buildSkillMd({
@@ -352,24 +290,16 @@ export function createSkillRegistry(
       } catch (cause) {
         contentErrorToRegistryError(cause);
       }
-      const published = await assets.findByName(caller.tenantId, name);
-      if (published !== null) {
+      const existing = await assets.findByName(caller.tenantId, name);
+      if (existing !== null) {
         throw new SkillRegistryError(
           "conflict",
           `a skill named "${name}" already exists in this workbench`,
         );
       }
-      const draftName = draftAssetName(name);
-      const existingDraft = await assets.findByName(caller.tenantId, draftName);
-      if (existingDraft !== null) {
-        throw new SkillRegistryError(
-          "conflict",
-          `a draft of "${name}" is already pending`,
-        );
-      }
       const created = await assets.create({
         tenantId: caller.tenantId,
-        name: draftName,
+        name,
         displayName: name,
         creatorPrincipalId: caller.principalId,
       });
@@ -377,111 +307,22 @@ export function createSkillRegistry(
         assetId: created.id,
         skillName: name,
         contents,
-        message: `Draft ${name}`,
-      });
-      return {
-        assetId: created.id,
-        name,
-        description: parseSkillMd(contents).description,
-        updatedAtIso: created.updatedAt.toISOString(),
-      };
-    },
-
-    async discardDraft(caller, name) {
-      const draft = await assets.findByName(
-        caller.tenantId,
-        draftAssetName(name),
-      );
-      if (draft === null || draft.creatorPrincipalId !== caller.principalId) {
-        throw new SkillRegistryError(
-          "not_found",
-          `no pending draft of "${name}"`,
-        );
-      }
-      await assets.remove(draft.id);
-    },
-
-    async publishDraft(caller, name, scope) {
-      const parsedScope = assertScope(scope);
-      const skillName = assertSkillName(name);
-      const draft = await assets.findByName(
-        caller.tenantId,
-        draftAssetName(skillName),
-      );
-      if (draft === null || draft.creatorPrincipalId !== caller.principalId) {
-        throw new SkillRegistryError(
-          "not_found",
-          `no pending draft of "${skillName}"`,
-        );
-      }
-      const contents = await assets.readSkillMd({
-        assetId: draft.id,
-        skillName,
-      });
-      if (contents === null) {
-        throw new SkillRegistryError(
-          "not_found",
-          `draft of "${skillName}" has no SKILL.md`,
-        );
-      }
-      const existing = await assets.findByName(caller.tenantId, skillName);
-      if (existing !== null) {
-        const existingRow = await access.get(existing.id);
-        if (existingRow === null) {
-          throw new SkillRegistryError(
-            "conflict",
-            `a skill named "${skillName}" already exists in this workbench`,
-          );
-        }
-        // The canonical asset already exists and the caller's draft of the
-        // same name is still here too: since only one draft can ever exist
-        // per name and a draft never outlives its own publish, the only way
-        // to reach this state is a prior publishDraft call that created the
-        // canonical asset and then failed or timed out before removing the
-        // draft. Resume by finishing that cleanup — never re-create or
-        // overwrite the canonical asset — so retrying a stuck publish
-        // completes instead of 409ing forever.
-        await assets.remove(draft.id);
-        const summaries = await summarize(caller, [existingRow]);
-        const summary = summaries[0];
-        if (summary === undefined) {
-          throw new SkillRegistryError(
-            "not_found",
-            `published skill "${skillName}" is not readable back`,
-          );
-        }
-        return summary;
-      }
-      const published = await assets.create({
-        tenantId: caller.tenantId,
-        name: skillName,
-        displayName: skillName,
-        creatorPrincipalId: caller.principalId,
-      });
-      await assets.writeSkillMd({
-        assetId: published.id,
-        skillName,
-        contents,
-        message: `Publish ${skillName}`,
+        message: `Create ${name}`,
       });
       const row: SkillAccessRow = {
-        assetId: published.id,
+        assetId: created.id,
         tenantId: caller.tenantId,
-        skillName,
+        skillName: name,
         creatorPrincipalId: caller.principalId,
         scope: parsedScope,
       };
       await access.upsert(row);
-      // Last: until the draft asset is gone the skill is still pending,
-      // so a failure anywhere above leaves a retryable draft rather than
-      // an orphaned half-published skill.
-      await assets.remove(draft.id);
       const summaries = await summarize(caller, [row]);
       const summary = summaries[0];
       if (summary === undefined) {
         throw new SkillRegistryError(
           "not_found",
-          `published skill "${skillName}" is not readable back`,
+          `created skill "${name}" is not readable back`,
         );
       }
       return summary;

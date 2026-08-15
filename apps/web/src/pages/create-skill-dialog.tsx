@@ -1,9 +1,11 @@
 // The create-skill form: identity (name, description) and the skill
 // body itself (the instructions/tools text). Submitting hands the
-// values to `onDrafted`, which the Skills section turns into a pending
-// draft in the workbench's registry (`../skills-api.ts`); a separate
-// Publish action is what makes the skill real. The dialog itself owns
-// only the form.
+// values to `onCreate`, which the Skills section turns directly into a
+// native `kind:"skill"` asset in the workbench's registry
+// (`../skills-api.ts`) — there is no intermediate draft. A rejection
+// from that call (a name conflict, or SKILL.md frontmatter the registry
+// refuses) surfaces inline here rather than closing the dialog, so the
+// person never loses what they typed.
 //
 // The name field is bound by the registry's own rule — lowercase
 // letters, digits, and hyphens — because that is what a SKILL.md's
@@ -25,7 +27,7 @@ import {
 import type { IntakeField } from "@corbits/react-ui";
 import { useState } from "react";
 
-export type SkillDraftInput = {
+export type SkillCreateInput = {
   readonly name: string;
   readonly description: string;
   readonly body: string;
@@ -88,10 +90,6 @@ export function validationIssues(values: FormValues): readonly string[] {
     );
   } else if (name.length > 64) {
     issues.push("Name must be at most 64 characters.");
-  } else if (name.startsWith("draft-")) {
-    issues.push(
-      'Name cannot start with "draft-" — that prefix marks a pending draft.',
-    );
   }
   if (values.description.trim() === "") issues.push("Description is required.");
   if (values.body.trim() === "") issues.push("Skill body is required.");
@@ -101,20 +99,23 @@ export function validationIssues(values: FormValues): readonly string[] {
 export function CreateSkillDialog({
   open,
   onOpenChange,
-  onDrafted,
+  onCreate,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  /** Receives the authored values; the Skills section turns them into a
-   * pending draft on the registry. */
-  readonly onDrafted: (draft: SkillDraftInput) => void;
+  /** Creates the skill directly on the registry. A rejection's message is
+   * shown inline and the form is left as typed. */
+  readonly onCreate: (input: SkillCreateInput) => Promise<void>;
 }) {
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
   const [showIssues, setShowIssues] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   function reset() {
     setValues(EMPTY_VALUES);
     setShowIssues(false);
+    setServerError(null);
   }
 
   function handleOpenChange(next: boolean) {
@@ -132,18 +133,25 @@ export function CreateSkillDialog({
 
   const issues = validationIssues(values);
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (issues.length > 0) {
       setShowIssues(true);
       return;
     }
-    const draft: SkillDraftInput = {
-      name: values.name.trim(),
-      description: values.description.trim(),
-      body: values.body.trim(),
-    };
-    reset();
-    onDrafted(draft);
+    setServerError(null);
+    setSubmitting(true);
+    try {
+      await onCreate({
+        name: values.name.trim(),
+        description: values.description.trim(),
+        body: values.body.trim(),
+      });
+      reset();
+    } catch (cause) {
+      setServerError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -167,6 +175,11 @@ export function CreateSkillDialog({
               ))}
             </ul>
           )}
+          {serverError !== null && (
+            <p className="mb-3 text-sm text-destructive" role="alert">
+              {serverError}
+            </p>
+          )}
           <IntakeForm
             fields={FIELDS}
             values={values}
@@ -184,8 +197,8 @@ export function CreateSkillDialog({
           </Button>
           <Button
             type="button"
-            onClick={handleSubmit}
-            disabled={!intakeFieldsComplete(FIELDS, values)}
+            onClick={() => void handleSubmit()}
+            disabled={submitting || !intakeFieldsComplete(FIELDS, values)}
           >
             Create skill
           </Button>
