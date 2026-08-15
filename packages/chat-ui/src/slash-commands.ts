@@ -28,12 +28,12 @@ export const SLASH_COMMANDS: readonly SlashCommandSpec[] = [
   {
     id: "invite",
     name: "/invite",
-    description: "Invite an agent to this channel",
+    description: "Invite an agent to this conversation",
   },
   {
     id: "summarize",
     name: "/summarize",
-    description: "Ask this channel's agent to summarize the thread",
+    description: "Ask this conversation's agent to summarize the thread",
   },
   { id: "run", name: "/run", description: "Run a routine now" },
   {
@@ -44,7 +44,7 @@ export const SLASH_COMMANDS: readonly SlashCommandSpec[] = [
   {
     id: "agents",
     name: "/agents",
-    description: "Open this channel's agents settings",
+    description: "Open this conversation's agents settings",
   },
   { id: "help", name: "/help", description: "List available commands" },
 ];

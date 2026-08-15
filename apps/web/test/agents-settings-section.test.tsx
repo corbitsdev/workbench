@@ -120,7 +120,7 @@ describe("AgentsSettingsSection", () => {
     expect(el.textContent).toContain("Answers research questions");
     expect(el.textContent).toContain("Active agents (1)");
     expect(el.textContent).toContain("Start chat");
-    expect(el.textContent).toContain("Open in channel");
+    expect(el.textContent).toContain("Open in space");
     expect(el.innerHTML).not.toContain("ins_1@acme.localhost");
   });
 

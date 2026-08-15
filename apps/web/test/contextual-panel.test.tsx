@@ -129,7 +129,7 @@ describe("ContextualPanel", () => {
     }
     expect(container.innerHTML).toContain("Quiet right now");
     expect(container.innerHTML).toContain(
-      "Channels and running routines for this workbench will appear here.",
+      "Spaces, chats, and running routines for this workbench will appear here.",
     );
     root.unmount();
     container.remove();

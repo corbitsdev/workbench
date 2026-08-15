@@ -560,7 +560,7 @@ describe("rowMenuLabels", () => {
     expect(rowMenuLabels({ pinned: true })).toEqual([
       "Rename",
       "Unpin",
-      "Channel settings",
+      "Settings",
     ]);
   });
 
@@ -568,7 +568,7 @@ describe("rowMenuLabels", () => {
     expect(rowMenuLabels({ pinned: false })).toEqual([
       "Rename",
       "Pin",
-      "Channel settings",
+      "Settings",
     ]);
   });
 });

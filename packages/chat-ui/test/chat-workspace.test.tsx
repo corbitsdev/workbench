@@ -228,7 +228,7 @@ describe("ChatWorkspace settings surface", () => {
     await harness.settle();
 
     const gearButton = harness.container.querySelector(
-      'button[aria-label="Channel settings"]',
+      'button[aria-label="Settings"]',
     ) as HTMLButtonElement;
     act(() => gearButton.click());
     await harness.settle();

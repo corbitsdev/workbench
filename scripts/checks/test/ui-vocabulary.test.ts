@@ -179,11 +179,22 @@ test("a reintroduced Channels JSX label attribute is a violation", () => {
   expect(report.violations).toHaveLength(1);
 });
 
-test("prose that merely mentions Channels is not a band-label violation", () => {
+test("prose mentioning Channels is now a plain banned-term violation, not just a band-label one (CL-6071)", () => {
   const report = auditUiVocabulary([
     {
       relPath: "apps/web/src/shell/panel-contributions.tsx",
       contents: `description="Channels and running routines for this workbench will appear here."`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("channel");
+});
+
+test("the current 'Spaces, chats, and running routines' copy is clean", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/panel-contributions.tsx",
+      contents: `description="Spaces, chats, and running routines for this workbench will appear here."`,
     },
   ]);
   expect(report.violations).toEqual([]);
@@ -207,6 +218,61 @@ test("chat-ui's channel-kind section label is not a band-label violation", () =>
     },
   ]);
   expect(report.violations).toEqual([]);
+});
+
+test("a reintroduced 'channel' in user-facing prose is a violation (CL-6071: channel is now space/chat)", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "packages/chat-ui/src/strings.ts",
+      contents: `noChannelsTitle: "No channel yet",`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("channel");
+});
+
+test("reports a 'channel' violation alongside other banned terms in the same file", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/pages/agents-settings-section.tsx",
+      contents: [
+        `title="No bench selected"`,
+        `description="Invite this agent into a channel to get started"`,
+      ].join("\n"),
+    },
+  ]);
+  expect(report.violations.length).toBeGreaterThanOrEqual(2);
+});
+
+test("'kind: \"channel\"' internal type literals never false-match — no space, not prose", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "packages/chat-ui/src/api.ts",
+      contents: `export const ChannelKind = type("'channel' | 'chat'");`,
+    },
+  ]);
+  expect(report.violations).toEqual([]);
+});
+
+test("a variable named after a banned term inside a template-literal interpolation never false-matches (CL-6071: `channel` is a common local var)", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/pages/routines-page.tsx",
+      contents: "`${when}, delivers to ${channel.title}.`",
+    },
+  ]);
+  expect(report.violations).toEqual([]);
+});
+
+test("the same template literal still catches a banned term outside any interpolation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/pages/routines-page.tsx",
+      contents: "`${when}, delivers to a channel named ${title}.`",
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("channel");
 });
 
 test("stripNonUserFacing preserves line and column positions", () => {

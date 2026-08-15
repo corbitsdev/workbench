@@ -322,7 +322,7 @@ function InboxDetail({
             disabled={busy}
             onClick={() => onOpenChannel(channel.id)}
           >
-            Open in channel
+            Open conversation
           </Button>
         )}
         {item.group === "action" ? (

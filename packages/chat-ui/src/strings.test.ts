@@ -5,7 +5,7 @@ import { CHAT_STRINGS } from "./strings";
 describe("toast confirmation copy", () => {
   test("channel create carries the new channel's title", () => {
     expect(CHAT_STRINGS.channelCreatedToast("Launch planning")).toBe(
-      "Channel created · Launch planning",
+      "Created · Launch planning",
     );
   });
 

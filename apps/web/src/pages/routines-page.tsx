@@ -1533,7 +1533,7 @@ function CreateRoutineDialog({
                       role="status"
                     >
                       Results land in your Inbox — this workflow never posts to
-                      a channel.
+                      a space.
                     </p>
                   </div>
                 )}

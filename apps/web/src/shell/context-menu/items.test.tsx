@@ -63,12 +63,12 @@ describe("shellContextMenuFor: channel", () => {
   test("offers rename, pin, and copy-link with a tenant selected", () => {
     const menu = shellContextMenuFor(target, actions());
     expect(itemIds(menu.entries)).toEqual(["rename", "pin", "copy-link"]);
-    expect(findItem(menu.entries, "pin").label).toBe("Pin channel");
+    expect(findItem(menu.entries, "pin").label).toBe("Pin conversation");
   });
 
   test("labels the pin item Unpin for an already-pinned channel", () => {
     const menu = shellContextMenuFor({ ...target, pinned: true }, actions());
-    expect(findItem(menu.entries, "pin").label).toBe("Unpin channel");
+    expect(findItem(menu.entries, "pin").label).toBe("Unpin conversation");
   });
 
   test("drops the pin item without a selected tenant", () => {

@@ -3,8 +3,14 @@
 // "tenant", "instance", "deploy(ed)", "definition", "DATABASE_URL", and
 // "asset" are all names for things from the operator/platform side of
 // the fence; the product word for a workspace is "workbench" and its
-// switching control is the "switcher" — see docs/GLOSSARY.md and the
-// CL-6016 copy sweep this check guards.
+// switching control is the "switcher". "Channel" is banned too — the
+// product word for a pinned, broadcast-style conversation is "space"
+// and a direct 1:1 conversation is "chat" ("channel" stays legal only
+// as the underlying platform/API vocabulary: `kind: "channel"`, route
+// paths, event names, and other non-prose identifiers, none of which
+// this check's prose filter treats as copy anyway) — see
+// docs/GLOSSARY.md and the CL-6016 and CL-6071 copy sweeps this check
+// guards.
 //
 // This scans string and template literals in apps/web/src and
 // packages/chat-ui/src (excluding *.test.ts(x)) for the banned terms.
@@ -45,6 +51,7 @@ const BANNED_TERMS: readonly { name: string; pattern: RegExp }[] = [
   { name: "definition", pattern: /\bdefinitions?\b/i },
   { name: "DATABASE_URL", pattern: /\bDATABASE_URL\b/ },
   { name: "asset", pattern: /\bassets?\b/i },
+  { name: "channel", pattern: /\bchannels?\b/i },
 ];
 
 /**
@@ -104,6 +111,17 @@ const STRING_LITERAL_PATTERN =
 const KEBAB_TOKEN = /^[a-z][a-z0-9-]*$/;
 const QUOTED_UNION = /^'[\w-]*'(\s*\|\s*'[\w-]*')*$/;
 
+/** Blanks out `${...}` template-literal interpolations, keeping
+ * everything outside them intact. A backtick literal like `` `delivers
+ * to ${channel.title}.` `` reads as prose to a user ("delivers to
+ * Launch planning.") — the identifier `channel.title` inside the
+ * expression is code the user never sees, so it must never trip a
+ * banned-term match on its own. Non-greedy so nested braces in a rare
+ * object-literal expression don't swallow past the first `}`. */
+function stripInterpolations(inner: string): string {
+  return inner.replace(/\$\{[^}]*\}/g, blank);
+}
+
 /** A literal counts as natural-language copy only when it contains a
  * space and isn't one of the handful of non-prose shapes that also
  * contain spaces: a CSS class list (space-separated kebab-case
@@ -142,7 +160,10 @@ export function findViolations(files: readonly ScannedFile[]): Violation[] {
       const literal = match[0];
       if (!isProseLiteral(literal)) continue;
       const inner = literal.slice(1, -1);
-      const hit = BANNED_TERMS.find(({ pattern }) => pattern.test(inner));
+      const testable = literal.startsWith("`")
+        ? stripInterpolations(inner)
+        : inner;
+      const hit = BANNED_TERMS.find(({ pattern }) => pattern.test(testable));
       if (hit === undefined) continue;
       if (
         ALLOWLIST.some(

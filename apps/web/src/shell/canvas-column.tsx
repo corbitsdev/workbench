@@ -190,7 +190,7 @@ function mentionAction(
   return () => {
     const inserted = insertIntoComposer(`@${profile.handle} `);
     if (!inserted) {
-      toast(`Open a channel to mention @${profile.handle}`);
+      toast(`Open a conversation to mention @${profile.handle}`);
     }
   };
 }
