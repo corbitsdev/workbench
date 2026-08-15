@@ -166,7 +166,10 @@ export function useAPIQuery<T>(
         throw new UnauthenticatedError();
       }
       if (!response.ok) {
-        throw new Error(`The server answered ${response.status} for ${path}.`);
+        throw new ApiQueryError(
+          `The server answered ${response.status} for ${path}.`,
+          response.status,
+        );
       }
       const parsed = schema(await response.json());
       if (parsed instanceof type.errors) {

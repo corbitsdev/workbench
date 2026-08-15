@@ -4,19 +4,33 @@
 
 import { QueryClient } from "@tanstack/react-query";
 
-import { UnauthenticatedError } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
 import { channelsQueryKey } from "@corbits/chat-ui";
 import type { ChannelKind } from "@corbits/chat-ui";
+
+/**
+ * Retry policy shared by every query in the app: no session and a
+ * definitive 404 both mean retrying cannot help — a 404 on a chain-context
+ * lookup (a run with no owning task) is a real, stable answer, not a
+ * transient failure, so retrying it three times only delays an honest
+ * quiet no-op. Everything else (500s, network failures) gets the normal
+ * three attempts.
+ */
+export function shouldRetryQuery(
+  failureCount: number,
+  error: unknown,
+): boolean {
+  if (error instanceof UnauthenticatedError) return false;
+  if (error instanceof ApiQueryError && error.status === 404) return false;
+  return failureCount < 3;
+}
 
 export function createAppQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: 30_000,
-        retry: (failureCount, error) => {
-          if (error instanceof UnauthenticatedError) return false;
-          return failureCount < 3;
-        },
+        retry: shouldRetryQuery,
       },
     },
   });
