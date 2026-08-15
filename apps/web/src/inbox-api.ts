@@ -1,42 +1,30 @@
-// Client for the product inbox mounted at
-// `/api/tenants/:tenantId/inbox`. Schemas mirror packages/inbox projections.
+// Client for the product inbox mounted at `/api/tenants/:tenantId/inbox`:
+// fetch composition only. Wire schemas (InboxItemSchema, ...) and group
+// classification are already browser-safe and exported from the package
+// root (`@corbits/inbox`'s "." export mixes them with server-only route/
+// migration code, so a UI pulls them through the "./client" subpath
+// instead — see packages/inbox/src/client.ts and its README). This app
+// only adds the request plumbing and the `InboxFilterGroup` UI concept
+// (`"all"` plus the package's three product groups), neither of which
+// belongs in the domain package.
 
 import { type } from "arktype";
 
 import { ApiQueryError } from "@corbits/api-query";
+import {
+  InboxItemSchema,
+  type InboxGroup,
+  type InboxItem,
+} from "@corbits/inbox/client";
 
-export const InboxItemSchema = type({
-  id: "string",
-  group: "'action' | 'mention' | 'delivery'",
-  from: "string",
-  "fromDisplay?": "string",
-  "subject?": "string",
-  date: "string",
-  read: "boolean",
-  status: "'open' | 'done' | 'snoozed'",
-  "snippet?": "string",
-  "refs?": type({
-    kind: "string",
-    id: "string",
-    "label?": "string",
-  }).array(),
-  "priority?": "string",
-  "assignee?": "string",
-});
-export type InboxItem = typeof InboxItemSchema.infer;
-
-export const InboxItemDetailSchema = InboxItemSchema.and({
-  body: "string",
-});
-export type InboxItemDetail = typeof InboxItemDetailSchema.infer;
-
-export const InboxCountsSchema = type({
-  action: "number",
-  mention: "number",
-  delivery: "number",
-  open: "number",
-});
-export type InboxCounts = typeof InboxCountsSchema.infer;
+export {
+  InboxCountsSchema,
+  InboxItemDetailSchema,
+  InboxItemSchema,
+  type InboxCounts,
+  type InboxItem,
+  type InboxItemDetail,
+} from "@corbits/inbox/client";
 
 export const InboxListSchema = type({
   items: InboxItemSchema.array(),
@@ -44,7 +32,7 @@ export const InboxListSchema = type({
 });
 export type InboxList = typeof InboxListSchema.infer;
 
-export type InboxFilterGroup = "all" | "action" | "mention" | "delivery";
+export type InboxFilterGroup = "all" | InboxGroup;
 
 export function inboxListPath(
   tenantId: string,

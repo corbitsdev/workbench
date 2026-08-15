@@ -21,6 +21,7 @@
     "@corbits/chat-ui": "workspace:*",
     "@corbits/command-palette": "workspace:*",
     "@corbits/context-menu": "workspace:*",
+    "@corbits/inbox": "workspace:*",
     "@corbits/insights": "workspace:*",
     "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",
