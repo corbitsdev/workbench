@@ -6,6 +6,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { ApiQueryError } from "@corbits/api-query";
 import {
   createWebhookTrigger,
   deleteWebhookTrigger,
@@ -15,7 +16,6 @@ import {
   sampleWebhookPayload,
   setWebhookTriggerEnabled,
   webhookTriggerUrl,
-  WebhookTriggersApiError,
 } from "../src/webhook-triggers-api";
 
 const realFetch = globalThis.fetch;
@@ -102,7 +102,7 @@ describe("createWebhookTrigger", () => {
         workflowDefinitionId: "wfd_1",
         inputTemplate: "x",
       }),
-    ).rejects.toBeInstanceOf(WebhookTriggersApiError);
+    ).rejects.toBeInstanceOf(ApiQueryError);
   });
 });
 
@@ -157,8 +157,8 @@ describe("error handling", () => {
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeInstanceOf(WebhookTriggersApiError);
-    expect((caught as WebhookTriggersApiError).status).toBe(401);
+    expect(caught).toBeInstanceOf(ApiQueryError);
+    expect((caught as ApiQueryError).status).toBe(401);
   });
 });
 

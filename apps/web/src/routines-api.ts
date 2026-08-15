@@ -1,13 +1,15 @@
 // The Routines page's one seam to `@corbits/routines`' HTTP routes (see
-// packages/routines/src/routes.ts), mirroring `@corbits/chat-ui`'s
-// `api.ts`: tenant-scoped request functions, each response validated at
-// the boundary with an arktype schema owned here rather than importing
-// `@corbits/routines` itself — that package's public surface also
-// exports Drizzle schema tables and a Postgres-backed store, none of
-// which belong in a browser bundle. Definitions come from the platform's
-// own `/api/tenants/:tenantId/workflows/definitions` listing (native to
-// `@intx/hub-api`, not part of routines), the same catalog a routine's
-// `definitionId` points into.
+// packages/routines/src/routes.ts): fetch composition only. Wire schemas,
+// path builders, and pure display helpers live in `@corbits/routines/client`
+// — browser-safe and shared with any UI over this data, not tied to this
+// app's fetch machinery (mirrors `insights-api.ts` / `@corbits/insights/client`
+// and `agents-directory.ts` / `@corbits/agent-directory/client`).
+// `@corbits/routines` itself is never imported directly — its public
+// surface also exports Drizzle schema tables and a Postgres-backed store,
+// none of which belong in a browser bundle. Definitions come from the
+// platform's own `/api/tenants/:tenantId/workflows/definitions` listing
+// (native to `@intx/hub-api`, not part of routines), the same catalog a
+// routine's `definitionId` points into.
 //
 // The create-flow picker only surfaces automatable workflows (see
 // `purpose-definitions.ts` + `@corbits/workflow-catalog`). Labels prefer
@@ -23,57 +25,40 @@ import {
   UnauthenticatedError,
   toAPIQuery,
 } from "@corbits/api-query";
+import {
+  Routine,
+  RoutineDraft,
+  RoutineRun,
+  RoutinesResponse,
+  RoutineRunsResponse,
+  routineCreatedToast,
+  routineDraftApprovePath,
+  routineDraftDiscardPath,
+  routineDraftsPath,
+  routinePath,
+  routineRunNowPath,
+  routineRunStartedToast,
+  routineRunsPath,
+  routinesPath,
+} from "@corbits/routines/client";
+import type {
+  CreateDraftInput,
+  CreateRoutineInput,
+  UpdateRoutineInput,
+} from "@corbits/routines/client";
 import { purposeDefinitions, withCatalogFields } from "./purpose-definitions";
 import type { CatalogFields } from "./purpose-definitions";
 
-export const RoutineTrigger = type({
-  kind: "'interval'",
-  unit: "'minutes' | 'hours'",
-  every: "number.integer > 0",
-})
-  .or({
-    kind: "'daily'",
-    hour: "0 <= number.integer <= 23",
-    minute: "0 <= number.integer <= 59",
-    "timezone?": "string",
-  })
-  .or({
-    kind: "'weekly'",
-    dayOfWeek: "0 <= number.integer <= 6",
-    hour: "0 <= number.integer <= 23",
-    minute: "0 <= number.integer <= 59",
-    "timezone?": "string",
-  })
-  .or({ kind: "'cron'", expression: "string", "timezone?": "string" })
-  .or({ kind: "'webhook'", webhookTriggerId: "string" })
-  .or("null");
-export type RoutineTrigger = typeof RoutineTrigger.infer;
-
-const Routine = type({
-  id: "string",
-  name: "string",
-  definitionId: "string",
-  trigger: RoutineTrigger,
-  scope: "'personal' | 'bench'",
-  input: "Record<string, unknown>",
-  enabled: "boolean",
-  deliveryChannelId: "string | null",
-  createdAt: "string",
-  updatedAt: "string",
-});
-export type Routine = typeof Routine.infer;
-
-const RoutinesResponse = type({ items: Routine.array() });
-
-const RoutineRun = type({
-  runId: "string",
-  triggeredBy: "string",
-  createdAt: "string",
-  "run?": "Record<string, unknown>",
-});
-export type RoutineRun = typeof RoutineRun.infer;
-
-const RoutineRunsResponse = type({ items: RoutineRun.array() });
+export {
+  DraftedStep,
+  type CreateDraftInput,
+  type CreateRoutineInput,
+  type Routine,
+  type RoutineDraft,
+  type RoutineRun,
+  type RoutineTriggerT as RoutineTrigger,
+  type UpdateRoutineInput,
+} from "@corbits/routines/client";
 
 const WorkflowDefinitionRecord = type({
   id: "string",
@@ -97,53 +82,6 @@ const DefinitionsPage = type({
 /** One page is enough for a seeded bench; walk cursors so a large catalog
  * never silently truncates automatable options. */
 const PAGE_LIMIT = 100;
-
-export type CreateRoutineInput = {
-  readonly name: string;
-  readonly definitionId: string;
-  readonly trigger: RoutineTrigger;
-  readonly scope: "personal" | "bench";
-  readonly deliveryChannelId: string;
-  readonly input?: Record<string, unknown>;
-  readonly runOnceNow?: boolean;
-};
-
-export type UpdateRoutineInput = {
-  readonly name?: string;
-  readonly trigger?: RoutineTrigger;
-  readonly enabled?: boolean;
-  readonly input?: Record<string, unknown>;
-  readonly deliveryChannelId?: string;
-};
-
-export const DraftedStep = type({
-  title: "string",
-  "detail?": "string",
-});
-export type DraftedStep = typeof DraftedStep.infer;
-
-export const RoutineDraft = type({
-  id: "string",
-  prompt: "string",
-  status: "'draft' | 'reviewed' | 'approved' | 'discarded'",
-  proposedSteps: DraftedStep.array(),
-  proposedTrigger: RoutineTrigger,
-  proposedName: "string | null",
-  definitionId: "string | null",
-  deliveryChannelId: "string",
-  scope: "'personal' | 'bench'",
-  autonomy: "Record<string, unknown> | null",
-  approvedRoutineId: "string | null",
-  createdAt: "string",
-  updatedAt: "string",
-});
-export type RoutineDraft = typeof RoutineDraft.infer;
-
-export type CreateDraftInput = {
-  readonly prompt: string;
-  readonly deliveryChannelId: string;
-  readonly scope: "personal" | "bench";
-};
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
@@ -190,20 +128,20 @@ async function request<T>(
 }
 
 export function listRoutines(tenantId: string): Promise<readonly Routine[]> {
-  return request(`/api/tenants/${tenantId}/routines`, RoutinesResponse).then(
+  return request(routinesPath(tenantId), RoutinesResponse).then(
     (page) => page.items,
   );
 }
 
 export function getRoutine(tenantId: string, id: string): Promise<Routine> {
-  return request(`/api/tenants/${tenantId}/routines/${id}`, Routine);
+  return request(routinePath(tenantId, id), Routine);
 }
 
 export function createRoutine(
   tenantId: string,
   input: CreateRoutineInput,
 ): Promise<Routine> {
-  return request(`/api/tenants/${tenantId}/routines`, Routine, {
+  return request(routinesPath(tenantId), Routine, {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -214,14 +152,14 @@ export function updateRoutine(
   id: string,
   patch: UpdateRoutineInput,
 ): Promise<Routine> {
-  return request(`/api/tenants/${tenantId}/routines/${id}`, Routine, {
+  return request(routinePath(tenantId, id), Routine, {
     method: "PATCH",
     body: JSON.stringify(patch),
   });
 }
 
 export function deleteRoutine(tenantId: string, id: string): Promise<void> {
-  return request(`/api/tenants/${tenantId}/routines/${id}`, type("unknown"), {
+  return request(routinePath(tenantId, id), type("unknown"), {
     method: "DELETE",
   }).then(() => undefined);
 }
@@ -230,28 +168,26 @@ export function runRoutineNow(
   tenantId: string,
   id: string,
 ): Promise<{ runId: string }> {
-  return request(
-    `/api/tenants/${tenantId}/routines/${id}/run`,
-    type({ runId: "string" }),
-    { method: "POST", body: JSON.stringify({}) },
-  );
+  return request(routineRunNowPath(tenantId, id), type({ runId: "string" }), {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
 }
 
 export function listRoutineRuns(
   tenantId: string,
   id: string,
 ): Promise<readonly RoutineRun[]> {
-  return request(
-    `/api/tenants/${tenantId}/routines/${id}/runs`,
-    RoutineRunsResponse,
-  ).then((page) => page.items);
+  return request(routineRunsPath(tenantId, id), RoutineRunsResponse).then(
+    (page) => page.items,
+  );
 }
 
 export function createRoutineDraft(
   tenantId: string,
   input: CreateDraftInput,
 ): Promise<RoutineDraft> {
-  return request(`/api/tenants/${tenantId}/routine-drafts`, RoutineDraft, {
+  return request(routineDraftsPath(tenantId), RoutineDraft, {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -261,7 +197,7 @@ export function listRoutineDrafts(
   tenantId: string,
 ): Promise<readonly RoutineDraft[]> {
   return request(
-    `/api/tenants/${tenantId}/routine-drafts`,
+    routineDraftsPath(tenantId),
     type({ items: RoutineDraft.array() }),
   ).then((page) => page.items);
 }
@@ -271,7 +207,7 @@ export function approveRoutineDraft(
   id: string,
 ): Promise<{ draft: RoutineDraft; routine: Routine }> {
   return request(
-    `/api/tenants/${tenantId}/routine-drafts/${id}/approve`,
+    routineDraftApprovePath(tenantId, id),
     type({ draft: RoutineDraft, routine: Routine }),
     { method: "POST", body: JSON.stringify({}) },
   );
@@ -281,11 +217,10 @@ export function discardRoutineDraft(
   tenantId: string,
   id: string,
 ): Promise<RoutineDraft> {
-  return request(
-    `/api/tenants/${tenantId}/routine-drafts/${id}/discard`,
-    RoutineDraft,
-    { method: "POST", body: JSON.stringify({}) },
-  );
+  return request(routineDraftDiscardPath(tenantId, id), RoutineDraft, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
 }
 
 /**
@@ -344,10 +279,4 @@ export function useTenantQuery<T>(
   return toAPIQuery(result);
 }
 
-export function routineCreatedToast(name: string): string {
-  return `Routine created · ${name}`;
-}
-
-export function routineRunStartedToast(name: string): string {
-  return `Run started · ${name}`;
-}
+export { routineCreatedToast, routineRunStartedToast };
