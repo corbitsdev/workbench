@@ -14,15 +14,21 @@ export {
   PlannerReplyUnparseableError,
   TaskSpec,
 } from "./task-spec";
+// Re-exported from `@corbits/folded-runs` (where `runOneShotFoldedPrompt`
+// now lives, CL-6051 finding 12) rather than dropped: this package's own
+// `./routes.ts` and `./planner-run.ts` are already this barrel's
+// established shape, so callers of `@corbits/task-planner` keep one
+// import surface instead of reaching into a second package for names
+// this package's own errors and routes still speak in terms of.
 export {
   runOneShotFoldedPrompt,
   OneShotDefinitionNotFoundError,
-  PlannerRunFailedError,
-  PlannerRunTimedOutError,
+  FoldedRunFailedError,
+  FoldedRunTimedOutError,
   type OneShotPromptInput,
   type OneShotReply,
   type OneShotRunnerDeps,
-} from "./one-shot-reply";
+} from "@corbits/folded-runs";
 export {
   runPlanner,
   resolveMyraDefinitionIdFromDb,

@@ -29,16 +29,20 @@ plan is dispatched exactly like a manually-launched task.
   names, a model name — actually appears in the inventory that was offered,
   throwing `PlannerReferenceOutOfInventoryError` on the first violation.
   Neither function partially trusts a near-miss.
-- **The one-shot reply wrapper** (`./src/one-shot-reply.ts`) —
-  `runOneShotFoldedPrompt` launches a folded run, sends one prompt, and
-  resolves a promise with the accumulated `connector.reply` content once the
-  run's `message.run.ended` bracket closes (or rejects with
-  `PlannerRunFailedError`/`PlannerRunTimedOutError`). No precedent for this
-  shape existed elsewhere in the codebase — `@corbits/tasks`' own
-  `launchTask` returns as soon as the run launches; this module is the one
-  place that turns the sidecar's `agent.event` stream into an awaitable
-  promise, for a caller with no Inbox and no task row to hang an async
-  delivery on.
+- **The one-shot reply wrapper** now lives in `@corbits/folded-runs`
+  (`packages/folded-runs/src/one-shot-reply.ts`) — `runOneShotFoldedPrompt`
+  launches a folded run, sends one prompt, and resolves a promise with the
+  accumulated `connector.reply` content once the run's `message.run.ended`
+  bracket closes (or rejects with
+  `FoldedRunFailedError`/`FoldedRunTimedOutError`). It was promoted out of
+  this package (CL-6051 finding 12) once CL-5917's routine chains needed the
+  same primitive without depending on this package's `TaskSpec`; this
+  package re-exports it from `./src/index.ts` for its own callers'
+  convenience. No precedent for this shape existed elsewhere in the
+  codebase before it — `@corbits/tasks`' own `launchTask` returns as soon as
+  the run launches; this is the one place that turns the sidecar's
+  `agent.event` stream into an awaitable promise, for a caller with no
+  Inbox and no task row to hang an async delivery on.
 - **Planner-run orchestration** (`./src/planner-run.ts`) — `runPlanner`
   resolves Myra's own definition for the tenant, assembles the inventory,
   builds the strict-output prompt, runs it, and parses + validates the
@@ -85,8 +89,14 @@ tenantId)` is provided as the production implementation: it queries
   lookup — same idea, keyed on `name` instead of `id`, since there is no
   "current tenant's Myra" foreign key anywhere else to join through.
 - `OneShotRunnerDeps` (`foldedRuns: FoldedRunsDeps`, `events:
-SidecarEventEmitter`, `cryptoProviders: CryptoProviderCache`) — the same
-  deps `@corbits/tasks`' launcher and orchestrator already take.
+SidecarEventEmitter`, `cryptoProviders: CryptoProviderCache`, `undeploy:
+  (address, reason) => Promise<void>`, `lifecycle?:
+  Pick<AgentLifecycle, "track" | "recordActivity" | "untrack">`) — the same
+  `foldedRuns`/`events`/`cryptoProviders` deps `@corbits/tasks`' launcher
+  and orchestrator already take, plus the raw termination port a one-shot
+  run tears itself down through the moment it settles (it has no further
+  purpose after that, unlike a launched task, so it is never left for an
+  idle sweep).
 - `deployAgentDefinition` — a host-injected wrapper around
   `@corbits/agent-directory`'s sanctioned deploy path
   (`buildAgentDefinitionWorkflow` → `AssetService.createAsset` +

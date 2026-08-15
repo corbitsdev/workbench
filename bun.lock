@@ -474,11 +474,13 @@
       "name": "@corbits/folded-runs",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/agent-lifecycle": "workspace:*",
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",

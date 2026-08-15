@@ -14,9 +14,9 @@ import { getLogger } from "@intx/log";
 
 import { PlannerMyraUnavailableError } from "./planner-run";
 import {
-  PlannerRunFailedError,
-  PlannerRunTimedOutError,
-} from "./one-shot-reply";
+  FoldedRunFailedError,
+  FoldedRunTimedOutError,
+} from "@corbits/folded-runs";
 import {
   PlannerReferenceOutOfInventoryError,
   PlannerReplyUnparseableError,
@@ -73,8 +73,8 @@ export type CreatePlannerRoutesDeps = {
 function isPlanningFailure(err: unknown): boolean {
   return (
     err instanceof PlannerMyraUnavailableError ||
-    err instanceof PlannerRunTimedOutError ||
-    err instanceof PlannerRunFailedError ||
+    err instanceof FoldedRunTimedOutError ||
+    err instanceof FoldedRunFailedError ||
     err instanceof PlannerReplyUnparseableError ||
     err instanceof PlannerReferenceOutOfInventoryError
   );

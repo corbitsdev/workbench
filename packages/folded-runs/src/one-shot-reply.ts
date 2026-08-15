@@ -1,0 +1,247 @@
+// A synchronous wrapper around one folded run's opening turn: launch,
+// send the prompt, wait for exactly one reply, tear down the
+// subscription AND the launched run itself. No precedent for this
+// shape existed elsewhere in the codebase — `@corbits/tasks`'
+// `launchTask` launches and returns immediately (its reply lands
+// asynchronously, via `createTaskOrchestrator`'s subscription to the
+// same event stream); this module is the one place that turns that
+// same event stream into an awaitable promise, for a caller that has
+// no Inbox and no task row to hang a later delivery on.
+// `@corbits/task-planner`'s `runPlanner` is one such caller: a
+// planning prompt isn't a task, so it must resolve in the same
+// request/response cycle that asked for it.
+import { and, eq } from "drizzle-orm";
+import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
+import { generateId } from "@intx/hub-common";
+import { getLogger } from "@intx/log";
+import type { SidecarEventEmitter } from "@intx/hub-sessions";
+import { formatRunAddress } from "@intx/types";
+import type { FoldedBody } from "@intx/workflow-deploy";
+import type { AgentLifecycle } from "@corbits/agent-lifecycle";
+
+import { connectorReplyContent, messageRunEnded } from "./agent-events";
+import type { CryptoProviderCache } from "./crypto-cache";
+import { readDefinitionJSON, readFoldedBody } from "./definition";
+import { launchFoldedRun } from "./launch";
+import { sendFoldedMailWithRetry } from "./mail";
+import type { FoldedRunsDeps } from "./types";
+
+const log = getLogger(["folded-runs", "one-shot-reply"]);
+
+export type OneShotReply = {
+  readonly content: string;
+  readonly runId: string;
+};
+
+export type OneShotRunnerDeps = {
+  readonly foldedRuns: FoldedRunsDeps;
+  readonly events: SidecarEventEmitter;
+  readonly cryptoProviders: CryptoProviderCache;
+  /** Same idle-sleep lifecycle tracking `@corbits/tasks`' own
+   * `TaskLauncherDeps.lifecycle?` takes — optional, since a caller
+   * that hasn't wired lifecycle tracking yet still gets a working
+   * call, just without idle-sleep bookkeeping. */
+  readonly lifecycle?: Pick<
+    AgentLifecycle,
+    "track" | "recordActivity" | "untrack"
+  >;
+  /**
+   * Tears the launched run's address down on the host. REQUIRED,
+   * unlike `lifecycle`: a `@corbits/tasks`-launched run lives on after
+   * it launches, tracked by idle-sleep until it goes quiet — but a
+   * one-shot run has no further purpose once it settles, so it must be
+   * torn down immediately on every settle path (success, failure,
+   * timeout, or a send-path throw), never left for an idle sweep. The
+   * same raw port a host's own `AgentLifecycle`'s `undeploy` option
+   * already is — e.g. `apps/hub`'s `sidecarRouter.sendAgentUndeploy`.
+   */
+  readonly undeploy: (address: string, reason: string) => Promise<void>;
+};
+
+export type OneShotPromptInput = {
+  readonly tenantId: string;
+  readonly principalId: string;
+  readonly definitionId: string;
+  readonly prompt: string;
+  readonly timeoutMs: number;
+};
+
+export class OneShotDefinitionNotFoundError extends Error {
+  constructor(definitionId: string) {
+    super(`No definition "${definitionId}" for this tenant`);
+    this.name = "OneShotDefinitionNotFoundError";
+  }
+}
+
+export class FoldedRunTimedOutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`the folded run did not reply within ${String(timeoutMs)}ms`);
+    this.name = "FoldedRunTimedOutError";
+  }
+}
+
+export class FoldedRunFailedError extends Error {
+  constructor(errorMessage: string | undefined) {
+    super(
+      errorMessage !== undefined
+        ? `the folded run failed: ${errorMessage}`
+        : "the folded run failed",
+    );
+    this.name = "FoldedRunFailedError";
+  }
+}
+
+/**
+ * Launches a folded run against `input.definitionId`, sends
+ * `input.prompt` as its opening mail, and resolves with the run's
+ * accumulated `connector.reply` content once its opening turn's
+ * `message.run.ended` bracket closes — or rejects with
+ * `FoldedRunFailedError` (the run itself ended `"failed"`) or
+ * `FoldedRunTimedOutError` (`input.timeoutMs` elapsed first).
+ *
+ * Deliberately bypasses `@corbits/tasks`' `launchTask`: this run gets
+ * no `task` row and no Inbox delivery — `launchFoldedRun` is called
+ * directly with no `persistExtra`. The event subscription always
+ * unsubscribes exactly once, and `deps.undeploy` always tears the
+ * launched run down exactly once, on every exit path (success, run
+ * failure, timeout, or a send-path throw) — a caller that runs many
+ * one-shot prompts in one process never leaks listeners OR live run
+ * instances.
+ */
+export async function runOneShotFoldedPrompt(
+  deps: OneShotRunnerDeps,
+  input: OneShotPromptInput,
+): Promise<OneShotReply> {
+  const definitionRow =
+    await deps.foldedRuns.db.query.workflowDefinition.findFirst({
+      where: and(
+        eq(workflowDefinition.id, input.definitionId),
+        eq(workflowDefinition.tenantId, input.tenantId),
+      ),
+    });
+  if (definitionRow === undefined || definitionRow.assetId === null) {
+    throw new OneShotDefinitionNotFoundError(input.definitionId);
+  }
+
+  const tenantRow = await deps.foldedRuns.db.query.tenant.findFirst({
+    where: eq(tenantTable.id, input.tenantId),
+  });
+  if (tenantRow === undefined) {
+    throw new Error(`No tenant "${input.tenantId}"`);
+  }
+
+  const definitionJSON = await readDefinitionJSON(
+    deps.foldedRuns.assetService,
+    definitionRow.assetId,
+  );
+  const definitionBody = readFoldedBody(definitionJSON);
+  const foldedBody: FoldedBody = {
+    systemPrompt: definitionBody.systemPrompt,
+    toolPackagePins: definitionBody.toolPackagePins,
+    grantRequirements: definitionBody.grantRequirements,
+    credentialBindings: definitionBody.credentialBindings,
+    model: definitionBody.model,
+  };
+
+  const instanceId = generateId("workflowRun");
+  const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
+
+  const launched = await launchFoldedRun(deps.foldedRuns, {
+    tenantId: input.tenantId,
+    instanceId,
+    triggerAddress,
+    definitionId: input.definitionId,
+    foldedBody,
+    launchLabel: "the planning run",
+  });
+
+  deps.lifecycle?.track(triggerAddress);
+  deps.lifecycle?.recordActivity(triggerAddress);
+
+  return new Promise<OneShotReply>((resolve, reject) => {
+    let settled = false;
+    let accumulated = "";
+
+    const unsubscribe = deps.events.on(
+      "agent.event",
+      ({ agentAddress, event }) => {
+        if (agentAddress !== triggerAddress || settled) return;
+
+        const content = connectorReplyContent(event);
+        if (content !== undefined) {
+          accumulated += content;
+          return;
+        }
+
+        const ended = messageRunEnded(event);
+        if (ended === undefined) return;
+
+        if (ended.status === "failed") {
+          void settle("planning-run-failed", () => {
+            reject(new FoldedRunFailedError(ended.errorMessage));
+          });
+          return;
+        }
+        void settle("planning-run-complete", () => {
+          resolve({ content: accumulated, runId: instanceId });
+        });
+      },
+    );
+
+    // Tears the run down exactly once, on whichever exit path calls it
+    // first — success, failure, timeout, or a send-path throw. `finish`
+    // (the caller's own resolve/reject) only runs once teardown has
+    // settled, so a failed `undeploy` never masks the real outcome and
+    // never leaves the outer promise hanging: it's logged and teardown
+    // proceeds to `untrack` regardless.
+    async function settle(reason: string, finish: () => void): Promise<void> {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsubscribe();
+      try {
+        await deps.undeploy(triggerAddress, reason);
+      } catch (err) {
+        log.error`one-shot run ${triggerAddress}: undeploy failed during teardown (${reason}): ${
+          err instanceof Error ? err.message : String(err)
+        }`;
+      }
+      deps.lifecycle?.untrack(triggerAddress);
+      finish();
+    }
+
+    const timer = setTimeout(() => {
+      void settle("planning-run-timed-out", () => {
+        reject(new FoldedRunTimedOutError(input.timeoutMs));
+      });
+    }, input.timeoutMs);
+
+    void (async () => {
+      try {
+        const cryptoProvider = await deps.cryptoProviders.get(instanceId);
+        const sent = await sendFoldedMailWithRetry(deps.foldedRuns, {
+          tenantId: input.tenantId,
+          sessionId: launched.sessionId,
+          agentAddress: triggerAddress,
+          from: `${input.principalId}@${tenantRow.domain}`,
+          domain: tenantRow.domain,
+          content: input.prompt,
+          cryptoProvider,
+        });
+        if (!sent.ok) {
+          void settle("planning-run-send-failed", () => {
+            reject(
+              sent.error instanceof Error
+                ? sent.error
+                : new Error(String(sent.error)),
+            );
+          });
+        }
+      } catch (cause) {
+        void settle("planning-run-send-failed", () => {
+          reject(cause instanceof Error ? cause : new Error(String(cause)));
+        });
+      }
+    })();
+  });
+}

@@ -22,7 +22,7 @@ import {
   validateTaskSpecAgainstInventory,
   type TaskSpec,
 } from "./task-spec";
-import type { OneShotReply } from "./one-shot-reply";
+import type { OneShotReply } from "@corbits/folded-runs";
 
 const DEFAULT_PLANNER_TIMEOUT_MS = 60_000;
 
