@@ -216,10 +216,11 @@ describe("inbox top bar", () => {
 
     // `Dialog` portals its content onto `document.body`, not `container`
     // — the same pattern `create-agent-dialog.test.tsx` queries against.
-    const newTaskButton = [
-      ...container.querySelectorAll("button"),
-    ].find((button) => button.textContent === "New task");
-    if (newTaskButton === undefined) throw new Error("New task button not rendered");
+    const newTaskButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "New task",
+    );
+    if (newTaskButton === undefined)
+      throw new Error("New task button not rendered");
     await act(async () => {
       newTaskButton.click();
     });
@@ -227,7 +228,8 @@ describe("inbox top bar", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (document.body.textContent?.includes("Let Myra choose") === true) break;
+      if (document.body.textContent?.includes("Let Myra choose") === true)
+        break;
     }
 
     const textarea = document.body.querySelector("textarea");
@@ -244,7 +246,8 @@ describe("inbox top bar", () => {
     const submitButton = [...document.body.querySelectorAll("button")].find(
       (button) => button.textContent === "Start task",
     );
-    if (submitButton === undefined) throw new Error("Start task button not rendered");
+    if (submitButton === undefined)
+      throw new Error("Start task button not rendered");
     await act(async () => {
       submitButton.click();
     });
@@ -259,6 +262,8 @@ describe("inbox top bar", () => {
       JSON.stringify({ outcome: "Summarize the last incident" }),
     ]);
     expect(tasksCalls).toEqual([]);
-    expect(window.localStorage.getItem("workbench.tasks.mru-agent:tnt_1")).toBeNull();
+    expect(
+      window.localStorage.getItem("workbench.tasks.mru-agent:tnt_1"),
+    ).toBeNull();
   });
 });

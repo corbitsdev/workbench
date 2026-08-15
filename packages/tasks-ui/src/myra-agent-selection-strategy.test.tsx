@@ -95,9 +95,7 @@ describe("createMyraAgentSelectionStrategy", () => {
     );
     await settle();
 
-    expect(
-      document.body.querySelector('input[name="task-agent"]'),
-    ).toBeNull();
+    expect(document.body.querySelector('input[name="task-agent"]')).toBeNull();
 
     const modeRadios = [
       ...document.body.querySelectorAll<HTMLInputElement>(

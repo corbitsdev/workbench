@@ -103,7 +103,10 @@ export function createMyraAgentSelectionStrategy(
 
     return (
       <>
-        <label className="tasks-radio-option" data-testid="new-task-agent-option">
+        <label
+          className="tasks-radio-option"
+          data-testid="new-task-agent-option"
+        >
           <input
             type="radio"
             name="task-agent-mode"
@@ -113,7 +116,10 @@ export function createMyraAgentSelectionStrategy(
           Let Myra choose — Myra reads your prompt and picks or creates the
           right agent.
         </label>
-        <label className="tasks-radio-option" data-testid="new-task-agent-option">
+        <label
+          className="tasks-radio-option"
+          data-testid="new-task-agent-option"
+        >
           <input
             type="radio"
             name="task-agent-mode"

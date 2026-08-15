@@ -8,7 +8,11 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { createApprovalStore, createDB, createGrantStore } from "@intx/db";
-import { model, tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
+import {
+  model,
+  tenant as tenantTable,
+  workflowDefinition,
+} from "@intx/db/schema";
 import { and, eq } from "drizzle-orm";
 import {
   createEnvKeyCredentialCipher,
