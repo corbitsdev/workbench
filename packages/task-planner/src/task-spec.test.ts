@@ -80,6 +80,29 @@ describe("parseTaskSpec", () => {
     ).toThrow(PlannerReplyUnparseableError);
   });
 
+  test("a reply missing the kind discriminant fails closed", () => {
+    expect(() =>
+      parseTaskSpec(
+        JSON.stringify({
+          use: "wfd_summarizer",
+          refinedOutcome: "Summarize the doc",
+        }),
+      ),
+    ).toThrow(PlannerReplyUnparseableError);
+  });
+
+  test('a reply with kind: "chain" fails closed — only "task" is accepted today', () => {
+    expect(() =>
+      parseTaskSpec(
+        JSON.stringify({
+          kind: "chain",
+          use: "wfd_summarizer",
+          refinedOutcome: "Summarize the doc",
+        }),
+      ),
+    ).toThrow(PlannerReplyUnparseableError);
+  });
+
   test("the unparseable error excerpts, never dumps, the raw reply", () => {
     const huge = "x".repeat(5000);
     try {

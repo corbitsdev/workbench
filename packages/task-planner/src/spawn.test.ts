@@ -50,7 +50,8 @@ mock.module("@corbits/folded-runs", () => ({
   }),
 }));
 
-const { spawnFromTaskSpec } = await import("./spawn");
+const { spawnFromTaskSpec, PlannerCredentialBindingUnavailableError } =
+  await import("./spawn");
 
 const AGENT_WORKFLOW_JSON = {
   id: "wfd_agent",
@@ -319,5 +320,45 @@ describe("spawnFromTaskSpec", () => {
 
     const stored = await store.getTask("tnt_1", record.id);
     expect(stored?.plannerRunId).toBe("wfr_planner_1");
+  });
+
+  test("{create} branch pinning a tool package absent from the offered inventory fails closed, never deploys, never launches", async () => {
+    const db = createFakeDb();
+    const store = storeOverInserts(db);
+    const deployAgentDefinition = mock(async () => ({
+      definitionId: "wfd_never",
+    }));
+    const requireDefinitionCreateGrant = allowDefinitionCreateGrant();
+
+    await expect(
+      spawnFromTaskSpec(
+        {
+          taskLauncherDeps: createTaskLauncherDeps(db) as never,
+          store,
+          deployAgentDefinition,
+          requireDefinitionCreateGrant,
+        },
+        {
+          ...INPUT_BASE,
+          spec: {
+            kind: "task",
+            create: {
+              name: "Incident bot",
+              systemPrompt: "You review incidents.",
+              // Not in INVENTORY.toolPackages — resolveCredentialBindings'
+              // own defense-in-depth lookup (validateTaskSpecAgainstInventory
+              // would already have caught this upstream; this proves the
+              // spawn-time check fails closed on its own too).
+              toolPackagePins: ["@corbits/absent-tools"],
+              skills: [],
+            },
+            refinedOutcome: "Review the latest incident",
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(PlannerCredentialBindingUnavailableError);
+
+    expect(deployAgentDefinition).not.toHaveBeenCalled();
+    expect(await store.listTasks("tnt_1")).toEqual([]);
   });
 });
