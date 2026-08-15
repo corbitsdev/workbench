@@ -7,6 +7,7 @@ import { CircleAlert, Lock } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { APIQuery } from "./envelope";
+import { describeApiError } from "./envelope";
 
 /** Which shape a loading `QueryView` should hint at, close enough to the
  * real content's footprint to keep layout shift small — not a skeleton
@@ -93,7 +94,10 @@ export function QueryView<T>({
         <EmptyState
           icon={<CircleAlert />}
           title={`Couldn't load ${label}`}
-          description={query.message}
+          description={describeApiError(
+            { status: query.status },
+            `loading ${label}`,
+          )}
           action={
             <Button variant="outline" onClick={query.retry}>
               Retry

@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 
 import {
   ApiQueryError,
+  describeApiError,
   describeQueryError,
   toAPIQuery,
   UnauthenticatedError,
@@ -39,6 +40,50 @@ describe("describeQueryError", () => {
     );
     expect(describeQueryError(new ApiQueryError("boom", 500))).toBe(
       "Something went wrong. Try again.",
+    );
+  });
+});
+
+describe("describeApiError", () => {
+  const pathBearing = new ApiQueryError(
+    "The server answered 404 for /api/tenants/9f2c-real-tenant/artifacts/42.",
+    404,
+  );
+
+  test("never echoes a path, tenant id, or status from the error message", () => {
+    const message = describeApiError(pathBearing, "loading this");
+    expect(message).not.toMatch(/\/api\//);
+    expect(message).not.toContain("9f2c-real-tenant");
+    expect(message).not.toContain("404");
+  });
+
+  test("401 and 403 read as an access problem", () => {
+    expect(
+      describeApiError(new ApiQueryError("boom", 401), "loading this"),
+    ).toBe("You don't have access to this.");
+    expect(
+      describeApiError(new ApiQueryError("boom", 403), "loading this"),
+    ).toBe("You don't have access to this.");
+  });
+
+  test("404 reads as gone, not as a generic failure", () => {
+    expect(describeApiError(pathBearing, "loading this")).toBe(
+      "This isn't here anymore.",
+    );
+  });
+
+  test("5xx and network failures share the same actionable copy, named around the task", () => {
+    expect(
+      describeApiError(new ApiQueryError("boom", 500), "uploading this file"),
+    ).toBe("Something went wrong uploading this file. Try again.");
+    expect(
+      describeApiError(new TypeError("Failed to fetch"), "starting that task"),
+    ).toBe("Something went wrong starting that task. Try again.");
+  });
+
+  test("an error with no status falls back to the same generic copy", () => {
+    expect(describeApiError(new Error("boom"), "saving this")).toBe(
+      "Something went wrong saving this. Try again.",
     );
   });
 });

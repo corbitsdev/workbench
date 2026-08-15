@@ -91,12 +91,14 @@ export async function uploadArtifactFiles(
   return body.data;
 }
 
-/** True when the hub answered "artifacts plane not configured". */
-export function isArtifactsUnavailableMessage(message: string): boolean {
-  return (
-    message.includes(" answered 503 ") ||
-    message.toLowerCase().includes("not configured")
-  );
+/** True when the hub answered "artifacts plane not configured" (503) —
+ * read off the query's own status field, never string-matched out of a
+ * rendered message (that copy is display-boundary plain by design and
+ * carries no status text to match against). */
+export function isArtifactsUnavailableStatus(
+  status: number | undefined,
+): boolean {
+  return status === 503;
 }
 
 export function artifactUploadToast(names: readonly string[]): string {

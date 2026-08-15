@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   artifactListRowToSummary,
-  isArtifactsUnavailableMessage,
+  isArtifactsUnavailableStatus,
   mapArtifactListToSummaries,
   type ArtifactListRow,
 } from "../src/shell/library-artifacts";
@@ -43,12 +43,9 @@ describe("library-artifacts", () => {
     expect(mapped[1]?.ownerName).toBeNull();
   });
 
-  test("detects the unconfigured-plane error message", () => {
-    expect(
-      isArtifactsUnavailableMessage(
-        "The server answered 503 for /api/tenants/t/artifacts.",
-      ),
-    ).toBe(true);
-    expect(isArtifactsUnavailableMessage("network failed")).toBe(false);
+  test("detects the unconfigured-plane status", () => {
+    expect(isArtifactsUnavailableStatus(503)).toBe(true);
+    expect(isArtifactsUnavailableStatus(500)).toBe(false);
+    expect(isArtifactsUnavailableStatus(undefined)).toBe(false);
   });
 });

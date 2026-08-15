@@ -47,7 +47,7 @@ export function artifactContentFromDetailError(
     title: part.name,
     rendererKind: "unsupported",
     content: "",
-    unavailableReason: `Couldn't load this artifact: ${message}`,
+    unavailableReason: message,
   };
 }
 
@@ -93,6 +93,6 @@ export function artifactContentFromBlobError(
     title: part.name,
     rendererKind: "unsupported",
     content: "",
-    unavailableReason: `Couldn't load this attachment: ${message}`,
+    unavailableReason: message,
   };
 }

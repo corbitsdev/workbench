@@ -4,6 +4,7 @@
 // this workspace.
 
 import { libraryArtifactPath } from "@corbits/artifact-ui";
+import { describeApiError } from "@corbits/api-query";
 import { ChatWorkspace, fetchChannelBlob, type Part } from "@corbits/chat-ui";
 import { toast } from "@corbits/react-ui";
 import { listPrincipals } from "@corbits/settings-ui";
@@ -120,7 +121,7 @@ export function ChatPage({
               artifactContentFromDetailError(
                 part,
                 artifactId,
-                err instanceof Error ? err.message : String(err),
+                describeApiError(err, "loading this artifact"),
               ),
             );
           });
@@ -139,7 +140,7 @@ export function ChatPage({
             artifactContentFromBlobError(
               part,
               blobId,
-              err instanceof Error ? err.message : String(err),
+              describeApiError(err, "loading this attachment"),
             ),
           );
         });

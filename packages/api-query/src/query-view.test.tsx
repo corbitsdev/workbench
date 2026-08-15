@@ -18,16 +18,38 @@ function render(query: APIQuery<string>): string {
 }
 
 describe("QueryView error state", () => {
-  test("shows plain, human copy — never the raw technical message", () => {
+  test("never renders the raw technical message, even when it carries a path", () => {
     const markup = render({
       kind: "error",
-      message: "Can't reach the server. Check your connection.",
+      message: "The server answered 500 for /api/tenants/abc-123/benches.",
       retry: () => undefined,
     });
     expect(markup).toContain("Couldn&#x27;t load your benches");
+    expect(markup).not.toMatch(/\/api\//);
+    expect(markup).not.toContain("abc-123");
     expect(markup).toContain(
-      "Can&#x27;t reach the server. Check your connection.",
+      "Something went wrong loading your benches. Try again.",
     );
+  });
+
+  test("404 reads as gone, not as a generic failure", () => {
+    const markup = render({
+      kind: "error",
+      message: "The server answered 404 for /api/tenants/abc-123/benches.",
+      retry: () => undefined,
+      status: 404,
+    });
+    expect(markup).toContain("This isn&#x27;t here anymore.");
+  });
+
+  test("401/403 reads as an access problem", () => {
+    const markup = render({
+      kind: "error",
+      message: "The server answered 403 for /api/tenants/abc-123/benches.",
+      retry: () => undefined,
+      status: 403,
+    });
+    expect(markup).toContain("You don&#x27;t have access to this.");
   });
 
   test("offers a Retry action", () => {
