@@ -405,11 +405,11 @@ export function CommandPaletteProvider({
 
   const recentItems = useMemo<readonly PaletteResultItem[]>(
     () =>
-      recents.map((entry) => ({
-        id: entry.id,
-        title: entry.title,
-        ...(entry.subtitle === undefined ? {} : { subtitle: entry.subtitle }),
-      })),
+      recents.map((entry) =>
+        entry.subtitle === undefined
+          ? { id: entry.id, title: entry.title }
+          : { id: entry.id, title: entry.title, subtitle: entry.subtitle },
+      ),
     [recents],
   );
 

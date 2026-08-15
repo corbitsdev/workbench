@@ -63,14 +63,20 @@ async function request<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, {
-      method: init.method ?? "GET",
-      headers:
-        init.body === undefined
-          ? { accept: "application/json" }
-          : { accept: "application/json", "content-type": "application/json" },
-      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-    });
+    response =
+      init.body === undefined
+        ? await fetch(path, {
+            method: init.method ?? "GET",
+            headers: { accept: "application/json" },
+          })
+        : await fetch(path, {
+            method: init.method ?? "GET",
+            headers: {
+              accept: "application/json",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(init.body),
+          });
   } catch (cause) {
     throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),

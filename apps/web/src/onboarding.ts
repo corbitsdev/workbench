@@ -74,10 +74,9 @@ export async function triggerFirstLoginProvisioning(
       };
     }
     if (parsed.kind === "existing-member") {
-      return {
-        kind: "existing-member",
-        ...(parsed.seeded !== undefined ? { seeded: parsed.seeded } : {}),
-      };
+      return parsed.seeded === undefined
+        ? { kind: "existing-member" }
+        : { kind: "existing-member", seeded: parsed.seeded };
     }
     if (parsed.kind === "needs-onboarding") return { kind: "needs-onboarding" };
     if (
@@ -91,15 +90,20 @@ export async function triggerFirstLoginProvisioning(
           "Unexpected provisioning response: a provisioned workbench is missing its details.",
       };
     }
-    return {
-      kind: "provisioned",
-      tenantId: parsed.tenantId,
-      tenantSlug: parsed.tenantSlug,
-      seeded: parsed.seeded,
-      ...(parsed.seedSkipReason !== undefined
-        ? { seedSkipReason: parsed.seedSkipReason }
-        : {}),
-    };
+    return parsed.seedSkipReason === undefined
+      ? {
+          kind: "provisioned",
+          tenantId: parsed.tenantId,
+          tenantSlug: parsed.tenantSlug,
+          seeded: parsed.seeded,
+        }
+      : {
+          kind: "provisioned",
+          tenantId: parsed.tenantId,
+          tenantSlug: parsed.tenantSlug,
+          seeded: parsed.seeded,
+          seedSkipReason: parsed.seedSkipReason,
+        };
   } catch (cause) {
     return {
       kind: "error",
@@ -436,12 +440,18 @@ export async function submitCredential(
         message: `Unexpected credential response shape: ${parsed.summary}`,
       };
     }
-    return {
-      kind: "seeded",
-      ...(parsed.tenantId !== undefined ? { tenantId: parsed.tenantId } : {}),
-      tenantSlug: parsed.tenantSlug,
-      workflows: parsed.workflows,
-    };
+    return parsed.tenantId === undefined
+      ? {
+          kind: "seeded",
+          tenantSlug: parsed.tenantSlug,
+          workflows: parsed.workflows,
+        }
+      : {
+          kind: "seeded",
+          tenantId: parsed.tenantId,
+          tenantSlug: parsed.tenantSlug,
+          workflows: parsed.workflows,
+        };
   } catch (cause) {
     return {
       kind: "error",
@@ -508,12 +518,18 @@ export async function completeSetup(): Promise<CompleteSetupOutcome> {
           "Unexpected setup response: a finished workbench is missing its details.",
       };
     }
-    return {
-      kind: "seeded",
-      ...(parsed.tenantId !== undefined ? { tenantId: parsed.tenantId } : {}),
-      tenantSlug: parsed.tenantSlug,
-      workflows: parsed.workflows,
-    };
+    return parsed.tenantId === undefined
+      ? {
+          kind: "seeded",
+          tenantSlug: parsed.tenantSlug,
+          workflows: parsed.workflows,
+        }
+      : {
+          kind: "seeded",
+          tenantId: parsed.tenantId,
+          tenantSlug: parsed.tenantSlug,
+          workflows: parsed.workflows,
+        };
   } catch (cause) {
     return {
       kind: "error",
