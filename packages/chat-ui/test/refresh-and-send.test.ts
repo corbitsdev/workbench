@@ -55,10 +55,27 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
   test("a foreground load's failure replaces the view with an error state", () => {
     const next = nextMessagesState(
       ready,
-      { kind: "error", message: "boom" },
+      { kind: "error", message: "boom", channelNotFound: false },
       false,
     );
-    expect(next).toEqual({ kind: "error", message: "boom" });
+    expect(next).toEqual({
+      kind: "error",
+      message: "boom",
+      channelNotFound: false,
+    });
+  });
+
+  test("a channel-not-found failure carries that flag through to the rendered state", () => {
+    const next = nextMessagesState(
+      ready,
+      { kind: "error", message: "not found", channelNotFound: true },
+      false,
+    );
+    expect(next).toEqual({
+      kind: "error",
+      message: "not found",
+      channelNotFound: true,
+    });
   });
 
   test("a background refresh never re-enters the loading state on success", () => {
@@ -69,7 +86,7 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
   test("a background refresh's failure leaves the previous ready items on screen", () => {
     const next = nextMessagesState(
       ready,
-      { kind: "error", message: "boom" },
+      { kind: "error", message: "boom", channelNotFound: false },
       true,
     );
     expect(next).toBe(ready);
@@ -80,7 +97,7 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
     const loading: MessagesState = { kind: "loading" };
     const next = nextMessagesState(
       loading,
-      { kind: "error", message: "boom" },
+      { kind: "error", message: "boom", channelNotFound: false },
       true,
     );
     expect(next).toBe(loading);
@@ -295,21 +312,21 @@ describe("canInviteAgent (a chat's agent is fixed at creation; the server 409s a
 
 describe("composerPlaceholderFor (CL-6070: a chat's composer reads as a DM, not a channel)", () => {
   test("names the counterpart for an agent chat", () => {
-    expect(
-      composerPlaceholderFor({ kind: "chat", title: "Myra" }),
-    ).toBe(CHAT_STRINGS.composerPlaceholderChat("Myra"));
+    expect(composerPlaceholderFor({ kind: "chat", title: "Myra" })).toBe(
+      CHAT_STRINGS.composerPlaceholderChat("Myra"),
+    );
   });
 
   test("names the counterpart for a person chat too — a chat's title is always its counterpart's name", () => {
-    expect(
-      composerPlaceholderFor({ kind: "chat", title: "Priya" }),
-    ).toBe(CHAT_STRINGS.composerPlaceholderChat("Priya"));
+    expect(composerPlaceholderFor({ kind: "chat", title: "Priya" })).toBe(
+      CHAT_STRINGS.composerPlaceholderChat("Priya"),
+    );
   });
 
   test("keeps the generic channel copy for a channel", () => {
-    expect(
-      composerPlaceholderFor({ kind: "channel", title: "General" }),
-    ).toBe(CHAT_STRINGS.composerPlaceholder);
+    expect(composerPlaceholderFor({ kind: "channel", title: "General" })).toBe(
+      CHAT_STRINGS.composerPlaceholder,
+    );
   });
 
   test("keeps the generic copy with no channel resolved yet", () => {
