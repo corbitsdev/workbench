@@ -1,15 +1,21 @@
-// DOM-mounted render tests for `TaskComposerDialog`: the agent picker
-// renders from `listAgents`, the model select only appears once
-// `listModels` resolves a non-empty catalog, and `Start task` stays
-// disabled until an agent is picked and a prompt is typed. Needs a
-// real DOM (see dom-setup.ts) — Radix's `Dialog.Portal` renders
-// nothing under `renderToStaticMarkup`, mirroring
-// `packages/chat-ui/test/new-channel-dialog.test.tsx`.
+// DOM-mounted render tests for `TaskComposerDialog`: the default
+// caller wires `createManualAgentSelectionStrategy` (the manual
+// picker), the model select only appears once `listModels` resolves a
+// non-empty catalog, `Start task` stays disabled until an agent is
+// picked and a prompt is typed, Cmd/Ctrl+Enter in the prompt submits,
+// `initialDefinitionId` preselects the agent field, and a stub
+// strategy proves the agent-selection seam is real — a future
+// programmatic strategy (CL-6050) can be swapped in without touching
+// this file. Needs a real DOM (see dom-setup.ts) — Radix's
+// `Dialog.Portal` renders nothing under `renderToStaticMarkup`,
+// mirroring `packages/chat-ui/test/new-channel-dialog.test.tsx`.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import { createManualAgentSelectionStrategy } from "./agent-selection-strategy";
+import type { AgentSelectionStrategy } from "./agent-selection-strategy";
 import { TaskComposerDialog } from "./task-composer-dialog";
 import type { CatalogModel } from "./api";
 
@@ -49,20 +55,29 @@ function baseProps(
     onCreate: () => undefined,
     tenantId: "tnt_1",
     submitting: false,
-    listAgents: async () => [],
+    agentSelectionStrategy: createManualAgentSelectionStrategy(async () => []),
     listModels: async () => [],
     ...overrides,
   };
 }
 
+function setTextareaValue(textarea: HTMLTextAreaElement | null, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(textarea, value);
+  textarea?.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 describe("TaskComposerDialog", () => {
-  test("renders the agents listAgents resolves, radio-selectable", async () => {
+  test("renders the agents the manual strategy resolves, radio-selectable", async () => {
     mount(
       baseProps({
-        listAgents: async () => [
+        agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
           { id: "wfd_1", name: "incident-bot", description: "Incident bot" },
           { id: "wfd_2", name: "digest-bot" },
-        ],
+        ]),
       }),
     );
     await settle();
@@ -107,7 +122,9 @@ describe("TaskComposerDialog", () => {
   test("Start task stays disabled until an agent is picked and a prompt is typed", async () => {
     mount(
       baseProps({
-        listAgents: async () => [{ id: "wfd_1", name: "incident-bot" }],
+        agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
+          { id: "wfd_1", name: "incident-bot" },
+        ]),
       }),
     );
     await settle();
@@ -128,15 +145,11 @@ describe("TaskComposerDialog", () => {
     await settle();
     expect(submit()?.hasAttribute("disabled")).toBe(true);
 
-    const textarea = document.body.querySelector("textarea");
+    const textarea =
+      document.body.querySelector<HTMLTextAreaElement>("textarea");
     expect(textarea).not.toBeNull();
     act(() => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        "value",
-      )?.set;
-      setter?.call(textarea, "Summarize the incident.");
-      textarea?.dispatchEvent(new Event("input", { bubbles: true }));
+      setTextareaValue(textarea, "Summarize the incident.");
     });
     await settle();
     expect(submit()?.hasAttribute("disabled")).toBe(false);
@@ -146,7 +159,9 @@ describe("TaskComposerDialog", () => {
     let created: unknown;
     mount(
       baseProps({
-        listAgents: async () => [{ id: "wfd_1", name: "incident-bot" }],
+        agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
+          { id: "wfd_1", name: "incident-bot" },
+        ]),
         onCreate: (input) => {
           created = input;
         },
@@ -162,14 +177,10 @@ describe("TaskComposerDialog", () => {
     });
     await settle();
 
-    const textarea = document.body.querySelector("textarea");
+    const textarea =
+      document.body.querySelector<HTMLTextAreaElement>("textarea");
     act(() => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        "value",
-      )?.set;
-      setter?.call(textarea, "  Summarize the incident.  ");
-      textarea?.dispatchEvent(new Event("input", { bubbles: true }));
+      setTextareaValue(textarea, "  Summarize the incident.  ");
     });
     await settle();
 
@@ -185,5 +196,179 @@ describe("TaskComposerDialog", () => {
       definitionId: "wfd_1",
       prompt: "Summarize the incident.",
     });
+  });
+
+  test("Cmd/Ctrl+Enter in the prompt submits without a form submit event", async () => {
+    let created: unknown;
+    mount(
+      baseProps({
+        agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
+          { id: "wfd_1", name: "incident-bot" },
+        ]),
+        onCreate: (input) => {
+          created = input;
+        },
+      }),
+    );
+    await settle();
+
+    const radio = document.body.querySelector<HTMLInputElement>(
+      'input[name="task-agent"]',
+    );
+    act(() => {
+      radio?.click();
+    });
+    await settle();
+
+    const textarea =
+      document.body.querySelector<HTMLTextAreaElement>("textarea");
+    act(() => {
+      setTextareaValue(textarea, "Summarize the incident.");
+    });
+    await settle();
+
+    act(() => {
+      textarea?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    await settle();
+
+    expect(created).toEqual({
+      definitionId: "wfd_1",
+      prompt: "Summarize the incident.",
+    });
+  });
+
+  test("a bare Enter in the prompt does not submit", async () => {
+    let created: unknown;
+    mount(
+      baseProps({
+        agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
+          { id: "wfd_1", name: "incident-bot" },
+        ]),
+        onCreate: (input) => {
+          created = input;
+        },
+      }),
+    );
+    await settle();
+
+    const radio = document.body.querySelector<HTMLInputElement>(
+      'input[name="task-agent"]',
+    );
+    act(() => {
+      radio?.click();
+    });
+    await settle();
+
+    const textarea =
+      document.body.querySelector<HTMLTextAreaElement>("textarea");
+    act(() => {
+      setTextareaValue(textarea, "Summarize the incident.");
+    });
+    await settle();
+
+    act(() => {
+      textarea?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    await settle();
+
+    expect(created).toBeUndefined();
+  });
+
+  test("the prompt textarea is focused as soon as the dialog opens", async () => {
+    mount(baseProps());
+    await settle();
+
+    const textarea = document.body.querySelector("textarea");
+    expect(document.activeElement).toBe(textarea);
+  });
+
+  test("initialDefinitionId preselects the agent field on open", async () => {
+    mount(
+      baseProps({
+        agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
+          { id: "wfd_1", name: "incident-bot" },
+          { id: "wfd_2", name: "digest-bot" },
+        ]),
+        initialDefinitionId: "wfd_2",
+      }),
+    );
+    await settle();
+
+    const radios = [
+      ...document.body.querySelectorAll<HTMLInputElement>(
+        'input[name="task-agent"]',
+      ),
+    ];
+    expect(radios[0]?.checked).toBe(false);
+    expect(radios[1]?.checked).toBe(true);
+  });
+
+  test("an injected strategy stands in for the manual picker — the seam is real", async () => {
+    const seen: {
+      props: { tenantId: string; selectedId: string | null } | null;
+    } = { props: null };
+    const stubStrategy: AgentSelectionStrategy = ({
+      tenantId,
+      selectedId,
+      onSelect,
+    }) => {
+      seen.props = { tenantId, selectedId };
+      return createElement(
+        "button",
+        {
+          type: "button",
+          "data-testid": "stub-strategy-pick",
+          onClick: () => onSelect("wfd_auto"),
+        },
+        "auto-picked",
+      );
+    };
+
+    mount(
+      baseProps({ agentSelectionStrategy: stubStrategy, tenantId: "tnt_9" }),
+    );
+    await settle();
+
+    expect(seen.props).toEqual({ tenantId: "tnt_9", selectedId: null });
+    expect(
+      document.body.querySelector('[data-testid="stub-strategy-pick"]'),
+    ).not.toBeNull();
+    expect(
+      document.body.querySelector('[data-testid="new-task-agent-option"]'),
+    ).toBeNull();
+
+    const pick = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="stub-strategy-pick"]',
+    );
+    act(() => {
+      pick?.click();
+    });
+    await settle();
+
+    const submit = () =>
+      [...document.body.querySelectorAll("button")].find(
+        (button) => button.textContent === "Start task",
+      );
+    const textarea =
+      document.body.querySelector<HTMLTextAreaElement>("textarea");
+    act(() => {
+      setTextareaValue(textarea, "Go");
+    });
+    await settle();
+    expect(submit()?.hasAttribute("disabled")).toBe(false);
   });
 });
