@@ -112,3 +112,88 @@ Connections-section card)
 5. Routine is live; runs post into the space as messages — results
    accumulate as conversation, not a separate runs table you have to go
    find.
+
+## Chat-first shell: the middle path on dropping col2
+
+Owner question: drop col2 entirely, make the whole app chat-based. The
+recommendation below is a middle path, not full teardown — it gets the
+"chat is home" feel this afternoon, and leaves the teardown decision to
+real usage data instead of a guess.
+
+**Recommended shape:**
+
+- **Land directly in a conversation.** No listing page as the front door —
+  session start resolves straight into the last-active (or Myra) chat, the
+  way `/` already resolves to the Myra land hop (`routes.tsx`), extended to
+  be true of every entry point, not just `/`.
+- **Col2 collapses by default**, using the collapse contract that already
+  exists (`packages/shell-layout/src/stage-chrome.tsx`: `Col2Width`,
+  `COL2_COLLAPSED_PREFERENCE_KEY` in `apps/web/src/shell/col2-preference.ts`,
+  the edge-handle affordance already rendered when col2 is collapsed). Only
+  the *default* flips from open to collapsed — the mechanism is unchanged.
+  A keystroke restore is new: today `toggleCol2` is click-only (no keybind
+  wired in `app-shell.tsx`); add one, mirroring the edge handle it already
+  renders.
+- **The command palette's scoped prefixes become primary navigation.**
+  `packages/command-palette/src/scope.ts` already parses `#` channels, `@`
+  people & agents, `>` actions, `/` pages — four of the reference's
+  eight-tab search-as-nav. Getting to parity means adding the missing
+  scopes (routines, at minimum — `#`/`@`/`>`/`/` don't currently cover "find
+  a routine" as its own scope) and making the palette the thing you reach
+  for instead of a rail icon, not just a `Cmd+K` overlay on top of a rail
+  you still primarily click.
+- **Rail stays at the proposed 5** (Spaces, Routines, Library, Inbox,
+  Search) — this proposal doesn't touch that count either way.
+
+**What col2 uniquely provides in a MULTIPLAYER bench — and would be lost
+by deleting it, not just collapsing it:**
+
+Col2 today is where ambient, cross-space signal lives, not just this-space
+navigation:
+
+- The **Working group** (`apps/web/src/shell/panel-contributions.tsx`):
+  tasks in flight across the bench, surfaced regardless of which space
+  you're in.
+- The **Activity band** (`apps/web/src/shell/activity-band.tsx`): needs-you
+  approvals, mounted on every page — deliberately global, not per-space,
+  so a pending approval is visible no matter what conversation you're
+  reading.
+- Unread state across every space at a glance — the thing a single-thread
+  chat-first view cannot show without either a switcher (re-inventing col2)
+  or losing the "what needs me across this whole bench" view a multiplayer
+  bench depends on when several humans and agents are producing activity in
+  parallel.
+
+None of that is a single-player concern — a solo user in one conversation
+doesn't miss it. It's what a *bench* (many spaces, many agents, many people)
+loses if col2 is deleted rather than collapsed.
+
+**Explicit trigger condition for deleting it later:** ship collapsed-by-
+default first. If telemetry on `toggleCol2` / the edge handle shows no
+meaningful re-expansion rate in real multiplayer use (i.e., people don't
+reach for Working/Activity/unread-across-spaces once it's out of their
+way), that's the signal to cut col2 for real — not a redesign guess made
+today. Until that data exists, deleting col2 is optimizing before the
+bottleneck is identified (Premature Optimization) against a surface whose
+only current justification is the same owner's frustration with an
+*unrelated* set of surfaces (settings burial) this proposal already fixes
+without touching col2.
+
+**Sizing:**
+
+- **One-afternoon path (recommended):** flip the col2 default to
+  collapsed (`col2CollapsedFromPreferences` default flip + initial
+  `useState`), wire a keystroke to `toggleCol2`, and extend
+  `PALETTE_SCOPES` with the missing tab(s) (routines) plus wiring the
+  palette as the primary "get anywhere" affordance in the empty/landed
+  state. All three land on existing contracts — no new state machine, no
+  new component tree.
+- **Full-teardown cost (not recommended without the trigger above):**
+  deleting col2 means re-homing Working and the Activity band somewhere
+  else in the shell (both are currently col2-only surfaces with no
+  alternate render path), rebuilding cross-space unread as a first-class
+  chat-first primitive, and touching every page that composes
+  `contextual-panel.tsx` / `panel-contributions.tsx`, plus their test
+  coverage. That's a multi-day rearchitecture of shared shell chrome, not
+  a toggle flip — and it's irreversible in a way the collapse default
+  isn't.
