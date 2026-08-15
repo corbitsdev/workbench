@@ -10,6 +10,10 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import type { APIQuery } from "@corbits/api-query";
+import {
+  requestMakeRoutine,
+  resetPendingDialogRequests,
+} from "../src/command-palette-actions";
 import { RoutinesListPage } from "../src/pages/routines-page";
 import type {
   CreateRoutineInput,
@@ -68,6 +72,7 @@ afterEach(() => {
     container.remove();
     container = null;
   }
+  resetPendingDialogRequests();
 });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -633,5 +638,123 @@ describe("CreateRoutineDialog webhook mode", () => {
     });
     await settle();
     expect(document.body.textContent).not.toContain("s3cr3t-value");
+  });
+});
+
+describe("'Make this a routine' prefill", () => {
+  const prefill = {
+    definitionId: "wfd_1",
+    name: "Summarize last night's incident",
+    input: { prompt: "Summarize last night's incident into a postmortem." },
+  };
+
+  test("opens the dialog with the task's agent picked and its name pre-filled", async () => {
+    requestMakeRoutine({
+      alreadyOnRoutines: false,
+      navigateToRoutines: () => {},
+      prefill,
+    });
+    mount(baseProps({}));
+    await settle();
+
+    expect(document.body.textContent).toContain("Step 1 of 3");
+    expect(cardWithTitle("Researcher")?.getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    const nameInput = document.body.querySelector(
+      "#routine-name",
+    ) as HTMLInputElement | null;
+    expect(nameInput?.value).toBe(prefill.name);
+  });
+
+  test("carries the task's prompt through as the created routine's stored input", async () => {
+    let created: CreateRoutineInput | null = null;
+    requestMakeRoutine({
+      alreadyOnRoutines: false,
+      navigateToRoutines: () => {},
+      prefill,
+    });
+    mount(
+      baseProps({
+        onCreate: (input) => {
+          created = input;
+          return Promise.resolve();
+        },
+      }),
+    );
+    await settle();
+
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    act(() => {
+      buttonWithText("Create & run now")?.click();
+    });
+    await settle();
+
+    expect(created).not.toBeNull();
+    expect((created as CreateRoutineInput | null)?.definitionId).toBe("wfd_1");
+    expect((created as CreateRoutineInput | null)?.name).toBe(prefill.name);
+    expect((created as CreateRoutineInput | null)?.input).toEqual(
+      prefill.input,
+    );
+  });
+
+  test("cancelling a prefilled dialog creates nothing", async () => {
+    let createCalls = 0;
+    requestMakeRoutine({
+      alreadyOnRoutines: false,
+      navigateToRoutines: () => {},
+      prefill,
+    });
+    mount(
+      baseProps({
+        onCreate: () => {
+          createCalls += 1;
+          return Promise.resolve();
+        },
+      }),
+    );
+    await settle();
+    expect(cardWithTitle("Researcher")?.getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+
+    const closeButton = document.body.querySelector(
+      'button[aria-label="Close"]',
+    ) as HTMLButtonElement | null;
+    expect(closeButton).not.toBeNull();
+    act(() => {
+      closeButton?.click();
+    });
+    await settle();
+
+    expect(createCalls).toBe(0);
+    expect(document.body.querySelector(".dialog-stepper")).toBeNull();
+
+    // Re-opening blank afterward must not still carry the cancelled prefill.
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+    expect(cardWithTitle("Researcher")?.getAttribute("aria-pressed")).not.toBe(
+      "true",
+    );
   });
 });
