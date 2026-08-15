@@ -79,6 +79,97 @@ describe("create", () => {
     ).rejects.toThrow(SkillRegistryError);
     expect(assets.assets.size).toBe(0);
   });
+
+  test("a name that fails the kebab-case pattern gets a plain-language message, never the raw regex", async () => {
+    await expect(
+      registry.create(AUTHOR, {
+        ...CREATE_INPUT,
+        name: "Not A Valid Name",
+        scope: "private",
+      }),
+    ).rejects.toThrow("Name must be lowercase letters, digits, and hyphens.");
+  });
+
+  test("a description with an HTML tag gets a plain-language message, never the raw regex", async () => {
+    await expect(
+      registry.create(AUTHOR, {
+        ...CREATE_INPUT,
+        description: "<script>bad</script>",
+        scope: "private",
+      }),
+    ).rejects.toThrow("Description can't contain HTML tags.");
+  });
+
+  test("retrying create after a failure between the asset write and the access-row write completes it, rather than 409ing forever", async () => {
+    // Simulates the exact crash window `create` cannot make transactional:
+    // the asset and its SKILL.md commit succeed, but the access-row write
+    // — the last step — fails once (a db timeout, say).
+    let failNext = true;
+    const flakyAccess: SkillAccessStore = {
+      ...access,
+      async upsert(row) {
+        if (failNext) {
+          failNext = false;
+          throw new Error("simulated write failure (e.g. db timeout)");
+        }
+        return access.upsert(row);
+      },
+    };
+    const flakyRegistry = createSkillRegistry({ assets, access: flakyAccess });
+
+    await expect(
+      flakyRegistry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/simulated write failure/);
+
+    // The asset was created and left behind, but is invisible: no access
+    // row backs it yet.
+    expect(assets.assets.size).toBe(1);
+    expect(await flakyRegistry.list(AUTHOR)).toHaveLength(0);
+
+    // Retrying the exact same create — the natural recovery a user or
+    // client would attempt — finishes the interrupted write instead of
+    // 409ing on a name this same caller can never use again.
+    const completed = await flakyRegistry.create(AUTHOR, {
+      ...CREATE_INPUT,
+      scope: "private",
+    });
+    expect(completed.name).toBe("triage");
+    expect(assets.assets.size).toBe(1);
+    expect((await flakyRegistry.list(AUTHOR)).map((s) => s.name)).toEqual([
+      "triage",
+    ]);
+
+    // A third attempt now hits a fully-formed skill and is a genuine
+    // conflict.
+    await expect(
+      flakyRegistry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/already exists/);
+  });
+
+  test("a caller can never complete another principal's half-written create", async () => {
+    let failNext = true;
+    const flakyAccess: SkillAccessStore = {
+      ...access,
+      async upsert(row) {
+        if (failNext) {
+          failNext = false;
+          throw new Error("simulated write failure");
+        }
+        return access.upsert(row);
+      },
+    };
+    const flakyRegistry = createSkillRegistry({ assets, access: flakyAccess });
+    await expect(
+      flakyRegistry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/simulated write failure/);
+
+    // A different principal retrying the same name hits a conflict, not
+    // a takeover of the first caller's orphaned asset.
+    await expect(
+      registry.create(TEAMMATE, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/already exists/);
+    expect(await registry.list(TEAMMATE)).toHaveLength(0);
+  });
 });
 
 describe("access scoping", () => {

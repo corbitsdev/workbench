@@ -153,7 +153,12 @@ export function createSkill(
 ): Promise<SkillSummary> {
   return request(base(tenantId), SkillResponse, {
     method: "POST",
-    body: { ...input, scope: DEFAULT_CREATE_SCOPE },
+    body: {
+      name: input.name,
+      description: input.description,
+      body: input.body,
+      scope: DEFAULT_CREATE_SCOPE,
+    },
   }).then((page) => page.skill);
 }
 

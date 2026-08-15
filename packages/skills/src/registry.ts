@@ -15,6 +15,7 @@ import type { SkillAssetStore, SkillCommit } from "./asset-store";
 import {
   buildSkillMd,
   parseSkillMd,
+  skillDescriptionSchema,
   skillNameSchema,
   SkillContentError,
 } from "./skill-md";
@@ -25,10 +26,19 @@ export type SkillRegistryErrorReason =
 
 export class SkillRegistryError extends Error {
   readonly reason: SkillRegistryErrorReason;
-  constructor(reason: SkillRegistryErrorReason, message: string) {
+  /** The validator's raw diagnostic (an arktype summary can quote a regex
+   * literal) — for logs and debugging, never for the message a person
+   * reads, which stays plain language. */
+  readonly details?: string | undefined;
+  constructor(
+    reason: SkillRegistryErrorReason,
+    message: string,
+    details?: string | undefined,
+  ) {
     super(message);
     this.name = "SkillRegistryError";
     this.reason = reason;
+    this.details = details;
   }
 }
 
@@ -76,12 +86,36 @@ export type CreateSkillRegistryDeps = {
   access: SkillAccessStore;
 };
 
+/** True when an arktype failure includes a regex `pattern` check — the
+ * one failure mode whose default summary quotes the raw regex literal,
+ * which is implementation detail no end user should see. */
+function isPatternFailure(errors: type.errors): boolean {
+  return errors.some((error) => error.code === "pattern");
+}
+
 function assertSkillName(raw: string): string {
   const parsed = skillNameSchema(raw);
   if (parsed instanceof type.errors) {
     throw new SkillRegistryError(
       "invalid",
-      `skill name ${JSON.stringify(raw)} is invalid: ${parsed.summary}`,
+      isPatternFailure(parsed)
+        ? "Name must be lowercase letters, digits, and hyphens."
+        : `skill name ${JSON.stringify(raw)} is invalid: ${parsed.summary}`,
+      parsed.summary,
+    );
+  }
+  return parsed;
+}
+
+function assertDescription(raw: string): string {
+  const parsed = skillDescriptionSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new SkillRegistryError(
+      "invalid",
+      isPatternFailure(parsed)
+        ? "Description can't contain HTML tags."
+        : `skill description is invalid: ${parsed.summary}`,
+      parsed.summary,
     );
   }
   return parsed;
@@ -279,24 +313,71 @@ export function createSkillRegistry(
 
     async create(caller, input) {
       const name = assertSkillName(input.name);
+      const description = assertDescription(input.description);
       const parsedScope = assertScope(input.scope);
       let contents: string;
       try {
-        contents = buildSkillMd({
-          name,
-          description: input.description,
-          body: input.body,
-        });
+        contents = buildSkillMd({ name, description, body: input.body });
       } catch (cause) {
         contentErrorToRegistryError(cause);
       }
+
+      async function finish(assetId: string): Promise<SkillSummary> {
+        const row: SkillAccessRow = {
+          assetId,
+          tenantId: caller.tenantId,
+          skillName: name,
+          creatorPrincipalId: caller.principalId,
+          scope: parsedScope,
+        };
+        await access.upsert(row);
+        const summaries = await summarize(caller, [row]);
+        const summary = summaries[0];
+        if (summary === undefined) {
+          throw new SkillRegistryError(
+            "not_found",
+            `created skill "${name}" is not readable back`,
+          );
+        }
+        return summary;
+      }
+
       const existing = await assets.findByName(caller.tenantId, name);
       if (existing !== null) {
-        throw new SkillRegistryError(
-          "conflict",
-          `a skill named "${name}" already exists in this workbench`,
-        );
+        const existingRow = await access.get(existing.id);
+        if (
+          existingRow !== null ||
+          existing.creatorPrincipalId !== caller.principalId
+        ) {
+          // Either a fully-formed skill already owns this name, or the
+          // orphaned asset was started by someone else — neither is this
+          // caller's to complete.
+          throw new SkillRegistryError(
+            "conflict",
+            `a skill named "${name}" already exists in this workbench`,
+          );
+        }
+        // The asset exists but has no access row: a prior create for this
+        // exact name got as far as `assets.create` (and maybe
+        // `writeSkillMd`) and then failed or timed out before finishing.
+        // Finish it — write the SKILL.md commit if it's still missing,
+        // then the access row — rather than 409ing on a name this same
+        // caller can never use again. Never re-create the asset itself.
+        const existingContents = await assets.readSkillMd({
+          assetId: existing.id,
+          skillName: name,
+        });
+        if (existingContents === null) {
+          await assets.writeSkillMd({
+            assetId: existing.id,
+            skillName: name,
+            contents,
+            message: `Create ${name}`,
+          });
+        }
+        return finish(existing.id);
       }
+
       const created = await assets.create({
         tenantId: caller.tenantId,
         name,
@@ -309,23 +390,7 @@ export function createSkillRegistry(
         contents,
         message: `Create ${name}`,
       });
-      const row: SkillAccessRow = {
-        assetId: created.id,
-        tenantId: caller.tenantId,
-        skillName: name,
-        creatorPrincipalId: caller.principalId,
-        scope: parsedScope,
-      };
-      await access.upsert(row);
-      const summaries = await summarize(caller, [row]);
-      const summary = summaries[0];
-      if (summary === undefined) {
-        throw new SkillRegistryError(
-          "not_found",
-          `created skill "${name}" is not readable back`,
-        );
-      }
-      return summary;
+      return finish(created.id);
     },
   };
 }

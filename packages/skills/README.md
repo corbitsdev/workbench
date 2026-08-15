@@ -26,10 +26,18 @@ visibility verdict, and nothing else. See `src/migrations.ts` and
 [docs/package-migrations.md](../../docs/package-migrations.md).
 
 A skill is created directly: `create` writes the `kind:"skill"` asset,
-commits its `SKILL.md`, and writes the `skill_access` row in one call —
-there is no pending or draft state in between. A name conflict, or
-`SKILL.md` frontmatter the schema rejects, fails the call before any
-asset is created, so a rejected create leaves nothing behind to clean up.
+commits its `SKILL.md`, and writes the `skill_access` row — no pending or
+draft state in between. A validation failure (a name or description the
+schema rejects) fails before any asset is created, so it leaves nothing
+behind. A failure between those three writes is not atomic, though:
+`create` isn't a transaction across the asset store and the access
+table, so a crash or timeout partway through can leave the asset written
+but not yet committed or accessible. That's not silent data loss —
+retrying the same create on the same name detects the caller's own
+half-written asset and finishes it (writing the missing `SKILL.md`
+commit and/or access row) instead of 409ing forever. A fully-formed
+skill, or another caller's half-written asset, still 409s as a genuine
+name conflict.
 
 ## Two surfaces
 

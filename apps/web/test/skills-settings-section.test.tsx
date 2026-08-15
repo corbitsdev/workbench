@@ -201,6 +201,15 @@ describe("SkillsSettingsSection", () => {
   });
 
   test("a rejected create surfaces the registry's error inline in the dialog and creates nothing", async () => {
+    // The dialog's own client-side validationIssues() never checks the
+    // description for HTML, so an author typing markup only gets caught
+    // server-side. That's the realistic path exercised here: the stubbed
+    // 400 body is the exact plain-language message
+    // `assertDescription` in packages/skills/src/registry.ts produces for
+    // a description containing an HTML tag ("Description can't contain
+    // HTML tags."), not an invented string — regression coverage against
+    // that message drifting or an arktype regex summary leaking back in.
+    const REGISTRY_DESCRIPTION_ERROR = "Description can't contain HTML tags.";
     globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
       const path = String(input);
       const method = init?.method ?? "GET";
@@ -212,12 +221,7 @@ describe("SkillsSettingsSection", () => {
       });
       if (method === "POST" && path.endsWith("/skills")) {
         return new Response(
-          JSON.stringify({
-            error: {
-              message:
-                "skill frontmatter is invalid: name must be lowercase letters, digits, and hyphens",
-            },
-          }),
+          JSON.stringify({ error: { message: REGISTRY_DESCRIPTION_ERROR } }),
           { status: 400 },
         );
       }
@@ -234,7 +238,7 @@ describe("SkillsSettingsSection", () => {
 
     await act(async () => {
       fillField("create-skill-name", "summarize");
-      fillField("create-skill-description", "Condenses.", true);
+      fillField("create-skill-description", "<b>Condenses.</b>", true);
       fillField("create-skill-body", "Do it.", true);
     });
 
@@ -248,7 +252,7 @@ describe("SkillsSettingsSection", () => {
       await Promise.resolve();
     });
 
-    expect(document.body.textContent).toContain("skill frontmatter is invalid");
+    expect(document.body.textContent).toContain(REGISTRY_DESCRIPTION_ERROR);
     // The dialog is still open with the typed values rather than closed.
     expect(document.body.textContent).toContain("Create skill");
     expect(
