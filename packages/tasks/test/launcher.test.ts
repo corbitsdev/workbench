@@ -247,6 +247,9 @@ function storeOverInserts(db: {
         settledAt: null,
       };
     },
+    async listStuckLegDispatches() {
+      throw new Error("the launcher never sweeps stuck hand-offs");
+    },
     async settleLeg() {
       throw new Error("launchTask never settles a leg");
     },

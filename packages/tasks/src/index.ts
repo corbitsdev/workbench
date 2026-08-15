@@ -28,6 +28,7 @@ export {
   type RecordLegRunInput,
   type RecordResultMailInput,
   type SettleLegInput,
+  type StuckLegDispatchesInput,
   type TaskDb,
   type TaskLegRecord,
   type TaskLegSpec,
@@ -60,3 +61,11 @@ export {
   type TaskOrchestratorDeps,
 } from "./orchestrator";
 export { createTaskRoutes, type CreateTaskRoutesDeps } from "./routes";
+export {
+  createStuckLegSweep,
+  tickStuckLegSweep,
+  STUCK_LEG_GRACE_MS,
+  STUCK_LEG_MESSAGE,
+  STUCK_LEG_SWEEP_INTERVAL_MS,
+  type StuckLegSweepDeps,
+} from "./stuck-legs";

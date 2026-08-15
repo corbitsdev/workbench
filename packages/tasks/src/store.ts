@@ -119,6 +119,11 @@ export interface RecordLegRunInput {
   readonly runId: string;
 }
 
+export interface StuckLegDispatchesInput {
+  /** Legs whose lease had already passed at this instant. */
+  readonly claimedBefore: Date;
+}
+
 export interface ConfirmLegDeliveryInput {
   readonly tenantId: string;
   readonly legId: string;
@@ -184,6 +189,14 @@ export interface TaskStore {
   confirmLegDelivery(
     input: ConfirmLegDeliveryInput,
   ): Promise<TaskLegRecord | null>;
+  /**
+   * Every leg, across every tenant, still claimed after its lease ran
+   * out — a hand-off no one is carrying and no settlement will
+   * redeliver. The sweep in `./stuck-legs.ts` is the only caller.
+   */
+  listStuckLegDispatches(
+    input: StuckLegDispatchesInput,
+  ): Promise<readonly TaskLegRecord[]>;
   /** Flips a still-`running` leg terminal, winner-takes-all per leg. */
   settleLeg(input: SettleLegInput): Promise<TaskLegRecord | null>;
   /** Fails a claimed leg whose agent never received its prompt. */
@@ -514,6 +527,20 @@ export function createDrizzleTaskStore<TSchema extends Record<string, unknown>>(
       return row === undefined ? null : toLegRecord(row);
     },
 
+    async listStuckLegDispatches(input) {
+      const rows = await db
+        .select()
+        .from(taskLeg)
+        .where(
+          and(
+            eq(taskLeg.status, "dispatching"),
+            lt(taskLeg.leaseExpiresAt, input.claimedBefore),
+          ),
+        )
+        .orderBy(asc(taskLeg.createdAt));
+      return rows.map(toLegRecord);
+    },
+
     async settleLeg(input) {
       const [row] = await db
         .update(taskLeg)
@@ -732,6 +759,17 @@ export function createMemoryTaskStore(): TaskStore {
       };
       legs.set(leg.id, updated);
       return updated;
+    },
+
+    async listStuckLegDispatches(input) {
+      return [...legs.values()]
+        .filter(
+          (leg) =>
+            leg.status === "dispatching" &&
+            leg.leaseExpiresAt !== null &&
+            leg.leaseExpiresAt.getTime() < input.claimedBefore.getTime(),
+        )
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     },
 
     async settleLeg(input) {

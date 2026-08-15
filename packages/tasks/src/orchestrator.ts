@@ -72,7 +72,10 @@ export type TaskOrchestrator = {
   ): void;
 };
 
-async function resolveAgentName(
+/** The name a person knows an agent by, falling back to its id when
+ * the definition is gone. Shared with the stuck hand-off sweep, which
+ * writes the same kind of Inbox item from outside the event stream. */
+export async function resolveAgentName(
   db: DB["db"],
   tenantId: string,
   definitionId: string,
