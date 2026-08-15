@@ -620,14 +620,6 @@ export function InsightsRunDetail({
               />
             ) : null}
             {trace.kind === "unauthenticated" ? <SignedOutNotice /> : null}
-            {trace.kind === "ready" &&
-            "absent" in trace.data &&
-            trace.data.spans === null ? (
-              <RichEmptyState
-                title="Trace reader not mounted"
-                description="Trace detail isn't available yet. Spans stay absent — not shown as zeros."
-              />
-            ) : null}
             {trace.kind === "ready" && spans.length > 0 ? (
               <section className="insights-panel">
                 <h3>Timeline</h3>
@@ -638,9 +630,7 @@ export function InsightsRunDetail({
                 />
               </section>
             ) : null}
-            {trace.kind === "ready" &&
-            spans.length === 0 &&
-            !("absent" in trace.data) ? (
+            {trace.kind === "ready" && spans.length === 0 ? (
               <RichEmptyState
                 title="Empty trace"
                 description="The run exists but has no recorded spans yet."
