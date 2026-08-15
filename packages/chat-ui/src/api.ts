@@ -235,7 +235,8 @@ export function listChannels(
  * omits the query param entirely rather than hardcoding the two kinds
  * this UI has bespoke handling for. Used where the caller needs the
  * complete channel-host/participant surface regardless of kind — e.g.
- * computing the tenant's folded-run id set (see `folded-run-ids.ts`).
+ * the shell's second column splitting the result into its channels and
+ * chats sections (see `apps/web/src/shell/bench-activity.ts`).
  */
 export function listAllChannels(tenantId: string): Promise<readonly Channel[]> {
   return request(

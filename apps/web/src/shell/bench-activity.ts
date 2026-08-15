@@ -14,7 +14,7 @@
 // query with nowhere to point.
 
 import { useEffect, useState } from "react";
-import { foldedRunIdsFromChannels, listAllChannels } from "@corbits/chat-ui";
+import { listAllChannels } from "@corbits/chat-ui";
 import type { Channel } from "@corbits/chat-ui";
 import { listTasks, workingTasks } from "@corbits/tasks-ui";
 import type { WorkingTask } from "@corbits/tasks-ui";
@@ -47,15 +47,16 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     }
     let cancelled = false;
     setState({ kind: "loading" });
-    // One all-kinds channels fetch, split client-side, instead of two
-    // per-kind fetches: the full list is also exactly what
-    // `foldedRunIdsFromChannels` needs to keep the tenant's folded/chat
-    // runs (channel hosts + invited agents, which self-anchor like real
-    // deployments) out of the "Running" band's deployments listing.
+    // One all-kinds channels fetch, split client-side, for the channels/
+    // chats sections below. `listRoutineActivity` no longer needs
+    // anything derived from it — it reads the hub's own server-side
+    // scoped listing (`listTopLevelRuns`), which already excludes every
+    // folded run (channel hosts, invited agents, tasks) — see
+    // `@corbits/folded-runs`'s `scope-routes.ts`.
     listAllChannels(tenantId)
       .then(async (allChannels) => {
         const [routines, tasks] = await Promise.all([
-          listRoutineActivity(tenantId, foldedRunIdsFromChannels(allChannels)),
+          listRoutineActivity(tenantId),
           listTasks(tenantId),
         ]);
         if (cancelled) return;
