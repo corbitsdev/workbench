@@ -4,10 +4,14 @@ import {
   computeInsightsStats,
   computeTraceStats,
   filterRunsByCreatedAt,
+  groupRunsByDefinition,
+  legDurationMs,
+  legStatusTone,
   purposeRunsForInsights,
 } from "./insights-stats";
 import type { InsightsRun, RunTraceSpan } from "./insights-api";
 import type { Routine } from "./routines-api";
+import type { TaskLeg } from "./insights-api";
 
 function span(
   partial: Partial<RunTraceSpan> & Pick<RunTraceSpan, "id">,
@@ -154,6 +158,94 @@ describe("computeTraceStats", () => {
       failed: 1,
       durationMs: 1200,
     });
+  });
+});
+
+function leg(partial: Partial<TaskLeg> & Pick<TaskLeg, "position">): TaskLeg {
+  return {
+    definitionId: "wfd_agent",
+    prompt: "do the thing",
+    status: "pending",
+    runId: null,
+    startedAt: null,
+    settledAt: null,
+    ...partial,
+  };
+}
+
+describe("groupRunsByDefinition", () => {
+  test("groups runs by definitionId, newest first within each group", () => {
+    const groups = groupRunsByDefinition([
+      run({
+        id: "a1",
+        status: "deployed",
+        definitionId: "wfd_a",
+        definitionName: "Research brief",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+      run({
+        id: "b1",
+        status: "running",
+        definitionId: "wfd_b",
+        definitionName: "Weekly digest",
+        createdAt: "2026-01-02T00:00:00.000Z",
+      }),
+      run({
+        id: "a2",
+        status: "error",
+        definitionId: "wfd_a",
+        definitionName: "Research brief",
+        createdAt: "2026-01-03T00:00:00.000Z",
+      }),
+    ]);
+
+    expect(groups.map((g) => g.definitionId)).toEqual(["wfd_a", "wfd_b"]);
+    expect(groups[0]?.runs.map((r) => r.id)).toEqual(["a2", "a1"]);
+    expect(groups[0]?.definitionName).toBe("Research brief");
+  });
+
+  test("an empty feed groups to nothing", () => {
+    expect(groupRunsByDefinition([])).toEqual([]);
+  });
+});
+
+describe("legDurationMs", () => {
+  test("derives duration from startedAt/settledAt", () => {
+    expect(
+      legDurationMs(
+        leg({
+          position: 0,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          settledAt: "2026-01-01T00:00:05.000Z",
+        }),
+      ),
+    ).toBe(5000);
+  });
+
+  test("returns null when the leg has not settled", () => {
+    expect(
+      legDurationMs(
+        leg({
+          position: 0,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          settledAt: null,
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("returns null when the leg never started", () => {
+    expect(legDurationMs(leg({ position: 0 }))).toBeNull();
+  });
+});
+
+describe("legStatusTone", () => {
+  test("maps each leg status to a badge tone", () => {
+    expect(legStatusTone("pending")).toBe("neutral");
+    expect(legStatusTone("dispatching")).toBe("info");
+    expect(legStatusTone("running")).toBe("info");
+    expect(legStatusTone("done")).toBe("success");
+    expect(legStatusTone("failed")).toBe("danger");
   });
 });
 
