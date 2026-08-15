@@ -40,6 +40,7 @@ import { workflowDefinition } from "@intx/db/schema";
 import type { SidecarEventEmitter } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
 
+import { advanceChain, type ChainDeps } from "./chain";
 import type { TaskStore } from "./store";
 
 const log = getLogger(["tasks", "orchestrator"]);
@@ -52,6 +53,12 @@ export type TaskOrchestratorDeps = {
   /** Bumps the idle-sleep lifecycle's activity clock — same optional
    * shape `@corbits/chat`'s orchestrator carries. */
   recordActivity?: (address: string) => void;
+  /**
+   * Launches the next leg of a chained task. Required: a host that
+   * couldn't hand work on would strand every multi-agent task at its
+   * first leg while reporting it finished.
+   */
+  launchLeg: ChainDeps["launchLeg"];
 };
 
 export type TaskOrchestrator = {
@@ -109,25 +116,19 @@ export function createTaskOrchestrator(
   // only closes the in-flight race the store can't see.
   const claimedAddresses = new Set<string>();
 
-  async function deliverTerminalTask(
+  async function completeAndDeliver(
     agentAddress: string,
-    status: "completed" | "failed",
+    record: {
+      id: string;
+      tenantId: string;
+      principalId: string;
+      definitionId: string;
+      createdAt: Date;
+    },
+    taskStatus: "done" | "failed",
     errorMessage: string | undefined,
   ): Promise<void> {
-    const run = await findFoldedRunByAddress(deps.db, agentAddress);
-    if (run === undefined || run.principalId === null) {
-      claimedAddresses.delete(agentAddress);
-      return;
-    }
-
-    const record = await deps.store.getTaskByRunId(run.id);
-    if (record === null) {
-      claimedAddresses.delete(agentAddress);
-      return;
-    }
-
     const completedAt = new Date();
-    const taskStatus = status === "completed" ? "done" : "failed";
     // Flip status FIRST, conditionally on still being "running" — the
     // store-level winner-takes-all guard (an UPDATE ... WHERE
     // status='running' in the drizzle store). Only the caller that won
@@ -161,7 +162,8 @@ export function createTaskOrchestrator(
       kind: "task-result",
       tenantId: record.tenantId,
       taskId: record.id,
-      runId: record.runId,
+      runIds: [...completed.runIds],
+      stepCount: completed.stepCount,
       agentName,
       status: taskStatus,
       ...(replyText !== undefined ? { replyText } : {}),
@@ -182,6 +184,70 @@ export function createTaskOrchestrator(
         resultMailId: mailId,
       });
     }
+  }
+
+  async function deliverTerminalTask(
+    agentAddress: string,
+    status: "completed" | "failed",
+    errorMessage: string | undefined,
+  ): Promise<void> {
+    const run = await findFoldedRunByAddress(deps.db, agentAddress);
+    if (run === undefined || run.principalId === null) {
+      claimedAddresses.delete(agentAddress);
+      return;
+    }
+
+    const leg = await deps.store.getLegByRunId(run.id);
+    if (leg === null) {
+      claimedAddresses.delete(agentAddress);
+      return;
+    }
+    const record = await deps.store.getTask(leg.tenantId, leg.taskId);
+    if (record === null) {
+      claimedAddresses.delete(agentAddress);
+      return;
+    }
+
+    // Settle THIS leg before anything else, conditionally on it still
+    // being "running" — the same winner-takes-all shape the task's own
+    // terminal flip uses, applied once per leg rather than once per
+    // task, so a chain's every hand-off is protected against a
+    // redelivered terminal event, not just its last one.
+    const settledAt = new Date();
+    const legStatus = status === "completed" ? "done" : "failed";
+    const settledLeg = await deps.store.settleLeg({
+      tenantId: leg.tenantId,
+      legId: leg.id,
+      status: legStatus,
+      ...(errorMessage !== undefined ? { errorMessage } : {}),
+      settledAt,
+    });
+    if (settledLeg === null) return;
+
+    if (legStatus === "failed") {
+      await completeAndDeliver(agentAddress, record, "failed", errorMessage);
+      return;
+    }
+
+    const advance = await advanceChain(
+      { store: deps.store, launchLeg: deps.launchLeg },
+      { task: record, settledLeg },
+    );
+    if (advance.kind === "dispatched" || advance.kind === "already-claimed") {
+      // The task is still running: its work moved to the next agent,
+      // and that agent's own terminal event will settle it.
+      return;
+    }
+    if (advance.kind === "dispatch-failed") {
+      await completeAndDeliver(
+        agentAddress,
+        record,
+        "failed",
+        advance.errorMessage,
+      );
+      return;
+    }
+    await completeAndDeliver(agentAddress, record, "done", errorMessage);
   }
 
   const unsubscribe = deps.events.on(

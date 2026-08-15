@@ -6,31 +6,53 @@ export {
 } from "./migrations";
 export {
   task,
+  taskLeg,
   tasksSchema,
+  TASK_LEG_STATUSES,
   TASK_STATUSES,
+  type TaskLegRow,
+  type TaskLegStatus,
   type TaskRow,
   type TaskStatus,
 } from "./schema";
 export {
   createDrizzleTaskStore,
   createMemoryTaskStore,
+  taskLegLaunchRows,
+  type ClaimLegDispatchInput,
   type CompleteTaskInput,
   type CreateTaskInput,
+  type FailLegDispatchInput,
   type LinkPlannerRunInput,
+  type RecordLegRunInput,
   type RecordResultMailInput,
+  type SettleLegInput,
   type TaskDb,
+  type TaskLegRecord,
+  type TaskLegSpec,
   type TaskRecord,
   type TaskStore,
 } from "./store";
 export {
   launchTask,
+  launchTaskLeg,
   PROMPT_DELIVERY_FAILED_MESSAGE,
   TaskDefinitionNotFoundError,
   TaskDefinitionNotLaunchableError,
   TaskDefinitionNotTaskableError,
+  TaskLegClaimLostError,
   type LaunchTaskInput,
+  type LaunchTaskLegInput,
   type TaskLauncherDeps,
 } from "./launcher";
+export {
+  advanceChain,
+  HANDOFF_FAILED_MESSAGE,
+  LEG_DISPATCH_LEASE_MS,
+  type ChainAdvance,
+  type ChainDeps,
+  type LaunchLegPort,
+} from "./chain";
 export {
   createTaskOrchestrator,
   type TaskOrchestrator,
