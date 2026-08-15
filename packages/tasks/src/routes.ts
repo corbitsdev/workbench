@@ -24,7 +24,7 @@ import {
   TaskDefinitionNotTaskableError,
   type LaunchTaskInput,
 } from "./launcher";
-import type { TaskRecord, TaskStore } from "./store";
+import type { TaskLegRecord, TaskRecord, TaskStore } from "./store";
 
 const log = getLogger(["tasks", "routes"]);
 
@@ -58,6 +58,18 @@ function taskView(record: TaskRecord) {
     resultMailId: record.resultMailId,
     createdAt: record.createdAt.toISOString(),
     completedAt: record.completedAt?.toISOString() ?? null,
+  };
+}
+
+function legView(leg: TaskLegRecord) {
+  return {
+    position: leg.position,
+    definitionId: leg.definitionId,
+    prompt: leg.prompt,
+    status: leg.status,
+    runId: leg.runId,
+    startedAt: leg.startedAt?.toISOString() ?? null,
+    settledAt: leg.settledAt?.toISOString() ?? null,
   };
 }
 
@@ -159,6 +171,47 @@ export function createTaskRoutes(deps: CreateTaskRoutesDeps): Hono<TenantEnv> {
       return c.json({ item: taskView(record) });
     },
   );
+
+  // Flat leg listing for linear chains only — a task with parent/child
+  // dispatch trees (not just a straight hand-off sequence) is out of
+  // scope here and deferred to a future re-vendor; see CL-5514.
+  app.get(
+    "/:id/legs",
+    deps.requireGrant(idResource("task", "id"), "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const id = c.req.param("id");
+      const record = await deps.store.getTask(tenant.id, id);
+      if (record === null || record.principalId !== principal.id) {
+        return c.json(
+          ErrorEnvelope("not_found", "That task doesn't exist."),
+          404,
+        );
+      }
+      const legs = await deps.store.listLegs(tenant.id, id);
+      const ordered = [...legs].sort((a, b) => a.position - b.position);
+      return c.json({ items: ordered.map(legView) });
+    },
+  );
+
+  app.get("/by-run/:runId", deps.requireGrant("task:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const principal = c.get("principal");
+    const runId = c.req.param("runId");
+    const record = await deps.store.getTaskByRunId(runId);
+    if (
+      record === null ||
+      record.tenantId !== tenant.id ||
+      record.principalId !== principal.id
+    ) {
+      return c.json(
+        ErrorEnvelope("not_found", "That task doesn't exist."),
+        404,
+      );
+    }
+    return c.json({ item: taskView(record) });
+  });
 
   return app;
 }

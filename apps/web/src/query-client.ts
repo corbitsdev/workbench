@@ -4,19 +4,33 @@
 
 import { QueryClient } from "@tanstack/react-query";
 
-import { UnauthenticatedError } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
 import { channelsQueryKey } from "@corbits/chat-ui";
 import type { ChannelKind } from "@corbits/chat-ui";
+
+/**
+ * Retry policy shared by every query in the app: no session and a
+ * definitive 404 both mean retrying cannot help — a 404 on a chain-context
+ * lookup (a run with no owning task) is a real, stable answer, not a
+ * transient failure, so retrying it three times only delays an honest
+ * quiet no-op. Everything else (500s, network failures) gets the normal
+ * three attempts.
+ */
+export function shouldRetryQuery(
+  failureCount: number,
+  error: unknown,
+): boolean {
+  if (error instanceof UnauthenticatedError) return false;
+  if (error instanceof ApiQueryError && error.status === 404) return false;
+  return failureCount < 3;
+}
 
 export function createAppQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: 30_000,
-        retry: (failureCount, error) => {
-          if (error instanceof UnauthenticatedError) return false;
-          return failureCount < 3;
-        },
+        retry: shouldRetryQuery,
       },
     },
   });
@@ -67,6 +81,10 @@ export const tenantKeys = {
   channels: (tenantId: string, kind: ChannelKind) =>
     channelsQueryKey(tenantId, kind),
   tasks: (tenantId: string) => ["tenant", tenantId, "tasks"] as const,
+  taskLegs: (tenantId: string, taskId: string) =>
+    ["tenant", tenantId, "tasks", taskId, "legs"] as const,
+  taskByRun: (tenantId: string, runId: string) =>
+    ["tenant", tenantId, "tasks", "by-run", runId] as const,
   topLevelRuns: (tenantId: string) =>
     ["tenant", tenantId, "top-level-runs"] as const,
 };
@@ -94,6 +112,16 @@ export function pathToQueryKey(path: string): readonly unknown[] {
   );
   if (artifacts?.[1] !== undefined) {
     return [...tenantKeys.artifacts(artifacts[1]), artifacts[2] ?? ""] as const;
+  }
+  const taskLegs = /^\/api\/tenants\/([^/]+)\/tasks\/([^/]+)\/legs$/.exec(path);
+  if (taskLegs?.[1] !== undefined && taskLegs[2] !== undefined) {
+    return tenantKeys.taskLegs(taskLegs[1], taskLegs[2]);
+  }
+  const taskByRun = /^\/api\/tenants\/([^/]+)\/tasks\/by-run\/([^/]+)$/.exec(
+    path,
+  );
+  if (taskByRun?.[1] !== undefined && taskByRun[2] !== undefined) {
+    return tenantKeys.taskByRun(taskByRun[1], taskByRun[2]);
   }
   return ["path", path];
 }

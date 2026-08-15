@@ -106,6 +106,24 @@ describe("toAPIQuery", () => {
     });
   });
 
+  test("threads an ApiQueryError's status onto the error kind", () => {
+    const result = toAPIQuery({
+      isLoading: false,
+      isError: true,
+      error: new ApiQueryError("not found", 404),
+      data: undefined,
+      isPending: false,
+      fetchStatus: "idle",
+      refetch: mock(() => undefined),
+    });
+    expect(result).toEqual({
+      kind: "error",
+      message: "Something went wrong. Try again.",
+      retry: expect.any(Function),
+      status: 404,
+    });
+  });
+
   test("error's retry calls the query's own refetch", () => {
     const refetch = mock(() => undefined);
     const result = toAPIQuery({

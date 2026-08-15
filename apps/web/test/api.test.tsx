@@ -6,10 +6,16 @@
 // bench-ui API clients are tested with.
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
+import { type } from "arktype";
 
+import type { APIQuery } from "@corbits/api-query";
 import { ApiQueryError } from "@corbits/api-query";
 
-import { approveApproval, rejectApproval } from "../src/api";
+import { approveApproval, rejectApproval, useAPIQuery } from "../src/api";
+import { TestQueryProvider } from "./test-query-provider";
 
 const realFetch = globalThis.fetch;
 
@@ -88,5 +94,54 @@ describe("rejectApproval", () => {
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
       message: "Not now",
     });
+  });
+});
+
+describe("useAPIQuery", () => {
+  const PingSchema = type({ ok: "boolean" });
+
+  async function mountHook(path: string): Promise<{
+    readonly latest: () => APIQuery<{ ok: boolean }>;
+    readonly root: Root;
+    readonly container: HTMLDivElement;
+  }> {
+    let latest: APIQuery<{ ok: boolean }> = { kind: "loading" };
+    function Probe() {
+      latest = useAPIQuery(path, PingSchema);
+      return null;
+    }
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <Probe />
+        </TestQueryProvider>,
+      );
+    });
+    return { latest: () => latest, root, container };
+  }
+
+  async function settle() {
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+  }
+
+  test("a non-2xx response reports the error kind carrying the response status", async () => {
+    stubFetch(() => json({ error: { code: "not_found" } }, 404));
+    const { latest, root, container } = await mountHook("/api/ping");
+    await settle();
+    expect(latest()).toEqual({
+      kind: "error",
+      message: "Something went wrong. Try again.",
+      retry: expect.any(Function),
+      status: 404,
+    });
+    root.unmount();
+    container.remove();
   });
 });
