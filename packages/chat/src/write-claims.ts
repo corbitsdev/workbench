@@ -1,6 +1,22 @@
 // Durable redelivery-dedup for `chat-orchestrator.ts`'s finalized-turn
 // write surfaces (CL-6039) — see `finalizedTurnWriteClaim`'s own doc
 // comment in `./schema.ts` for the table shape and why it exists.
+//
+// A claim means "won the right to attempt the write", not "the write
+// succeeded" — `tryClaim` alone can't tell the difference. Every call
+// site in `./chat-orchestrator.ts` therefore wraps its write in a
+// try/catch that calls `release` on any throw, before its own
+// log-and-drop catch runs: a write that fails un-claims itself so a
+// redelivery can retry it, rather than the claim silently outliving a
+// write that never happened. The residual gap this can't close: a
+// process that dies between winning a claim and either finishing the
+// write or reaching that catch block leaves a claimed-but-unwritten row
+// behind, exactly like `@corbits/tasks`' `chain.ts` surviving a claim
+// but not a hub restart mid-hand-off — there is no sweep here (unlike
+// that package's `stuck-legs.ts`, which exists precisely to re-open
+// `chain.ts`'s abandoned claims) to notice and re-open one of these, so
+// that one entry is lost silently until a human does.
+import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import { finalizedTurnWriteClaim } from "./schema";
@@ -22,6 +38,14 @@ export type WriteClaimStore = {
    * write either way).
    */
   tryClaim(claim: WriteClaim): Promise<boolean>;
+  /**
+   * Un-claims `(tenantId, surface, claimKey)` — called only when the
+   * write this claim was won for then failed, so a later redelivery
+   * sees no claim and retries it. Never called after a successful
+   * write: a released claim and a never-attempted claim are
+   * indistinguishable to `tryClaim`, which is exactly the point.
+   */
+  release(claim: WriteClaim): Promise<void>;
 };
 
 export type WriteClaimDb<
@@ -60,6 +84,17 @@ export function createDrizzleWriteClaimStore<
 
       return inserted.length > 0;
     },
+    async release(claim) {
+      await db
+        .delete(finalizedTurnWriteClaim)
+        .where(
+          and(
+            eq(finalizedTurnWriteClaim.tenantId, claim.tenantId),
+            eq(finalizedTurnWriteClaim.surface, claim.surface),
+            eq(finalizedTurnWriteClaim.claimKey, claim.claimKey),
+          ),
+        );
+    },
   };
 }
 
@@ -76,12 +111,17 @@ export function createDrizzleWriteClaimStore<
  */
 export function createInMemoryWriteClaimStore(): WriteClaimStore {
   const claimed = new Set<string>();
+  const keyOf = (claim: WriteClaim) =>
+    `${claim.tenantId}:${claim.surface}:${claim.claimKey}`;
   return {
     async tryClaim(claim) {
-      const key = `${claim.tenantId}:${claim.surface}:${claim.claimKey}`;
+      const key = keyOf(claim);
       if (claimed.has(key)) return false;
       claimed.add(key);
       return true;
+    },
+    async release(claim) {
+      claimed.delete(keyOf(claim));
     },
   };
 }

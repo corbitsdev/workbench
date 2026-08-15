@@ -54,7 +54,11 @@ const RATE_WINDOW_MS = 60_000;
  * `createWorkflowMemoryRoutes` call — resets on hub restart, which is
  * fine: unlike the durable redelivery-dedup claim (`@corbits/chat`'s
  * `WriteClaimStore`), a rate bound only needs to hold within one
- * process's uptime, never across it.
+ * process's uptime, never across it. Per-process also means per-replica:
+ * N hub replicas give one run an effective N × `MAX_ADDS_PER_RUN_PER_MINUTE`
+ * budget, since each replica counts only what it personally handled —
+ * a known fail-open gap, not a fail-closed one, so it under-limits rather
+ * than wrongly rejecting a caller a sibling replica hasn't seen yet.
  */
 function createRunAddRateLimiter(maxPerWindow: number) {
   const timestampsByRunId = new Map<string, number[]>();

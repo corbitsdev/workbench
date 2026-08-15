@@ -47,7 +47,12 @@ const RATE_WINDOW_MS = 60_000;
  * In-process sliding-window rate limiter, closed over per
  * `createWorkflowArtifactRoutes` call — resets on hub restart, which is
  * fine: unlike a durable redelivery-dedup claim, a rate bound only
- * needs to hold within one process's uptime, never across it.
+ * needs to hold within one process's uptime, never across it. Per-process
+ * also means per-replica: N hub replicas give one run an effective
+ * N × `MAX_CREATES_PER_RUN_PER_MINUTE` budget, since each replica counts
+ * only what it personally handled — a known fail-open gap, not a
+ * fail-closed one, so it under-limits rather than wrongly rejecting a
+ * caller a sibling replica hasn't seen yet.
  */
 function createRunCreateRateLimiter(maxPerWindow: number) {
   const timestampsByRunId = new Map<string, number[]>();
