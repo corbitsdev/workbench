@@ -63,6 +63,24 @@ export type {
   DraftDb,
 } from "./drafts";
 
+export {
+  createMyraRoutineDrafting,
+  assembleRoutineDraftInventory,
+  parseRoutineDraftReply,
+  validateRoutineDraftReplyAgainstInventory,
+  MyraRoutineDraftingUnavailableError,
+  RoutineDraftReferenceOutOfInventoryError,
+  RoutineDraftReplyUnparseableError,
+  RoutineDraftReply,
+} from "./myra-drafting";
+export type {
+  RoutineDraftInventory,
+  RoutineDraftInventoryAgent,
+  RoutineDraftInventoryWorkflow,
+  RoutineDraftInventorySources,
+  RoutineDraftingRunnerDeps,
+} from "./myra-drafting";
+
 export { createRoutineRoutes, fireScheduledRoutine } from "./routes";
 export type {
   CreateRoutineRoutesDeps,

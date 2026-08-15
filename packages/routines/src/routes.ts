@@ -13,9 +13,22 @@ import { type } from "arktype";
 import type { TenantEnv } from "@intx/hub-api";
 import type { RequireGrant } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
+import { getLogger } from "@intx/log";
+import {
+  FoldedRunFailedError,
+  FoldedRunTimedOutError,
+  OneShotDefinitionNotFoundError,
+} from "@corbits/folded-runs";
 
 import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
 import type { RoutineRow, RoutineRunRow, RoutineStore } from "./store";
+import {
+  MyraRoutineDraftingUnavailableError,
+  RoutineDraftReferenceOutOfInventoryError,
+  RoutineDraftReplyUnparseableError,
+} from "./myra-drafting";
+
+const log = getLogger(["routines", "routes"]);
 
 export interface LaunchedRoutineRun {
   readonly runId: string;
@@ -147,6 +160,27 @@ export type CreateRoutineRoutesDeps = {
 const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
 });
+
+const DRAFT_FAILED_MESSAGE =
+  "Myra couldn't draft a routine from that. Try rephrasing, or build it from the catalog instead.";
+
+/** Every fail-closed error the Myra drafting path (`./myra-drafting.ts`)
+ * can throw — Myra unresolvable, the one-shot run timing out or
+ * failing, an unparseable reply, an out-of-inventory reference — reads
+ * as the same honest "couldn't draft" 422 to the person who typed the
+ * description, mirroring `@corbits/task-planner`'s own
+ * `isPlanningFailure`. Anything else is a platform fault and is
+ * re-thrown for the host's own error handling to surface. */
+function isDraftingFailure(err: unknown): boolean {
+  return (
+    err instanceof MyraRoutineDraftingUnavailableError ||
+    err instanceof OneShotDefinitionNotFoundError ||
+    err instanceof FoldedRunTimedOutError ||
+    err instanceof FoldedRunFailedError ||
+    err instanceof RoutineDraftReplyUnparseableError ||
+    err instanceof RoutineDraftReferenceOutOfInventoryError
+  );
+}
 
 const CreateRoutineBody = type({
   name: "string",
@@ -642,11 +676,25 @@ export function createRoutineRoutes(
       });
 
       if (deps.drafting !== undefined) {
-        const proposal = await deps.drafting.propose({
-          tenantId: tenant.id,
-          principalId: principal.id,
-          prompt: body.prompt,
-        });
+        let proposal: Awaited<ReturnType<typeof deps.drafting.propose>>;
+        try {
+          proposal = await deps.drafting.propose({
+            tenantId: tenant.id,
+            principalId: principal.id,
+            prompt: body.prompt,
+          });
+        } catch (err) {
+          log.error`routine drafting failed for tenant ${tenant.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`;
+          if (isDraftingFailure(err)) {
+            return c.json(
+              ErrorEnvelope("drafting_failed", DRAFT_FAILED_MESSAGE),
+              422,
+            );
+          }
+          throw err;
+        }
         const reviewed = await deps.drafts.markReviewed(tenant.id, draft.id, {
           proposedSteps: proposal.steps,
           proposedTrigger: proposal.trigger ?? null,

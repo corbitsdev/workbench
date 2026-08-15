@@ -16,9 +16,12 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/folded-runs": "workspace:*",
+    "@corbits/workflow-catalog": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",
+    "@intx/log": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
