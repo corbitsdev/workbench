@@ -233,6 +233,18 @@ export const chatMigrations: readonly ChatMigration[] = [
       );
     `,
   },
+  {
+    name: "0016_finalized_turn_write_claim",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."finalized_turn_write_claim" (
+        "tenant_id" text NOT NULL,
+        "surface" text NOT NULL,
+        "claim_key" text NOT NULL,
+        "claimed_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "surface", "claim_key")
+      );
+    `,
+  },
 ];
 
 /**

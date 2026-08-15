@@ -51,6 +51,7 @@ import {
   createDrizzlePinStore,
   createDrizzleReactionStore,
   createDrizzleThreadStore,
+  createDrizzleWriteClaimStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
   isChannelHostDefinitionName,
@@ -397,7 +398,7 @@ export async function createHub(config: HubConfig) {
   const artifactDeliveryHandlerRef: {
     current?: (
       agentAddress: string,
-      turn: { toolCalls: FinalizedTurnToolCall[] },
+      turn: { turnId: string; toolCalls: FinalizedTurnToolCall[] },
     ) => void;
   } = {};
   const eventCollectors = createEventCollectorRegistry({
@@ -582,6 +583,11 @@ export async function createHub(config: HubConfig) {
   const blockResponseStore = createDrizzleBlockResponseStore(db);
   const reactionStore = createDrizzleReactionStore(db);
   const pinStore = createDrizzlePinStore(db);
+  // Durable redelivery-dedup for the finalized-turn write surfaces
+  // (CL-6039) — see `WriteClaimStore`'s own doc comment. Same `db`
+  // handle as every other Drizzle store above, never a second
+  // connection.
+  const writeClaims = createDrizzleWriteClaimStore(db);
   // Mounted outside the tenant prefix — the sidecar reaches it as a
   // plain inference endpoint, never through tenant-scoped auth, the
   // same way it reaches a real provider's API. `config.baseUrl` (not
@@ -628,6 +634,7 @@ export async function createHub(config: HubConfig) {
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
     recordActivity: chatPlatform.recordActivity,
+    claims: writeClaims,
     ...(memoryHandle !== undefined ? { memory: memoryHandle.memory } : {}),
   });
   // Now that `chatStore`/`chatPlatform` exist, arm the finalized-turn
@@ -640,6 +647,7 @@ export async function createHub(config: HubConfig) {
     platform: chatPlatform,
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
+    claims: writeClaims,
     ...(memoryHandle !== undefined ? { memory: memoryHandle.memory } : {}),
   });
   // The one SSE subscriber registry for this process's channel events

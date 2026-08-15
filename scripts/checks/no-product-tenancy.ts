@@ -41,7 +41,7 @@ const ALLOWLIST: readonly {
 }[] = [
   {
     relPath: "packages/chat/src/schema.ts",
-    maxOccurrences: 12,
+    maxOccurrences: 13,
     tables: [
       "channel_settings",
       "chat_bench_settings",
@@ -55,6 +55,10 @@ const ALLOWLIST: readonly {
       "block_responses",
       "message_reactions",
       "pinned_messages",
+      // Durable redelivery-dedup claim for the finalized-turn write
+      // surfaces (CL-6039) — see finalizedTurnWriteClaim's doc comment
+      // in schema.ts.
+      "finalized_turn_write_claim",
     ],
   },
   {
