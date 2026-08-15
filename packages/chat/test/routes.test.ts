@@ -103,7 +103,9 @@ describe("POST /channels", () => {
   test("creating an unnamed chat titles it by the agent's display name, tenant row included", async () => {
     const deps = buildDeps({
       platform: fakePlatform({
-        invitable: [{ id: "wfd_assist", name: "assistant", description: "Myra" }],
+        invitable: [
+          { id: "wfd_assist", name: "assistant", description: "Myra" },
+        ],
       }),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
