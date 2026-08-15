@@ -37,12 +37,15 @@ import {
   AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
   parseAgentSkills,
+  readAgentSystemPrompt,
   reindexPinnedSkills,
   serializeAgentDefinitionWorkflow,
   serializeAgentSkills,
+  withAgentSystemPrompt,
 } from "./agent-workflow";
 import {
   CreateAgentDefinitionInput,
+  UpdateAgentInstructionsInput,
   UpdateAgentSkillsInput,
 } from "./validation";
 
@@ -289,6 +292,119 @@ export function createAgentDefinitionRoutes({
         if (entry !== null) skills[entry[0]] = entry[1];
       }
       return c.json({ skills });
+    },
+  );
+
+  app.get(
+    "/:definitionId",
+    requireGrant("workflow-definition:*", "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const definitionId = c.req.param("definitionId");
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, definitionId),
+          eq(workflowDefinition.tenantId, tenant.id),
+        ),
+      });
+      if (row === undefined || row.assetId === null) {
+        return c.json(
+          errorEnvelope(
+            "not_found",
+            `No agent definition "${definitionId}" in this workbench`,
+          ),
+          404,
+        );
+      }
+
+      const workflowJson = new TextDecoder().decode(
+        await assetService.readAssetBlob({
+          assetId: row.assetId,
+          path: AGENT_DEFINITION_ASSET_PATH,
+        }),
+      );
+
+      return c.json({
+        id: row.id,
+        name: row.description ?? row.name,
+        systemPrompt: readAgentSystemPrompt(workflowJson),
+      });
+    },
+  );
+
+  app.put(
+    "/:definitionId",
+    requireGrant("workflow-definition:*", "update"),
+    async (c) => {
+      const body = UpdateAgentInstructionsInput(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
+          errorEnvelope(
+            "bad_request",
+            `invalid agent instructions: ${body.summary}`,
+          ),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const definitionId = c.req.param("definitionId");
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, definitionId),
+          eq(workflowDefinition.tenantId, tenant.id),
+        ),
+      });
+      if (row === undefined || row.assetId === null) {
+        return c.json(
+          errorEnvelope(
+            "not_found",
+            `No agent definition "${definitionId}" in this workbench`,
+          ),
+          404,
+        );
+      }
+
+      const workflowJson = new TextDecoder().decode(
+        await assetService.readAssetBlob({
+          assetId: row.assetId,
+          path: AGENT_DEFINITION_ASSET_PATH,
+        }),
+      );
+
+      await assetService.populateAsset({
+        assetId: row.assetId,
+        ref: DEFAULT_ASSET_REF,
+        principal: { kind: "hub" },
+        tree: {
+          files: {
+            [AGENT_DEFINITION_ASSET_PATH]: withAgentSystemPrompt(
+              workflowJson,
+              body.systemPrompt,
+            ),
+          },
+          message: `Update agent instructions for ${row.name}`,
+        },
+      });
+
+      const now = new Date();
+      await db
+        .update(workflowDefinition)
+        .set({ description: body.name, updatedAt: now })
+        .where(
+          and(
+            eq(workflowDefinition.id, definitionId),
+            eq(workflowDefinition.tenantId, tenant.id),
+          ),
+        );
+      await db
+        .update(asset)
+        .set({ displayName: body.name, updatedAt: now })
+        .where(eq(asset.id, row.assetId));
+
+      return c.json({ name: body.name, systemPrompt: body.systemPrompt });
     },
   );
 

@@ -296,6 +296,12 @@
   border-color: color-mix(in oklab, var(--destructive) 40%, var(--border));
 }
 
+.chat-settings-field-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 .chat-settings-choice-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));

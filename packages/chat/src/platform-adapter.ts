@@ -398,6 +398,11 @@ export function createHubChatPlatform(
         }));
     },
 
+    async resolveDefinitionIdByAddress(address): Promise<string | undefined> {
+      const run = await findFoldedRunByAddress(deps.db, address);
+      return run?.definitionId ?? undefined;
+    },
+
     async sendMail(input): Promise<SentMail> {
       const run = await findFoldedRunById(deps.db, input.channelId);
       if (run === undefined) {

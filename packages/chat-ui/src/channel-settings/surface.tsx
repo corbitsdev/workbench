@@ -22,6 +22,7 @@ import type { ChannelSettings } from "../api";
 import { CHAT_STRINGS } from "../strings";
 import { AccessSection } from "./access-section";
 import { AgentsSection } from "./agents-section";
+import { AssistantSection } from "./assistant-section";
 import {
   contextWindowControlState,
   contextWindowPatchValue,
@@ -133,14 +134,16 @@ export function ChannelSettingsSurface({
   // participant address — the same derivation the host app's sidebar
   // uses to bucket it (`assignChannelBucket`), so this trims Agents
   // without a second signal to keep in sync.
-  const isDm =
+  const hasAgent =
     state.kind === "ready" &&
-    !state.data.participants.some((participant) =>
+    state.data.participants.some((participant) =>
       isAgentAddress(participant.address),
     );
+  const isDm = state.kind === "ready" && !hasAgent;
   const sections = channelSettingsSections(
     state.kind === "ready" ? state.data.kind : "channel",
     isDm,
+    hasAgent,
   );
   const firstSection = sections[0];
   if (firstSection === undefined) {
@@ -300,6 +303,10 @@ export function ChannelSettingsSurface({
                 participants={state.data.participants}
                 onInvite={onInviteParticipant}
               />
+            ) : null}
+
+            {activeSection.id === "assistant" ? (
+              <AssistantSection tenantId={tenantId} channelId={channelId} />
             ) : null}
 
             {activeSection.id === "access" ? <AccessSection /> : null}

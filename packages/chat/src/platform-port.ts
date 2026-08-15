@@ -103,6 +103,14 @@ export interface ChannelLauncher {
   listInvitableDefinitions(
     tenantId: string,
   ): Promise<readonly InvitableDefinition[]>;
+
+  /**
+   * Resolves an already-joined participant's address back to the
+   * definition id it was launched from — the reverse of `launchInvite`.
+   * Returns undefined for an address this platform has no folded run
+   * for (a human participant, or a stale/removed agent).
+   */
+  resolveDefinitionIdByAddress(address: string): Promise<string | undefined>;
 }
 
 /** Sending and reading a channel's mail, and fetching its attachment

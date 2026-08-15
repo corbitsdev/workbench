@@ -117,6 +117,49 @@ export function reindexPinnedSkills(
   return JSON.stringify(definition);
 }
 
+/** Reads a definition's system prompt back out of its serialized
+ * `workflow.json` — the raw text a person edits in the Assistant
+ * settings section, before `reindexPinnedSkills` appends the
+ * `<available_skills>` index on top of it at save time. Every builder
+ * in this codebase produces exactly one step, so the definition's one
+ * step is unambiguous regardless of the step's own key. */
+export function readAgentSystemPrompt(workflowJson: string): string {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry a step agent to read a system prompt from: ${definition.summary}`,
+    );
+  }
+  const [step] = Object.values(definition.steps);
+  if (step === undefined) {
+    throw new Error("workflow.json has no steps");
+  }
+  return step.agent.systemPrompt;
+}
+
+/** Replaces a definition's system prompt in its serialized
+ * `workflow.json`, leaving every other field — the trigger, timeouts,
+ * inference sources, tool-package pins — untouched. */
+export function withAgentSystemPrompt(
+  workflowJson: string,
+  systemPrompt: string,
+): string {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry a step agent to write a system prompt into: ${definition.summary}`,
+    );
+  }
+  const [step] = Object.values(definition.steps);
+  if (step === undefined) {
+    throw new Error("workflow.json has no steps");
+  }
+  step.agent.systemPrompt = systemPrompt;
+  return JSON.stringify(definition);
+}
+
 /** Serializes an agent definition's attached skill names to the JSON
  * `AGENT_SKILLS_ASSET_PATH` carries in the asset tree. */
 export function serializeAgentSkills(skills: readonly string[]): string {

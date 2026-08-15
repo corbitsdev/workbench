@@ -539,6 +539,66 @@ export function inviteAgent(
   );
 }
 
+// `GET /channels/:id/agent` (see `packages/chat/src/routes.ts`): the
+// channel's agent participant, resolved back to the definition id its
+// name/instructions are read from and saved to via
+// `@corbits/agent-directory`'s own routes (see `getAgentInstructions`/
+// `updateAgentInstructions` below).
+const ChannelAgentWire = type({
+  address: "string",
+  handle: "string",
+  definitionId: "string",
+});
+export type ChannelAgent = typeof ChannelAgentWire.infer;
+
+export function getChannelAgent(
+  tenantId: string,
+  channelId: string,
+): Promise<ChannelAgent> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/agent`,
+    ChannelAgentWire,
+  );
+}
+
+// `GET`/`PUT /api/tenants/:t/agent-definitions/:id` (see
+// `packages/agent-directory/src/routes.ts`): an agent's editable
+// persona — its display name and system prompt (surfaced to a person as
+// "instructions"). `name` here is the display name, matching the create
+// form's own "name" field (see `CreateAgentDefinitionInput`), never the
+// definition's immutable handle.
+const AgentInstructionsWire = type({
+  name: "string",
+  systemPrompt: "string",
+});
+export type AgentInstructions = typeof AgentInstructionsWire.infer;
+
+function agentInstructionsPath(tenantId: string, definitionId: string) {
+  return `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}`;
+}
+
+export function getAgentInstructions(
+  tenantId: string,
+  definitionId: string,
+): Promise<AgentInstructions> {
+  return request(
+    agentInstructionsPath(tenantId, definitionId),
+    AgentInstructionsWire,
+  );
+}
+
+export function updateAgentInstructions(
+  tenantId: string,
+  definitionId: string,
+  input: AgentInstructions,
+): Promise<AgentInstructions> {
+  return request(
+    agentInstructionsPath(tenantId, definitionId),
+    AgentInstructionsWire,
+    { method: "PUT", body: JSON.stringify(input) },
+  );
+}
+
 export function channelStreamUrl(tenantId: string, channelId: string): string {
   return `/api/tenants/${tenantId}/chat/channels/${channelId}/stream`;
 }

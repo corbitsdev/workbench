@@ -60,3 +60,14 @@ export const UpdateAgentSkillsInput = type({
   skills: SkillNameArray,
 });
 export type UpdateAgentSkillsInput = typeof UpdateAgentSkillsInput.infer;
+
+/** The body of a request that replaces a definition's display name and
+ * system prompt wholesale — the Assistant settings section's edit
+ * form, mirroring `CreateAgentDefinitionInput`'s `name`/`systemPrompt`
+ * fields exactly (the create form's "name" is this same display name). */
+export const UpdateAgentInstructionsInput = type({
+  name: boundedNonBlankString(100),
+  systemPrompt: boundedNonBlankString(8000),
+});
+export type UpdateAgentInstructionsInput =
+  typeof UpdateAgentInstructionsInput.infer;

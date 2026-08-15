@@ -92,6 +92,7 @@ import type { ChannelShareStore } from "./channel-share";
 import { monogramFromName } from "./channel-share";
 import type { FederationTrustStore } from "./federation-trust";
 import type { InvitableDefinition as InvitableDefinitionRecord } from "./platform-port";
+import { isAgentAddress } from "./mentions";
 
 export type {
   ChannelActivitySummary,
@@ -1892,6 +1893,54 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
       const items = await deps.platform.listInvitableDefinitions(tenant.id);
       return c.json({ items: items.filter(deps.isInvitableDefinition) });
+    },
+  );
+
+  // The channel's own agent participant, resolved back to its
+  // definition id — the settings surface's Assistant section reads
+  // this before it can look up that definition's name/instructions
+  // through `@corbits/agent-directory`. Absent (404) for a channel
+  // with no agent participant, or one whose participant no longer
+  // resolves to a live definition.
+  app.get(
+    "/channels/:id/agent",
+    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      const existing = await deps.store.getChannelSettings(
+        tenant.id,
+        channelId,
+      );
+      if (existing === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      const agent = participantsOf(existing.settings).find((participant) =>
+        isAgentAddress(participant.address),
+      );
+      if (agent === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", "no agent in this channel"),
+          404,
+        );
+      }
+
+      const definitionId = await deps.platform.resolveDefinitionIdByAddress(
+        agent.address,
+      );
+      if (definitionId === undefined) {
+        return c.json(
+          ErrorEnvelope("not_found", "no agent in this channel"),
+          404,
+        );
+      }
+
+      return c.json({
+        address: agent.address,
+        handle: agent.handle,
+        definitionId,
+      });
     },
   );
 

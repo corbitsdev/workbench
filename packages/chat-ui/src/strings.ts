@@ -193,6 +193,7 @@ export const CHAT_STRINGS = {
   channelSettingsSectionGeneral: "General",
   channelSettingsSectionMembers: "Members",
   channelSettingsSectionAgents: "Agents",
+  channelSettingsSectionAssistant: "Assistant",
   channelSettingsSectionAccess: "Access",
   channelSettingsSectionNotifications: "Notifications",
   channelSettingsSectionDanger: "Danger zone",
@@ -223,6 +224,16 @@ export const CHAT_STRINGS = {
   channelSettingsAutonomyTitle: "Autonomy",
   channelSettingsAutonomyBody:
     "Per-channel autonomy overrides are not stored yet. Agents inherit the workbench default until that control lands.",
+  channelSettingsAssistantNameLabel: "Assistant name",
+  channelSettingsAssistantInstructionsLabel: "Instructions",
+  channelSettingsAssistantInstructionsHint:
+    "How this agent should act and what it knows to do — shown to the agent on every reply.",
+  channelSettingsAssistantLoadError: "Couldn't load this agent's instructions",
+  channelSettingsAssistantSaveError: "Couldn't save these changes — try again.",
+  channelSettingsAssistantSavedToast: "Instructions saved",
+  channelSettingsAssistantSave: "Save",
+  channelSettingsAssistantSaving: "Saving…",
+  channelSettingsAssistantCancel: "Cancel",
   channelSettingsAccessBody:
     "Channel access follows workbench grants and membership. Manage role and member grants under Workspace → Grants.",
   channelSettingsNotificationsLabel: "Notifications",
