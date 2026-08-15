@@ -22,13 +22,6 @@ const TRIAGE = {
   updatedAtIso: "2026-08-05T11:00:00.000Z",
 };
 
-const PENDING_DRAFT = {
-  assetId: "ast_2",
-  name: "summarize",
-  description: "Condenses a long thread.",
-  updatedAtIso: "2026-08-05T11:00:00.000Z",
-};
-
 type StubRoutes = Record<string, unknown>;
 
 let container: HTMLDivElement | null = null;
@@ -99,8 +92,31 @@ async function mount(
 
 const EMPTY_REGISTRY: StubRoutes = {
   [`GET /api/tenants/${TENANT}/skills`]: { skills: [] },
-  [`GET /api/tenants/${TENANT}/skills/drafts`]: { drafts: [] },
 };
+
+function nativeValueSetter(
+  proto: HTMLInputElement | HTMLTextAreaElement,
+): (this: HTMLInputElement | HTMLTextAreaElement, value: string) => void {
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (setter === undefined) {
+    throw new Error("native value setter unavailable in this DOM");
+  }
+  return setter;
+}
+
+function fillField(id: string, value: string, textarea = false) {
+  const el = document.getElementById(id) as
+    HTMLInputElement | HTMLTextAreaElement | null;
+  expect(el).not.toBeNull();
+  if (el === null) return;
+  const setter = nativeValueSetter(
+    textarea
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype,
+  );
+  setter.call(el, value);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
 
 describe("SkillsSettingsSection", () => {
   test("renders the honest empty state when the registry has nothing", async () => {
@@ -132,45 +148,10 @@ describe("SkillsSettingsSection", () => {
     expect(el.textContent).toContain("Private");
   });
 
-  test("a pending draft is shown separately with Publish and Discard actions", async () => {
+  test("Create skill posts directly to the registry and opens the new skill's detail", async () => {
     stubRoutes({
       ...EMPTY_REGISTRY,
-      [`GET /api/tenants/${TENANT}/skills/drafts`]: { drafts: [PENDING_DRAFT] },
-    });
-    const el = await mount();
-    expect(el.textContent).toContain("Pending");
-    expect(el.textContent).toContain("summarize");
-    expect(el.textContent).toContain("Publish");
-    expect(el.textContent).toContain("Discard");
-  });
-
-  test("Discard removes the pending draft through the registry's delete endpoint", async () => {
-    stubRoutes({
-      ...EMPTY_REGISTRY,
-      [`GET /api/tenants/${TENANT}/skills/drafts`]: { drafts: [PENDING_DRAFT] },
-      [`DELETE /api/tenants/${TENANT}/skills/drafts/summarize`]: undefined,
-    });
-    const el = await mount();
-    const discard = Array.from(el.querySelectorAll("button")).find(
-      (button) => button.textContent === "Discard",
-    );
-    await act(async () => {
-      discard?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(
-      requested.some(
-        (call) =>
-          call.method === "DELETE" &&
-          call.path.endsWith("/skills/drafts/summarize"),
-      ),
-    ).toBe(true);
-  });
-
-  test("Publish converts the draft through the registry's publish endpoint", async () => {
-    stubRoutes({
-      ...EMPTY_REGISTRY,
-      [`GET /api/tenants/${TENANT}/skills/drafts`]: { drafts: [PENDING_DRAFT] },
-      [`POST /api/tenants/${TENANT}/skills/drafts/summarize/publish`]: {
+      [`POST /api/tenants/${TENANT}/skills`]: {
         skill: { ...TRIAGE, name: "summarize" },
       },
       [`GET /api/tenants/${TENANT}/skills/summarize`]: {
@@ -181,20 +162,104 @@ describe("SkillsSettingsSection", () => {
         versions: [],
       },
     });
-    const el = await mount();
-    const publish = Array.from(el.querySelectorAll("button")).find(
-      (button) => button.textContent === "Publish",
+    const navigated: string[] = [];
+    const el = await mount({ navigate: (to) => navigated.push(to) });
+
+    const newSkill = Array.from(el.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("New skill"),
     );
     await act(async () => {
-      publish?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      newSkill?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+
+    await act(async () => {
+      fillField("create-skill-name", "summarize");
+      fillField("create-skill-description", "Condenses.", true);
+      fillField("create-skill-body", "Do it.", true);
+    });
+
+    const create = Array.from(document.body.querySelectorAll("button")).find(
+      (button) => button.textContent === "Create skill",
+    );
+    await act(async () => {
+      create?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const call = requested.find(
+      (entry) => entry.method === "POST" && entry.path.endsWith("/skills"),
+    );
+    expect(call?.body).toEqual({
+      name: "summarize",
+      description: "Condenses.",
+      body: "Do it.",
+      scope: "private",
+    });
+    expect(navigated).toContain("/settings/skills/summarize");
+  });
+
+  test("a rejected create surfaces the registry's error inline in the dialog and creates nothing", async () => {
+    // The dialog's own client-side validationIssues() never checks the
+    // description for HTML, so an author typing markup only gets caught
+    // server-side. That's the realistic path exercised here: the stubbed
+    // 400 body is the exact plain-language message
+    // `assertDescription` in packages/skills/src/registry.ts produces for
+    // a description containing an HTML tag ("Description can't contain
+    // HTML tags."), not an invented string — regression coverage against
+    // that message drifting or an arktype regex summary leaking back in.
+    const REGISTRY_DESCRIPTION_ERROR = "Description can't contain HTML tags.";
+    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+      const path = String(input);
+      const method = init?.method ?? "GET";
+      requested.push({
+        method,
+        path,
+        body:
+          init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+      });
+      if (method === "POST" && path.endsWith("/skills")) {
+        return new Response(
+          JSON.stringify({ error: { message: REGISTRY_DESCRIPTION_ERROR } }),
+          { status: 400 },
+        );
+      }
+      return new Response(JSON.stringify({ skills: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const el = await mount();
+    const newSkill = Array.from(el.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("New skill"),
+    );
+    await act(async () => {
+      newSkill?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await act(async () => {
+      fillField("create-skill-name", "summarize");
+      fillField("create-skill-description", "<b>Condenses.</b>", true);
+      fillField("create-skill-body", "Do it.", true);
+    });
+
+    const create = Array.from(document.body.querySelectorAll("button")).find(
+      (button) => button.textContent === "Create skill",
+    );
+    await act(async () => {
+      create?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent).toContain(REGISTRY_DESCRIPTION_ERROR);
+    // The dialog is still open with the typed values rather than closed.
+    expect(document.body.textContent).toContain("Create skill");
     expect(
-      requested.some(
-        (call) =>
-          call.method === "POST" &&
-          call.path.endsWith("/skills/drafts/summarize/publish"),
+      requested.filter(
+        (entry) => entry.method === "POST" && entry.path.endsWith("/skills"),
       ),
-    ).toBe(true);
+    ).toHaveLength(1);
   });
 
   test("entityId opens the skill's detail with its version history and pins", async () => {
@@ -320,7 +385,7 @@ describe("SkillsSettingsSection", () => {
 });
 
 describe("CreateSkillDialog validation", () => {
-  test("an empty draft names every missing field in plain language", () => {
+  test("an empty form names every missing field in plain language", () => {
     expect(validationIssues({ name: "", description: "", body: "" })).toEqual([
       "Name is required.",
       "Description is required.",
@@ -340,19 +405,7 @@ describe("CreateSkillDialog validation", () => {
     ]);
   });
 
-  test("the reserved draft prefix is rejected", () => {
-    expect(
-      validationIssues({
-        name: "draft-summarize",
-        description: "x",
-        body: "do the thing",
-      }),
-    ).toEqual([
-      'Name cannot start with "draft-" — that prefix marks a pending draft.',
-    ]);
-  });
-
-  test("a complete draft has no validation issues", () => {
+  test("a complete form has no validation issues", () => {
     expect(
       validationIssues({
         name: "summarize",

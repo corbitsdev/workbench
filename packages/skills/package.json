@@ -1,7 +1,7 @@
 {
   "name": "@corbits/skills",
   "private": true,
-  "description": "The skill registry over native kind:\"skill\" hub assets: SKILL.md authoring, draft-then-publish, git-history versions, per-principal access scoping, and the pinned-skills prompt index",
+  "description": "The skill registry over native kind:\"skill\" hub assets: SKILL.md authoring, direct create, git-history versions, per-principal access scoping, and the pinned-skills prompt index",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",

@@ -29,10 +29,6 @@ export type SkillAssetStore = {
   }): Promise<SkillAssetRow>;
   findByName(tenantId: string, name: string): Promise<SkillAssetRow | null>;
   listForTenant(tenantId: string): Promise<readonly SkillAssetRow[]>;
-  /** Removes the asset row. The backing repo directory is left inert on
-   * disk — the same trade the platform's own asset service documents for
-   * a failed create. */
-  remove(assetId: string): Promise<void>;
   writeSkillMd(input: {
     readonly assetId: string;
     readonly skillName: string;

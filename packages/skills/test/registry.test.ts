@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, test } from "bun:test";
 
 import {
   createSkillRegistry,
-  DRAFT_ASSET_NAME_PREFIX,
   SkillRegistryError,
   type SkillRegistry,
 } from "../src/registry";
@@ -14,7 +13,7 @@ const AUTHOR = { tenantId: "tenant_1", principalId: "principal_author" };
 const TEAMMATE = { tenantId: "tenant_1", principalId: "principal_teammate" };
 const OUTSIDER = { tenantId: "tenant_2", principalId: "principal_author" };
 
-const DRAFT_INPUT = {
+const CREATE_INPUT = {
   name: "triage",
   description: "Sorts inbound issues into bug, question, or feature.",
   body: "Read the report. Pick exactly one label. Explain the pick.",
@@ -31,126 +30,145 @@ beforeEach(() => {
 });
 
 async function publish(scope: "private" | "tenant") {
-  await registry.createDraft(AUTHOR, DRAFT_INPUT);
-  return registry.publishDraft(AUTHOR, DRAFT_INPUT.name, scope);
+  return registry.create(AUTHOR, { ...CREATE_INPUT, scope });
 }
 
-describe("drafts", () => {
-  test("a draft's existence is the pending state — it never appears in the registry", async () => {
-    await registry.createDraft(AUTHOR, DRAFT_INPUT);
-    expect(await registry.list(AUTHOR)).toHaveLength(0);
-    expect(registry.load(AUTHOR, "triage")).rejects.toThrow(SkillRegistryError);
-    const drafts = await registry.listDrafts(AUTHOR);
-    expect(drafts.map((d) => d.name)).toEqual(["triage"]);
-  });
-
-  test("the draft lives on a prefixed skill asset, not an invented asset kind", async () => {
-    await registry.createDraft(AUTHOR, DRAFT_INPUT);
-    const names = [...assets.assets.values()].map((row) => row.name);
-    expect(names).toEqual([`${DRAFT_ASSET_NAME_PREFIX}triage`]);
-  });
-
-  test("another principal never sees someone else's pending draft", async () => {
-    await registry.createDraft(AUTHOR, DRAFT_INPUT);
-    expect(await registry.listDrafts(TEAMMATE)).toHaveLength(0);
-  });
-
-  test("a second draft of the same name is a conflict, not a silent overwrite", async () => {
-    await registry.createDraft(AUTHOR, DRAFT_INPUT);
-    expect(registry.createDraft(AUTHOR, DRAFT_INPUT)).rejects.toThrow(
-      /already pending/,
-    );
-  });
-
-  test("a name inside the reserved draft prefix is refused", async () => {
-    expect(
-      registry.createDraft(AUTHOR, { ...DRAFT_INPUT, name: "draft-triage" }),
-    ).rejects.toThrow(/reserved/);
-  });
-
-  test("an invalid skill body is refused before any asset is created", async () => {
-    expect(
-      registry.createDraft(AUTHOR, { ...DRAFT_INPUT, body: "   " }),
-    ).rejects.toThrow(SkillRegistryError);
-    expect(assets.assets.size).toBe(0);
-  });
-
-  test("discarding a draft removes the pending asset", async () => {
-    await registry.createDraft(AUTHOR, DRAFT_INPUT);
-    await registry.discardDraft(AUTHOR, "triage");
-    expect(assets.assets.size).toBe(0);
-  });
-});
-
-describe("publish", () => {
-  test("converts the draft into a real skill and drops the draft asset", async () => {
+describe("create", () => {
+  test("creates a real skill immediately, with no pending state in between", async () => {
     const skill = await publish("tenant");
     expect(skill.name).toBe("triage");
     const names = [...assets.assets.values()].map((row) => row.name);
     expect(names).toEqual(["triage"]);
-    expect(await registry.listDrafts(AUTHOR)).toHaveLength(0);
+    expect((await registry.list(AUTHOR)).map((s) => s.name)).toEqual([
+      "triage",
+    ]);
   });
 
-  test("the published skill keeps the drafted description and body", async () => {
+  test("the created skill keeps the authored description and body", async () => {
     await publish("tenant");
     const loaded = await registry.load(AUTHOR, "triage");
-    expect(loaded.description).toBe(DRAFT_INPUT.description);
-    expect(loaded.body).toBe(DRAFT_INPUT.body);
+    expect(loaded.description).toBe(CREATE_INPUT.description);
+    expect(loaded.body).toBe(CREATE_INPUT.body);
   });
 
-  test("publishing without a draft is a not-found, never an empty skill", async () => {
-    expect(registry.publishDraft(AUTHOR, "triage", "tenant")).rejects.toThrow(
-      /no pending draft/,
-    );
+  test("a second skill of the same name is a conflict, not a silent overwrite", async () => {
+    await publish("private");
+    expect(
+      registry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/already exists/);
   });
 
-  test("another principal cannot publish someone else's draft", async () => {
-    await registry.createDraft(AUTHOR, DRAFT_INPUT);
-    expect(registry.publishDraft(TEAMMATE, "triage", "tenant")).rejects.toThrow(
-      /no pending draft/,
-    );
+  test("an invalid skill body is refused before any asset is created", async () => {
+    expect(
+      registry.create(AUTHOR, {
+        ...CREATE_INPUT,
+        body: "   ",
+        scope: "private",
+      }),
+    ).rejects.toThrow(SkillRegistryError);
+    expect(assets.assets.size).toBe(0);
   });
 
-  test("retrying publish after the canonical asset exists but the draft is still pending resumes, without erroring or duplicating", async () => {
-    await registry.createDraft(AUTHOR, DRAFT_INPUT);
-    const draftRow = await assets.findByName(
-      AUTHOR.tenantId,
-      `${DRAFT_ASSET_NAME_PREFIX}${DRAFT_INPUT.name}`,
-    );
-    if (draftRow === null) throw new Error("draft row missing");
-    const draftContents = await assets.readSkillMd({
-      assetId: draftRow.id,
-      skillName: DRAFT_INPUT.name,
-    });
-    if (draftContents === null) throw new Error("draft SKILL.md missing");
+  test("invalid SKILL.md frontmatter (a name the schema rejects) is refused before any asset is created", async () => {
+    expect(
+      registry.create(AUTHOR, {
+        ...CREATE_INPUT,
+        name: "Not A Valid Name",
+        scope: "private",
+      }),
+    ).rejects.toThrow(SkillRegistryError);
+    expect(assets.assets.size).toBe(0);
+  });
 
-    // Simulate a publish that created the canonical asset and its access
-    // row, then crashed or timed out before removing the draft.
-    const published = await assets.create({
-      tenantId: AUTHOR.tenantId,
-      name: DRAFT_INPUT.name,
-      displayName: DRAFT_INPUT.name,
-      creatorPrincipalId: AUTHOR.principalId,
-    });
-    await assets.writeSkillMd({
-      assetId: published.id,
-      skillName: DRAFT_INPUT.name,
-      contents: draftContents,
-      message: `Publish ${DRAFT_INPUT.name}`,
-    });
-    await access.upsert({
-      assetId: published.id,
-      tenantId: AUTHOR.tenantId,
-      skillName: DRAFT_INPUT.name,
-      creatorPrincipalId: AUTHOR.principalId,
-      scope: "tenant",
-    });
+  test("a name that fails the kebab-case pattern gets a plain-language message, never the raw regex", async () => {
+    await expect(
+      registry.create(AUTHOR, {
+        ...CREATE_INPUT,
+        name: "Not A Valid Name",
+        scope: "private",
+      }),
+    ).rejects.toThrow("Name must be lowercase letters, digits, and hyphens.");
+  });
 
-    const resumed = await registry.publishDraft(AUTHOR, "triage", "tenant");
-    expect(resumed.assetId).toBe(published.id);
-    expect(await registry.listDrafts(AUTHOR)).toHaveLength(0);
-    const names = [...assets.assets.values()].map((row) => row.name);
-    expect(names).toEqual(["triage"]);
+  test("a description with an HTML tag gets a plain-language message, never the raw regex", async () => {
+    await expect(
+      registry.create(AUTHOR, {
+        ...CREATE_INPUT,
+        description: "<script>bad</script>",
+        scope: "private",
+      }),
+    ).rejects.toThrow("Description can't contain HTML tags.");
+  });
+
+  test("retrying create after a failure between the asset write and the access-row write completes it, rather than 409ing forever", async () => {
+    // Simulates the exact crash window `create` cannot make transactional:
+    // the asset and its SKILL.md commit succeed, but the access-row write
+    // — the last step — fails once (a db timeout, say).
+    let failNext = true;
+    const flakyAccess: SkillAccessStore = {
+      ...access,
+      async upsert(row) {
+        if (failNext) {
+          failNext = false;
+          throw new Error("simulated write failure (e.g. db timeout)");
+        }
+        return access.upsert(row);
+      },
+    };
+    const flakyRegistry = createSkillRegistry({ assets, access: flakyAccess });
+
+    await expect(
+      flakyRegistry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/simulated write failure/);
+
+    // The asset was created and left behind, but is invisible: no access
+    // row backs it yet.
+    expect(assets.assets.size).toBe(1);
+    expect(await flakyRegistry.list(AUTHOR)).toHaveLength(0);
+
+    // Retrying the exact same create — the natural recovery a user or
+    // client would attempt — finishes the interrupted write instead of
+    // 409ing on a name this same caller can never use again.
+    const completed = await flakyRegistry.create(AUTHOR, {
+      ...CREATE_INPUT,
+      scope: "private",
+    });
+    expect(completed.name).toBe("triage");
+    expect(assets.assets.size).toBe(1);
+    expect((await flakyRegistry.list(AUTHOR)).map((s) => s.name)).toEqual([
+      "triage",
+    ]);
+
+    // A third attempt now hits a fully-formed skill and is a genuine
+    // conflict.
+    await expect(
+      flakyRegistry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/already exists/);
+  });
+
+  test("a caller can never complete another principal's half-written create", async () => {
+    let failNext = true;
+    const flakyAccess: SkillAccessStore = {
+      ...access,
+      async upsert(row) {
+        if (failNext) {
+          failNext = false;
+          throw new Error("simulated write failure");
+        }
+        return access.upsert(row);
+      },
+    };
+    const flakyRegistry = createSkillRegistry({ assets, access: flakyAccess });
+    await expect(
+      flakyRegistry.create(AUTHOR, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/simulated write failure/);
+
+    // A different principal retrying the same name hits a conflict, not
+    // a takeover of the first caller's orphaned asset.
+    await expect(
+      registry.create(TEAMMATE, { ...CREATE_INPUT, scope: "private" }),
+    ).rejects.toThrow(/already exists/);
+    expect(await registry.list(TEAMMATE)).toHaveLength(0);
   });
 });
 
@@ -218,7 +236,7 @@ describe("versions", () => {
     const versions = await registry.versions(AUTHOR, "triage");
     expect(versions).toHaveLength(1);
     expect(versions[0]?.current).toBe(true);
-    expect(versions[0]?.message).toBe("Publish triage");
+    expect(versions[0]?.message).toBe("Create triage");
   });
 
   test("restore re-commits an older version and marks it current", async () => {
@@ -234,7 +252,7 @@ describe("versions", () => {
       "triage",
       first?.commitSha ?? "",
     );
-    expect(restored.body).toBe(DRAFT_INPUT.body);
+    expect(restored.body).toBe(CREATE_INPUT.body);
     const versions = await registry.versions(AUTHOR, "triage");
     expect(versions).toHaveLength(2);
     expect(versions[0]?.current).toBe(true);
