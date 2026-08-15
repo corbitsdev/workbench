@@ -26,11 +26,13 @@ export interface TaskRecord {
   readonly tenantId: string;
   readonly principalId: string;
   readonly definitionId: string;
+  readonly agentName: string;
   readonly prompt: string;
   readonly modelPreference: string | null;
   readonly status: TaskStatus;
   readonly runId: string;
   readonly resultMailId: string | null;
+  readonly plannerRunId: string | null;
   readonly createdAt: Date;
   readonly completedAt: Date | null;
 }
@@ -40,8 +42,10 @@ export interface CreateTaskInput {
   readonly tenantId: string;
   readonly principalId: string;
   readonly definitionId: string;
+  readonly agentName: string;
   readonly prompt: string;
   readonly modelPreference: string | null;
+  readonly plannerRunId?: string | null;
   readonly runId: string;
   readonly createdAt?: Date;
 }
@@ -59,6 +63,12 @@ export interface RecordResultMailInput {
   readonly resultMailId: string;
 }
 
+export interface LinkPlannerRunInput {
+  readonly tenantId: string;
+  readonly id: string;
+  readonly plannerRunId: string;
+}
+
 export interface TaskStore {
   createTask(input: CreateTaskInput): Promise<TaskRecord>;
   getTask(tenantId: string, id: string): Promise<TaskRecord | null>;
@@ -74,6 +84,12 @@ export interface TaskStore {
   completeTask(input: CompleteTaskInput): Promise<TaskRecord | null>;
   /** Stamps the delivered inbox mail id onto an already-completed task. */
   recordResultMail(input: RecordResultMailInput): Promise<void>;
+  /**
+   * Stamps the planner run id onto a task that a planner dispatched on
+   * the caller's behalf — set once, immediately after `launchTask`
+   * returns, never revisited.
+   */
+  linkPlannerRun(input: LinkPlannerRunInput): Promise<void>;
 }
 
 function toRecord(row: typeof task.$inferSelect): TaskRecord {
@@ -82,11 +98,13 @@ function toRecord(row: typeof task.$inferSelect): TaskRecord {
     tenantId: row.tenantId,
     principalId: row.principalId,
     definitionId: row.definitionId,
+    agentName: row.agentName,
     prompt: row.prompt,
     modelPreference: row.modelPreference,
     status: row.status,
     runId: row.runId,
     resultMailId: row.resultMailId,
+    plannerRunId: row.plannerRunId,
     createdAt: row.createdAt,
     completedAt: row.completedAt,
   };
@@ -105,11 +123,13 @@ export function createDrizzleTaskStore<TSchema extends Record<string, unknown>>(
           tenantId: input.tenantId,
           principalId: input.principalId,
           definitionId: input.definitionId,
+          agentName: input.agentName,
           prompt: input.prompt,
           modelPreference: input.modelPreference,
           status: "running",
           runId: input.runId,
           resultMailId: null,
+          plannerRunId: input.plannerRunId ?? null,
           createdAt,
           completedAt: null,
         })
@@ -172,6 +192,13 @@ export function createDrizzleTaskStore<TSchema extends Record<string, unknown>>(
         .set({ resultMailId: input.resultMailId })
         .where(and(eq(task.tenantId, input.tenantId), eq(task.id, input.id)));
     },
+
+    async linkPlannerRun(input) {
+      await db
+        .update(task)
+        .set({ plannerRunId: input.plannerRunId })
+        .where(and(eq(task.tenantId, input.tenantId), eq(task.id, input.id)));
+    },
   };
 }
 
@@ -192,11 +219,13 @@ export function createMemoryTaskStore(): TaskStore {
         tenantId: input.tenantId,
         principalId: input.principalId,
         definitionId: input.definitionId,
+        agentName: input.agentName,
         prompt: input.prompt,
         modelPreference: input.modelPreference,
         status: "running",
         runId: input.runId,
         resultMailId: null,
+        plannerRunId: input.plannerRunId ?? null,
         createdAt: input.createdAt ?? new Date(),
         completedAt: null,
       };
@@ -246,6 +275,12 @@ export function createMemoryTaskStore(): TaskStore {
       const record = tasks.get(input.id);
       if (record === undefined || record.tenantId !== input.tenantId) return;
       tasks.set(record.id, { ...record, resultMailId: input.resultMailId });
+    },
+
+    async linkPlannerRun(input) {
+      const record = tasks.get(input.id);
+      if (record === undefined || record.tenantId !== input.tenantId) return;
+      tasks.set(record.id, { ...record, plannerRunId: input.plannerRunId });
     },
   };
 }

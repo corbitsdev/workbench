@@ -10,10 +10,12 @@ import type { ArkErrors } from "arktype";
 const TaskStatus = type(
   '"queued" | "running" | "needs-you" | "done" | "failed"',
 );
+export type TaskStatus = typeof TaskStatus.infer;
 
 const Task = type({
   id: "string",
   definitionId: "string",
+  agentName: "string",
   prompt: "string",
   modelPreference: "string | null",
   status: TaskStatus,
@@ -38,6 +40,32 @@ const CatalogModel = type({
 export type CatalogModel = typeof CatalogModel.infer;
 
 const CatalogModelsPage = type({ data: CatalogModel.array() });
+
+// The shape `@corbits/task-planner`'s `createPlannerRoutes` returns:
+// the raw `TaskRecord` (unlike `taskView`'s trimmed `Task` above, this
+// carries `plannerRunId` — "why this agent?" needs it) plus the
+// planner run's own id, redundant with `task.plannerRunId` but named
+// at the top level since a `{use}` dispatch's task and its planning
+// run share the same id today, not by contract.
+const PlannerTask = type({
+  id: "string",
+  definitionId: "string",
+  agentName: "string",
+  prompt: "string",
+  modelPreference: "string | null",
+  status: TaskStatus,
+  runId: "string",
+  resultMailId: "string | null",
+  plannerRunId: "string | null",
+  createdAt: "string",
+  completedAt: "string | null",
+});
+export type PlannerTask = typeof PlannerTask.infer;
+
+const DispatchPlannerResponse = type({
+  task: PlannerTask,
+  plannerRunId: "string",
+});
 
 export class TasksApiError extends Error {
   constructor(
@@ -102,6 +130,23 @@ export function getTask(tenantId: string, taskId: string): Promise<Task> {
   return request(`/api/tenants/${tenantId}/tasks/${taskId}`, TaskResponse).then(
     (page) => page.item,
   );
+}
+
+/**
+ * Dispatches an outcome to Myra auto-dispatch (`@corbits/task-planner`'s
+ * `createPlannerRoutes`, mounted at the same tenant-prefixed base path
+ * `createTask` posts to). Myra picks or creates the agent and launches
+ * it exactly like a manually-launched task; the caller gets back the
+ * launched task plus the planning run's own id.
+ */
+export function dispatchPlanner(
+  tenantId: string,
+  input: { readonly outcome: string },
+): Promise<{ readonly task: PlannerTask; readonly plannerRunId: string }> {
+  return request(`/api/tenants/${tenantId}/planner`, DispatchPlannerResponse, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 const CATALOG_PAGE_LIMIT = 200;

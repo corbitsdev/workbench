@@ -48,6 +48,7 @@ function taskView(record: TaskRecord) {
   return {
     id: record.id,
     definitionId: record.definitionId,
+    agentName: record.agentName,
     prompt: record.prompt,
     modelPreference: record.modelPreference,
     status: record.status,

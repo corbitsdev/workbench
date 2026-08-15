@@ -20,6 +20,7 @@
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
+    "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",

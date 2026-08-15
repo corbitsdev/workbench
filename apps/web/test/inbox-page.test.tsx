@@ -79,6 +79,26 @@ function taskRecord(overrides: {
   };
 }
 
+const plannerTaskResponse = {
+  task: {
+    id: "task_2",
+    definitionId: "wfd_created",
+    agentName: "Researcher",
+    prompt: "Refined outcome",
+    modelPreference: null,
+    status: "queued",
+    runId: "run_2",
+    resultMailId: null,
+    plannerRunId: "run_planner_1",
+    createdAt: "2026-08-15T10:00:00.000Z",
+    completedAt: null,
+  },
+  plannerRunId: "run_planner_1",
+};
+
+let plannerCalls: string[] = [];
+let tasksCalls: string[] = [];
+
 // The Routines picker's catalog is automatable-only, filtered client-side
 // via `purposeDefinitions` (isAutomatableWorkflowName + not a channel
 // host) — a task's own agent is conversational, so it is NEVER a member
@@ -108,8 +128,8 @@ const WORKFLOW_DEFINITIONS_RESPONSE = {
 function makeRouteFetch(
   items: readonly unknown[],
   definitions: unknown = WORKFLOW_DEFINITIONS_RESPONSE,
-): (input: RequestInfo | URL) => Promise<Response> {
-  return (input) => {
+): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
+  return (input, init) => {
     const url = String(input);
     if (url.includes("/api/me/principals")) {
       return Promise.resolve(
@@ -144,8 +164,24 @@ function makeRouteFetch(
     if (url.includes("/workflows/definitions")) {
       return Promise.resolve(jsonResponse(definitions));
     }
+    if (url.includes("/chat/invitable-definitions")) {
+      return Promise.resolve(jsonResponse({ items: [] }));
+    }
+    if (url.includes("/catalog/models")) {
+      return Promise.resolve(jsonResponse({ data: [] }));
+    }
+    if (url.includes("/planner")) {
+      plannerCalls.push(String(init?.body ?? ""));
+      return Promise.resolve(jsonResponse(plannerTaskResponse));
+    }
     if (url.includes("/inbox")) {
       return Promise.resolve(jsonResponse({ items }));
+    }
+    if (url.includes("/tasks")) {
+      tasksCalls.push(String(init?.body ?? ""));
+      return Promise.reject(
+        new Error("createTask should not be called for the Myra default"),
+      );
     }
     return Promise.reject(new Error(`unrouted fetch in inbox test: ${url}`));
   };
@@ -159,6 +195,8 @@ describe("inbox top bar", () => {
 
   beforeEach(() => {
     globalThis.fetch = routeFetch as typeof fetch;
+    plannerCalls = [];
+    tasksCalls = [];
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -420,5 +458,77 @@ describe("inbox top bar", () => {
     await settle();
 
     expect(buttonWithText("Make this a routine")).toBeUndefined();
+  });
+
+  test("submitting with the Myra default dispatches to the planner, not /tasks, and never saves it as the MRU agent", async () => {
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={noop}>
+            <BenchProvider>
+              <InboxPage path="/inbox" navigate={noop} />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (container.innerHTML.includes("need action")) break;
+    }
+
+    // `Dialog` portals its content onto `document.body`, not `container`
+    // — the same pattern `create-agent-dialog.test.tsx` queries against.
+    const newTaskButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "New task",
+    );
+    if (newTaskButton === undefined)
+      throw new Error("New task button not rendered");
+    await act(async () => {
+      newTaskButton.click();
+    });
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (document.body.textContent?.includes("Let Myra choose") === true)
+        break;
+    }
+
+    const textarea = document.body.querySelector("textarea");
+    if (textarea === null) throw new Error("prompt textarea not rendered");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(textarea, "Summarize the last incident");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const submitButton = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Start task",
+    );
+    if (submitButton === undefined)
+      throw new Error("Start task button not rendered");
+    await act(async () => {
+      submitButton.click();
+    });
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (plannerCalls.length > 0) break;
+    }
+
+    expect(plannerCalls).toEqual([
+      JSON.stringify({ outcome: "Summarize the last incident" }),
+    ]);
+    expect(tasksCalls).toEqual([]);
+    expect(
+      window.localStorage.getItem("workbench.tasks.mru-agent:tnt_1"),
+    ).toBeNull();
   });
 });

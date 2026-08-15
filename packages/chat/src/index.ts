@@ -36,6 +36,10 @@ export {
   serializeChannelHostWorkflow,
 } from "./channel-workflow";
 export type { ChannelHostWorkflowInput } from "./channel-workflow";
+export {
+  channelHostAssetName,
+  isChannelHostDefinitionName,
+} from "./channel-host-naming";
 
 export {
   CHANNEL_CONTROL_NAMESPACE,

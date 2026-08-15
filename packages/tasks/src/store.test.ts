@@ -13,6 +13,7 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_A,
       principalId: "prn_1",
       definitionId: "wfd_agent",
+      agentName: "Agent",
       prompt: "Summarize the incident.",
       modelPreference: null,
       runId: "run_1",
@@ -33,6 +34,7 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_A,
       principalId: "prn_1",
       definitionId: "wfd_agent",
+      agentName: "Agent",
       prompt: "Summarize the incident.",
       modelPreference: null,
       runId: "run_1",
@@ -48,6 +50,7 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_A,
       principalId: "prn_1",
       definitionId: "wfd_agent",
+      agentName: "Agent",
       prompt: "Summarize the incident.",
       modelPreference: "anthropic/claude-sonnet",
       runId: "run_abc",
@@ -64,6 +67,7 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_A,
       principalId: "prn_1",
       definitionId: "wfd_agent",
+      agentName: "Agent",
       prompt: "first",
       modelPreference: null,
       runId: "run_1",
@@ -74,6 +78,7 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_A,
       principalId: "prn_1",
       definitionId: "wfd_agent",
+      agentName: "Agent",
       prompt: "second",
       modelPreference: null,
       runId: "run_2",
@@ -84,6 +89,7 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_B,
       principalId: "prn_2",
       definitionId: "wfd_agent",
+      agentName: "Agent",
       prompt: "other tenant",
       modelPreference: null,
       runId: "run_3",
@@ -100,6 +106,7 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_A,
       principalId: "prn_1",
       definitionId: "wfd_agent",
+      agentName: "Agent",
       prompt: "Summarize the incident.",
       modelPreference: null,
       runId: "run_1",
@@ -122,6 +129,7 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_A,
       principalId: "prn_1",
       definitionId: "wfd_agent",
+      agentName: "Agent",
       prompt: "Summarize the incident.",
       modelPreference: null,
       runId: "run_1",
@@ -150,6 +158,7 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_A,
       principalId: "prn_1",
       definitionId: "wfd_agent",
+      agentName: "Agent",
       prompt: "Summarize the incident.",
       modelPreference: null,
       runId: "run_1",
@@ -178,6 +187,7 @@ describe("createMemoryTaskStore", () => {
       tenantId: TENANT_A,
       principalId: "prn_1",
       definitionId: "wfd_agent",
+      agentName: "Agent",
       prompt: "Summarize the incident.",
       modelPreference: null,
       runId: "run_1",
@@ -197,5 +207,84 @@ describe("createMemoryTaskStore", () => {
     const record = await store.getTask(TENANT_A, "task_1");
     expect(record?.resultMailId).toBe("mail_1");
     expect(record?.status).toBe("done");
+  });
+
+  test("createTask defaults plannerRunId to null when omitted", async () => {
+    const store = createMemoryTaskStore();
+    const record = await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      agentName: "Agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+    });
+
+    expect(record.plannerRunId).toBeNull();
+  });
+
+  test("createTask accepts an explicit plannerRunId", async () => {
+    const store = createMemoryTaskStore();
+    const record = await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      agentName: "Agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+      plannerRunId: "plan_1",
+    });
+
+    expect(record.plannerRunId).toBe("plan_1");
+  });
+
+  test("linkPlannerRun stamps the planner run id onto an existing task", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      agentName: "Agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+    });
+
+    await store.linkPlannerRun({
+      tenantId: TENANT_A,
+      id: "task_1",
+      plannerRunId: "plan_1",
+    });
+
+    const record = await store.getTask(TENANT_A, "task_1");
+    expect(record?.plannerRunId).toBe("plan_1");
+  });
+
+  test("linkPlannerRun is a no-op for a task in a different tenant", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      agentName: "Agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+    });
+
+    await store.linkPlannerRun({
+      tenantId: TENANT_B,
+      id: "task_1",
+      plannerRunId: "plan_1",
+    });
+
+    const record = await store.getTask(TENANT_A, "task_1");
+    expect(record?.plannerRunId).toBeNull();
   });
 });

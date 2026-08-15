@@ -10,8 +10,15 @@ same idle-sleep lifecycle chat already uses.
 ## What this package owns
 
 - **`task` table** (`./src/schema.ts`, `./src/migrations.ts`) — one row per
-  launched task: `id, tenantId, principalId, definitionId, prompt,
-modelPreference, status, runId, resultMailId, createdAt, completedAt`. Own
+  launched task: `id, tenantId, principalId, definitionId, agentName,
+prompt, modelPreference, status, runId, resultMailId, plannerRunId,
+createdAt, completedAt`. `agentName` is the launched definition's name at
+  launch time, stored on the row so a listing (the Spaces band's Working
+  group, the Inbox) never has to re-resolve it against a definitions
+  catalog that may exclude the definition by the time anyone reads the row
+  — a planner-created agent, for instance, never appears in the
+  invitable-definitions listing (CL-6051). `plannerRunId` is nullable and
+  set post-hoc by a planner — see CL-6051. Own
   Postgres schema (`tasks`), own migration ledger — see
   `docs/package-migrations.md`. The task id is hand-prefixed (`task_` +
   16 hex bytes) because `@intx/hub-common`'s `generateId` has no "task"

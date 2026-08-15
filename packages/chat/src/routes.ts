@@ -92,6 +92,7 @@ import type { ChannelShareStore } from "./channel-share";
 import { monogramFromName } from "./channel-share";
 import type { FederationTrustStore } from "./federation-trust";
 import type { InvitableDefinition as InvitableDefinitionRecord } from "./platform-port";
+import { isAgentAddress } from "./mentions";
 
 export type {
   ChannelActivitySummary,
@@ -271,6 +272,10 @@ function isChatWithPrincipal(
 
 const InviteAgentBody = type({
   definitionId: "string",
+});
+
+const RefreshAgentBody = type({
+  address: "string",
 });
 
 /** The message's own text, joined across every text part in send order
@@ -1892,6 +1897,85 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
       const items = await deps.platform.listInvitableDefinitions(tenant.id);
       return c.json({ items: items.filter(deps.isInvitableDefinition) });
+    },
+  );
+
+  // Every one of the channel's own agent participants, each resolved
+  // back to its definition id — the settings surface's Assistant
+  // section reads this before it can look up each definition's
+  // name/instructions through `@corbits/agent-directory`. A channel
+  // with several invited agents lists every one of them, not just the
+  // first; a participant whose address no longer resolves to a live
+  // definition is simply omitted rather than failing the whole list.
+  app.get(
+    "/channels/:id/agents",
+    deps.requireGrant(idResource("workflow-run", "id"), "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      const existing = await deps.store.getChannelSettings(
+        tenant.id,
+        channelId,
+      );
+      if (existing === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      const agentParticipants = participantsOf(existing.settings).filter(
+        (participant) => isAgentAddress(participant.address),
+      );
+      const items = (
+        await Promise.all(
+          agentParticipants.map(async (participant) => {
+            const definitionId =
+              await deps.platform.resolveDefinitionIdByAddress(
+                participant.address,
+              );
+            return definitionId === undefined
+              ? null
+              : {
+                  address: participant.address,
+                  handle: participant.handle,
+                  definitionId,
+                };
+          }),
+        )
+      ).filter((item) => item !== null);
+
+      return c.json({ items });
+    },
+  );
+
+  // Recomputes the given agent's `channel_launch` folded body from its
+  // definition's CURRENT `workflow.json` — the lever that makes an
+  // edited system prompt reach an already-invited, already-running
+  // instance, since a wake replays whatever `channel_launch` holds
+  // verbatim and never re-reads the asset itself (see
+  // `ChatPlatform.refreshAgentInstanceFromDefinition`). The settings
+  // surface calls this right after saving through
+  // `@corbits/agent-directory`, so the change is live for this
+  // channel's agent from its next reply. A no-op (never errors) for an
+  // address this platform has no running instance for.
+  app.post(
+    "/channels/:id/agents/refresh",
+    deps.requireGrant(idResource("workflow-run", "id"), "update"),
+    async (c) => {
+      const body = RefreshAgentBody(await c.req.json().catch(() => undefined));
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope("bad_request", `invalid refresh body: ${body.summary}`),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      await deps.platform.refreshAgentInstanceFromDefinition(
+        tenant.id,
+        channelId,
+        body.address,
+      );
+      return c.json({ ok: true });
     },
   );
 

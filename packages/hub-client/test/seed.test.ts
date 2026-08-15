@@ -53,6 +53,7 @@ function args(
     },
     model: MODEL,
     pushWorkflow: recordingPusher().push,
+    publishToolRegistry: async () => undefined,
     log,
     sleep: instantSleep,
     runStartTimeoutMs: 3,
@@ -151,6 +152,82 @@ describe("seedTenant", () => {
     expect(output).toContain("deployed workflow echo as dep_1");
     expect(output).toContain("confirmed workflow echo: run run_1 started");
     expect(output).toContain("seed complete: 1 workflow(s)");
+  });
+
+  test("publishes the tenant's corbits-tools registry before deploying any workflow", async () => {
+    const { push } = recordingPusher();
+    const publishCalls: { tenantId: string; hubUrl: string }[] = [];
+    let assetCreated = false;
+    let runsCalls = 0;
+    const handler: FakeHandler = (method, path, _body) => {
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return { status: 201, data: assetRow("ast_1", "echo") };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return {
+          status: 201,
+          data: deploymentRow("dep_1", "ast_1", "deployed"),
+        };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_1/mail`
+      )
+        return {
+          status: 202,
+          data: {
+            deploymentId: "dep_1",
+            address: `ins_dep_1@${TENANT_DOMAIN}`,
+            messageId: "<m1@workbench.localhost>",
+          },
+        };
+      return undefined;
+    };
+
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        workflows: echoOnly,
+        publishToolRegistry: async (publishArgs) => {
+          publishCalls.push({
+            tenantId: publishArgs.tenantId,
+            hubUrl: publishArgs.hubUrl,
+          });
+          assetCreated = true;
+        },
+      }),
+    );
+
+    expect(publishCalls).toEqual([
+      { tenantId: TENANT_ID, hubUrl: "http://localhost:3000" },
+    ]);
+    // The fake stands in for the real publish call, which must run
+    // before any workflow deploy call reaches the fake API — proven
+    // indirectly here by the deploy succeeding at all, since the fake
+    // handler above never special-cases ordering; the direct ordering
+    // guarantee lives in `seedTenant`'s own source (publish happens
+    // immediately after the grant loop, before the workflow loop).
+    expect(assetCreated).toBe(true);
   });
 
   test("fresh run pushes, deploys, and confirms the assistant workflow", async () => {

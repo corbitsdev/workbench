@@ -406,14 +406,21 @@ export function expectStatus(
 // --- keyless-by-construction guard -------------------------------------
 
 /**
- * Real inference provider hosts the e2e suite must never reach. The
- * suite runs against a real hub process, but every inference source it
- * configures must resolve to the hub's own noop-inference endpoint or
- * an unreachable placeholder host — never a live provider. `startHub`
- * only forwards an explicit env allowlist (see `osEnv`), so a real
- * ANTHROPIC_API_KEY sitting in a developer's shell never reaches the
- * spawned hub either; this guard is the second, explicit line of
- * defense for any baseURL/apiKey string a test constructs by hand.
+ * Real inference provider hosts. This is not a repo-wide invariant —
+ * each e2e suite chooses per file whether it stays zero-network: a
+ * suite that pins every inference source at the hub's own
+ * noop-inference endpoint or an unreachable placeholder host imports
+ * this guard and calls it at every baseURL/apiKey it constructs, so an
+ * accidental live-provider reference fails immediately instead of
+ * silently attempting a real call. A suite that deliberately does dial
+ * a real provider host (`chat.test.ts`'s echo-invite test, and
+ * `local-rip.test.ts`'s task leg — see each file's own header comment
+ * for why) skips this guard on purpose and says so inline, rather than
+ * importing it and then routing around it. `startHub` only forwards an
+ * explicit env allowlist (see `osEnv`), so a real ANTHROPIC_API_KEY
+ * sitting in a developer's shell never reaches the spawned hub either
+ * way; this guard is the second, explicit line of defense for the
+ * suites that opt into it.
  */
 const REAL_PROVIDER_HOSTS = [
   "api.anthropic.com",

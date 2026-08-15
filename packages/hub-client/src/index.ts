@@ -15,6 +15,7 @@ export type {
   SeedCatalogArgs,
   SeedTenant,
   SeedTenantArgs,
+  ToolRegistryPublisher,
   WorkflowPusher,
 } from "./seed";
 export {

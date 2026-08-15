@@ -14,6 +14,8 @@
 import { defineAgent } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
+import type { CredentialBinding } from "@intx/types";
 import {
   withAvailableSkills,
   type PinnedSkillIndexEntry,
@@ -117,6 +119,49 @@ export function reindexPinnedSkills(
   return JSON.stringify(definition);
 }
 
+/** Reads a definition's system prompt back out of its serialized
+ * `workflow.json` — the raw text a person edits in the Assistant
+ * settings section, before `reindexPinnedSkills` appends the
+ * `<available_skills>` index on top of it at save time. Every builder
+ * in this codebase produces exactly one step, so the definition's one
+ * step is unambiguous regardless of the step's own key. */
+export function readAgentSystemPrompt(workflowJson: string): string {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry a step agent to read a system prompt from: ${definition.summary}`,
+    );
+  }
+  const [step] = Object.values(definition.steps);
+  if (step === undefined) {
+    throw new Error("workflow.json has no steps");
+  }
+  return step.agent.systemPrompt;
+}
+
+/** Replaces a definition's system prompt in its serialized
+ * `workflow.json`, leaving every other field — the trigger, timeouts,
+ * inference sources, tool-package pins — untouched. */
+export function withAgentSystemPrompt(
+  workflowJson: string,
+  systemPrompt: string,
+): string {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry a step agent to write a system prompt into: ${definition.summary}`,
+    );
+  }
+  const [step] = Object.values(definition.steps);
+  if (step === undefined) {
+    throw new Error("workflow.json has no steps");
+  }
+  step.agent.systemPrompt = systemPrompt;
+  return JSON.stringify(definition);
+}
+
 /** Serializes an agent definition's attached skill names to the JSON
  * `AGENT_SKILLS_ASSET_PATH` carries in the asset tree. */
 export function serializeAgentSkills(skills: readonly string[]): string {
@@ -157,6 +202,31 @@ export interface AgentDefinitionWorkflowInput {
    * against the live catalog (see `resolveDefinitionSources`), not
    * baked into the definition. */
   readonly model?: string;
+  /**
+   * Tool packages pinned directly on this definition — connector tool
+   * bundles (e.g. `@corbits/granola-tools`) a planner-created agent
+   * needs beyond what skills reindexing pins. Additive: undeclared or
+   * empty behaves exactly like a definition built before this field
+   * existed. `defineAgent`'s own `DefineAgentConfig` has no field for
+   * this (only `AgentDefinition` itself carries `toolPackagePins`, as
+   * a passthrough for the sidecar's tool-materialization step — see
+   * `@intx/agent`'s `definition.ts`), so it is set directly on the
+   * definition `defineAgent` returns rather than threaded through the
+   * config, mirroring how `reindexPinnedSkills` sets the same field
+   * post-hoc for skills.
+   */
+  readonly toolPackagePins?: readonly ToolPackagePin[];
+  /**
+   * Credential bindings the deployed definition carries at the workflow
+   * level — the same `CredentialBinding[]` shape and the same
+   * `defineWorkflow({ credentialBindings, ... })` field
+   * `workflows/granola-call` pins through (CL-6028's pattern). Additive:
+   * undeclared or empty behaves exactly like a definition built before
+   * this field existed. Required for a `toolPackagePins` entry whose
+   * tool needs a live credential to do anything at runtime — a pin with
+   * no matching binding is inert.
+   */
+  readonly credentialBindings?: readonly CredentialBinding[];
 }
 
 /**
@@ -176,29 +246,37 @@ export function buildAgentDefinitionWorkflow(
       "buildAgentDefinitionWorkflow requires a non-empty systemPrompt",
     );
   }
+  const agent = defineAgent({
+    id: AGENT_DEFINITION_STEP_ID,
+    description: input.description,
+    systemPrompt: input.systemPrompt,
+    tools: [],
+    capabilities: [],
+    inference: {
+      // `provider` only participates in deploy-hash bookkeeping —
+      // launch-time resolution reads `model` alone and resolves a
+      // provider fresh against the tenant catalog (see
+      // `resolveDefinitionSources`), so a placeholder here costs
+      // nothing real.
+      sources:
+        input.model !== undefined
+          ? [{ provider: "catalog", model: input.model }]
+          : [],
+    },
+  });
   return defineWorkflow({
     id: `wf_agent_${input.handle}`,
     trigger: { type: "mail", to: `${input.handle}@${input.tenantDomain}` },
+    ...(input.credentialBindings !== undefined &&
+    input.credentialBindings.length > 0
+      ? { credentialBindings: input.credentialBindings }
+      : {}),
     steps: {
       [AGENT_DEFINITION_STEP_ID]: step({
-        agent: defineAgent({
-          id: AGENT_DEFINITION_STEP_ID,
-          description: input.description,
-          systemPrompt: input.systemPrompt,
-          tools: [],
-          capabilities: [],
-          inference: {
-            // `provider` only participates in deploy-hash bookkeeping —
-            // launch-time resolution reads `model` alone and resolves a
-            // provider fresh against the tenant catalog (see
-            // `resolveDefinitionSources`), so a placeholder here costs
-            // nothing real.
-            sources:
-              input.model !== undefined
-                ? [{ provider: "catalog", model: input.model }]
-                : [],
-          },
-        }),
+        agent:
+          input.toolPackagePins !== undefined
+            ? { ...agent, toolPackagePins: input.toolPackagePins }
+            : agent,
         timeout: AGENT_DEFINITION_TURN_TIMEOUT_MS,
       }),
     },

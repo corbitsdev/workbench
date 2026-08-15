@@ -26,6 +26,7 @@ function stubTenantFetch(
   data: {
     readonly channels?: readonly unknown[];
     readonly runs?: readonly unknown[];
+    readonly tasks?: readonly unknown[];
   } = {},
 ): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
@@ -33,6 +34,8 @@ function stubTenantFetch(
     calls.push(path);
     if (path.includes("/workflows/deployments"))
       return Promise.resolve(json(data.runs ?? []));
+    if (path.includes("/tasks"))
+      return Promise.resolve(json({ items: data.tasks ?? [] }));
     return Promise.resolve(json({ items: data.channels ?? [] }));
   }) as typeof fetch;
 }
@@ -80,6 +83,7 @@ describe("useBenchActivity", () => {
       channels: [],
       chats: [],
       routines: [],
+      workingTasks: [],
     });
     // One all-kinds channels fetch (no kind= param), split client-side.
     expect(
@@ -90,6 +94,7 @@ describe("useBenchActivity", () => {
     expect(calls.some((path) => path.includes("/workflows/deployments"))).toBe(
       true,
     );
+    expect(calls.some((path) => path.includes("/tasks"))).toBe(true);
     root.unmount();
     container.remove();
   });
@@ -152,6 +157,56 @@ describe("useBenchActivity", () => {
     // deployments, so the deployments listing carries them — the
     // "Running" band must not.
     expect(state.routines.map((r) => r.id)).toEqual(["run_deployment1"]);
+    root.unmount();
+    container.remove();
+  });
+
+  test("keeps a task's own agentName and drops terminal tasks", async () => {
+    const calls: string[] = [];
+    stubTenantFetch(calls, {
+      tasks: [
+        {
+          id: "tsk_running",
+          definitionId: "wfd_myra_task_1",
+          agentName: "Incident triage",
+          prompt: "Summarize the thread",
+          modelPreference: null,
+          status: "running",
+          runId: "run_tsk1",
+          resultMailId: null,
+          createdAt: "2026-08-14T00:00:00.000Z",
+          completedAt: null,
+        },
+        {
+          id: "tsk_done",
+          definitionId: "def_researcher",
+          agentName: "Researcher",
+          prompt: "Draft the summary",
+          modelPreference: null,
+          status: "done",
+          runId: "run_tsk2",
+          resultMailId: "mail_1",
+          createdAt: "2026-08-13T00:00:00.000Z",
+          completedAt: "2026-08-13T00:05:00.000Z",
+        },
+      ],
+    });
+    const { latest, root, container } = await mountHook("tnt_1");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const state = latest();
+    if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
+    // A planner-created agent (wfd_myra_task_1) never appears in
+    // listTenantInvitableDefinitions (CL-6051) — the name still shows
+    // because it travels on the task record itself, not a lookup.
+    expect(state.workingTasks).toEqual([
+      expect.objectContaining({
+        id: "tsk_running",
+        agentName: "Incident triage",
+      }),
+    ]);
     root.unmount();
     container.remove();
   });

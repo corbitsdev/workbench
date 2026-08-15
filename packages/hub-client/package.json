@@ -22,6 +22,7 @@
     "@corbits/echo-workflow": "workspace:*",
     "@corbits/heartbeat-workflow": "workspace:*",
     "@corbits/recurring-task-workflow": "workspace:*",
+    "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*"
   },
   "devDependencies": {
