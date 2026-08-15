@@ -16,11 +16,6 @@ import {
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ChatApiError,
-  foldedRunIdsFromChannels,
-  listAllChannels,
-} from "@corbits/chat-ui";
 
 import type { APIQuery } from "@corbits/api-query";
 import {
@@ -129,6 +124,24 @@ export function listAgentInstances(
   ).then((page) => page.data);
 }
 
+/**
+ * The tenant's genuine top-level deployment runs — every folded run
+ * (channel host, invited agent, task) excluded server-side by the hub's
+ * own `folded_run` marker table (see `@corbits/folded-runs`'s
+ * `scope-routes.ts`), not derived client-side from a tenant's channels
+ * the way `foldedRunIdsFromChannels` used to. Used wherever a page needs
+ * "real deployments only" — the Agent Directory and the shell's
+ * "Running" activity band alike.
+ */
+export function listTopLevelRuns(
+  tenantId: string,
+): Promise<readonly AgentInstance[]> {
+  return getJSON(
+    `/api/tenants/${tenantId}/top-level-runs?limit=${PAGE_LIMIT}`,
+    InstancesPage,
+  ).then((page) => page.data);
+}
+
 /** The tenant's visible, enabled catalog models for the create-agent form's
  * model picker. Uses `/catalog/models` (paginated `ModelResponse`), not the
  * bare-array discovery route at `/models` (`ModelInfo[]`) — those are
@@ -206,12 +219,6 @@ export type AgentDirectoryData = {
   readonly models: readonly CatalogModel[];
   /** Attached skills per definition id. Missing entries read as "none". */
   readonly definitionSkills: Record<string, readonly string[]>;
-  /** Every folded/chat workflowRun id (channel hosts + invited agents)
-   * this tenant holds — see `foldedRunIdsFromChannels`. Fed to
-   * `purposeAgentInstances` so an invited agent's chat run, which now
-   * self-anchors like a real deployment, doesn't leak into the
-   * directory as if it were one. */
-  readonly foldedRunIds: ReadonlySet<string>;
   /** Set when the model catalog failed independently; definitions and
    * instances still load so the page stays usable. */
   readonly modelsError?: string;
@@ -224,45 +231,26 @@ type ModelsOutcome =
 /**
  * Loads a bench's agent directory. Definitions and instances are required;
  * the model catalog and each definition's attached skills are best-effort
- * so either failing alone never blanks the page. The folded-run-id set is
- * required too, not best-effort like the model catalog: dropping it
- * silently on a transient failure would let invited-agent chat runs leak
- * back into the directory as if they were real deployments — exactly the
- * bug this filter exists to close (see `purposeAgentInstances` in
- * `agents-directory.ts`) — so a failure here fails the whole load. The one
- * exception is a 404 from the channels route (chat not mounted on this
- * host), where an empty set is genuinely correct — see the inline comment.
+ * so either failing alone never blanks the page. `instances` comes from
+ * `listTopLevelRuns`, which already excludes every folded run (channel
+ * host, invited agent, task) server-side — see `@corbits/folded-runs`'s
+ * `scope-routes.ts` — so this page never has to derive that exclusion
+ * itself from a tenant's channels.
  */
 export async function loadAgentDirectory(
   tenantId: string,
 ): Promise<AgentDirectoryData> {
-  const [definitions, instances, foldedRunIds, modelsOutcome] =
-    await Promise.all([
-      listAgentDefinitions(tenantId),
-      listAgentInstances(tenantId),
-      // A 404 means the chat module isn't mounted on this host at all
-      // (workbench composes it in, but a chat-less host is a valid
-      // composition): with no chat there are no folded chat runs to
-      // filter, so an empty set is the *correct* answer, not a degraded
-      // one. Any other failure still fails the load — see the doc
-      // comment above.
-      listAllChannels(tenantId).then(
-        foldedRunIdsFromChannels,
-        (cause: unknown) => {
-          if (cause instanceof ChatApiError && cause.status === 404) {
-            return new Set<string>();
-          }
-          throw cause;
-        },
-      ),
-      listCatalogModels(tenantId).then(
-        (models): ModelsOutcome => ({ ok: true, models }),
-        (cause: unknown): ModelsOutcome => ({
-          ok: false,
-          message: cause instanceof Error ? cause.message : String(cause),
-        }),
-      ),
-    ]);
+  const [definitions, instances, modelsOutcome] = await Promise.all([
+    listAgentDefinitions(tenantId),
+    listTopLevelRuns(tenantId),
+    listCatalogModels(tenantId).then(
+      (models): ModelsOutcome => ({ ok: true, models }),
+      (cause: unknown): ModelsOutcome => ({
+        ok: false,
+        message: cause instanceof Error ? cause.message : String(cause),
+      }),
+    ),
+  ]);
 
   const definitionSkills = await listAgentSkills(
     tenantId,
@@ -276,7 +264,6 @@ export async function loadAgentDirectory(
       instances,
       models: modelsOutcome.models,
       definitionSkills,
-      foldedRunIds,
     };
   }
   return {
@@ -285,7 +272,6 @@ export async function loadAgentDirectory(
     instances,
     models: [],
     definitionSkills,
-    foldedRunIds,
     modelsError: modelsOutcome.message,
   };
 }

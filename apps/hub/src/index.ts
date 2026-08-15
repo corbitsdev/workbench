@@ -58,7 +58,10 @@ import {
   startWorkflowCommand,
 } from "@corbits/chat";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
-import { createCryptoProviderCache } from "@corbits/folded-runs";
+import {
+  createCryptoProviderCache,
+  createTopLevelRunRoutes,
+} from "@corbits/folded-runs";
 import {
   createInboxRoutes,
   createWorkbenchMailboxDelivery,
@@ -1164,6 +1167,23 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       launch: (input) => launchTask(taskLauncherDeps, input),
+    }),
+  );
+
+  // Every genuine top-level deployment run, folded runs (channel hosts,
+  // invited agents, tasks) excluded — the scoped listing CL-6061 adds
+  // so the Agent Directory and the shell's "Running" bands stop
+  // deriving that exclusion client-side from a tenant's channels alone
+  // (see `@corbits/folded-runs`'s `scope-routes.ts`, which task-style
+  // runs — no channel involved — silently slipped past).
+  app.route(
+    `${TENANT_PREFIX}/top-level-runs`,
+    createTopLevelRunRoutes({
+      db,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
     }),
   );
 

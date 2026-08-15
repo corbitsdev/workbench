@@ -45,7 +45,6 @@ const directoryData: AgentDirectoryData = {
   instances: [instance],
   models: [],
   definitionSkills: { wfd_1: ["web-research", "long-form-write"] },
-  foldedRunIds: new Set(),
 };
 
 function seededClient(data: AgentDirectoryData): QueryClient {
@@ -147,7 +146,6 @@ describe("AgentsSettingsSection", () => {
       instances: [],
       models: [],
       definitionSkills: {},
-      foldedRunIds: new Set(),
     });
     expect(el.textContent).toContain("No agents yet");
   });

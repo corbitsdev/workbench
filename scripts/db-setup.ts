@@ -28,7 +28,14 @@
 import path from "node:path";
 import { readdir } from "node:fs/promises";
 
-import { applyChatMigrations } from "../packages/chat/src/migrations";
+import {
+  applyFoldedRunsMigrations,
+  backfillFoldedRunMarkers,
+} from "../packages/folded-runs/src/migrations";
+import {
+  applyChatMigrations,
+  listChannelLaunchFoldedRunIds,
+} from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import { applyRoutineMigrations } from "../packages/routines/src/migrations";
@@ -39,7 +46,10 @@ import { applyBenchMigrations } from "../packages/bench/src/migrations";
 import { applySkillsMigrations } from "../packages/skills/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 import { applyAccessPolicyMigrations } from "../packages/access-policy/src/migrations";
-import { applyTasksMigrations } from "../packages/tasks/src/migrations";
+import {
+  applyTasksMigrations,
+  listTaskFoldedRunIds,
+} from "../packages/tasks/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -57,6 +67,10 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   name: string;
   apply: (databaseUrl: string) => Promise<{ applied: string[] }>;
 }[] = [
+  // Ahead of @corbits/chat and @corbits/tasks: both launch runs
+  // through @corbits/folded-runs' `launchFoldedRun`, which writes into
+  // its `folded_run` marker table unconditionally on every launch.
+  { name: "@corbits/folded-runs", apply: applyFoldedRunsMigrations },
   { name: "@corbits/chat", apply: applyChatMigrations },
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
   { name: "@corbits/routines", apply: applyRoutineMigrations },
@@ -96,6 +110,41 @@ async function applyInstalledPackageMigrations(
         { cause: error },
       );
     }
+  }
+  await backfillFoldedRunsFromInstalledPackages(databaseUrl);
+}
+
+/**
+ * One-time cross-package backfill for every folded run launched
+ * before @corbits/folded-runs' own `folded_run` marker table existed
+ * (CL-6061). Neither @corbits/folded-runs nor this script reads
+ * another package's tables directly to do this — @corbits/chat and
+ * @corbits/tasks already depend on @corbits/folded-runs, so having it
+ * read back their schemas would close that into a cycle. Instead each
+ * launching package exposes its own read-only lister over its own
+ * schema (listChannelLaunchFoldedRunIds, listTaskFoldedRunIds), this
+ * script — the one place that already knows and sequences every
+ * installed package — combines their output, and
+ * @corbits/folded-runs' own backfillFoldedRunMarkers is the only thing
+ * that ever writes to its table. Ledgered by that function under its
+ * own migration name, so every run after the first is a fast no-op.
+ */
+async function backfillFoldedRunsFromInstalledPackages(
+  databaseUrl: string,
+): Promise<void> {
+  const [channelLaunchSeeds, taskSeeds] = await Promise.all([
+    listChannelLaunchFoldedRunIds(databaseUrl),
+    listTaskFoldedRunIds(databaseUrl),
+  ]);
+  const { applied, inserted } = await backfillFoldedRunMarkers(databaseUrl, [
+    ...channelLaunchSeeds,
+    ...taskSeeds,
+  ]);
+  if (applied) {
+    console.log(
+      `db-setup: backfilled ${inserted} folded_run marker(s) from ` +
+        "@corbits/chat and @corbits/tasks",
+    );
   }
 }
 
@@ -517,6 +566,7 @@ export async function setupDatabase(
 // package's tables, not only the platform's.
 const PACKAGE_SCHEMAS = [
   "mailbox",
+  "folded_runs",
   "chat",
   "routines",
   "insights",

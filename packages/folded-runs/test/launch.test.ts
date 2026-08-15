@@ -15,6 +15,7 @@
 // — so a real tenant catalog is never required to prove the wiring.
 import { describe, expect, mock, test } from "bun:test";
 import { agentSession, principal, workflowRun } from "@intx/db/schema";
+import { foldedRun } from "../src/schema";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type {
   EventCollectorRegistry,
@@ -261,6 +262,17 @@ describe("launchFoldedRun", () => {
       principalId: result.instancePrincipalId,
       status: "active",
     });
+
+    // The permanent folded-run marker (`./schema.ts`) is written
+    // unconditionally, inside the same transaction, regardless of
+    // whether the caller supplies `persistExtra` — this is what lets a
+    // workbench-owned scoped run listing exclude every folded run with
+    // no per-caller opt-in.
+    const foldedRunInsert = db.inserted.find((row) => row.table === foldedRun);
+    expect(foldedRunInsert?.values).toMatchObject({
+      id: "ins_channel1",
+      tenantId: "ten_1",
+    });
   });
 
   test("rolls back the committed rows and abandons the collector when the deploy fails", async () => {
@@ -313,7 +325,10 @@ describe("launchFoldedRun", () => {
     const sessionUpdate = db.updated.find((row) => row.table === agentSession);
     expect(sessionUpdate?.values).toMatchObject({ status: "ended" });
 
-    expect(db.deleted).toEqual([{ table: workflowRun }]);
+    // The run row and its folded-run marker are rolled back together —
+    // a rolled-back launch must leave no marker behind for an id that
+    // no longer names a real run.
+    expect(db.deleted).toEqual([{ table: workflowRun }, { table: foldedRun }]);
 
     const principalUpdate = db.updated.find((row) => row.table === principal);
     expect(principalUpdate?.values).toMatchObject({ status: "deactivated" });
@@ -361,6 +376,9 @@ describe("launchFoldedRun", () => {
       ),
     ).rejects.toThrow(SessionLaunchError);
 
+    // Neither the run row nor its folded-run marker is deleted: the
+    // leaked child is still real and still folded, so both rows must
+    // stay.
     expect(db.deleted).toEqual([]);
     const runUpdate = db.updated.find((row) => row.table === workflowRun);
     expect(runUpdate?.values).toEqual({ status: "failed" });

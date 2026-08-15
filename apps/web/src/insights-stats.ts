@@ -59,9 +59,14 @@ export const INSIGHTS_RECENT_LIMIT = 12;
  * plus (given `foldedRunIds`) invited-agent chat runs, which self-anchor
  * like a real deployment (see `packages/folded-runs/src/launch.ts`) and
  * launch under a real `definitionId` `isChannelHostDefinitionName` never
- * catches. Defaults to an empty set: today's caller (`insights-page.tsx`)
- * reads `/me/workflows/runs`, which selects `anchorRunId IS NULL` and so
- * never surfaces a self-anchored folded run in the first place.
+ * catches. `foldedRunIds` defaults to an empty set because today's
+ * caller (`insights-page.tsx`) never supplies one — not because the
+ * feed it reads is actually scoped. `/me/workflows/runs` selects
+ * `anchorRunId IS NULL`, but every top-level run, real deployment or
+ * folded alike, self-anchors (`anchorRunId === id`); no addressed run
+ * ever satisfies that predicate. The feed is dead by construction, not
+ * correctly filtered — tracked separately as CL-6062, out of scope
+ * here. Do not read the empty default as evidence the feed works.
  */
 export function purposeRunsForInsights(
   runs: readonly WorkflowRun[],

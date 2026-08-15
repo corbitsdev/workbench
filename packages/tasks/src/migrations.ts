@@ -127,6 +127,45 @@ export const tasksMigrations: readonly TaskMigration[] = [
   },
 ];
 
+/**
+ * Every folded run this package's own launches recorded in `task` or
+ * `task_leg` — a task's own `run_id` names its first leg, and
+ * `task_leg.run_id` names every hand-off in a chain (CL-6052). Exists
+ * for `@corbits/folded-runs`' one-time backfill (CL-6061): before its
+ * own `folded_run` marker table existed, these two tables were the
+ * only durable record that a given run was folded. This package never
+ * writes to `folded_runs.folded_run` itself — that would make it
+ * depend on a package that already depends on it — so it only ever
+ * reads its own schema and hands the ids back; the caller
+ * (scripts/db-setup.ts, the one place that already knows every
+ * installed package) is the one that inserts them as markers via
+ * `@corbits/folded-runs`' own export.
+ */
+export interface TaskFoldedRunSeed {
+  readonly id: string;
+  readonly tenantId: string;
+}
+
+export async function listTaskFoldedRunIds(
+  databaseUrl: string,
+): Promise<TaskFoldedRunSeed[]> {
+  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
+  try {
+    const rows = await sql.unsafe(`
+      SELECT "run_id" AS "id", "tenant_id" AS "tenantId" FROM "tasks"."task"
+      UNION
+      SELECT "run_id" AS "id", "tenant_id" AS "tenantId" FROM "tasks"."task_leg"
+      WHERE "run_id" IS NOT NULL
+    `);
+    return rows.map((row) => ({
+      id: String(row["id"]),
+      tenantId: String(row["tenantId"]),
+    }));
+  } finally {
+    await sql.end();
+  }
+}
+
 const LEDGER_TABLE = "tasks_migrations";
 
 function quoteIdentifier(name: string): string {

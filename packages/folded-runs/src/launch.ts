@@ -17,6 +17,7 @@ import {
   principal as principalTable,
   workflowRun,
 } from "@intx/db/schema";
+import { foldedRun } from "./schema";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import { resolveDefinitionSources } from "@intx/hub-api";
 import { generateId } from "@intx/hub-common";
@@ -262,6 +263,20 @@ export async function launchFoldedRun(
       createdAt: now,
     });
 
+    // Permanently marks this run as folded, in `folded-runs`'s own
+    // package-owned table — see `./schema.ts`'s doc comment for why
+    // this has to be written here, unconditionally, rather than left
+    // to each caller's own `persistExtra`: it is the one thing every
+    // folded run needs recorded, and the workbench-owned scoped run
+    // listings (e.g. the hub's `/top-level-runs` route) depend on it
+    // existing for every run this function launches, with zero
+    // per-caller opt-in.
+    await tx.insert(foldedRun).values({
+      id: params.instanceId,
+      tenantId: params.tenantId,
+      createdAt: now,
+    });
+
     if (params.persistExtra !== undefined) {
       await params.persistExtra(tx);
     }
@@ -312,6 +327,9 @@ export async function launchFoldedRun(
       await deps.db
         .delete(workflowRun)
         .where(eq(workflowRun.id, params.instanceId));
+      await deps.db
+        .delete(foldedRun)
+        .where(eq(foldedRun.id, params.instanceId));
     }
 
     await deps.db

@@ -22,16 +22,16 @@ export function purposeAgentDefinitions(
 }
 
 /**
- * `foldedRunIds` excludes invited-agent chat runs — see
- * `packages/folded-runs/src/launch.ts` (self-anchoring) and
- * `packages/chat/src/platform-adapter.ts`'s `launchInvite` for why the
- * shared name-based filter alone can't catch them.
+ * `instances` is expected to already come from `listTopLevelRuns`
+ * (see `./agents-api.ts`), which excludes every folded run (channel
+ * host, invited agent, task) server-side — see
+ * `@corbits/folded-runs`'s `scope-routes.ts`. This still applies the
+ * shared name-based channel-host filter as defense in depth.
  */
 export function purposeAgentInstances(
   instances: readonly AgentInstance[],
-  foldedRunIds: ReadonlySet<string> = new Set(),
 ): readonly AgentInstance[] {
-  return purposeAgentInstancesShared(instances, foldedRunIds);
+  return purposeAgentInstancesShared(instances);
 }
 
 export function filterDefinitions(
