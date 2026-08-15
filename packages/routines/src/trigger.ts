@@ -100,6 +100,14 @@ const WebhookTrigger = type({
  * (arktype at the trust boundary) — an invalid cron string, an
  * impossible schedule, or a bad timezone is rejected at save time with
  * a specific error, never at the next scheduled fire.
+ *
+ * Postel's law: this strict schema is for what the client *sends* —
+ * create/update request bodies, validated once before they reach the
+ * server. A GET response reads a trigger the server already accepted
+ * at save time; re-running these narrows on every read would let a
+ * value that was valid when written turn into a read-time crash later
+ * (a stricter cron/timezone check shipped, ICU data drifted, …). Read
+ * paths use the liberal `RoutineTriggerWire` below instead.
  */
 export const RoutineTrigger = IntervalTrigger.or(DailyTrigger)
   .or(WeeklyTrigger)
@@ -108,6 +116,45 @@ export const RoutineTrigger = IntervalTrigger.or(DailyTrigger)
   .or("null");
 
 export type RoutineTriggerT = typeof RoutineTrigger.infer;
+
+const DailyTriggerWire = type({
+  kind: "'daily'",
+  hour: "0 <= number.integer <= 23",
+  minute: "0 <= number.integer <= 59",
+  "timezone?": "string",
+});
+
+const WeeklyTriggerWire = type({
+  kind: "'weekly'",
+  dayOfWeek: "0 <= number.integer <= 6",
+  hour: "0 <= number.integer <= 23",
+  minute: "0 <= number.integer <= 59",
+  "timezone?": "string",
+});
+
+const CronTriggerWire = type({
+  kind: "'cron'",
+  expression: "string",
+  "timezone?": "string",
+});
+
+/**
+ * Postel's law counterpart to `RoutineTrigger`: the same shape with no
+ * `.narrow()` checks — no IANA-timezone check, no "fires within a
+ * year" check. A routine's trigger was already validated once, at the
+ * moment it was saved; a GET response is replaying that already-
+ * accepted value, not proposing a new one, so it must parse even if
+ * what counts as valid has since drifted. Use this for anything the
+ * client only reads (routine list/detail, drafted proposals); the
+ * strict `RoutineTrigger` above stays on create/update request bodies.
+ */
+export const RoutineTriggerWire = IntervalTrigger.or(DailyTriggerWire)
+  .or(WeeklyTriggerWire)
+  .or(CronTriggerWire)
+  .or(WebhookTrigger)
+  .or("null");
+
+export type RoutineTriggerWireT = typeof RoutineTriggerWire.infer;
 
 /**
  * Renders any trigger shape to a canonical cron expression, the single

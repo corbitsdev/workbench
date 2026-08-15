@@ -74,7 +74,15 @@ toast copy a UI over routines routes needs, plus a re-export of the
 caller has one import for the whole client contract. Kept apart from the
 root export so a browser bundle never pulls in `drizzle-orm`, `postgres`,
 or `@intx/hub-api` (those stay in `store.ts` / `routes.ts` / `migrations.ts`)
-— see `client.test.ts`.
+— enforced by `bun run check:browser-safe-subpaths`
+(`scripts/checks/browser-safe-subpaths.ts`), which walks this subpath's
+transitive import graph, not just by convention.
+
+Read responses use `RoutineTriggerWire`, not the strict `RoutineTrigger`:
+a routine's trigger was already validated once, at save time, so a GET
+must still parse it even if a cron/timezone check has since tightened.
+`RoutineTrigger` stays on `CreateRoutineInput` / `UpdateRoutineInput` /
+`CreateDraftInput`, which describe what the client sends.
 
 **Owns:**
 
@@ -89,6 +97,7 @@ or `@intx/hub-api` (those stay in `store.ts` / `routes.ts` / `migrations.ts`)
 - `routineCreatedToast`, `routineRunStartedToast` — the confirmation copy
   a create/run-now flow shows.
 - Re-exported from `./trigger`: `RoutineTrigger`, `RoutineTriggerT`,
+  `RoutineTriggerWire`, `RoutineTriggerWireT`,
   `computeNextFireAt`, `cronExpressionForTrigger`, `routineCadenceLabel`,
   `routineCadenceSummary`, `routineMatchesModeFilter`,
   `routineTriggerCategory`, `ROUTINE_WEEKDAY_NAMES`, `timezoneForTrigger`,

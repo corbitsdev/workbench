@@ -27,6 +27,7 @@
     "check:packages": "bun run scripts/checks/packages.ts",
     "check:licenses": "bun run scripts/checks/licenses.ts",
     "check:no-product-tenancy": "bun run scripts/checks/no-product-tenancy.ts",
+    "check:browser-safe-subpaths": "bun run scripts/checks/browser-safe-subpaths.ts",
     "check:web-utilities": "bun run scripts/checks/web-tailwind-utilities.ts",
     "check:ui-vocabulary": "bun run scripts/checks/ui-vocabulary.ts"
   },

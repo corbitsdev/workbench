@@ -73,6 +73,30 @@ describe("wire schemas", () => {
     expect(out instanceof type.errors).toBe(false);
   });
 
+  test("Routine parses a response whose trigger carries an unrecognized timezone", () => {
+    // A row the server already accepted at save time must still parse on
+    // read even if a stricter check would reject it today — see
+    // RoutineTriggerWire in ./trigger.
+    const out = Routine({
+      id: "r1",
+      name: "Morning brief",
+      definitionId: "wfd_1",
+      trigger: {
+        kind: "daily",
+        hour: 9,
+        minute: 0,
+        timezone: "Mars/Olympus_Mons",
+      },
+      scope: "personal",
+      input: {},
+      enabled: true,
+      deliveryChannelId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(out instanceof type.errors).toBe(false);
+  });
+
   test("RoutineDraft parses a drafted proposal", () => {
     const out = RoutineDraft({
       id: "d1",

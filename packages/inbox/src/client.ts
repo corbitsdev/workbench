@@ -7,8 +7,9 @@
 // also carries `./routes` (hono, `@intx/hub-api`), `./delivery`
 // (`@corbits/notify/mailbox`), and `./migrations` (`@corbits/mailbox`'s
 // Postgres migration runner) — none of which belong in a browser bundle —
-// which is why a UI imports this subpath instead of the root. See
-// client.test.ts for the import-surface check.
+// which is why a UI imports this subpath instead of the root. Enforced
+// by `bun run check:browser-safe-subpaths`
+// (scripts/checks/browser-safe-subpaths.ts), not just by convention.
 
 export { itemsEligibleForClearDone, itemsEligibleForMarkAllRead } from "./bulk";
 export {

@@ -15,7 +15,9 @@ this subpath adds no code of its own. It exists because the root export
 (`.`) also carries `./routes` (`hono`, `@intx/hub-api`), `./delivery`
 (`@corbits/notify/mailbox`), and `./migrations` (`@corbits/mailbox`'s
 Postgres migration runner) alongside them, and none of those belong in a
-browser bundle — see `client.test.ts`.
+browser bundle — enforced by `bun run check:browser-safe-subpaths`
+(`scripts/checks/browser-safe-subpaths.ts`), which walks this subpath's
+transitive import graph, not just by convention.
 
 **Owns:**
 

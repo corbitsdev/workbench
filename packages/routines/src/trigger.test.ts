@@ -1,10 +1,51 @@
 import { describe, expect, test } from "bun:test";
+import { type } from "arktype";
 
 import {
   ROUTINE_WEEKDAY_NAMES,
+  RoutineTrigger,
+  RoutineTriggerWire,
   routineCadenceLabel,
   routineCadenceSummary,
 } from "./trigger";
+
+describe("RoutineTrigger vs RoutineTriggerWire (Postel's law)", () => {
+  test("an unrecognized timezone is rejected on write by RoutineTrigger", () => {
+    const out = RoutineTrigger({
+      kind: "daily",
+      hour: 9,
+      minute: 0,
+      timezone: "Mars/Olympus_Mons",
+    });
+    expect(out instanceof type.errors).toBe(true);
+  });
+
+  test("the same unrecognized timezone still parses on read via RoutineTriggerWire", () => {
+    const out = RoutineTriggerWire({
+      kind: "daily",
+      hour: 9,
+      minute: 0,
+      timezone: "Mars/Olympus_Mons",
+    });
+    expect(out instanceof type.errors).toBe(false);
+  });
+
+  test("a cron expression that never fires within a year is rejected on write", () => {
+    const out = RoutineTrigger({
+      kind: "cron",
+      expression: "0 0 30 2 *",
+    });
+    expect(out instanceof type.errors).toBe(true);
+  });
+
+  test("the same never-fires cron expression still parses on read", () => {
+    const out = RoutineTriggerWire({
+      kind: "cron",
+      expression: "0 0 30 2 *",
+    });
+    expect(out instanceof type.errors).toBe(false);
+  });
+});
 
 describe("ROUTINE_WEEKDAY_NAMES", () => {
   test("names Sunday through Saturday in cron dayOfWeek order", () => {

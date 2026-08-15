@@ -1,17 +1,20 @@
 // Browser-safe Routines domain surface: wire schemas, HTTP path builders,
 // and pure display helpers shared by any UI over `@corbits/routines`'
 // routes (see ./routes.ts). No drizzle, postgres, or `@intx/hub-api`
-// server import reaches this module — see client.test.ts. Trigger
-// validation (`RoutineTrigger`, cadence labels, next-fire math) already
-// lives in ./trigger and ./cron and is re-exported here so a browser
-// caller has one import for the whole client surface.
+// server import reaches this module — enforced by
+// `bun run check:browser-safe-subpaths` (scripts/checks/browser-safe-
+// subpaths.ts), not just by convention. Trigger validation
+// (`RoutineTrigger` / `RoutineTriggerWire`, cadence labels, next-fire
+// math) already lives in ./trigger and ./cron and is re-exported here
+// so a browser caller has one import for the whole client surface.
 
 import { type } from "arktype";
 
-import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
+import { RoutineTriggerWire, type RoutineTriggerT } from "./trigger";
 
 export {
   RoutineTrigger,
+  RoutineTriggerWire,
   computeNextFireAt,
   cronExpressionForTrigger,
   isValidCronExpression,
@@ -23,13 +26,24 @@ export {
   ROUTINE_WEEKDAY_NAMES,
   timezoneForTrigger,
 } from "./trigger";
-export type { RoutineModeFilter, RoutineTriggerT } from "./trigger";
+export type {
+  RoutineModeFilter,
+  RoutineTriggerT,
+  RoutineTriggerWireT,
+} from "./trigger";
 
+// Response schemas read a trigger with `RoutineTriggerWire`, not the
+// strict `RoutineTrigger` — a routine already saved was already
+// validated once; re-validating its cron/timezone narrows on every GET
+// would let an old row a stricter check now disagrees with hard-fail
+// parsing in the browser instead of just rendering. `RoutineTrigger`
+// (strict) stays on `CreateRoutineInput`/`UpdateRoutineInput`/
+// `CreateDraftInput` below, which describe what the client sends.
 export const Routine = type({
   id: "string",
   name: "string",
   definitionId: "string",
-  trigger: RoutineTrigger,
+  trigger: RoutineTriggerWire,
   scope: "'personal' | 'bench'",
   input: "Record<string, unknown>",
   enabled: "boolean",
@@ -62,7 +76,7 @@ export const RoutineDraft = type({
   prompt: "string",
   status: "'draft' | 'reviewed' | 'approved' | 'discarded'",
   proposedSteps: DraftedStep.array(),
-  proposedTrigger: RoutineTrigger,
+  proposedTrigger: RoutineTriggerWire,
   proposedName: "string | null",
   definitionId: "string | null",
   deliveryChannelId: "string",
