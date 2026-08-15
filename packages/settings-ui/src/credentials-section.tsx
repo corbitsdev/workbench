@@ -52,6 +52,13 @@ const STATUS_TONE: Record<
   error: "danger",
 };
 
+const CREDENTIAL_TYPE_LABEL: Record<CredentialType, string> = {
+  api_key: "API key",
+  oauth_token: "OAuth token",
+  certificate: "Certificate",
+  other: "Other",
+};
+
 type CredentialsData = {
   readonly credentials: readonly Credential[];
   readonly providers: readonly Provider[];
@@ -228,7 +235,9 @@ export function CredentialsTable({
                 credential.providerId}
             </TableCell>
             <TableCell>
-              <code>{credential.type}</code>
+              <span title={credential.type}>
+                {CREDENTIAL_TYPE_LABEL[credential.type]}
+              </span>
             </TableCell>
             <TableCell>
               <Badge tone={STATUS_TONE[credential.status]}>
@@ -346,7 +355,7 @@ export function CreateCredentialDialog({
             >
               {credentialTypes.map((credType) => (
                 <option key={credType} value={credType}>
-                  {credType}
+                  {CREDENTIAL_TYPE_LABEL[credType]}
                 </option>
               ))}
             </select>
