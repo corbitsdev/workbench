@@ -47,17 +47,18 @@ const BANNED_TERMS: readonly { name: string; pattern: RegExp }[] = [
  * The nav band renamed "Channels" → "Spaces" (CL-6054): the band you
  * direct work from, not the word for a single channel. This matches the
  * exact shape a reintroduced band label would take — a `label`/`title`
- * property or an `aria-label` attribute set to precisely "Channels" — so
- * it never trips on legitimate copy that happens to contain the word:
- * prose like "Channels and running routines…" (not a bare label value),
- * `channelsSectionLabel: "Channels"` (chat-ui's pinned-vs-chat kind
- * label, a different concept from the nav band), or a command palette
- * `heading: "Channels"` (groups search results by entity kind, same
- * pattern as its `heading: "Routines"` sibling). Those all stay legal;
- * only the band label itself is banned.
+ * object property (`title: "Channels"`), the same as a JSX attribute
+ * (`title="Channels"`), or an `aria-label` attribute set to precisely
+ * "Channels" — so it never trips on legitimate copy that happens to
+ * contain the word: prose like "Channels and running routines…" (not a
+ * bare label value), `channelsSectionLabel: "Channels"` (chat-ui's
+ * pinned-vs-chat kind label, a different concept from the nav band), or
+ * a command palette `heading: "Channels"` (groups search results by
+ * entity kind, same pattern as its `heading: "Routines"` sibling). Those
+ * all stay legal; only the band label itself is banned.
  */
 const BAND_LABEL_PATTERN =
-  /\b(?:label|title)\s*:\s*"Channels"|aria-label\s*=\s*"Channels"/g;
+  /\b(?:label|title)\s*[:=]\s*"Channels"|aria-label\s*=\s*"Channels"/g;
 
 /**
  * Exact strings that legitimately contain a banned term as UI copy.

@@ -159,6 +159,26 @@ test("a reintroduced Channels aria-label is a violation", () => {
   expect(report.violations).toHaveLength(1);
 });
 
+test("a reintroduced Channels JSX title attribute is a violation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/rail.tsx",
+      contents: `<SidebarPanelHeader title="Channels" />`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+});
+
+test("a reintroduced Channels JSX label attribute is a violation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/rail.tsx",
+      contents: `<NavItem label="Channels" />`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+});
+
 test("prose that merely mentions Channels is not a band-label violation", () => {
   const report = auditUiVocabulary([
     {
