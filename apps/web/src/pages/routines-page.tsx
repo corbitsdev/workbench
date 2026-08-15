@@ -33,7 +33,11 @@ import {
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import type { Channel, DialogStepperStep } from "@corbits/chat-ui";
-import { DialogStepper, listChannels } from "@corbits/chat-ui";
+import {
+  DialogStepper,
+  listChannels,
+  listTenantInvitableDefinitions,
+} from "@corbits/chat-ui";
 import {
   connectorStatus,
   CopyButton,
@@ -121,6 +125,27 @@ function routineDetailSentence(
     return `${when}, delivers to ${channel.title}.`;
   }
   return `${when}.`;
+}
+
+/** Plain-language state for a routine the scheduler has stopped firing —
+ * `consecutiveFailures` at the moment it dead-lettered equals the
+ * threshold, so it's an honest count, not a guess. `null` for a
+ * healthy routine (never rendered). */
+function routinePausedMessage(routine: Routine): string | null {
+  if (routine.deadLetteredAt === null) return null;
+  return `Paused after ${routine.consecutiveFailures} failed attempt${
+    routine.consecutiveFailures === 1 ? "" : "s"
+  }.`;
+}
+
+/** The most recent recorded failure's own error text, for the honest
+ * "why" next to `routinePausedMessage`'s "that". `undefined` runs
+ * (still loading) and runs with no `error` are skipped. */
+function mostRecentRunError(runs: readonly RoutineRun[]): string | null {
+  const failed = runs.find(
+    (run) => run.error !== undefined && run.error !== null,
+  );
+  return failed?.error ?? null;
 }
 
 function draftedStepsFromInput(
@@ -468,6 +493,51 @@ function DeliveryChannelPicker({
   );
 }
 
+/**
+ * An `"agent"`-kind trigger field (see `@corbits/workflow-catalog`'s
+ * `WorkflowTriggerField.kind`) renders as a picker of taskable agent
+ * definitions, never a raw-id text box — the same listing the task
+ * composer's own agent picker reads (`listTenantInvitableDefinitions`),
+ * so "the agent this recurring task runs" is chosen the identical way
+ * "New task" chooses one.
+ */
+function AgentTriggerFieldPicker({
+  agents,
+  value,
+  onChange,
+  disabled,
+}: {
+  readonly agents: readonly { readonly id: string; readonly name: string }[];
+  readonly value: string;
+  readonly onChange: (id: string) => void;
+  readonly disabled?: boolean;
+}) {
+  const selected = agents.find((a) => a.id === value);
+  if (agents.length === 0) {
+    return (
+      <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
+        No taskable agents on this workbench yet — create one first.
+      </p>
+    );
+  }
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" disabled={disabled}>
+          {selected?.name ?? "Choose agent"}
+        </Button>
+      </MenuTrigger>
+      <MenuContent>
+        {agents.map((agent) => (
+          <MenuItem key={agent.id} onSelect={() => onChange(agent.id)}>
+            {agent.name}
+          </MenuItem>
+        ))}
+      </MenuContent>
+    </Menu>
+  );
+}
+
 type CreatePath = "catalog" | "describe";
 type CreateStep = 1 | 2 | 3;
 
@@ -574,6 +644,38 @@ function useDialogConnections(tenantId: string | null, open: boolean) {
   return connections;
 }
 
+/** Taskable agent definitions for an `"agent"`-kind trigger field's
+ * picker — reuses the exact listing the task composer's own agent
+ * picker fetches (`listTenantInvitableDefinitions`). Mirrors
+ * `useDialogConnections` above: only fetches once the dialog is open,
+ * a plain effect rather than `useQuery` so this dialog never requires
+ * a `QueryClientProvider` ancestor. */
+function useTaskableAgents(
+  tenantId: string | null,
+  open: boolean,
+): readonly { readonly id: string; readonly name: string }[] {
+  const [agents, setAgents] = useState<
+    readonly { readonly id: string; readonly name: string }[]
+  >([]);
+
+  useEffect(() => {
+    if (!open || tenantId === null) return;
+    let cancelled = false;
+    listTenantInvitableDefinitions(tenantId)
+      .then((definitions) => {
+        if (!cancelled) setAgents(definitions);
+      })
+      .catch(() => {
+        if (!cancelled) setAgents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, open]);
+
+  return agents;
+}
+
 export function connectorBadgeLabel(connectorId: string): string {
   const entry = CONNECTOR_REGISTRY[connectorId];
   if (entry === undefined) {
@@ -634,6 +736,9 @@ function CreateRoutineDialog({
   const open = openProp ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
   const connections = useDialogConnections(tenantId ?? null, open);
+  // Only matters for a workflow that declares an `"agent"`-kind trigger
+  // field (today, only the recurring-task bridge).
+  const taskableAgents = useTaskableAgents(tenantId ?? null, open);
   const [step, setStep] = useState<CreateStep>(1);
   const [path, setPath] = useState<CreatePath>("catalog");
   const [name, setName] = useState("");
@@ -692,6 +797,17 @@ function CreateRoutineDialog({
 
   const selectedDefinition =
     definitions.find((d) => d.id === definitionId) ?? null;
+  // A workflow whose result never posts to a channel (e.g. the
+  // recurring-task bridge — always delivers to its creator's Inbox)
+  // must never be forced through the channel step at all: no picker,
+  // no requirement, nothing collected to silently discard. Unresolved
+  // (no pick yet, or the "describe" path, which only learns its
+  // definitionId after drafting) defaults to requiring one — the
+  // honest, prior behavior.
+  const deliversToChannel =
+    path !== "catalog" ||
+    selectedDefinition === null ||
+    selectedDefinition.deliveryMode !== "inbox";
 
   const reset = () => {
     setStep(1);
@@ -761,7 +877,11 @@ function CreateRoutineDialog({
   };
 
   const createCatalogRoutine = () => {
-    if (selectedDefinition === null || deliveryChannelId === "") return;
+    if (
+      selectedDefinition === null ||
+      (deliversToChannel && deliveryChannelId === "")
+    )
+      return;
     setBusy(true);
     setError(null);
     const routineName =
@@ -792,7 +912,7 @@ function CreateRoutineDialog({
             name: routineName,
             definitionId,
             scope: "bench",
-            deliveryChannelId,
+            ...(deliversToChannel ? { deliveryChannelId } : {}),
             trigger: { kind: "webhook", webhookTriggerId: binding.id },
             runOnceNow: false,
             ...(triggerInput !== undefined ? { input: triggerInput } : {}),
@@ -817,7 +937,7 @@ function CreateRoutineDialog({
       name: routineName,
       definitionId,
       scope: "bench",
-      deliveryChannelId,
+      ...(deliversToChannel ? { deliveryChannelId } : {}),
       trigger: runMode === "once" ? null : trigger,
       runOnceNow: runMode === "once",
       ...(triggerInput !== undefined ? { input: triggerInput } : {}),
@@ -877,7 +997,7 @@ function CreateRoutineDialog({
     primaryLabel = "Next";
     primaryDisabled =
       busy ||
-      deliveryChannelId === "" ||
+      (deliversToChannel && deliveryChannelId === "") ||
       !triggerFieldsSatisfied(
         selectedDefinition?.triggerFields ?? [],
         triggerFieldValues,
@@ -900,7 +1020,7 @@ function CreateRoutineDialog({
     primaryDisabled =
       busy ||
       selectedDefinition === null ||
-      deliveryChannelId === "" ||
+      (deliversToChannel && deliveryChannelId === "") ||
       !triggerFieldsSatisfied(
         selectedDefinition?.triggerFields ?? [],
         triggerFieldValues,
@@ -1155,18 +1275,32 @@ function CreateRoutineDialog({
                         {field.label}
                         {field.required ? "" : " (optional)"}
                       </label>
-                      <Input
-                        id={`routine-trigger-field-${field.key}`}
-                        value={triggerFieldValues[field.key] ?? ""}
-                        placeholder={field.placeholder}
-                        disabled={busy}
-                        onChange={(event) =>
-                          setTriggerFieldValues((values) => ({
-                            ...values,
-                            [field.key]: event.target.value,
-                          }))
-                        }
-                      />
+                      {field.kind === "agent" ? (
+                        <AgentTriggerFieldPicker
+                          agents={taskableAgents}
+                          value={triggerFieldValues[field.key] ?? ""}
+                          disabled={busy}
+                          onChange={(id) =>
+                            setTriggerFieldValues((values) => ({
+                              ...values,
+                              [field.key]: id,
+                            }))
+                          }
+                        />
+                      ) : (
+                        <Input
+                          id={`routine-trigger-field-${field.key}`}
+                          value={triggerFieldValues[field.key] ?? ""}
+                          placeholder={field.placeholder}
+                          disabled={busy}
+                          onChange={(event) =>
+                            setTriggerFieldValues((values) => ({
+                              ...values,
+                              [field.key]: event.target.value,
+                            }))
+                          }
+                        />
+                      )}
                       {field.help !== undefined ? (
                         <p className="text-xs text-[var(--ui-fg-muted)]">
                           {field.help}
@@ -1176,20 +1310,35 @@ function CreateRoutineDialog({
                   ))}
                 </div>
               ) : null}
-              <div className="flex flex-col gap-1.5">
-                <span
-                  id="routine-delivery-label"
-                  className="text-xs font-medium"
-                >
-                  Deliver results to
-                </span>
-                <DeliveryChannelPicker
-                  channels={channels}
-                  value={deliveryChannelId}
-                  onChange={setDeliveryChannelId}
-                  disabled={busy}
-                />
-              </div>
+              {deliversToChannel ? (
+                <div className="flex flex-col gap-1.5">
+                  <span
+                    id="routine-delivery-label"
+                    className="text-xs font-medium"
+                  >
+                    Deliver results to
+                  </span>
+                  <DeliveryChannelPicker
+                    channels={channels}
+                    value={deliveryChannelId}
+                    onChange={setDeliveryChannelId}
+                    disabled={busy}
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium">
+                    Deliver results to
+                  </span>
+                  <p
+                    className="text-xs text-[var(--ui-fg-muted)]"
+                    role="status"
+                  >
+                    Results land in your Inbox — this workflow never posts to a
+                    channel.
+                  </p>
+                </div>
+              )}
             </>
           ) : null}
 
@@ -1502,10 +1651,20 @@ function RunsTable({
                   },
                 }
               : {};
+          const hasError = run.error !== undefined && run.error !== null;
           return (
             <TableRow key={run.runId} {...rowProps}>
               <TableCell>
-                <Badge tone="neutral">{run.triggeredBy}</Badge>
+                <Badge tone={hasError ? "danger" : "neutral"}>
+                  {run.triggeredBy === "schedule-failed"
+                    ? "Failed to start"
+                    : run.triggeredBy}
+                </Badge>
+                {hasError ? (
+                  <p className="mt-1 max-w-xs text-xs text-[var(--ui-fg-muted)]">
+                    {run.error}
+                  </p>
+                ) : null}
               </TableCell>
               <TableCell>
                 {typeof status === "string" ? (
@@ -1667,6 +1826,21 @@ export function RoutinesListPage({
           )
         }
       />
+      {selected !== null && routinePausedMessage(selected) !== null ? (
+        <div
+          className="mx-4 mt-3 flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
+          role="alert"
+        >
+          <p className="m-0 font-medium text-destructive">
+            {routinePausedMessage(selected)}
+          </p>
+          {mostRecentRunError(recentRuns) !== null ? (
+            <p className="m-0 text-xs text-[var(--ui-fg-muted)]">
+              {mostRecentRunError(recentRuns)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <CreateRoutineDialog
         tenantId={tenantId}
         definitions={definitions}
@@ -1865,6 +2039,22 @@ export function RoutineDetailPage({
                     </Badge>
                   </dd>
                 </dl>
+                {routinePausedMessage(data) !== null ? (
+                  <div
+                    className="flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
+                    role="alert"
+                  >
+                    <p className="m-0 font-medium text-destructive">
+                      {routinePausedMessage(data)}
+                    </p>
+                    {runs.kind === "ready" &&
+                    mostRecentRunError(runs.data) !== null ? (
+                      <p className="m-0 text-xs text-[var(--ui-fg-muted)]">
+                        {mostRecentRunError(runs.data)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <section>
                   <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
                     Steps

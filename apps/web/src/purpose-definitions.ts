@@ -28,6 +28,11 @@ export type CatalogFields = {
    * that needs to recognize a *specific* known workflow (not just show
    * it) must compare against this field, never `name`. */
   readonly assetName: string;
+  /** Where this workflow's result actually lands — see
+   * `@corbits/workflow-catalog`'s `WorkflowCatalogEntry.deliveryMode`.
+   * The create dialog reads this to decide whether to collect (and
+   * require) a delivery channel at all. */
+  readonly deliveryMode: "channel" | "inbox";
   readonly whatItDoes: string;
   readonly requiredConnections: readonly string[];
   readonly exampleOutput: string;
@@ -54,6 +59,7 @@ export function withCatalogFields<T extends { readonly name: string }>(
     return {
       ...workflow,
       assetName: workflow.name,
+      deliveryMode: entry.deliveryMode,
       whatItDoes: entry.whatItDoes,
       requiredConnections: entry.requiredConnections,
       exampleOutput: entry.exampleOutput,

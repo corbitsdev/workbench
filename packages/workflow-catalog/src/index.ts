@@ -20,6 +20,13 @@ import { type } from "arktype";
  */
 export const WorkflowTriggerField = type({
   key: "/^[a-zA-Z][a-zA-Z0-9]*$/",
+  // Explicit, never defaulted: `"text"` renders a plain input and
+  // accepts any non-empty string; `"agent"` renders a picker of
+  // taskable agent definitions (the routines create stepper reuses the
+  // task composer's own listing) and its value must resolve to a real
+  // taskable definition at create time — see
+  // `packages/routines/src/routes.ts`'s trigger-input validation.
+  kind: "'text' | 'agent'",
   label: "string > 0",
   "placeholder?": "string",
   required: "boolean",
@@ -33,6 +40,18 @@ export type WorkflowCatalogEntry = {
   readonly displayName: string;
   /** Schedulable as a Routine. False for conversational agents / chat hosts. */
   readonly automatable: boolean;
+  /**
+   * Where a run's result actually lands — the honest end-to-end
+   * contract a routine's "Deliver results to" step depends on. Every
+   * entry states this plainly, whether or not it is automatable:
+   * `"channel"` posts into the picked delivery channel's thread (the
+   * default every workflow used before recurring-task existed);
+   * `"inbox"` never posts to a channel at all — its result reaches only
+   * the creator's Inbox, so a create/run flow for it must never collect
+   * or require a deliveryChannelId that would otherwise be silently
+   * discarded.
+   */
+  readonly deliveryMode: "channel" | "inbox";
   /** One honest sentence: what this workflow actually does. No metrics, no hype. */
   readonly whatItDoes: string;
   /**
@@ -75,6 +94,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "echo",
     displayName: "Echo",
     automatable: false,
+    deliveryMode: "channel",
     whatItDoes:
       "Replies with the exact text it received — a wiring check for the mail-triggered contract, not a real assistant.",
     requiredConnections: [],
@@ -85,6 +105,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "assistant",
     displayName: "Myra",
     automatable: false,
+    deliveryMode: "channel",
     whatItDoes:
       "A general-purpose assistant for the workspace — answers questions, drafts text, and reasons through problems in conversation.",
     requiredConnections: [],
@@ -95,6 +116,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "heartbeat",
     displayName: "Heartbeat",
     automatable: true,
+    deliveryMode: "channel",
     whatItDoes:
       "Completes immediately on every trigger with no real reply — a lightweight target for testing scheduling and mail triggers.",
     requiredConnections: [],
@@ -105,6 +127,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "channel-digest",
     displayName: "Channel digest",
     automatable: true,
+    deliveryMode: "channel",
     whatItDoes:
       "Relays a scheduler-computed digest line straight into a channel, unchanged — the digest content itself comes entirely from its trigger.",
     requiredConnections: [],
@@ -115,6 +138,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "granola-call",
     displayName: "Granola call notes",
     automatable: true,
+    deliveryMode: "channel",
     whatItDoes:
       "Polls Granola for recent calls and starts one process-granola-call run per call that doesn't yet have published notes.",
     requiredConnections: ["granola"],
@@ -125,6 +149,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "process-granola-call",
     displayName: "Process Granola call",
     automatable: false,
+    deliveryMode: "channel",
     whatItDoes:
       "Fetches one call's transcript and publishes five-section working notes — Participants, Summary, Pain points, Decisions, Action items — grounded in the transcript.",
     requiredConnections: ["granola"],
@@ -136,6 +161,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "morning-brief",
     displayName: "Morning brief",
     automatable: true,
+    deliveryMode: "channel",
     whatItDoes:
       "Pulls the sender's recent Granola calls and Linear issues and writes a three-section daily brief: what happened, what needs attention, and suggested next actions.",
     requiredConnections: ["granola", "linear"],
@@ -147,6 +173,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "pain-point-collateral",
     displayName: "Pain-point collateral",
     automatable: false,
+    deliveryMode: "channel",
     whatItDoes:
       "Extracts a customer's real pain points from a call transcript and drafts one piece of targeted collateral, held for approval before it's finalized.",
     requiredConnections: ["granola"],
@@ -162,6 +189,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     triggerFields: [
       {
         key: "transcript",
+        kind: "text",
         label: "Transcript",
         placeholder: "Paste the call transcript",
         required: false,
@@ -169,6 +197,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       },
       {
         key: "noteId",
+        kind: "text",
         label: "Granola note ID",
         placeholder: "note_abc123",
         required: false,
@@ -180,6 +209,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "collateral-generation",
     displayName: "Collateral generation",
     automatable: false,
+    deliveryMode: "channel",
     whatItDoes:
       "Drafts marketing collateral across picked content types from Granola notes, Linear issues, or pasted text, with a swipe review on every draft and one approval on the final set.",
     requiredConnections: ["granola", "linear"],
@@ -191,6 +221,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "reddit-opportunity-scanner",
     displayName: "Reddit opportunity scanner",
     automatable: false,
+    deliveryMode: "channel",
     whatItDoes:
       "Scores Reddit posts as outreach opportunities for a target website, after a review of the search plan and one approval on the final list.",
     requiredConnections: ["scrapecreators"],
@@ -201,6 +232,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: "last-30-days-research",
     displayName: "Last 30 days research report",
     automatable: false,
+    deliveryMode: "channel",
     whatItDoes:
       "Researches a topic over the last 30 days across web search and GitHub, and writes a cited report with sourced findings.",
     requiredConnections: ["exa"],
@@ -213,6 +245,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     triggerFields: [
       {
         key: "topic",
+        kind: "text",
         label: "Topic",
         placeholder: "AI coding agents",
         required: true,
@@ -220,6 +253,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       },
       {
         key: "focus",
+        kind: "text",
         label: "Focus",
         placeholder: "Competing launches",
         required: false,
@@ -231,6 +265,14 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     assetName: RECURRING_TASK_ASSET_NAME,
     displayName: "Recurring task",
     automatable: true,
+    // A task result always lands in its creator's Inbox — never a
+    // channel — the same delivery every manual task uses. The create
+    // dialog reads this to skip the "Deliver results to" channel step
+    // entirely for this workflow, and packages/routines' create/fire
+    // validation reads it (via the host's deliveryChannelRequired port)
+    // to never require a deliveryChannelId this workflow would silently
+    // discard.
+    deliveryMode: "inbox",
     whatItDoes:
       "Runs a task prompt through a picked agent on a schedule — the same launch a manual task uses, delivered to your Inbox the same way.",
     requiredConnections: [],
@@ -247,6 +289,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
     triggerFields: [
       {
         key: "agent",
+        kind: "agent",
         label: "Agent",
         placeholder: "wfd_...",
         required: true,
@@ -254,6 +297,7 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       },
       {
         key: "prompt",
+        kind: "text",
         label: "Prompt",
         placeholder: "Summarize last night's incidents",
         required: true,
@@ -280,6 +324,17 @@ const byAssetName = new Map(
 
 export function isAutomatableWorkflowName(name: string): boolean {
   return byAssetName.get(name)?.automatable === true;
+}
+
+/**
+ * Whether a routine on this workflow needs a `deliveryChannelId` at
+ * all — `false` only for a known `"inbox"`-delivering entry (see
+ * `WorkflowCatalogEntry.deliveryMode`). An unknown name defaults `true`
+ * (channel required): the safe, prior-behavior default when a workflow
+ * isn't catalog-known at all.
+ */
+export function deliveryChannelRequiredForWorkflowName(name: string): boolean {
+  return byAssetName.get(name)?.deliveryMode !== "inbox";
 }
 
 /** The full catalog entry for an asset name, or `undefined` if it isn't
@@ -315,4 +370,36 @@ function humanizeAssetName(name: string): string {
     .filter((part) => part.length > 0)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+export type TriggerFieldsValidation =
+  { readonly ok: true } | { readonly ok: false; readonly message: string };
+
+/**
+ * The shape half of a workflow's declared `triggerFields` contract: every
+ * required field must be present as a non-empty string. This is
+ * definition-agnostic (a `kind: "agent"` field's value additionally has to
+ * *resolve* to a real taskable definition, which needs a tenant DB lookup
+ * only a host can do — see `apps/hub/src/index.ts`'s own
+ * `validateRoutineInput`, which runs this check first and its own
+ * resolution check second). Called at the routine-create boundary
+ * (`@corbits/routines`' `deps.validateRoutineInput` port); the workflow's
+ * own fire-time validation (`launchTask`'s definition checks) is the
+ * second, authoritative line — this is the earlier, friendlier rejection.
+ */
+export function validateTriggerFieldsInput(
+  fields: readonly WorkflowTriggerField[],
+  input: Record<string, unknown>,
+): TriggerFieldsValidation {
+  for (const field of fields) {
+    if (!field.required) continue;
+    const value = input[field.key];
+    if (typeof value !== "string" || value.trim() === "") {
+      return {
+        ok: false,
+        message: `"${field.label}" is required`,
+      };
+    }
+  }
+  return { ok: true };
 }

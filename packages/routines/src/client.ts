@@ -49,6 +49,14 @@ export const Routine = type({
   input: "Record<string, unknown>",
   enabled: "boolean",
   deliveryChannelId: "string | null",
+  // How many scheduled fires have failed in a row (reset to 0 on any
+  // successful fire, including "run now" — see store.ts). Zero means
+  // healthy, regardless of `deadLetteredAt`.
+  consecutiveFailures: "number",
+  // Set once `consecutiveFailures` reaches `MAX_ROUTINE_FIRE_FAILURES`
+  // — the scheduler stops claiming this routine until a person
+  // re-enables or edits it. `null` means still scheduling normally.
+  deadLetteredAt: "string | null",
   createdAt: "string",
   updatedAt: "string",
 });
@@ -60,6 +68,10 @@ export const RoutineRun = type({
   runId: "string",
   triggeredBy: "string",
   createdAt: "string",
+  // Set on a synthetic `schedule-failed` run row (see store.ts) — the
+  // launch failure's own message, so a dead-lettered routine's detail
+  // can show *why*, not just *that* it stopped.
+  "error?": "string | null",
   "run?": "Record<string, unknown>",
 });
 export type RoutineRun = typeof RoutineRun.infer;
@@ -94,7 +106,11 @@ export type CreateRoutineInput = {
   readonly definitionId: string;
   readonly trigger: RoutineTriggerT;
   readonly scope: "personal" | "bench";
-  readonly deliveryChannelId: string;
+  /** Omitted only for a workflow whose result never posts to a channel
+   * (see `@corbits/workflow-catalog`'s `WorkflowCatalogEntry.deliveryMode`)
+   * — the server itself still rejects a missing value for every other
+   * workflow (`deliveryChannelRequired`, routes.ts). */
+  readonly deliveryChannelId?: string;
   readonly input?: Record<string, unknown>;
   readonly runOnceNow?: boolean;
 };

@@ -99,7 +99,10 @@ import {
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
 import {
+  deliveryChannelRequiredForWorkflowName,
   isAutomatableWorkflowName,
+  validateTriggerFieldsInput,
+  workflowCatalogEntry,
   workflowDisplayName,
 } from "@corbits/workflow-catalog";
 import {
@@ -1085,6 +1088,78 @@ export async function createHub(config: HubConfig) {
   const routineGrantStore = createGrantStore(db);
   const routineStore = createDrizzleRoutineStore(db);
   const routineDraftStore = createDrizzleDraftStore(db);
+  // The honest end-to-end delivery-destination rule: a workflow that
+  // never posts to a channel (e.g. recurring-task, always delivering
+  // to its creator's Inbox — see @corbits/workflow-catalog's
+  // `deliveryMode`) must never be forced to collect, or block on
+  // missing, a `deliveryChannelId` it would just discard. An unknown
+  // definitionId (row missing, or its asset name isn't catalog-known)
+  // defaults to channel-required — the safe, prior behavior.
+  async function routineDeliveryChannelRequired(
+    tenantId: string,
+    definitionId: string,
+  ): Promise<boolean> {
+    const row = await db.query.workflowDefinition.findFirst({
+      where: and(
+        eq(workflowDefinition.id, definitionId),
+        eq(workflowDefinition.tenantId, tenantId),
+      ),
+      columns: { name: true },
+    });
+    if (row === undefined) return true;
+    return deliveryChannelRequiredForWorkflowName(row.name);
+  }
+  // Create-time boundary check for a routine's stored `input` against
+  // its own definition's declared trigger fields (shape, then — for an
+  // `"agent"`-kind field — that the value resolves to a real taskable
+  // definition). An unknown definitionId or asset name passes here
+  // (its 404 comes from `definitionInTenant` instead); a definition
+  // with no declared trigger fields accepts any input, same as today.
+  // This is the friendly early rejection only — `launchTask`'s own
+  // definition checks at fire time remain authoritative.
+  async function routineInputValid(
+    tenantId: string,
+    definitionId: string,
+    input: Record<string, unknown>,
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    const row = await db.query.workflowDefinition.findFirst({
+      where: and(
+        eq(workflowDefinition.id, definitionId),
+        eq(workflowDefinition.tenantId, tenantId),
+      ),
+      columns: { name: true },
+    });
+    if (row === undefined) return { ok: true };
+    const entry = workflowCatalogEntry(row.name);
+    if (entry?.triggerFields === undefined) return { ok: true };
+
+    const shapeResult = validateTriggerFieldsInput(entry.triggerFields, input);
+    if (!shapeResult.ok) return shapeResult;
+
+    for (const field of entry.triggerFields) {
+      if (field.kind !== "agent") continue;
+      const value = input[field.key];
+      if (typeof value !== "string" || value === "") continue;
+      const agentRow = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, value),
+          eq(workflowDefinition.tenantId, tenantId),
+        ),
+        columns: { name: true, status: true },
+      });
+      if (
+        agentRow === undefined ||
+        agentRow.status !== "deployed" ||
+        !isConversationalAgentDefinition(agentRow)
+      ) {
+        return {
+          ok: false,
+          message: `"${field.label}" must be a taskable agent`,
+        };
+      }
+    }
+    return { ok: true };
+  }
   const routineLauncher = createHubRoutineLauncher({
     db,
     sessionService,
@@ -1145,6 +1220,8 @@ export async function createHub(config: HubConfig) {
         const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
         return row !== undefined && row.workflowDefinitionId === definitionId;
       },
+      deliveryChannelRequired: routineDeliveryChannelRequired,
+      validateRoutineInput: routineInputValid,
     }),
   );
   // Recurring auto-fire: a minimal in-process poller (routine-scheduler.ts)
@@ -1159,6 +1236,7 @@ export async function createHub(config: HubConfig) {
   const routineScheduler = createRoutineScheduler({
     store: routineStore,
     launcher: routineLauncher,
+    deliveryChannelRequired: routineDeliveryChannelRequired,
   });
 
   // Myra auto-dispatch (CL-6051): a typed outcome becomes a validated
