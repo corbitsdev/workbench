@@ -663,13 +663,22 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
   // workflow happens to pin an unresolved package.
   const publishToolRegistry =
     args.publishToolRegistry ?? publishCorbitsToolsRegistry;
-  await publishToolRegistry({
-    api,
-    cookies,
-    hubUrl,
-    tenantId: tenant.tenantId,
-    log,
-  });
+  try {
+    await publishToolRegistry({
+      api,
+      cookies,
+      hubUrl,
+      tenantId: tenant.tenantId,
+      log,
+    });
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new CliError(
+      `publishing the corbits-tools package-registry asset failed: ${message}`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+      { cause },
+    );
+  }
 
   let confirmed = 0;
   for (const workflow of workflows) {

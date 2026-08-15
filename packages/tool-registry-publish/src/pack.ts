@@ -16,6 +16,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { type } from "arktype";
 import * as tar from "tar";
 
 const BUNDLE_ENTRY_FILENAME = "tool.mjs";
@@ -32,11 +33,16 @@ export function tarballFilenameFor(name: string, version: string): string {
   return `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`;
 }
 
-type PackageManifest = {
-  name: string;
-  version: string;
-  exports?: Record<string, unknown>;
-};
+// The slice of a source package's `package.json` this packer reads —
+// validated at the read boundary rather than trusted with `as`, since
+// a malformed manifest here should fail loud with a parse-time
+// message, not surface later as a confusing bundler or tar error.
+const PackageManifest = type({
+  name: "string",
+  version: "string",
+  "exports?": "Record<string, unknown>",
+});
+type PackageManifest = typeof PackageManifest.infer;
 
 function entryFileFor(manifest: PackageManifest, packageDir: string): string {
   const entry = manifest.exports?.["."];
@@ -123,9 +129,15 @@ async function runBunBuild(
 async function packToolPackageTarballUncached(
   packageDir: string,
 ): Promise<PackedTarball> {
-  const manifest = JSON.parse(
+  const manifestJson: unknown = JSON.parse(
     await readFile(path.join(packageDir, "package.json"), "utf8"),
-  ) as PackageManifest;
+  );
+  const manifest = PackageManifest(manifestJson);
+  if (manifest instanceof type.errors) {
+    throw new Error(
+      `packToolPackageTarball: ${packageDir}'s package.json failed validation: ${manifest.summary}`,
+    );
+  }
 
   const bundleStagingDir = await mkdtemp(
     path.join(tmpdir(), "corbits-tools-bundle-"),
