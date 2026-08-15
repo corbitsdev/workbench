@@ -197,6 +197,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
 import { upgradeWebSocket, websocket } from "hono/bun";
+import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 import { readHubConfig, type HubConfig } from "./config";
 import { createLocalRoutineDrafting } from "./local-routine-drafting";
 import { createHubRoutineLauncher } from "./routine-launcher";
@@ -218,10 +219,12 @@ const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 // npm publishing the CL-5999 capability audit called for. Routing the
 // `@corbits` scope at this registry name means a `@corbits/*` pin
 // resolves only once an operator seeds a `package-registry` asset named
-// `CORBITS_TOOLS_REGISTRY` with the package's tarball; until then,
-// resolution fails loud rather than silently falling through to npmjs
-// (which could never carry an unpublished scope anyway).
-const CORBITS_TOOLS_REGISTRY = "corbits-tools";
+// `CORBITS_TOOLS_REGISTRY` with the package's tarball — `workbench
+// seed`'s `seedTenant` does exactly that, via
+// `@corbits/tool-registry-publish`, ahead of deploying any workflow
+// that pins a `@corbits/*` package; until then, resolution fails loud
+// rather than silently falling through to npmjs (which could never
+// carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;

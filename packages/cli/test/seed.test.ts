@@ -34,6 +34,7 @@ function deps(overrides: Partial<SeedDeps> & Pick<SeedDeps, "api">): SeedDeps {
   return {
     config: CONFIG,
     pushWorkflow: async () => "pushed",
+    publishToolRegistry: async () => undefined,
     log,
     ...overrides,
   };

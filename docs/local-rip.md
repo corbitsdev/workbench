@@ -87,30 +87,27 @@ Either path:
 2. plants it as a credential on your bench alongside that provider's
    curated model catalog;
 3. deploys and (unlike the OAuth callback's own fast half) confirms every
-   default workflow the platform ships — see the note below on the one
-   default workflow this currently can't finish.
+   default workflow the platform ships, including **assistant**.
 
 Expect the page to show a short "setting up your workbench" wait while
 `/complete-setup` polls, then land on a "Your first routines are running"
 screen listing each routine as confirmed running with your credential, and
 a "Meet Myra" button into the bench itself.
 
-### A known gap: the assistant routine
+### Publishing the corbits-tools registry
 
-As of this writing, the **assistant** default workflow does not finish
-deploying: it pins the `@corbits/memory-tools` tool package
-(`workflows/assistant/src/index.ts`), and that pin only resolves once an
-operator has published a `package-registry`-kind asset named
-`corbits-tools` carrying its tarball (see `apps/hub/src/index.ts`'s
-`CORBITS_TOOLS_REGISTRY` comment). No such asset exists in a fresh
-checkout, and nothing in this repo publishes one yet — building that
-packaging pipeline (which also needs `@intx/agent`'s and `@intx/types`'s
-own dependency closures packaged as real npm tarballs) is real,
-substantial work of its own, tracked separately from this walkthrough.
-Expect the **echo** and **channel-digest** routines to come up live and
-the **assistant** routine to show as failed-to-deploy until that gap is
-closed; `scripts/e2e/local-rip.test.ts` asserts this exact, documented
-condition rather than a false "fully seeded."
+The **assistant** default workflow pins the `@corbits/memory-tools` tool
+package (`workflows/assistant/src/index.ts`), and that pin only resolves
+once a `package-registry`-kind asset named `corbits-tools` carries its
+tarball (see `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` comment).
+`seedTenant` (`packages/hub-client/src/seed.ts`) publishes that asset
+itself — via `@corbits/tool-registry-publish`, which bundles
+`@corbits/memory-tools` into a self-contained tarball (every dependency
+inlined, so the closure resolver has nothing further to fetch) and pushes
+it through the hub's native asset REST routes — ahead of deploying any
+workflow, so this step needs nothing from you: **echo**, **channel-digest**,
+and **assistant** all come up live. `scripts/e2e/local-rip.test.ts`
+asserts exactly that.
 
 ## 5. Check the Connections surface
 

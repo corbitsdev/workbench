@@ -5,22 +5,22 @@
 // up → first-login provisioning mints a personal bench, unseeded (no
 // hub-owned seed model) → connecting a real inference credential
 // through the key path (`POST /api/onboarding/complete`'s own
-// machinery, called directly — see the stubbing note below) seeds
-// every default workflow with no unresolvable tool pin → the
+// machinery, called directly — see the stubbing note below) fully
+// seeds every default workflow, including "assistant" → the
 // Connections surface (the tenant's own credentials list, the same
 // route `connectorStatus` in `@workbench/settings-ui` reads) honestly
 // reflects the connected credential. Phase B (once CL-6049's task leg
 // merges) appends the task leg at the marked point at the bottom of
 // this scenario; this file proves onboarding→connect only.
 //
-// Known gap this suite documents rather than hides: the "assistant"
-// default workflow does not deploy today. See the long comment above
-// the "corbits-tools registry gap" hop below for the full account —
-// short version, its `@corbits/memory-tools` tool pin has no seeded
-// registry anywhere in this repo, and building one is its own
-// substantial, unscoped body of work. `bun run check`'s green result
-// for this file proves the gap is real and unchanged, not that
-// onboarding fully seeds a bench yet.
+// Until CL-6057, this suite documented a real platform gap instead of
+// hiding it: the "assistant" default workflow pins
+// `@corbits/memory-tools`, and that pin only resolved once an operator
+// had published a `package-registry`-kind asset named "corbits-tools"
+// carrying its tarball. `seedTenant` now publishes that asset itself
+// (`@corbits/tool-registry-publish`, wired in at
+// `packages/hub-client/src/seed.ts`) ahead of deploying any workflow,
+// so this suite asserts a full seed rather than a documented skip.
 //
 // Stubbing note: proving a pasted key means an outbound call to the
 // provider's own auth layer (`testProviderCredential`, hit through
@@ -335,38 +335,6 @@ describe.skipIf(databaseUrl === undefined)(
       // CliError rather than a response this suite can branch on. Every
       // step ensureSeeded/seedTenant takes is itself ensure-then-create,
       // so retrying the whole call is safe.
-      //
-      // A real, pre-existing platform gap surfaces here too, and this
-      // suite documents it rather than papering over it: the "assistant"
-      // default workflow pins `@corbits/memory-tools`
-      // (`workflows/assistant/src/index.ts`), and that pin only resolves
-      // once an operator has published a `package-registry`-kind asset
-      // named "corbits-tools" carrying its tarball — see
-      // `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` comment. No
-      // such asset exists anywhere (nothing in this repo publishes one —
-      // confirmed by exhaustive search), and building the packaging
-      // pipeline for it (which would also need `@intx/agent`'s and
-      // `@intx/types`'s own dependency closure packaged as real npm
-      // tarballs, since the sidecar's tool loader materializes every
-      // transitive dependency) is its own substantial, unscoped body of
-      // work — well outside this onboard→connect leg. This suite proves
-      // the real, unmodified `ensureSeeded` hits exactly that gap (not
-      // some other regression), then separately proves the two default
-      // workflows with no unresolvable tool pin (echo, channel-digest)
-      // deploy and go live for real.
-      // Matched without the surrounding quote characters: the CliError's
-      // message embeds the hub's JSON error body via `JSON.stringify`,
-      // which re-escapes the nested message's own quotes as `\"` — a
-      // needle with real quote characters would never match that
-      // escaped text.
-      const CORBITS_TOOLS_GAP_NEEDLE = "unknown registry";
-      function isCorbitsToolsRegistryGap(message: string): boolean {
-        return (
-          message.includes(CORBITS_TOOLS_GAP_NEEDLE) &&
-          message.includes("corbits-tools")
-        );
-      }
-
       async function deploySeededWorkflows(
         workflows: typeof DEFAULT_WORKFLOWS,
       ): Promise<Awaited<ReturnType<typeof seedTenant>>> {
@@ -394,27 +362,32 @@ describe.skipIf(databaseUrl === undefined)(
               confirmDeployments: false,
             });
           } catch (cause) {
-            const message =
-              cause instanceof Error ? cause.message : String(cause);
-            if (isCorbitsToolsRegistryGap(message)) throw cause;
             if (Date.now() > deadline) throw cause;
             await Bun.sleep(1000);
           }
         }
       }
 
+      // CL-6057 closed the platform gap the earlier version of this
+      // suite documented: `seedTenant` (via `ensureSeeded`) now
+      // publishes the tenant's `corbits-tools` package-registry asset
+      // — packing `@corbits/memory-tools` into a self-contained
+      // tarball through `@corbits/tool-registry-publish` — ahead of
+      // deploying any workflow, so the "assistant" default workflow's
+      // `@corbits/memory-tools` pin resolves instead of failing the
+      // closure resolver with "unknown registry". This hop proves the
+      // real, unmodified connect flow fully seeds a fresh bench: every
+      // default workflow deploys, with none skipped.
       await hop(
-        "the real, unmodified connect flow hits the known corbits-tools registry gap on 'assistant', not a regression",
+        "the real, unmodified connect flow fully seeds every default workflow, including 'assistant'",
         async () => {
           const deadline = Date.now() + 60_000;
-          let threw: unknown;
           for (;;) {
             if (sidecar.exited()) {
               throw new Error(
                 `sidecar exited before ensureSeeded could run; output:\n${sidecar.output()}`,
               );
             }
-            threw = undefined;
             try {
               await ensureSeeded({
                 api: hubApi,
@@ -426,44 +399,20 @@ describe.skipIf(databaseUrl === undefined)(
                 provider: "anthropic",
                 apiKey: STUB_API_KEY,
               });
+              break;
             } catch (cause) {
-              threw = cause;
+              if (Date.now() > deadline) throw cause;
+              await Bun.sleep(1000);
             }
-            if (threw === undefined) break;
-            const message =
-              threw instanceof Error ? threw.message : String(threw);
-            // The known, permanent gap this hop documents — stop retrying,
-            // it is the expected outcome.
-            if (isCorbitsToolsRegistryGap(message)) break;
-            // Any other failure is either the sidecar's dial-in still in
-            // flight (retry) or a real deadline overrun (surface it).
-            if (Date.now() > deadline) break;
-            await Bun.sleep(1000);
-          }
-          if (threw === undefined) {
-            throw new Error(
-              "ensureSeeded succeeded — the corbits-tools registry gap this " +
-                "suite documents appears to be fixed; replace this hop with " +
-                "the full isFullySeeded assertion below instead of skipping " +
-                "'assistant'",
-            );
-          }
-          const message =
-            threw instanceof Error ? threw.message : String(threw);
-          if (!isCorbitsToolsRegistryGap(message)) {
-            throw threw;
           }
         },
       );
 
       await hop(
-        "echo and channel-digest — the default workflows with no unresolvable tool pin — deploy and go live",
+        "every default workflow — echo, channel-digest, and assistant — deploys and goes live",
         async () => {
-          const deployable = DEFAULT_WORKFLOWS.filter(
-            (workflow) => workflow.assetName !== "assistant",
-          );
-          await deploySeededWorkflows(deployable);
-          for (const workflow of deployable) {
+          await deploySeededWorkflows(DEFAULT_WORKFLOWS);
+          for (const workflow of DEFAULT_WORKFLOWS) {
             const assetsRes = await api(
               hub.baseUrl,
               "GET",
