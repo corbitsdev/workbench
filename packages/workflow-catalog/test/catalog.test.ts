@@ -5,6 +5,7 @@ import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 
 import {
   isAutomatableWorkflowName,
+  RECURRING_TASK_ASSET_NAME,
   workflowDisplayName,
   workflowCatalogEntry,
   WorkflowTriggerField,
@@ -218,6 +219,24 @@ describe("workflow catalog", () => {
       ]);
       for (const field of entry?.triggerFields ?? []) {
         expect(field.required).toBe(false);
+      }
+    });
+
+    test("recurring-task is automatable and declares required agent and prompt fields", () => {
+      // The bridge "Make this a routine" needs: a taskable definition id
+      // (a task's actual agent) never satisfies the routine picker's
+      // automatable-only filter, so this catalog entry is what a task
+      // result's prefill targets instead — see
+      // apps/hub/src/routine-launcher.ts for how a fired routine on this
+      // asset name dispatches through @corbits/tasks' launchTask.
+      expect(isAutomatableWorkflowName(RECURRING_TASK_ASSET_NAME)).toBe(true);
+      const entry = workflowCatalogEntry(RECURRING_TASK_ASSET_NAME);
+      expect(entry?.triggerFields?.map((f) => f.key)).toEqual([
+        "agent",
+        "prompt",
+      ]);
+      for (const field of entry?.triggerFields ?? []) {
+        expect(field.required).toBe(true);
       }
     });
 

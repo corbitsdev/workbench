@@ -38,6 +38,7 @@ const routine: Routine = {
 
 const researcherDefinition = {
   id: "wfd_1",
+  assetName: "researcher",
   name: "Researcher",
   status: "deployed",
   whatItDoes: "Pulls research from connected sources.",

@@ -481,31 +481,42 @@ describe("seedTenant", () => {
     }
   });
 
-  test("the default set consumed by real tenant provisioning is echo, assistant, and channel-digest", () => {
+  test("the default set consumed by real tenant provisioning is echo, assistant, channel-digest, and recurring-task", () => {
     // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
     // DEFAULT_WORKFLOWS for every real signup. channel-digest is the
-    // seed automation the Routines picker can honestly offer. The
-    // remaining catalog-test workflows exist only to exercise the
-    // platform continuously and must never reach a real user through
-    // this array — they are seeded only via the explicit
-    // CATALOG_TEST_WORKFLOWS opt-in.
+    // seed automation the Routines picker can honestly offer;
+    // recurring-task is the bridge "Make this a routine" (an Inbox
+    // action on a completed task result) prefills the create dialog
+    // with — every real tenant needs it deployed for that action to
+    // ever resolve a definitionId. The remaining catalog-test workflows
+    // exist only to exercise the platform continuously and must never
+    // reach a real user through this array — they are seeded only via
+    // the explicit CATALOG_TEST_WORKFLOWS opt-in.
     expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual([
       "echo",
       "assistant",
       "channel-digest",
+      "recurring-task",
     ]);
   });
 
   test("catalog-test workflows declare a modelSource override; defaults do not", () => {
-    // Defaults (echo, assistant, channel-digest) deploy against the
-    // tenant's real model. Catalog-test entries stay free via
-    // NOOP_MODEL_SOURCE.
+    // Defaults (echo, assistant, channel-digest, recurring-task) deploy
+    // against the tenant's real model. Catalog-test entries stay free
+    // via NOOP_MODEL_SOURCE.
     for (const workflow of DEFAULT_WORKFLOWS) {
       expect(workflow.modelSource).toBeUndefined();
     }
     for (const workflow of CATALOG_TEST_WORKFLOWS) {
       expect(workflow.modelSource).toBeDefined();
     }
+  });
+
+  test("recurring-task is automatable, so it reaches the Routines picker", () => {
+    const recurringTask = DEFAULT_WORKFLOWS.find(
+      (w) => w.assetName === "recurring-task",
+    );
+    expect(recurringTask?.automatable).toBe(true);
   });
 
   test("the catalog-test set includes the heartbeat workflow", () => {

@@ -95,6 +95,7 @@ function cardWithTitle(title: string): HTMLButtonElement | undefined {
 const definitions = [
   {
     id: "wfd_1",
+    assetName: "researcher",
     name: "Researcher",
     status: "deployed",
     description: "Pulls research",
@@ -106,6 +107,7 @@ const definitions = [
   },
   {
     id: "wfd_2",
+    assetName: "summarizer",
     name: "Summarizer",
     status: "deployed",
     whatItDoes: "Summarizes a document into a short brief.",
@@ -116,6 +118,7 @@ const definitions = [
   },
   {
     id: "wfd_3",
+    assetName: "last-30-days-research",
     name: "Last 30 days research report",
     status: "deployed",
     whatItDoes: "Researches a topic over the last 30 days.",
@@ -136,6 +139,36 @@ const definitions = [
         placeholder: "Competing launches",
         required: false,
         help: "Optional — narrows which angle of the topic to chase.",
+      },
+    ],
+  },
+  {
+    // Mirrors packages/workflow-catalog's real "recurring-task" entry —
+    // the "Make this a routine" bridge (see inbox-page.tsx) prefills
+    // THIS card's id, never a task's own (conversational, never
+    // automatable) agent id.
+    id: "wfd_recurring_task",
+    assetName: "recurring-task",
+    name: "Recurring task",
+    status: "deployed",
+    whatItDoes: "Runs a task prompt through a picked agent on a schedule.",
+    requiredConnections: [],
+    exampleOutput: "Delivered to your Inbox, same as a manual task's reply",
+    typicalDuration: "same as the agent's own manual-task duration",
+    triggerFields: [
+      {
+        key: "agent",
+        label: "Agent",
+        placeholder: "wfd_...",
+        required: true,
+        help: "The agent this recurring task runs.",
+      },
+      {
+        key: "prompt",
+        label: "Prompt",
+        placeholder: "Summarize last night's incidents",
+        required: true,
+        help: "What to ask the agent to do, every time this routine fires.",
       },
     ],
   },
@@ -642,13 +675,22 @@ describe("CreateRoutineDialog webhook mode", () => {
 });
 
 describe("'Make this a routine' prefill", () => {
+  // Targets the recurring-task bridge workflow's id, never a task's own
+  // (conversational, never automatable) agent id — see
+  // apps/hub/src/routine-launcher.ts and inbox-page.tsx's onMakeRoutine
+  // for why. `input` matches that workflow's own declared trigger
+  // fields (`agent`, `prompt`) exactly, the same seam a manually-picked
+  // catalog workflow's trigger fields go through.
   const prefill = {
-    definitionId: "wfd_1",
+    definitionId: "wfd_recurring_task",
     name: "Summarize last night's incident",
-    input: { prompt: "Summarize last night's incident into a postmortem." },
+    input: {
+      agent: "wfd_summarizer",
+      prompt: "Summarize last night's incident into a postmortem.",
+    },
   };
 
-  test("opens the dialog with the task's agent picked and its name pre-filled", async () => {
+  test("opens the dialog with the recurring-task card picked, its trigger fields rendered, and its name pre-filled", async () => {
     requestMakeRoutine({
       alreadyOnRoutines: false,
       navigateToRoutines: () => {},
@@ -658,7 +700,7 @@ describe("'Make this a routine' prefill", () => {
     await settle();
 
     expect(document.body.textContent).toContain("Step 1 of 3");
-    expect(cardWithTitle("Researcher")?.getAttribute("aria-pressed")).toBe(
+    expect(cardWithTitle("Recurring task")?.getAttribute("aria-pressed")).toBe(
       "true",
     );
 
@@ -666,6 +708,12 @@ describe("'Make this a routine' prefill", () => {
       buttonWithText("Next")?.click();
     });
     await settle();
+
+    // The picked workflow's own trigger fields render at Configure —
+    // proof the dialog is not stuck with an unresolved definitionId.
+    expect(document.body.textContent).toContain("Agent");
+    expect(document.body.textContent).toContain("Prompt");
+
     act(() => {
       buttonWithText("Next")?.click();
     });
@@ -675,9 +723,14 @@ describe("'Make this a routine' prefill", () => {
       "#routine-name",
     ) as HTMLInputElement | null;
     expect(nameInput?.value).toBe(prefill.name);
+    // Create is enabled — a resolved definitionId with its required
+    // trigger fields already satisfied by the prefill.
+    expect(buttonWithText("Create & run now")?.hasAttribute("disabled")).toBe(
+      false,
+    );
   });
 
-  test("carries the task's prompt through as the created routine's stored input", async () => {
+  test("carries the task's agent and prompt through as the created routine's stored trigger-field input", async () => {
     let created: CreateRoutineInput | null = null;
     requestMakeRoutine({
       alreadyOnRoutines: false,
@@ -709,7 +762,9 @@ describe("'Make this a routine' prefill", () => {
     await settle();
 
     expect(created).not.toBeNull();
-    expect((created as CreateRoutineInput | null)?.definitionId).toBe("wfd_1");
+    expect((created as CreateRoutineInput | null)?.definitionId).toBe(
+      "wfd_recurring_task",
+    );
     expect((created as CreateRoutineInput | null)?.name).toBe(prefill.name);
     expect((created as CreateRoutineInput | null)?.input).toEqual(
       prefill.input,
@@ -732,7 +787,7 @@ describe("'Make this a routine' prefill", () => {
       }),
     );
     await settle();
-    expect(cardWithTitle("Researcher")?.getAttribute("aria-pressed")).toBe(
+    expect(cardWithTitle("Recurring task")?.getAttribute("aria-pressed")).toBe(
       "true",
     );
 
@@ -753,8 +808,33 @@ describe("'Make this a routine' prefill", () => {
       buttonWithText("New routine")?.click();
     });
     await settle();
-    expect(cardWithTitle("Researcher")?.getAttribute("aria-pressed")).not.toBe(
-      "true",
+    expect(
+      cardWithTitle("Recurring task")?.getAttribute("aria-pressed"),
+    ).not.toBe("true");
+  });
+
+  test("regression: a prefilled definitionId absent from the catalog is not treated as a valid pick — no dead end", async () => {
+    // Reproduces the critique's exact failure: prefilling with a task's
+    // own (conversational, never-automatable) agent id, which never
+    // resolves in `definitions`. Before the fix, this silently let the
+    // stepper advance to a Configure/Confirm step with no
+    // selectedDefinition to launch against.
+    requestMakeRoutine({
+      alreadyOnRoutines: false,
+      navigateToRoutines: () => {},
+      prefill: {
+        definitionId: "wfd_conversational_agent_not_in_catalog",
+        name: "Should never resolve",
+        input: {},
+      },
+    });
+    mount(baseProps({}));
+    await settle();
+
+    expect(document.body.textContent).toContain(
+      "isn't in your automatable catalog",
     );
+    const nextButton = buttonWithText("Next");
+    expect(nextButton?.hasAttribute("disabled")).toBe(true);
   });
 });

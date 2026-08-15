@@ -28,4 +28,20 @@ describe("suggestRoutineNameFromPrompt", () => {
   test("returns an empty string for whitespace-only input", () => {
     expect(suggestRoutineNameFromPrompt("   \n  ")).toBe("");
   });
+
+  test("truncates on a code-point boundary, never splitting a surrogate pair", () => {
+    // Each 🎉 is one code point but two UTF-16 code units — a
+    // `.slice`/`.length` truncation at exactly 59 *code units* would cut
+    // the 30th emoji in half, leaving an unpaired (invalid) surrogate.
+    const prompt = "🎉".repeat(70);
+    const result = suggestRoutineNameFromPrompt(prompt);
+
+    expect(result.endsWith("…")).toBe(true);
+    const kept = result.slice(0, -1);
+    expect(Array.from(kept)).toEqual(Array(59).fill("🎉"));
+    expect(kept).toBe("🎉".repeat(59));
+    // An unpaired surrogate makes encodeURIComponent throw a URIError —
+    // this is the cheapest way to prove no half-emoji leaked through.
+    expect(() => encodeURIComponent(result)).not.toThrow();
+  });
 });

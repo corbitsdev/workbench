@@ -79,10 +79,35 @@ function taskRecord(overrides: {
   };
 }
 
+// The Routines picker's catalog is automatable-only, filtered client-side
+// via `purposeDefinitions` (isAutomatableWorkflowName + not a channel
+// host) — a task's own agent is conversational, so it is NEVER a member
+// of this list. This mirrors production exactly: the recurring-task
+// bridge workflow (`RECURRING_TASK_ASSET_NAME`, seeded once per tenant
+// per `packages/hub-client/src/seed.ts`) is the only entry, and its id
+// (`wfd_recurring_task`) is deliberately disjoint from the task's own
+// agent id (`wfd_summarizer`) below — the exact shape a real bench has,
+// and the shape whose disjointness broke the very first version of this
+// feature (it prefilled the dialog with the task's own agent id, which
+// never resolved in this list).
+const WORKFLOW_DEFINITIONS_RESPONSE = {
+  data: [
+    {
+      id: "wfd_recurring_task",
+      name: "recurring-task",
+      status: "deployed",
+    },
+  ],
+  nextCursor: null,
+};
+
 /** `items` is what the inbox list route answers with — each test picks
- * which task-result item(s) are in view. */
+ * which task-result item(s) are in view. `definitions` defaults to the
+ * production-shaped, disjoint-from-the-task-agent catalog above; a test
+ * proving the "no recurring-task deployed yet" case overrides it empty. */
 function makeRouteFetch(
   items: readonly unknown[],
+  definitions: unknown = WORKFLOW_DEFINITIONS_RESPONSE,
 ): (input: RequestInfo | URL) => Promise<Response> {
   return (input) => {
     const url = String(input);
@@ -115,6 +140,9 @@ function makeRouteFetch(
       return Promise.resolve(
         jsonResponse({ ...failedTaskResultItem, body: "Ran into an error." }),
       );
+    }
+    if (url.includes("/workflows/definitions")) {
+      return Promise.resolve(jsonResponse(definitions));
     }
     if (url.includes("/inbox")) {
       return Promise.resolve(jsonResponse({ items }));
@@ -305,9 +333,92 @@ describe("inbox top bar", () => {
     // flow, pre-filled and awaiting the person's cadence pick and confirm.
     expect(navigated).toEqual(["/routines"]);
     expect(consumePendingRoutinePrefill()).toEqual({
-      definitionId: "wfd_summarizer",
+      // NOT the task's own agent ("wfd_summarizer") — that id is
+      // conversational and never resolves in the Routines picker (the
+      // dead end a critique caught in this feature's first version).
+      // The recurring-task bridge workflow's id is what actually
+      // resolves; the task's agent travels as its "agent" trigger-field
+      // input instead.
+      definitionId: "wfd_recurring_task",
       name: suggestRoutineNameFromPrompt(TASK_PROMPT),
-      input: { prompt: TASK_PROMPT },
+      input: { agent: "wfd_summarizer", prompt: TASK_PROMPT },
     });
+  });
+
+  test("regression: a task's own (conversational) agent id is never used as the prefilled definitionId, even though the two id spaces are disjoint in production", async () => {
+    // Reproduces the critique's exact failure shape: the routine
+    // catalog response contains ONLY the recurring-task bridge
+    // workflow — the task's own agent id never appears there, exactly
+    // as in a real bench (conversational definitions are excluded from
+    // the automatable-only Routines picker by construction). If this
+    // regresses to prefilling with the task's own definitionId, the
+    // create dialog's `definitions.find` would fail to resolve it and
+    // the flow would dead-end silently.
+    const disjointDefinitions = {
+      data: [
+        {
+          id: "wfd_recurring_task",
+          name: "recurring-task",
+          status: "deployed",
+        },
+      ],
+      nextCursor: null,
+    };
+    globalThis.fetch = makeRouteFetch(
+      [taskResultItem],
+      disjointDefinitions,
+    ) as typeof fetch;
+
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={noop}>
+            <BenchProvider>
+              <InboxPage path="/inbox" navigate={noop} />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    await waitForText("All clear.");
+    await waitForText("Make this a routine");
+
+    const button = buttonWithText("Make this a routine");
+    if (button === undefined) throw new Error("affordance not rendered");
+    await act(async () => {
+      button.click();
+    });
+
+    const prefill = consumePendingRoutinePrefill();
+    expect(prefill?.definitionId).not.toBe("wfd_summarizer");
+    expect(
+      disjointDefinitions.data.some((d) => d.id === prefill?.definitionId),
+    ).toBe(true);
+  });
+
+  test("hides 'Make this a routine' when no recurring-task bridge workflow is deployed for this tenant yet", async () => {
+    // Even on a successful task result, the affordance must not offer a
+    // dead end: without a resolvable recurring-task definitionId there
+    // is nothing honest to prefill.
+    globalThis.fetch = makeRouteFetch([taskResultItem], {
+      data: [],
+      nextCursor: null,
+    }) as typeof fetch;
+
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={noop}>
+            <BenchProvider>
+              <InboxPage path="/inbox" navigate={noop} />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    await waitForText("All clear.");
+    await settle();
+
+    expect(buttonWithText("Make this a routine")).toBeUndefined();
   });
 });

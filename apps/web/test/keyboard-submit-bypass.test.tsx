@@ -58,6 +58,7 @@ function cardWithTitle(title: string): HTMLButtonElement | undefined {
 const definitions = [
   {
     id: "wfd_3",
+    assetName: "last-30-days-research",
     name: "Last 30 days research report",
     status: "deployed",
     whatItDoes: "Researches a topic over the last 30 days.",
