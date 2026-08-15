@@ -258,6 +258,30 @@ describe("loadAgentDirectory", () => {
     expect(directory.foldedRunIds.has("ins_invited1")).toBe(true);
   });
 
+  test("a 404 from the channels route (chat not mounted) degrades to an empty folded-run-id set", async () => {
+    stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [definitionFixture], nextCursor: null });
+      }
+      if (path.includes("/workflows/runs")) {
+        return json({ data: [instanceFixture], nextCursor: null });
+      }
+      if (path.includes("/catalog/models")) {
+        return json({ data: [modelFixture], nextCursor: null });
+      }
+      if (path.includes("/chat/channels")) {
+        return json({ error: { message: "not found" } }, 404);
+      }
+      return json({ error: { message: "unexpected" } }, 500);
+    });
+
+    // A chat-less host has no folded chat runs to filter, so an empty
+    // set is the correct answer — the page must still load.
+    const directory = await loadAgentDirectory("tnt_1");
+    expect(directory.foldedRunIds.size).toBe(0);
+    expect(directory.instances).toEqual([instanceFixture]);
+  });
+
   test("fails the whole load when the channels fetch fails, rather than silently dropping the filter", async () => {
     stubFetch((path) => {
       if (path.includes("/workflows/definitions")) {

@@ -16,7 +16,11 @@ import {
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
-import { foldedRunIdsFromChannels, listAllChannels } from "@corbits/chat-ui";
+import {
+  ChatApiError,
+  foldedRunIdsFromChannels,
+  listAllChannels,
+} from "@corbits/chat-ui";
 
 import type { APIQuery } from "./api";
 import { toAPIQuery } from "./api";
@@ -230,7 +234,9 @@ type ModelsOutcome =
  * silently on a transient failure would let invited-agent chat runs leak
  * back into the directory as if they were real deployments — exactly the
  * bug this filter exists to close (see `purposeAgentInstances` in
- * `agents-directory.ts`) — so a failure here fails the whole load instead.
+ * `agents-directory.ts`) — so a failure here fails the whole load. The one
+ * exception is a 404 from the channels route (chat not mounted on this
+ * host), where an empty set is genuinely correct — see the inline comment.
  */
 export async function loadAgentDirectory(
   tenantId: string,
@@ -239,7 +245,21 @@ export async function loadAgentDirectory(
     await Promise.all([
       listAgentDefinitions(tenantId),
       listAgentInstances(tenantId),
-      listAllChannels(tenantId).then(foldedRunIdsFromChannels),
+      // A 404 means the chat module isn't mounted on this host at all
+      // (workbench composes it in, but a chat-less host is a valid
+      // composition): with no chat there are no folded chat runs to
+      // filter, so an empty set is the *correct* answer, not a degraded
+      // one. Any other failure still fails the load — see the doc
+      // comment above.
+      listAllChannels(tenantId).then(
+        foldedRunIdsFromChannels,
+        (cause: unknown) => {
+          if (cause instanceof ChatApiError && cause.status === 404) {
+            return new Set<string>();
+          }
+          throw cause;
+        },
+      ),
       listCatalogModels(tenantId).then(
         (models): ModelsOutcome => ({ ok: true, models }),
         (cause: unknown): ModelsOutcome => ({

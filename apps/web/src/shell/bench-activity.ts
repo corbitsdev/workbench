@@ -7,7 +7,7 @@
 // to point.
 
 import { useEffect, useState } from "react";
-import { listChannels } from "@corbits/chat-ui";
+import { foldedRunIdsFromChannels, listAllChannels } from "@corbits/chat-ui";
 import type { Channel } from "@corbits/chat-ui";
 
 import { listRoutineActivity } from "./routine-activity";
@@ -37,14 +37,24 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     }
     let cancelled = false;
     setState({ kind: "loading" });
-    Promise.all([
-      listChannels(tenantId, "channel"),
-      listChannels(tenantId, "chat"),
-      listRoutineActivity(tenantId),
-    ])
-      .then(([channels, chats, routines]) => {
+    // One all-kinds channels fetch, split client-side, instead of two
+    // per-kind fetches: the full list is also exactly what
+    // `foldedRunIdsFromChannels` needs to keep the tenant's folded/chat
+    // runs (channel hosts + invited agents, which self-anchor like real
+    // deployments) out of the "Running" band's deployments listing.
+    listAllChannels(tenantId)
+      .then(async (allChannels) => {
+        const routines = await listRoutineActivity(
+          tenantId,
+          foldedRunIdsFromChannels(allChannels),
+        );
         if (cancelled) return;
-        setState({ kind: "ready", channels, chats, routines });
+        setState({
+          kind: "ready",
+          channels: allChannels.filter((channel) => channel.kind === "channel"),
+          chats: allChannels.filter((channel) => channel.kind === "chat"),
+          routines,
+        });
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
