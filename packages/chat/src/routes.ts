@@ -459,6 +459,23 @@ async function resolveMessageSenderTenant(
  * `GET /channels/:id/pins` and the thread-messages route already use
  * to resolve a message id against the channel's mailbox.
  */
+/**
+ * The display name an unnamed chat with this agent is titled by — the
+ * definition's `description` ("Myra" for the `assistant` asset).
+ * `undefined` when the definition is unknown or carries no display
+ * name; the caller then falls back to the joined agent's handle,
+ * exactly as before display names existed.
+ */
+async function agentChatDisplayName(
+  platform: ChatPlatform,
+  tenantId: string,
+  definitionId: string,
+): Promise<string | undefined> {
+  const invitable = await platform.listInvitableDefinitions(tenantId);
+  return invitable.find((definition) => definition.id === definitionId)
+    ?.description;
+}
+
 async function messageExistsInChannel(
   platform: ChatPlatform,
   tenantId: string,
@@ -696,6 +713,20 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       const channelId = generateId("workflowRun");
+      // An unnamed agent chat is titled by its agent's display name
+      // ("Myra"), resolved before the channel tenant is minted so the
+      // tenant row carries the same readable name instead of the raw
+      // channel id. An unknown definition leaves this undefined; the
+      // post-join handle fallback below still names the chat then.
+      const chatTitle =
+        body.name ??
+        (isChatWithDefinition(body)
+          ? await agentChatDisplayName(
+              deps.platform,
+              tenant.id,
+              body.definitionId,
+            )
+          : undefined);
       const triggerAddress = formatRunAddress(channelId, tenant.domain);
       const inferencePreferences =
         (await deps.channelHostInferencePreferences?.(tenant.id)) ?? [];
@@ -719,7 +750,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const channelTenant = await deps.tenancy.createChannelTenant({
         parentTenantId: tenant.id,
         channelId,
-        name: body.name ?? channelId,
+        name: chatTitle ?? channelId,
         creatorUserId: principal.refId,
       });
 
@@ -775,7 +806,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         "chat/kind": body.kind,
         "chat/pinned": preset.pinned,
         "chat/participants": initialParticipants,
-        ...(body.name !== undefined ? { "chat/name": body.name } : {}),
+        ...(chatTitle !== undefined ? { "chat/name": chatTitle } : {}),
       };
 
       const row = await deps.store.createChannelSettings({
@@ -898,7 +929,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         // The chat's default title, when the caller passes no name, is
         // its agent's handle.
         const finalSettings =
-          body.name === undefined
+          chatTitle === undefined
             ? (
                 await deps.store.updateChannelSettings({
                   tenantId: tenant.id,

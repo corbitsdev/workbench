@@ -35,7 +35,7 @@ export const CHAT_STRINGS = {
   newChatDialogTitle: "New chat",
   newChatDialogDescription: "Pick who you want to talk to.",
   newChatNameLabel: "Name (optional)",
-  newChatNamePlaceholder: "Defaults to the agent's handle",
+  newChatNamePlaceholder: "Defaults to the agent's name",
   newChatCounterpartTabAgent: "Agents",
   newChatCounterpartTabPerson: "People",
   newChatAgentLabel: "Agent",
