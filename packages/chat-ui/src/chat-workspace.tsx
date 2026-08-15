@@ -156,6 +156,28 @@ export function canInviteAgent(kind: string | undefined): boolean {
 }
 
 /**
+ * The composer's placeholder reads as a direct message once the active
+ * surface is a chat, naming its one counterpart — a chat's title always
+ * defaults to that counterpart's name at creation (see `routes.ts`'s
+ * `POST /channels`), so it's always the right word here even when the
+ * counterpart is a person, not an agent. A channel (or a surface that
+ * hasn't resolved yet) keeps the generic, mention-driven copy.
+ */
+export function composerPlaceholderFor(channel: {
+  readonly kind: string;
+  readonly title: string;
+} | undefined): string {
+  if (channel === undefined || channel.kind !== "chat") {
+    return CHAT_STRINGS.composerPlaceholder;
+  }
+  const counterpart =
+    channel.title.trim().length > 0
+      ? channel.title
+      : CHAT_STRINGS.unnamedChannel;
+  return CHAT_STRINGS.composerPlaceholderChat(counterpart);
+}
+
+/**
  * Which message source the timeline should load for the current view.
  *
  * - Open reply/delivery thread → that thread's membership only
@@ -1171,6 +1193,7 @@ function ChatWorkspaceInner({
                     agents={mentionCandidatesFromParticipants(
                       activeChannel?.participants ?? [],
                     )}
+                    placeholder={composerPlaceholderFor(activeChannel)}
                     onSend={handleSend}
                     onInviteAgent={() => setInviteDialogOpen(true)}
                     onOpenAgentsSettings={() => openChannelSettings("agents")}

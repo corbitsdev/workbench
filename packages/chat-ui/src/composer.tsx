@@ -275,9 +275,18 @@ export const Composer = forwardRef<
     readonly onOpenAgentsSettings: () => void;
     /** `/run` — the cheapest real hop to running a routine: Routines, create/run open. */
     readonly onOpenRoutines: () => void;
+    /** Defaults to the generic channel copy — a chat passes one naming its counterpart. */
+    readonly placeholder?: string;
   }
 >(function Composer(
-  { agents, onSend, onInviteAgent, onOpenAgentsSettings, onOpenRoutines },
+  {
+    agents,
+    onSend,
+    onInviteAgent,
+    onOpenAgentsSettings,
+    onOpenRoutines,
+    placeholder = CHAT_STRINGS.composerPlaceholder,
+  },
   ref,
 ) {
   const [value, setValue] = useState("");
@@ -661,7 +670,7 @@ export const Composer = forwardRef<
           ref={textareaRef}
           className="chat-composer-input"
           value={value}
-          placeholder={CHAT_STRINGS.composerPlaceholder}
+          placeholder={placeholder}
           onChange={(event) => {
             setValue(event.target.value);
             syncComposerSuggestState(

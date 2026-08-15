@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   canInviteAgent,
+  composerPlaceholderFor,
   nextMessagesState,
   resolveMessageFeedTarget,
 } from "../src/chat-workspace";
@@ -289,6 +290,38 @@ describe("canInviteAgent (a chat's agent is fixed at creation; the server 409s a
 
   test("is true for a kind this UI doesn't otherwise recognize", () => {
     expect(canInviteAgent("archive")).toBe(true);
+  });
+});
+
+describe("composerPlaceholderFor (CL-6070: a chat's composer reads as a DM, not a channel)", () => {
+  test("names the counterpart for an agent chat", () => {
+    expect(
+      composerPlaceholderFor({ kind: "chat", title: "Myra" }),
+    ).toBe(CHAT_STRINGS.composerPlaceholderChat("Myra"));
+  });
+
+  test("names the counterpart for a person chat too — a chat's title is always its counterpart's name", () => {
+    expect(
+      composerPlaceholderFor({ kind: "chat", title: "Priya" }),
+    ).toBe(CHAT_STRINGS.composerPlaceholderChat("Priya"));
+  });
+
+  test("keeps the generic channel copy for a channel", () => {
+    expect(
+      composerPlaceholderFor({ kind: "channel", title: "General" }),
+    ).toBe(CHAT_STRINGS.composerPlaceholder);
+  });
+
+  test("keeps the generic copy with no channel resolved yet", () => {
+    expect(composerPlaceholderFor(undefined)).toBe(
+      CHAT_STRINGS.composerPlaceholder,
+    );
+  });
+
+  test("falls back to the unnamed-channel label for a titleless chat", () => {
+    expect(composerPlaceholderFor({ kind: "chat", title: "" })).toBe(
+      CHAT_STRINGS.composerPlaceholderChat(CHAT_STRINGS.unnamedChannel),
+    );
   });
 });
 

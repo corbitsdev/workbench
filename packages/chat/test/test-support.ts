@@ -245,6 +245,13 @@ export interface ChannelView {
   kind: string;
   pinned: boolean;
   participants: { address: string; handle: string }[];
+  /** Present on create/reopen responses: the channel's own tenancy
+   * link, or null (with `legacy: true`) for a pre-tenancy channel. */
+  tenancy?: {
+    tenantId: string;
+    parentTenantId: string;
+    slug: string;
+  } | null;
 }
 
 export async function createChannel(
