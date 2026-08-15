@@ -65,6 +65,7 @@ const FailureBody = type({ message: "string" });
 async function postAuth(
   path: string,
   body: Record<string, string>,
+  doing: string,
 ): Promise<AuthResult> {
   try {
     const response = await fetch(path, {
@@ -79,7 +80,7 @@ async function postAuth(
         ok: false,
         message:
           failure instanceof type.errors
-            ? `The server answered ${response.status} for ${path}.`
+            ? `The server answered ${response.status} ${doing}.`
             : failure.message,
       };
     }
@@ -87,7 +88,7 @@ async function postAuth(
     if (parsed instanceof type.errors) {
       return {
         ok: false,
-        message: `Unexpected response shape from ${path}: ${parsed.summary}`,
+        message: `Unexpected response shape ${doing}: ${parsed.summary}`,
       };
     }
     return { ok: true, user: parsed.user };
@@ -100,7 +101,7 @@ async function postAuth(
 }
 
 export function signIn(email: string, password: string): Promise<AuthResult> {
-  return postAuth("/api/auth/sign-in/email", { email, password });
+  return postAuth("/api/auth/sign-in/email", { email, password }, "signing in");
 }
 
 /**
@@ -110,7 +111,11 @@ export function signIn(email: string, password: string): Promise<AuthResult> {
  */
 export function signUp(email: string, password: string): Promise<AuthResult> {
   const name = email.split("@")[0] ?? email;
-  return postAuth("/api/auth/sign-up/email", { name, email, password });
+  return postAuth(
+    "/api/auth/sign-up/email",
+    { name, email, password },
+    "creating your account",
+  );
 }
 
 const SocialProviderId = type("'google' | 'github'");

@@ -62,12 +62,15 @@ async function postInbox(path: string, body: unknown = {}): Promise<void> {
   } catch (cause) {
     throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
+      undefined,
+      path,
     );
   }
   if (!response.ok) {
     throw new ApiQueryError(
-      `The server answered ${response.status} for ${path}.`,
+      `The server answered ${response.status}.`,
       response.status,
+      path,
     );
   }
 }

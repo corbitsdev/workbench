@@ -31,11 +31,13 @@ export class UnauthenticatedError extends Error {
 }
 
 /** The one HTTP-query error shape every hub request throws: a human message
- * plus the response status when one exists (absent for network failures). */
+ * plus the response status when one exists (absent for network failures),
+ * plus the request path for logs — never surfaced in user-facing copy. */
 export class ApiQueryError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly path?: string,
   ) {
     super(message);
   }
@@ -51,6 +53,31 @@ export function describeQueryError(error: unknown): string {
     return "Can't reach the server. Check your connection.";
   }
   return "Something went wrong. Try again.";
+}
+
+/**
+ * Human copy for a failed request, one sentence per status class, named
+ * around what the caller was trying to do ("loading your benches",
+ * "uploading this file"). Reads only `error.status` (any error-like value
+ * carrying one, not just `ApiQueryError`) — never `error.message`, so a
+ * request path, tenant id, or raw status text baked into a thrown message
+ * can never reach this return value.
+ */
+export function describeApiError(error: unknown, doing: string): string {
+  const status =
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof (error as { status: unknown }).status === "number"
+      ? (error as { status: number }).status
+      : undefined;
+  if (status === 401 || status === 403) {
+    return "You don't have access to this.";
+  }
+  if (status === 404) {
+    return "This isn't here anymore.";
+  }
+  return `Something went wrong ${doing}. Try again.`;
 }
 
 /**

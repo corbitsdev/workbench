@@ -16,7 +16,11 @@ import { Inbox } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
-import { QueryView, SignedOutNotice } from "@corbits/api-query";
+import {
+  describeApiError,
+  QueryView,
+  SignedOutNotice,
+} from "@corbits/api-query";
 import { listTenantInvitableDefinitions } from "@corbits/chat-ui";
 import {
   createMyraAgentSelectionStrategy,
@@ -210,7 +214,10 @@ function InboxDetail({
     return (
       <EmptyState
         title="Couldn't load this item"
-        description={detail.message}
+        description={describeApiError(
+          { status: detail.status },
+          "loading this item",
+        )}
       />
     );
   }
@@ -486,11 +493,7 @@ export function InboxPage({
         setTaskDialogOpen(false);
       })
       .catch((cause: unknown) => {
-        setTaskError(
-          cause instanceof Error
-            ? cause.message
-            : "That task didn't start — try again.",
-        );
+        setTaskError(describeApiError(cause, "starting that task"));
       })
       .finally(() => setTaskSubmitting(false));
   }

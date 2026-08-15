@@ -100,12 +100,17 @@ async function request<T>(
   } catch (cause) {
     throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
+      undefined,
+      path,
     );
   }
   if (response.status === 401) {
-    throw new ApiQueryError(`Not signed in for ${path}.`, 401);
+    throw new ApiQueryError("Not signed in.", 401, path);
   }
   if (!response.ok) {
+    // Envelope-first: the hub's own `error.message` is already plain,
+    // human copy — kept verbatim. Only the fallback (no envelope message)
+    // is synthesized here, and it never repeats the request path.
     const detail = await response
       .json()
       .then(
@@ -113,8 +118,9 @@ async function request<T>(
       )
       .catch(() => "");
     throw new ApiQueryError(
-      `The server answered ${response.status} for ${path}.${detail === "" ? "" : ` ${detail}`}`,
+      detail === "" ? `The server answered ${response.status}.` : detail,
       response.status,
+      path,
     );
   }
   if (response.status === 204) return undefined as T;
@@ -122,7 +128,9 @@ async function request<T>(
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
     throw new ApiQueryError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
+      `Unexpected response shape: ${parsed.summary}`,
+      undefined,
+      path,
     );
   }
   return parsed;

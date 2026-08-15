@@ -80,6 +80,8 @@ async function request<T>(
   } catch (cause) {
     throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
+      undefined,
+      path,
     );
   }
   const json: unknown = await response.json().catch(() => undefined);
@@ -87,15 +89,18 @@ async function request<T>(
     const envelope = ErrorEnvelope(json);
     throw new ApiQueryError(
       envelope instanceof type.errors
-        ? `The server answered ${String(response.status)} for ${path}.`
+        ? `The server answered ${String(response.status)}.`
         : envelope.error.message,
       response.status,
+      path,
     );
   }
   const parsed = schema(json);
   if (parsed instanceof type.errors) {
     throw new ApiQueryError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
+      `Unexpected response shape: ${parsed.summary}`,
+      undefined,
+      path,
     );
   }
   return parsed;

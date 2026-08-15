@@ -35,7 +35,7 @@ import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownUp, FileStack, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { QueryView } from "@corbits/api-query";
+import { describeApiError, QueryView } from "@corbits/api-query";
 
 import {
   ArtifactDetailSchema,
@@ -52,7 +52,7 @@ import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
 import {
   artifactUploadToast,
-  isArtifactsUnavailableMessage,
+  isArtifactsUnavailableStatus,
   mapArtifactListToSummaries,
   uploadArtifactFiles,
 } from "../shell/library-artifacts";
@@ -457,7 +457,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
     );
   }
 
-  if (page.kind === "error" && isArtifactsUnavailableMessage(page.message)) {
+  if (page.kind === "error" && isArtifactsUnavailableStatus(page.status)) {
     return (
       <PageShell width="full" className="page-fill">
         <RichEmptyState
@@ -488,7 +488,10 @@ export function LibraryRoute({ path }: { readonly path: string }) {
             previewLoading={detail.kind === "loading" && selectedId !== null}
             previewError={
               detail.kind === "error" && selectedId !== null
-                ? detail.message
+                ? describeApiError(
+                    { status: detail.status },
+                    "loading this artifact",
+                  )
                 : null
             }
             onUpload={(files) => {
@@ -503,7 +506,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
                   toast(artifactUploadToast(files.map((file) => file.name)));
                 } catch (err) {
                   setUploadError(
-                    err instanceof Error ? err.message : String(err),
+                    describeApiError(err, "uploading those files"),
                   );
                 } finally {
                   setUploading(false);

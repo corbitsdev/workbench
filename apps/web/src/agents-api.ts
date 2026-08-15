@@ -48,21 +48,26 @@ async function getJSON<T>(path: string, schema: Validator<T>): Promise<T> {
   } catch (cause) {
     throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
+      undefined,
+      path,
     );
   }
   if (response.status === 401) {
-    throw new ApiQueryError("Not signed in.", 401);
+    throw new ApiQueryError("Not signed in.", 401, path);
   }
   if (!response.ok) {
     throw new ApiQueryError(
-      `The server answered ${response.status} for ${path}.`,
+      `The server answered ${response.status}.`,
       response.status,
+      path,
     );
   }
   const parsed = schema(await response.json().catch(() => undefined));
   if (parsed instanceof type.errors) {
     throw new ApiQueryError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
+      `Unexpected response shape: ${parsed.summary}`,
+      undefined,
+      path,
     );
   }
   return parsed;
@@ -86,6 +91,8 @@ async function postJSON<T>(
   } catch (cause) {
     throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
+      undefined,
+      path,
     );
   }
   const json: unknown = await response.json().catch(() => undefined);
@@ -93,14 +100,16 @@ async function postJSON<T>(
     const envelope = ErrorEnvelope(json);
     const message =
       envelope instanceof type.errors
-        ? `The server answered ${response.status} for ${path}.`
+        ? `The server answered ${response.status}.`
         : envelope.error.message;
-    throw new ApiQueryError(message, response.status);
+    throw new ApiQueryError(message, response.status, path);
   }
   const parsed = schema(json);
   if (parsed instanceof type.errors) {
     throw new ApiQueryError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
+      `Unexpected response shape: ${parsed.summary}`,
+      undefined,
+      path,
     );
   }
   return parsed;

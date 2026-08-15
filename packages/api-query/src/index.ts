@@ -2,6 +2,7 @@ export type { APIQuery } from "./envelope";
 export {
   ApiQueryError,
   UnauthenticatedError,
+  describeApiError,
   describeQueryError,
   toAPIQuery,
 } from "./envelope";
