@@ -10,8 +10,8 @@
 import { describe, expect, mock, test } from "bun:test";
 
 import type { DefinitionSourceResolution } from "@intx/hub-api";
-import { task as taskTable } from "../src/schema";
-import type { TaskRecord, TaskStore } from "../src/store";
+import { task as taskTable, taskLeg as taskLegTable } from "../src/schema";
+import type { TaskLegRecord, TaskRecord, TaskStore } from "../src/store";
 import type { NotifyDeliveryDeps, NotifyInboxItem } from "@corbits/notify";
 import {
   createInMemoryNotifyDispatchStore,
@@ -128,15 +128,29 @@ function storeOverInserts(db: {
   const statusOverride = new Map<string, "done" | "failed">();
   const resultMailIds = new Map<string, string>();
   const completed: { id: string; status: string }[] = [];
+  function legRows(): TaskLegRecord[] {
+    return db.inserted
+      .filter((row) => row.table === taskLegTable)
+      .flatMap((row) => row.values as TaskLegRecord[])
+      .sort((a, b) => a.position - b.position);
+  }
+  function legsOf(taskId: string): TaskLegRecord[] {
+    return legRows().filter((leg) => leg.taskId === taskId);
+  }
   function rows(): TaskRecord[] {
     return db.inserted
       .filter((row) => row.table === taskTable)
       .map((row) => {
-        const values = row.values as TaskRecord;
+        const values = row.values as Omit<TaskRecord, "runIds" | "stepCount">;
         const status = statusOverride.get(values.id) ?? values.status;
+        const legs = legsOf(values.id);
         return {
           ...values,
           status,
+          runIds: legs
+            .map((leg) => leg.runId)
+            .filter((runId): runId is string => runId !== null),
+          stepCount: legs.length,
           resultMailId: resultMailIds.get(values.id) ?? values.resultMailId,
           completedAt:
             statusOverride.has(values.id) && values.completedAt === null
@@ -156,7 +170,9 @@ function storeOverInserts(db: {
       );
     },
     async getTaskByRunId(runId) {
-      return rows().find((row) => row.runId === runId) ?? null;
+      const leg = legRows().find((candidate) => candidate.runId === runId);
+      if (leg === undefined) return null;
+      return rows().find((row) => row.id === leg.taskId) ?? null;
     },
     async listTasks(tenantId) {
       return rows().filter((row) => row.tenantId === tenantId);
@@ -179,6 +195,24 @@ function storeOverInserts(db: {
     },
     async linkPlannerRun() {
       throw new Error("launchTask never calls linkPlannerRun");
+    },
+    async listLegs(tenantId, taskId) {
+      return legsOf(taskId).filter((leg) => leg.tenantId === tenantId);
+    },
+    async getLegByRunId(runId) {
+      return legRows().find((leg) => leg.runId === runId) ?? null;
+    },
+    async claimLegDispatch() {
+      throw new Error("launchTask never claims a hand-off leg");
+    },
+    async recordLegRun() {
+      throw new Error("launchTask records its own leg run in the launch tx");
+    },
+    async settleLeg() {
+      throw new Error("launchTask never settles a leg");
+    },
+    async failLegDispatch() {
+      throw new Error("launchTask never fails a hand-off leg");
     },
   };
 }
