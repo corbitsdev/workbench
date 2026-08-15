@@ -354,3 +354,53 @@ describe("claimLegDispatch", () => {
     expect(await claim(new Date(leaseExpiresAt.getTime() + 1))).not.toBeNull();
   });
 });
+
+describe("listStuckLegDispatches", () => {
+  test("finds only legs still claimed past the given instant", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_researcher",
+      prompt: "Research the outage.",
+      modelPreference: null,
+      runId: "run_leg0",
+      followOn: [
+        {
+          definitionId: "wfd_editor",
+          prompt: "Edit the findings.",
+          modelPreference: null,
+        },
+        {
+          definitionId: "wfd_reviewer",
+          prompt: "Review the edit.",
+          modelPreference: null,
+        },
+      ],
+    });
+    const legs = await store.listLegs(TENANT_A, "task_1");
+    const claimed = legs[1];
+    if (claimed === undefined) throw new Error("no follow-on leg was seeded");
+    const leaseExpiresAt = new Date("2026-08-14T10:00:30.000Z");
+    await store.claimLegDispatch({
+      tenantId: TENANT_A,
+      legId: claimed.id,
+      parentRunId: "run_leg0",
+      leaseExpiresAt,
+      now: new Date("2026-08-14T10:00:00.000Z"),
+    });
+
+    // Neither the leg already running (position 0) nor the one still
+    // pending (position 2) is stuck — only a claim whose lease ran out.
+    expect(
+      await store.listStuckLegDispatches({
+        claimedBefore: new Date(leaseExpiresAt.getTime() - 1),
+      }),
+    ).toEqual([]);
+    const stuck = await store.listStuckLegDispatches({
+      claimedBefore: new Date(leaseExpiresAt.getTime() + 1),
+    });
+    expect(stuck.map((leg) => leg.id)).toEqual([claimed.id]);
+  });
+});
