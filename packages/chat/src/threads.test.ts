@@ -184,12 +184,10 @@ describe("in-memory ThreadStore", () => {
     });
 
     const assignments = await store.listThreadAssignments("t1", "c1");
-    expect([...assignments.entries()].sort()).toEqual(
-      [
-        ["msg_a", root.id],
-        ["msg_b", reply.id],
-      ].sort(),
-    );
+    expect(Object.fromEntries(assignments)).toEqual({
+      msg_a: root.id,
+      msg_b: reply.id,
+    });
     // A message nothing ever assigned is absent, not defaulted here —
     // the root-feed default belongs to the reader (see the threads
     // route in `./routes.ts`), so this stays a faithful report of what

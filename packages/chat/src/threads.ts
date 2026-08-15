@@ -130,6 +130,17 @@ export interface ThreadStore {
     tenantId: string,
     threadId: string,
   ): Promise<readonly string[]>;
+  /**
+   * Every membership row this channel has, as `messageId -> threadId`.
+   * A message with no row is absent rather than defaulted to the root
+   * thread: the "root feed by default" contract belongs to whoever
+   * reads a thread's messages (see the threads route in `./routes.ts`),
+   * so this stays a faithful report of what was actually written.
+   */
+  listThreadAssignments(
+    tenantId: string,
+    channelId: string,
+  ): Promise<ReadonlyMap<string, string>>;
   threadIdForMessage(
     tenantId: string,
     channelId: string,
@@ -323,6 +334,16 @@ export function createInMemoryThreadStore(): ThreadStore {
 
     async threadIdForMessage(tenantId, channelId, messageId) {
       return messageToThread.get(messageKey(tenantId, channelId, messageId));
+    },
+
+    async listThreadAssignments(tenantId, channelId) {
+      const prefix = `${channelKey(tenantId, channelId)}::`;
+      const assignments = new Map<string, string>();
+      for (const [key, threadId] of messageToThread) {
+        if (!key.startsWith(prefix)) continue;
+        assignments.set(key.slice(prefix.length), threadId);
+      }
+      return assignments;
     },
   };
 }
@@ -569,6 +590,22 @@ export function createDrizzleThreadStore<
         )
         .limit(1);
       return rows[0]?.threadId;
+    },
+
+    async listThreadAssignments(tenantId, channelId) {
+      const rows = await db
+        .select({
+          messageId: channelThreadMessages.messageId,
+          threadId: channelThreadMessages.threadId,
+        })
+        .from(channelThreadMessages)
+        .where(
+          and(
+            eq(channelThreadMessages.tenantId, tenantId),
+            eq(channelThreadMessages.channelId, channelId),
+          ),
+        );
+      return new Map(rows.map((row) => [row.messageId, row.threadId]));
     },
   };
 }
