@@ -29,6 +29,7 @@ import {
   channelsQueryKey,
   channelsQueryKeyPrefix,
   createChannel,
+  describeChatError,
   forkThread,
   inviteAgent,
   listChannels,
@@ -156,6 +157,28 @@ export function canInviteAgent(kind: string | undefined): boolean {
 }
 
 /**
+ * The composer's placeholder reads as a direct message once the active
+ * surface is a chat, naming its one counterpart — a chat's title always
+ * defaults to that counterpart's name at creation (see `routes.ts`'s
+ * `POST /channels`), so it's always the right word here even when the
+ * counterpart is a person, not an agent. A channel (or a surface that
+ * hasn't resolved yet) keeps the generic, mention-driven copy.
+ */
+export function composerPlaceholderFor(channel: {
+  readonly kind: string;
+  readonly title: string;
+} | undefined): string {
+  if (channel === undefined || channel.kind !== "chat") {
+    return CHAT_STRINGS.composerPlaceholder;
+  }
+  const counterpart =
+    channel.title.trim().length > 0
+      ? channel.title
+      : CHAT_STRINGS.unnamedChannel;
+  return CHAT_STRINGS.composerPlaceholderChat(counterpart);
+}
+
+/**
  * Which message source the timeline should load for the current view.
  *
  * - Open reply/delivery thread → that thread's membership only
@@ -195,9 +218,6 @@ function sortMessagesOldestFirst(items: readonly MessageItem[]): MessageItem[] {
   );
 }
 
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
 
 /**
  * Channels and chats via TanStack Query, keyed with `channelsQueryKey` —
@@ -221,9 +241,15 @@ function useChannelLists(tenantId: string) {
 
   let state: ChannelsState;
   if (channels.isError) {
-    state = { kind: "error", message: errorMessage(channels.error) };
+    state = {
+      kind: "error",
+      message: describeChatError(channels.error, "Couldn't load channels."),
+    };
   } else if (chats.isError) {
-    state = { kind: "error", message: errorMessage(chats.error) };
+    state = {
+      kind: "error",
+      message: describeChatError(chats.error, "Couldn't load chats."),
+    };
   } else if (channels.data === undefined || chats.data === undefined) {
     state = { kind: "loading" };
   } else {
@@ -466,40 +492,65 @@ function ChatWorkspaceInner({
           rootThreadId: resolvedRootThreadId,
         });
 
+        async function fetchTarget(
+          fetchFor: MessageFeedTarget,
+        ): Promise<MessageItem[]> {
+          switch (fetchFor.kind) {
+            case "thread": {
+              const page = await listThreadMessages(
+                tenantId,
+                channelId,
+                fetchFor.threadId,
+              );
+              return sortMessagesOldestFirst(page.items);
+            }
+            case "empty":
+              // Brand-new reply thread — nothing to load yet.
+              return [];
+            case "root-thread": {
+              const page = await listThreadMessages(
+                tenantId,
+                channelId,
+                fetchFor.rootThreadId,
+              );
+              // Membership order is assignment order; timeline wants
+              // oldest-first with the viewport pinned to the end.
+              return sortMessagesOldestFirst(page.items);
+            }
+            case "channel-mail": {
+              // Threads not available on this hub — full mailbox is the
+              // only feed source (and there is no reply-thread
+              // membership to mix in).
+              const page = await listMessages(tenantId, channelId);
+              return sortMessagesOldestFirst(page.items);
+            }
+          }
+        }
+
         let items: MessageItem[];
-        switch (target.kind) {
-          case "thread": {
-            const page = await listThreadMessages(
-              tenantId,
-              channelId,
-              target.threadId,
-            );
-            items = sortMessagesOldestFirst(page.items);
-            break;
-          }
-          case "empty":
-            // Brand-new reply thread — nothing to load yet.
-            items = [];
-            break;
-          case "root-thread": {
-            const page = await listThreadMessages(
-              tenantId,
-              channelId,
-              target.rootThreadId,
-            );
-            // Membership order is assignment order; timeline wants
-            // oldest-first with the viewport pinned to the end.
-            items = sortMessagesOldestFirst(page.items);
-            break;
-          }
-          case "channel-mail": {
-            // Threads not available on this hub — full mailbox is the
-            // only feed source (and there is no reply-thread membership
-            // to mix in).
-            const page = await listMessages(tenantId, channelId);
-            items = sortMessagesOldestFirst(page.items);
-            break;
-          }
+        try {
+          items = await fetchTarget(target);
+        } catch (cause) {
+          // A remembered thread id can outlive the server-side run it
+          // named — e.g. across a hub restart (CL-6067), where the
+          // reconnect-ownership challenge treats the run as dead and
+          // every id under it 404s from here on. That is a stale
+          // reference, not a real failure: discard it and fall back to
+          // the channel's live feed instead of a dead-end error a "Try
+          // again" can never actually recover from.
+          const isStaleThreadRef =
+            cause instanceof ChatApiError &&
+            cause.status === 404 &&
+            (target.kind === "thread" || target.kind === "root-thread");
+          if (!isStaleThreadRef) throw cause;
+          if (target.kind === "thread") setOpenThreadId(null);
+          if (target.kind === "root-thread") setRootThreadId(null);
+          const fallbackTarget = resolveMessageFeedTarget({
+            openThreadId: target.kind === "thread" ? null : openThreadId,
+            pendingParentMessageId,
+            rootThreadId: target.kind === "root-thread" ? null : resolvedRootThreadId,
+          });
+          items = await fetchTarget(fallbackTarget);
         }
         setMessagesState((current) =>
           nextMessagesState(current, { kind: "success", items }, background),
@@ -520,7 +571,7 @@ function ChatWorkspaceInner({
         if (cause instanceof ChatApiError && cause.status === 401) {
           unauthorizedRef.current = true;
         }
-        const message = cause instanceof Error ? cause.message : String(cause);
+        const message = describeChatError(cause, "Couldn't load messages.");
         setMessagesState((current) =>
           nextMessagesState(current, { kind: "error", message }, background),
         );
@@ -1171,6 +1222,7 @@ function ChatWorkspaceInner({
                     agents={mentionCandidatesFromParticipants(
                       activeChannel?.participants ?? [],
                     )}
+                    placeholder={composerPlaceholderFor(activeChannel)}
                     onSend={handleSend}
                     onInviteAgent={() => setInviteDialogOpen(true)}
                     onOpenAgentsSettings={() => openChannelSettings("agents")}

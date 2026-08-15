@@ -7,14 +7,24 @@
 
 import {
   Badge,
+  BarChart,
   PageShell,
   RichEmptyState,
   Skeleton,
+  StatGrid,
+  StatGridItem,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
   TokenMosaic,
   TraceWaterfall,
   type TraceSpan,
 } from "@corbits/react-ui";
 import { ChartColumn } from "lucide-react";
+import type * as React from "react";
 import { useMemo } from "react";
 
 import {
@@ -209,43 +219,49 @@ function InsightsStat({
   readonly onClick?: () => void;
   readonly loading?: boolean;
 }) {
-  const body = (
-    <>
-      <div className="insights-stat-k">{label}</div>
-      <div className="insights-stat-v">{loading ? "…" : value}</div>
-      {detail !== undefined ? (
-        <div className="insights-stat-d">{loading ? " " : detail}</div>
-      ) : null}
-    </>
+  return (
+    <StatGridItem
+      label={label}
+      value={loading === true ? "…" : value}
+      {...(detail === undefined
+        ? {}
+        : { sub: loading === true ? " " : detail })}
+      {...(onClick === undefined ? {} : { onClick })}
+    />
   );
-  if (onClick !== undefined) {
-    return (
-      <button type="button" className="insights-stat" onClick={onClick}>
-        {body}
-      </button>
-    );
-  }
-  return <div className="insights-stat">{body}</div>;
+}
+
+/** Clickable-row semantics shared by the recent-runs and history tables —
+ * mirrors react-ui's `DataTable` row affordance (button role, Enter/Space
+ * activation) for tables fed by data already resident in this page. */
+function onRowActivate(onActivate: () => void) {
+  return {
+    role: "button" as const,
+    tabIndex: 0,
+    className: "cursor-pointer insights-row-clickable",
+    onClick: onActivate,
+    onKeyDown: (event: React.KeyboardEvent<HTMLTableRowElement>) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onActivate();
+      }
+    },
+  };
 }
 
 function ActivityBars({ days }: { readonly days: readonly DayActivity[] }) {
   const window = recentActivityDays(days);
-  const max = Math.max(1, ...window.map((d) => d.turns));
   return (
-    <div className="insights-gen-bars" role="img" aria-label="Daily turns">
-      {window.map((d) => {
-        const pct = Math.round((d.turns / max) * 100);
-        return (
-          <div key={d.day} className="insights-gen-bar-row">
-            <span title={d.day}>{dayWeekdayLabel(d.day)}</span>
-            <div className="insights-gen-bar">
-              <i style={{ width: `${pct}%` }} />
-            </div>
-            <span>{formatCount(d.turns)}</span>
-          </div>
-        );
-      })}
-    </div>
+    <BarChart
+      title="Activity"
+      description={`Last ${window.length} days`}
+      data={window.map((d) => ({
+        label: dayWeekdayLabel(d.day),
+        value: d.turns,
+      }))}
+      valueLabel="Turns"
+      format={formatCount}
+    />
   );
 }
 
@@ -255,61 +271,63 @@ function ModelCostTable({
   readonly models: readonly ModelUsage[];
 }) {
   return (
-    <div className="insights-table-wrap">
-      <table className="insights-table">
-        <thead>
-          <tr>
-            <th>Model</th>
-            <th>Cost</th>
-            <th>Input</th>
-            <th>Cache read</th>
-            <th>Output</th>
-          </tr>
-        </thead>
-        <tbody>
-          {models.map((m) => (
-            <tr key={m.model}>
-              <td title={m.model}>{m.model}</td>
-              <td>
-                {m.costUsd === null && m.tokens.total > 0
-                  ? "—"
-                  : formatUsd(m.costUsd)}
-              </td>
-              <td>{formatCount(m.tokens.input)}</td>
-              <td>{formatCount(m.tokens.cacheRead)}</td>
-              <td>{formatCount(m.tokens.output)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table
+      aria-label="Cost by model"
+      className="insights-data-table insights-table-inert"
+    >
+      <TableHeader>
+        <TableRow>
+          <TableHead>Model</TableHead>
+          <TableHead>Cost</TableHead>
+          <TableHead>Input</TableHead>
+          <TableHead>Cache read</TableHead>
+          <TableHead>Output</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {models.map((m) => (
+          <TableRow key={m.model}>
+            <TableCell title={m.model}>{m.model}</TableCell>
+            <TableCell>
+              {m.costUsd === null && m.tokens.total > 0
+                ? "—"
+                : formatUsd(m.costUsd)}
+            </TableCell>
+            <TableCell>{formatCount(m.tokens.input)}</TableCell>
+            <TableCell>{formatCount(m.tokens.cacheRead)}</TableCell>
+            <TableCell>{formatCount(m.tokens.output)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
 function ToolCallsTable({ tools }: { readonly tools: readonly ToolCall[] }) {
   return (
-    <div className="insights-table-wrap">
-      <table className="insights-table">
-        <thead>
-          <tr>
-            <th>Tool</th>
-            <th>Calls</th>
-            <th>Errors</th>
-            <th>Error rate</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tools.map((t) => (
-            <tr key={t.tool}>
-              <td title={t.tool}>{t.tool}</td>
-              <td>{formatCount(t.calls)}</td>
-              <td>{formatCount(t.errors)}</td>
-              <td>{formatRate(t.errorRate)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table
+      aria-label="Calls by tool"
+      className="insights-data-table insights-table-inert"
+    >
+      <TableHeader>
+        <TableRow>
+          <TableHead>Tool</TableHead>
+          <TableHead>Calls</TableHead>
+          <TableHead>Errors</TableHead>
+          <TableHead>Error rate</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {tools.map((t) => (
+          <TableRow key={t.tool}>
+            <TableCell title={t.tool}>{t.tool}</TableCell>
+            <TableCell>{formatCount(t.calls)}</TableCell>
+            <TableCell>{formatCount(t.errors)}</TableCell>
+            <TableCell>{formatRate(t.errorRate)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -323,32 +341,39 @@ function RecentRunRows({
   readonly onOpenRuns: () => void;
 }) {
   return (
-    <div className="insights-run-list">
-      {runs.map((row) => (
-        <button
-          key={row.id}
-          type="button"
-          className="insights-run-row"
-          data-ctx-insights-run={row.id}
-          onClick={() => onOpenRun(row.id)}
-        >
-          <span className="insights-run-meta">
-            <strong>{row.definitionName}</strong>
-            <span>{formatWhen(row.createdAt)}</span>
-          </span>
-          <Badge tone={statusTone(row.status)}>{row.status}</Badge>
-        </button>
-      ))}
-      <button
-        type="button"
-        className="insights-run-row insights-run-row-more"
-        onClick={onOpenRuns}
-      >
-        <span className="insights-run-meta">
-          <strong>All runs & traces →</strong>
-        </span>
-      </button>
-    </div>
+    <Table aria-label="Recent runs" className="insights-data-table">
+      <TableBody>
+        {runs.map((row) => (
+          <TableRow
+            key={row.id}
+            data-ctx-insights-run={row.id}
+            {...onRowActivate(() => onOpenRun(row.id))}
+          >
+            <TableCell>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <strong className="truncate text-sm font-semibold">
+                  {row.definitionName}
+                </strong>
+                <span className="truncate text-xs text-muted-foreground">
+                  {formatWhen(row.createdAt)}
+                </span>
+              </div>
+            </TableCell>
+            <TableCell className="text-right">
+              <Badge tone={statusTone(row.status)}>{row.status}</Badge>
+            </TableCell>
+          </TableRow>
+        ))}
+        <TableRow {...onRowActivate(onOpenRuns)}>
+          <TableCell
+            colSpan={2}
+            className="font-semibold text-primary-emphasis"
+          >
+            All runs & traces →
+          </TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
   );
 }
 
@@ -394,7 +419,7 @@ function InsightsLanding({
 
   return (
     <div className="insights-layout">
-      <div className="insights-stat-row">
+      <StatGrid columns={4}>
         <InsightsStat
           label="Cost"
           value={tileValue(formatUsd(usage.costUsd), loading)}
@@ -422,7 +447,7 @@ function InsightsLanding({
             loading={loading}
           />
         ) : null}
-      </div>
+      </StatGrid>
 
       {missingRates.length > 0 ? (
         <p className="insights-note">
@@ -433,7 +458,6 @@ function InsightsLanding({
 
       <div className="insights-grid">
         <section className="insights-panel">
-          <h3>Activity · last {activityDays.length} days</h3>
           <ActivityBars days={activityDays} />
         </section>
 
@@ -441,7 +465,7 @@ function InsightsLanding({
           <section className="insights-panel">
             <h3>Token mix</h3>
             <TokenMosaic parts={mosaicParts} label="Token usage by class" />
-            <div className="insights-stat-row insights-stat-row-nested">
+            <StatGrid columns={2} className="mt-3.5">
               <InsightsStat
                 label="Cache hit"
                 value={tileValue(formatRate(hitRate), false)}
@@ -452,7 +476,7 @@ function InsightsLanding({
                 value={formatCount(usage.tokens.total)}
                 detail={`${formatCount(usage.turns)} turns`}
               />
-            </div>
+            </StatGrid>
           </section>
         ) : null}
 
@@ -509,33 +533,30 @@ function DefinitionRunTable({
   return (
     <section className="insights-panel" data-definition-group={definitionId}>
       <h3>{definitionName}</h3>
-      <div className="insights-table-wrap">
-        <table className="insights-table">
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Started</th>
-              <th>Duration</th>
-            </tr>
-          </thead>
-          <tbody>
-            {runs.map((row) => (
-              <tr
-                key={row.id}
-                className="insights-table-row-clickable"
-                data-ctx-insights-run={row.id}
-                onClick={() => onOpenRun(row.id)}
-              >
-                <td>
-                  <Badge tone={statusTone(row.status)}>{row.status}</Badge>
-                </td>
-                <td>{formatWhen(row.createdAt)}</td>
-                <td>{runDurationLabel(row)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Table aria-label={definitionName} className="insights-data-table">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Status</TableHead>
+            <TableHead>Started</TableHead>
+            <TableHead>Duration</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {runs.map((row) => (
+            <TableRow
+              key={row.id}
+              data-ctx-insights-run={row.id}
+              {...onRowActivate(() => onOpenRun(row.id))}
+            >
+              <TableCell>
+                <Badge tone={statusTone(row.status)}>{row.status}</Badge>
+              </TableCell>
+              <TableCell>{formatWhen(row.createdAt)}</TableCell>
+              <TableCell>{runDurationLabel(row)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </section>
   );
 }
@@ -740,7 +761,7 @@ export function InsightsRunDetail({
                 Couldn't check this run's task context.
               </p>
             ) : null}
-            <div className="insights-stat-row">
+            <StatGrid columns={5}>
               {/* Owner is not carried by WorkflowRunResponse yet — dash, not
                   a fabricated identity. */}
               <InsightsStat label="Owner" value="—" />
@@ -768,7 +789,7 @@ export function InsightsRunDetail({
                 )}
                 loading={trace.kind === "loading"}
               />
-            </div>
+            </StatGrid>
 
             {trace.kind === "loading" ? (
               <Skeleton className="h-48 w-full" />

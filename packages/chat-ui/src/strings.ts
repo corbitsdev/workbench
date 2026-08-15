@@ -61,6 +61,7 @@ export const CHAT_STRINGS = {
   couldNotLoadMessages: "messages",
   composerPlaceholder:
     "Message this channel… use @ to mention an agent, / for commands",
+  composerPlaceholderChat: (name: string) => `Message ${name}… / for commands`,
   composerSend: "Send",
   composerSending: "Sending…",
   composerAttach: "Attach files",

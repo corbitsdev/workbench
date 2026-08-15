@@ -692,3 +692,133 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 });
+
+describe("a stale thread reference self-heals instead of dead-ending", () => {
+  // CL-6069: a channel's remembered root-thread id can outlive the
+  // server-side run it named (e.g. across a hub restart), so
+  // `GET .../threads/:id/messages` 404s. The client must fall back to
+  // the channel's live feed rather than rendering a dead-end
+  // "Couldn't load messages" / "Try again" that keeps re-requesting
+  // the same gone thread.
+  function stubFetchWithStaleThread(recoveredText: string) {
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/channels\?kind=channel$/.test(path)) {
+        return json({ items: [CHANNEL_WIRE] });
+      }
+      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
+      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "thr_stale", items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/threads\/thr_stale\/messages$/.test(path)) {
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+        return json({
+          items: [
+            {
+              id: "msg_recovered",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              sender: { name: null, address: "user@x.localhost" },
+              parts: [{ kind: "text", text: recoveredText }],
+            },
+          ],
+        });
+      }
+      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+        return json({
+          ...CHANNEL_WIRE,
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
+  }
+
+  test("a 404 on the channel's remembered root thread falls back to the channel's live feed", async () => {
+    stubFetchWithStaleThread("recovered after a stale thread 404");
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+    await harness.settle();
+
+    expect(harness.container.textContent).not.toContain("Couldn't load");
+    expect(harness.container.textContent).not.toContain("Try again");
+    expect(harness.container.textContent).toContain(
+      "recovered after a stale thread 404",
+    );
+    harness.unmount();
+  });
+});
+
+describe("chat error copy never leaks a raw API path", () => {
+  test("a genuine load failure renders plain-language copy, never a raw /api/ path or bare status code", async () => {
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/channels\?kind=channel$/.test(path)) {
+        return json({ items: [CHANNEL_WIRE] });
+      }
+      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
+      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+        return new Response(JSON.stringify({ error: "boom" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+        return json({
+          ...CHANNEL_WIRE,
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
+
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    expect(harness.container.textContent).toContain("Couldn't load messages");
+    expect(harness.container.textContent).not.toContain("/api/");
+    expect(harness.container.textContent).not.toContain("500");
+    harness.unmount();
+  });
+});

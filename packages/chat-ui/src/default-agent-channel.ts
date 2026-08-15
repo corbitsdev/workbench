@@ -17,6 +17,7 @@ import { isAgentAddress } from "@corbits/chat/mentions";
 
 import {
   createChannel,
+  describeChatError,
   listChannels,
   patchChannelSettings,
   type Channel,
@@ -123,7 +124,7 @@ export function createDefaultAgentChannel(config: DefaultAgentChannelConfig) {
     } catch (cause) {
       return {
         kind: "error",
-        message: cause instanceof Error ? cause.message : String(cause),
+        message: describeChatError(cause, "Couldn't open this chat."),
       };
     }
   }

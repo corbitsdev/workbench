@@ -77,7 +77,7 @@ import {
   type ChannelSubscriberRegistry,
 } from "./channel-events";
 import type { ChatPlatform } from "./platform-port";
-import type { ChatStore } from "./store";
+import type { ChannelSettingsRow, ChatStore } from "./store";
 import {
   dispatchAtCommand,
   dispatchSlashCommand,
@@ -595,6 +595,65 @@ const MoveChannelBody = type({
   newParentTenantId: "string",
 });
 
+/**
+ * A chat's counterpart agent is fixed for its whole life — a chat with
+ * the same agent, requested twice, is the same conversation, never two.
+ * `POST /channels` calls this before minting anything so re-submitting
+ * the "new chat" picker for an agent already talked to reopens that chat
+ * instead of forking a duplicate.
+ *
+ * Matches forward, by the `chat/definitionId` every agent chat has
+ * carried in its settings since this landed, and falls back to
+ * `matchesLegacyAgentChat` for a chat minted before that key existed.
+ * More than one match (duplicates this same gap already let through)
+ * resolves to the oldest by its channel-tenancy `createdAt` — the
+ * original conversation, not whichever the caller happens to hit first —
+ * with a channel that predates channel tenancy entirely sorting oldest
+ * of all.
+ */
+async function findExistingAgentChat(
+  deps: Pick<CreateChatRoutesDeps, "store" | "platform" | "tenancy">,
+  tenantId: string,
+  definitionId: string,
+): Promise<ChannelSettingsRow | undefined> {
+  const chats = await deps.store.listChannelSettings(tenantId, "chat");
+  const matches: { row: ChannelSettingsRow; createdAt: Date }[] = [];
+  for (const row of chats) {
+    const storedDefinitionId = row.settings["chat/definitionId"];
+    const isMatch =
+      storedDefinitionId !== undefined
+        ? storedDefinitionId === definitionId
+        : await matchesLegacyAgentChat(deps, row, definitionId);
+    if (!isMatch) continue;
+    const link = await deps.tenancy.getChannelTenancy(row.channelId);
+    matches.push({ row, createdAt: link?.createdAt ?? new Date(0) });
+  }
+  if (matches.length === 0) return undefined;
+  matches.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return matches[0]?.row;
+}
+
+/**
+ * A chat minted before `chat/definitionId` was recorded at creation
+ * carries no forward marker naming its agent — the only way back to its
+ * definition is the platform's reverse address lookup, run once per
+ * agent participant the chat has (ordinarily exactly one).
+ */
+async function matchesLegacyAgentChat(
+  deps: Pick<CreateChatRoutesDeps, "platform">,
+  row: ChannelSettingsRow,
+  definitionId: string,
+): Promise<boolean> {
+  const agentAddresses = participantsOf(row.settings)
+    .map((participant) => participant.address)
+    .filter(isAgentAddress);
+  for (const address of agentAddresses) {
+    const resolved = await deps.platform.resolveDefinitionIdByAddress(address);
+    if (resolved === definitionId) return true;
+  }
+  return false;
+}
+
 /** Annotates a channel view with its native child-tenancy — the
  * `tenancy` field every channel created after this rollout carries,
  * never `null` unless a caller reaches a route that skips the
@@ -668,6 +727,30 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
 
       const tenant = c.get("tenant");
       const principal = c.get("principal");
+
+      // A chat with an agent is find-or-create, not create: the same
+      // agent picked twice reopens the existing conversation instead of
+      // forking a duplicate one. Checked before anything is minted, and
+      // before the (cheaper, in-memory) principal-self-chat validation
+      // below, since a found match short-circuits the whole handler.
+      if (isChatWithDefinition(body)) {
+        const existing = await findExistingAgentChat(
+          deps,
+          tenant.id,
+          body.definitionId,
+        );
+        if (existing !== undefined) {
+          const link = await deps.tenancy.getChannelTenancy(
+            existing.channelId,
+          );
+          return c.json(
+            link !== undefined
+              ? withTenancy(channelView(existing), link)
+              : { ...channelView(existing), tenancy: null, legacy: true },
+            200,
+          );
+        }
+      }
 
       // A person-DM's counterpart is validated before anything is
       // minted: a caller cannot start a direct chat with themselves
@@ -799,10 +882,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         "chat/pinned": preset.pinned,
         "chat/participants": initialParticipants,
       };
+      // Recorded so a later `POST /channels` for the same agent can find
+      // this chat by it directly (see `findExistingAgentChat`) instead of
+      // reverse-resolving a participant address every time.
+      const withDefinitionId: Record<string, unknown> = isChatWithDefinition(
+        body,
+      )
+        ? { ...baseSettings, "chat/definitionId": body.definitionId }
+        : baseSettings;
       const settings: Record<string, unknown> =
         chatTitle !== undefined
-          ? { ...baseSettings, "chat/name": chatTitle }
-          : baseSettings;
+          ? { ...withDefinitionId, "chat/name": chatTitle }
+          : withDefinitionId;
 
       const row = await deps.store.createChannelSettings({
         tenantId: tenant.id,

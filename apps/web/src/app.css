@@ -9,6 +9,7 @@
 @import "@corbits/chat-ui/styles.css";
 @import "@corbits/bench-ui/styles.css";
 @import "@corbits/settings-ui/styles.css";
+@import "@corbits/tasks-ui/styles.css";
 
 /* Mock chrome: 15px root so rem-based density matches the interactive mock. */
 html {
@@ -468,6 +469,14 @@ html {
   color: var(--muted-foreground);
 }
 
+/* Stacks the activity band's ApprovalCards — a plain flex column so
+   consecutive cards read as a list rather than running edge to edge. */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .panel-muted {
   margin: 0;
   font-size: 0.75rem;
@@ -599,6 +608,17 @@ html {
   flex-shrink: 0;
   border-radius: 0;
   background: var(--muted-foreground);
+}
+
+/* A New Routine / Edit dialog owns the page while open — its own overlay
+   only dims (50% black, 2px blur), not enough to hide a bordered card
+   like RichEmptyState whose center falls outside the dialog's own
+   footprint. `inert` already pulls this content out of focus and
+   assistive tech; fading it here removes the leftover visual "ghost"
+   rather than trusting the overlay to cover it. */
+.stage-content[inert] {
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
 
 .stage-top-bar-sub {
@@ -2241,67 +2261,6 @@ html {
   width: 100%;
 }
 
-.insights-stat-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-  gap: 0.5rem;
-}
-
-.insights-stat-row-nested {
-  margin-top: 0.9rem;
-}
-
-.insights-stat {
-  display: block;
-  width: 100%;
-  padding: 0.75rem 0.85rem;
-  text-align: left;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
-  background: var(--card, var(--background, #fff));
-  color: inherit;
-  font: inherit;
-  cursor: default;
-  transition:
-    border-color 120ms ease,
-    transform 120ms ease,
-    background 120ms ease;
-}
-
-button.insights-stat {
-  cursor: pointer;
-}
-
-button.insights-stat:hover {
-  border-color: color-mix(in srgb, var(--foreground, #2b2627) 16%, transparent);
-  transform: translateY(-1px);
-  background: color-mix(in srgb, var(--primary, #e98428) 8%, transparent);
-}
-
-.insights-stat-k {
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted-foreground, #8a8080);
-}
-
-.insights-stat-v {
-  margin-top: 0.15rem;
-  font-size: 1.25rem;
-  font-weight: 680;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-  color: var(--foreground, #2b2627);
-}
-
-.insights-stat-d {
-  margin-top: 0.1rem;
-  font-size: 0.7rem;
-  color: var(--muted-foreground, #5c5555);
-  font-variant-numeric: tabular-nums;
-}
-
 .insights-note {
   margin: 0;
   font-size: 0.75rem;
@@ -2331,92 +2290,54 @@ button.insights-stat:hover {
   color: var(--muted-foreground, #8a8080);
 }
 
-.insights-gen-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.35rem 0 0.15rem;
-}
-
-.insights-gen-bar-row {
-  display: grid;
-  grid-template-columns: 2.6rem 1fr 2.4rem;
-  gap: 0.4rem;
-  align-items: center;
-  font-size: 0.74rem;
-  color: var(--muted-foreground, #5c5555);
-  font-variant-numeric: tabular-nums;
-}
-
-.insights-gen-bar-row > span:last-child {
-  text-align: right;
-}
-
-.insights-gen-bar {
-  height: 0.45rem;
-  background: color-mix(in srgb, var(--foreground, #2b2627) 6%, transparent);
-  overflow: hidden;
-}
-
-.insights-gen-bar i {
-  display: block;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    var(--primary, #e98428),
-    color-mix(in srgb, var(--primary, #e98428) 70%, #fff)
-  );
-}
-
-.insights-table-wrap {
-  border: 1px solid
-    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
-  overflow: auto;
-  background: var(--background, #fff);
-}
-
-.insights-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.82rem;
-  min-width: 32rem;
-}
-
-/* This card scrolls sideways instead of truncating cells — override the
-   page-fill "fit the slot, ellipsis on overflow" default those other
-   tables use. */
-.page-fill .insights-table {
-  table-layout: auto;
-}
-
-.insights-table th,
-.insights-table td {
-  text-align: left;
-  padding: 0.55rem 0.7rem;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
-  vertical-align: middle;
-  font-variant-numeric: tabular-nums;
-}
-
-.page-fill .insights-table th,
-.page-fill .insights-table td {
-  overflow: visible;
-  text-overflow: clip;
-  white-space: nowrap;
-}
-
-.insights-table th {
-  font-size: 0.68rem;
-  text-transform: uppercase;
+/* BarChart's own figcaption title (ChartFrame) doesn't share .insights-panel
+   h3's small-caps treatment — re-assert it here instead of carrying two
+   different section-title styles side by side in the same grid. */
+.insights-panel figcaption > span:first-child {
+  font-size: 0.78rem;
+  font-weight: 700;
   letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--muted-foreground, #8a8080);
-  font-weight: 650;
-  background: color-mix(in srgb, var(--foreground, #2b2627) 4%, transparent);
 }
 
-.insights-table tr:last-child td {
-  border-bottom: 0;
+/* react-ui's StatGridItem hardcodes rounded-[12px] (stat-grid.tsx) instead
+   of consuming var(--radius), so it never picks up the app-wide zero-radius
+   re-assertion above — every KPI tile renders rounded while every
+   neighboring panel is square. Re-assert zero radius here, scoped to the
+   insights stat grids, until StatGridItem consumes var(--radius) upstream. */
+.insights-layout [data-slot="stat-grid-item"] {
+  border-radius: 0;
+}
+
+/* react-ui's Table/TableRow ships one row treatment for every row, clickable
+   or not (unconditional hover:bg-muted). The house distinction — an
+   orange-tinted hover only on rows that actually navigate, and no hover cue
+   at all on inert data rows — lived in the deleted bespoke CSS and has to be
+   re-asserted here. */
+tr.insights-row-clickable:hover {
+  background-color: color-mix(in srgb, var(--primary, #e98428) 8%, transparent);
+}
+
+.insights-table-inert tr:hover {
+  background-color: transparent;
+}
+
+/* Dashboard-density header/cell treatment for the insights data tables —
+   scoped to this wrapper class so react-ui's roomier Table defaults stand
+   everywhere else. */
+.insights-data-table th {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground, #8a8080);
+  background: color-mix(in srgb, var(--foreground, #2b2627) 4%, transparent);
+  padding: 0.55rem 0.7rem;
+}
+
+.insights-data-table td {
+  padding: 0.55rem 0.7rem;
 }
 
 .insights-section {
@@ -2438,70 +2359,6 @@ button.insights-stat:hover {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted-foreground, #8a8080);
-}
-
-.insights-run-list {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
-  background: var(--card, var(--background, #fff));
-  overflow: hidden;
-}
-
-.insights-run-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  width: 100%;
-  padding: 0.65rem 0.9rem;
-  text-align: left;
-  border: 0;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  transition: background 120ms ease;
-}
-
-.insights-run-row:last-child {
-  border-bottom: 0;
-}
-
-.insights-run-row:hover {
-  background: color-mix(in srgb, var(--primary, #e98428) 8%, transparent);
-}
-
-.insights-run-row-more {
-  justify-content: flex-start;
-  color: var(--primary, #e98428);
-  font-weight: 600;
-}
-
-.insights-run-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
-.insights-run-meta strong {
-  font-size: 0.875rem;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.insights-run-meta span {
-  font-size: 0.75rem;
-  color: var(--muted-foreground, #8a8080);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .insights-chain-strip {
@@ -2561,14 +2418,6 @@ button.insights-stat:hover {
   font-size: 0.75rem;
   color: var(--muted-foreground, #8a8080);
   font-variant-numeric: tabular-nums;
-}
-
-.insights-table-row-clickable {
-  cursor: pointer;
-}
-
-.insights-table-row-clickable:hover {
-  background: color-mix(in srgb, var(--primary, #e98428) 8%, transparent);
 }
 
 /* Legacy I2 day-bucket strip (still used by insights-timeline helpers). */

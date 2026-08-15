@@ -23,6 +23,7 @@ import {
   wakeFoldedRun,
   FoldedBodySchema,
   type FoldedRunsDeps,
+  type SendFoldedMailParams,
   type SourcesOverride,
 } from "@corbits/folded-runs";
 import type { FoldedBody } from "@intx/workflow-deploy";
@@ -43,7 +44,10 @@ import {
   channelHostAssetName,
   isChannelHostDefinitionName,
 } from "./channel-host-naming";
-import { ensureWorkflowDefinitionForAsset } from "@intx/hub-sessions";
+import {
+  ensureWorkflowDefinitionForAsset,
+  SessionLaunchError,
+} from "@intx/hub-sessions";
 import type {
   AssetService,
   EventCollectorRegistry,
@@ -171,6 +175,7 @@ export function createHubChatPlatform(
   };
 
   const cryptoProviders = createCryptoProviderCache();
+  const wakeLogger = getLogger(["chat", "wake"]);
 
   // Built from `@corbits/agent-lifecycle` — the idle-sleep sweep and
   // wake-coalescing logic live entirely in that package, imported as a
@@ -235,18 +240,88 @@ export function createHubChatPlatform(
       principalId: run.principalId,
       foldedBody: parsedFoldedBody,
     };
-    await wakeFoldedRun(
-      foldedRunsDeps,
-      launchRow.noopInference
-        ? {
-            ...wakeParams,
-            sources: noopSourcesOverride(
-              deps.noopInferenceBaseUrl,
-              parsedFoldedBody,
-            ),
-          }
-        : wakeParams,
-    );
+    try {
+      await wakeFoldedRun(
+        foldedRunsDeps,
+        launchRow.noopInference
+          ? {
+              ...wakeParams,
+              sources: noopSourcesOverride(
+                deps.noopInferenceBaseUrl,
+                parsedFoldedBody,
+              ),
+            }
+          : wakeParams,
+      );
+    } catch (err) {
+      // A hub restart empties this process's own routable-address
+      // index before the sidecar's reconnect challenge (Interchange's
+      // own reclaim protocol, `vendor/intx/hub-sessions`) has had a
+      // chance to repopulate it — `isRoutable` reads that index, so it
+      // reads "not routable" for an address whose sidecar-side agent
+      // never actually stopped. A wake racing ahead of that reclaim
+      // hits this exact provision-phase rejection ("is already
+      // deployed") from the still-live agent. That message *is* proof
+      // the address is live: no redeploy is needed, only the pending
+      // reclaim finishing on its own, so this is a self-healing no-op
+      // rather than a failure the send should surface.
+      if (
+        err instanceof SessionLaunchError &&
+        err.phase === "provision" &&
+        err.message.includes("is already deployed")
+      ) {
+        wakeLogger.info`wake for ${address} raced the sidecar's own post-restart reclaim; address is already live, no redeploy needed`;
+        return;
+      }
+      throw err;
+    }
+  }
+
+  // Bounded delays between a delivery retry and the wake that precedes
+  // it. The sidecar's own reconnect-challenge reclaim (or, if that
+  // reclaim tore the agent down, a genuine redeploy) normally settles
+  // within a couple of seconds of the hub coming back up; a message
+  // sent into that window must still land rather than surface a
+  // stuck-broken error for a condition that resolves itself.
+  const MAIL_RECLAIM_RETRY_DELAYS_MS = [250, 750, 1500];
+
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+  }
+
+  function isAgentUnreachable(err: unknown): boolean {
+    return err instanceof Error && err.message.includes("agent is unreachable");
+  }
+
+  /**
+   * `sendFoldedMail` delivers synchronously against the sidecar's
+   * current routable set — the same in-memory index `isRoutable` reads
+   * — so a send that lands in the same post-restart reclaim window
+   * `wakeByAddress` above tolerates can still fail with "agent is
+   * unreachable" even right after a successful (or no-op) wake. Each
+   * retry forces a fresh wake first: if the earlier reclaim tore the
+   * agent down (see `wakeByAddress`'s "Unknown run address" case, left
+   * to the sidecar's own protocol to log), this becomes the genuine
+   * redeploy that recovers it; if the reclaim is still in flight, the
+   * wake itself no-ops and the delay gives it more time to finish.
+   * Exhausting every delay means the condition is not transient (e.g.
+   * the instance's sidecar identity is gone for good) and the caller
+   * gets the real, honest delivery error.
+   */
+  async function sendFoldedMailWithReclaimRetry(
+    params: SendFoldedMailParams,
+  ): Promise<Awaited<ReturnType<typeof sendFoldedMail>>> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await sendFoldedMail(foldedRunsDeps, params);
+      } catch (err) {
+        const delay = MAIL_RECLAIM_RETRY_DELAYS_MS[attempt];
+        if (!isAgentUnreachable(err) || delay === undefined) throw err;
+        wakeLogger.info`mail to ${params.agentAddress} hit "agent is unreachable" (attempt ${String(attempt + 1)}); retrying once the post-restart reclaim settles`;
+        await sleep(delay);
+        await wakeByAddress(params.agentAddress);
+      }
+    }
   }
 
   const platform: ChatPlatform = {
@@ -509,8 +584,7 @@ export function createHubChatPlatform(
         attachments !== undefined
           ? { ...sendMailBase, attachments }
           : sendMailBase;
-      const sent = await sendFoldedMail(
-        foldedRunsDeps,
+      const sent = await sendFoldedMailWithReclaimRetry(
         input.content.replyTo !== undefined
           ? { ...withAttachments, replyTo: input.content.replyTo }
           : withAttachments,

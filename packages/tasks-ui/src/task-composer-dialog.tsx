@@ -177,9 +177,12 @@ export function TaskComposerDialog({
                 />
               ) : null}
             </fieldset>
-            <label className="tasks-form-field">
-              <span className="tasks-field-label">Prompt</span>
+            <div className="tasks-form-field">
+              <label htmlFor="new-task-prompt" className="tasks-field-label">
+                Prompt
+              </label>
               <textarea
+                id="new-task-prompt"
                 className="tasks-textarea"
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
@@ -194,18 +197,22 @@ export function TaskComposerDialog({
                     handleSubmit();
                   }
                 }}
-                placeholder="What should the agent do? (⌘/Ctrl+Enter to start)"
+                placeholder="What should the agent do?"
                 rows={4}
                 autoFocus
               />
-            </label>
+              <p className="tasks-field-hint">⌘/Ctrl+Enter to start</p>
+            </div>
             {modelState.kind === "ready" && modelState.items.length > 0 ? (
-              <label
+              <div
                 className="tasks-form-field"
                 data-testid="new-task-model-select"
               >
-                <span className="tasks-field-label">Model</span>
+                <label htmlFor="new-task-model" className="tasks-field-label">
+                  Model
+                </label>
                 <select
+                  id="new-task-model"
                   className="tasks-select"
                   value={modelPreference}
                   onChange={(event) => setModelPreference(event.target.value)}
@@ -217,7 +224,7 @@ export function TaskComposerDialog({
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
             ) : null}
             {error !== null && (
               <p className="tasks-dialog-error" role="alert">

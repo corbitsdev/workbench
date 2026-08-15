@@ -77,6 +77,30 @@ describe("createMyraAgentSelectionStrategy", () => {
       'input[name="task-agent-mode"]',
     );
     expect(myraRadio?.checked).toBe(true);
+
+    // The two options render stacked, each with its own title and
+    // description as separate text — not one inline run-on sentence
+    // (CL-6066: this used to render as bare `<label>` prose). No
+    // role="radiogroup" here — this strategy is always hosted inside
+    // task-composer-dialog.tsx's fieldset/legend "Agent", which already
+    // provides the group semantics; a nested ARIA group would be
+    // redundant.
+    expect(document.body.querySelector('[role="radiogroup"]')).toBeNull();
+    const modeRadiosNow = document.body.querySelectorAll(
+      'input[name="task-agent-mode"]',
+    );
+    expect(modeRadiosNow).toHaveLength(2);
+    const titles = [
+      ...document.body.querySelectorAll(".tasks-radio-option-title"),
+    ].map((el) => el.textContent);
+    expect(titles).toEqual(["Let Myra choose", "Choose an agent yourself"]);
+    const descriptions = [
+      ...document.body.querySelectorAll(".tasks-radio-option-desc"),
+    ].map((el) => el.textContent);
+    expect(descriptions).toEqual([
+      "Myra reads your prompt and picks or creates the right agent.",
+      "Pick from your agents and set the prompt yourself.",
+    ]);
   });
 
   test("one click on Choose an agent yourself reveals the manual list, picking forwards the real id", async () => {

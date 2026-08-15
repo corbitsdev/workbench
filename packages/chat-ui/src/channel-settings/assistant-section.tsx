@@ -15,6 +15,7 @@ import { Button, EmptyState, Input, Skeleton, toast } from "@corbits/react-ui";
 import { CircleAlert } from "lucide-react";
 
 import {
+  describeChatError,
   getAgentInstructions,
   listChannelAgents,
   refreshChannelAgent,
@@ -48,7 +49,7 @@ export function AssistantSection({
         if (cancelled) return;
         setState({
           kind: "error",
-          message: cause instanceof Error ? cause.message : String(cause),
+          message: describeChatError(cause, "Couldn't load the assistant."),
         });
       });
     return () => {
@@ -133,7 +134,7 @@ function AssistantAgentEditor({
         if (cancelled) return;
         setState({
           kind: "error",
-          message: cause instanceof Error ? cause.message : String(cause),
+          message: describeChatError(cause, "Couldn't load the assistant."),
         });
       });
     return () => {

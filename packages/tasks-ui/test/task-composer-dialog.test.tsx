@@ -407,6 +407,54 @@ describe("TaskComposerDialog", () => {
     expect(createdCount).toBe(0);
   });
 
+  test("the prompt textarea is labeled and the footer has Cancel and Start task", async () => {
+    mount(baseProps());
+    await settle();
+
+    const textarea =
+      document.body.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea?.id).toBeTruthy();
+    const label = document.body.querySelector(`label[for="${textarea?.id}"]`);
+    expect(label?.textContent).toBe("Prompt");
+
+    const buttons = [...document.body.querySelectorAll("button")].map(
+      (button) => button.textContent,
+    );
+    expect(buttons).toContain("Cancel");
+    expect(buttons).toContain("Start task");
+  });
+
+  test("the manual agent list renders inside a legend-labeled Agent fieldset, each option its own name and description", async () => {
+    mount(
+      baseProps({
+        agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
+          { id: "wfd_1", name: "incident-bot", description: "Incident bot" },
+          { id: "wfd_2", name: "digest-bot" },
+        ]),
+      }),
+    );
+    await settle();
+
+    // Group semantics come from the fieldset/legend — the manual list
+    // itself carries no redundant nested ARIA group (CL-6066 follow-up).
+    const fieldset = document.body.querySelector("fieldset");
+    expect(fieldset?.querySelector("legend")?.textContent).toBe("Agent");
+    expect(fieldset?.querySelector('[role="radiogroup"]')).toBeNull();
+
+    const radios = fieldset?.querySelectorAll('input[type="radio"]');
+    expect(radios).toHaveLength(2);
+
+    const titles = [
+      ...document.body.querySelectorAll(".tasks-radio-option-title"),
+    ].map((el) => el.textContent);
+    expect(titles).toEqual(["incident-bot", "digest-bot"]);
+    const descriptions = document.body.querySelectorAll(
+      ".tasks-radio-option-desc",
+    );
+    expect(descriptions).toHaveLength(1);
+    expect(descriptions[0]?.textContent).toBe("Incident bot");
+  });
+
   test("the error prop renders as an alert inside the dialog", async () => {
     mount(baseProps({ error: "The task couldn't start. Try again." }));
     await settle();

@@ -62,6 +62,7 @@ import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import {
   createCryptoProviderCache,
   createTopLevelRunRoutes,
+  lookupFoldedRunReconnectKey,
 } from "@corbits/folded-runs";
 import {
   createInboxRoutes,
@@ -383,7 +384,28 @@ export async function createHub(config: HubConfig) {
     repoStore: agentRepoStore.repoStore,
     reservedPackageRegistryNames: new Set(REGISTRIES.keys()),
   });
-  const lookups = createHubSessionLookups({ db, agentRepoStore });
+  const baseLookups = createHubSessionLookups({ db, agentRepoStore });
+  // A folded run (a channel host, an invited agent, a task) settles
+  // "completed" between message occurrences as part of its own normal
+  // wake/redeploy cycle — not "done forever" the way a one-shot
+  // workflow deployment's "completed" is. The platform's own
+  // `lookupPublicKey` gates the reconnect-ownership challenge on
+  // `isLiveWorkflowRunStatus` ("deployed"/"running" only), so a folded
+  // run reconnecting mid-cycle (its sidecar dials back in, e.g. after a
+  // hub restart, while the run happens to be between occurrences) fails
+  // that challenge and gets torn down even though nothing about it
+  // actually ended. Falling back to `lookupFoldedRunReconnectKey` for a
+  // "completed" folded run keeps its reconnect honest without loosening
+  // the gate for a real workflow deployment or for a folded run that is
+  // genuinely gone ("failed"/"cancelled" still fail closed).
+  const lookups = {
+    ...baseLookups,
+    async lookupPublicKey(agentAddress: string): Promise<string | null> {
+      const key = await baseLookups.lookupPublicKey(agentAddress);
+      if (key !== null) return key;
+      return lookupFoldedRunReconnectKey(db, agentAddress);
+    },
+  };
   const sidecarRouter = createSidecarRouter({
     hubPublicKey: hexEncode(signingKey.publicKey),
     authenticateSidecar: createSidecarTokenAuthenticator({ db }),
