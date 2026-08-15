@@ -277,6 +277,7 @@ function ChatWorkspaceInner({
   listMembers,
   registerComposerInsert,
   onOpenRoutines,
+  onRequestNewAgent,
   presenceMembers,
 }: {
   readonly tenantId: string;
@@ -330,6 +331,15 @@ function ChatWorkspaceInner({
    * route the host owns, so opening it is a host-supplied hop the same way
    * `onOpenArtifact` is. */
   readonly onOpenRoutines?: () => void;
+  /**
+   * The new-chat picker's "New agent…" affordance, beneath its agent
+   * list — omitted entirely, the row doesn't render (same contract as
+   * `listMembers`). Firing this closes this component's own
+   * `NewChannelDialog` first, then delegates to the host, which owns
+   * the actual create-agent panel (an apps/web page component this
+   * package never depends on).
+   */
+  readonly onRequestNewAgent?: () => void;
   /** See `ChatWorkspace`'s prop of the same name. */
   readonly presenceMembers?: readonly PresenceMember[];
 }) {
@@ -1251,6 +1261,14 @@ function ChatWorkspaceInner({
         {...(currentUser !== undefined
           ? { currentUserPrincipalId: currentUser.principalId }
           : {})}
+        {...(onRequestNewAgent !== undefined
+          ? {
+              onRequestNewAgent: () => {
+                setDialogOpen(false);
+                onRequestNewAgent();
+              },
+            }
+          : {})}
       />
       {activeChannelId !== null ? (
         <InviteAgentDialog
@@ -1287,6 +1305,7 @@ export function ChatWorkspace({
   listMembers,
   registerComposerInsert,
   onOpenRoutines,
+  onRequestNewAgent,
   presenceMembers,
 }: {
   readonly tenant: TenantResolution;
@@ -1349,6 +1368,8 @@ export function ChatWorkspace({
   ) => void;
   /** The composer's `/run` command — see `ChatWorkspaceInner`'s prop note. */
   readonly onOpenRoutines?: () => void;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly onRequestNewAgent?: () => void;
   /**
    * Who's live in the active channel right now, beyond the static
    * participants list — the host's `@corbits/presence/client` connection,
@@ -1388,6 +1409,7 @@ export function ChatWorkspace({
             ? { registerComposerInsert }
             : {})}
           {...(onOpenRoutines !== undefined ? { onOpenRoutines } : {})}
+          {...(onRequestNewAgent !== undefined ? { onRequestNewAgent } : {})}
           {...(presenceMembers !== undefined ? { presenceMembers } : {})}
         />
       );

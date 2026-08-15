@@ -23,7 +23,7 @@ import {
   Skeleton,
   Tabs,
 } from "@corbits/react-ui";
-import { CircleAlert, Users } from "lucide-react";
+import { CircleAlert, Plus, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type {
@@ -138,6 +138,7 @@ export function NewChannelDialog({
   initialKind,
   listMembers,
   currentUserPrincipalId,
+  onRequestNewAgent,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -171,6 +172,16 @@ export function NewChannelDialog({
   /** Excluded from the People list — starting a direct chat with yourself
    * is refused by the server (409), so this dialog never offers it. */
   readonly currentUserPrincipalId?: string;
+  /**
+   * Opens the agent-create panel from beneath the agent list — the
+   * "New agent…" affordance. Host-supplied, same absent-not-broken
+   * contract as `listMembers`: a host with nothing to wire (no create
+   * rights, no panel available) simply omits it and the row doesn't
+   * render, rather than rendering disabled. Firing this does not close
+   * the dialog itself — the host decides that (see `ChatWorkspace`, which
+   * closes its own `NewChannelDialog` before delegating here).
+   */
+  readonly onRequestNewAgent?: () => void;
 }) {
   // A caller that already knows the kind opens straight on the details
   // step — `initialKind` is only ever passed by a caller in that position,
@@ -407,10 +418,13 @@ export function NewChannelDialog({
                       >
                         {(active) =>
                           active === "agent" ? (
-                            <AgentPicker
+                            <AgentPickerSection
                               state={agentState}
                               selectedId={definitionId}
                               onSelect={setDefinitionId}
+                              {...(onRequestNewAgent !== undefined
+                                ? { onRequestNewAgent }
+                                : {})}
                             />
                           ) : (
                             <PersonPicker
@@ -426,10 +440,13 @@ export function NewChannelDialog({
                         <legend className="chat-field-label">
                           {CHAT_STRINGS.newChatAgentLabel}
                         </legend>
-                        <AgentPicker
+                        <AgentPickerSection
                           state={agentState}
                           selectedId={definitionId}
                           onSelect={setDefinitionId}
+                          {...(onRequestNewAgent !== undefined
+                            ? { onRequestNewAgent }
+                            : {})}
                         />
                       </fieldset>
                     )}
@@ -512,6 +529,41 @@ export function NewChannelDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * The agent list plus the "New agent…" affordance beneath it —
+ * `onRequestNewAgent` absent hides the row entirely (same contract as
+ * `NewChannelDialog`'s own `onRequestNewAgent` prop), so a host with
+ * nothing to wire never renders a row that goes nowhere.
+ */
+function AgentPickerSection({
+  state,
+  selectedId,
+  onSelect,
+  onRequestNewAgent,
+}: {
+  readonly state: AgentListState;
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string) => void;
+  readonly onRequestNewAgent?: () => void;
+}) {
+  return (
+    <div className="chat-agent-picker-section">
+      <AgentPicker state={state} selectedId={selectedId} onSelect={onSelect} />
+      {onRequestNewAgent !== undefined ? (
+        <button
+          type="button"
+          className="chat-new-agent-row"
+          data-testid="new-chat-create-agent"
+          onClick={onRequestNewAgent}
+        >
+          <Plus aria-hidden size={14} />
+          {CHAT_STRINGS.newChatCreateAgentAffordance}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
