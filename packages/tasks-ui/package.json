@@ -1,0 +1,29 @@
+{
+  "name": "@corbits/tasks-ui",
+  "private": true,
+  "description": "The task composer surface: agent picker, prompt, optional model select, wired to @corbits/tasks' HTTP routes.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/react-ui": "github:corbitsdev/react-ui#4c1214298e6f7005da01918c7d5a68230f7109cc",
+    "arktype": "catalog:",
+    "lucide-react": "^1.27.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.2",
+    "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "typescript": "catalog:"
+  }
+}

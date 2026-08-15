@@ -221,10 +221,4 @@ export type { ConnectedProviderLister } from "./inference-preferences";
 export {
   artifactPartsForFinalizedTurn,
   artifactPartsForToolCall,
-  persistedArtifactsForFinalizedTurn,
-  persistedArtifactsForToolCall,
-} from "./artifact-delivery";
-export type {
-  FinalizedTurnToolCall,
-  PersistedArtifact,
 } from "./artifact-delivery";

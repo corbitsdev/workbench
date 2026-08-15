@@ -8,6 +8,7 @@ import {
   deliverMentionMail,
   deliverNotification,
   deliverRunFailureMail,
+  deliverTaskResultMail,
   InvalidNotificationEventError,
   NOTIFY_MAIL_SOURCE,
   type MailboxDelivery,
@@ -204,6 +205,61 @@ describe("deliverNotification", () => {
       kind: "credential",
       id: "cred_hf_1",
     });
+  });
+
+  test("a task-result event mails the reply, elapsed time, and artifact refs", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverTaskResultMail(deps, {
+      kind: "task-result",
+      tenantId: "tnt_1",
+      taskId: "task_1",
+      runId: "run_1",
+      agentName: "Incident Summarizer",
+      status: "done",
+      replyText: "All clear, no action needed.",
+      elapsedMs: 192_000,
+      artifacts: [{ id: "art_1", title: "Postmortem draft" }],
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-14T10:00:00.000Z",
+    });
+
+    expect(written[0]?.subject).toBe(
+      "“Incident Summarizer” finished your task",
+    );
+    expect(written[0]?.body).toContain("All clear, no action needed.");
+    expect(written[0]?.body).toContain("3m 12s");
+    expect(written[0]?.body).toContain("Postmortem draft");
+    expect(written[0]?.externalId).toBe("task-result:task_1");
+    expect(written[0]?.refs).toContainEqual({ kind: "task", id: "task_1" });
+    expect(written[0]?.refs).toContainEqual({ kind: "run", id: "run_1" });
+    expect(written[0]?.refs).toContainEqual({
+      kind: "artifact",
+      id: "art_1",
+      label: "Postmortem draft",
+    });
+  });
+
+  test("a failed task-result event mails the error, never a placeholder", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverTaskResultMail(deps, {
+      kind: "task-result",
+      tenantId: "tnt_1",
+      taskId: "task_2",
+      runId: "run_2",
+      agentName: "Incident Summarizer",
+      status: "failed",
+      errorMessage: "tool call exploded",
+      elapsedMs: 4_000,
+      artifacts: [],
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-14T10:05:00.000Z",
+    });
+
+    expect(written[0]?.subject).toBe("“Incident Summarizer” failed your task");
+    expect(written[0]?.body).toContain("tool call exploded");
+    expect(written[0]?.body).not.toContain("Artifacts:");
   });
 
   test("re-notifying the same still-expired credential dedupes on the credential, not the tick", async () => {

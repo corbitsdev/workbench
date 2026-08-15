@@ -100,6 +100,7 @@ export {
   putReadState,
   listRuns,
   listInvitableDefinitions,
+  listTenantInvitableDefinitions,
   inviteAgent,
   channelStreamUrl,
   runDisplayName,

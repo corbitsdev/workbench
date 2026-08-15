@@ -17,15 +17,32 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
 import { QueryView, SignedOutNotice } from "@corbits/api-query";
+import { listTenantInvitableDefinitions } from "@corbits/chat-ui";
+import {
+  createManualAgentSelectionStrategy,
+  createTask,
+  listCatalogModels,
+  TaskComposerDialog,
+} from "@corbits/tasks-ui";
 
 import { approveApproval, rejectApproval, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
 import {
+  consumePendingNewTask,
+  NEW_TASK_EVENT,
+} from "../command-palette-actions";
+import {
+  loadMostRecentTaskAgent,
+  saveMostRecentTaskAgent,
+} from "../task-mru-agent";
+import { libraryArtifactPath } from "@corbits/artifact-ui";
+import {
   InboxCountsSchema,
   InboxItemDetailSchema,
   InboxListSchema,
   approvalIdFromItem,
+  artifactRefsFromItem,
   channelRefFromItem,
   clearDoneInbox,
   inboxCountsPath,
@@ -132,6 +149,7 @@ function InboxDetail({
   onSnooze,
   onOpenRun,
   onOpenChannel,
+  onOpenArtifact,
 }: {
   readonly detail: APIQuery<InboxItemDetail>;
   readonly busy: boolean;
@@ -142,6 +160,7 @@ function InboxDetail({
   readonly onSnooze: (id: string) => void;
   readonly onOpenRun: (runId: string) => void;
   readonly onOpenChannel: (channelId: string) => void;
+  readonly onOpenArtifact: (artifactId: string) => void;
 }) {
   if (detail.kind === "loading") {
     return (
@@ -168,6 +187,7 @@ function InboxDetail({
   const approvalId = approvalIdFromItem(item);
   const run = runRefFromItem(item);
   const channel = channelRefFromItem(item);
+  const artifacts = artifactRefsFromItem(item);
 
   return (
     <article
@@ -188,6 +208,25 @@ function InboxDetail({
           {item.body}
         </pre>
       </div>
+      {artifacts.length > 0 && (
+        <div
+          className="flex flex-wrap gap-2"
+          data-testid="inbox-artifact-chips"
+          aria-label="Artifacts"
+        >
+          {artifacts.map((artifact) => (
+            <Button
+              key={artifact.id}
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => onOpenArtifact(artifact.id)}
+            >
+              {artifact.label ?? "Open in Library"}
+            </Button>
+          ))}
+        </div>
+      )}
       {actionError !== null && (
         <p className="m-0 text-sm text-destructive" role="alert">
           {actionError}
@@ -274,6 +313,16 @@ export function InboxPage({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [taskSubmitting, setTaskSubmitting] = useState(false);
+  const [taskError, setTaskError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (consumePendingNewTask()) setTaskDialogOpen(true);
+    const onEvent = () => setTaskDialogOpen(true);
+    window.addEventListener(NEW_TASK_EVENT, onEvent);
+    return () => window.removeEventListener(NEW_TASK_EVENT, onEvent);
+  }, []);
 
   const countsQuery = useAPIQuery(
     selectedTenantId === null ? "" : inboxCountsPath(selectedTenantId),
@@ -350,6 +399,41 @@ export function InboxPage({
       .finally(() => setBusy(false));
   }
 
+  function handleCreateTask(input: {
+    readonly definitionId: string;
+    readonly prompt: string;
+    readonly modelPreference?: string;
+  }) {
+    if (selectedTenantId === null) return;
+    setTaskSubmitting(true);
+    setTaskError(null);
+    createTask(selectedTenantId, input)
+      .then(() => {
+        saveMostRecentTaskAgent(selectedTenantId, input.definitionId);
+        setTaskDialogOpen(false);
+      })
+      .catch((cause: unknown) => {
+        setTaskError(
+          cause instanceof Error
+            ? cause.message
+            : "That task didn't start — try again.",
+        );
+      })
+      .finally(() => setTaskSubmitting(false));
+  }
+
+  // A stable strategy reference across renders — recreating it every
+  // render would remount the strategy component on every parent
+  // re-render, refetching the agent list mid-composer. Wired to the
+  // manual picker here, explicitly, per `AgentSelectionStrategy`'s own
+  // "no default, no fallback" contract — a future strategy (CL-6050)
+  // is a different value passed to this same prop, never a change to
+  // TaskComposerDialog itself.
+  const taskAgentSelectionStrategy = useMemo(
+    () => createManualAgentSelectionStrategy(listTenantInvitableDefinitions),
+    [],
+  );
+
   if (selectedTenantId === null || listQuery.kind === "unauthenticated") {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -360,6 +444,22 @@ export function InboxPage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <TaskComposerDialog
+        open={taskDialogOpen}
+        onOpenChange={(next) => {
+          setTaskDialogOpen(next);
+          // A failed attempt's message must not greet the next open —
+          // the error belongs to the attempt, not to the dialog.
+          if (!next) setTaskError(null);
+        }}
+        onCreate={handleCreateTask}
+        tenantId={selectedTenantId}
+        submitting={taskSubmitting}
+        error={taskError}
+        agentSelectionStrategy={taskAgentSelectionStrategy}
+        listModels={listCatalogModels}
+        initialDefinitionId={loadMostRecentTaskAgent(selectedTenantId)}
+      />
       <StageTopBar
         title="Inbox"
         subtitle={
@@ -369,6 +469,13 @@ export function InboxPage({
         }
         actions={
           <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setTaskDialogOpen(true)}
+            >
+              New task
+            </Button>
             <Button
               variant="secondary"
               size="sm"
@@ -442,6 +549,9 @@ export function InboxPage({
               }}
               onOpenChannel={(channelId) => {
                 navigate(channelPath(channelId));
+              }}
+              onOpenArtifact={(artifactId) => {
+                navigate(libraryArtifactPath(artifactId));
               }}
             />
           )

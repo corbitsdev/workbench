@@ -26,11 +26,13 @@ export const NEW_CHANNEL_EVENT = "workbench:chat:new-channel";
 export const NEW_AGENT_EVENT = "workbench:agents:create";
 export const NEW_ROUTINE_EVENT = "workbench:routines:create";
 export const NEW_SKILL_EVENT = "workbench:skills:create";
+export const NEW_TASK_EVENT = "workbench:tasks:create";
 
 const newChannelRequest = createPendingDialogRequest();
 const newAgentRequest = createPendingDialogRequest();
 const newRoutineRequest = createPendingDialogRequest();
 const newSkillRequest = createPendingDialogRequest();
+const newTaskRequest = createPendingDialogRequest();
 
 /** Consumed by chat-page.tsx on mount. */
 export const consumePendingNewChannel = newChannelRequest.consumePending;
@@ -40,6 +42,10 @@ export const consumePendingNewAgent = newAgentRequest.consumePending;
 export const consumePendingNewRoutine = newRoutineRequest.consumePending;
 /** Consumed by skills-settings-section.tsx on mount. */
 export const consumePendingNewSkill = newSkillRequest.consumePending;
+/** Consumed by inbox-page.tsx on mount — the task composer opens there
+ * (CL-6049): a task is spawn-and-return, its result reaches the Inbox,
+ * so that's the one page that owns the affordance for starting one. */
+export const consumePendingNewTask = newTaskRequest.consumePending;
 
 /**
  * Requests the routine create/run affordance — the same off-route-safe hop
@@ -63,6 +69,7 @@ export function resetPendingDialogRequests(): void {
   newAgentRequest.resetPending();
   newRoutineRequest.resetPending();
   newSkillRequest.resetPending();
+  newTaskRequest.resetPending();
 }
 
 export type ActionCommandId =
@@ -70,6 +77,7 @@ export type ActionCommandId =
   | "new-agent"
   | "new-routine"
   | "new-skill"
+  | "new-task"
   | "upload-artifact"
   | "toggle-theme"
   | "close-canvas"
@@ -100,6 +108,11 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
     subtitle: "Schedule · trigger · demand",
   },
   { id: "new-skill", title: "New skill", subtitle: "Workbench capability" },
+  {
+    id: "new-task",
+    title: "New task",
+    subtitle: "Give an agent a prompt",
+  },
   {
     id: "upload-artifact",
     title: "Upload artifact",
@@ -182,6 +195,14 @@ export async function runActionCommand(
           ctx.path.startsWith("/settings/skills/"),
         navigateToTargetRoute: () => ctx.navigate("/settings/skills"),
         dispatch: () => window.dispatchEvent(new CustomEvent(NEW_SKILL_EVENT)),
+      });
+      return;
+    }
+    case "new-task": {
+      newTaskRequest.request({
+        alreadyOnTargetRoute: ctx.path === "/inbox",
+        navigateToTargetRoute: () => ctx.navigate("/inbox"),
+        dispatch: () => window.dispatchEvent(new CustomEvent(NEW_TASK_EVENT)),
       });
       return;
     }

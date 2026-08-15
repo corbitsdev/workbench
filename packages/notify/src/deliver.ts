@@ -13,6 +13,7 @@ import {
   type MentionNotification,
   type NotificationEvent,
   type RunFailureNotification,
+  type TaskResultNotification,
 } from "./events";
 import type {
   MailboxDelivery,
@@ -128,6 +129,15 @@ export function deliverMentionMail(
 export function deliverCredentialMail(
   deps: NotifyDeliveryDeps,
   event: CredentialExpiredNotification,
+): Promise<NotifyDeliveryReport> {
+  return deliverNotification(deps, event);
+}
+
+/** A one-shot task's run reached a terminal state, mailed to the person
+ * who launched it. */
+export function deliverTaskResultMail(
+  deps: NotifyDeliveryDeps,
+  event: TaskResultNotification,
 ): Promise<NotifyDeliveryReport> {
   return deliverNotification(deps, event);
 }

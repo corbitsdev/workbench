@@ -39,6 +39,7 @@ import { applyBenchMigrations } from "../packages/bench/src/migrations";
 import { applySkillsMigrations } from "../packages/skills/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 import { applyAccessPolicyMigrations } from "../packages/access-policy/src/migrations";
+import { applyTasksMigrations } from "../packages/tasks/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const HUB_DIR = path.join(repoRoot, "apps", "hub");
@@ -67,6 +68,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/skills", apply: applySkillsMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
   { name: "@workbench/access-policy", apply: applyAccessPolicyMigrations },
+  { name: "@corbits/tasks", apply: applyTasksMigrations },
 ];
 
 /**
