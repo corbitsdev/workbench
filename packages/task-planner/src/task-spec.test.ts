@@ -91,13 +91,109 @@ describe("parseTaskSpec", () => {
     ).toThrow(PlannerReplyUnparseableError);
   });
 
-  test('a reply with kind: "chain" fails closed — only "task" is accepted today', () => {
+  test('a reply with an unrecognized "kind" fails closed', () => {
+    expect(() =>
+      parseTaskSpec(
+        JSON.stringify({
+          kind: "workflow",
+          use: "wfd_summarizer",
+          refinedOutcome: "Summarize the doc",
+        }),
+      ),
+    ).toThrow(PlannerReplyUnparseableError);
+  });
+
+  test('parses a "chain" reply whose steps are each a valid {use}/{create} shape', () => {
+    const spec = parseTaskSpec(
+      JSON.stringify({
+        kind: "chain",
+        steps: [
+          { use: "wfd_summarizer", refinedOutcome: "Summarize the doc" },
+          {
+            create: {
+              name: "Incident bot",
+              systemPrompt: "You review incidents.",
+              toolPackagePins: ["@corbits/granola-tools"],
+              skills: ["incident-review"],
+            },
+            refinedOutcome: "Review the summary",
+          },
+        ],
+      }),
+    );
+    expect(spec).toEqual({
+      kind: "chain",
+      steps: [
+        { use: "wfd_summarizer", refinedOutcome: "Summarize the doc" },
+        {
+          create: {
+            name: "Incident bot",
+            systemPrompt: "You review incidents.",
+            toolPackagePins: ["@corbits/granola-tools"],
+            skills: ["incident-review"],
+          },
+          refinedOutcome: "Review the summary",
+        },
+      ],
+    });
+  });
+
+  test("a chain with only one step fails closed — a chain is at least 2 steps", () => {
     expect(() =>
       parseTaskSpec(
         JSON.stringify({
           kind: "chain",
-          use: "wfd_summarizer",
-          refinedOutcome: "Summarize the doc",
+          steps: [
+            { use: "wfd_summarizer", refinedOutcome: "Summarize the doc" },
+          ],
+        }),
+      ),
+    ).toThrow(PlannerReplyUnparseableError);
+  });
+
+  test("a chain with zero steps fails closed", () => {
+    expect(() =>
+      parseTaskSpec(JSON.stringify({ kind: "chain", steps: [] })),
+    ).toThrow(PlannerReplyUnparseableError);
+  });
+
+  test("a chain with 6 steps fails closed — bounded at 5", () => {
+    expect(() =>
+      parseTaskSpec(
+        JSON.stringify({
+          kind: "chain",
+          steps: Array.from({ length: 6 }, (_unused, index) => ({
+            use: "wfd_summarizer",
+            refinedOutcome: `Step ${String(index + 1)}`,
+          })),
+        }),
+      ),
+    ).toThrow(PlannerReplyUnparseableError);
+  });
+
+  test("a chain with 5 steps is accepted — the upper bound is inclusive", () => {
+    expect(() =>
+      parseTaskSpec(
+        JSON.stringify({
+          kind: "chain",
+          steps: Array.from({ length: 5 }, (_unused, index) => ({
+            use: "wfd_summarizer",
+            refinedOutcome: `Step ${String(index + 1)}`,
+          })),
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  test("a chain step missing refinedOutcome fails closed", () => {
+    expect(() =>
+      parseTaskSpec(
+        JSON.stringify({
+          kind: "chain",
+          steps: [
+            { use: "wfd_summarizer" },
+            { use: "wfd_summarizer", refinedOutcome: "Summarize the doc" },
+          ],
         }),
       ),
     ).toThrow(PlannerReplyUnparseableError);
@@ -202,6 +298,67 @@ describe("validateTaskSpecAgainstInventory", () => {
             modelPreference: "openai/gpt-unknown",
           },
           refinedOutcome: "Do it",
+        },
+        INVENTORY,
+      ),
+    ).toThrow(PlannerReferenceOutOfInventoryError);
+  });
+
+  test("a chain whose every step is in-inventory passes", () => {
+    expect(() =>
+      validateTaskSpecAgainstInventory(
+        {
+          kind: "chain",
+          steps: [
+            { use: "wfd_summarizer", refinedOutcome: "Summarize" },
+            {
+              create: {
+                name: "Incident bot",
+                systemPrompt: "You review incidents.",
+                toolPackagePins: ["@corbits/granola-tools"],
+                skills: ["incident-review"],
+              },
+              refinedOutcome: "Review the summary",
+            },
+          ],
+        },
+        INVENTORY,
+      ),
+    ).not.toThrow();
+  });
+
+  test("a chain whose FIRST step is out of inventory fails closed", () => {
+    expect(() =>
+      validateTaskSpecAgainstInventory(
+        {
+          kind: "chain",
+          steps: [
+            { use: "wfd_unknown", refinedOutcome: "Summarize" },
+            { use: "wfd_summarizer", refinedOutcome: "Review" },
+          ],
+        },
+        INVENTORY,
+      ),
+    ).toThrow(PlannerReferenceOutOfInventoryError);
+  });
+
+  test("a chain whose LAST step is out of inventory fails closed — no step is trusted on the strength of its neighbors", () => {
+    expect(() =>
+      validateTaskSpecAgainstInventory(
+        {
+          kind: "chain",
+          steps: [
+            { use: "wfd_summarizer", refinedOutcome: "Summarize" },
+            {
+              create: {
+                name: "Bot",
+                systemPrompt: "Prompt.",
+                toolPackagePins: [],
+                skills: ["unknown-skill"],
+              },
+              refinedOutcome: "Review",
+            },
+          ],
         },
         INVENTORY,
       ),

@@ -9,23 +9,44 @@
 import { type } from "arktype";
 import type { PlannerInventory } from "./inventory";
 
-export const TaskSpec = type({
-  kind: "'task'",
+const MIN_CHAIN_STEPS = 2;
+const MAX_CHAIN_STEPS = 5;
+
+/** One step's agent choice, shared verbatim by a single `{kind: "task"}`
+ * spec and every entry of a `{kind: "chain"}` spec's `steps` — the same
+ * `{use}`/`{create}` shapes either way, each carrying its own
+ * `refinedOutcome` so a chain's later steps are never left inferring
+ * their prompt from the first step's. */
+const UseStep = type({
   use: "string > 0",
   refinedOutcome: "string > 0",
-}).or(
-  type({
-    kind: "'task'",
-    create: {
-      name: "string > 0",
-      systemPrompt: "string > 0",
-      toolPackagePins: "string[]",
-      skills: "string[]",
-      "modelPreference?": "string",
-    },
-    refinedOutcome: "string > 0",
-  }),
-);
+});
+
+const CreateStep = type({
+  create: {
+    name: "string > 0",
+    systemPrompt: "string > 0",
+    toolPackagePins: "string[]",
+    skills: "string[]",
+    "modelPreference?": "string",
+  },
+  refinedOutcome: "string > 0",
+});
+
+export const TaskStep = UseStep.or(CreateStep);
+export type TaskStep = typeof TaskStep.infer;
+
+export const TaskSpec = type({ kind: "'task'" })
+  .and(UseStep)
+  .or(type({ kind: "'task'" }).and(CreateStep))
+  .or(
+    type({
+      kind: "'chain'",
+      steps: TaskStep.array()
+        .atLeastLength(MIN_CHAIN_STEPS)
+        .atMostLength(MAX_CHAIN_STEPS),
+    }),
+  );
 export type TaskSpec = typeof TaskSpec.infer;
 
 const MAX_REPLY_EXCERPT = 400;
@@ -74,22 +95,13 @@ export function parseTaskSpec(raw: string): TaskSpec {
   return parsed;
 }
 
-/**
- * Asserts every reference a validated-shape `TaskSpec` makes actually
- * appears in `inventory` — the inventory that was actually offered to
- * Myra, not a copy fetched fresh afterward, so a race between offering
- * and validating can never widen what the plan is allowed to name.
- * Throws `PlannerReferenceOutOfInventoryError` on the first violation
- * found; checks every reference before returning, never trusting a
- * partially-valid plan. No return value — this is a pure assertion.
- */
-export function validateTaskSpecAgainstInventory(
-  spec: TaskSpec,
+function validateStepAgainstInventory(
+  step: TaskStep,
   inventory: PlannerInventory,
 ): void {
-  if ("use" in spec) {
-    if (!inventory.agents.some((agent) => agent.id === spec.use)) {
-      throw new PlannerReferenceOutOfInventoryError("use", spec.use);
+  if ("use" in step) {
+    if (!inventory.agents.some((agent) => agent.id === step.use)) {
+      throw new PlannerReferenceOutOfInventoryError("use", step.use);
     }
     return;
   }
@@ -97,7 +109,7 @@ export function validateTaskSpecAgainstInventory(
   const toolPackageNames = new Set(
     inventory.toolPackages.map((entry) => entry.name),
   );
-  for (const pin of spec.create.toolPackagePins) {
+  for (const pin of step.create.toolPackagePins) {
     if (!toolPackageNames.has(pin)) {
       throw new PlannerReferenceOutOfInventoryError(
         "create.toolPackagePins",
@@ -107,21 +119,45 @@ export function validateTaskSpecAgainstInventory(
   }
 
   const skillNames = new Set(inventory.skills.map((entry) => entry.name));
-  for (const skill of spec.create.skills) {
+  for (const skill of step.create.skills) {
     if (!skillNames.has(skill)) {
       throw new PlannerReferenceOutOfInventoryError("create.skills", skill);
     }
   }
 
-  if (spec.create.modelPreference !== undefined) {
+  if (step.create.modelPreference !== undefined) {
     const modelNames = new Set(
       inventory.models.map((entry) => entry.canonicalName),
     );
-    if (!modelNames.has(spec.create.modelPreference)) {
+    if (!modelNames.has(step.create.modelPreference)) {
       throw new PlannerReferenceOutOfInventoryError(
         "create.modelPreference",
-        spec.create.modelPreference,
+        step.create.modelPreference,
       );
     }
   }
+}
+
+/**
+ * Asserts every reference a validated-shape `TaskSpec` makes actually
+ * appears in `inventory` — the inventory that was actually offered to
+ * Myra, not a copy fetched fresh afterward, so a race between offering
+ * and validating can never widen what the plan is allowed to name.
+ * Throws `PlannerReferenceOutOfInventoryError` on the first violation
+ * found; checks every reference before returning, never trusting a
+ * partially-valid plan — for a `{kind: "chain"}` spec, every step is
+ * checked, in order, before any of them is trusted. No return value —
+ * this is a pure assertion.
+ */
+export function validateTaskSpecAgainstInventory(
+  spec: TaskSpec,
+  inventory: PlannerInventory,
+): void {
+  if (spec.kind === "chain") {
+    for (const step of spec.steps) {
+      validateStepAgainstInventory(step, inventory);
+    }
+    return;
+  }
+  validateStepAgainstInventory(spec, inventory);
 }

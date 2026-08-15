@@ -60,6 +60,9 @@ function neverCalledDeps(): SpawnDeps {
     requireDefinitionCreateGrant: () => {
       throw new Error("requireDefinitionCreateGrant should never be reached");
     },
+    undeployAgentDefinition: () => {
+      throw new Error("undeployAgentDefinition should never be reached");
+    },
   };
 }
 
