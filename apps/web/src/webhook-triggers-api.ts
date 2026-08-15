@@ -12,6 +12,8 @@
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
+import { ApiQueryError } from "@corbits/api-query";
+
 export const WebhookTrigger = type({
   id: "string",
   tenantId: "string",
@@ -34,15 +36,6 @@ export type CreateWebhookTriggerInput = {
   readonly inputTemplate: string;
 };
 
-export class WebhookTriggersApiError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-  }
-}
-
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
 async function request<T>(
@@ -57,12 +50,12 @@ async function request<T>(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new WebhookTriggersApiError(
+    throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
   if (response.status === 401) {
-    throw new WebhookTriggersApiError(`Not signed in for ${path}.`, 401);
+    throw new ApiQueryError(`Not signed in for ${path}.`, 401);
   }
   if (!response.ok) {
     const detail = await response
@@ -71,7 +64,7 @@ async function request<T>(
         (body: { error?: { message?: string } }) => body.error?.message ?? "",
       )
       .catch(() => "");
-    throw new WebhookTriggersApiError(
+    throw new ApiQueryError(
       `The server answered ${response.status} for ${path}.${detail === "" ? "" : ` ${detail}`}`,
       response.status,
     );
@@ -80,7 +73,7 @@ async function request<T>(
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
-    throw new WebhookTriggersApiError(
+    throw new ApiQueryError(
       `Unexpected response shape from ${path}: ${parsed.summary}`,
     );
   }

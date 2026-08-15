@@ -8,6 +8,7 @@
 // the shape contract has its own tests. The old asset-shim path is gone.
 
 import type { ArtifactSummary } from "@corbits/artifact-ui";
+import { ApiQueryError } from "@corbits/api-query";
 
 /** List row from the hub artifacts surface (content omitted). */
 export type ArtifactListRow = {
@@ -71,12 +72,12 @@ export async function uploadArtifactFiles(
       body: form,
     });
   } catch (cause) {
-    throw new ArtifactUploadError(
+    throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
   if (!response.ok) {
-    throw new ArtifactUploadError(
+    throw new ApiQueryError(
       `The server answered ${response.status} for artifact upload.`,
       response.status,
     );
@@ -85,20 +86,9 @@ export async function uploadArtifactFiles(
     data?: readonly ArtifactDetail[];
   };
   if (!Array.isArray(body.data)) {
-    throw new ArtifactUploadError(
-      "Unexpected response shape from artifact upload.",
-    );
+    throw new ApiQueryError("Unexpected response shape from artifact upload.");
   }
   return body.data;
-}
-
-export class ArtifactUploadError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-  }
 }
 
 /** True when the hub answered "artifacts plane not configured". */

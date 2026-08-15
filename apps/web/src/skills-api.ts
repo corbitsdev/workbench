@@ -10,15 +10,7 @@
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
-export class SkillsApiError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
-    this.name = "SkillsApiError";
-  }
-}
+import { ApiQueryError } from "@corbits/api-query";
 
 export const SkillScope = type("'private' | 'tenant'");
 export type SkillScope = typeof SkillScope.infer;
@@ -80,14 +72,14 @@ async function request<T>(
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
     });
   } catch (cause) {
-    throw new SkillsApiError(
+    throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
   const json: unknown = await response.json().catch(() => undefined);
   if (!response.ok) {
     const envelope = ErrorEnvelope(json);
-    throw new SkillsApiError(
+    throw new ApiQueryError(
       envelope instanceof type.errors
         ? `The server answered ${String(response.status)} for ${path}.`
         : envelope.error.message,
@@ -96,7 +88,7 @@ async function request<T>(
   }
   const parsed = schema(json);
   if (parsed instanceof type.errors) {
-    throw new SkillsApiError(
+    throw new ApiQueryError(
       `Unexpected response shape from ${path}: ${parsed.summary}`,
     );
   }
