@@ -206,6 +206,77 @@ describe("GET / and GET /:id", () => {
     expect((await asAlice.request("/task_1")).status).toBe(200);
   });
 
+  test("GET /:id/legs returns a chained task's legs in position order", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT.id,
+      principalId: "prn_alice",
+      definitionId: "wfd_first",
+      agentName: "Agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+      followOn: [
+        {
+          definitionId: "wfd_second",
+          prompt: "Draft a follow-up.",
+          modelPreference: null,
+        },
+      ],
+    });
+
+    const asAlice = mountAs(
+      createTaskRoutes(buildDeps({ store })),
+      "prn_alice",
+    );
+    const response = await asAlice.request("/task_1/legs");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      items: { position: number; definitionId: string; status: string }[];
+    };
+    expect(body.items.map((item) => item.position)).toEqual([0, 1]);
+    expect(body.items.map((item) => item.definitionId)).toEqual([
+      "wfd_first",
+      "wfd_second",
+    ]);
+    expect(body.items[0]?.status).toBe("running");
+
+    const asBob = mountAs(createTaskRoutes(buildDeps({ store })), "prn_bob");
+    expect((await asBob.request("/task_1/legs")).status).toBe(404);
+
+    const missing = await asAlice.request("/task_missing/legs");
+    expect(missing.status).toBe(404);
+  });
+
+  test("GET /by-run/:runId resolves the owning task and 404s otherwise", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT.id,
+      principalId: "prn_alice",
+      definitionId: "wfd_agent",
+      agentName: "Agent",
+      prompt: "hi",
+      modelPreference: null,
+      runId: "run_1",
+    });
+
+    const asAlice = mountAs(
+      createTaskRoutes(buildDeps({ store })),
+      "prn_alice",
+    );
+    const found = await asAlice.request("/by-run/run_1");
+    expect(found.status).toBe(200);
+    const body = (await found.json()) as { item: { id: string } };
+    expect(body.item.id).toBe("task_1");
+
+    const asBob = mountAs(createTaskRoutes(buildDeps({ store })), "prn_bob");
+    expect((await asBob.request("/by-run/run_1")).status).toBe(404);
+
+    expect((await asAlice.request("/by-run/run_missing")).status).toBe(404);
+  });
+
   test("lists and fetches a tenant's own tasks only", async () => {
     const store = createMemoryTaskStore();
     await store.createTask({
