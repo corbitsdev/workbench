@@ -52,6 +52,8 @@ function taskView(record: TaskRecord) {
     modelPreference: record.modelPreference,
     status: record.status,
     runId: record.runId,
+    runIds: [...record.runIds],
+    stepCount: record.stepCount,
     resultMailId: record.resultMailId,
     createdAt: record.createdAt.toISOString(),
     completedAt: record.completedAt?.toISOString() ?? null,

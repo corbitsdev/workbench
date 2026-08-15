@@ -84,6 +84,7 @@ export function renderNotification(
         : `“${event.agentName}” failed your task`,
     body: [
       `Agent: ${event.agentName} · Elapsed: ${formatElapsed(event.elapsedMs)}`,
+      describeHandOffs(event.status, event.runIds.length, event.stepCount),
       event.status === "done"
         ? (event.replyText ?? "The agent finished without a reply.")
         : (event.errorMessage ??
@@ -96,7 +97,7 @@ export function renderNotification(
       .join("\n\n"),
     refs: [
       { kind: "task", id: event.taskId },
-      { kind: "run", id: event.runId },
+      ...event.runIds.map((runId) => ({ kind: "run", id: runId })),
       ...event.artifacts.map((artifact) => ({
         kind: "artifact",
         id: artifact.id,
@@ -104,6 +105,24 @@ export function renderNotification(
       })),
     ],
   };
+}
+
+/**
+ * One plain line about a task that passed through more than one agent
+ * — where it got to, and out of how many. A single-agent task says
+ * nothing extra, so the ordinary result reads exactly as it always
+ * has.
+ */
+function describeHandOffs(
+  status: "done" | "failed",
+  agentsRun: number,
+  agentsPlanned: number,
+): string {
+  if (agentsPlanned < 2) return "";
+  if (status === "done") {
+    return `This task was passed through ${String(agentsPlanned)} agents in turn, and the reply below is the last one's.`;
+  }
+  return `This task was meant to pass through ${String(agentsPlanned)} agents in turn, and it stopped at agent ${String(agentsRun)}.`;
 }
 
 /** `"3m 12s"`-style duration, floored to the second — never a raw
