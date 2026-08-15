@@ -4,7 +4,7 @@
 // state, and the shared stepper chrome rendering. `CreateRoutineDialog`
 // itself stays private — exercised the same way a person would, through
 // `RoutinesListPage`'s "New routine" action.
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -12,6 +12,7 @@ import type { Root } from "react-dom/client";
 import type { APIQuery } from "@corbits/api-query";
 import {
   requestMakeRoutine,
+  requestNewRoutineInSpace,
   resetPendingDialogRequests,
 } from "../src/command-palette-actions";
 import { RoutinesListPage } from "../src/pages/routines-page";
@@ -53,6 +54,36 @@ function typeInto(input: HTMLInputElement | null, value: string) {
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
+// "New space for this routine" (the default destination) mints a real
+// channel client-side via `@corbits/chat-ui`'s `createChannel` — stubbed
+// here the same way every other fetch-driven dialog test in this file
+// stubs its own network calls, rather than exercising real HTTP.
+const realFetch = globalThis.fetch;
+let createdSpaceChannels: { name: string }[] = [];
+
+beforeEach(() => {
+  createdSpaceChannels = [];
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/chat/channels") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body)) as { name?: string };
+      createdSpaceChannels.push({ name: body.name ?? "" });
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: "ch_new_space",
+            title: body.name ?? "New space",
+            kind: "channel",
+            pinned: true,
+            participants: [],
+          }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        ),
+      );
+    }
+    return Promise.resolve(new Response("{}", { status: 200 }));
+  }) as typeof fetch;
+});
+
 function mount(props: Parameters<typeof RoutinesListPage>[0]) {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -73,6 +104,7 @@ afterEach(() => {
     container = null;
   }
   resetPendingDialogRequests();
+  globalThis.fetch = realFetch;
 });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -414,8 +446,8 @@ describe("CreateRoutineDialog stepper", () => {
   test("the describe path drafts, reviews, and approves", async () => {
     let approvedId: string | null = null;
     let approvedDefinitionId: string | undefined;
-    mount(
-      baseProps({
+    mount({
+      ...baseProps({
         onDescribe: () =>
           Promise.resolve({
             id: "draft_9",
@@ -438,7 +470,8 @@ describe("CreateRoutineDialog stepper", () => {
           return Promise.resolve();
         },
       }),
-    );
+      tenantId: "tnt_1",
+    });
     await settle();
     act(() => {
       buttonWithText("New routine")?.click();
@@ -489,8 +522,8 @@ describe("CreateRoutineDialog stepper", () => {
   test("regression: a draft with no definitionId shows a fallback workflow picker and blocks Approve until one is picked — no dead end", async () => {
     let approvedId: string | null = null;
     let approvedDefinitionId: string | undefined;
-    mount(
-      baseProps({
+    mount({
+      ...baseProps({
         onDescribe: () =>
           Promise.resolve({
             id: "draft_10",
@@ -513,7 +546,8 @@ describe("CreateRoutineDialog stepper", () => {
           return Promise.resolve();
         },
       }),
-    );
+      tenantId: "tnt_1",
+    });
     await settle();
     act(() => {
       buttonWithText("New routine")?.click();
@@ -1014,5 +1048,278 @@ describe("'Make this a routine' prefill", () => {
     );
     const nextButton = buttonWithText("Next");
     expect(nextButton?.hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("routine destination (CL-6073)", () => {
+  test("a zero-channel bench sails through — 'New space for this routine' is the default, no dead end", async () => {
+    mount({ ...baseProps({}), channels: [] });
+    await settle();
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+
+    act(() => {
+      cardWithTitle("Researcher")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    expect(document.body.textContent).not.toContain(
+      "create a channel first",
+    );
+    expect(document.body.textContent).toContain(
+      "New space for this routine",
+    );
+    expect(document.body.textContent).toContain(
+      "Reports land in a new space named after this routine.",
+    );
+    expect(buttonWithText("Next")?.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("creating with the default destination sends no deliveryChannelId — the create route provisions the space", async () => {
+    let created: CreateRoutineInput | null = null;
+    mount({
+      ...baseProps({
+        onCreate: (input) => {
+          created = input;
+          return Promise.resolve();
+        },
+      }),
+      channels: [],
+    });
+    await settle();
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+
+    act(() => {
+      cardWithTitle("Researcher")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Create & run now")?.click();
+    });
+    await settle();
+
+    expect(created).not.toBeNull();
+    expect(
+      (created as CreateRoutineInput | null)?.deliveryChannelId,
+    ).toBeUndefined();
+  });
+
+  test("an existing space, once picked as the destination, is sent as-is (not the new-space sentinel)", async () => {
+    // Exercises the same path a person picking "Ops" from the destination
+    // menu drives — pre-bound via the space entry point's prefill rather
+    // than clicking through the (Radix-portalled) menu itself, which this
+    // suite's jsdom harness cannot drive; `requestNewRoutineInSpace` is
+    // covered end-to-end below.
+    let created: CreateRoutineInput | null = null;
+    requestNewRoutineInSpace({
+      alreadyOnRoutines: false,
+      navigateToRoutines: () => {},
+      deliveryChannelId: "ch_1",
+    });
+    mount({
+      ...baseProps({
+        onCreate: (input) => {
+          created = input;
+          return Promise.resolve();
+        },
+      }),
+    });
+    await settle();
+
+    act(() => {
+      cardWithTitle("Researcher")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Create & run now")?.click();
+    });
+    await settle();
+
+    expect(created).not.toBeNull();
+    expect((created as CreateRoutineInput | null)?.deliveryChannelId).toBe(
+      "ch_1",
+    );
+  });
+
+  test("'New routine in this space' pre-selects that space as the destination", async () => {
+    requestNewRoutineInSpace({
+      alreadyOnRoutines: false,
+      navigateToRoutines: () => {},
+      deliveryChannelId: "ch_1",
+    });
+    mount(baseProps({}));
+    await settle();
+
+    expect(document.body.textContent).toContain("Step 1 of 3");
+    act(() => {
+      cardWithTitle("Researcher")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain("Step 2 of 3");
+    const destinationTrigger = document.getElementById("routine-delivery");
+    // Pre-bound, not committed: the picker shows the space selected, and
+    // nothing here has prevented picking something else instead.
+    expect(destinationTrigger?.textContent).toBe("Ops");
+  });
+});
+
+describe("recurring-task agent picker empty state (review addendum)", () => {
+  async function openRecurringTaskConfigure() {
+    act(() => {
+      cardWithTitle("Recurring task")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+  }
+
+  test("offers 'Create an agent' when the host wires the hop — no dead end", async () => {
+    let calls = 0;
+    mount({
+      ...baseProps({}),
+      onCreateAgent: () => {
+        calls += 1;
+      },
+    });
+    await settle();
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+    await openRecurringTaskConfigure();
+
+    expect(document.body.textContent).toContain(
+      "No taskable agents on this workbench yet.",
+    );
+    const createButton = buttonWithText("Create an agent");
+    expect(createButton).not.toBeUndefined();
+    act(() => {
+      createButton?.click();
+    });
+    expect(calls).toBe(1);
+  });
+
+  test("stays plain text, no dead promise, when the host has not wired the hop", async () => {
+    mount(baseProps({}));
+    await settle();
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+    await openRecurringTaskConfigure();
+
+    expect(document.body.textContent).toContain(
+      "No taskable agents on this workbench yet.",
+    );
+    expect(buttonWithText("Create an agent")).toBeUndefined();
+  });
+});
+
+describe("routine scope (review addendum)", () => {
+  test("defaults to 'Just for you' (personal) — the safer blast radius", async () => {
+    let created: CreateRoutineInput | null = null;
+    mount(
+      baseProps({
+        onCreate: (input) => {
+          created = input;
+          return Promise.resolve();
+        },
+      }),
+    );
+    await settle();
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+
+    act(() => {
+      cardWithTitle("Researcher")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    const personalButton = buttonWithText("Just for you");
+    expect(personalButton?.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      buttonWithText("Everyone on this bench")?.getAttribute("aria-pressed"),
+    ).toBe("false");
+
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Create & run now")?.click();
+    });
+    await settle();
+
+    expect((created as CreateRoutineInput | null)?.scope).toBe("personal");
+  });
+
+  test("choosing 'Everyone on this bench' widens the created routine's scope", async () => {
+    let created: CreateRoutineInput | null = null;
+    mount(
+      baseProps({
+        onCreate: (input) => {
+          created = input;
+          return Promise.resolve();
+        },
+      }),
+    );
+    await settle();
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+
+    act(() => {
+      cardWithTitle("Researcher")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Everyone on this bench")?.click();
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Create & run now")?.click();
+    });
+    await settle();
+
+    expect((created as CreateRoutineInput | null)?.scope).toBe("bench");
   });
 });

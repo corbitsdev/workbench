@@ -56,6 +56,7 @@ import {
   createNoopInferenceRoutes,
   isChannelHostDefinitionName,
   listConnectedProviders,
+  provisionSpaceChannel,
   startWorkflowCommand,
 } from "@corbits/chat";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
@@ -1356,6 +1357,25 @@ export async function createHub(config: HubConfig) {
         return row !== undefined && row.workflowDefinitionId === definitionId;
       },
       deliveryChannelRequired: routineDeliveryChannelRequired,
+      // A routine created with no `deliveryChannelId` gets a brand-new
+      // space of its own, named after it, rather than a dead-end
+      // 400 — the same channel-provisioning core `POST /chat/channels`
+      // uses (`@corbits/chat`'s `provisionSpaceChannel`), reused here
+      // instead of reimplemented.
+      deliverySpace: {
+        createDeliverySpace: (input) =>
+          provisionSpaceChannel(
+            {
+              tenancy: chatTenancy,
+              platform: chatPlatform,
+              store: chatStore,
+              channelHostInferencePreferences:
+                chatDeps.channelHostInferencePreferences,
+              turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+            },
+            input,
+          ),
+      },
       validateRoutineInput: routineInputValid,
     }),
   );

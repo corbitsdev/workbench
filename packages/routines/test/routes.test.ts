@@ -495,6 +495,110 @@ describe("createRoutineRoutes", () => {
     });
   });
 
+  describe("deliverySpace", () => {
+    function fakeDeliverySpace(overrides: {
+      readonly channelId?: string;
+      readonly onCreate?: () => void;
+      readonly onCompensate?: () => void;
+      readonly failCompensate?: boolean;
+    } = {}) {
+      const channelId = overrides.channelId ?? "ch_new_space";
+      let createCalls = 0;
+      let compensateCalls = 0;
+      return {
+        get createCalls() {
+          return createCalls;
+        },
+        get compensateCalls() {
+          return compensateCalls;
+        },
+        async createDeliverySpace(input: {
+          tenantId: string;
+          tenantDomain: string;
+          creatorPrincipalId: string;
+          creatorUserId: string;
+          name: string;
+        }) {
+          createCalls += 1;
+          overrides.onCreate?.();
+          expect(input.tenantId).toBe(TENANT.id);
+          expect(input.tenantDomain).toBe(TENANT.domain);
+          return {
+            channelId,
+            compensate: async () => {
+              compensateCalls += 1;
+              overrides.onCompensate?.();
+              if (overrides.failCompensate === true) {
+                throw new Error("compensation failed");
+              }
+            },
+          };
+        },
+      };
+    }
+
+    test("provisions a new space and binds it as deliveryChannelId when none is named", async () => {
+      const deliverySpace = fakeDeliverySpace();
+      const deps = buildDeps({ deliverySpace });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const { response, body } = await createRoutine(app, {
+        ...withoutChannel,
+        name: "Weekly digest",
+      });
+      expect(response.status).toBe(201);
+      expect(body["deliveryChannelId"]).toBe("ch_new_space");
+      expect(deliverySpace.createCalls).toBe(1);
+    });
+
+    test("leaves an existing deliveryChannelId untouched — the space port is never called", async () => {
+      const deliverySpace = fakeDeliverySpace();
+      const deps = buildDeps({ deliverySpace });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { response, body } = await createRoutine(app, VALID_BODY);
+      expect(response.status).toBe(201);
+      expect(body["deliveryChannelId"]).toBe(VALID_BODY.deliveryChannelId);
+      expect(deliverySpace.createCalls).toBe(0);
+    });
+
+    test("compensates (deletes) the provisioned space when the routine row then fails to write", async () => {
+      const deliverySpace = fakeDeliverySpace();
+      const store = createInMemoryRoutineStore();
+      store.createRoutine = async () => {
+        throw new Error("db unavailable");
+      };
+      const deps = buildDeps({ store, deliverySpace });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const response = await app.request("/routines", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...withoutChannel, name: "Doomed" }),
+      });
+      expect(response.status).toBe(500);
+      expect(deliverySpace.createCalls).toBe(1);
+      expect(deliverySpace.compensateCalls).toBe(1);
+    });
+
+    test("a routine row write failure still propagates even if compensation itself fails", async () => {
+      const deliverySpace = fakeDeliverySpace({ failCompensate: true });
+      const store = createInMemoryRoutineStore();
+      store.createRoutine = async () => {
+        throw new Error("db unavailable");
+      };
+      const deps = buildDeps({ store, deliverySpace });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const response = await app.request("/routines", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...withoutChannel, name: "Doomed" }),
+      });
+      expect(response.status).toBe(500);
+      expect(deliverySpace.compensateCalls).toBe(1);
+    });
+  });
+
   describe("validateRoutineInput", () => {
     test("creates without validation when no port is wired (prior behavior)", async () => {
       const deps = buildDeps();

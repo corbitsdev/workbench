@@ -10,7 +10,13 @@
 // and are omitted rather than wired to a no-op — a command that appears
 // in the popover promises a real action.
 
-export type SlashCommandId = "invite" | "summarize" | "run" | "agents" | "help";
+export type SlashCommandId =
+  | "invite"
+  | "summarize"
+  | "run"
+  | "routine"
+  | "agents"
+  | "help";
 
 export type SlashCommandSpec = {
   readonly id: SlashCommandId;
@@ -30,6 +36,11 @@ export const SLASH_COMMANDS: readonly SlashCommandSpec[] = [
     description: "Ask this channel's agent to summarize the thread",
   },
   { id: "run", name: "/run", description: "Run a routine now" },
+  {
+    id: "routine",
+    name: "/routine",
+    description: "Create a new routine that delivers here",
+  },
   {
     id: "agents",
     name: "/agents",

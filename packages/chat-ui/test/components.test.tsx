@@ -31,6 +31,7 @@ const composerSlashHandlers = {
   onInviteAgent: () => {},
   onOpenAgentsSettings: () => {},
   onOpenRoutines: () => {},
+  onCreateRoutineInSpace: () => {},
 };
 
 describe("ChannelTimeline", () => {

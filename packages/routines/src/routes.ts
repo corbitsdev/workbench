@@ -76,6 +76,24 @@ export interface DeliveryThreadPort {
 }
 
 /**
+ * Optional port: provision a new delivery destination ("space") for a
+ * routine that didn't pick an existing channel. Wired to `@corbits/chat`
+ * channel creation at the hub. Returns the new channel's id plus a
+ * `compensate` callback that undoes the provisioning — called if the
+ * routine row itself then fails to write, so a space is never left
+ * behind with nothing pointing at it.
+ */
+export interface DeliverySpacePort {
+  createDeliverySpace(input: {
+    tenantId: string;
+    tenantDomain: string;
+    creatorPrincipalId: string;
+    creatorUserId: string;
+    name: string;
+  }): Promise<{ channelId: string; compensate: () => Promise<void> }>;
+}
+
+/**
  * Enriches a correlated run id with whatever summary the host's own
  * run-listing surface exposes (status, timing, ...). Optional: a host
  * that mounts routines without wiring this still gets bare run ids and
@@ -121,6 +139,15 @@ export type CreateRoutineRoutesDeps = {
    * thread before launch.
    */
   deliveryThreads?: DeliveryThreadPort | undefined;
+  /**
+   * Provisions a brand-new space for a routine created with no
+   * `deliveryChannelId`, named after the routine. When omitted, a
+   * routine whose workflow requires delivery and names no channel
+   * still 400s exactly as before this port existed — a host that
+   * hasn't wired space creation yet keeps the prior, honest error
+   * instead of silently accepting a routine with nowhere to deliver.
+   */
+  deliverySpace?: DeliverySpacePort | undefined;
   /**
    * Whether a routine on this definition must carry a `deliveryChannelId`
    * — `false` for a workflow whose result never posts to a channel at
@@ -435,10 +462,18 @@ export function createRoutineRoutes(
         );
       }
 
-      if (
+      const needsDelivery =
         (await isDeliveryChannelRequired(deps, tenant.id, body.definitionId)) &&
-        (body.deliveryChannelId === undefined || body.deliveryChannelId === "")
-      ) {
+        (body.deliveryChannelId === undefined || body.deliveryChannelId === "");
+
+      // No channel named and none needed: fall through with a null
+      // delivery channel, unchanged from before this port existed.
+      // A channel is named: use it as-is, unchanged. Only the third
+      // case — delivery required, nothing named — is new: a space
+      // named after the routine is auto-provisioned, the routine's
+      // default destination rather than a dead end. A host that
+      // hasn't wired `deliverySpace` yet keeps the prior 400.
+      if (needsDelivery && deps.deliverySpace === undefined) {
         return c.json(
           ErrorEnvelope(
             "bad_request",
@@ -459,16 +494,57 @@ export function createRoutineRoutes(
         }
       }
 
-      const row = await deps.store.createRoutine({
-        tenantId: tenant.id,
-        name: body.name,
-        definitionId: body.definitionId,
-        trigger: body.trigger as RoutineTriggerT,
-        scope: body.scope,
-        input: body.input ?? {},
-        deliveryChannelId: body.deliveryChannelId ?? null,
-        createdBy: principal.id,
-      });
+      // The space is provisioned before the routine row: `createRoutine`
+      // is a single insert and effectively never fails on its own, but
+      // if it somehow does, the freshly-made space is compensated
+      // (deleted) rather than left behind pointing at nothing — the
+      // same mint-then-compensate shape `@corbits/chat`'s own
+      // `POST /channels` uses for its tenant mint.
+      let provisionedSpace: { channelId: string; compensate: () => Promise<void> } | undefined;
+      if (needsDelivery && deps.deliverySpace !== undefined) {
+        provisionedSpace = await deps.deliverySpace.createDeliverySpace({
+          tenantId: tenant.id,
+          tenantDomain: tenant.domain,
+          creatorPrincipalId: principal.id,
+          creatorUserId: principal.refId,
+          name: body.name,
+        });
+      }
+      const deliveryChannelId =
+        body.deliveryChannelId ?? provisionedSpace?.channelId ?? null;
+
+      let row: RoutineRow;
+      try {
+        row = await deps.store.createRoutine({
+          tenantId: tenant.id,
+          name: body.name,
+          definitionId: body.definitionId,
+          trigger: body.trigger as RoutineTriggerT,
+          scope: body.scope,
+          input: body.input ?? {},
+          deliveryChannelId,
+          createdBy: principal.id,
+        });
+      } catch (err) {
+        if (provisionedSpace !== undefined) {
+          log.error(
+            "Routine creation failed after provisioning space " +
+              "{channelId}; compensating the orphaned space",
+            { channelId: provisionedSpace.channelId, err },
+          );
+          try {
+            await provisionedSpace.compensate();
+          } catch (compensationErr) {
+            log.error(
+              "Compensation failed for orphaned space {channelId} " +
+                "after routine creation failed; this space now has no " +
+                "routine pointing at it and requires manual cleanup",
+              { channelId: provisionedSpace.channelId, compensationErr },
+            );
+          }
+        }
+        throw err;
+      }
 
       if (body.runOnceNow === true) {
         await launchAndCorrelate(

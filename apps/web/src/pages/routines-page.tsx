@@ -35,6 +35,7 @@ import {
 import type { BadgeTone } from "@corbits/react-ui";
 import type { Channel, DialogStepperStep } from "@corbits/chat-ui";
 import {
+  createChannel,
   DialogStepper,
   listChannels,
   listTenantInvitableDefinitions,
@@ -60,7 +61,10 @@ import { useAPIQuery, RunsSchema } from "../api";
 import type { WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
-import { consumePendingNewRoutine } from "../command-palette-actions";
+import {
+  consumePendingNewRoutine,
+  requestNewAgent,
+} from "../command-palette-actions";
 import { consumePendingRoutinePrefill } from "../routine-prefill";
 import type { RoutinePrefill } from "../routine-prefill";
 import { tenantKeys } from "../query-client";
@@ -451,7 +455,17 @@ function TriggerPicker({
   );
 }
 
-function DeliveryChannelPicker({
+/** Sentinel `deliveryDestination` value meaning "provision a brand-new
+ * space named after this routine" — the default, always-available
+ * choice, distinct from any real channel id. */
+export const NEW_SPACE_DESTINATION = "__new_space__";
+
+/**
+ * A routine's destination: a new space named after it (the default,
+ * always offered — a zero-channel bench never dead-ends) or any
+ * existing space on the bench.
+ */
+function DeliveryDestinationPicker({
   channels,
   value,
   onChange,
@@ -463,34 +477,41 @@ function DeliveryChannelPicker({
   readonly disabled?: boolean;
 }) {
   const selected = channels.find((c) => c.id === value);
-  if (channels.length === 0) {
-    return (
-      <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-        No delivery channel on this workbench yet — create a channel first.
-      </p>
-    );
-  }
+  const label =
+    value === NEW_SPACE_DESTINATION || selected === undefined
+      ? "New space for this routine"
+      : selected.title;
   return (
-    <Menu>
-      <MenuTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled}
-          id="routine-delivery"
-        >
-          {selected?.title ?? "Choose channel"}
-        </Button>
-      </MenuTrigger>
-      <MenuContent>
-        {channels.map((channel) => (
-          <MenuItem key={channel.id} onSelect={() => onChange(channel.id)}>
-            {channel.title}
+    <div className="flex flex-col gap-1.5">
+      <Menu>
+        <MenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            id="routine-delivery"
+          >
+            {label}
+          </Button>
+        </MenuTrigger>
+        <MenuContent>
+          <MenuItem onSelect={() => onChange(NEW_SPACE_DESTINATION)}>
+            New space for this routine
           </MenuItem>
-        ))}
-      </MenuContent>
-    </Menu>
+          {channels.map((channel) => (
+            <MenuItem key={channel.id} onSelect={() => onChange(channel.id)}>
+              {channel.title}
+            </MenuItem>
+          ))}
+        </MenuContent>
+      </Menu>
+      {value === NEW_SPACE_DESTINATION ? (
+        <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
+          Reports land in a new space named after this routine.
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -507,18 +528,35 @@ function AgentTriggerFieldPicker({
   value,
   onChange,
   disabled,
+  onCreateAgent,
 }: {
   readonly agents: readonly { readonly id: string; readonly name: string }[];
   readonly value: string;
   readonly onChange: (id: string) => void;
   readonly disabled?: boolean;
+  /** The host's off-route-safe hop to agent creation (see
+   * `requestNewAgent`) — omitted, the empty state stays plain text
+   * rather than a dead promise. */
+  readonly onCreateAgent?: () => void;
 }) {
   const selected = agents.find((a) => a.id === value);
   if (agents.length === 0) {
     return (
-      <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-        No taskable agents on this workbench yet — create one first.
-      </p>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
+          No taskable agents on this workbench yet.
+        </p>
+        {onCreateAgent !== undefined ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onCreateAgent}
+          >
+            Create an agent
+          </Button>
+        ) : null}
+      </div>
     );
   }
   return (
@@ -536,6 +574,49 @@ function AgentTriggerFieldPicker({
         ))}
       </MenuContent>
     </Menu>
+  );
+}
+
+/**
+ * Who can see and edit this routine: just its creator (the default,
+ * safer blast radius) or everyone on the bench. A quiet two-button
+ * choice, not a menu — there are only ever two options.
+ */
+function RoutineScopePicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  readonly value: "personal" | "bench";
+  readonly onChange: (scope: "personal" | "bench") => void;
+  readonly disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium">Who can see this</span>
+      <div className="flex gap-1.5" role="group" aria-label="Who can see this">
+        <Button
+          type="button"
+          variant={value === "personal" ? "primary" : "outline"}
+          size="sm"
+          disabled={disabled}
+          aria-pressed={value === "personal"}
+          onClick={() => onChange("personal")}
+        >
+          Just for you
+        </Button>
+        <Button
+          type="button"
+          variant={value === "bench" ? "primary" : "outline"}
+          size="sm"
+          disabled={disabled}
+          aria-pressed={value === "bench"}
+          onClick={() => onChange("bench")}
+        >
+          Everyone on this bench
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -796,6 +877,8 @@ function CreateRoutineDialog({
   initialDefinitionId = null,
   initialName = null,
   initialInput = null,
+  initialDeliveryChannelId = null,
+  onCreateAgent,
 }: {
   readonly tenantId?: string | null;
   readonly definitions: readonly WorkflowDefinitionSummary[];
@@ -823,6 +906,14 @@ function CreateRoutineDialog({
   readonly initialDefinitionId?: string | null;
   readonly initialName?: string | null;
   readonly initialInput?: Record<string, unknown> | null;
+  /** "New routine in this space" seam (see chat-workspace's header
+   * action and the `/routine` composer command): opens the dialog with
+   * this space pre-selected as the destination — the picker still
+   * shows it selected, and the person can still change it. */
+  readonly initialDeliveryChannelId?: string | null;
+  /** The recurring-task trigger field's "no taskable agents yet" empty
+   * state — see `AgentTriggerFieldPicker`'s own prop note. */
+  readonly onCreateAgent?: () => void;
 }) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = openProp ?? uncontrolledOpen;
@@ -843,9 +934,17 @@ function CreateRoutineDialog({
     Record<string, string>
   >({});
   const [prompt, setPrompt] = useState("");
-  const [deliveryChannelId, setDeliveryChannelId] = useState(
-    channels[0]?.id ?? "",
+  // The default destination is always a brand-new space named after
+  // the routine — an existing channel is an opt-in choice, not a
+  // precondition. A bench with zero channels sails through with no
+  // special-casing: the sentinel is valid regardless of `channels`.
+  const [deliveryDestination, setDeliveryDestination] = useState(
+    NEW_SPACE_DESTINATION,
   );
+  // Personal is the safer default blast radius — visible and editable
+  // only by the person who made it, until they deliberately widen it to
+  // the whole bench.
+  const [scope, setScope] = useState<"personal" | "bench">("personal");
   const [pendingDraft, setPendingDraft] = useState<RoutineDraft | null>(null);
   // The review step's own fallback pick when the draft has no
   // `definitionId` — Myra didn't pin a workflow, a valid honest
@@ -860,12 +959,6 @@ function CreateRoutineDialog({
     secret: string;
   } | null>(null);
 
-  useEffect(() => {
-    if (deliveryChannelId === "" && channels[0] !== undefined) {
-      setDeliveryChannelId(channels[0].id);
-    }
-  }, [channels, deliveryChannelId]);
-
   // "Make this a routine" seeds the catalog pick and name once, the
   // instant the dialog opens with a prefill — after that the person edits
   // freely, same as any other field in this stepper.
@@ -876,6 +969,9 @@ function CreateRoutineDialog({
       setDefinitionId(initialDefinitionId);
     }
     if (initialName !== null) setName(initialName);
+    if (initialDeliveryChannelId !== null) {
+      setDeliveryDestination(initialDeliveryChannelId);
+    }
     if (initialInput !== null) {
       // Seeds the Configure step's own trigger-field inputs (visibly
       // pre-filled, and counted toward `triggerFieldsSatisfied` so a
@@ -916,7 +1012,8 @@ function CreateRoutineDialog({
     setTrigger(null);
     setTriggerFieldValues({});
     setPrompt("");
-    setDeliveryChannelId(channels[0]?.id ?? "");
+    setDeliveryDestination(NEW_SPACE_DESTINATION);
+    setScope("personal");
     setPendingDraft(null);
     setDraftDefinitionPick("");
     setError(null);
@@ -960,15 +1057,41 @@ function CreateRoutineDialog({
   const canAdvanceFromSource =
     path === "catalog" ? selectedDefinition !== null : prompt.trim().length > 0;
 
+  // Myra's drafting run needs a real channel to draft into — unlike the
+  // catalog path, this can't defer to the create route's own
+  // auto-provisioning. Picking "new space" here mints the space up
+  // front (the same `@corbits/chat-ui` client the New Channel dialog
+  // uses), then drafts against it exactly as picking an existing
+  // channel always has.
   const draftAndAdvance = () => {
-    if (deliveryChannelId === "" || prompt.trim().length === 0) return;
+    if (
+      deliveryDestination === "" ||
+      prompt.trim().length === 0 ||
+      (deliveryDestination === NEW_SPACE_DESTINATION &&
+        (tenantId === null || tenantId === undefined))
+    )
+      return;
     setBusy(true);
     setError(null);
-    void onDescribe({
-      prompt: prompt.trim(),
-      deliveryChannelId,
-      scope: "bench",
-    })
+    const routineName = name.trim().length > 0 ? name.trim() : prompt.trim();
+    const resolvedChannelId: Promise<string> =
+      deliveryDestination === NEW_SPACE_DESTINATION
+        ? createChannel(tenantId as string, {
+            kind: "channel",
+            name: routineName,
+          }).then((channel) => {
+            setDeliveryDestination(channel.id);
+            return channel.id;
+          })
+        : Promise.resolve(deliveryDestination);
+    void resolvedChannelId
+      .then((deliveryChannelId) =>
+        onDescribe({
+          prompt: prompt.trim(),
+          deliveryChannelId,
+          scope,
+        }),
+      )
       .then((draft) => setPendingDraft(draft))
       .catch((cause: unknown) => {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -977,15 +1100,19 @@ function CreateRoutineDialog({
   };
 
   const createCatalogRoutine = () => {
-    if (
-      selectedDefinition === null ||
-      (deliversToChannel && deliveryChannelId === "")
-    )
-      return;
+    if (selectedDefinition === null) return;
     setBusy(true);
     setError(null);
     const routineName =
       name.trim().length > 0 ? name.trim() : selectedDefinition.name;
+    // A picked existing channel is sent as-is; "new space" sends no
+    // `deliveryChannelId` at all — the create route auto-provisions
+    // one named after the routine (`routineName`, above) rather than
+    // this dialog minting it up front.
+    const deliveryChannelId =
+      deliveryDestination === NEW_SPACE_DESTINATION
+        ? undefined
+        : deliveryDestination;
     // Threads the same field values a manual "Run once now" collects into
     // the stored routine.input record — the one seam the fire path
     // (packages/routines' POST /routines -> RoutineLauncher.launchRoutineRun)
@@ -1011,8 +1138,10 @@ function CreateRoutineDialog({
           onCreate({
             name: routineName,
             definitionId,
-            scope: "bench",
-            ...(deliversToChannel ? { deliveryChannelId } : {}),
+            scope,
+            ...(deliversToChannel && deliveryChannelId !== undefined
+              ? { deliveryChannelId }
+              : {}),
             trigger: { kind: "webhook", webhookTriggerId: binding.id },
             runOnceNow: false,
             ...(triggerInput !== undefined ? { input: triggerInput } : {}),
@@ -1036,8 +1165,10 @@ function CreateRoutineDialog({
     void onCreate({
       name: routineName,
       definitionId,
-      scope: "bench",
-      ...(deliversToChannel ? { deliveryChannelId } : {}),
+      scope,
+      ...(deliversToChannel && deliveryChannelId !== undefined
+        ? { deliveryChannelId }
+        : {}),
       trigger: runMode === "once" ? null : trigger,
       runOnceNow: runMode === "once",
       ...(triggerInput !== undefined ? { input: triggerInput } : {}),
@@ -1101,7 +1232,6 @@ function CreateRoutineDialog({
     primaryLabel = "Next";
     primaryDisabled =
       busy ||
-      (deliversToChannel && deliveryChannelId === "") ||
       !triggerFieldsSatisfied(
         selectedDefinition?.triggerFields ?? [],
         triggerFieldValues,
@@ -1109,7 +1239,7 @@ function CreateRoutineDialog({
     primaryOnClick = () => setStep(3);
   } else if (step === 2 && path === "describe" && pendingDraft === null) {
     primaryLabel = busy ? "Drafting…" : "Draft with agent";
-    primaryDisabled = busy || deliveryChannelId === "";
+    primaryDisabled = busy || deliveryDestination === "";
     primaryOnClick = draftAndAdvance;
   } else if (step === 2 && path === "describe" && pendingDraft !== null) {
     primaryLabel = "Next";
@@ -1124,7 +1254,6 @@ function CreateRoutineDialog({
     primaryDisabled =
       busy ||
       selectedDefinition === null ||
-      (deliversToChannel && deliveryChannelId === "") ||
       !triggerFieldsSatisfied(
         selectedDefinition?.triggerFields ?? [],
         triggerFieldValues,
@@ -1154,8 +1283,11 @@ function CreateRoutineDialog({
       : null;
   const autonomyLines =
     draft !== null ? autonomyReviewLines(draft.autonomy) : [];
-  const channelTitle =
-    channels.find((c) => c.id === deliveryChannelId)?.title ?? null;
+  const channelTitle = !deliversToChannel
+    ? null
+    : deliveryDestination === NEW_SPACE_DESTINATION
+      ? "a new space named after this routine"
+      : (channels.find((c) => c.id === deliveryDestination)?.title ?? null);
 
   return (
     <Dialog
@@ -1349,6 +1481,9 @@ function CreateRoutineDialog({
                                 [field.key]: id,
                               }))
                             }
+                            {...(onCreateAgent !== undefined
+                              ? { onCreateAgent }
+                              : {})}
                           />
                         ) : (
                           <Input
@@ -1381,10 +1516,10 @@ function CreateRoutineDialog({
                     >
                       Deliver results to
                     </span>
-                    <DeliveryChannelPicker
+                    <DeliveryDestinationPicker
                       channels={channels}
-                      value={deliveryChannelId}
-                      onChange={setDeliveryChannelId}
+                      value={deliveryDestination}
+                      onChange={setDeliveryDestination}
                       disabled={busy}
                     />
                   </div>
@@ -1402,24 +1537,36 @@ function CreateRoutineDialog({
                     </p>
                   </div>
                 )}
+                <RoutineScopePicker
+                  value={scope}
+                  onChange={setScope}
+                  disabled={busy}
+                />
               </>
             ) : null}
 
             {step === 2 && path === "describe" && pendingDraft === null ? (
-              <div className="flex flex-col gap-1.5">
-                <span
-                  id="routine-delivery-label"
-                  className="text-xs font-medium"
-                >
-                  Deliver results to
-                </span>
-                <DeliveryChannelPicker
-                  channels={channels}
-                  value={deliveryChannelId}
-                  onChange={setDeliveryChannelId}
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <span
+                    id="routine-delivery-label"
+                    className="text-xs font-medium"
+                  >
+                    Deliver results to
+                  </span>
+                  <DeliveryDestinationPicker
+                    channels={channels}
+                    value={deliveryDestination}
+                    onChange={setDeliveryDestination}
+                    disabled={busy}
+                  />
+                </div>
+                <RoutineScopePicker
+                  value={scope}
+                  onChange={setScope}
                   disabled={busy}
                 />
-              </div>
+              </>
             ) : null}
 
             {step === 2 && path === "describe" && draft !== null ? (
@@ -1627,7 +1774,7 @@ function EditRoutineDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent side="right">
         <DialogHeader>
           <DialogTitle>Edit routine</DialogTitle>
           <DialogDescription>Name and cadence only.</DialogDescription>
@@ -1803,6 +1950,7 @@ export function RoutinesListPage({
   onEdit,
   onOpenRuns,
   onOpenChannel,
+  onCreateAgent,
 }: {
   readonly tenantId?: string | null;
   readonly routines: APIQuery<readonly Routine[]>;
@@ -1834,6 +1982,8 @@ export function RoutinesListPage({
   ) => Promise<void>;
   readonly onOpenRuns: () => void;
   readonly onOpenChannel: (channelId: string) => void;
+  /** Threaded to `CreateRoutineDialog` — see its own prop note. */
+  readonly onCreateAgent?: () => void;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -1960,6 +2110,7 @@ export function RoutinesListPage({
         onDescribe={onDescribe}
         onApproveDraft={onApproveDraft}
         onDiscardDraft={onDiscardDraft}
+        {...(onCreateAgent !== undefined ? { onCreateAgent } : {})}
         open={createOpen}
         onOpenChange={(next) => {
           setCreateOpen(next);
@@ -1970,6 +2121,7 @@ export function RoutinesListPage({
         initialDefinitionId={createPrefill?.definitionId ?? null}
         initialName={createPrefill?.name ?? null}
         initialInput={createPrefill?.input ?? null}
+        initialDeliveryChannelId={createPrefill?.deliveryChannelId ?? null}
       />
       {selected !== null ? (
         <EditRoutineDialog
@@ -2079,6 +2231,7 @@ export function RoutineDetailPage({
   onBack,
   now = Date.now(),
   definitions = [],
+  channels = [],
   webhookTrigger = null,
   onRotateWebhookSecret,
   onOpenRuns,
@@ -2090,6 +2243,7 @@ export function RoutineDetailPage({
   readonly onBack: () => void;
   readonly now?: number;
   readonly definitions?: readonly WorkflowDefinitionSummary[];
+  readonly channels?: readonly Channel[];
   readonly webhookTrigger?: APIQuery<WebhookTrigger> | null;
   readonly onRotateWebhookSecret?: () => Promise<{ secret: string }>;
   readonly onOpenRuns: () => void;
@@ -2151,6 +2305,27 @@ export function RoutineDetailPage({
                       {data.enabled ? "On" : "Off"}
                     </Badge>
                   </dd>
+                  {data.deliveryChannelId !== null ? (
+                    <>
+                      <dt className="text-[var(--ui-fg-muted)]">
+                        Delivers to
+                      </dt>
+                      <dd>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto p-0 font-normal"
+                          onClick={() =>
+                            onOpenChannel(data.deliveryChannelId as string)
+                          }
+                        >
+                          {channels.find((c) => c.id === data.deliveryChannelId)
+                            ?.title ?? "Open space"}
+                        </Button>
+                      </dd>
+                    </>
+                  ) : null}
                 </dl>
                 {routinePausedMessage(data) !== null ? (
                   <div
@@ -2438,6 +2613,7 @@ export function RoutinesRoute({
         routine={detailRoutine}
         runs={detailRuns}
         definitions={definitions}
+        channels={channels}
         webhookTrigger={
           selectedWebhookTriggerId !== null ? webhookTriggerQuery : null
         }
@@ -2487,6 +2663,12 @@ export function RoutinesRoute({
         selectedWebhookTriggerId !== null ? webhookTriggerQuery : null
       }
       onRotateWebhookSecret={onRotateWebhookSecret}
+      onCreateAgent={() =>
+        requestNewAgent({
+          alreadyOnAgentsSettings: path === "/settings/agents",
+          navigateToAgentsSettings: () => navigate("/settings/agents"),
+        })
+      }
       onDescribe={async (input) => {
         if (tenantId === null)
           throw new Error("No workbench to draft this in yet");

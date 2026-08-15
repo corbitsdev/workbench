@@ -36,4 +36,12 @@ describe("routine prefill", () => {
 
     expect(consumePendingRoutinePrefill()).toBe(null);
   });
+
+  test("a space-only prefill (no catalog pick) round-trips just its deliveryChannelId", () => {
+    setPendingRoutinePrefill({ deliveryChannelId: "ch_space1" });
+
+    expect(consumePendingRoutinePrefill()).toEqual({
+      deliveryChannelId: "ch_space1",
+    });
+  });
 });
