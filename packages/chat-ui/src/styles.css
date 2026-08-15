@@ -1829,6 +1829,11 @@
   resize: vertical;
 }
 
+.chat-textarea:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: -2px;
+}
+
 .chat-new-channel-form {
   display: flex;
   flex-direction: column;
@@ -1855,16 +1860,48 @@
   color: var(--muted-foreground);
 }
 
+/* Vertical padding + min-height clear the 40px hit-area floor (shared
+   with .tasks-radio-option in packages/tasks-ui/src/styles.css, which
+   mirrors this class). */
 .chat-radio-option {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.25rem;
   font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.chat-radio-option:has(input:focus-visible) {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: -2px;
+  border-radius: var(--radius, 0.375rem);
 }
 
 .chat-dialog-error {
   margin: 0;
   color: var(--destructive);
+  font-size: 0.875rem;
+}
+
+.chat-invitable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-invitable-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 0.5rem 0.65rem;
   font-size: 0.875rem;
 }
 

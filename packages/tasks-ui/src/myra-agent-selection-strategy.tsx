@@ -103,31 +103,49 @@ export function createMyraAgentSelectionStrategy(
 
     return (
       <>
-        <label
-          className="tasks-radio-option"
-          data-testid="new-task-agent-option"
-        >
-          <input
-            type="radio"
-            name="task-agent-mode"
-            checked={mode === "myra"}
-            onChange={chooseMyra}
-          />
-          Let Myra choose — Myra reads your prompt and picks or creates the
-          right agent.
-        </label>
-        <label
-          className="tasks-radio-option"
-          data-testid="new-task-agent-option"
-        >
-          <input
-            type="radio"
-            name="task-agent-mode"
-            checked={mode === "manual"}
-            onChange={chooseManually}
-          />
-          Choose an agent yourself
-        </label>
+        {/* No role="radiogroup" here — the fieldset/legend "Agent" that
+            hosts this strategy in task-composer-dialog.tsx already
+            provides the group semantics; a second ARIA group nested
+            inside it would be redundant. This div exists only for the
+            visual gap between the two stacked options. */}
+        <div className="tasks-radio-group">
+          <label
+            className="tasks-radio-option"
+            data-testid="new-task-agent-option"
+          >
+            <input
+              type="radio"
+              name="task-agent-mode"
+              checked={mode === "myra"}
+              onChange={chooseMyra}
+            />
+            <span className="tasks-radio-option-text">
+              <span className="tasks-radio-option-title">Let Myra choose</span>
+              <span className="tasks-radio-option-desc">
+                Myra reads your prompt and picks or creates the right agent.
+              </span>
+            </span>
+          </label>
+          <label
+            className="tasks-radio-option"
+            data-testid="new-task-agent-option"
+          >
+            <input
+              type="radio"
+              name="task-agent-mode"
+              checked={mode === "manual"}
+              onChange={chooseManually}
+            />
+            <span className="tasks-radio-option-text">
+              <span className="tasks-radio-option-title">
+                Choose an agent yourself
+              </span>
+              <span className="tasks-radio-option-desc">
+                Pick from your agents and set the prompt yourself.
+              </span>
+            </span>
+          </label>
+        </div>
         {mode === "manual" ? (
           <ManualStrategy
             tenantId={tenantId}
