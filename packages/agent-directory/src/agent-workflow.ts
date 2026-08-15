@@ -14,6 +14,7 @@
 import { defineAgent } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
+import type { ToolPackagePin } from "@intx/types/tool-packages";
 import {
   withAvailableSkills,
   type PinnedSkillIndexEntry,
@@ -157,6 +158,20 @@ export interface AgentDefinitionWorkflowInput {
    * against the live catalog (see `resolveDefinitionSources`), not
    * baked into the definition. */
   readonly model?: string;
+  /**
+   * Tool packages pinned directly on this definition — connector tool
+   * bundles (e.g. `@corbits/granola-tools`) a planner-created agent
+   * needs beyond what skills reindexing pins. Additive: undeclared or
+   * empty behaves exactly like a definition built before this field
+   * existed. `defineAgent`'s own `DefineAgentConfig` has no field for
+   * this (only `AgentDefinition` itself carries `toolPackagePins`, as
+   * a passthrough for the sidecar's tool-materialization step — see
+   * `@intx/agent`'s `definition.ts`), so it is set directly on the
+   * definition `defineAgent` returns rather than threaded through the
+   * config, mirroring how `reindexPinnedSkills` sets the same field
+   * post-hoc for skills.
+   */
+  readonly toolPackagePins?: readonly ToolPackagePin[];
 }
 
 /**
@@ -176,29 +191,33 @@ export function buildAgentDefinitionWorkflow(
       "buildAgentDefinitionWorkflow requires a non-empty systemPrompt",
     );
   }
+  const agent = defineAgent({
+    id: AGENT_DEFINITION_STEP_ID,
+    description: input.description,
+    systemPrompt: input.systemPrompt,
+    tools: [],
+    capabilities: [],
+    inference: {
+      // `provider` only participates in deploy-hash bookkeeping —
+      // launch-time resolution reads `model` alone and resolves a
+      // provider fresh against the tenant catalog (see
+      // `resolveDefinitionSources`), so a placeholder here costs
+      // nothing real.
+      sources:
+        input.model !== undefined
+          ? [{ provider: "catalog", model: input.model }]
+          : [],
+    },
+  });
   return defineWorkflow({
     id: `wf_agent_${input.handle}`,
     trigger: { type: "mail", to: `${input.handle}@${input.tenantDomain}` },
     steps: {
       [AGENT_DEFINITION_STEP_ID]: step({
-        agent: defineAgent({
-          id: AGENT_DEFINITION_STEP_ID,
-          description: input.description,
-          systemPrompt: input.systemPrompt,
-          tools: [],
-          capabilities: [],
-          inference: {
-            // `provider` only participates in deploy-hash bookkeeping —
-            // launch-time resolution reads `model` alone and resolves a
-            // provider fresh against the tenant catalog (see
-            // `resolveDefinitionSources`), so a placeholder here costs
-            // nothing real.
-            sources:
-              input.model !== undefined
-                ? [{ provider: "catalog", model: input.model }]
-                : [],
-          },
-        }),
+        agent:
+          input.toolPackagePins !== undefined
+            ? { ...agent, toolPackagePins: input.toolPackagePins }
+            : agent,
         timeout: AGENT_DEFINITION_TURN_TIMEOUT_MS,
       }),
     },
