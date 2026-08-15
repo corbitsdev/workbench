@@ -8,7 +8,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { createApprovalStore, createDB, createGrantStore } from "@intx/db";
-import { workflowDefinition } from "@intx/db/schema";
+import { model, tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { and, eq } from "drizzle-orm";
 import {
   createEnvKeyCredentialCipher,
@@ -25,7 +25,14 @@ import {
   type TenantEnv,
 } from "@intx/hub-api";
 
-import { createAgentDefinitionRoutes } from "@corbits/agent-directory";
+import {
+  AGENT_SKILLS_ASSET_PATH,
+  buildAgentDefinitionWorkflow,
+  createAgentDefinitionRoutes,
+  reindexPinnedSkills,
+  serializeAgentDefinitionWorkflow,
+  serializeAgentSkills,
+} from "@corbits/agent-directory";
 
 import {
   createArtifactDeliveryHandler,
@@ -86,7 +93,10 @@ import {
   createWebhookTriggerRoutes,
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
-import { isAutomatableWorkflowName } from "@corbits/workflow-catalog";
+import {
+  isAutomatableWorkflowName,
+  workflowDisplayName,
+} from "@corbits/workflow-catalog";
 import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
@@ -99,6 +109,16 @@ import {
   createTaskRoutes,
   launchTask,
 } from "@corbits/tasks";
+import {
+  createPlannerRoutes,
+  dispatchWithPlanner,
+  resolveMyraDefinitionIdFromDb,
+  runOneShotFoldedPrompt,
+  type InventoryAgent,
+  type InventoryModel,
+  type InventorySources,
+  type InventoryToolPackage,
+} from "@corbits/task-planner";
 
 import {
   createAgentRepoStore,
@@ -109,6 +129,8 @@ import {
   createSessionService,
   createSidecarRouter,
   createSidecarTokenAuthenticator,
+  DEFAULT_ASSET_REF,
+  ensureWorkflowDefinitionForAsset,
   type WsHandle,
 } from "@intx/hub-sessions";
 import { getLogger, setup } from "@intx/log";
@@ -137,6 +159,7 @@ import {
   createOnboardingRoutes,
 } from "@workbench/onboarding";
 import { createConnectionRoutes } from "@workbench/connections";
+import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import {
   applyAccessPolicyMigrations,
   createAccessPolicyRoutes,
@@ -1098,6 +1121,220 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       launch: (input) => launchTask(taskLauncherDeps, input),
+    }),
+  );
+
+  // Myra auto-dispatch (CL-6051): a typed outcome becomes a validated
+  // task plan via `@corbits/task-planner`, dispatched exactly like a
+  // manually-launched task. Every inventory lister below generalizes a
+  // pattern that already lives elsewhere in this composition root
+  // (`isConversationalAgentDefinition`, `chatDeps.channelHostInferencePreferences`'s
+  // per-tenant connected-provider derivation) — this package owns the
+  // inventory's shape, never the listing logic.
+  const memoryToolPackageName = "@corbits/memory-tools";
+
+  async function listMyraConversationalAgents(
+    tenantId: string,
+  ): Promise<readonly InventoryAgent[]> {
+    const rows = await db.query.workflowDefinition.findMany({
+      where: and(
+        eq(workflowDefinition.tenantId, tenantId),
+        eq(workflowDefinition.status, "deployed"),
+      ),
+    });
+    return rows
+      .filter((row) => isConversationalAgentDefinition(row))
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        displayName: workflowDisplayName(row.name, row.description),
+        ...(row.description !== null ? { description: row.description } : {}),
+      }));
+  }
+
+  async function listMyraUsableToolPackages(
+    tenantId: string,
+  ): Promise<readonly InventoryToolPackage[]> {
+    const connectedConnectorIds = await listConnectedProviders(db, tenantId);
+    const entries: InventoryToolPackage[] = [];
+    for (const connectorId of connectedConnectorIds) {
+      const descriptor = CONNECTOR_REGISTRY[connectorId];
+      if (descriptor === undefined) continue;
+      for (const toolPackageName of descriptor.feedsTools) {
+        entries.push({ name: toolPackageName, connectorId: descriptor.id });
+      }
+    }
+    if (memoryHandle !== undefined) {
+      entries.push({ name: memoryToolPackageName, connectorId: "memory" });
+    }
+    return entries;
+  }
+
+  async function listMyraModels(
+    tenantId: string,
+  ): Promise<readonly InventoryModel[]> {
+    const rows = await db.query.model.findMany({
+      where: and(eq(model.tenantId, tenantId), eq(model.disabled, false)),
+    });
+    return rows.map((row) => ({
+      canonicalName: row.canonicalName,
+      ...(row.displayName !== null ? { displayName: row.displayName } : {}),
+    }));
+  }
+
+  const plannerInventorySources: InventorySources = {
+    listConversationalAgents: listMyraConversationalAgents,
+    listUsableToolPackages: listMyraUsableToolPackages,
+    listSkills: (caller) => skills.registry.list(caller),
+    memoryAvailable: memoryHandle !== undefined,
+    listModels: listMyraModels,
+  };
+
+  // Mirrors `@corbits/agent-directory`'s own private
+  // `AGENT_DEFINITION_ASSET_PATH` constant (not exported — the route
+  // module keeps it internal), kept in lockstep by convention since
+  // this is the same asset-tree contract `ensureWorkflowDefinitionForAsset`
+  // reads back from.
+  const PLANNER_AGENT_DEFINITION_ASSET_PATH = "workflow.json";
+
+  function slugifyAgentHandle(name: string): string {
+    const base = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    // A random suffix rather than the create-route's duplicate-asset
+    // retry/409 dance: a planner-created handle is never shown to a
+    // person to retype, so collision recovery has no UI to serve — a
+    // random suffix makes collision practically impossible instead.
+    const suffix = generateId("workflowDefinition").slice(-8);
+    return `${base === "" ? "agent" : base}-${suffix}`;
+  }
+
+  /**
+   * Wraps the same sequence `@corbits/agent-directory`'s `POST /`
+   * handler runs (`buildAgentDefinitionWorkflow` → `reindexPinnedSkills`
+   * when skills are present → `createAsset` + `populateAsset` →
+   * `ensureWorkflowDefinitionForAsset`), reusing the exact `db`,
+   * `assetService`, and `skills.skillIndex` already in scope — never a
+   * second instance of any of them. The one addition beyond that route's
+   * own input is `toolPackagePins`, which the REST boundary deliberately
+   * has no field for (see `@corbits/agent-directory`'s `validation.ts`)
+   * since only this in-process planner caller needs it.
+   */
+  async function deployAgentDefinition(input: {
+    readonly tenantId: string;
+    readonly principalId: string;
+    readonly name: string;
+    readonly systemPrompt: string;
+    readonly toolPackagePins: readonly string[];
+    readonly skills: readonly string[];
+    readonly model?: string;
+  }): Promise<{ readonly definitionId: string }> {
+    const tenantRow = await db.query.tenant.findFirst({
+      where: eq(tenantTable.id, input.tenantId),
+    });
+    if (tenantRow === undefined) {
+      throw new Error(`No tenant "${input.tenantId}"`);
+    }
+
+    const handle = slugifyAgentHandle(input.name);
+    const skillEntries =
+      input.skills.length > 0
+        ? await skills.skillIndex.resolve(
+            input.tenantId,
+            input.principalId,
+            input.skills,
+          )
+        : [];
+
+    const definition = buildAgentDefinitionWorkflow({
+      handle,
+      tenantDomain: tenantRow.domain,
+      description: "",
+      systemPrompt: input.systemPrompt,
+      ...(input.model !== undefined ? { model: input.model } : {}),
+      ...(input.toolPackagePins.length > 0
+        ? {
+            toolPackagePins: input.toolPackagePins.map((name) => ({
+              name,
+              version: "*",
+            })),
+          }
+        : {}),
+    });
+    const workflowJson = reindexPinnedSkills(
+      serializeAgentDefinitionWorkflow(definition),
+      skillEntries,
+    );
+    const skillsJson = serializeAgentSkills(input.skills);
+
+    const created = await assetService.createAsset({
+      tenantId: input.tenantId,
+      kind: "workflow",
+      name: handle,
+      displayName: input.name,
+      creatorPrincipalId: input.principalId,
+    });
+
+    await assetService.populateAsset({
+      assetId: created.id,
+      ref: DEFAULT_ASSET_REF,
+      principal: { kind: "hub" },
+      tree: {
+        files: {
+          [PLANNER_AGENT_DEFINITION_ASSET_PATH]: workflowJson,
+          [AGENT_SKILLS_ASSET_PATH]: skillsJson,
+        },
+        message: `Define agent ${input.name}`,
+      },
+    });
+
+    const { definitionId } = await ensureWorkflowDefinitionForAsset(
+      db,
+      created.id,
+    );
+    return { definitionId };
+  }
+
+  // A separate `CryptoProviderCache` from the task launcher's own
+  // (`taskLauncherDeps.cryptoProviders`): a planning run's instance id
+  // is never a real task's, but the cache is keyed by instance id
+  // regardless, and a planning run's one-shot prompt/reply cadence has
+  // nothing to do with a launched task's — separate caches keep the
+  // two lifecycles from ever contending over the same key space.
+  const plannerCryptoProviders = createCryptoProviderCache();
+
+  app.route(
+    `${TENANT_PREFIX}/planner`,
+    createPlannerRoutes({
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      dispatch: (input) =>
+        dispatchWithPlanner(
+          {
+            db,
+            runner: {
+              run: (runnerInput) =>
+                runOneShotFoldedPrompt(
+                  {
+                    foldedRuns: taskLauncherDeps.foldedRuns,
+                    events: sidecarRouter.events,
+                    cryptoProviders: plannerCryptoProviders,
+                  },
+                  runnerInput,
+                ),
+            },
+            inventorySources: plannerInventorySources,
+            resolveMyraDefinitionId: (tenantId) =>
+              resolveMyraDefinitionIdFromDb(db, tenantId),
+            taskLauncherDeps,
+            store: taskStore,
+            deployAgentDefinition,
+          },
+          input,
+        ),
     }),
   );
 
