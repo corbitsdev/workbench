@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
+import { QueryClient } from "@tanstack/react-query";
 
 import {
   createInsightsWindow,
@@ -23,16 +24,21 @@ import { NavigationProvider } from "../src/navigation";
 import {
   InsightsPage,
   InsightsRunDetail,
+  InsightsRunDetailRoute,
   InsightsRunsHistory,
 } from "../src/pages/insights-page";
+import { shouldRetryQuery } from "../src/query-client";
 import type { Routine } from "../src/routines-api";
-import { TestQueryProvider } from "./test-query-provider";
+import {
+  createTestQueryClient,
+  TestQueryProvider,
+} from "./test-query-provider";
 
 const range = createInsightsWindow(7, new Date("2026-01-15T18:00:00.000Z"));
 
-const emptyRuns: APIQuery<{ data: readonly never[] }> = {
+const emptyRuns: APIQuery<{ data: readonly never[]; nextCursor: null }> = {
   kind: "ready",
-  data: { data: [] },
+  data: { data: [], nextCursor: null },
 };
 const emptyRoutines: APIQuery<readonly Routine[]> = {
   kind: "ready",
@@ -145,7 +151,10 @@ function renderAtPath(path: string): string {
             summary={{ kind: "ready", data: EMPTY_OVERALL_USAGE }}
             activity={{ kind: "ready", data: [] }}
             byTool={{ kind: "ready", data: [] }}
-            runs={{ kind: "ready", data: { data: [purposeRun] } }}
+            runs={{
+              kind: "ready",
+              data: { data: [purposeRun], nextCursor: null },
+            }}
             routines={emptyRoutines}
             range={range}
           />
@@ -508,6 +517,7 @@ describe("InsightsRunsHistory definition grouping", () => {
       <InsightsRunsHistory
         runs={runs}
         loading={false}
+        nextCursor={null}
         onOpenRun={() => undefined}
         onBack={() => undefined}
       />,
@@ -519,6 +529,7 @@ describe("InsightsRunsHistory definition grouping", () => {
     const firstGroupRows = groups[0]?.querySelectorAll("tbody tr") ?? [];
     expect(firstGroupRows.length).toBe(2);
     expect(firstGroupRows[0]?.textContent).toContain("error");
+    expect(el.textContent).not.toContain("Showing the 100 most recent runs.");
   });
 
   test("no runs renders an honest empty state, not empty tables", () => {
@@ -526,11 +537,175 @@ describe("InsightsRunsHistory definition grouping", () => {
       <InsightsRunsHistory
         runs={[]}
         loading={false}
+        nextCursor={null}
         onOpenRun={() => undefined}
         onBack={() => undefined}
       />,
     );
     expect(el.querySelector("[data-definition-group]")).toBeNull();
     expect(el.textContent).toContain("No purpose runs yet");
+  });
+
+  test("a non-null nextCursor tells the reader more runs exist beyond the 100 shown", () => {
+    const el = mount(
+      <InsightsRunsHistory
+        runs={[insightsRun({ id: "a1", status: "deployed" })]}
+        loading={false}
+        nextCursor="cursor_2"
+        onOpenRun={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    expect(el.textContent).toContain("Showing the 100 most recent runs.");
+  });
+});
+
+describe("InsightsRunDetailRoute wiring", () => {
+  const realFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  function json(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const readyTrace = { runId: "run_1", spans: [] };
+
+  async function mountRoute(
+    client: QueryClient = createTestQueryClient(),
+  ): Promise<HTMLDivElement> {
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    const r = createRoot(el);
+    await act(async () => {
+      r.render(
+        <TestQueryProvider client={client}>
+          <InsightsRunDetailRoute
+            runId="run_1"
+            run={null}
+            tenantId="tnt_1"
+            onBack={() => undefined}
+            onOpenRun={() => undefined}
+          />
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    return el;
+  }
+
+  test("a 404 on the by-run lookup is the true quiet no-op: plain view, no error note, no retries", async () => {
+    const calls: string[] = [];
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      calls.push(path);
+      if (path.includes("/tasks/by-run/")) {
+        return Promise.resolve(json({ error: "not found" }, 404));
+      }
+      if (path.includes("/trace")) {
+        return Promise.resolve(json(readyTrace));
+      }
+      return Promise.resolve(json({ error: "unexpected" }, 500));
+    }) as typeof fetch;
+
+    // The real app retry predicate (`shouldRetryQuery`), not the test
+    // client's blanket retry:false — this is what proves the 404 branch
+    // actually stops react-query from retrying, not just that the test
+    // harness never retries anything.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0 } },
+    });
+
+    const el = await mountRoute(client);
+
+    expect(el.querySelector("[data-insights-chain-strip]")).toBeNull();
+    expect(el.textContent).not.toContain(
+      "Couldn't check this run's task context",
+    );
+    const byRunCalls = calls.filter((c) => c.includes("/tasks/by-run/"));
+    expect(byRunCalls.length).toBe(1);
+  });
+
+  test("a 500 on the by-run lookup renders an honest inline note, never a silent omission", async () => {
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/tasks/by-run/")) {
+        return Promise.resolve(json({ error: "boom" }, 500));
+      }
+      if (path.includes("/trace")) {
+        return Promise.resolve(json(readyTrace));
+      }
+      return Promise.resolve(json({ error: "unexpected" }, 500));
+    }) as typeof fetch;
+
+    const el = await mountRoute();
+
+    expect(el.textContent).toContain("Couldn't check this run's task context");
+    expect(el.querySelector("[data-insights-chain-strip]")).toBeNull();
+  });
+
+  test("chained happy path: by-run resolves, legs fetch, and the strip renders through the real component tree", async () => {
+    const task = {
+      id: "task_1",
+      definitionId: "wfd_agent",
+      agentName: "Agent",
+      prompt: "do the thing",
+      status: "running",
+      runId: "run_1",
+      runIds: ["run_1", "run_2"],
+      stepCount: 2,
+    };
+    const legs = [
+      {
+        position: 0,
+        definitionId: "wfd_first",
+        prompt: "p1",
+        status: "done",
+        runId: "run_1",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        settledAt: "2026-01-01T00:00:05.000Z",
+      },
+      {
+        position: 1,
+        definitionId: "wfd_second",
+        prompt: "p2",
+        status: "running",
+        runId: "run_2",
+        startedAt: "2026-01-01T00:00:05.000Z",
+        settledAt: null,
+      },
+    ];
+
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/tasks/by-run/")) {
+        return Promise.resolve(json({ item: task }));
+      }
+      if (path.includes("/legs")) {
+        return Promise.resolve(json({ items: legs }));
+      }
+      if (path.includes("/trace")) {
+        return Promise.resolve(json(readyTrace));
+      }
+      return Promise.resolve(json({ error: "unexpected" }, 500));
+    }) as typeof fetch;
+
+    const el = await mountRoute();
+
+    expect(el.querySelector("[data-insights-chain-strip]")).not.toBeNull();
+    expect(el.textContent).toContain("Step 1 of 2");
+    expect(el.textContent).toContain("Step 2 of 2");
+    expect(el.textContent).not.toContain(
+      "Couldn't check this run's task context",
+    );
   });
 });
