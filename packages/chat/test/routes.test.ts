@@ -931,6 +931,47 @@ describe("GET /channels/:id/invitable", () => {
     const response = await app.request(`/channels/ins_x/invitable`);
     expect(response.status).toBe(403);
   });
+
+  test("a nonexistent channel 404s", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [{ id: "wfd_echo", name: "echo" }],
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request(`/channels/ins_missing/invitable`);
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("GET /invitable-definitions", () => {
+  test("lists the tenant's invitable definitions with no channel required", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [{ id: "wfd_echo", name: "echo" }],
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request(`/invitable-definitions`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      items: { id: string; name: string }[];
+    };
+    expect(body.items).toEqual([{ id: "wfd_echo", name: "echo" }]);
+  });
+
+  test("a denied grant is rejected", async () => {
+    const deps = buildDeps({
+      requireGrant: () => async (c) =>
+        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request(`/invitable-definitions`);
+    expect(response.status).toBe(403);
+  });
 });
 
 describe("typing", () => {
