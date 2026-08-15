@@ -19,6 +19,7 @@ import type { APIQuery } from "@corbits/api-query";
 import { QueryView, SignedOutNotice } from "@corbits/api-query";
 import { listTenantInvitableDefinitions } from "@corbits/chat-ui";
 import {
+  createManualAgentSelectionStrategy,
   createTask,
   listCatalogModels,
   TaskComposerDialog,
@@ -31,6 +32,10 @@ import {
   consumePendingNewTask,
   NEW_TASK_EVENT,
 } from "../command-palette-actions";
+import {
+  loadMostRecentTaskAgent,
+  saveMostRecentTaskAgent,
+} from "../task-mru-agent";
 import {
   InboxCountsSchema,
   InboxItemDetailSchema,
@@ -380,6 +385,7 @@ export function InboxPage({
     setTaskError(null);
     createTask(selectedTenantId, input)
       .then(() => {
+        saveMostRecentTaskAgent(selectedTenantId, input.definitionId);
         setTaskDialogOpen(false);
       })
       .catch((cause: unknown) => {
@@ -391,6 +397,18 @@ export function InboxPage({
       })
       .finally(() => setTaskSubmitting(false));
   }
+
+  // A stable strategy reference across renders — recreating it every
+  // render would remount the strategy component on every parent
+  // re-render, refetching the agent list mid-composer. Wired to the
+  // manual picker here, explicitly, per `AgentSelectionStrategy`'s own
+  // "no default, no fallback" contract — a future strategy (CL-6050)
+  // is a different value passed to this same prop, never a change to
+  // TaskComposerDialog itself.
+  const taskAgentSelectionStrategy = useMemo(
+    () => createManualAgentSelectionStrategy(listTenantInvitableDefinitions),
+    [],
+  );
 
   if (selectedTenantId === null || listQuery.kind === "unauthenticated") {
     return (
@@ -409,8 +427,9 @@ export function InboxPage({
         tenantId={selectedTenantId}
         submitting={taskSubmitting}
         error={taskError}
-        listAgents={listTenantInvitableDefinitions}
+        agentSelectionStrategy={taskAgentSelectionStrategy}
         listModels={listCatalogModels}
+        initialDefinitionId={loadMostRecentTaskAgent(selectedTenantId)}
       />
       <StageTopBar
         title="Inbox"

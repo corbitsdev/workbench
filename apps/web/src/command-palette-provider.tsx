@@ -27,6 +27,7 @@ import {
 import { OPEN_COMMAND_PALETTE_EVENT } from "./command-palette-events";
 import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
+import { isNewTaskShortcutEvent } from "./task-shortcut";
 import { ArtifactListPageSchema, RunsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
@@ -207,6 +208,42 @@ export function CommandPaletteProvider({
   );
 
   useCommandShortcut(() => setOpen((current) => !current));
+
+  // Global "New task" shortcut (Cmd+T / Ctrl+T), mounted at the same
+  // provider level as the command palette's own Cmd+K listener above
+  // (`app.tsx`'s `Shell`, live on every path for the whole session) so
+  // it fires from anywhere, not just from a page that happens to own
+  // the dialog. Guard structure mirrors react-ui's `useCommandShortcut`
+  // exactly — `event.repeat` skipped, `input`/`textarea`/`select`/
+  // contentEditable targets skipped so typing "t" never hijacks a text
+  // field, `metaKey || ctrlKey` so both mac and non-mac work without
+  // OS-sniffing, `preventDefault()` only once every guard passes.
+  //
+  // Caveat this repo cannot route around: browsers and OSes reserve
+  // Cmd+T/Ctrl+T for "new browser tab" and intercept the keystroke
+  // before it ever reaches this listener, in many browser/OS
+  // combinations (notably most desktop browsers when the page — not
+  // an embedded webview — owns the tab chrome). This handler only
+  // fires in the remaining cases (some browsers, some platforms, or
+  // when the reservation doesn't apply); it is not a guaranteed global
+  // hotkey. The command palette's own "New task" entry (`> New task`)
+  // is the reliable fallback and is unaffected by this caveat.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!isNewTaskShortcutEvent(event)) return;
+      event.preventDefault();
+      void runActionCommand("new-task", {
+        path,
+        navigate,
+        tenantId: selectedTenantId,
+        cycleTheme: cycleMode,
+        closeCanvas,
+        toggleCol2,
+      });
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [path, navigate, selectedTenantId, cycleMode, closeCanvas, toggleCol2]);
 
   useEffect(() => {
     function onOpenRequest() {

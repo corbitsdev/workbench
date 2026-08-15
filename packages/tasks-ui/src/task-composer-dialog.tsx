@@ -1,6 +1,7 @@
-// The "New task" affordance: pick an agent definition, write a prompt,
-// optionally pick a model (only when the tenant's dynamic model
-// catalog offers more than the empty set — mirrors
+// The "New task" affordance: pick an agent (via an injected
+// `AgentSelectionStrategy` — see ./agent-selection-strategy.tsx),
+// write a prompt, optionally pick a model (only when the tenant's
+// dynamic model catalog offers more than the empty set — mirrors
 // `apps/web/src/pages/create-agent-dialog.tsx`'s own "hide when
 // there's nothing to pick" rule). Submitting launches the task and
 // closes; the result reaches the caller later through the Inbox, not
@@ -15,13 +16,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  EmptyState,
-  Skeleton,
 } from "@corbits/react-ui";
-import type { InvitableDefinition } from "@corbits/chat-ui";
-import { CircleAlert, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import type { AgentSelectionStrategy } from "./agent-selection-strategy";
 import type { CatalogModel } from "./api";
 
 type ListState<T> =
@@ -43,8 +41,9 @@ export function TaskComposerDialog({
   tenantId,
   submitting,
   error = null,
-  listAgents,
+  agentSelectionStrategy: AgentSelection,
   listModels,
+  initialDefinitionId = null,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -56,47 +55,39 @@ export function TaskComposerDialog({
   readonly tenantId: string;
   readonly submitting: boolean;
   readonly error?: string | null;
-  readonly listAgents: (
-    tenantId: string,
-  ) => Promise<readonly InvitableDefinition[]>;
+  /** Renders the "Agent" field — see ./agent-selection-strategy.tsx.
+   * Required, never defaulted: a caller wires its own strategy (the
+   * manual picker today) explicitly. */
+  readonly agentSelectionStrategy: AgentSelectionStrategy;
   readonly listModels: (tenantId: string) => Promise<readonly CatalogModel[]>;
+  /** The most-recently-used agent, if the caller tracks one (e.g. the
+   * global Cmd+T shortcut preselects it) — pre-selects the field the
+   * strategy renders, without changing how the strategy itself picks
+   * an agent. Absent means no default, the same as before this prop
+   * existed. */
+  readonly initialDefinitionId?: string | null;
 }) {
-  const [definitionId, setDefinitionId] = useState<string | null>(null);
+  const [definitionId, setDefinitionId] = useState<string | null>(
+    initialDefinitionId,
+  );
   const [prompt, setPrompt] = useState("");
   const [modelPreference, setModelPreference] = useState<string>("");
-  const [agentState, setAgentState] = useState<ListState<InvitableDefinition>>({
-    kind: "loading",
-  });
   const [modelState, setModelState] = useState<ListState<CatalogModel>>({
     kind: "loading",
   });
 
+  // Reseeded on every open (not on every render) so a person's own
+  // reselect inside one open dialog is never clobbered — this only
+  // ever runs on the false->true edge.
+  useEffect(() => {
+    if (open) setDefinitionId(initialDefinitionId);
+  }, [open, initialDefinitionId]);
+
   function reset() {
-    setDefinitionId(null);
+    setDefinitionId(initialDefinitionId);
     setPrompt("");
     setModelPreference("");
   }
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setAgentState({ kind: "loading" });
-    listAgents(tenantId)
-      .then((items) => {
-        if (!cancelled) setAgentState({ kind: "ready", items });
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setAgentState({
-            kind: "error",
-            message: cause instanceof Error ? cause.message : String(cause),
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, tenantId, listAgents]);
 
   useEffect(() => {
     if (!open) return;
@@ -164,11 +155,13 @@ export function TaskComposerDialog({
               data-testid="new-task-agent-picker"
             >
               <legend className="tasks-field-label">Agent</legend>
-              <AgentPicker
-                state={agentState}
-                selectedId={definitionId}
-                onSelect={setDefinitionId}
-              />
+              {open ? (
+                <AgentSelection
+                  tenantId={tenantId}
+                  selectedId={definitionId}
+                  onSelect={setDefinitionId}
+                />
+              ) : null}
             </fieldset>
             <label className="tasks-form-field">
               <span className="tasks-field-label">Prompt</span>
@@ -176,7 +169,18 @@ export function TaskComposerDialog({
                 className="tasks-textarea"
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
-                placeholder="What should the agent do?"
+                onKeyDown={(event) => {
+                  // Cmd/Ctrl+Enter submits — a bare Enter still inserts
+                  // a newline, since prompts are often multi-line.
+                  if (
+                    event.key === "Enter" &&
+                    (event.metaKey || event.ctrlKey)
+                  ) {
+                    event.preventDefault();
+                    handleSubmit();
+                  }
+                }}
+                placeholder="What should the agent do? (⌘/Ctrl+Enter to start)"
                 rows={4}
                 autoFocus
               />
@@ -227,54 +231,5 @@ export function TaskComposerDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function AgentPicker({
-  state,
-  selectedId,
-  onSelect,
-}: {
-  readonly state: ListState<InvitableDefinition>;
-  readonly selectedId: string | null;
-  readonly onSelect: (id: string) => void;
-}) {
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title="Couldn't load agents"
-        description={state.message}
-      />
-    );
-  }
-  if (state.items.length === 0) {
-    return (
-      <EmptyState
-        icon={<Users />}
-        title="No agents yet"
-        description="Create an agent before giving it a task."
-      />
-    );
-  }
-  return (
-    <>
-      {state.items.map((definition) => (
-        <label
-          key={definition.id}
-          className="tasks-radio-option"
-          data-testid="new-task-agent-option"
-        >
-          <input
-            type="radio"
-            name="task-agent"
-            checked={selectedId === definition.id}
-            onChange={() => onSelect(definition.id)}
-          />
-          {definition.description ?? definition.name}
-        </label>
-      ))}
-    </>
   );
 }
