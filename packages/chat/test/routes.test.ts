@@ -100,6 +100,31 @@ describe("POST /channels", () => {
     expect(body.error.code).toBe("bad_request");
   });
 
+  test("creating an unnamed chat titles it by the agent's display name, tenant row included", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [{ id: "wfd_assist", name: "assistant", description: "Myra" }],
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response, body } = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_assist",
+    });
+
+    expect(response.status).toBe(201);
+    expect(body.title).toBe("Myra");
+    expect(body.participants).toEqual([
+      { address: "ins_invited1@acme.example", handle: "assistant" },
+    ]);
+    const tenancy = deps.tenancy as ReturnType<
+      typeof createInMemoryChannelTenancyStore
+    >;
+    const [minted] = await tenancy.listChildChannelTenancies(TENANT.id);
+    expect(minted?.slug.startsWith("myra")).toBe(true);
+  });
+
   test("creating a chat auto-invites its agent and titles it by handle", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
