@@ -112,3 +112,32 @@ handled the same way it always was, by the platform's own approval
 machinery. A task's own list/detail routes (`GET /tasks`, `GET
 /tasks/:id`) are the way to check on a still-running task before it
 completes.
+
+## UI: global shortcut and the agent-selection seam
+
+`@corbits/tasks-ui`'s `TaskComposerDialog` is reachable in one keystroke —
+`apps/web` registers a global Cmd+T/Ctrl+T listener at the same shell level
+(`CommandPaletteProvider`, mounted once in `app.tsx`'s `Shell`) react-ui's
+own Cmd+K listener uses, guarded the same way (repeat-key and
+editable-target skipped, `metaKey || ctrlKey` accepted so mac and non-mac
+both work without OS-sniffing). **Caveat:** browsers and OSes reserve
+Cmd+T/Ctrl+T for "new tab" and intercept the keystroke before many pages
+ever see it, in many browser/OS combinations — this listener only fires in
+the cases the browser doesn't claim first. The command palette's own "New
+task" entry (`> New task`) is the reliable fallback, unaffected by that
+reservation, and funnels through the identical `runActionCommand("new-task",
+…)` path.
+
+The dialog's "Agent" field is an injected `AgentSelectionStrategy`
+(`packages/tasks-ui/src/agent-selection-strategy.tsx`), not a hardcoded
+picker. `createManualAgentSelectionStrategy` — the fetched-definition-list,
+click-to-select surface the composer always had — is the only strategy
+wired today, explicitly, by `apps/web/src/pages/inbox-page.tsx`. The seam
+exists so a later programmatic strategy (CL-6050, "Myra auto-dispatch") can
+be swapped in without reworking the dialog's layout, submit, or model-select
+logic — nothing in this repo builds or shows an auto-pick affordance yet.
+`initialDefinitionId` preselects the field from a per-bench
+most-recently-used-agent value in `localStorage`
+(`apps/web/src/task-mru-agent.ts`) — browser-local only, never round-tripped
+through `@corbits/preferences`, since losing it on a new device costs
+nothing more than one manual pick.
