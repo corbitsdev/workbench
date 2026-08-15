@@ -31,19 +31,12 @@ import type {
   ChannelKind,
   InvitableDefinition,
 } from "./api";
-import { listInvitableDefinitions } from "./api";
+import { listTenantInvitableDefinitions } from "./api";
 import { DialogStepper } from "./dialog-stepper";
 import type { DialogStepperStep } from "./dialog-stepper";
 import { CHAT_STRINGS } from "./strings";
 
 type NewChannelStep = 1 | 2;
-
-// The invitable-definitions listing is fetched per-channel in the invite
-// flow, but the underlying tenant-wide listing does not actually key off
-// the channel id (see `packages/chat/src/routes.ts`'s `/channels/:id/invitable`
-// handler) — so this placeholder segment is enough to reuse it before a
-// chat (and its id) exists yet.
-const NEW_CHAT_PLACEHOLDER_CHANNEL_ID = "new";
 
 /**
  * A bench member a chat's counterpart can be — the same People listing
@@ -213,7 +206,7 @@ export function NewChannelDialog({
     if (!open || kind !== "chat" || counterpartTab !== "agent") return;
     let cancelled = false;
     setAgentState({ kind: "loading" });
-    listInvitableDefinitions(tenantId, NEW_CHAT_PLACEHOLDER_CHANNEL_ID)
+    listTenantInvitableDefinitions(tenantId)
       .then((items) => {
         if (!cancelled) setAgentState({ kind: "ready", items });
       })

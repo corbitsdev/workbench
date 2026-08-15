@@ -1843,6 +1843,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     },
   );
 
+  // The tenant-wide listing the new-chat dialog reads before any channel
+  // exists; the per-channel `/channels/:id/invitable` below serves the
+  // in-channel invite flow and insists its channel is real.
+  app.get(
+    "/invitable-definitions",
+    deps.requireGrant("workflow-run:*", "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const items = await deps.platform.listInvitableDefinitions(tenant.id);
+      return c.json({ items });
+    },
+  );
+
   app.get(
     "/channels/:id/invitable",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),

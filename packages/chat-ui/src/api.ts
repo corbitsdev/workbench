@@ -493,6 +493,20 @@ export function listInvitableDefinitions(
   ).then((page) => page.items);
 }
 
+/**
+ * The tenant-wide invitable listing (`GET /invitable-definitions`) the
+ * new-chat dialog reads before any channel exists — the per-channel
+ * variant above 404s on a channel id that isn't real.
+ */
+export function listTenantInvitableDefinitions(
+  tenantId: string,
+): Promise<readonly InvitableDefinition[]> {
+  return request(
+    `/api/tenants/${tenantId}/chat/invitable-definitions`,
+    InvitableDefinitionsResponse,
+  ).then((page) => page.items);
+}
+
 export function inviteAgent(
   tenantId: string,
   channelId: string,

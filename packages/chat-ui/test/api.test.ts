@@ -12,6 +12,7 @@ import {
   listChannels,
   listRuns,
   listInvitableDefinitions,
+  listTenantInvitableDefinitions,
   listMessages,
   listPinnedMessages,
   sendMessage,
@@ -306,6 +307,19 @@ describe("listRuns", () => {
     expect(runs).toHaveLength(1);
     const [run] = runs;
     expect(run !== undefined && runDisplayName(run)).toBe("workflow");
+  });
+});
+
+describe("listTenantInvitableDefinitions", () => {
+  test("fetches the tenant-wide listing with no channel id", async () => {
+    const calls = stubFetch(() =>
+      json({ items: [{ id: "wfd_echo", name: "echo" }] }),
+    );
+    const items = await listTenantInvitableDefinitions("tenant_1");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/invitable-definitions",
+    );
+    expect(items).toEqual([{ id: "wfd_echo", name: "echo" }]);
   });
 });
 
