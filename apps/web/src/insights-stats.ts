@@ -3,8 +3,9 @@
 // existing endpoints.
 
 import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
+import type { BadgeTone } from "@corbits/react-ui";
 
-import type { InsightsRun, RunTraceSpan } from "./insights-api";
+import type { InsightsRun, RunTraceSpan, TaskLeg } from "./insights-api";
 import type { Routine } from "./routines-api";
 
 export type TraceStats = {
@@ -75,6 +76,67 @@ export function purposeRunsForInsights(
  * Keep runs whose `createdAt` falls inside `[fromIso, toIso]` (inclusive).
  * Invalid timestamps are dropped so KPIs never invent rows.
  */
+export type DefinitionRunGroup = {
+  readonly definitionId: string;
+  readonly definitionName: string;
+  /** Newest run first. */
+  readonly runs: readonly InsightsRun[];
+};
+
+/**
+ * "Run history" grouping for the Insights runs page: the same feed already
+ * fetched for the flat list, bucketed by definition and sorted newest-run
+ * first — a client-side grouping of already-fetched data, no new endpoint.
+ * Group order follows each group's own newest run, newest overall first.
+ */
+export function groupRunsByDefinition(
+  runs: readonly InsightsRun[],
+): readonly DefinitionRunGroup[] {
+  const byDefinition = new Map<string, InsightsRun[]>();
+  for (const run of runs) {
+    const bucket = byDefinition.get(run.definitionId);
+    if (bucket === undefined) {
+      byDefinition.set(run.definitionId, [run]);
+    } else {
+      bucket.push(run);
+    }
+  }
+  const groups = [...byDefinition.entries()].map(([definitionId, group]) => ({
+    definitionId,
+    definitionName: group[0]?.definitionName ?? definitionId,
+    runs: [...group].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+  }));
+  return groups.sort((a, b) =>
+    (b.runs[0]?.createdAt ?? "").localeCompare(a.runs[0]?.createdAt ?? ""),
+  );
+}
+
+/** Duration of a settled leg in milliseconds, or null while it is still
+ * pending, dispatching, or running — never a fabricated in-flight number. */
+export function legDurationMs(leg: TaskLeg): number | null {
+  if (leg.startedAt === null || leg.settledAt === null) return null;
+  const startMs = Date.parse(leg.startedAt);
+  const endMs = Date.parse(leg.settledAt);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return null;
+  return Math.max(0, endMs - startMs);
+}
+
+/** Badge tone for a chain step, matching the run-status palette used
+ * elsewhere on Insights (`statusTone` in `pages/insights-page.tsx`). */
+export function legStatusTone(status: TaskLeg["status"]): BadgeTone {
+  switch (status) {
+    case "done":
+      return "success";
+    case "dispatching":
+    case "running":
+      return "info";
+    case "failed":
+      return "danger";
+    case "pending":
+      return "neutral";
+  }
+}
+
 export function filterRunsByCreatedAt(
   runs: readonly InsightsRun[],
   fromIso: string,

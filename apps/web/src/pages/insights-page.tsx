@@ -42,21 +42,29 @@ import {
   ActivityResponseSchema,
   OverallUsageSchema,
   RunTraceSchema,
+  TaskLegsResponseSchema,
+  TaskResponseSchema,
   ToolsResponseSchema,
   TopLevelRunsSchema,
   insightsActivityPath,
   insightsRunTracePath,
+  insightsTaskByRunPath,
+  insightsTaskLegsPath,
   insightsToolsPath,
   insightsTopLevelRunsPath,
   insightsUsagePath,
   type InsightsRun,
   type RunTrace,
+  type TaskLeg,
   type ToolCall,
 } from "../insights-api";
 import {
   computeInsightsStats,
   computeTraceStats,
   filterRunsByCreatedAt,
+  groupRunsByDefinition,
+  legDurationMs,
+  legStatusTone,
   purposeRunsForInsights,
 } from "../insights-stats";
 import { useNavigate } from "../navigation";
@@ -479,7 +487,60 @@ function InsightsLanding({
   );
 }
 
-function InsightsRunsHistory({
+function runDurationLabel(run: InsightsRun): string {
+  if (run.endedAt === undefined || run.endedAt === null) return "—";
+  const startMs = Date.parse(run.createdAt);
+  const endMs = Date.parse(run.endedAt);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return "—";
+  return durationLabel(Math.max(0, endMs - startMs));
+}
+
+function DefinitionRunTable({
+  definitionId,
+  definitionName,
+  runs,
+  onOpenRun,
+}: {
+  readonly definitionId: string;
+  readonly definitionName: string;
+  readonly runs: readonly InsightsRun[];
+  readonly onOpenRun: (id: string) => void;
+}) {
+  return (
+    <section className="insights-panel" data-definition-group={definitionId}>
+      <h3>{definitionName}</h3>
+      <div className="insights-table-wrap">
+        <table className="insights-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Started</th>
+              <th>Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            {runs.map((row) => (
+              <tr
+                key={row.id}
+                className="insights-table-row-clickable"
+                data-ctx-insights-run={row.id}
+                onClick={() => onOpenRun(row.id)}
+              >
+                <td>
+                  <Badge tone={statusTone(row.status)}>{row.status}</Badge>
+                </td>
+                <td>{formatWhen(row.createdAt)}</td>
+                <td>{runDurationLabel(row)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+export function InsightsRunsHistory({
   runs,
   loading,
   onOpenRun,
@@ -491,6 +552,7 @@ function InsightsRunsHistory({
   readonly onBack: () => void;
 }) {
   const purpose = purposeRunsForInsights(runs);
+  const groups = groupRunsByDefinition(purpose);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
@@ -498,7 +560,7 @@ function InsightsRunsHistory({
           <StageCrumbs
             crumbs={[
               { label: "Insights", onSelect: onBack },
-              { label: "Runs" },
+              { label: "Run history" },
             ]}
           />
         }
@@ -509,28 +571,22 @@ function InsightsRunsHistory({
           <div className="insights-layout">
             {loading ? (
               <Skeleton className="h-40 w-full" />
-            ) : purpose.length === 0 ? (
+            ) : groups.length === 0 ? (
               <RichEmptyState
                 icon={<ChartColumn />}
                 title="No purpose runs yet"
                 description="When a routine or purpose workflow fires, it shows up here."
               />
             ) : (
-              <div className="insights-run-list">
-                {purpose.map((row) => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    className="insights-run-row"
-                    data-ctx-insights-run={row.id}
-                    onClick={() => onOpenRun(row.id)}
-                  >
-                    <span className="insights-run-meta">
-                      <strong>{row.definitionName}</strong>
-                      <span>{formatWhen(row.createdAt)}</span>
-                    </span>
-                    <Badge tone={statusTone(row.status)}>{row.status}</Badge>
-                  </button>
+              <div className="insights-grid">
+                {groups.map((group) => (
+                  <DefinitionRunTable
+                    key={group.definitionId}
+                    definitionId={group.definitionId}
+                    definitionName={group.definitionName}
+                    runs={group.runs}
+                    onOpenRun={onOpenRun}
+                  />
                 ))}
               </div>
             )}
@@ -541,15 +597,91 @@ function InsightsRunsHistory({
   );
 }
 
+// A chain step strip for a linear task chain only — CL-5514 tracks parent →
+// child dispatch trees (real branching, not a straight hand-off sequence)
+// as future scope; this renders `legs` as a flat ordered sequence and
+// assumes there is exactly one "next" leg per position, same as the route
+// this reads from (`GET /tasks/:id/legs` in packages/tasks/src/routes.ts).
+function TaskChainStrip({
+  legs,
+  currentRunId,
+  onOpenRun,
+}: {
+  readonly legs: readonly TaskLeg[];
+  readonly currentRunId: string;
+  readonly onOpenRun: (runId: string) => void;
+}) {
+  return (
+    <section className="insights-panel" data-insights-chain-strip="true">
+      <h3>Chain steps</h3>
+      <ol className="insights-chain-strip">
+        {legs.map((leg) => {
+          const isCurrent = leg.runId === currentRunId;
+          const durationMs = legDurationMs(leg);
+          const body = (
+            <>
+              <span className="insights-chain-step-title">
+                {`Step ${leg.position + 1} of ${legs.length}`}
+                <span className="insights-chain-step-agent">
+                  {leg.definitionId}
+                </span>
+              </span>
+              <Badge tone={legStatusTone(leg.status)}>{leg.status}</Badge>
+              <span className="insights-chain-step-duration">
+                {durationMs === null ? "—" : durationLabel(durationMs)}
+              </span>
+            </>
+          );
+          if (leg.runId === null) {
+            return (
+              <li
+                key={leg.position}
+                data-chain-step
+                aria-current={isCurrent ? "step" : undefined}
+                data-current={isCurrent}
+                className="insights-chain-step"
+              >
+                {body}
+              </li>
+            );
+          }
+          return (
+            <li key={leg.position}>
+              <button
+                type="button"
+                data-chain-step
+                aria-current={isCurrent ? "step" : undefined}
+                data-current={isCurrent}
+                className="insights-chain-step insights-chain-step-clickable"
+                onClick={() => onOpenRun(leg.runId as string)}
+              >
+                {body}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
 export function InsightsRunDetail({
   runId,
   run,
   trace,
+  chainLegs,
+  onOpenRun,
   onBack,
 }: {
   readonly runId: string;
   readonly run: InsightsRun | null;
   readonly trace: APIQuery<RunTrace>;
+  /** Ordered legs for the owning task, or null when this run has no
+   * owning task, or the task has never been fetched. A single-leg task's
+   * legs are still passed through — the strip itself hides for
+   * `legs.length <= 1` so a chain-less run renders unchanged. */
+  readonly chainLegs: readonly TaskLeg[] | null;
+  readonly onOpenRun: (runId: string) => void;
   readonly onBack: () => void;
 }) {
   const spans = trace.kind === "ready" ? toTraceSpans(trace.data) : [];
@@ -574,6 +706,13 @@ export function InsightsRunDetail({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageShell width="full" className="page-fill">
           <div className="insights-layout">
+            {chainLegs !== null && chainLegs.length > 1 ? (
+              <TaskChainStrip
+                legs={chainLegs}
+                currentRunId={runId}
+                onOpenRun={onOpenRun}
+              />
+            ) : null}
             <div className="insights-stat-row">
               {/* Owner is not carried by WorkflowRunResponse yet — dash, not
                   a fabricated identity. */}
@@ -729,6 +868,7 @@ export function InsightsPage({
         run={run}
         tenantId={selectedTenantId}
         onBack={() => navigate("/insights/runs")}
+        onOpenRun={(id) => navigate(`/insights/runs/${encodeURIComponent(id)}`)}
       />
     );
   }
@@ -792,18 +932,47 @@ function InsightsRunDetailRoute({
   run,
   tenantId,
   onBack,
+  onOpenRun,
 }: {
   readonly runId: string;
   readonly run: InsightsRun | null;
   readonly tenantId: string | null;
   readonly onBack: () => void;
+  readonly onOpenRun: (runId: string) => void;
 }) {
   const trace = useAPIQuery(
     tenantId === null ? "" : insightsRunTracePath(tenantId, runId),
     RunTraceSchema,
   );
+
+  // Chain context (CL-5626): resolve the owning task from this run, then
+  // its legs, so a run reached from a task/inbox link shows its chain.
+  // A run with no owning task 404s the by-run lookup — that lands here as
+  // `kind: "error"`, task stays null, and the legs query never enables, so
+  // this quietly renders as the plain single-run view instead of surfacing
+  // an error for what is simply "not a chained run."
+  const taskByRun = useAPIQuery(
+    tenantId === null ? "" : insightsTaskByRunPath(tenantId, runId),
+    TaskResponseSchema,
+  );
+  const task = taskByRun.kind === "ready" ? taskByRun.data.item : null;
+  const legsQuery = useAPIQuery(
+    tenantId === null || task === null || task.stepCount <= 1
+      ? ""
+      : insightsTaskLegsPath(tenantId, task.id),
+    TaskLegsResponseSchema,
+  );
+  const chainLegs = legsQuery.kind === "ready" ? legsQuery.data.items : null;
+
   return (
-    <InsightsRunDetail runId={runId} run={run} trace={trace} onBack={onBack} />
+    <InsightsRunDetail
+      runId={runId}
+      run={run}
+      trace={trace}
+      chainLegs={chainLegs}
+      onOpenRun={onOpenRun}
+      onBack={onBack}
+    />
   );
 }
 
@@ -832,9 +1001,7 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     ToolsResponseSchema,
   );
   const runs = useAPIQuery(
-    selectedTenantId === null
-      ? ""
-      : insightsTopLevelRunsPath(selectedTenantId),
+    selectedTenantId === null ? "" : insightsTopLevelRunsPath(selectedTenantId),
     TopLevelRunsSchema,
   );
   const routines = useTenantQuery(
