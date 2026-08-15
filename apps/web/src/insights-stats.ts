@@ -101,11 +101,19 @@ export function groupRunsByDefinition(
       bucket.push(run);
     }
   }
-  const groups = [...byDefinition.entries()].map(([definitionId, group]) => ({
-    definitionId,
-    definitionName: group[0]?.definitionName ?? definitionId,
-    runs: [...group].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-  }));
+  const groups = [...byDefinition.entries()].map(([definitionId, group]) => {
+    const runs = [...group].sort((a, b) =>
+      b.createdAt.localeCompare(a.createdAt),
+    );
+    // Name from the newest run, after sorting — a definition rename must
+    // show the current name in the group header, not whatever name its
+    // oldest fetched run happened to carry.
+    return {
+      definitionId,
+      definitionName: runs[0]?.definitionName ?? definitionId,
+      runs,
+    };
+  });
   return groups.sort((a, b) =>
     (b.runs[0]?.createdAt ?? "").localeCompare(a.runs[0]?.createdAt ?? ""),
   );
