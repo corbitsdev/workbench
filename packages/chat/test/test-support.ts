@@ -54,8 +54,17 @@ export function fakePlatform(
       channelId: string,
       blobId: string,
     ) => Promise<string | Uint8Array>;
+    resolveDefinitionIdByAddress?: (
+      address: string,
+    ) => Promise<string | undefined>;
+    refreshAgentInstanceFromDefinition?: (
+      tenantId: string,
+      channelId: string,
+      address: string,
+    ) => Promise<void>;
   } = {},
 ): ChatPlatform & {
+  refreshCalls: { tenantId: string; channelId: string; address: string }[];
   sentMail: {
     channelId: string;
     principalId?: string;
@@ -84,10 +93,16 @@ export function fakePlatform(
     { id: string; createdAt: string; mail: unknown }[]
   >();
   let mailCounter = 0;
+  const refreshCalls: {
+    tenantId: string;
+    channelId: string;
+    address: string;
+  }[] = [];
 
   return {
     sentMail,
     launchInviteCalls,
+    refreshCalls,
     async launchChannel(input) {
       if (opts.launchChannel !== undefined) return opts.launchChannel(input);
       return { instanceId: "launched" };
@@ -102,6 +117,22 @@ export function fakePlatform(
     },
     async listInvitableDefinitions() {
       return opts.invitable ?? [];
+    },
+    async resolveDefinitionIdByAddress(address) {
+      if (opts.resolveDefinitionIdByAddress !== undefined) {
+        return opts.resolveDefinitionIdByAddress(address);
+      }
+      return undefined;
+    },
+    async refreshAgentInstanceFromDefinition(tenantId, channelId, address) {
+      refreshCalls.push({ tenantId, channelId, address });
+      if (opts.refreshAgentInstanceFromDefinition !== undefined) {
+        return opts.refreshAgentInstanceFromDefinition(
+          tenantId,
+          channelId,
+          address,
+        );
+      }
     },
     async sendMail(input) {
       sentMail.push({

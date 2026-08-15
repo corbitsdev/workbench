@@ -419,6 +419,175 @@ describe("POST /channels/:id/invite", () => {
   });
 });
 
+describe("GET /channels/:id/agents", () => {
+  test("resolves the channel's agent participant back to its definition id", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        resolveDefinitionIdByAddress: async (address) =>
+          address === "ins_invited1@acme.example" ? "wfd_echo" : undefined,
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    const response = await app.request(`/channels/${channel.id}/agents`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      items: { address: string; handle: string; definitionId: string }[];
+    };
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]?.address).toBe("ins_invited1@acme.example");
+    expect(body.items[0]?.definitionId).toBe("wfd_echo");
+  });
+
+  test("lists every invited agent when a channel has more than one", async () => {
+    let invited = 0;
+    const deps = buildDeps({
+      platform: fakePlatform({
+        launchInvite: async () => {
+          invited += 1;
+          return {
+            instanceId: `ins_invited${invited}`,
+            address: `ins_invited${invited}@acme.example`,
+          };
+        },
+        resolveDefinitionIdByAddress: async (address) =>
+          address === "ins_invited1@acme.example"
+            ? "wfd_echo"
+            : address === "ins_invited2@acme.example"
+              ? "wfd_other"
+              : undefined,
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_other" }),
+    });
+
+    const response = await app.request(`/channels/${channel.id}/agents`);
+    const body = (await response.json()) as {
+      items: { address: string; definitionId: string }[];
+    };
+    expect(body.items.map((item) => item.definitionId).sort()).toEqual([
+      "wfd_echo",
+      "wfd_other",
+    ]);
+  });
+
+  test("lists no agents (empty items) for a channel with none", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Quiet",
+    });
+
+    const response = await app.request(`/channels/${channel.id}/agents`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { items: unknown[] };
+    expect(body.items).toEqual([]);
+  });
+
+  test("404s for an unknown channel", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+    const response = await app.request(`/channels/ins_missing/agents`);
+    expect(response.status).toBe(404);
+  });
+
+  test("omits a participant whose address no longer resolves to a definition", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        resolveDefinitionIdByAddress: async () => undefined,
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    const response = await app.request(`/channels/${channel.id}/agents`);
+    const body = (await response.json()) as { items: unknown[] };
+    expect(body.items).toEqual([]);
+  });
+});
+
+describe("POST /channels/:id/agents/refresh", () => {
+  test("asks the platform to refresh the given agent's running instance", async () => {
+    const platform = fakePlatform();
+    const deps = buildDeps({ platform });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    const response = await app.request(
+      `/channels/${channel.id}/agents/refresh`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ address: "ins_invited1@acme.example" }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(platform.refreshCalls).toEqual([
+      {
+        tenantId: TENANT.id,
+        channelId: channel.id,
+        address: "ins_invited1@acme.example",
+      },
+    ]);
+  });
+
+  test("rejects a body with no address", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+
+    const response = await app.request(
+      `/channels/${channel.id}/agents/refresh`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(response.status).toBe(400);
+  });
+});
+
 describe("GET /channels", () => {
   test("filters by kind", async () => {
     const deps = buildDeps();

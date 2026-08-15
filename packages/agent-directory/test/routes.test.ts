@@ -9,7 +9,8 @@ import { expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 
-import type { TenantEnv } from "@intx/hub-api";
+import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import { idResource } from "@intx/hub-api";
 import { AssetServiceError } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
@@ -183,17 +184,20 @@ function fakeDb(opts: FakeDbOptions = {}): DB["db"] {
   } as unknown as DB["db"];
 }
 
+const allowAllRequireGrant: RequireGrant = () => async (_c, next) => {
+  await next();
+};
+
 function buildApp(
   assetService: AssetService,
   db: DB["db"] = fakeDb(),
+  requireGrant: RequireGrant = allowAllRequireGrant,
 ): Hono<TenantEnv> {
   const routes = createAgentDefinitionRoutes({
     db,
     assetService,
     skillIndex: fakeSkillIndex,
-    requireGrant: () => async (_c, next) => {
-      await next();
-    },
+    requireGrant,
   });
   const asPrincipal: MiddlewareHandler<TenantEnv> = async (c, next) => {
     c.set("tenant", TENANT);
@@ -584,6 +588,301 @@ test("PUT /:definitionId/skills rejects a blank skill name with a 400", async ()
   );
   const response = await put(app, "/def_1/skills", { skills: ["   "] });
   expect(response.status).toBe(400);
+});
+
+/** A db fake for the instructions read/write routes: `findFirst` answers
+ * the tenant-scoped lookup, and `update` records every `.set(...)` call
+ * (in call order) rather than asserting a real drizzle round-trip — the
+ * route's own choice of table/predicate is what a test here should
+ * catch, not drizzle's chain semantics. `db.transaction` runs the
+ * callback against the same recording `update`, so the row-update
+ * atomicity test can assert both calls land (or, with
+ * `failSecondUpdate`, that the first is rolled back rather than left
+ * standing alone). */
+function fakeInstructionsDb(
+  row: { id: string; assetId: string | null; name: string } | undefined,
+  options: { readonly failSecondUpdate?: boolean } = {},
+): DB["db"] & { readonly updateCalls: readonly unknown[] } {
+  const updateCalls: unknown[] = [];
+  const committedUpdateCalls: unknown[] = [];
+  const makeUpdater = (target: unknown[]) => () => ({
+    set: (values: unknown) => {
+      target.push(values);
+      if (options.failSecondUpdate === true && target.length === 2) {
+        throw new Error("simulated row-update failure");
+      }
+      return { where: async () => undefined };
+    },
+  });
+  return {
+    query: {
+      workflowDefinition: {
+        findFirst: async () =>
+          row === undefined
+            ? undefined
+            : {
+                id: row.id,
+                tenantId: TENANT.id,
+                assetId: row.assetId,
+                name: row.name,
+                description: null,
+              },
+      },
+    },
+    update: makeUpdater(committedUpdateCalls),
+    // A failed transaction commits nothing: `txCalls` (whatever ran
+    // before the throw) is only merged into `updateCalls` once `fn`
+    // resolves — a rejection propagates straight out, leaving
+    // `updateCalls` exactly as it was, so a test can assert "both or
+    // neither" by reading it after a failure and seeing it empty.
+    transaction: async (fn: (tx: unknown) => Promise<void>) => {
+      const txCalls: unknown[] = [];
+      await fn({ update: makeUpdater(txCalls) });
+      updateCalls.push(...txCalls);
+    },
+    updateCalls,
+  } as unknown as DB["db"] & { readonly updateCalls: readonly unknown[] };
+}
+
+test("GET /:definitionId returns the agent's display name and system prompt", async () => {
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () =>
+        Promise.resolve(
+          storedDefinitionBytes("You are a careful research assistant."),
+        ),
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await app.request("/def_1");
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as {
+    name: string;
+    systemPrompt: string;
+  };
+  expect(body.name).toBe("research-buddy");
+  expect(body.systemPrompt).toBe("You are a careful research assistant.");
+});
+
+test("GET /:definitionId 404s for an unknown definition", async () => {
+  const app = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  const response = await app.request("/def_missing");
+  expect(response.status).toBe(404);
+});
+
+test("PUT /:definitionId writes the new system prompt in a single workflow.json commit", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const db = fakeInstructionsDb({
+    id: "def_1",
+    assetId: "ast_1",
+    name: "research-buddy",
+  });
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () =>
+        Promise.resolve(
+          storedDefinitionBytes("You are a careful research assistant."),
+        ),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    db,
+  );
+  const response = await put(app, "/def_1", {
+    name: "Research Buddy",
+    systemPrompt: "You are now a blunt, no-nonsense researcher.",
+  });
+  expect(response.status).toBe(200);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(promptFrom(writtenFiles?.["workflow.json"] as string)).toBe(
+    "You are now a blunt, no-nonsense researcher.",
+  );
+  expect(db.updateCalls).toEqual([
+    { description: "Research Buddy", updatedAt: expect.any(Date) },
+    { displayName: "Research Buddy", updatedAt: expect.any(Date) },
+  ]);
+  const body = (await response.json()) as {
+    name: string;
+    systemPrompt: string;
+  };
+  expect(body).toEqual({
+    name: "Research Buddy",
+    systemPrompt: "You are now a blunt, no-nonsense researcher.",
+  });
+});
+
+test("PUT /:definitionId 404s for an unknown definition", async () => {
+  const app = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  const response = await put(app, "/def_missing", {
+    name: "Research Buddy",
+    systemPrompt: "hello",
+  });
+  expect(response.status).toBe(404);
+});
+
+test("PUT /:definitionId rejects a blank display name with a 400", async () => {
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await put(app, "/def_1", {
+    name: "   ",
+    systemPrompt: "hello",
+  });
+  expect(response.status).toBe(400);
+});
+
+test("PUT /:definitionId rejects a blank system prompt with a 400", async () => {
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await put(app, "/def_1", {
+    name: "Research Buddy",
+    systemPrompt: "   ",
+  });
+  expect(response.status).toBe(400);
+});
+
+/** Captures the exact resolved resource string `requireGrant` was
+ * called with, per route, so a test can assert the grant check is
+ * scoped to the definitionId in the URL rather than the tenant-wide
+ * `workflow-definition:*` wildcard. */
+function capturingRequireGrant(): RequireGrant & {
+  readonly calls: { readonly resource: string; readonly action: string }[];
+} {
+  const calls: { resource: string; action: string }[] = [];
+  const requireGrant: RequireGrant = (resource, action) => {
+    return async (c, next) => {
+      const resolved =
+        typeof resource === "function"
+          ? resource({ param: (name) => c.req.param(name) })
+          : resource;
+      calls.push({ resource: resolved, action });
+      await next();
+    };
+  };
+  return Object.assign(requireGrant, { calls });
+}
+
+test("GET /:definitionId scopes its grant check to this definition, not the tenant-wide wildcard", async () => {
+  const requireGrant = capturingRequireGrant();
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () => Promise.resolve(storedDefinitionBytes()),
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    requireGrant,
+  );
+  await app.request("/def_1");
+  expect(requireGrant.calls).toEqual([
+    {
+      resource: idResource(
+        "workflow-definition",
+        "definitionId",
+      )({ param: () => "def_1" }),
+      action: "read",
+    },
+  ]);
+});
+
+test("PUT /:definitionId and PUT /:definitionId/skills scope their grant check per definition id", async () => {
+  const requireGrant = capturingRequireGrant();
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () => Promise.resolve(storedDefinitionBytes()),
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    requireGrant,
+  );
+  await put(app, "/def_1", { name: "Research Buddy", systemPrompt: "hi" });
+  await put(app, "/def_1/skills", { skills: [] });
+  expect(requireGrant.calls).toEqual([
+    { resource: "workflow-definition:def_1", action: "update" },
+    { resource: "workflow-definition:def_1", action: "update" },
+  ]);
+});
+
+// A definition belonging to another tenant never resolves through this
+// package's own tenant-scoped lookup (`and(eq(id), eq(tenantId))`,
+// unchanged by the grant-scoping fix above) — it falls into exactly the
+// same `row === undefined` branch an unknown id does, so it 404s rather
+// than ever reaching a point where the caller's grant matters. The
+// unknown-id tests above already exercise this branch; the case is
+// restated here so the authz-scoping fix is explicitly covered too.
+test("PUT /:definitionId 404s rather than 403s for a definition this tenant cannot see", async () => {
+  const app = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  const response = await put(app, "/def_other_tenant", {
+    name: "Research Buddy",
+    systemPrompt: "hello",
+  });
+  expect(response.status).toBe(404);
+});
+
+test("GET/PUT /:definitionId refuse a channel host's definition as 404, never exposing its prompt", async () => {
+  const hostName = `run-${"a".repeat(32)}`;
+  const getApp = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({ id: "def_host", assetId: "ast_host", name: hostName }),
+  );
+  const getResponse = await getApp.request("/def_host");
+  expect(getResponse.status).toBe(404);
+
+  const putApp = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({ id: "def_host", assetId: "ast_host", name: hostName }),
+  );
+  const putResponse = await put(putApp, "/def_host", {
+    name: "Not Actually Editable",
+    systemPrompt: "You are now a responder.",
+  });
+  expect(putResponse.status).toBe(404);
+});
+
+test("PUT /:definitionId updates the definition's row and its asset's row together, or neither", async () => {
+  const failingDb = fakeInstructionsDb(
+    { id: "def_1", assetId: "ast_1", name: "research-buddy" },
+    { failSecondUpdate: true },
+  );
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: () => Promise.resolve(storedDefinitionBytes()),
+      populateAsset: () => Promise.resolve({ commitSha: "deadbeef" }),
+    }),
+    failingDb,
+  );
+  const response = await put(app, "/def_1", {
+    name: "Research Buddy",
+    systemPrompt: "hello",
+  });
+  expect(response.status).toBe(500);
+  const body = (await response.json()) as { error: { code: string } };
+  expect(body.error.code).toBe("partial_failure");
+  // Neither row update is left standing when the transaction fails
+  // partway through.
+  expect(failingDb.updateCalls).toEqual([]);
 });
 
 test("a create request indexes its pinned skills into the stored system prompt", async () => {
