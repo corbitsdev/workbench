@@ -20,7 +20,7 @@ import {
 import { CircleAlert, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { ChatApiError, listInvitableDefinitions } from "./api";
+import { ChatApiError, describeChatError, listInvitableDefinitions } from "./api";
 import type { InvitableDefinition } from "./api";
 import { CHAT_STRINGS } from "./strings";
 
@@ -59,7 +59,7 @@ export function InviteAgentDialog({
         if (!cancelled) {
           setState({
             kind: "error",
-            message: cause instanceof Error ? cause.message : String(cause),
+            message: describeChatError(cause, "Couldn't load agents."),
           });
         }
       });

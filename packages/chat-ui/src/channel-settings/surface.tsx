@@ -14,6 +14,7 @@ import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
+  describeChatError,
   getBenchChatSettings,
   getChannelSettings,
   patchChannelSettings,
@@ -121,7 +122,7 @@ export function ChannelSettingsSurface({
         if (cancelled) return;
         setState({
           kind: "error",
-          message: cause instanceof Error ? cause.message : String(cause),
+          message: describeChatError(cause, "Couldn't load settings."),
         });
       });
     return () => {
