@@ -755,7 +755,13 @@ describe.skipIf(databaseUrl === undefined)(
             "body",
             "task-result inbox item",
           );
-          if (!body.includes("credential error") || !body.includes("401")) {
+          // The status code is 401 today, but Anthropic controls it —
+          // 403 is the same `credential_failure` category in the
+          // vendor retry policy (`vendor/intx/inference/src/errors.ts`
+          // classifies both identically), so accept either without
+          // loosening the substantive check: the body must still name
+          // a credential error, not merely any 4xx.
+          if (!body.includes("credential error") || !/40[13]/.test(body)) {
             throw new Error(
               `expected the delivered task-result to report the stub key's credential error, got: ${JSON.stringify(detailRes.data)}`,
             );
