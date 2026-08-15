@@ -113,14 +113,11 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
       }
-      if (path.includes("/workflows/runs")) {
+      if (path.includes("/top-level-runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
         return json({ error: { message: "catalog down" } }, 503);
-      }
-      if (path.includes("/chat/channels")) {
-        return json({ items: [] });
       }
       return json({ error: { message: "unexpected" } }, 500);
     });
@@ -130,7 +127,6 @@ describe("loadAgentDirectory", () => {
     expect(directory.instances).toEqual([instanceFixture]);
     expect(directory.models).toEqual([]);
     expect(directory.modelsError).toMatch(/503|catalog/i);
-    expect(directory.foldedRunIds.size).toBe(0);
   });
 
   test("surfaces a definitions failure as a hard error", async () => {
@@ -138,14 +134,11 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ error: { message: "nope" } }, 500);
       }
-      if (path.includes("/workflows/runs")) {
+      if (path.includes("/top-level-runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
         return json({ data: [modelFixture], nextCursor: null });
-      }
-      if (path.includes("/chat/channels")) {
-        return json({ items: [] });
       }
       return json({ error: { message: "unexpected" } }, 500);
     });
@@ -158,14 +151,11 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
       }
-      if (path.includes("/workflows/runs")) {
+      if (path.includes("/top-level-runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
         return json({ data: [modelFixture], nextCursor: null });
-      }
-      if (path.includes("/chat/channels")) {
-        return json({ items: [] });
       }
       return json({ error: { message: "unexpected" } }, 500);
     });
@@ -180,7 +170,7 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
       }
-      if (path.includes("/workflows/runs")) {
+      if (path.includes("/top-level-runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
@@ -188,9 +178,6 @@ describe("loadAgentDirectory", () => {
       }
       if (path.includes("/agent-definitions/skills")) {
         return json({ skills: { wfd_1: ["web-research"] } });
-      }
-      if (path.includes("/chat/channels")) {
-        return json({ items: [] });
       }
       return json({ error: { message: "unexpected" } }, 500);
     });
@@ -204,7 +191,7 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
       }
-      if (path.includes("/workflows/runs")) {
+      if (path.includes("/top-level-runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
@@ -213,9 +200,6 @@ describe("loadAgentDirectory", () => {
       if (path.includes("/agent-definitions/skills")) {
         return json({ error: { message: "down" } }, 500);
       }
-      if (path.includes("/chat/channels")) {
-        return json({ items: [] });
-      }
       return json({ error: { message: "unexpected" } }, 500);
     });
 
@@ -223,83 +207,24 @@ describe("loadAgentDirectory", () => {
     expect(directory.definitionSkills).toEqual({});
   });
 
-  test("collects the folded-run-id set from every channel's host id and participant addresses", async () => {
-    stubFetch((path) => {
+  test("reads instances from the server-scoped top-level-runs endpoint, never /workflows/runs", async () => {
+    const calls = stubFetch((path) => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
       }
-      if (path.includes("/workflows/runs")) {
+      if (path.includes("/top-level-runs")) {
         return json({ data: [instanceFixture], nextCursor: null });
       }
       if (path.includes("/catalog/models")) {
         return json({ data: [modelFixture], nextCursor: null });
       }
-      if (path.includes("/chat/channels")) {
-        expect(path).toBe("/api/tenants/tnt_1/chat/channels");
-        return json({
-          items: [
-            {
-              id: "chan_host1",
-              title: "General",
-              kind: "channel",
-              pinned: false,
-              participants: [
-                { address: "ins_invited1@tnt1.workbench.test", handle: "echo" },
-              ],
-            },
-          ],
-        });
-      }
       return json({ error: { message: "unexpected" } }, 500);
     });
 
     const directory = await loadAgentDirectory("tnt_1");
-    expect(directory.foldedRunIds.has("chan_host1")).toBe(true);
-    expect(directory.foldedRunIds.has("ins_invited1")).toBe(true);
-  });
-
-  test("a 404 from the channels route (chat not mounted) degrades to an empty folded-run-id set", async () => {
-    stubFetch((path) => {
-      if (path.includes("/workflows/definitions")) {
-        return json({ data: [definitionFixture], nextCursor: null });
-      }
-      if (path.includes("/workflows/runs")) {
-        return json({ data: [instanceFixture], nextCursor: null });
-      }
-      if (path.includes("/catalog/models")) {
-        return json({ data: [modelFixture], nextCursor: null });
-      }
-      if (path.includes("/chat/channels")) {
-        return json({ error: { message: "not found" } }, 404);
-      }
-      return json({ error: { message: "unexpected" } }, 500);
-    });
-
-    // A chat-less host has no folded chat runs to filter, so an empty
-    // set is the correct answer — the page must still load.
-    const directory = await loadAgentDirectory("tnt_1");
-    expect(directory.foldedRunIds.size).toBe(0);
     expect(directory.instances).toEqual([instanceFixture]);
-  });
-
-  test("fails the whole load when the channels fetch fails, rather than silently dropping the filter", async () => {
-    stubFetch((path) => {
-      if (path.includes("/workflows/definitions")) {
-        return json({ data: [definitionFixture], nextCursor: null });
-      }
-      if (path.includes("/workflows/runs")) {
-        return json({ data: [instanceFixture], nextCursor: null });
-      }
-      if (path.includes("/catalog/models")) {
-        return json({ data: [modelFixture], nextCursor: null });
-      }
-      if (path.includes("/chat/channels")) {
-        return json({ error: { message: "chat down" } }, 500);
-      }
-      return json({ error: { message: "unexpected" } }, 500);
-    });
-
-    await expect(loadAgentDirectory("tnt_1")).rejects.toThrow();
+    expect(calls.some((c) => c.path.includes("/top-level-runs"))).toBe(true);
+    expect(calls.some((c) => c.path.includes("/workflows/runs"))).toBe(false);
   });
 });
 

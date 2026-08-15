@@ -33,6 +33,7 @@ import {
   workflowRun,
 } from "@intx/db/schema";
 import { channelLaunch } from "../src/schema";
+import { foldedRun } from "@corbits/folded-runs";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type {
   EventCollectorRegistry,
@@ -711,7 +712,10 @@ describe("createHubChatPlatform", () => {
     const sessionUpdate = db.updated.find((row) => row.table === agentSession);
     expect(sessionUpdate?.values).toMatchObject({ status: "ended" });
 
-    expect(db.deleted).toEqual([{ table: workflowRun }]);
+    // The run row and its `@corbits/folded-runs`-owned folded-run
+    // marker (see `launchFoldedRun`'s own doc comment) are rolled back
+    // together.
+    expect(db.deleted).toEqual([{ table: workflowRun }, { table: foldedRun }]);
 
     const principalUpdate = db.updated.find((row) => row.table === principal);
     expect(principalUpdate?.values).toMatchObject({ status: "deactivated" });

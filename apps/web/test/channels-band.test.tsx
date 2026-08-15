@@ -58,8 +58,8 @@ function stubFetch(data: { readonly tasks?: readonly unknown[] }): void {
     const path = typeof input === "string" ? input : String(input);
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
-    if (path.includes("/workflows/deployments"))
-      return Promise.resolve(json([]));
+    if (path.includes("/top-level-runs"))
+      return Promise.resolve(json({ data: [], nextCursor: null }));
     if (path.includes("/tasks"))
       return Promise.resolve(json({ items: data.tasks ?? [] }));
     return Promise.resolve(json({ items: [] }));

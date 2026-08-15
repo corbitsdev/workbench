@@ -32,8 +32,8 @@ function stubTenantFetch(
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     calls.push(path);
-    if (path.includes("/workflows/deployments"))
-      return Promise.resolve(json(data.runs ?? []));
+    if (path.includes("/top-level-runs"))
+      return Promise.resolve(json({ data: data.runs ?? [], nextCursor: null }));
     if (path.includes("/tasks"))
       return Promise.resolve(json({ items: data.tasks ?? [] }));
     return Promise.resolve(json({ items: data.channels ?? [] }));
@@ -91,15 +91,13 @@ describe("useBenchActivity", () => {
         (path) => path.includes("/chat/channels") && !path.includes("kind="),
       ),
     ).toBe(true);
-    expect(calls.some((path) => path.includes("/workflows/deployments"))).toBe(
-      true,
-    );
+    expect(calls.some((path) => path.includes("/top-level-runs"))).toBe(true);
     expect(calls.some((path) => path.includes("/tasks"))).toBe(true);
     root.unmount();
     container.remove();
   });
 
-  test("splits channels by kind and keeps folded/chat runs out of routines", async () => {
+  test("splits channels by kind and shows only genuine top-level runs", async () => {
     const calls: string[] = [];
     stubTenantFetch(calls, {
       channels: [
@@ -120,27 +118,21 @@ describe("useBenchActivity", () => {
           participants: [],
         },
       ],
+      // The channel host and the invited agent never appear here: the
+      // hub's `/top-level-runs` route excludes every folded run
+      // server-side (see `@corbits/folded-runs`'s `scope-routes.ts`),
+      // so this mock reflects exactly what that route returns — only
+      // the genuine deployment.
       runs: [
         {
           id: "run_deployment1",
+          definitionId: "def_researcher",
+          definitionName: "researcher",
           tenantId: "tnt_1",
-          definitionAssetId: "researcher/workflow.json",
+          address: "run_deployment1@tnt1.example",
           status: "running",
           createdAt: "2026-01-01T00:00:00.000Z",
-        },
-        {
-          id: "run_host1",
-          tenantId: "tnt_1",
-          definitionAssetId: "run-abc/workflow.json",
-          status: "running",
-          createdAt: "2026-01-02T00:00:00.000Z",
-        },
-        {
-          id: "run_invited1",
-          tenantId: "tnt_1",
-          definitionAssetId: "researcher/workflow.json",
-          status: "running",
-          createdAt: "2026-01-03T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
         },
       ],
     });
@@ -153,9 +145,6 @@ describe("useBenchActivity", () => {
     if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
     expect(state.channels.map((c) => c.id)).toEqual(["run_host1"]);
     expect(state.chats.map((c) => c.id)).toEqual(["run_chat1"]);
-    // The channel host and the invited agent self-anchor like real
-    // deployments, so the deployments listing carries them — the
-    // "Running" band must not.
     expect(state.routines.map((r) => r.id)).toEqual(["run_deployment1"]);
     root.unmount();
     container.remove();
