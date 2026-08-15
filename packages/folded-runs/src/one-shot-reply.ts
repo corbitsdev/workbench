@@ -22,8 +22,8 @@ import type { AgentLifecycle } from "@corbits/agent-lifecycle";
 import { connectorReplyContent, messageRunEnded } from "./agent-events";
 import type { CryptoProviderCache } from "./crypto-cache";
 import { readDefinitionJSON, readFoldedBody } from "./definition";
-import { launchFoldedRun } from "./launch";
-import { sendFoldedMailWithRetry } from "./mail";
+import { launchFoldedRun as launchFoldedRunDefault } from "./launch";
+import { sendFoldedMailWithRetry as sendFoldedMailWithRetryDefault } from "./mail";
 import type { FoldedRunsDeps } from "./types";
 
 const log = getLogger(["folded-runs", "one-shot-reply"]);
@@ -56,6 +56,18 @@ export type OneShotRunnerDeps = {
    * already is — e.g. `apps/hub`'s `sidecarRouter.sendAgentUndeploy`.
    */
   readonly undeploy: (address: string, reason: string) => Promise<void>;
+  /**
+   * Test seam only — no production caller ever sets these. Defaults to
+   * the real `launchFoldedRun`/`sendFoldedMailWithRetry`. Exists
+   * because this module's own tests live alongside `test/launch.test.ts`
+   * and `test/mail.test.ts` in this same package, both of which
+   * dynamically import the exact modules a `mock.module("./launch",
+   * ...)`/`mock.module("./mail", ...)` here would replace — a plain
+   * injected override sidesteps that shared-registry collision
+   * entirely rather than racing it.
+   */
+  readonly launchFoldedRun?: typeof launchFoldedRunDefault;
+  readonly sendFoldedMailWithRetry?: typeof sendFoldedMailWithRetryDefault;
 };
 
 export type OneShotPromptInput = {
@@ -146,7 +158,10 @@ export async function runOneShotFoldedPrompt(
   const instanceId = generateId("workflowRun");
   const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
 
-  const launched = await launchFoldedRun(deps.foldedRuns, {
+  const launchRun = deps.launchFoldedRun ?? launchFoldedRunDefault;
+  const sendMail = deps.sendFoldedMailWithRetry ?? sendFoldedMailWithRetryDefault;
+
+  const launched = await launchRun(deps.foldedRuns, {
     tenantId: input.tenantId,
     instanceId,
     triggerAddress,
@@ -219,7 +234,7 @@ export async function runOneShotFoldedPrompt(
     void (async () => {
       try {
         const cryptoProvider = await deps.cryptoProviders.get(instanceId);
-        const sent = await sendFoldedMailWithRetry(deps.foldedRuns, {
+        const sent = await sendMail(deps.foldedRuns, {
           tenantId: input.tenantId,
           sessionId: launched.sessionId,
           agentAddress: triggerAddress,

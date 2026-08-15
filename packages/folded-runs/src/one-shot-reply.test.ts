@@ -1,71 +1,22 @@
-// Mirrors packages/tasks/test/launcher.test.ts's fake-db shape, plus
-// bun's module mocking for this package's own `launchFoldedRun` and
-// `sendFoldedMailWithRetry` — the two free functions this module calls
-// that a plain dependency object can't stub, since they're imported
-// directly rather than threaded through `FoldedRunsDeps`. `@intx/hub-common`'s
-// `generateId` is also mocked to a fixed id, so the launched run's
-// address (`formatRunAddress(id, domain)`) is known ahead of time and
-// tests can emit fake sidecar events under it.
-import { afterAll, describe, expect, mock, test } from "bun:test";
-import { formatRunAddress } from "@intx/types";
+// Mirrors packages/tasks/test/launcher.test.ts's fake-db shape.
+// `launchFoldedRun` and `sendFoldedMailWithRetry` — the two free
+// functions this module calls directly rather than threading through
+// `FoldedRunsDeps` — are stubbed via `OneShotRunnerDeps`' own
+// `launchFoldedRun`/`sendFoldedMailWithRetry` test seam (a plain
+// injected override), NOT `mock.module`: `test/launch.test.ts` and
+// `test/mail.test.ts`, this package's own tests for those two
+// modules, both dynamically import the exact files a
+// `mock.module("./launch", ...)`/`mock.module("./mail", ...)` here
+// would replace, in the same `bun test` process — a shared-registry
+// collision a plain injected fake sidesteps entirely.
+import { describe, expect, test } from "bun:test";
 
-const actualLaunch = await import("./launch");
-const actualMail = await import("./mail");
-const actualHubCommon = await import("@intx/hub-common");
-
-let launchFoldedRunCalls = 0;
-let sendFoldedMailCalls = 0;
-let sendShouldFail = false;
-
-mock.module("./launch", () => ({
-  ...actualLaunch,
-  launchFoldedRun: async () => {
-    launchFoldedRunCalls++;
-    return { instancePrincipalId: "prn_run", sessionId: "sess_1" };
-  },
-}));
-
-mock.module("./mail", () => ({
-  ...actualMail,
-  sendFoldedMailWithRetry: async () => {
-    sendFoldedMailCalls++;
-    if (sendShouldFail) {
-      return {
-        ok: false as const,
-        error: new Error("send failed"),
-        attempts: 3,
-      };
-    }
-    return {
-      ok: true as const,
-      mail: { id: "mail_1", createdAt: new Date().toISOString() },
-    };
-  },
-}));
-
-mock.module("@intx/hub-common", () => ({
-  ...actualHubCommon,
-  generateId: () => "wfr_fixed_test_id",
-}));
-
-const {
+import {
   runOneShotFoldedPrompt,
   OneShotDefinitionNotFoundError,
   FoldedRunFailedError,
   FoldedRunTimedOutError,
-} = await import("./one-shot-reply");
-
-// `mock.module` replaces the module in bun's process-wide registry —
-// it outlives this file's own test run and would otherwise leak into
-// every other test file in the same `bun test` invocation that imports
-// `./launch`, `./mail`, or `@intx/hub-common` for real behavior (e.g.
-// `test/launch.test.ts`, `test/mail.test.ts`). Restore all three to
-// their actual implementations once this file's tests are done.
-afterAll(() => {
-  mock.module("./launch", () => actualLaunch);
-  mock.module("./mail", () => actualMail);
-  mock.module("@intx/hub-common", () => actualHubCommon);
-});
+} from "./one-shot-reply";
 
 const AGENT_WORKFLOW_JSON = {
   id: "wfd_planner",
@@ -89,10 +40,6 @@ const DEFINITION_ROW = {
   name: "assistant",
 };
 const TENANT_ROW = { id: "tnt_1", domain: "acme.example" };
-const TRIGGER_ADDRESS = formatRunAddress(
-  "wfr_fixed_test_id",
-  TENANT_ROW.domain,
-);
 
 /** A tiny fake `SidecarEventEmitter` — a `Map` of listener sets plus an
  * `.emit()` test helper mimicking the real emitter's `on`/`emit` shape. */
@@ -117,6 +64,62 @@ function createFakeEmitter() {
     },
     listenerCount(type: string) {
       return listeners.get(type)?.size ?? 0;
+    },
+  };
+}
+
+/** A fake `launchFoldedRun`: records every call, always "succeeds," and
+ * captures the `triggerAddress` it was launched under so a test can
+ * emit fake sidecar events for that exact address without needing to
+ * predict the real (randomly generated) instance id. */
+function createFakeLaunch() {
+  const calls: Array<{ triggerAddress: string; instanceId: string }> = [];
+  return {
+    calls,
+    launchFoldedRun: async (
+      _foldedRuns: unknown,
+      params: { triggerAddress: string; instanceId: string },
+    ) => {
+      calls.push({
+        triggerAddress: params.triggerAddress,
+        instanceId: params.instanceId,
+      });
+      return { instancePrincipalId: "prn_run", sessionId: "sess_1" };
+    },
+  };
+}
+
+/** A fake `sendFoldedMailWithRetry`: records every call and either
+ * succeeds, returns an `!ok` result, or throws — controlled per test. */
+function createFakeSend(
+  behavior: "ok" | "not-ok" | "throws" = "ok",
+): {
+  calls: number;
+  sendFoldedMailWithRetry: (
+    ...args: unknown[]
+  ) => Promise<{ ok: true; mail: unknown } | { ok: false; error: Error; attempts: number }>;
+} {
+  let calls = 0;
+  return {
+    get calls() {
+      return calls;
+    },
+    sendFoldedMailWithRetry: async () => {
+      calls++;
+      if (behavior === "throws") {
+        throw new Error("cipher unavailable");
+      }
+      if (behavior === "not-ok") {
+        return {
+          ok: false as const,
+          error: new Error("send failed"),
+          attempts: 3,
+        };
+      }
+      return {
+        ok: true as const,
+        mail: { id: "mail_1", createdAt: new Date().toISOString() },
+      };
     },
   };
 }
@@ -155,7 +158,7 @@ function createFakeLifecycle() {
   };
 }
 
-function createDeps() {
+function createBaseDeps() {
   return {
     foldedRuns: {
       db: {
@@ -191,15 +194,17 @@ const INPUT = {
 
 describe("runOneShotFoldedPrompt", () => {
   test("happy path resolves with accumulated reply content, tears the run down, and untracks it", async () => {
-    sendShouldFail = false;
-    launchFoldedRunCalls = 0;
-    sendFoldedMailCalls = 0;
     const fake = createFakeEmitter();
+    const { launchFoldedRun, calls: launchCalls } = createFakeLaunch();
+    const fakeSend = createFakeSend("ok");
+    const { sendFoldedMailWithRetry } = fakeSend;
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const { lifecycle, tracked, activity, untracked } = createFakeLifecycle();
     const deps = {
-      ...createDeps(),
+      ...createBaseDeps(),
       events: fake.emitter,
+      launchFoldedRun,
+      sendFoldedMailWithRetry,
       undeploy,
       lifecycle,
     } as never;
@@ -208,51 +213,59 @@ describe("runOneShotFoldedPrompt", () => {
 
     // Let the async launch+send chain settle before emitting events.
     await new Promise((r) => setTimeout(r, 10));
+    const triggerAddress = launchCalls[0]!.triggerAddress;
+    expect(triggerAddress).toBeTruthy();
+
     fake.emit("agent.event", {
       agentAddress: "some-other-address",
       event: { type: "connector.reply", data: { content: "ignored" } },
     });
     fake.emit("agent.event", {
-      agentAddress: TRIGGER_ADDRESS,
+      agentAddress: triggerAddress,
       event: { type: "connector.reply", data: { content: "Hello " } },
     });
     fake.emit("agent.event", {
-      agentAddress: TRIGGER_ADDRESS,
+      agentAddress: triggerAddress,
       event: { type: "connector.reply", data: { content: "world" } },
     });
     fake.emit("agent.event", {
-      agentAddress: TRIGGER_ADDRESS,
+      agentAddress: triggerAddress,
       event: { type: "message.run.ended", data: { status: "completed" } },
     });
 
     const result = await promise;
     expect(result.content).toBe("Hello world");
-    expect(result.runId).toBe("wfr_fixed_test_id");
-    expect(launchFoldedRunCalls).toBe(1);
-    expect(sendFoldedMailCalls).toBe(1);
+    expect(result.runId).toBe(launchCalls[0]!.instanceId);
+    expect(launchCalls).toHaveLength(1);
+    expect(fakeSend.calls).toBe(1);
     expect(fake.listenerCount("agent.event")).toBe(0);
     expect(undeployCalls).toEqual([
-      { address: TRIGGER_ADDRESS, reason: "planning-run-complete" },
+      { address: triggerAddress, reason: "planning-run-complete" },
     ]);
-    expect(tracked).toEqual([TRIGGER_ADDRESS]);
-    expect(activity).toEqual([TRIGGER_ADDRESS]);
-    expect(untracked).toEqual([TRIGGER_ADDRESS]);
+    expect(tracked).toEqual([triggerAddress]);
+    expect(activity).toEqual([triggerAddress]);
+    expect(untracked).toEqual([triggerAddress]);
   });
 
   test("a failed run rejects with FoldedRunFailedError, unsubscribes, and tears the run down", async () => {
-    sendShouldFail = false;
     const fake = createFakeEmitter();
+    const { launchFoldedRun, calls: launchCalls } = createFakeLaunch();
+    const { sendFoldedMailWithRetry } = createFakeSend("ok");
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const deps = {
-      ...createDeps(),
+      ...createBaseDeps(),
       events: fake.emitter,
+      launchFoldedRun,
+      sendFoldedMailWithRetry,
       undeploy,
     } as never;
 
     const promise = runOneShotFoldedPrompt(deps, INPUT);
     await new Promise((r) => setTimeout(r, 10));
+    const triggerAddress = launchCalls[0]!.triggerAddress;
+
     fake.emit("agent.event", {
-      agentAddress: TRIGGER_ADDRESS,
+      agentAddress: triggerAddress,
       event: {
         type: "message.run.ended",
         data: { status: "failed", error: { message: "boom" } },
@@ -262,19 +275,23 @@ describe("runOneShotFoldedPrompt", () => {
     await expect(promise).rejects.toBeInstanceOf(FoldedRunFailedError);
     expect(fake.listenerCount("agent.event")).toBe(0);
     expect(undeployCalls).toEqual([
-      { address: TRIGGER_ADDRESS, reason: "planning-run-failed" },
+      { address: triggerAddress, reason: "planning-run-failed" },
     ]);
   });
 
   test("an unknown definition throws OneShotDefinitionNotFoundError", async () => {
     const fake = createFakeEmitter();
+    const { launchFoldedRun } = createFakeLaunch();
+    const { sendFoldedMailWithRetry } = createFakeSend("ok");
     const { undeploy } = createFakeUndeploy();
     const deps = {
-      ...createDeps(),
+      ...createBaseDeps(),
       events: fake.emitter,
+      launchFoldedRun,
+      sendFoldedMailWithRetry,
       undeploy,
       foldedRuns: {
-        ...createDeps().foldedRuns,
+        ...createBaseDeps().foldedRuns,
         db: {
           query: {
             workflowDefinition: { findFirst: async () => undefined },
@@ -292,18 +309,20 @@ describe("runOneShotFoldedPrompt", () => {
 
 describe("send-path throw (not an !ok result)", () => {
   test("a throwing cryptoProviders.get is caught, torn down, and rejects promptly with the real cause", async () => {
-    sendShouldFail = false;
     const fake = createFakeEmitter();
+    const { launchFoldedRun, calls: launchCalls } = createFakeLaunch();
+    const { sendFoldedMailWithRetry } = createFakeSend("ok");
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
-    const base = createDeps();
     const deps = {
-      ...base,
+      ...createBaseDeps(),
       cryptoProviders: {
         get() {
           return Promise.reject(new Error("cipher unavailable"));
         },
       },
       events: fake.emitter,
+      launchFoldedRun,
+      sendFoldedMailWithRetry,
       undeploy,
     } as never;
 
@@ -315,13 +334,14 @@ describe("send-path throw (not an !ok result)", () => {
       caught = err;
     }
     const elapsed = Date.now() - started;
+    const triggerAddress = launchCalls[0]!.triggerAddress;
 
     // The real cause propagates directly, well before the timeout.
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toContain("cipher unavailable");
     expect(elapsed).toBeLessThan(300);
     expect(undeployCalls).toEqual([
-      { address: TRIGGER_ADDRESS, reason: "planning-run-send-failed" },
+      { address: triggerAddress, reason: "planning-run-send-failed" },
     ]);
     expect(fake.listenerCount("agent.event")).toBe(0);
   });
@@ -329,27 +349,30 @@ describe("send-path throw (not an !ok result)", () => {
 
 describe("timeout tears the launched run down", () => {
   test("a timeout unsubscribes AND undeploys the run it launched, before rejecting", async () => {
-    sendShouldFail = false;
-    launchFoldedRunCalls = 0;
     const fake = createFakeEmitter();
+    const { launchFoldedRun, calls: launchCalls } = createFakeLaunch();
+    const { sendFoldedMailWithRetry } = createFakeSend("ok");
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const deps = {
-      ...createDeps(),
+      ...createBaseDeps(),
       events: fake.emitter,
+      launchFoldedRun,
+      sendFoldedMailWithRetry,
       undeploy,
     } as never;
 
     await expect(
       runOneShotFoldedPrompt(deps, { ...INPUT, timeoutMs: 100 }),
     ).rejects.toBeInstanceOf(FoldedRunTimedOutError);
+    const triggerAddress = launchCalls[0]!.triggerAddress;
 
     // A run WAS launched (workflow_run row + deployed sidecar instance)...
-    expect(launchFoldedRunCalls).toBe(1);
+    expect(launchCalls).toHaveLength(1);
     // ...the listener is gone...
     expect(fake.listenerCount("agent.event")).toBe(0);
     // ...and the launched run was torn down, not left running.
     expect(undeployCalls).toEqual([
-      { address: TRIGGER_ADDRESS, reason: "planning-run-timed-out" },
+      { address: triggerAddress, reason: "planning-run-timed-out" },
     ]);
   });
 });
