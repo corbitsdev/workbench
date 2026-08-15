@@ -690,26 +690,6 @@
   margin-top: 0.75rem;
 }
 
-.chat-block-action {
-  border: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-  padding: 0.3rem 0.7rem;
-  font: inherit;
-  font-size: 0.8125rem;
-  color: var(--foreground);
-}
-
-.chat-block-action[data-primary="true"] {
-  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-}
-
-.chat-block-action:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .chat-block-risk {
   display: inline-flex;
   align-items: center;

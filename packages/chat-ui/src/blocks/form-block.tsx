@@ -6,6 +6,7 @@
 // all -- the server-side aggregation never puts them on the wire for a
 // form block in the first place (see `packages/chat/src/routes.ts`).
 
+import { Button } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { FormBlockData } from "@corbits/chat/blocks";
@@ -176,14 +177,9 @@ export function FormBlockView({
           );
         })}
         <div className="chat-block-actions">
-          <button
-            type="button"
-            className="chat-block-action"
-            data-primary="true"
-            disabled
-          >
+          <Button type="button" variant="primary" disabled>
             {data.submitLabel ?? CHAT_STRINGS.blockFormSubmit}
-          </button>
+          </Button>
         </div>
       </BlockCard>
     );
@@ -277,25 +273,20 @@ export function FormBlockView({
               >
                 {CHAT_STRINGS.blockFormSubmitted}
               </span>
-              <button
+              <Button
                 type="button"
-                className="chat-block-action"
+                variant="outline"
                 onClick={() => setEditing(true)}
               >
                 {CHAT_STRINGS.blockFormEdit}
-              </button>
+              </Button>
             </>
           ) : (
-            <button
-              type="submit"
-              className="chat-block-action"
-              data-primary="true"
-              disabled={submitting}
-            >
+            <Button type="submit" variant="primary" disabled={submitting}>
               {submitting
                 ? CHAT_STRINGS.blockFormSubmitting
                 : (data.submitLabel ?? CHAT_STRINGS.blockFormSubmit)}
-            </button>
+            </Button>
           )}
         </div>
       </form>

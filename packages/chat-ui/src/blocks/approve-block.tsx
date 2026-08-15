@@ -11,7 +11,7 @@
 // gives no `ApprovalActions` port, the card falls back to its
 // pre-round-trip framing: fixed disabled buttons, no fetch.
 
-import { toast } from "@corbits/react-ui";
+import { Button, toast } from "@corbits/react-ui";
 import type { ApproveBlockData } from "@corbits/chat/blocks";
 import { useEffect, useState } from "react";
 
@@ -84,27 +84,21 @@ function ApproveButtons({
   const busy = deciding !== null;
   return (
     <div className="chat-block-actions">
-      <button
+      <Button
         type="button"
-        className="chat-block-action"
-        data-primary="true"
+        variant="primary"
         disabled={busy}
         onClick={onApprove}
       >
         {deciding === "approve"
           ? CHAT_STRINGS.blockApproveApproving
           : CHAT_STRINGS.blockApproveAction}
-      </button>
-      <button
-        type="button"
-        className="chat-block-action"
-        disabled={busy}
-        onClick={onDeny}
-      >
+      </Button>
+      <Button type="button" variant="outline" disabled={busy} onClick={onDeny}>
         {deciding === "reject"
           ? CHAT_STRINGS.blockApproveRejecting
           : CHAT_STRINGS.blockDenyAction}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -204,17 +198,12 @@ export function ApproveBlockView({
       )}
       {view.kind === "unwired" && (
         <div className="chat-block-actions">
-          <button
-            type="button"
-            className="chat-block-action"
-            data-primary="true"
-            disabled
-          >
+          <Button type="button" variant="primary" disabled>
             {CHAT_STRINGS.blockApproveAction}
-          </button>
-          <button type="button" className="chat-block-action" disabled>
+          </Button>
+          <Button type="button" variant="outline" disabled>
             {CHAT_STRINGS.blockDenyAction}
-          </button>
+          </Button>
         </div>
       )}
       {view.kind === "loading" && (
