@@ -13,9 +13,22 @@ import { type } from "arktype";
 import type { TenantEnv } from "@intx/hub-api";
 import type { RequireGrant } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
+import { getLogger } from "@intx/log";
+import {
+  FoldedRunFailedError,
+  FoldedRunTimedOutError,
+  OneShotDefinitionNotFoundError,
+} from "@corbits/folded-runs";
 
 import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
 import type { RoutineRow, RoutineRunRow, RoutineStore } from "./store";
+import {
+  MyraRoutineDraftingUnavailableError,
+  RoutineDraftReferenceOutOfInventoryError,
+  RoutineDraftReplyUnparseableError,
+} from "./myra-drafting";
+
+const log = getLogger(["routines", "routes"]);
 
 export interface LaunchedRoutineRun {
   readonly runId: string;
@@ -148,6 +161,27 @@ const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
 });
 
+const DRAFT_FAILED_MESSAGE =
+  "Myra couldn't draft a routine from that. Try rephrasing, or build it from the catalog instead.";
+
+/** Every fail-closed error the Myra drafting path (`./myra-drafting.ts`)
+ * can throw — Myra unresolvable, the one-shot run timing out or
+ * failing, an unparseable reply, an out-of-inventory reference — reads
+ * as the same honest "couldn't draft" 422 to the person who typed the
+ * description, mirroring `@corbits/task-planner`'s own
+ * `isPlanningFailure`. Anything else is a platform fault and is
+ * re-thrown for the host's own error handling to surface. */
+function isDraftingFailure(err: unknown): boolean {
+  return (
+    err instanceof MyraRoutineDraftingUnavailableError ||
+    err instanceof OneShotDefinitionNotFoundError ||
+    err instanceof FoldedRunTimedOutError ||
+    err instanceof FoldedRunFailedError ||
+    err instanceof RoutineDraftReplyUnparseableError ||
+    err instanceof RoutineDraftReferenceOutOfInventoryError
+  );
+}
+
 const CreateRoutineBody = type({
   name: "string",
   definitionId: "string",
@@ -178,6 +212,19 @@ const CreateDraftBody = type({
   prompt: "string",
   deliveryChannelId: "string",
   scope: "'personal' | 'bench'",
+});
+
+/**
+ * Optional body for approving a draft: when Myra's proposal didn't pin
+ * a `definitionId` (a valid, honest outcome — see
+ * `RoutineDraftingPort`'s own doc comment), the review UI collects one
+ * from the person instead and sends it here, rather than leaving
+ * Approve permanently disabled with no recovery. Omitted (or an empty
+ * body) falls back to the draft's own `definitionId`, unchanged
+ * behavior for a draft that already has one.
+ */
+const ApproveDraftBody = type({
+  "definitionId?": "string",
 });
 
 /**
@@ -327,6 +374,16 @@ export function createRoutineRoutes(
   deps: CreateRoutineRoutesDeps,
 ): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
+
+  // A person can't have two "describe it, Myra drafts it" calls racing
+  // at once — a real one-shot inference call with no other
+  // serialization (CL-5917 wires a live `runOneShotFoldedPrompt`, not a
+  // stub) — mirrors `@corbits/task-planner`'s own `inFlightPrincipals`
+  // guard exactly: a plain-language 409 rejection of a same-principal
+  // concurrent second request, released in a `finally` once the first
+  // settles. Single-principal-in-flight only; broader per-tenant rate
+  // limiting is tracked separately as CL-5285.
+  const inFlightDraftingPrincipals = new Set<string>();
 
   app.post(
     "/routines",
@@ -633,31 +690,63 @@ export function createRoutineRoutes(
       }
       const tenant = c.get("tenant");
       const principal = c.get("principal");
-      const draft = await deps.drafts.createDraft({
-        tenantId: tenant.id,
-        prompt: body.prompt,
-        deliveryChannelId: body.deliveryChannelId,
-        scope: body.scope,
-        createdBy: principal.id,
-      });
 
       if (deps.drafting !== undefined) {
-        const proposal = await deps.drafting.propose({
-          tenantId: tenant.id,
-          principalId: principal.id,
-          prompt: body.prompt,
-        });
-        const reviewed = await deps.drafts.markReviewed(tenant.id, draft.id, {
-          proposedSteps: proposal.steps,
-          proposedTrigger: proposal.trigger ?? null,
-          proposedName: proposal.name ?? null,
-          definitionId: proposal.definitionId ?? null,
-          autonomy: proposal.autonomy ?? null,
-        });
-        return c.json(draftView(reviewed), 201);
+        if (inFlightDraftingPrincipals.has(principal.id)) {
+          return c.json(
+            ErrorEnvelope(
+              "dispatch_in_progress",
+              "Myra is already working on your last request.",
+            ),
+            409,
+          );
+        }
+        inFlightDraftingPrincipals.add(principal.id);
       }
 
-      return c.json(draftView(draft), 201);
+      try {
+        const draft = await deps.drafts.createDraft({
+          tenantId: tenant.id,
+          prompt: body.prompt,
+          deliveryChannelId: body.deliveryChannelId,
+          scope: body.scope,
+          createdBy: principal.id,
+        });
+
+        if (deps.drafting !== undefined) {
+          let proposal: Awaited<ReturnType<typeof deps.drafting.propose>>;
+          try {
+            proposal = await deps.drafting.propose({
+              tenantId: tenant.id,
+              principalId: principal.id,
+              prompt: body.prompt,
+            });
+          } catch (err) {
+            log.error`routine drafting failed for tenant ${tenant.id}: ${
+              err instanceof Error ? err.message : String(err)
+            }`;
+            if (isDraftingFailure(err)) {
+              return c.json(
+                ErrorEnvelope("drafting_failed", DRAFT_FAILED_MESSAGE),
+                422,
+              );
+            }
+            throw err;
+          }
+          const reviewed = await deps.drafts.markReviewed(tenant.id, draft.id, {
+            proposedSteps: proposal.steps,
+            proposedTrigger: proposal.trigger ?? null,
+            proposedName: proposal.name ?? null,
+            definitionId: proposal.definitionId ?? null,
+            autonomy: proposal.autonomy ?? null,
+          });
+          return c.json(draftView(reviewed), 201);
+        }
+
+        return c.json(draftView(draft), 201);
+      } finally {
+        inFlightDraftingPrincipals.delete(principal.id);
+      }
     },
   );
 
@@ -697,6 +786,13 @@ export function createRoutineRoutes(
       if (deps.drafts === undefined) {
         return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
       }
+      const body = ApproveDraftBody(await c.req.json().catch(() => ({})));
+      if (body instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope("bad_request", `invalid approve body: ${body.summary}`),
+          400,
+        );
+      }
       const tenant = c.get("tenant");
       const principal = c.get("principal");
       const draftId = c.req.param("id");
@@ -713,13 +809,49 @@ export function createRoutineRoutes(
           400,
         );
       }
-      if (draft.definitionId === null || draft.definitionId === "") {
+      // A draft's own `definitionId` wins when set; otherwise the
+      // review UI's own pick (Myra proposing steps with no workflow
+      // pinned is a valid, honest outcome — see `RoutineDraftingPort`'s
+      // doc comment) — never silently falling back to nothing pinned.
+      const definitionId =
+        body.definitionId !== undefined && body.definitionId !== ""
+          ? body.definitionId
+          : draft.definitionId;
+      if (definitionId === null || definitionId === "") {
         return c.json(
           ErrorEnvelope(
             "bad_request",
             "draft has no definitionId; review must pin a workflow definition",
           ),
           400,
+        );
+      }
+      if (deps.definitionInTenant !== undefined) {
+        const owned = await deps.definitionInTenant(tenant.id, definitionId);
+        if (!owned) {
+          return c.json(
+            ErrorEnvelope("not_found", "definition not found"),
+            404,
+          );
+        }
+      }
+      // Defense in depth: `POST /routines` never lets a `{kind:
+      // "webhook"}` trigger through without this same check
+      // (`webhookTriggerValid`'s own doc comment explains why the two
+      // ids must agree) — a drafted proposal is no more trusted than a
+      // request body a person typed by hand, so approve runs the exact
+      // same check, never a second, looser path.
+      if (
+        !(await webhookTriggerValid(
+          deps,
+          tenant.id,
+          draft.proposedTrigger,
+          definitionId,
+        ))
+      ) {
+        return c.json(
+          ErrorEnvelope("not_found", "webhook trigger not found"),
+          404,
         );
       }
       const name =
@@ -730,7 +862,7 @@ export function createRoutineRoutes(
       const routine = await deps.store.createRoutine({
         tenantId: tenant.id,
         name,
-        definitionId: draft.definitionId,
+        definitionId,
         trigger,
         scope: draft.scope,
         input: {

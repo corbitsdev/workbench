@@ -111,7 +111,9 @@ import {
 import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
+  createMyraRoutineDrafting,
   createRoutineRoutes,
+  type RoutineDraftInventoryWorkflow,
 } from "@corbits/routines";
 import { createAgentLifecycle } from "@corbits/agent-lifecycle";
 import {
@@ -207,7 +209,6 @@ import { type Context, Hono, type Next } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 import { readHubConfig, type HubConfig } from "./config";
-import { createLocalRoutineDrafting } from "./local-routine-drafting";
 import { createHubRoutineLauncher } from "./routine-launcher";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
 import { createRoutineScheduler } from "./routine-scheduler";
@@ -1191,6 +1192,50 @@ export async function createHub(config: HubConfig) {
     }
     return { ok: true };
   }
+
+  /**
+   * The routine-drafting inventory's workflow half: every deployed
+   * definition in the tenant whose catalog entry is `automatable`,
+   * carrying the exact `triggerFields`/`deliveryMode` Myra's drafted
+   * trigger input is checked against (`@corbits/routines`'
+   * `validateRoutineDraftReplyAgainstInventory`). Mirrors
+   * `listMyraConversationalAgents` below in shape, scoped to
+   * automatable rather than conversational definitions.
+   */
+  async function listAutomatableWorkflowsForDraftInventory(
+    tenantId: string,
+  ): Promise<readonly RoutineDraftInventoryWorkflow[]> {
+    const rows = await db.query.workflowDefinition.findMany({
+      where: and(
+        eq(workflowDefinition.tenantId, tenantId),
+        eq(workflowDefinition.status, "deployed"),
+      ),
+    });
+    const out: RoutineDraftInventoryWorkflow[] = [];
+    for (const row of rows) {
+      if (!isAutomatableWorkflowName(row.name)) continue;
+      const entry = workflowCatalogEntry(row.name);
+      if (entry === undefined) continue;
+      out.push({
+        definitionId: row.id,
+        assetName: row.name,
+        displayName: workflowDisplayName(row.name, row.description),
+        deliveryMode: entry.deliveryMode,
+        triggerFields: entry.triggerFields ?? [],
+        ...(row.description !== null ? { description: row.description } : {}),
+      });
+    }
+    return out;
+  }
+
+  // A separate `CryptoProviderCache` from the task launcher's and the
+  // planner's own (`plannerCryptoProviders` below): a routine-drafting
+  // one-shot run's instance id has nothing to do with either lifecycle,
+  // so a separate cache keeps the three from ever contending over the
+  // same key space — same rationale as `plannerCryptoProviders`' own
+  // comment.
+  const routineDraftingCryptoProviders = createCryptoProviderCache();
+
   const routineLauncher = createHubRoutineLauncher({
     db,
     sessionService,
@@ -1208,18 +1253,32 @@ export async function createHub(config: HubConfig) {
     createRoutineRoutes({
       store: routineStore,
       drafts: routineDraftStore,
-      // Local prompt→steps drafting until Myra owns the port. Auto-pin a
-      // definitionId only when the tenant has exactly one workflow definition
-      // so describe-to-agent drafts are approvable without a second pick.
-      // 0 or >1 → null (honest; approve path still needs an explicit pick).
-      drafting: createLocalRoutineDrafting({
-        resolveDefinitionId: async (tenantId) => {
-          const rows = await db.query.workflowDefinition.findMany({
-            where: eq(workflowDefinition.tenantId, tenantId),
-            columns: { id: true },
-            limit: 2,
-          });
-          return rows.length === 1 ? (rows[0]?.id ?? null) : null;
+      // Myra-backed drafting (CL-5917): a real one-shot inference call,
+      // mirroring `@corbits/task-planner`'s own Myra auto-dispatch
+      // wiring below (`plannerInventorySources`/`dispatchWithPlanner`)
+      // — resolve Myra's definition, offer her the automatable-workflow
+      // and taskable-agent inventory, and never trust her reply beyond
+      // what `@corbits/routines`' own fail-closed validation proves.
+      drafting: createMyraRoutineDrafting({
+        resolveMyraDefinitionId: (tenantId) =>
+          resolveMyraDefinitionIdFromDb(db, tenantId),
+        runner: {
+          run: (runnerInput) =>
+            runOneShotFoldedPrompt(
+              {
+                foldedRuns: taskLauncherDeps.foldedRuns,
+                events: sidecarRouter.events,
+                cryptoProviders: routineDraftingCryptoProviders,
+                lifecycle: taskLifecycle,
+                undeploy: (address, reason) =>
+                  sidecarRouter.sendAgentUndeploy(address, reason),
+              },
+              runnerInput,
+            ),
+        },
+        inventorySources: {
+          listAutomatableWorkflows: listAutomatableWorkflowsForDraftInventory,
+          listTaskableAgents: listMyraConversationalAgents,
         },
       }),
       launcher: routineLauncher,

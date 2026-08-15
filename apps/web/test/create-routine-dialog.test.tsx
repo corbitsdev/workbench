@@ -195,7 +195,7 @@ const channels = [
 function baseProps(overrides: {
   onCreate?: (input: CreateRoutineInput) => Promise<void>;
   onDescribe?: () => Promise<RoutineDraft>;
-  onApproveDraft?: (draftId: string) => Promise<void>;
+  onApproveDraft?: (draftId: string, definitionId?: string) => Promise<void>;
 }) {
   return {
     routines: ready([] as readonly Routine[]),
@@ -383,6 +383,7 @@ describe("CreateRoutineDialog stepper", () => {
 
   test("the describe path drafts, reviews, and approves", async () => {
     let approvedId: string | null = null;
+    let approvedDefinitionId: string | undefined;
     mount(
       baseProps({
         onDescribe: () =>
@@ -393,7 +394,7 @@ describe("CreateRoutineDialog stepper", () => {
             proposedSteps: [{ title: "Pull signups" }],
             proposedTrigger: null,
             proposedName: "Daily signups",
-            definitionId: null,
+            definitionId: "wfd_1",
             deliveryChannelId: "ch_1",
             scope: "bench" as const,
             autonomy: null,
@@ -401,8 +402,9 @@ describe("CreateRoutineDialog stepper", () => {
             createdAt: "2026-01-01T00:00:00.000Z",
             updatedAt: "2026-01-01T00:00:00.000Z",
           }),
-        onApproveDraft: (draftId) => {
+        onApproveDraft: (draftId, definitionId) => {
           approvedId = draftId;
+          approvedDefinitionId = definitionId;
           return Promise.resolve();
         },
       }),
@@ -449,6 +451,88 @@ describe("CreateRoutineDialog stepper", () => {
     await settle();
 
     expect(approvedId as string | null).toBe("draft_9");
+    // The draft already carried a definitionId, so no fallback pick was
+    // needed — approve is called with no override.
+    expect(approvedDefinitionId).toBeUndefined();
+  });
+
+  test("regression: a draft with no definitionId shows a fallback workflow picker and blocks Approve until one is picked — no dead end", async () => {
+    let approvedId: string | null = null;
+    let approvedDefinitionId: string | undefined;
+    mount(
+      baseProps({
+        onDescribe: () =>
+          Promise.resolve({
+            id: "draft_10",
+            prompt: "Summarize signups daily",
+            status: "draft" as const,
+            proposedSteps: [{ title: "Pull signups" }],
+            proposedTrigger: null,
+            proposedName: "Daily signups",
+            definitionId: null,
+            deliveryChannelId: "ch_1",
+            scope: "bench" as const,
+            autonomy: null,
+            approvedRoutineId: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          }),
+        onApproveDraft: (draftId, definitionId) => {
+          approvedId = draftId;
+          approvedDefinitionId = definitionId;
+          return Promise.resolve();
+        },
+      }),
+    );
+    await settle();
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+
+    act(() => {
+      cardWithTitle("Describe it to an agent")?.click();
+    });
+    const textarea = document.body.querySelector(
+      "#routine-prompt",
+    ) as HTMLTextAreaElement | null;
+    act(() => {
+      textareaValueSetter.call(textarea, "Summarize signups daily");
+      textarea?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Draft with agent")?.click();
+    });
+    await settle();
+    act(() => {
+      buttonWithText("Next")?.click();
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain("Step 3 of 3");
+    expect(document.body.textContent).toContain(
+      "Myra didn't pin a workflow — pick one.",
+    );
+    const approveButton = buttonWithText("Approve");
+    expect(approveButton?.disabled).toBe(true);
+
+    act(() => {
+      cardWithTitle("Researcher")?.click();
+    });
+    await settle();
+    expect(buttonWithText("Approve")?.disabled).toBe(false);
+
+    act(() => {
+      buttonWithText("Approve")?.click();
+    });
+    await settle();
+
+    expect(approvedId as string | null).toBe("draft_10");
+    expect(approvedDefinitionId).toBe("wfd_1");
   });
 });
 
