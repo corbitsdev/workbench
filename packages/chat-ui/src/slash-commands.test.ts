@@ -51,6 +51,13 @@ describe("filterSlashCommands", () => {
     expect(ids).not.toContain("thread");
     expect(ids).not.toContain("status");
     expect(ids).not.toContain("pin");
-    expect(ids).toEqual(["invite", "summarize", "run", "agents", "help"]);
+    expect(ids).toEqual([
+      "invite",
+      "summarize",
+      "run",
+      "routine",
+      "agents",
+      "help",
+    ]);
   });
 });
