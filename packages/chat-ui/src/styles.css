@@ -1859,6 +1859,36 @@
   border-radius: var(--radius, 0.375rem);
 }
 
+.chat-agent-picker-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chat-new-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.25rem;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.chat-new-agent-row:hover {
+  color: var(--foreground);
+}
+
+.chat-new-agent-row:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: -2px;
+  border-radius: var(--radius, 0.375rem);
+}
+
 .chat-dialog-error {
   margin: 0;
   color: var(--destructive);

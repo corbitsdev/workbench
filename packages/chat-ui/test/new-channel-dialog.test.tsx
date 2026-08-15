@@ -423,3 +423,74 @@ describe("NewChannelDialog counterpart picker", () => {
     expect(document.body.textContent).not.toContain("Alice");
   });
 });
+
+describe("NewChannelDialog New agent… affordance", () => {
+  test("with onRequestNewAgent wired, the agent tab offers a New agent… row", async () => {
+    stubInvitableDefinitions([{ id: "wfd_echo", name: "Echo" }]);
+    let requested = false;
+
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "chat",
+      onRequestNewAgent: () => {
+        requested = true;
+      },
+    });
+    await settle();
+
+    const row = document.body.querySelector(
+      '[data-testid="new-chat-create-agent"]',
+    );
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain("New agent");
+    act(() => {
+      (row as HTMLButtonElement | null)?.click();
+    });
+    expect(requested).toBe(true);
+  });
+
+  test("absent — not disabled — when the host hasn't wired onRequestNewAgent", async () => {
+    stubInvitableDefinitions([{ id: "wfd_echo", name: "Echo" }]);
+
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "chat",
+    });
+    await settle();
+
+    expect(
+      document.body.querySelector('[data-testid="new-chat-create-agent"]'),
+    ).toBeNull();
+  });
+
+  test("still offered with listMembers wired (the agent tab inside the People/Agents Tabs)", async () => {
+    stubInvitableDefinitions([{ id: "wfd_echo", name: "Echo" }]);
+    const listMembers = async (): Promise<readonly PersonOption[]> => [
+      { id: "prn_bob", displayName: "Bob" },
+    ];
+
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "chat",
+      listMembers,
+      onRequestNewAgent: () => undefined,
+    });
+    await settle();
+
+    expect(
+      document.body.querySelector('[data-testid="new-chat-create-agent"]'),
+    ).not.toBeNull();
+  });
+});

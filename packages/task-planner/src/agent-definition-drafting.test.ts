@@ -1,0 +1,275 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  createMyraAgentDefinitionDrafting,
+  parseAgentDefinitionDraftReply,
+  validateAgentDefinitionDraftReplyAgainstInventory,
+  AgentDefinitionDraftReplyUnparseableError,
+  AgentDefinitionDraftReferenceOutOfInventoryError,
+  MyraAgentDefinitionDraftingUnavailableError,
+  type AgentDefinitionDraftingRunnerDeps,
+} from "./agent-definition-drafting";
+import type { InventorySources, PlannerInventory } from "./inventory";
+import { FoldedRunTimedOutError } from "@corbits/folded-runs";
+
+const INVENTORY_SOURCES: InventorySources = {
+  async listConversationalAgents() {
+    return [];
+  },
+  async listUsableToolPackages() {
+    return [
+      {
+        name: "@corbits/granola-tools",
+        connectorId: "granola",
+        credentialBinding: {
+          package: "@corbits/granola-tools",
+          handle: "granola",
+          provider: "granola",
+          locator: "tenant",
+        },
+      },
+    ];
+  },
+  async listSkills() {
+    return [{ name: "incident-review" }];
+  },
+  memoryAvailable: false,
+  async listModels() {
+    return [{ canonicalName: "anthropic/claude-sonnet-5" }];
+  },
+};
+
+const INVENTORY: PlannerInventory = {
+  agents: [],
+  toolPackages: [
+    {
+      name: "@corbits/granola-tools",
+      connectorId: "granola",
+      credentialBinding: {
+        package: "@corbits/granola-tools",
+        handle: "granola",
+        provider: "granola",
+        locator: "tenant",
+      },
+    },
+  ],
+  skills: [{ name: "incident-review" }],
+  memoryAvailable: false,
+  models: [{ canonicalName: "anthropic/claude-sonnet-5" }],
+};
+
+function buildDeps(
+  overrides: Partial<AgentDefinitionDraftingRunnerDeps> = {},
+): AgentDefinitionDraftingRunnerDeps {
+  return {
+    runner: {
+      run: async () => ({
+        content: JSON.stringify({
+          systemPrompt: "You review incident reports and summarize them.",
+          description: "Summarizes incident reports",
+          modelPreference: "anthropic/claude-sonnet-5",
+          toolPackagePins: ["@corbits/granola-tools"],
+          skills: ["incident-review"],
+        }),
+        runId: "wfr_draft_1",
+      }),
+    },
+    inventorySources: INVENTORY_SOURCES,
+    resolveMyraDefinitionId: async () => "wfd_myra",
+    ...overrides,
+  };
+}
+
+const INPUT = {
+  tenantId: "tnt_1",
+  principalId: "prn_alice",
+  name: "Incident Bot",
+  purpose: "Summarize incident reports for the on-call channel",
+};
+
+describe("parseAgentDefinitionDraftReply", () => {
+  test("rejects malformed JSON", () => {
+    expect(() => parseAgentDefinitionDraftReply("not json")).toThrow(
+      AgentDefinitionDraftReplyUnparseableError,
+    );
+  });
+
+  test("rejects a reply missing the required systemPrompt", () => {
+    expect(() =>
+      parseAgentDefinitionDraftReply(JSON.stringify({ description: "x" })),
+    ).toThrow(AgentDefinitionDraftReplyUnparseableError);
+  });
+
+  test("rejects an empty systemPrompt", () => {
+    expect(() =>
+      parseAgentDefinitionDraftReply(JSON.stringify({ systemPrompt: "" })),
+    ).toThrow(AgentDefinitionDraftReplyUnparseableError);
+  });
+
+  test("rejects a toolPackagePins array over the cardinality bound", () => {
+    const pins = Array.from({ length: 9 }, (_, i) => `pkg-${i}`);
+    expect(() =>
+      parseAgentDefinitionDraftReply(
+        JSON.stringify({ systemPrompt: "You help.", toolPackagePins: pins }),
+      ),
+    ).toThrow(AgentDefinitionDraftReplyUnparseableError);
+  });
+
+  test("rejects duplicate toolPackagePins", () => {
+    expect(() =>
+      parseAgentDefinitionDraftReply(
+        JSON.stringify({
+          systemPrompt: "You help.",
+          toolPackagePins: ["a", "a"],
+        }),
+      ),
+    ).toThrow(AgentDefinitionDraftReplyUnparseableError);
+  });
+
+  test("a minimal valid reply parses", () => {
+    const parsed = parseAgentDefinitionDraftReply(
+      JSON.stringify({ systemPrompt: "You help with incidents." }),
+    );
+    expect(parsed.systemPrompt).toBe("You help with incidents.");
+  });
+});
+
+describe("validateAgentDefinitionDraftReplyAgainstInventory", () => {
+  test("an out-of-inventory modelPreference is rejected", () => {
+    expect(() =>
+      validateAgentDefinitionDraftReplyAgainstInventory(
+        { systemPrompt: "You help.", modelPreference: "made-up/model" },
+        INVENTORY,
+      ),
+    ).toThrow(AgentDefinitionDraftReferenceOutOfInventoryError);
+  });
+
+  test("an out-of-inventory tool package pin is rejected", () => {
+    expect(() =>
+      validateAgentDefinitionDraftReplyAgainstInventory(
+        { systemPrompt: "You help.", toolPackagePins: ["@corbits/made-up"] },
+        INVENTORY,
+      ),
+    ).toThrow(AgentDefinitionDraftReferenceOutOfInventoryError);
+  });
+
+  test("an out-of-inventory skill is rejected", () => {
+    expect(() =>
+      validateAgentDefinitionDraftReplyAgainstInventory(
+        { systemPrompt: "You help.", skills: ["made-up-skill"] },
+        INVENTORY,
+      ),
+    ).toThrow(AgentDefinitionDraftReferenceOutOfInventoryError);
+  });
+
+  test("a fully in-inventory reply resolves with defaulted collections", () => {
+    const draft = validateAgentDefinitionDraftReplyAgainstInventory(
+      { systemPrompt: "You help." },
+      INVENTORY,
+    );
+    expect(draft).toEqual({
+      systemPrompt: "You help.",
+      toolPackagePins: [],
+      skills: [],
+    });
+  });
+});
+
+describe("createMyraAgentDefinitionDrafting", () => {
+  test("a valid in-inventory reply succeeds", async () => {
+    const drafting = createMyraAgentDefinitionDrafting(buildDeps());
+    const draft = await drafting.propose(INPUT);
+    expect(draft).toEqual({
+      systemPrompt: "You review incident reports and summarize them.",
+      description: "Summarizes incident reports",
+      modelPreference: "anthropic/claude-sonnet-5",
+      toolPackagePins: ["@corbits/granola-tools"],
+      skills: ["incident-review"],
+    });
+  });
+
+  test("an unparseable reply propagates as AgentDefinitionDraftReplyUnparseableError", async () => {
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        runner: { run: async () => ({ content: "nope", runId: "wfr_x" }) },
+      }),
+    );
+    await expect(drafting.propose(INPUT)).rejects.toBeInstanceOf(
+      AgentDefinitionDraftReplyUnparseableError,
+    );
+  });
+
+  test("an out-of-inventory reply propagates as AgentDefinitionDraftReferenceOutOfInventoryError", async () => {
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        runner: {
+          run: async () => ({
+            content: JSON.stringify({
+              systemPrompt: "You help.",
+              modelPreference: "made-up/model",
+            }),
+            runId: "wfr_x",
+          }),
+        },
+      }),
+    );
+    await expect(drafting.propose(INPUT)).rejects.toBeInstanceOf(
+      AgentDefinitionDraftReferenceOutOfInventoryError,
+    );
+  });
+
+  test("a runner failure propagates unchanged, never fabricating a draft", async () => {
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        runner: {
+          run: async () => {
+            throw new FoldedRunTimedOutError(60_000);
+          },
+        },
+      }),
+    );
+    await expect(drafting.propose(INPUT)).rejects.toBeInstanceOf(
+      FoldedRunTimedOutError,
+    );
+  });
+
+  test("a name-only propose (no purpose) still runs the drafting flow, never a template", async () => {
+    let sentPrompt = "";
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        runner: {
+          run: async ({ prompt }) => {
+            sentPrompt = prompt;
+            return {
+              content: JSON.stringify({
+                systemPrompt: "You are a friendly, capable assistant.",
+              }),
+              runId: "wfr_draft_2",
+            };
+          },
+        },
+      }),
+    );
+    const draft = await drafting.propose({
+      tenantId: "tnt_1",
+      principalId: "prn_alice",
+      name: "New Agent",
+    });
+    expect(draft.systemPrompt).toBe("You are a friendly, capable assistant.");
+    expect(sentPrompt).toContain("New Agent");
+    expect(sentPrompt).not.toContain("undefined");
+  });
+
+  test("an unresolvable Myra definition surfaces as MyraAgentDefinitionDraftingUnavailableError", async () => {
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        resolveMyraDefinitionId: async () => {
+          throw new Error("no myra deployed for this tenant");
+        },
+      }),
+    );
+    await expect(drafting.propose(INPUT)).rejects.toBeInstanceOf(
+      MyraAgentDefinitionDraftingUnavailableError,
+    );
+  });
+});

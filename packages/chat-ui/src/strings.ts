@@ -48,6 +48,7 @@ export const CHAT_STRINGS = {
   newChatPersonEmptyTitle: "No teammates available",
   newChatPersonEmptyDescription:
     "Invite teammates to this workbench before starting a direct chat.",
+  newChatCreateAgentAffordance: "New agent…",
   newChannelMissingAgentError:
     "Choose an agent or teammate to start this chat.",
   newChannelSelfDmError: "You can't start a direct chat with yourself.",
