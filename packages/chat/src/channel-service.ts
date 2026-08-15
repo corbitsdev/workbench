@@ -29,6 +29,7 @@ import type {
   ChannelLauncher,
   ChannelMail,
   ChatChannelEvent,
+  InvitableDefinition,
 } from "./platform-port";
 import type { ChatStore } from "./store";
 
@@ -46,6 +47,13 @@ export type LaunchAndJoinAgentInput = {
   readonly channelId: string;
   readonly definitionId: string;
   readonly existingSettings: Record<string, unknown>;
+  /**
+   * The tenant's invitable listing, fetched once by the caller — every
+   * call site already holds (or needs) it for its own resolution, so
+   * this function never re-fetches the same listing behind the
+   * caller's back.
+   */
+  readonly invitable: readonly InvitableDefinition[];
 };
 
 export type LaunchAndJoinAgentResult = {
@@ -79,10 +87,7 @@ export async function launchAndJoinAgent(
   // the listing no longer carries falls back to that local part.
   // Either way it is de-duplicated against every handle already in
   // the channel ("echo", "echo-2", ...).
-  const invitable = await deps.platform.listInvitableDefinitions(
-    input.tenantId,
-  );
-  const invitedDefinition = invitable.find(
+  const invitedDefinition = input.invitable.find(
     (definition) => definition.id === input.definitionId,
   );
   const desiredHandle =
@@ -280,6 +285,7 @@ export async function startWorkflowCommand(
       channelId: input.channelId,
       definitionId: input.definitionId,
       existingSettings: existing.settings,
+      invitable: await deps.platform.listInvitableDefinitions(input.tenantId),
     },
   );
 

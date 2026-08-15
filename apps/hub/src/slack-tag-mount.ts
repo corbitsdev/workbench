@@ -190,6 +190,9 @@ export async function mountWorkbenchSlackTag(
           channelId,
           definitionId,
           existingSettings: settingsRow.settings,
+          invitable: await deps.chatPlatform.listInvitableDefinitions(
+            tenantRow.id,
+          ),
         },
       );
 
