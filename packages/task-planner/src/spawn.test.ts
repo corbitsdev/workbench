@@ -25,8 +25,8 @@
 // `deployAtHead`/`resolveDefinitionSources` path, since that path is
 // already covered by `packages/tasks/test/launcher.test.ts`.
 import { describe, expect, mock, test } from "bun:test";
-import { task as taskTable } from "@corbits/tasks";
-import type { TaskRecord, TaskStore } from "@corbits/tasks";
+import { task as taskTable, taskLeg as taskLegTable } from "@corbits/tasks";
+import type { TaskLegRecord, TaskRecord, TaskStore } from "@corbits/tasks";
 import type { SpawnDeps } from "./spawn";
 
 const actualFoldedRuns = await import("@corbits/folded-runs");
@@ -121,13 +121,24 @@ function storeOverInserts(db: {
   inserted: { table: unknown; values: unknown }[];
 }): TaskStore {
   const plannerRunIds = new Map<string, string>();
+  function legRows(): TaskLegRecord[] {
+    return db.inserted
+      .filter((row) => row.table === taskLegTable)
+      .flatMap((row) => row.values as TaskLegRecord[])
+      .sort((a, b) => a.position - b.position);
+  }
   function rows(): TaskRecord[] {
     return db.inserted
       .filter((row) => row.table === taskTable)
       .map((row) => {
-        const values = row.values as TaskRecord;
+        const values = row.values as Omit<TaskRecord, "runIds" | "stepCount">;
+        const legs = legRows().filter((leg) => leg.taskId === values.id);
         return {
           ...values,
+          runIds: legs
+            .map((leg) => leg.runId)
+            .filter((runId): runId is string => runId !== null),
+          stepCount: legs.length,
           plannerRunId: plannerRunIds.get(values.id) ?? values.plannerRunId,
         };
       });
@@ -142,7 +153,9 @@ function storeOverInserts(db: {
       );
     },
     async getTaskByRunId(runId) {
-      return rows().find((row) => row.runId === runId) ?? null;
+      const leg = legRows().find((candidate) => candidate.runId === runId);
+      if (leg === undefined) return null;
+      return rows().find((row) => row.id === leg.taskId) ?? null;
     },
     async listTasks(tenantId) {
       return rows().filter((row) => row.tenantId === tenantId);
@@ -153,6 +166,26 @@ function storeOverInserts(db: {
     async recordResultMail() {},
     async linkPlannerRun(input) {
       plannerRunIds.set(input.id, input.plannerRunId);
+    },
+    async listLegs(tenantId, taskId) {
+      return legRows().filter(
+        (leg) => leg.tenantId === tenantId && leg.taskId === taskId,
+      );
+    },
+    async getLegByRunId(runId) {
+      return legRows().find((leg) => leg.runId === runId) ?? null;
+    },
+    async claimLegDispatch() {
+      return null;
+    },
+    async recordLegRun() {
+      return null;
+    },
+    async settleLeg() {
+      return null;
+    },
+    async failLegDispatch() {
+      return null;
     },
   };
 }

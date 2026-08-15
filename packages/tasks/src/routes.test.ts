@@ -50,6 +50,8 @@ function buildDeps(
       modelPreference: input.modelPreference ?? null,
       status: "running",
       runId: "run_1",
+      runIds: ["run_1"],
+      stepCount: 1,
       resultMailId: null,
       plannerRunId: null,
       createdAt: new Date(),
