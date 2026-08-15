@@ -33,7 +33,11 @@ import {
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import type { Channel, DialogStepperStep } from "@corbits/chat-ui";
-import { DialogStepper, listChannels } from "@corbits/chat-ui";
+import {
+  DialogStepper,
+  listChannels,
+  listTenantInvitableDefinitions,
+} from "@corbits/chat-ui";
 import {
   connectorStatus,
   CopyButton,
@@ -56,6 +60,8 @@ import type { WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
 import { consumePendingNewRoutine } from "../command-palette-actions";
+import { consumePendingRoutinePrefill } from "../routine-prefill";
+import type { RoutinePrefill } from "../routine-prefill";
 import { tenantKeys } from "../query-client";
 import { cadenceLabel } from "../routine-trigger";
 import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
@@ -119,6 +125,27 @@ function routineDetailSentence(
     return `${when}, delivers to ${channel.title}.`;
   }
   return `${when}.`;
+}
+
+/** Plain-language state for a routine the scheduler has stopped firing —
+ * `consecutiveFailures` at the moment it dead-lettered equals the
+ * threshold, so it's an honest count, not a guess. `null` for a
+ * healthy routine (never rendered). */
+function routinePausedMessage(routine: Routine): string | null {
+  if (routine.deadLetteredAt === null) return null;
+  return `Paused after ${routine.consecutiveFailures} failed attempt${
+    routine.consecutiveFailures === 1 ? "" : "s"
+  }.`;
+}
+
+/** The most recent recorded failure's own error text, for the honest
+ * "why" next to `routinePausedMessage`'s "that". `undefined` runs
+ * (still loading) and runs with no `error` are skipped. */
+function mostRecentRunError(runs: readonly RoutineRun[]): string | null {
+  const failed = runs.find(
+    (run) => run.error !== undefined && run.error !== null,
+  );
+  return failed?.error ?? null;
 }
 
 function draftedStepsFromInput(
@@ -466,6 +493,51 @@ function DeliveryChannelPicker({
   );
 }
 
+/**
+ * An `"agent"`-kind trigger field (see `@corbits/workflow-catalog`'s
+ * `WorkflowTriggerField.kind`) renders as a picker of taskable agent
+ * definitions, never a raw-id text box — the same listing the task
+ * composer's own agent picker reads (`listTenantInvitableDefinitions`),
+ * so "the agent this recurring task runs" is chosen the identical way
+ * "New task" chooses one.
+ */
+function AgentTriggerFieldPicker({
+  agents,
+  value,
+  onChange,
+  disabled,
+}: {
+  readonly agents: readonly { readonly id: string; readonly name: string }[];
+  readonly value: string;
+  readonly onChange: (id: string) => void;
+  readonly disabled?: boolean;
+}) {
+  const selected = agents.find((a) => a.id === value);
+  if (agents.length === 0) {
+    return (
+      <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
+        No taskable agents on this workbench yet — create one first.
+      </p>
+    );
+  }
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" disabled={disabled}>
+          {selected?.name ?? "Choose agent"}
+        </Button>
+      </MenuTrigger>
+      <MenuContent>
+        {agents.map((agent) => (
+          <MenuItem key={agent.id} onSelect={() => onChange(agent.id)}>
+            {agent.name}
+          </MenuItem>
+        ))}
+      </MenuContent>
+    </Menu>
+  );
+}
+
 type CreatePath = "catalog" | "describe";
 type CreateStep = 1 | 2 | 3;
 
@@ -572,6 +644,38 @@ function useDialogConnections(tenantId: string | null, open: boolean) {
   return connections;
 }
 
+/** Taskable agent definitions for an `"agent"`-kind trigger field's
+ * picker — reuses the exact listing the task composer's own agent
+ * picker fetches (`listTenantInvitableDefinitions`). Mirrors
+ * `useDialogConnections` above: only fetches once the dialog is open,
+ * a plain effect rather than `useQuery` so this dialog never requires
+ * a `QueryClientProvider` ancestor. */
+function useTaskableAgents(
+  tenantId: string | null,
+  open: boolean,
+): readonly { readonly id: string; readonly name: string }[] {
+  const [agents, setAgents] = useState<
+    readonly { readonly id: string; readonly name: string }[]
+  >([]);
+
+  useEffect(() => {
+    if (!open || tenantId === null) return;
+    let cancelled = false;
+    listTenantInvitableDefinitions(tenantId)
+      .then((definitions) => {
+        if (!cancelled) setAgents(definitions);
+      })
+      .catch(() => {
+        if (!cancelled) setAgents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, open]);
+
+  return agents;
+}
+
 export function connectorBadgeLabel(connectorId: string): string {
   const entry = CONNECTOR_REGISTRY[connectorId];
   if (entry === undefined) {
@@ -603,6 +707,9 @@ function CreateRoutineDialog({
   onDiscardDraft,
   open: openProp,
   onOpenChange,
+  initialDefinitionId = null,
+  initialName = null,
+  initialInput = null,
 }: {
   readonly tenantId?: string | null;
   readonly definitions: readonly WorkflowDefinitionSummary[];
@@ -617,11 +724,21 @@ function CreateRoutineDialog({
   readonly onDiscardDraft: (draftId: string) => Promise<void>;
   readonly open?: boolean;
   readonly onOpenChange?: (open: boolean) => void;
+  /** "Make this a routine" seam (see inbox-page.tsx): opens the dialog
+   * already on the given catalog pick and name, its stored input carrying
+   * the source task's prompt. The person still picks cadence and confirms
+   * — nothing here creates a routine on its own. */
+  readonly initialDefinitionId?: string | null;
+  readonly initialName?: string | null;
+  readonly initialInput?: Record<string, unknown> | null;
 }) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = openProp ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
   const connections = useDialogConnections(tenantId ?? null, open);
+  // Only matters for a workflow that declares an `"agent"`-kind trigger
+  // field (today, only the recurring-task bridge).
+  const taskableAgents = useTaskableAgents(tenantId ?? null, open);
   const [step, setStep] = useState<CreateStep>(1);
   const [path, setPath] = useState<CreatePath>("catalog");
   const [name, setName] = useState("");
@@ -651,8 +768,46 @@ function CreateRoutineDialog({
     }
   }, [channels, deliveryChannelId]);
 
+  // "Make this a routine" seeds the catalog pick and name once, the
+  // instant the dialog opens with a prefill — after that the person edits
+  // freely, same as any other field in this stepper.
+  useEffect(() => {
+    if (!open) return;
+    if (initialDefinitionId !== null) {
+      setPath("catalog");
+      setDefinitionId(initialDefinitionId);
+    }
+    if (initialName !== null) setName(initialName);
+    if (initialInput !== null) {
+      // Seeds the Configure step's own trigger-field inputs (visibly
+      // pre-filled, and counted toward `triggerFieldsSatisfied` so a
+      // fully-specified prefill can advance without retyping) — only
+      // string values, matching what a trigger field can hold; a
+      // non-string entry still reaches the created routine's `input`
+      // via createCatalogRoutine's own merge below.
+      const stringFields = Object.fromEntries(
+        Object.entries(initialInput).filter(
+          (entry): entry is [string, string] => typeof entry[1] === "string",
+        ),
+      );
+      setTriggerFieldValues((prev) => ({ ...prev, ...stringFields }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const selectedDefinition =
     definitions.find((d) => d.id === definitionId) ?? null;
+  // A workflow whose result never posts to a channel (e.g. the
+  // recurring-task bridge — always delivers to its creator's Inbox)
+  // must never be forced through the channel step at all: no picker,
+  // no requirement, nothing collected to silently discard. Unresolved
+  // (no pick yet, or the "describe" path, which only learns its
+  // definitionId after drafting) defaults to requiring one — the
+  // honest, prior behavior.
+  const deliversToChannel =
+    path !== "catalog" ||
+    selectedDefinition === null ||
+    selectedDefinition.deliveryMode !== "inbox";
 
   const reset = () => {
     setStep(1);
@@ -698,8 +853,12 @@ function CreateRoutineDialog({
     setStep(1);
   };
 
+  // A non-empty definitionId that doesn't resolve in `definitions` is a
+  // dead end further down the stepper (no selectedDefinition to launch
+  // against — see the inline message above), so it must not be treated
+  // as an honest "picked" state here.
   const canAdvanceFromSource =
-    path === "catalog" ? definitionId !== "" : prompt.trim().length > 0;
+    path === "catalog" ? selectedDefinition !== null : prompt.trim().length > 0;
 
   const draftAndAdvance = () => {
     if (deliveryChannelId === "" || prompt.trim().length === 0) return;
@@ -718,7 +877,11 @@ function CreateRoutineDialog({
   };
 
   const createCatalogRoutine = () => {
-    if (selectedDefinition === null || deliveryChannelId === "") return;
+    if (
+      selectedDefinition === null ||
+      (deliversToChannel && deliveryChannelId === "")
+    )
+      return;
     setBusy(true);
     setError(null);
     const routineName =
@@ -726,13 +889,20 @@ function CreateRoutineDialog({
     // Threads the same field values a manual "Run once now" collects into
     // the stored routine.input record — the one seam the fire path
     // (packages/routines' POST /routines -> RoutineLauncher.launchRoutineRun)
-    // actually reads from a create request.
-    const triggerInput =
+    // actually reads from a create request. A "Make this a routine" prefill
+    // (initialInput — the source task's prompt) merges underneath: the
+    // picked workflow's own trigger fields, if any, take precedence over
+    // it rather than the reverse.
+    const triggerFieldInput =
       selectedDefinition.triggerFields.length > 0
         ? triggerFieldsInput(
             selectedDefinition.triggerFields,
             triggerFieldValues,
           )
+        : undefined;
+    const triggerInput =
+      initialInput !== null || triggerFieldInput !== undefined
+        ? { ...(initialInput ?? {}), ...triggerFieldInput }
         : undefined;
 
     if (runMode === "webhook") {
@@ -742,7 +912,7 @@ function CreateRoutineDialog({
             name: routineName,
             definitionId,
             scope: "bench",
-            deliveryChannelId,
+            ...(deliversToChannel ? { deliveryChannelId } : {}),
             trigger: { kind: "webhook", webhookTriggerId: binding.id },
             runOnceNow: false,
             ...(triggerInput !== undefined ? { input: triggerInput } : {}),
@@ -767,7 +937,7 @@ function CreateRoutineDialog({
       name: routineName,
       definitionId,
       scope: "bench",
-      deliveryChannelId,
+      ...(deliversToChannel ? { deliveryChannelId } : {}),
       trigger: runMode === "once" ? null : trigger,
       runOnceNow: runMode === "once",
       ...(triggerInput !== undefined ? { input: triggerInput } : {}),
@@ -827,7 +997,7 @@ function CreateRoutineDialog({
     primaryLabel = "Next";
     primaryDisabled =
       busy ||
-      deliveryChannelId === "" ||
+      (deliversToChannel && deliveryChannelId === "") ||
       !triggerFieldsSatisfied(
         selectedDefinition?.triggerFields ?? [],
         triggerFieldValues,
@@ -850,7 +1020,7 @@ function CreateRoutineDialog({
     primaryDisabled =
       busy ||
       selectedDefinition === null ||
-      deliveryChannelId === "" ||
+      (deliversToChannel && deliveryChannelId === "") ||
       !triggerFieldsSatisfied(
         selectedDefinition?.triggerFields ?? [],
         triggerFieldValues,
@@ -1007,6 +1177,15 @@ function CreateRoutineDialog({
                     instead.
                   </p>
                 ) : null}
+                {path === "catalog" &&
+                definitionId !== "" &&
+                selectedDefinition === null ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    This workflow isn't in your automatable catalog, so it can't
+                    be scheduled — pick one of the cards above, or describe it
+                    instead.
+                  </p>
+                ) : null}
               </div>
 
               {path === "describe" ? (
@@ -1096,18 +1275,32 @@ function CreateRoutineDialog({
                         {field.label}
                         {field.required ? "" : " (optional)"}
                       </label>
-                      <Input
-                        id={`routine-trigger-field-${field.key}`}
-                        value={triggerFieldValues[field.key] ?? ""}
-                        placeholder={field.placeholder}
-                        disabled={busy}
-                        onChange={(event) =>
-                          setTriggerFieldValues((values) => ({
-                            ...values,
-                            [field.key]: event.target.value,
-                          }))
-                        }
-                      />
+                      {field.kind === "agent" ? (
+                        <AgentTriggerFieldPicker
+                          agents={taskableAgents}
+                          value={triggerFieldValues[field.key] ?? ""}
+                          disabled={busy}
+                          onChange={(id) =>
+                            setTriggerFieldValues((values) => ({
+                              ...values,
+                              [field.key]: id,
+                            }))
+                          }
+                        />
+                      ) : (
+                        <Input
+                          id={`routine-trigger-field-${field.key}`}
+                          value={triggerFieldValues[field.key] ?? ""}
+                          placeholder={field.placeholder}
+                          disabled={busy}
+                          onChange={(event) =>
+                            setTriggerFieldValues((values) => ({
+                              ...values,
+                              [field.key]: event.target.value,
+                            }))
+                          }
+                        />
+                      )}
                       {field.help !== undefined ? (
                         <p className="text-xs text-[var(--ui-fg-muted)]">
                           {field.help}
@@ -1117,20 +1310,35 @@ function CreateRoutineDialog({
                   ))}
                 </div>
               ) : null}
-              <div className="flex flex-col gap-1.5">
-                <span
-                  id="routine-delivery-label"
-                  className="text-xs font-medium"
-                >
-                  Deliver results to
-                </span>
-                <DeliveryChannelPicker
-                  channels={channels}
-                  value={deliveryChannelId}
-                  onChange={setDeliveryChannelId}
-                  disabled={busy}
-                />
-              </div>
+              {deliversToChannel ? (
+                <div className="flex flex-col gap-1.5">
+                  <span
+                    id="routine-delivery-label"
+                    className="text-xs font-medium"
+                  >
+                    Deliver results to
+                  </span>
+                  <DeliveryChannelPicker
+                    channels={channels}
+                    value={deliveryChannelId}
+                    onChange={setDeliveryChannelId}
+                    disabled={busy}
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium">
+                    Deliver results to
+                  </span>
+                  <p
+                    className="text-xs text-[var(--ui-fg-muted)]"
+                    role="status"
+                  >
+                    Results land in your Inbox — this workflow never posts to a
+                    channel.
+                  </p>
+                </div>
+              )}
             </>
           ) : null}
 
@@ -1443,10 +1651,20 @@ function RunsTable({
                   },
                 }
               : {};
+          const hasError = run.error !== undefined && run.error !== null;
           return (
             <TableRow key={run.runId} {...rowProps}>
               <TableCell>
-                <Badge tone="neutral">{run.triggeredBy}</Badge>
+                <Badge tone={hasError ? "danger" : "neutral"}>
+                  {run.triggeredBy === "schedule-failed"
+                    ? "Failed to start"
+                    : run.triggeredBy}
+                </Badge>
+                {hasError ? (
+                  <p className="mt-1 max-w-xs text-xs text-[var(--ui-fg-muted)]">
+                    {run.error}
+                  </p>
+                ) : null}
               </TableCell>
               <TableCell>
                 {typeof status === "string" ? (
@@ -1520,19 +1738,30 @@ export function RoutinesListPage({
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [createPrefill, setCreatePrefill] = useState<RoutinePrefill | null>(
+    null,
+  );
 
   useEffect(() => {
-    const onCreateEvent = () => setCreateOpen(true);
+    const onCreateEvent = () => {
+      setCreatePrefill(consumePendingRoutinePrefill());
+      setCreateOpen(true);
+    };
     window.addEventListener("workbench:routines:create", onCreateEvent);
     return () =>
       window.removeEventListener("workbench:routines:create", onCreateEvent);
   }, []);
 
-  // The command palette may have requested "New routine" from another page,
-  // before this listener existed to catch the dispatch — see
-  // pending-dialog-request.ts. Consume that flag now that we've mounted.
+  // The command palette (or "Make this a routine" — see inbox-page.tsx)
+  // may have requested "New routine" from another page, before this
+  // listener existed to catch the dispatch — see pending-dialog-request.ts.
+  // Consume that flag, and any prefill stashed alongside it, now that
+  // we've mounted.
   useEffect(() => {
-    if (consumePendingNewRoutine()) setCreateOpen(true);
+    if (consumePendingNewRoutine()) {
+      setCreatePrefill(consumePendingRoutinePrefill());
+      setCreateOpen(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -1597,6 +1826,21 @@ export function RoutinesListPage({
           )
         }
       />
+      {selected !== null && routinePausedMessage(selected) !== null ? (
+        <div
+          className="mx-4 mt-3 flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
+          role="alert"
+        >
+          <p className="m-0 font-medium text-destructive">
+            {routinePausedMessage(selected)}
+          </p>
+          {mostRecentRunError(recentRuns) !== null ? (
+            <p className="m-0 text-xs text-[var(--ui-fg-muted)]">
+              {mostRecentRunError(recentRuns)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <CreateRoutineDialog
         tenantId={tenantId}
         definitions={definitions}
@@ -1607,7 +1851,15 @@ export function RoutinesListPage({
         onApproveDraft={onApproveDraft}
         onDiscardDraft={onDiscardDraft}
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(next) => {
+          setCreateOpen(next);
+          // A cancelled or completed prefilled session must not haunt the
+          // next blank "New routine" open.
+          if (!next) setCreatePrefill(null);
+        }}
+        initialDefinitionId={createPrefill?.definitionId ?? null}
+        initialName={createPrefill?.name ?? null}
+        initialInput={createPrefill?.input ?? null}
       />
       {selected !== null ? (
         <EditRoutineDialog
@@ -1787,6 +2039,22 @@ export function RoutineDetailPage({
                     </Badge>
                   </dd>
                 </dl>
+                {routinePausedMessage(data) !== null ? (
+                  <div
+                    className="flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
+                    role="alert"
+                  >
+                    <p className="m-0 font-medium text-destructive">
+                      {routinePausedMessage(data)}
+                    </p>
+                    {runs.kind === "ready" &&
+                    mostRecentRunError(runs.data) !== null ? (
+                      <p className="m-0 text-xs text-[var(--ui-fg-muted)]">
+                        {mostRecentRunError(runs.data)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <section>
                   <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
                     Steps

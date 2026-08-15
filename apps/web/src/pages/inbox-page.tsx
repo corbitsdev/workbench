@@ -11,7 +11,7 @@ import {
   TriageListItem,
   TriagePane,
 } from "@corbits/react-ui";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -22,10 +22,12 @@ import {
   createMyraAgentSelectionStrategy,
   createTask,
   dispatchPlanner,
+  getTask,
   listCatalogModels,
   MYRA_AUTO_SELECTION_ID,
   TaskComposerDialog,
 } from "@corbits/tasks-ui";
+import type { Task } from "@corbits/tasks-ui";
 
 import { approveApproval, rejectApproval, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
@@ -33,7 +35,13 @@ import { channelPath } from "../channel-path";
 import {
   consumePendingNewTask,
   NEW_TASK_EVENT,
+  requestMakeRoutine,
 } from "../command-palette-actions";
+import {
+  listWorkflowDefinitions,
+  suggestRoutineNameFromPrompt,
+} from "../routines-api";
+import { RECURRING_TASK_ASSET_NAME } from "@corbits/workflow-catalog";
 import {
   loadMostRecentTaskAgent,
   saveMostRecentTaskAgent,
@@ -54,6 +62,7 @@ import {
   markInboxItemDone,
   runRefFromItem,
   snoozeInboxItem,
+  taskRefFromItem,
   type InboxCounts,
   type InboxFilterGroup,
   type InboxItem,
@@ -142,6 +151,7 @@ function FactsGrid({ item }: { readonly item: InboxItemDetail }) {
 }
 
 function InboxDetail({
+  tenantId,
   detail,
   busy,
   actionError,
@@ -152,7 +162,10 @@ function InboxDetail({
   onOpenRun,
   onOpenChannel,
   onOpenArtifact,
+  recurringTaskDefinitionId,
+  onMakeRoutine,
 }: {
+  readonly tenantId: string | null;
   readonly detail: APIQuery<InboxItemDetail>;
   readonly busy: boolean;
   readonly actionError: string | null;
@@ -163,7 +176,27 @@ function InboxDetail({
   readonly onOpenRun: (runId: string) => void;
   readonly onOpenChannel: (channelId: string) => void;
   readonly onOpenArtifact: (artifactId: string) => void;
+  /** The tenant's deployed "recurring-task" bridge workflow id (see
+   * routine-launcher.ts), or null while it's still loading / genuinely
+   * absent. "Make this a routine" needs this to resolve before it can
+   * hand the create dialog a definitionId that actually lands in the
+   * Routines picker — a task's own agent never does (conversational
+   * definitions are never automatable). */
+  readonly recurringTaskDefinitionId: string | null;
+  readonly onMakeRoutine: (task: Task) => void;
 }) {
+  // A task-result item's own ref never carries the task's prompt or
+  // status (see packages/notify's render.ts) — only its id, so "Make this
+  // a routine" resolves the full record before it can gate on
+  // `status === "done"`.
+  const taskRef = detail.kind === "ready" ? taskRefFromItem(detail.data) : null;
+  const taskQuery = useQuery({
+    queryKey: ["task-for-inbox-item", tenantId, taskRef?.id ?? null],
+    enabled: tenantId !== null && taskRef !== null,
+    queryFn: () => getTask(tenantId ?? "", taskRef?.id ?? ""),
+  });
+  const task = taskQuery.data ?? null;
+
   if (detail.kind === "loading") {
     return (
       <div className="flex flex-col gap-3 p-4">
@@ -265,6 +298,17 @@ function InboxDetail({
             View run trace
           </Button>
         )}
+        {task !== null &&
+          task.status === "done" &&
+          recurringTaskDefinitionId !== null && (
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => onMakeRoutine(task)}
+            >
+              Make this a routine
+            </Button>
+          )}
         {channel !== null && (
           <Button
             variant="secondary"
@@ -337,6 +381,20 @@ export function InboxPage({
     selectedTenantId === null ? "" : inboxListPath(selectedTenantId, group),
     InboxListSchema,
   );
+
+  // "Make this a routine" needs the tenant's deployed recurring-task
+  // bridge workflow id (see apps/hub/src/routine-launcher.ts) — a
+  // task's own agent is conversational and never resolves in the
+  // Routines picker itself.
+  const workflowDefinitionsQuery = useQuery({
+    queryKey: ["workflow-definitions-for-inbox", selectedTenantId],
+    enabled: selectedTenantId !== null,
+    queryFn: () => listWorkflowDefinitions(selectedTenantId ?? ""),
+  });
+  const recurringTaskDefinitionId =
+    workflowDefinitionsQuery.data?.find(
+      (definition) => definition.assetName === RECURRING_TASK_ASSET_NAME,
+    )?.id ?? null;
 
   const items = useMemo(() => {
     if (listQuery.kind !== "ready") return [] as InboxItem[];
@@ -529,6 +587,7 @@ export function InboxPage({
         detail={
           selectedId === null ? null : (
             <InboxDetail
+              tenantId={selectedTenantId}
               detail={detailQuery}
               busy={busy}
               actionError={actionError}
@@ -568,6 +627,29 @@ export function InboxPage({
               }}
               onOpenArtifact={(artifactId) => {
                 navigate(libraryArtifactPath(artifactId));
+              }}
+              recurringTaskDefinitionId={recurringTaskDefinitionId}
+              onMakeRoutine={(task) => {
+                // Never the task's own definitionId: a task's agent is
+                // conversational, so it can never resolve in the Routines
+                // picker (automatable-only) — the recurring-task bridge
+                // workflow is the one definitionId that both schedules
+                // and, on fire, dispatches this exact agent+prompt as a
+                // task (see apps/hub/src/routine-launcher.ts). The button
+                // itself only renders once recurringTaskDefinitionId has
+                // resolved, so this is never null here.
+                if (recurringTaskDefinitionId === null) return;
+                requestMakeRoutine({
+                  // This callback only ever fires from the Inbox page, so
+                  // the hop to Routines is always off-route.
+                  alreadyOnRoutines: false,
+                  navigateToRoutines: () => navigate("/routines"),
+                  prefill: {
+                    definitionId: recurringTaskDefinitionId,
+                    name: suggestRoutineNameFromPrompt(task.prompt),
+                    input: { agent: task.definitionId, prompt: task.prompt },
+                  },
+                });
               }}
             />
           )

@@ -32,12 +32,16 @@ const routine: Routine = {
   },
   enabled: true,
   deliveryChannelId: "ch_1",
+  consecutiveFailures: 0,
+  deadLetteredAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
 const researcherDefinition = {
   id: "wfd_1",
+  assetName: "researcher",
+  deliveryMode: "channel" as const,
   name: "Researcher",
   status: "deployed",
   whatItDoes: "Pulls research from connected sources.",
@@ -148,6 +152,38 @@ describe("RoutinesListPage", () => {
     expect(markup).not.toContain("rtn_1");
   });
 
+  test("a dead-lettered selected routine shows a plain-language paused banner with the real error", () => {
+    const deadLettered: Routine = {
+      ...routine,
+      consecutiveFailures: 5,
+      deadLetteredAt: "2026-01-02T00:00:00.000Z",
+    };
+    const runHistories = new Map<string, readonly RoutineRun[]>([
+      [
+        routine.id,
+        [
+          {
+            runId: "run_fail_1",
+            triggeredBy: "schedule-failed",
+            createdAt: "2026-01-02T00:00:00.000Z",
+            error: "sidecar unreachable",
+          },
+        ],
+      ],
+    ]);
+    const markup = renderToStaticMarkup(
+      <RoutinesListPage
+        {...listProps}
+        routines={ready([deadLettered])}
+        runHistories={runHistories}
+        selectedId={deadLettered.id}
+        definitions={[researcherDefinition]}
+      />,
+    );
+    expect(markup).toContain("Paused after 5 failed attempts");
+    expect(markup).toContain("sidecar unreachable");
+  });
+
   test("shows an Edit action and an insights link instead of a local toggle", () => {
     const markup = renderToStaticMarkup(
       <RoutinesListPage
@@ -227,6 +263,49 @@ describe("RoutineDetailPage", () => {
     );
     expect(markup).toContain("manual");
     expect(markup).toContain("completed");
+  });
+
+  test("a dead-lettered routine shows a plain-language paused state and the real error text", () => {
+    const deadLettered: Routine = {
+      ...routine,
+      consecutiveFailures: 5,
+      deadLetteredAt: "2026-01-02T00:00:00.000Z",
+    };
+    const failedRun: RoutineRun = {
+      runId: "run_fail_1",
+      triggeredBy: "schedule-failed",
+      createdAt: "2026-01-02T00:00:00.000Z",
+      error: 'no definition "wfd_deleted" for this tenant',
+    };
+    const markup = renderToStaticMarkup(
+      <RoutineDetailPage
+        routine={ready(deadLettered)}
+        runs={ready<readonly RoutineRun[]>([failedRun])}
+        onBack={() => {}}
+        onOpenRuns={() => {}}
+        onOpenChannel={(_channelId: string) => {}}
+        onEdit={() => Promise.resolve()}
+      />,
+    );
+    expect(markup).toContain("Paused after 5 failed attempts");
+    expect(markup).toContain(
+      "no definition &quot;wfd_deleted&quot; for this tenant",
+    );
+    expect(markup).toContain("Failed to start");
+  });
+
+  test("a healthy routine shows no paused banner", () => {
+    const markup = renderToStaticMarkup(
+      <RoutineDetailPage
+        routine={ready(routine)}
+        runs={ready<readonly RoutineRun[]>([])}
+        onBack={() => {}}
+        onOpenRuns={() => {}}
+        onOpenChannel={(_channelId: string) => {}}
+        onEdit={() => Promise.resolve()}
+      />,
+    );
+    expect(markup).not.toContain("Paused after");
   });
 });
 

@@ -7,8 +7,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { BenchProvider } from "../src/bench-context";
+import { resetPendingDialogRequests } from "../src/command-palette-actions";
 import { NavigationProvider } from "../src/navigation";
 import { InboxPage } from "../src/pages/inbox-page";
+import { consumePendingRoutinePrefill } from "../src/routine-prefill";
+import { suggestRoutineNameFromPrompt } from "../src/routines-api";
 import { TestQueryProvider } from "./test-query-provider";
 
 const noop = () => undefined;
@@ -31,6 +34,8 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
+const TASK_PROMPT = "Summarize last night's incident into a postmortem draft.";
+
 const taskResultItem = {
   id: "mail_1",
   group: "delivery",
@@ -47,6 +52,36 @@ const taskResultItem = {
   ],
 };
 
+const failedTaskResultItem = {
+  ...taskResultItem,
+  id: "mail_2",
+  subject: "“Incident Summarizer” failed your task",
+  refs: [{ kind: "task", id: "task_2" }],
+};
+
+function taskRecord(overrides: {
+  readonly id: string;
+  readonly status: "done" | "failed" | "running";
+}) {
+  return {
+    item: {
+      id: overrides.id,
+      definitionId: "wfd_summarizer",
+      agentName: "Incident Summarizer",
+      prompt: TASK_PROMPT,
+      modelPreference: null,
+      status: overrides.status,
+      runId: "run_1",
+      runIds: ["run_1"],
+      stepCount: 1,
+      resultMailId: overrides.status === "done" ? "mail_1" : null,
+      createdAt: "2026-08-15T09:00:00.000Z",
+      completedAt:
+        overrides.status === "running" ? null : "2026-08-15T10:00:00.000Z",
+    },
+  };
+}
+
 const plannerTaskResponse = {
   task: {
     id: "task_2",
@@ -56,6 +91,8 @@ const plannerTaskResponse = {
     modelPreference: null,
     status: "queued",
     runId: "run_2",
+    runIds: ["run_2"],
+    stepCount: 1,
     resultMailId: null,
     plannerRunId: "run_planner_1",
     createdAt: "2026-08-15T10:00:00.000Z",
@@ -67,47 +104,95 @@ const plannerTaskResponse = {
 let plannerCalls: string[] = [];
 let tasksCalls: string[] = [];
 
-function routeFetch(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<Response> {
-  const url = String(input);
-  if (url.includes("/api/me/principals")) {
-    return Promise.resolve(
-      jsonResponse({ data: [membership], nextCursor: null }),
-    );
-  }
-  if (url.includes("/inbox/counts")) {
-    return Promise.resolve(
-      jsonResponse({ action: 2, mention: 1, delivery: 0, open: 5 }),
-    );
-  }
-  if (url.includes("/inbox/mail_1")) {
-    return Promise.resolve(
-      jsonResponse({ ...taskResultItem, body: "All clear." }),
-    );
-  }
-  if (url.includes("/inbox")) {
-    return Promise.resolve(jsonResponse({ items: [taskResultItem] }));
-  }
-  if (url.includes("/chat/invitable-definitions")) {
-    return Promise.resolve(jsonResponse({ items: [] }));
-  }
-  if (url.includes("/catalog/models")) {
-    return Promise.resolve(jsonResponse({ data: [] }));
-  }
-  if (url.includes("/planner")) {
-    plannerCalls.push(String(init?.body ?? ""));
-    return Promise.resolve(jsonResponse(plannerTaskResponse));
-  }
-  if (url.includes("/tasks")) {
-    tasksCalls.push(String(init?.body ?? ""));
-    return Promise.reject(
-      new Error("createTask should not be called for the Myra default"),
-    );
-  }
-  return Promise.reject(new Error(`unrouted fetch in inbox test: ${url}`));
+// The Routines picker's catalog is automatable-only, filtered client-side
+// via `purposeDefinitions` (isAutomatableWorkflowName + not a channel
+// host) — a task's own agent is conversational, so it is NEVER a member
+// of this list. This mirrors production exactly: the recurring-task
+// bridge workflow (`RECURRING_TASK_ASSET_NAME`, seeded once per tenant
+// per `packages/hub-client/src/seed.ts`) is the only entry, and its id
+// (`wfd_recurring_task`) is deliberately disjoint from the task's own
+// agent id (`wfd_summarizer`) below — the exact shape a real bench has,
+// and the shape whose disjointness broke the very first version of this
+// feature (it prefilled the dialog with the task's own agent id, which
+// never resolved in this list).
+const WORKFLOW_DEFINITIONS_RESPONSE = {
+  data: [
+    {
+      id: "wfd_recurring_task",
+      name: "recurring-task",
+      status: "deployed",
+    },
+  ],
+  nextCursor: null,
+};
+
+/** `items` is what the inbox list route answers with — each test picks
+ * which task-result item(s) are in view. `definitions` defaults to the
+ * production-shaped, disjoint-from-the-task-agent catalog above; a test
+ * proving the "no recurring-task deployed yet" case overrides it empty. */
+function makeRouteFetch(
+  items: readonly unknown[],
+  definitions: unknown = WORKFLOW_DEFINITIONS_RESPONSE,
+): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
+  return (input, init) => {
+    const url = String(input);
+    if (url.includes("/api/me/principals")) {
+      return Promise.resolve(
+        jsonResponse({ data: [membership], nextCursor: null }),
+      );
+    }
+    if (url.includes("/inbox/counts")) {
+      return Promise.resolve(
+        jsonResponse({ action: 2, mention: 1, delivery: 0, open: 5 }),
+      );
+    }
+    if (url.includes("/tasks/task_1")) {
+      return Promise.resolve(
+        jsonResponse(taskRecord({ id: "task_1", status: "done" })),
+      );
+    }
+    if (url.includes("/tasks/task_2")) {
+      return Promise.resolve(
+        jsonResponse(taskRecord({ id: "task_2", status: "failed" })),
+      );
+    }
+    if (url.includes("/inbox/mail_1")) {
+      return Promise.resolve(
+        jsonResponse({ ...taskResultItem, body: "All clear." }),
+      );
+    }
+    if (url.includes("/inbox/mail_2")) {
+      return Promise.resolve(
+        jsonResponse({ ...failedTaskResultItem, body: "Ran into an error." }),
+      );
+    }
+    if (url.includes("/workflows/definitions")) {
+      return Promise.resolve(jsonResponse(definitions));
+    }
+    if (url.includes("/chat/invitable-definitions")) {
+      return Promise.resolve(jsonResponse({ items: [] }));
+    }
+    if (url.includes("/catalog/models")) {
+      return Promise.resolve(jsonResponse({ data: [] }));
+    }
+    if (url.includes("/planner")) {
+      plannerCalls.push(String(init?.body ?? ""));
+      return Promise.resolve(jsonResponse(plannerTaskResponse));
+    }
+    if (url.includes("/inbox")) {
+      return Promise.resolve(jsonResponse({ items }));
+    }
+    if (url.includes("/tasks")) {
+      tasksCalls.push(String(init?.body ?? ""));
+      return Promise.reject(
+        new Error("createTask should not be called for the Myra default"),
+      );
+    }
+    return Promise.reject(new Error(`unrouted fetch in inbox test: ${url}`));
+  };
 }
+
+const routeFetch = makeRouteFetch([taskResultItem]);
 
 describe("inbox top bar", () => {
   let container: HTMLDivElement;
@@ -127,6 +212,7 @@ describe("inbox top bar", () => {
     container.remove();
     globalThis.fetch = realFetch;
     window.localStorage.clear();
+    resetPendingDialogRequests();
   });
 
   test("shows counts and the bulk actions in the shared bar", async () => {
@@ -194,6 +280,189 @@ describe("inbox top bar", () => {
       chip.click();
     });
     expect(navigated).toEqual(["/library/a/art_1"]);
+  });
+
+  async function waitForText(text: string) {
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (container.textContent?.includes(text)) return;
+    }
+    throw new Error(`timed out waiting for "${text}"`);
+  }
+
+  async function settle(ticks = 10) {
+    for (let i = 0; i < ticks; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+  }
+
+  function buttonWithText(text: string): HTMLButtonElement | undefined {
+    return [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === text,
+    );
+  }
+
+  test("shows 'Make this a routine' on a successful task result", async () => {
+    globalThis.fetch = makeRouteFetch([taskResultItem]) as typeof fetch;
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={noop}>
+            <BenchProvider>
+              <InboxPage path="/inbox" navigate={noop} />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    await waitForText("All clear.");
+    await waitForText("Make this a routine");
+
+    expect(buttonWithText("Make this a routine")).not.toBeUndefined();
+  });
+
+  test("hides 'Make this a routine' on a failed task result", async () => {
+    globalThis.fetch = makeRouteFetch([failedTaskResultItem]) as typeof fetch;
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={noop}>
+            <BenchProvider>
+              <InboxPage path="/inbox" navigate={noop} />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    await waitForText("Ran into an error.");
+    // Give the task fetch a chance to settle before asserting its absence.
+    await settle();
+
+    expect(buttonWithText("Make this a routine")).toBeUndefined();
+  });
+
+  test("accepting 'Make this a routine' opens the prefilled routine flow and creates nothing on its own", async () => {
+    const navigated: string[] = [];
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={noop}>
+            <BenchProvider>
+              <InboxPage
+                path="/inbox"
+                navigate={(to) => {
+                  navigated.push(to);
+                }}
+              />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    await waitForText("All clear.");
+    await waitForText("Make this a routine");
+
+    const button = buttonWithText("Make this a routine");
+    if (button === undefined) throw new Error("affordance not rendered");
+    await act(async () => {
+      button.click();
+    });
+
+    // Never auto-creates — clicking only navigates to the routine-creation
+    // flow, pre-filled and awaiting the person's cadence pick and confirm.
+    expect(navigated).toEqual(["/routines"]);
+    expect(consumePendingRoutinePrefill()).toEqual({
+      // NOT the task's own agent ("wfd_summarizer") — that id is
+      // conversational and never resolves in the Routines picker (the
+      // dead end a critique caught in this feature's first version).
+      // The recurring-task bridge workflow's id is what actually
+      // resolves; the task's agent travels as its "agent" trigger-field
+      // input instead.
+      definitionId: "wfd_recurring_task",
+      name: suggestRoutineNameFromPrompt(TASK_PROMPT),
+      input: { agent: "wfd_summarizer", prompt: TASK_PROMPT },
+    });
+  });
+
+  test("regression: a task's own (conversational) agent id is never used as the prefilled definitionId, even though the two id spaces are disjoint in production", async () => {
+    // Reproduces the critique's exact failure shape: the routine
+    // catalog response contains ONLY the recurring-task bridge
+    // workflow — the task's own agent id never appears there, exactly
+    // as in a real bench (conversational definitions are excluded from
+    // the automatable-only Routines picker by construction). If this
+    // regresses to prefilling with the task's own definitionId, the
+    // create dialog's `definitions.find` would fail to resolve it and
+    // the flow would dead-end silently.
+    const disjointDefinitions = {
+      data: [
+        {
+          id: "wfd_recurring_task",
+          name: "recurring-task",
+          status: "deployed",
+        },
+      ],
+      nextCursor: null,
+    };
+    globalThis.fetch = makeRouteFetch(
+      [taskResultItem],
+      disjointDefinitions,
+    ) as typeof fetch;
+
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={noop}>
+            <BenchProvider>
+              <InboxPage path="/inbox" navigate={noop} />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    await waitForText("All clear.");
+    await waitForText("Make this a routine");
+
+    const button = buttonWithText("Make this a routine");
+    if (button === undefined) throw new Error("affordance not rendered");
+    await act(async () => {
+      button.click();
+    });
+
+    const prefill = consumePendingRoutinePrefill();
+    expect(prefill?.definitionId).not.toBe("wfd_summarizer");
+    expect(
+      disjointDefinitions.data.some((d) => d.id === prefill?.definitionId),
+    ).toBe(true);
+  });
+
+  test("hides 'Make this a routine' when no recurring-task bridge workflow is deployed for this tenant yet", async () => {
+    // Even on a successful task result, the affordance must not offer a
+    // dead end: without a resolvable recurring-task definitionId there
+    // is nothing honest to prefill.
+    globalThis.fetch = makeRouteFetch([taskResultItem], {
+      data: [],
+      nextCursor: null,
+    }) as typeof fetch;
+
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={noop}>
+            <BenchProvider>
+              <InboxPage path="/inbox" navigate={noop} />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    await waitForText("All clear.");
+    await settle();
+
+    expect(buttonWithText("Make this a routine")).toBeUndefined();
   });
 
   test("submitting with the Myra default dispatches to the planner, not /tasks, and never saves it as the MRU agent", async () => {

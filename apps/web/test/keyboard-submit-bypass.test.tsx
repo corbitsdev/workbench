@@ -58,6 +58,8 @@ function cardWithTitle(title: string): HTMLButtonElement | undefined {
 const definitions = [
   {
     id: "wfd_3",
+    assetName: "last-30-days-research",
+    deliveryMode: "channel",
     name: "Last 30 days research report",
     status: "deployed",
     whatItDoes: "Researches a topic over the last 30 days.",
@@ -67,6 +69,7 @@ const definitions = [
     triggerFields: [
       {
         key: "topic",
+        kind: "text",
         label: "Topic",
         placeholder: "AI coding agents",
         required: true,

@@ -16,8 +16,43 @@ routine is what a person names, schedules, and comes back to look at.
   input: Record<string, unknown>;
   enabled: boolean;
   deliveryChannelId: string | null; // where results are posted, if anywhere
+  consecutiveFailures: number; // scheduled fires failed in a row; 0 when healthy
+  deadLetteredAt: string | null; // set once the scheduler stops firing this routine
 }
 ```
+
+## Delivery destination
+
+`deliveryChannelId` is not always required: a host wires an optional
+`deliveryChannelRequired(tenantId, definitionId)` port
+(`CreateRoutineRoutesDeps`, also threaded into `fireScheduledRoutine`) that
+decides, per definition, whether its result actually posts to a channel at
+all. A definition this port says never delivers to a channel (e.g. a
+workflow whose result always reaches its creator's Inbox instead) can be
+created, run now, and fired on schedule with `deliveryChannelId` entirely
+absent — no silent-discard field collected for nothing. Omitting the port
+keeps every prior host's contract unchanged: every definition defaults to
+channel-required.
+
+## Trigger-input validation
+
+An optional `validateRoutineInput(tenantId, definitionId, input)` port on
+`CreateRoutineRoutesDeps` runs at `POST /routines`, rejecting a 400 with an
+honest message before a routine is ever created with input that doesn't
+match its definition's own declared contract. This is the early, friendly
+rejection; a workflow's own launch-time validation remains the
+authoritative second line.
+
+## Dead-lettering
+
+`consecutiveFailures` and `deadLetteredAt` track a routine's scheduled-fire
+health: each failed scheduled fire increments the counter and backs off the
+next attempt; a fire that succeeds (including "run now") clears it. Once
+`consecutiveFailures` reaches the package's fire-failure ceiling, the
+routine dead-letters — the scheduler stops claiming it until a person
+re-enables or edits it — and a synthetic `schedule-failed` run row (with the
+launch failure's own `error` text) is recorded so `GET /routines/:id/runs`
+shows *why*, not just *that* it stopped.
 
 ## Triggers
 
@@ -96,6 +131,13 @@ must still parse it even if a cron/timezone check has since tightened.
   route in `routes.ts`.
 - `routineCreatedToast`, `routineRunStartedToast` — the confirmation copy
   a create/run-now flow shows.
+- `suggestRoutineNameFromPrompt` — a default routine name derived from
+  free-form prompt text (first line, truncated), for a create flow that
+  starts from a prompt rather than a picked catalog entry — e.g.
+  "Make this a routine" on a completed task result, which prefills the
+  create dialog with that task's agent, prompt, and this suggested name.
+  The person still confirms (or edits) it; nothing here creates a routine
+  on its own.
 - Re-exported from `./trigger`: `RoutineTrigger`, `RoutineTriggerT`,
   `RoutineTriggerWire`, `RoutineTriggerWireT`,
   `computeNextFireAt`, `cronExpressionForTrigger`, `routineCadenceLabel`,

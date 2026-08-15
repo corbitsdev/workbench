@@ -48,6 +48,37 @@ describe("tickRoutineScheduler", () => {
     expect(runs[0]?.runId).toBe("run_1");
   });
 
+  test("threads deliveryChannelRequired through to fireScheduledRoutine, firing a channel-less routine when the port says one isn't needed", async () => {
+    const store = createInMemoryRoutineStore();
+    const routine = await store.createRoutine({
+      tenantId: "t1",
+      name: "recurring task",
+      definitionId: "def_recurring_task",
+      trigger: CRON,
+      scope: "bench",
+      input: { agent: "wfd_agent", prompt: "Do it" },
+      createdBy: "user_1",
+    });
+    const at = new Date(
+      Math.max(Date.now(), routine.nextFireAt?.getTime() ?? 0),
+    );
+    const launches: string[] = [];
+    await tickRoutineScheduler(
+      {
+        store,
+        launcher: launcher(async (input) => {
+          launches.push(input.definitionId);
+          return { runId: "run_task_1" };
+        }),
+        deliveryChannelRequired: async () => false,
+      },
+      at,
+    );
+    expect(launches).toEqual(["def_recurring_task"]);
+    const runs = await store.listRunsForRoutine("t1", routine.id);
+    expect(runs).toHaveLength(1);
+  });
+
   test("a launch failure backs off and records schedule-failed", async () => {
     const store = createInMemoryRoutineStore();
     const routine = await store.createRoutine({

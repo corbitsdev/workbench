@@ -104,6 +104,40 @@ export type CreateRoutineRoutesDeps = {
    */
   deliveryThreads?: DeliveryThreadPort | undefined;
   /**
+   * Whether a routine on this definition must carry a `deliveryChannelId`
+   * — `false` for a workflow whose result never posts to a channel at
+   * all (e.g. the recurring-task bridge, which always delivers to its
+   * creator's Inbox). Omitted defaults every definition to
+   * channel-required, the behavior before this port existed — a host
+   * that never wires it keeps every prior create/run-now/fire contract
+   * unchanged. Consulted at create, at "run now", and at every
+   * scheduled fire (`fireScheduledRoutine`'s own `deps` takes the same
+   * port), so a routine can never end up silently missing the delivery
+   * its own workflow actually needs, and never forced to collect a
+   * channel a workflow would just discard.
+   */
+  deliveryChannelRequired?: (
+    tenantId: string,
+    definitionId: string,
+  ) => Promise<boolean>;
+  /**
+   * Validates `input` against the definition's own declared
+   * trigger-field contract (shape — every required field a non-empty
+   * string — and, for an `"agent"`-kind field, that the value actually
+   * resolves to a real taskable definition) before a routine is
+   * created. This is the friendly, early rejection; the workflow's own
+   * fire-time validation (a host's launcher, e.g. `launchTask`'s
+   * definition checks) is the authoritative second line — omitting
+   * this port never blocks create, matching every prior contract.
+   */
+  validateRoutineInput?: (
+    tenantId: string,
+    definitionId: string,
+    input: Record<string, unknown>,
+  ) => Promise<
+    { readonly ok: true } | { readonly ok: false; readonly message: string }
+  >;
+  /**
    * Describe-to-agent drafting. When omitted, draft routes return 404.
    */
   drafts?: import("./drafts").RoutineDraftStore | undefined;
@@ -120,9 +154,11 @@ const CreateRoutineBody = type({
   trigger: RoutineTrigger,
   scope: "'personal' | 'bench'",
   "input?": "Record<string, unknown>",
-  // Delivery is required: every routine lands results in a channel
-  // (owner decision). Null is not accepted on create.
-  deliveryChannelId: "string",
+  // Whether this is actually required depends on the definition's own
+  // delivery mode (see `deliveryChannelRequired`, checked below, after
+  // parse) — a workflow that only ever delivers to its creator's Inbox
+  // must never be forced to collect a channel it would just discard.
+  "deliveryChannelId?": "string",
   "runOnceNow?": "boolean",
 });
 
@@ -275,6 +311,18 @@ async function webhookTriggerValid(
   );
 }
 
+/** Every definition defaults to channel-required — see
+ * `CreateRoutineRoutesDeps.deliveryChannelRequired`'s own doc comment
+ * for why an omitted port must never change prior behavior. */
+async function isDeliveryChannelRequired(
+  deps: Pick<CreateRoutineRoutesDeps, "deliveryChannelRequired">,
+  tenantId: string,
+  definitionId: string,
+): Promise<boolean> {
+  if (deps.deliveryChannelRequired === undefined) return true;
+  return deps.deliveryChannelRequired(tenantId, definitionId);
+}
+
 export function createRoutineRoutes(
   deps: CreateRoutineRoutesDeps,
 ): Hono<TenantEnv> {
@@ -322,6 +370,30 @@ export function createRoutineRoutes(
         );
       }
 
+      if (
+        (await isDeliveryChannelRequired(deps, tenant.id, body.definitionId)) &&
+        (body.deliveryChannelId === undefined || body.deliveryChannelId === "")
+      ) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            "deliveryChannelId is required for this workflow",
+          ),
+          400,
+        );
+      }
+
+      if (deps.validateRoutineInput !== undefined) {
+        const validated = await deps.validateRoutineInput(
+          tenant.id,
+          body.definitionId,
+          body.input ?? {},
+        );
+        if (!validated.ok) {
+          return c.json(ErrorEnvelope("bad_request", validated.message), 400);
+        }
+      }
+
       const row = await deps.store.createRoutine({
         tenantId: tenant.id,
         name: body.name,
@@ -329,7 +401,7 @@ export function createRoutineRoutes(
         trigger: body.trigger as RoutineTriggerT,
         scope: body.scope,
         input: body.input ?? {},
-        deliveryChannelId: body.deliveryChannelId,
+        deliveryChannelId: body.deliveryChannelId ?? null,
         createdBy: principal.id,
       });
 
@@ -497,8 +569,13 @@ export function createRoutineRoutes(
       // scheduled trigger would call — the only difference is
       // `triggeredBy`, never a second launch code path.
       if (
-        existing.deliveryChannelId === null ||
-        existing.deliveryChannelId === ""
+        (await isDeliveryChannelRequired(
+          deps,
+          tenant.id,
+          existing.definitionId,
+        )) &&
+        (existing.deliveryChannelId === null ||
+          existing.deliveryChannelId === "")
       ) {
         return c.json(
           ErrorEnvelope(
@@ -735,6 +812,10 @@ export async function fireScheduledRoutine(
     store: RoutineStore;
     launcher: RoutineLauncher;
     deliveryThreads?: DeliveryThreadPort | undefined;
+    deliveryChannelRequired?: (
+      tenantId: string,
+      definitionId: string,
+    ) => Promise<boolean>;
   },
   params: { tenantId: string; routine: RoutineRow },
 ): Promise<LaunchedRoutineRun> {
@@ -744,8 +825,13 @@ export async function fireScheduledRoutine(
     );
   }
   if (
-    params.routine.deliveryChannelId === null ||
-    params.routine.deliveryChannelId === ""
+    (await isDeliveryChannelRequired(
+      deps,
+      params.tenantId,
+      params.routine.definitionId,
+    )) &&
+    (params.routine.deliveryChannelId === null ||
+      params.routine.deliveryChannelId === "")
   ) {
     throw new Error(
       `routine ${params.routine.id} has no deliveryChannelId; cannot fire`,

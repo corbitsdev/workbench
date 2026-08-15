@@ -32,6 +32,13 @@ import { getLogger } from "@intx/log";
 export type RoutineSchedulerDeps = {
   store: RoutineStore;
   launcher: RoutineLauncher;
+  /** See `@corbits/routines`' `fireScheduledRoutine` — passed straight
+   * through so a scheduled fire enforces the same honest
+   * channel-required-or-not rule a manual "run now" does. */
+  deliveryChannelRequired?: (
+    tenantId: string,
+    definitionId: string,
+  ) => Promise<boolean>;
   /** Injectable for deterministic tests; defaults to `Date.now`-backed wall time. */
   now?: () => Date;
 };
@@ -46,7 +53,10 @@ const log = getLogger(["hub", "routine-scheduler"]);
  * waiting on `setInterval`.
  */
 export async function tickRoutineScheduler(
-  deps: Pick<RoutineSchedulerDeps, "store" | "launcher">,
+  deps: Pick<
+    RoutineSchedulerDeps,
+    "store" | "launcher" | "deliveryChannelRequired"
+  >,
   at: Date,
 ): Promise<void> {
   const dueRoutines = await deps.store.listDueRoutines(at);
@@ -58,7 +68,13 @@ export async function tickRoutineScheduler(
     if (claimed === undefined) continue;
     try {
       await fireScheduledRoutine(
-        { store: deps.store, launcher: deps.launcher },
+        {
+          store: deps.store,
+          launcher: deps.launcher,
+          ...(deps.deliveryChannelRequired !== undefined
+            ? { deliveryChannelRequired: deps.deliveryChannelRequired }
+            : {}),
+        },
         { tenantId: claimed.tenantId, routine: claimed },
       );
     } catch (err) {

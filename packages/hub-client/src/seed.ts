@@ -38,6 +38,10 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "@corbits/heartbeat-workflow";
+import {
+  buildRecurringTaskWorkflow,
+  serializeRecurringTaskWorkflow,
+} from "@corbits/recurring-task-workflow";
 import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
 import {
   publishCorbitsToolsRegistry,
@@ -57,6 +61,11 @@ const ASSISTANT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 // conversational workflows above allow.
 const HEARTBEAT_TURN_TIMEOUT_MS = 30 * 1000;
 const CHANNEL_DIGEST_TURN_TIMEOUT_MS = 30 * 1000;
+// Never actually runs (its routine fire is intercepted and dispatched
+// as a task instead — see @corbits/recurring-task-workflow's own doc),
+// so this timeout only bounds the deploy-time definition, never a real
+// turn.
+const RECURRING_TASK_TURN_TIMEOUT_MS = 30 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
@@ -227,6 +236,27 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
             { provider: model.provider, model: model.model },
           ],
           turnTimeoutMs: CHANNEL_DIGEST_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "recurring-task",
+    displayName: catalogDisplayName("recurring-task"),
+    automatable: catalogAutomatable("recurring-task"),
+    // Every real tenant needs a deployed "recurring-task" definition for
+    // the Routines picker to offer — "Make this a routine" (an Inbox
+    // action on a completed task result) prefills the create dialog
+    // with this definition's id. Its own step is never actually run
+    // (see @corbits/recurring-task-workflow's module doc), so the real
+    // model here costs nothing extra to seed.
+    buildJson: (tenantDomain, model) =>
+      serializeRecurringTaskWorkflow(
+        buildRecurringTaskWorkflow({
+          triggerAddress: `recurring-task@${tenantDomain}`,
+          inferencePreferences: [
+            { provider: model.provider, model: model.model },
+          ],
+          turnTimeoutMs: RECURRING_TASK_TURN_TIMEOUT_MS,
         }),
       ),
   },
