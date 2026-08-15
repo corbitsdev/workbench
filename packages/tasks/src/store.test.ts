@@ -274,3 +274,83 @@ describe("createMemoryTaskStore", () => {
     expect(record?.plannerRunId).toBeNull();
   });
 });
+
+describe("claimLegDispatch", () => {
+  async function seedPendingLeg() {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_researcher",
+      prompt: "Research the outage.",
+      modelPreference: null,
+      runId: "run_leg0",
+      followOn: [
+        {
+          definitionId: "wfd_editor",
+          prompt: "Edit the findings.",
+          modelPreference: null,
+        },
+      ],
+    });
+    const legs = await store.listLegs(TENANT_A, "task_1");
+    const pending = legs[1];
+    if (pending === undefined) throw new Error("no follow-on leg was seeded");
+    return { store, pending };
+  }
+
+  test("two callers racing for the same pending leg: exactly one wins", async () => {
+    const { store, pending } = await seedPendingLeg();
+    const now = new Date("2026-08-14T10:00:00.000Z");
+    const leaseExpiresAt = new Date(now.getTime() + 30_000);
+
+    // Both callers see the same pending leg and claim it at the same
+    // instant, each proposing its own live lease. Two agents launched
+    // for one hand-off is the failure this guards.
+    const claims = await Promise.all([
+      store.claimLegDispatch({
+        tenantId: TENANT_A,
+        legId: pending.id,
+        parentRunId: "run_leg0",
+        leaseExpiresAt,
+        now,
+      }),
+      store.claimLegDispatch({
+        tenantId: TENANT_A,
+        legId: pending.id,
+        parentRunId: "run_leg0",
+        leaseExpiresAt,
+        now,
+      }),
+    ]);
+
+    const won = claims.filter((claim) => claim !== null);
+    expect(won).toHaveLength(1);
+    expect(claims.filter((claim) => claim === null)).toHaveLength(1);
+    expect(won[0]?.status).toBe("dispatching");
+    expect(won[0]?.runId).toBeNull();
+  });
+
+  test("a live lease refuses every later claim until it passes", async () => {
+    const { store, pending } = await seedPendingLeg();
+    const claimedAt = new Date("2026-08-14T10:00:00.000Z");
+    const leaseExpiresAt = new Date(claimedAt.getTime() + 30_000);
+
+    const claim = (now: Date) =>
+      store.claimLegDispatch({
+        tenantId: TENANT_A,
+        legId: pending.id,
+        parentRunId: "run_leg0",
+        leaseExpiresAt: new Date(now.getTime() + 30_000),
+        now,
+      });
+
+    expect(await claim(claimedAt)).not.toBeNull();
+    // Inside the lease the leg belongs to whoever holds it, however
+    // many callers ask; only a lease that has genuinely passed hands
+    // the leg to the next one.
+    expect(await claim(new Date(leaseExpiresAt.getTime() - 1))).toBeNull();
+    expect(await claim(new Date(leaseExpiresAt.getTime() + 1))).not.toBeNull();
+  });
+});
