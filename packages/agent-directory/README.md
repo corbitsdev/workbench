@@ -25,7 +25,10 @@ just at different points in the request lifecycle.
 
 - `purposeAgentDefinitions` / `purposeAgentInstances` — drops the chat
   anchor machinery's channel-host rows; those are internal plumbing, never
-  an agent a person created.
+  an agent a person created. `purposeAgentInstances` also takes an
+  `excludeRunIds` set for folded chat runs (invited agents) that
+  self-anchor like real deployments under a real `definitionId`, which the
+  name-based filter alone can't catch.
 - `filterDefinitions` / `filterInstances` — full-text search across the
   fields a person actually reads (name, description), never a raw id.
 - `isOrphanedInstance` / `definitionsById` — flags an instance whose
@@ -35,8 +38,10 @@ just at different points in the request lifecycle.
 
 **A host injects:** its own definition and instance lists, already fetched
 from wherever it gets them (`apps/web/src/agents-api.ts`'s
-`loadAgentDirectory`, for this repo) — this subpath issues no request and
-holds no state of its own. Every function is generic over the host's
+`loadAgentDirectory`, for this repo), and the folded-run-id set for
+`excludeRunIds` (from `@corbits/chat-ui`'s
+`foldedRunIdsFromChannels`, for this repo) — this subpath issues no
+request and holds no state of its own. Every function is generic over the host's
 concrete row type (constrained to the minimal shape it reads), so a host's
 richer types pass through untouched.
 
