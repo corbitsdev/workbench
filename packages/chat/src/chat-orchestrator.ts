@@ -21,16 +21,19 @@
 // already wrote (`ApprovalStore.findByCorrelationId`), matching the
 // gen-UI design's "agents can never mint these" rule.
 import { headlineFor } from "@corbits/approvals";
-import { findFoldedRunByAddress } from "@corbits/folded-runs";
+import {
+  connectorReplyContent,
+  findFoldedRunByAddress,
+} from "@corbits/folded-runs";
 import type { Memory } from "@corbits/memory";
+import {
+  persistedArtifactsForFinalizedTurn,
+  type FinalizedTurnToolCall,
+} from "@corbits/turn-artifacts";
 import type { ApprovalStore, DB } from "@intx/db";
 import type { SidecarEventEmitter } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
-import {
-  artifactPartsForFinalizedTurn,
-  persistedArtifactsForFinalizedTurn,
-  type FinalizedTurnToolCall,
-} from "./artifact-delivery";
+import { artifactPartsForFinalizedTurn } from "./artifact-delivery";
 import type { ApproveBlockData } from "./blocks";
 import { encodeParts } from "./codec";
 import { parseParticipants } from "./participants";
@@ -79,18 +82,6 @@ export type ChatOrchestrator = {
    * to tear one down between cases. */
   dispose(): void;
 };
-
-function connectorReplyContent(event: unknown): string | undefined {
-  if (
-    typeof event !== "object" ||
-    event === null ||
-    (event as { type?: unknown }).type !== "connector.reply"
-  ) {
-    return undefined;
-  }
-  const content = (event as { data?: { content?: unknown } }).data?.content;
-  return typeof content === "string" && content !== "" ? content : undefined;
-}
 
 /**
  * A `reactor.gate.blocked` event whose gate is an approval ask, carrying the

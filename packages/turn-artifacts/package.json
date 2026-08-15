@@ -1,0 +1,22 @@
+{
+  "name": "@corbits/turn-artifacts",
+  "private": true,
+  "description": "Parses persisted-Library-artifact facts out of a finalized turn's tool-call results — the one shape a workflow's finalize tool reports, shared by every surface that delivers those artifacts (chat messages, task results).",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

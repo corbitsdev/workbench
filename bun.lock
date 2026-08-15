@@ -43,6 +43,7 @@
         "@corbits/skills": "workspace:*",
         "@corbits/slack-tag": "workspace:*",
         "@corbits/tasks": "workspace:*",
+        "@corbits/turn-artifacts": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@intx/authz": "workspace:*",
@@ -323,6 +324,7 @@
         "@corbits/commands": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
+        "@corbits/turn-artifacts": "workspace:*",
         "@intx/agent": "workspace:*",
         "@intx/authz": "workspace:*",
         "@intx/crypto": "workspace:*",
@@ -795,9 +797,9 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/agent-lifecycle": "workspace:*",
-        "@corbits/chat": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@corbits/notify": "workspace:*",
+        "@corbits/turn-artifacts": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "workspace:*",
@@ -819,7 +821,6 @@
       "name": "@corbits/tasks-ui",
       "version": "0.0.1",
       "dependencies": {
-        "@corbits/chat-ui": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#4c1214298e6f7005da01918c7d5a68230f7109cc",
         "arktype": "catalog:",
         "lucide-react": "^1.27.0",
@@ -840,6 +841,17 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/turn-artifacts": {
+      "name": "@corbits/turn-artifacts",
+      "version": "0.0.1",
+      "dependencies": {
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1503,6 +1515,8 @@
     "@corbits/tasks-ui": ["@corbits/tasks-ui@workspace:packages/tasks-ui"],
 
     "@corbits/tools-skills": ["@corbits/tools-skills@workspace:packages/tools-skills"],
+
+    "@corbits/turn-artifacts": ["@corbits/turn-artifacts@workspace:packages/turn-artifacts"],
 
     "@corbits/web-search-tools": ["@corbits/web-search-tools@workspace:packages/web-search-tools"],
 
@@ -2590,8 +2604,6 @@
 
     "@corbits/context-menu/@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#4c12142", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@radix-ui/react-tooltip": "^1.2.8", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-4c12142", "sha512-H5yK7hXmN20cyCB0JGg6HjvcsFI9sq9XyWrqkpM4oGmEFgyy7j5i7/gke1JwLCaEgHNoXnHAB3uI+SV1jLQZ6A=="],
 
-    "@corbits/memory-hub/@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#9e6f213", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-9e6f213", "sha512-utnM4ZT2zmslcPXYWAAqxlDNLcpGsXFiTOtj8h7+OXnhCP0Eaw8yl25+yCTyHpvt3jcdeG4h5uFsSj7ou0BZCA=="],
-
     "@corbits/settings-ui/@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#4c12142", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@radix-ui/react-tooltip": "^1.2.8", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-4c12142", "sha512-H5yK7hXmN20cyCB0JGg6HjvcsFI9sq9XyWrqkpM4oGmEFgyy7j5i7/gke1JwLCaEgHNoXnHAB3uI+SV1jLQZ6A=="],
 
     "@corbits/tasks-ui/@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#4c12142", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@radix-ui/react-tooltip": "^1.2.8", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-4c12142", "sha512-H5yK7hXmN20cyCB0JGg6HjvcsFI9sq9XyWrqkpM4oGmEFgyy7j5i7/gke1JwLCaEgHNoXnHAB3uI+SV1jLQZ6A=="],
@@ -2615,8 +2627,6 @@
     "@tailwindcss/oxide-wasm32-wasi/tslib": ["tslib@2.8.1", "", { "bundled": true }, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.6", "", {}, "sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw=="],
-
-    "@workbench/hub/@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#9e6f213", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-9e6f213", "sha512-utnM4ZT2zmslcPXYWAAqxlDNLcpGsXFiTOtj8h7+OXnhCP0Eaw8yl25+yCTyHpvt3jcdeG4h5uFsSj7ou0BZCA=="],
 
     "@workbench/web/@corbits/react-ui": ["@corbits/react-ui@github:corbitsdev/react-ui#4c12142", { "dependencies": { "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "tailwind-merge": "^3.3.1" }, "peerDependencies": { "@radix-ui/react-dialog": "^1.1.15", "@radix-ui/react-dropdown-menu": "^2.1.16", "@radix-ui/react-slot": "^1.2.3", "@radix-ui/react-tooltip": "^1.2.8", "@tanstack/react-query": "^5.90.2", "lucide-react": "^0.545.0 || ^1.0.0", "react": "^18.2.0 || ^19.0.0", "react-dom": "^18.2.0 || ^19.0.0", "sonner": "^2.0.7" }, "optionalPeers": ["@tanstack/react-query"] }, "corbitsdev-react-ui-4c12142", "sha512-H5yK7hXmN20cyCB0JGg6HjvcsFI9sq9XyWrqkpM4oGmEFgyy7j5i7/gke1JwLCaEgHNoXnHAB3uI+SV1jLQZ6A=="],
 

@@ -38,3 +38,8 @@ export {
   type SendFoldedMailAttemptResult,
   type ListFoldedMailParams,
 } from "./mail";
+export {
+  connectorReplyContent,
+  messageRunEnded,
+  type MessageRunEnded,
+} from "./agent-events";

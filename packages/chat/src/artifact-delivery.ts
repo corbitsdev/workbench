@@ -1,44 +1,18 @@
-// Turns a finalized turn's tool-call results into chat `FilePart`s that
-// reference a persisted Library artifact (CL-6000). A workflow's
-// finalize tool (`pain_point_collateral_finalize`,
-// `collateral_generation_finalize`) persists via the sanctioned
-// workflow-artifacts HTTP surface (`packages/artifacts-hub`'s
-// `createWorkflowArtifactRoutes`) and returns the artifact's id/version
-// in its `ToolResult.content` JSON. This module recognizes that shape —
-// nothing else — and never fabricates a part for a call it doesn't
-// recognize or one that errored.
-import { type } from "arktype";
+// Turns a finalized turn's persisted-artifact facts into chat
+// `FilePart`s (CL-6000). The recognition itself — which tool-call
+// results name a persisted Library artifact — lives in
+// `@corbits/turn-artifacts`, shared with every other delivery surface
+// (task results included); this module only owns the chat-specific
+// half: mapping those facts onto the `FilePart` wire shape chat's
+// codec delivers.
+import {
+  persistedArtifactsForFinalizedTurn,
+  persistedArtifactsForToolCall,
+  type FinalizedTurnToolCall,
+  type PersistedArtifact,
+} from "@corbits/turn-artifacts";
 
 import type { FilePart } from "./parts";
-
-/**
- * The minimal shape this module reads off a finalized turn. Deliberately
- * structural rather than importing `@intx/hub-sessions`' `TurnFinalized`/
- * `TurnToolCall` (which that vendored package does not export past its
- * own internal module) — every real `TurnToolCall` satisfies this.
- */
-export type FinalizedTurnToolCall = {
-  readonly result: string;
-  readonly isError: boolean;
-};
-
-const PersistedArtifactResult = type({
-  id: "string > 0",
-  title: "string > 0",
-  kind: "string > 0",
-  persisted: "true",
-});
-
-const PersistedArtifactBatchResult = type({
-  artifacts: PersistedArtifactResult.array(),
-});
-
-/** A recognized persisted-artifact result, parsed off one finalized tool call. */
-export type PersistedArtifact = {
-  readonly id: string;
-  readonly title: string;
-  readonly kind: string;
-};
 
 function mediaTypeForArtifactKind(kind: string): string {
   return kind === "text" ? "text/plain" : "application/octet-stream";
@@ -51,43 +25,6 @@ function filePartFor(artifact: PersistedArtifact): FilePart {
     mediaType: mediaTypeForArtifactKind(artifact.kind),
     artifactId: artifact.id,
   };
-}
-
-/**
- * Parses one tool call's result for a recognized persisted-artifact
- * shape (single `{id, title, kind, persisted: true}` or batched
- * `{artifacts: [...]}`) and returns the artifacts it names. An errored
- * call, unparseable JSON, or a result that matches neither shape yields
- * nothing — this never guesses. Shared by the `FilePart` delivery below
- * and by `chat-orchestrator.ts`'s memory-ingest call site (CL-5852),
- * which needs the same `{id, title, kind}` facts.
- */
-export function persistedArtifactsForToolCall(
-  toolCall: FinalizedTurnToolCall,
-): readonly PersistedArtifact[] {
-  if (toolCall.isError) return [];
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(toolCall.result);
-  } catch {
-    return [];
-  }
-
-  const single = PersistedArtifactResult(parsed);
-  if (!(single instanceof type.errors)) return [single];
-
-  const batch = PersistedArtifactBatchResult(parsed);
-  if (!(batch instanceof type.errors)) return batch.artifacts;
-
-  return [];
-}
-
-/** Every persisted artifact named across a finalized turn's tool calls. */
-export function persistedArtifactsForFinalizedTurn(
-  toolCalls: readonly FinalizedTurnToolCall[],
-): readonly PersistedArtifact[] {
-  return toolCalls.flatMap((call) => persistedArtifactsForToolCall(call));
 }
 
 /** One tool call's persisted artifacts as `FilePart`s. */
