@@ -8,10 +8,8 @@ proves the same path with a stubbed provider probe and a scratch database
 (see its own header comment); this doc is the honest, no-shortcuts version
 for a person, not CI.
 
-This first pass covers onboarding → connect only: sign-up through a fully
-connected bench. It stops short of proving a task end to end — that leg
-lands once CL-6049's task work merges, and will extend this same
-walkthrough rather than replace it.
+This covers the whole path: sign-up through a fully connected bench,
+then dispatching and reading back your first task.
 
 ## Prerequisites
 
@@ -120,4 +118,57 @@ does — the credential named `<provider>-default`
 "active"`.
 
 That's the onboard → connect leg, proven with your own real key end to
-end. Phase B picks up from here once the task leg lands.
+end.
+
+## 6. Dispatch a task
+
+Press Cmd/Ctrl+T (or the "New task" control in the shell) to open the task
+composer: pick a taskable agent — **echo** is always available — and send
+it a prompt. This calls the real `@corbits/tasks` HTTP surface
+(`packages/tasks/src/routes.ts`): `POST /api/tenants/:id/tasks` launches a
+one-shot folded run with no channel involved (`launchTask`,
+`packages/tasks/src/launcher.ts` — the run's own `workflowRun` id comes
+from `@intx/hub-common`'s `generateId`, mirroring `@corbits/chat`'s own
+invite-launch shape).
+
+The task starts `running` immediately — the HTTP response only proves the
+opening prompt reached the agent's session, not that its turn finished.
+Watch your Inbox: once the run's own bracket closes, `@corbits/tasks`'s
+orchestrator (`packages/tasks/src/orchestrator.ts`, subscribed to the
+sidecar's `agent.event` stream for the process's lifetime) delivers a
+single terminal item — subject `"<agent>" finished your task`, with the
+agent's reply (or an honest error report if the turn couldn't complete)
+as its body, and `refs` naming the task and its run
+(`{kind:"task",id}`/`{kind:"run",id}`, `packages/notify/src/render.ts`).
+Delivery is idempotent by construction: the store-level guard behind
+`completeTask` (`orchestrator.ts`'s `deliverTerminalTask`) only lets the
+caller that wins the running→terminal flip send mail, so a redelivered
+terminal event can never double-post.
+
+Tasks are personal: `GET /api/tenants/:id/tasks/:id` 404s for anyone but
+the principal who created it — a same-workbench colleague's task reads as
+absent, never as forbidden, so the response never leaks that it exists
+(`packages/tasks/src/routes.ts`).
+
+`scripts/e2e/local-rip.test.ts`'s task leg proves this whole path against
+a real hub, sidecar, and Postgres — creation, the terminal poll, exactly-
+once inbox delivery with the matching run ref, and the creator-only 404.
+It launches against the tenant's already-seeded **echo** agent using the
+suite's own stub credential (see that file's header comment), so its own
+terminal outcome is a task marked `"done"` whose delivered body honestly
+reports the stub key's real 401 against the real Anthropic host, rather
+than a reply — swap in your own real key, as this walkthrough does, and
+the identical path completes with a real reply instead.
+
+**Operational note:** unlike the rest of this suite, the task leg makes a
+real outbound call to `api.anthropic.com` (like `scripts/e2e/chat.test.ts`'s
+echo-invite test before it — both skip `harness.ts`'s
+`assertNeverRealProvider` guard on purpose, and say so inline). If this
+leg fails in CI, first rule out third-party network/provider behavior
+before suspecting the platform: the fast-fail shape it depends on is the
+real host answering the stub key with a `401` (or `403` — Anthropic could
+shift which code it uses for an invalid key), which
+`vendor/intx/inference/src/errors.ts` classifies `credential_failure`, a
+category the retry policy never retries. A hang, a timeout, or a
+different status code the assertion doesn't recognize points at the
+provider or the network path, not at `@corbits/tasks`.
