@@ -16,7 +16,8 @@
 // on a list/get read. See `packages/webhook-triggers/src/management-routes.ts`.
 
 import { type } from "arktype";
-import type { ArkErrors } from "arktype";
+
+import { apiRequest, type Validator } from "./api-request";
 
 export class GranolaWebhookApiError extends Error {
   constructor(
@@ -27,47 +28,13 @@ export class GranolaWebhookApiError extends Error {
   }
 }
 
-type Validator<T> = (data: unknown) => T | ArkErrors;
-
-async function request<T>(
+function request<T>(
   path: string,
   schema: Validator<T>,
+  verb: string,
   init?: RequestInit,
 ): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      ...init,
-      headers: { "content-type": "application/json", ...init?.headers },
-    });
-  } catch (cause) {
-    throw new GranolaWebhookApiError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
-  }
-  if (response.status === 401) {
-    throw new GranolaWebhookApiError(`Not signed in for ${path}.`, 401);
-  }
-  if (!response.ok) {
-    const detail = await response
-      .json()
-      .then(
-        (body: { error?: { message?: string } }) => body.error?.message ?? "",
-      )
-      .catch(() => "");
-    throw new GranolaWebhookApiError(
-      `The server answered ${response.status} for ${path}.${detail === "" ? "" : ` ${detail}`}`,
-      response.status,
-    );
-  }
-  const body: unknown = await response.json().catch(() => undefined);
-  const parsed = schema(body);
-  if (parsed instanceof type.errors) {
-    throw new GranolaWebhookApiError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
-    );
-  }
-  return parsed;
+  return apiRequest(path, schema, verb, GranolaWebhookApiError, init);
 }
 
 const WebhookTriggerFields = {
@@ -95,6 +62,7 @@ export function listGranolaWebhookTriggers(
   return request(
     `/api/tenants/${tenantId}/webhook-triggers`,
     type({ items: GranolaWebhookTrigger.array() }),
+    "loading webhooks",
   ).then((page) => page.items);
 }
 
@@ -112,6 +80,7 @@ export function createGranolaWebhookTrigger(
   return request(
     `/api/tenants/${tenantId}/webhook-triggers`,
     GranolaWebhookTriggerWithSecret,
+    "creating that webhook",
     {
       method: "POST",
       body: JSON.stringify({
@@ -130,6 +99,7 @@ export function rotateGranolaWebhookTriggerSecret(
   return request(
     `/api/tenants/${tenantId}/webhook-triggers/${id}/rotate-secret`,
     GranolaWebhookTriggerWithSecret,
+    "rotating that secret",
     { method: "POST", body: JSON.stringify({}) },
   );
 }
@@ -196,6 +166,7 @@ export function listGranolaRoutines(
   return request(
     `/api/tenants/${tenantId}/routines`,
     type({ items: GranolaRoutine.array() }),
+    "loading routines",
   ).then((page) => page.items);
 }
 
@@ -207,6 +178,7 @@ export function bindRoutineWebhookTrigger(
   return request(
     `/api/tenants/${tenantId}/routines/${routineId}`,
     type("unknown"),
+    "binding that webhook",
     {
       method: "PATCH",
       body: JSON.stringify({
@@ -255,6 +227,7 @@ export async function listGranolaWorkflowDefinitions(
     const page = await request(
       `/api/tenants/${tenantId}/workflows/definitions?${query}`,
       DefinitionsPage,
+      "loading workflow definitions",
     );
     collected.push(...page.data.map(({ id, name }) => ({ id, name })));
     if (page.nextCursor === undefined || page.nextCursor === null) break;
