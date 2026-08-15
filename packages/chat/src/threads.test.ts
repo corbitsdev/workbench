@@ -155,6 +155,48 @@ describe("in-memory ThreadStore", () => {
     expect(await store.threadIdForMessage("t1", "c1", "msg_a")).toBe(root.id);
   });
 
+  test("listThreadAssignments maps only the channel's assigned messages", async () => {
+    const store = createInMemoryThreadStore();
+    const root = await store.ensureRootThread("t1", "c1");
+    const reply = await store.openReplyThread({
+      tenantId: "t1",
+      channelId: "c1",
+      parentMessageId: "msg_a",
+    });
+    await store.assignMessage({
+      tenantId: "t1",
+      channelId: "c1",
+      threadId: root.id,
+      messageId: "msg_a",
+    });
+    await store.assignMessage({
+      tenantId: "t1",
+      channelId: "c1",
+      threadId: reply.id,
+      messageId: "msg_b",
+    });
+    const otherRoot = await store.ensureRootThread("t1", "c2");
+    await store.assignMessage({
+      tenantId: "t1",
+      channelId: "c2",
+      threadId: otherRoot.id,
+      messageId: "msg_c",
+    });
+
+    const assignments = await store.listThreadAssignments("t1", "c1");
+    expect([...assignments.entries()].sort()).toEqual(
+      [
+        ["msg_a", root.id],
+        ["msg_b", reply.id],
+      ].sort(),
+    );
+    // A message nothing ever assigned is absent, not defaulted here —
+    // the root-feed default belongs to the reader (see the threads
+    // route in `./routes.ts`), so this stays a faithful report of what
+    // was actually written.
+    expect(assignments.has("msg_never_assigned")).toBe(false);
+  });
+
   test("listThreads returns root + delivery + reply", async () => {
     const store = createInMemoryThreadStore();
     await store.ensureRootThread("t1", "c1");
