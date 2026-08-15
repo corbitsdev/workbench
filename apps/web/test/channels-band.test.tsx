@@ -1,9 +1,10 @@
 // The Spaces band's "Working" group (`ChannelsBand` in
 // `../src/shell/panel-contributions.tsx`): a quiet list of the signed-in
 // user's running tasks, hidden entirely when there's nothing running,
-// clearing a task the instant it completes, and opening the Inbox on
-// click — a task is spawn-and-return, its result lands there, not on a
-// dedicated detail page (see `TaskComposerDialog`'s own header comment).
+// dropping a task on the band's next refresh once it completes, and
+// opening the Inbox on click — a task is spawn-and-return, its result
+// lands there, not on a dedicated detail page (see `TaskComposerDialog`'s
+// own header comment).
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -52,10 +53,7 @@ function json(body: unknown): Response {
   });
 }
 
-function stubFetch(data: {
-  readonly tasks?: readonly unknown[];
-  readonly definitions?: readonly unknown[];
-}): void {
+function stubFetch(data: { readonly tasks?: readonly unknown[] }): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     if (path.includes("/api/me/principals"))
@@ -64,8 +62,6 @@ function stubFetch(data: {
       return Promise.resolve(json([]));
     if (path.includes("/tasks"))
       return Promise.resolve(json({ items: data.tasks ?? [] }));
-    if (path.includes("/chat/invitable-definitions"))
-      return Promise.resolve(json({ items: data.definitions ?? [] }));
     return Promise.resolve(json({ items: [] }));
   }) as typeof fetch;
 }
@@ -73,7 +69,12 @@ function stubFetch(data: {
 function runningTask(overrides: Record<string, unknown> = {}) {
   return {
     id: "tsk_1",
-    definitionId: "def_researcher",
+    // Planner-created agents (myra-task-*) are excluded from
+    // listTenantInvitableDefinitions (CL-6051) — using that id here
+    // proves the row's name comes from the task's own agentName, not a
+    // definitions lookup this band no longer even fetches.
+    definitionId: "wfd_myra_task_1",
+    agentName: "Incident triage",
     prompt: "Summarize the thread",
     modelPreference: null,
     status: "running",
@@ -108,17 +109,14 @@ async function mount(onNavigate: (to: string) => void = () => undefined) {
 
 describe("ChannelsBand — Working group", () => {
   test("shows a running task with its agent's display name", async () => {
-    stubFetch({
-      tasks: [runningTask()],
-      definitions: [{ id: "def_researcher", name: "Researcher" }],
-    });
+    stubFetch({ tasks: [runningTask()] });
     const el = await mount();
     expect(el.textContent).toContain("Working");
-    expect(el.textContent).toContain("Researcher");
+    expect(el.textContent).toContain("Incident triage");
   });
 
   test("hides the group entirely when there's nothing running", async () => {
-    stubFetch({ tasks: [], definitions: [] });
+    stubFetch({ tasks: [] });
     const el = await mount();
     expect(el.textContent).not.toContain("Working");
   });
@@ -132,17 +130,13 @@ describe("ChannelsBand — Working group", () => {
           completedAt: "2026-08-14T00:05:00.000Z",
         }),
       ],
-      definitions: [{ id: "def_researcher", name: "Researcher" }],
     });
     const el = await mount();
     expect(el.textContent).not.toContain("Working");
   });
 
   test("clicking a working task navigates to the Inbox", async () => {
-    stubFetch({
-      tasks: [runningTask()],
-      definitions: [{ id: "def_researcher", name: "Researcher" }],
-    });
+    stubFetch({ tasks: [runningTask()] });
     let navigatedTo: string | null = null;
     const el = await mount((to) => {
       navigatedTo = to;

@@ -9,7 +9,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { WorkingTaskRow } from "./working-task-row";
-import type { Task } from "./api";
+import type { WorkingTask } from "./working-task";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -38,22 +38,21 @@ afterEach(() => {
 });
 
 function task(
-  overrides: Partial<Task> = {},
-): Pick<Task, "status" | "createdAt"> {
+  overrides: Partial<
+    Pick<WorkingTask, "status" | "createdAt" | "agentName">
+  > = {},
+): Pick<WorkingTask, "status" | "createdAt" | "agentName"> {
   return {
     status: "running",
     createdAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+    agentName: "Researcher",
     ...overrides,
   };
 }
 
 describe("WorkingTaskRow", () => {
   test("shows the agent's display name and elapsed time", () => {
-    const el = mount({
-      task: task(),
-      displayName: "Researcher",
-      onSelect: () => undefined,
-    });
+    const el = mount({ task: task(), onSelect: () => undefined });
     expect(el.textContent).toContain("Researcher");
     expect(el.querySelector('[role="img"]')).not.toBeNull();
   });
@@ -61,7 +60,6 @@ describe("WorkingTaskRow", () => {
   test("a plain running task never carries the needs-you badge", () => {
     const el = mount({
       task: task({ status: "running" }),
-      displayName: "Researcher",
       onSelect: () => undefined,
     });
     expect(el.textContent).not.toContain("Needs you");
@@ -70,7 +68,6 @@ describe("WorkingTaskRow", () => {
   test("a needs-you task shows the accent badge", () => {
     const el = mount({
       task: task({ status: "needs-you" }),
-      displayName: "Researcher",
       onSelect: () => undefined,
     });
     expect(el.textContent).toContain("Needs you");
@@ -80,7 +77,6 @@ describe("WorkingTaskRow", () => {
     let selected = false;
     const el = mount({
       task: task(),
-      displayName: "Researcher",
       onSelect: () => {
         selected = true;
       },

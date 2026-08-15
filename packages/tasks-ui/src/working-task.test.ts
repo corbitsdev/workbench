@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
-import { isWorkingTask, toWorkingTaskViews } from "./working-task";
+import { isWorkingTask, workingTasks } from "./working-task";
 import type { Task } from "./api";
+import type { WorkingTask } from "./working-task";
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
     id: "tsk_1",
     definitionId: "def_1",
+    agentName: "Researcher",
     prompt: "Summarize the thread",
     modelPreference: null,
     status: "running",
@@ -16,6 +18,13 @@ function task(overrides: Partial<Task> = {}): Task {
     completedAt: null,
     ...overrides,
   };
+}
+
+/** Same fixture, narrowed to a status `workingTasks` always returns —
+ * lets a test assert against `workingTasks`'s own `WorkingTask` return
+ * type without widening it back to the full `Task` status union. */
+function workingTask(overrides: Partial<Task> = {}): WorkingTask {
+  return task({ status: "running", ...overrides }) as WorkingTask;
 }
 
 describe("isWorkingTask", () => {
@@ -31,34 +40,30 @@ describe("isWorkingTask", () => {
   });
 });
 
-describe("toWorkingTaskViews", () => {
-  test("keeps only in-progress tasks and resolves their display name", () => {
-    const running = task({
-      id: "tsk_running",
-      status: "running",
-      definitionId: "def_1",
-    });
+describe("workingTasks", () => {
+  test("keeps only in-progress tasks, carrying their own agentName", () => {
+    const running = workingTask({ id: "tsk_running", agentName: "Researcher" });
     const tasks = [
       running,
-      task({ id: "tsk_done", status: "done", definitionId: "def_1" }),
-      task({ id: "tsk_failed", status: "failed", definitionId: "def_1" }),
+      task({ id: "tsk_done", status: "done" }),
+      task({ id: "tsk_failed", status: "failed" }),
     ];
-    const names = new Map([["def_1", "Researcher"]]);
-    expect(toWorkingTaskViews(tasks, names)).toEqual([
-      { task: running, displayName: "Researcher" },
-    ]);
+    expect(workingTasks(tasks)).toEqual([running]);
   });
 
-  test("falls back to the definitionId when the name isn't in the map", () => {
-    const unlisted = task({ definitionId: "def_unlisted" });
-    const tasks = [unlisted];
-    expect(toWorkingTaskViews(tasks, new Map())).toEqual([
-      { task: unlisted, displayName: "def_unlisted" },
-    ]);
+  test("a planner-created agent's name comes from the task record, not a definitions listing", () => {
+    // Planner-created agents (myra-task-*) are excluded from
+    // listTenantInvitableDefinitions (CL-6051) — the row's name has to
+    // come from the task itself, never from a definitions lookup.
+    const plannerTask = workingTask({
+      definitionId: "wfd_myra_task_1",
+      agentName: "Incident triage",
+    });
+    expect(workingTasks([plannerTask])).toEqual([plannerTask]);
   });
 
   test("returns nothing for an all-terminal task list", () => {
     const tasks = [task({ status: "done" }), task({ status: "failed" })];
-    expect(toWorkingTaskViews(tasks, new Map())).toEqual([]);
+    expect(workingTasks(tasks)).toEqual([]);
   });
 });

@@ -39,6 +39,7 @@ const RESULT: DispatchWithPlannerResult = {
     tenantId: "tnt_1",
     principalId: "prn_alice",
     definitionId: "wfd_agent",
+    agentName: "Agent",
     prompt: "Summarize the doc",
     modelPreference: null,
     status: "running",

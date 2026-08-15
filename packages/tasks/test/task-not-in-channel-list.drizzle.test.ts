@@ -90,6 +90,7 @@ describeIfDb("a task never appears in the channel listing", () => {
         tenantId: TENANT_ID,
         principalId: "prn_1",
         definitionId: "wfd_agent",
+        agentName: "Agent",
         prompt: "Summarize the incident.",
         modelPreference: null,
         runId: "run_task_1",
