@@ -259,6 +259,36 @@ describe("CreateRoutineDialog stepper", () => {
     expect(document.body.textContent).toContain("Describe it to an agent");
   });
 
+  test("docks to the right as a full-height sheet, not a centered modal", async () => {
+    await openDialog();
+
+    const content = document.body.querySelector('[data-slot="dialog-content"]');
+    expect(content?.getAttribute("data-side")).toBe("right");
+  });
+
+  test("regression: opening New routine from the empty routines page pulls the page's own empty-state card out of view, so nothing bleeds through the dialog overlay", async () => {
+    mount(baseProps({}));
+    await settle();
+
+    expect(document.body.textContent).toContain("No routines yet");
+    const stageContent = document.body.querySelector(".stage-content");
+    expect(stageContent?.hasAttribute("inert")).toBe(false);
+
+    act(() => {
+      buttonWithText("New routine")?.click();
+    });
+    await settle();
+
+    expect(stageContent?.hasAttribute("inert")).toBe(true);
+
+    act(() => {
+      buttonWithText("Cancel")?.click();
+    });
+    await settle();
+
+    expect(stageContent?.hasAttribute("inert")).toBe(false);
+  });
+
   test("picker cards clamp exampleOutput to two lines", async () => {
     await openDialog();
 

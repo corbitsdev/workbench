@@ -7,6 +7,7 @@ import {
   Badge,
   Button,
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,
@@ -1167,7 +1168,7 @@ function CreateRoutineDialog({
         setOpen(next);
       }}
     >
-      <DialogContent>
+      <DialogContent side="right">
         <DialogHeader>
           <DialogTitle>New routine</DialogTitle>
           <DialogDescription>
@@ -1176,373 +1177,384 @@ function CreateRoutineDialog({
           </DialogDescription>
         </DialogHeader>
         <form
-          className="flex flex-col gap-3"
+          className="flex min-h-0 flex-1 flex-col"
           onSubmit={(event) => {
             event.preventDefault();
             if (!primaryDisabled) primaryOnClick();
           }}
         >
-          <DialogStepper step={step} steps={stepperSteps} />
+          <DialogBody className="flex flex-col gap-3">
+            <DialogStepper step={step} steps={stepperSteps} />
 
-          {step === 1 ? (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <span id="routine-source-label" className="text-xs font-medium">
-                  Workflow
-                </span>
-                <div
-                  role="group"
-                  aria-labelledby="routine-source-label"
-                  className="grid grid-cols-2 gap-2"
-                >
-                  <WorkflowPickerCards
-                    definitions={definitions}
-                    connections={connections}
-                    selectedId={path === "catalog" ? definitionId : ""}
-                    disabled={busy}
-                    onSelect={(id) => {
-                      setPath("catalog");
-                      setDefinitionId(id);
-                      setTriggerFieldValues({});
-                    }}
-                  />
-                  <button
-                    type="button"
-                    disabled={busy}
-                    aria-pressed={path === "describe"}
-                    onClick={() => setPath("describe")}
-                    className={[
-                      "flex flex-col gap-0.5 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
-                      path === "describe"
-                        ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
-                        : "border-[var(--ui-border)]",
-                    ].join(" ")}
-                  >
-                    <span className="font-medium text-[var(--ui-fg)]">
-                      Describe it to an agent
-                    </span>
-                    <span className="text-[var(--ui-fg-muted)]">
-                      An agent drafts the steps for you to review.
-                    </span>
-                  </button>
-                </div>
-                {definitions.length === 0 ? (
-                  <p
-                    className="text-xs text-[var(--ui-fg-muted)]"
-                    role="status"
-                  >
-                    No automatable workflows on this workbench yet — describe it
-                    instead.
-                  </p>
-                ) : null}
-                {path === "catalog" &&
-                definitionId !== "" &&
-                selectedDefinition === null ? (
-                  <p className="text-xs text-destructive" role="alert">
-                    This workflow isn't in your automatable catalog, so it can't
-                    be scheduled — pick one of the cards above, or describe it
-                    instead.
-                  </p>
-                ) : null}
-              </div>
-
-              {path === "describe" ? (
-                <div className="flex flex-col gap-1.5">
-                  <label
-                    htmlFor="routine-prompt"
-                    className="text-xs font-medium"
-                  >
-                    Describe the routine
-                  </label>
-                  <textarea
-                    id="routine-prompt"
-                    value={prompt}
-                    disabled={busy}
-                    rows={4}
-                    placeholder="Every weekday at 9am, pull the signups export and post a summary to #ops."
-                    onChange={(event) => setPrompt(event.target.value)}
-                    className="w-full resize-y rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg)] px-2.5 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-ring)]"
-                  />
-                </div>
-              ) : null}
-            </>
-          ) : null}
-
-          {step === 2 && path === "catalog" ? (
-            <>
-              {selectedDefinition !== null &&
-              selectedDefinition.exampleOutput !== "" ? (
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium">Example output</span>
-                  <span className="whitespace-pre-line rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] p-2 text-xs text-[var(--ui-fg-muted)]">
-                    {selectedDefinition.exampleOutput}
-                  </span>
-                </div>
-              ) : null}
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium">When</span>
-                <div className="flex gap-1">
-                  {(
-                    [
-                      ["once", "Run once now"],
-                      ["schedule", "On a schedule"],
-                      ["webhook", "On webhook"],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setRunMode(value)}
-                      className={[
-                        "rounded-[var(--ui-radius-sm)] border px-2 py-1 text-xs",
-                        runMode === value
-                          ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
-                          : "border-[var(--ui-border)]",
-                      ].join(" ")}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {runMode === "schedule" ? (
-                  <TriggerPicker value={trigger} onChange={setTrigger} />
-                ) : null}
-                {runMode === "webhook" ? (
-                  <p
-                    className="text-xs text-[var(--ui-fg-muted)]"
-                    role="status"
-                  >
-                    A hook URL and signing secret are generated when you create
-                    this routine — shown once, on the next step.
-                  </p>
-                ) : null}
-              </div>
-              {selectedDefinition !== null &&
-              selectedDefinition.triggerFields.length > 0 ? (
-                <div className="flex flex-col gap-2">
-                  <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-                    Trigger inputs
-                  </h3>
-                  {selectedDefinition.triggerFields.map((field) => (
-                    <div key={field.key} className="flex flex-col gap-1.5">
-                      <label
-                        htmlFor={`routine-trigger-field-${field.key}`}
-                        className="text-xs font-medium"
-                      >
-                        {field.label}
-                        {field.required ? "" : " (optional)"}
-                      </label>
-                      {field.kind === "agent" ? (
-                        <AgentTriggerFieldPicker
-                          agents={taskableAgents}
-                          value={triggerFieldValues[field.key] ?? ""}
-                          disabled={busy}
-                          onChange={(id) =>
-                            setTriggerFieldValues((values) => ({
-                              ...values,
-                              [field.key]: id,
-                            }))
-                          }
-                        />
-                      ) : (
-                        <Input
-                          id={`routine-trigger-field-${field.key}`}
-                          value={triggerFieldValues[field.key] ?? ""}
-                          placeholder={field.placeholder}
-                          disabled={busy}
-                          onChange={(event) =>
-                            setTriggerFieldValues((values) => ({
-                              ...values,
-                              [field.key]: event.target.value,
-                            }))
-                          }
-                        />
-                      )}
-                      {field.help !== undefined ? (
-                        <p className="text-xs text-[var(--ui-fg-muted)]">
-                          {field.help}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {deliversToChannel ? (
-                <div className="flex flex-col gap-1.5">
-                  <span
-                    id="routine-delivery-label"
-                    className="text-xs font-medium"
-                  >
-                    Deliver results to
-                  </span>
-                  <DeliveryChannelPicker
-                    channels={channels}
-                    value={deliveryChannelId}
-                    onChange={setDeliveryChannelId}
-                    disabled={busy}
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium">
-                    Deliver results to
-                  </span>
-                  <p
-                    className="text-xs text-[var(--ui-fg-muted)]"
-                    role="status"
-                  >
-                    Results land in your Inbox — this workflow never posts to a
-                    channel.
-                  </p>
-                </div>
-              )}
-            </>
-          ) : null}
-
-          {step === 2 && path === "describe" && pendingDraft === null ? (
-            <div className="flex flex-col gap-1.5">
-              <span id="routine-delivery-label" className="text-xs font-medium">
-                Deliver results to
-              </span>
-              <DeliveryChannelPicker
-                channels={channels}
-                value={deliveryChannelId}
-                onChange={setDeliveryChannelId}
-                disabled={busy}
-              />
-            </div>
-          ) : null}
-
-          {step === 2 && path === "describe" && draft !== null ? (
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                  Proposed steps
-                </span>
-                {draft.proposedSteps.length === 0 ? (
-                  <p
-                    className="text-sm text-[var(--ui-fg-muted)]"
-                    role="status"
-                  >
-                    No steps proposed yet.
-                  </p>
-                ) : (
-                  <ol className="list-decimal space-y-1.5 pl-5 text-sm">
-                    {draft.proposedSteps.map((draftStep, index) => (
-                      <li key={`${draftStep.title}-${String(index)}`}>
-                        <span className="font-medium">{draftStep.title}</span>
-                        {draftStep.detail !== undefined ? (
-                          <span className="text-[var(--ui-fg-muted)]">
-                            {" — "}
-                            {draftStep.detail}
-                          </span>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </div>
-              {draft.proposedTrigger !== null ? (
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                    Schedule
-                  </span>
-                  <p className="text-sm">
-                    {cadenceLabel(draft.proposedTrigger)}
-                  </p>
-                </div>
-              ) : null}
-              {autonomyLines.length > 0 ? (
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                    Autonomy
-                  </span>
-                  <ul className="list-disc space-y-0.5 pl-5 text-sm text-[var(--ui-fg-muted)]">
-                    {autonomyLines.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {step === 3 && path === "catalog" ? (
-            webhookRevealed !== null ? (
-              <WebhookSecretPanel
-                url={webhookRevealed.url}
-                secret={webhookRevealed.secret}
-                samplePayload={sampleWebhookPayload()}
-              />
-            ) : (
+            {step === 1 ? (
               <>
-                <p className="text-sm text-[var(--ui-fg)]">
-                  {catalogConfirmSentence(runMode, trigger, channelTitle)}
-                </p>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="routine-name" className="text-xs font-medium">
-                    Name (optional)
-                  </label>
-                  <Input
-                    id="routine-name"
-                    value={name}
-                    placeholder={selectedDefinition?.name ?? "Morning brief"}
-                    disabled={busy}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </div>
-              </>
-            )
-          ) : null}
-
-          {step === 3 && path === "describe" ? (
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                  Name
-                </span>
-                <p className="text-sm font-medium text-[var(--ui-fg)]">
-                  {draftName}
-                </p>
-              </div>
-              <p className="text-xs text-[var(--ui-fg-muted)]">
-                From: {draft?.prompt}
-              </p>
-              {draft !== null && draft.definitionId === null ? (
                 <div className="flex flex-col gap-1.5">
                   <span
-                    id="draft-workflow-pick-label"
+                    id="routine-source-label"
                     className="text-xs font-medium"
                   >
                     Workflow
                   </span>
-                  <p className="text-xs text-[var(--ui-fg-muted)]">
-                    Myra didn't pin a workflow — pick one.
-                  </p>
                   <div
                     role="group"
-                    aria-labelledby="draft-workflow-pick-label"
+                    aria-labelledby="routine-source-label"
                     className="grid grid-cols-2 gap-2"
                   >
                     <WorkflowPickerCards
                       definitions={definitions}
                       connections={connections}
-                      selectedId={draftDefinitionPick}
+                      selectedId={path === "catalog" ? definitionId : ""}
                       disabled={busy}
-                      onSelect={setDraftDefinitionPick}
+                      onSelect={(id) => {
+                        setPath("catalog");
+                        setDefinitionId(id);
+                        setTriggerFieldValues({});
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-pressed={path === "describe"}
+                      onClick={() => setPath("describe")}
+                      className={[
+                        "flex flex-col gap-0.5 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
+                        path === "describe"
+                          ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
+                          : "border-[var(--ui-border)]",
+                      ].join(" ")}
+                    >
+                      <span className="font-medium text-[var(--ui-fg)]">
+                        Describe it to an agent
+                      </span>
+                      <span className="text-[var(--ui-fg-muted)]">
+                        An agent drafts the steps for you to review.
+                      </span>
+                    </button>
+                  </div>
+                  {definitions.length === 0 ? (
+                    <p
+                      className="text-xs text-[var(--ui-fg-muted)]"
+                      role="status"
+                    >
+                      No automatable workflows on this workbench yet — describe
+                      it instead.
+                    </p>
+                  ) : null}
+                  {path === "catalog" &&
+                  definitionId !== "" &&
+                  selectedDefinition === null ? (
+                    <p className="text-xs text-destructive" role="alert">
+                      This workflow isn't in your automatable catalog, so it
+                      can't be scheduled — pick one of the cards above, or
+                      describe it instead.
+                    </p>
+                  ) : null}
+                </div>
+
+                {path === "describe" ? (
+                  <div className="flex flex-col gap-1.5">
+                    <label
+                      htmlFor="routine-prompt"
+                      className="text-xs font-medium"
+                    >
+                      Describe the routine
+                    </label>
+                    <textarea
+                      id="routine-prompt"
+                      value={prompt}
+                      disabled={busy}
+                      rows={4}
+                      placeholder="Every weekday at 9am, pull the signups export and post a summary to #ops."
+                      onChange={(event) => setPrompt(event.target.value)}
+                      className="w-full resize-y rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg)] px-2.5 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-ring)]"
                     />
                   </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+                ) : null}
+              </>
+            ) : null}
 
-          {error !== null ? (
-            <p className="text-xs text-[var(--ui-danger)]" role="alert">
-              {error}
-            </p>
-          ) : null}
+            {step === 2 && path === "catalog" ? (
+              <>
+                {selectedDefinition !== null &&
+                selectedDefinition.exampleOutput !== "" ? (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium">Example output</span>
+                    <span className="whitespace-pre-line rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] p-2 text-xs text-[var(--ui-fg-muted)]">
+                      {selectedDefinition.exampleOutput}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium">When</span>
+                  <div className="flex gap-1">
+                    {(
+                      [
+                        ["once", "Run once now"],
+                        ["schedule", "On a schedule"],
+                        ["webhook", "On webhook"],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setRunMode(value)}
+                        className={[
+                          "rounded-[var(--ui-radius-sm)] border px-2 py-1 text-xs",
+                          runMode === value
+                            ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
+                            : "border-[var(--ui-border)]",
+                        ].join(" ")}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {runMode === "schedule" ? (
+                    <TriggerPicker value={trigger} onChange={setTrigger} />
+                  ) : null}
+                  {runMode === "webhook" ? (
+                    <p
+                      className="text-xs text-[var(--ui-fg-muted)]"
+                      role="status"
+                    >
+                      A hook URL and signing secret are generated when you
+                      create this routine — shown once, on the next step.
+                    </p>
+                  ) : null}
+                </div>
+                {selectedDefinition !== null &&
+                selectedDefinition.triggerFields.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
+                      Trigger inputs
+                    </h3>
+                    {selectedDefinition.triggerFields.map((field) => (
+                      <div key={field.key} className="flex flex-col gap-1.5">
+                        <label
+                          htmlFor={`routine-trigger-field-${field.key}`}
+                          className="text-xs font-medium"
+                        >
+                          {field.label}
+                          {field.required ? "" : " (optional)"}
+                        </label>
+                        {field.kind === "agent" ? (
+                          <AgentTriggerFieldPicker
+                            agents={taskableAgents}
+                            value={triggerFieldValues[field.key] ?? ""}
+                            disabled={busy}
+                            onChange={(id) =>
+                              setTriggerFieldValues((values) => ({
+                                ...values,
+                                [field.key]: id,
+                              }))
+                            }
+                          />
+                        ) : (
+                          <Input
+                            id={`routine-trigger-field-${field.key}`}
+                            value={triggerFieldValues[field.key] ?? ""}
+                            placeholder={field.placeholder}
+                            disabled={busy}
+                            onChange={(event) =>
+                              setTriggerFieldValues((values) => ({
+                                ...values,
+                                [field.key]: event.target.value,
+                              }))
+                            }
+                          />
+                        )}
+                        {field.help !== undefined ? (
+                          <p className="text-xs text-[var(--ui-fg-muted)]">
+                            {field.help}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {deliversToChannel ? (
+                  <div className="flex flex-col gap-1.5">
+                    <span
+                      id="routine-delivery-label"
+                      className="text-xs font-medium"
+                    >
+                      Deliver results to
+                    </span>
+                    <DeliveryChannelPicker
+                      channels={channels}
+                      value={deliveryChannelId}
+                      onChange={setDeliveryChannelId}
+                      disabled={busy}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium">
+                      Deliver results to
+                    </span>
+                    <p
+                      className="text-xs text-[var(--ui-fg-muted)]"
+                      role="status"
+                    >
+                      Results land in your Inbox — this workflow never posts to
+                      a channel.
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : null}
+
+            {step === 2 && path === "describe" && pendingDraft === null ? (
+              <div className="flex flex-col gap-1.5">
+                <span
+                  id="routine-delivery-label"
+                  className="text-xs font-medium"
+                >
+                  Deliver results to
+                </span>
+                <DeliveryChannelPicker
+                  channels={channels}
+                  value={deliveryChannelId}
+                  onChange={setDeliveryChannelId}
+                  disabled={busy}
+                />
+              </div>
+            ) : null}
+
+            {step === 2 && path === "describe" && draft !== null ? (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                    Proposed steps
+                  </span>
+                  {draft.proposedSteps.length === 0 ? (
+                    <p
+                      className="text-sm text-[var(--ui-fg-muted)]"
+                      role="status"
+                    >
+                      No steps proposed yet.
+                    </p>
+                  ) : (
+                    <ol className="list-decimal space-y-1.5 pl-5 text-sm">
+                      {draft.proposedSteps.map((draftStep, index) => (
+                        <li key={`${draftStep.title}-${String(index)}`}>
+                          <span className="font-medium">{draftStep.title}</span>
+                          {draftStep.detail !== undefined ? (
+                            <span className="text-[var(--ui-fg-muted)]">
+                              {" — "}
+                              {draftStep.detail}
+                            </span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+                {draft.proposedTrigger !== null ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                      Schedule
+                    </span>
+                    <p className="text-sm">
+                      {cadenceLabel(draft.proposedTrigger)}
+                    </p>
+                  </div>
+                ) : null}
+                {autonomyLines.length > 0 ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                      Autonomy
+                    </span>
+                    <ul className="list-disc space-y-0.5 pl-5 text-sm text-[var(--ui-fg-muted)]">
+                      {autonomyLines.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {step === 3 && path === "catalog" ? (
+              webhookRevealed !== null ? (
+                <WebhookSecretPanel
+                  url={webhookRevealed.url}
+                  secret={webhookRevealed.secret}
+                  samplePayload={sampleWebhookPayload()}
+                />
+              ) : (
+                <>
+                  <p className="text-sm text-[var(--ui-fg)]">
+                    {catalogConfirmSentence(runMode, trigger, channelTitle)}
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    <label
+                      htmlFor="routine-name"
+                      className="text-xs font-medium"
+                    >
+                      Name (optional)
+                    </label>
+                    <Input
+                      id="routine-name"
+                      value={name}
+                      placeholder={selectedDefinition?.name ?? "Morning brief"}
+                      disabled={busy}
+                      onChange={(event) => setName(event.target.value)}
+                    />
+                  </div>
+                </>
+              )
+            ) : null}
+
+            {step === 3 && path === "describe" ? (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
+                    Name
+                  </span>
+                  <p className="text-sm font-medium text-[var(--ui-fg)]">
+                    {draftName}
+                  </p>
+                </div>
+                <p className="text-xs text-[var(--ui-fg-muted)]">
+                  From: {draft?.prompt}
+                </p>
+                {draft !== null && draft.definitionId === null ? (
+                  <div className="flex flex-col gap-1.5">
+                    <span
+                      id="draft-workflow-pick-label"
+                      className="text-xs font-medium"
+                    >
+                      Workflow
+                    </span>
+                    <p className="text-xs text-[var(--ui-fg-muted)]">
+                      Myra didn't pin a workflow — pick one.
+                    </p>
+                    <div
+                      role="group"
+                      aria-labelledby="draft-workflow-pick-label"
+                      className="grid grid-cols-2 gap-2"
+                    >
+                      <WorkflowPickerCards
+                        definitions={definitions}
+                        connections={connections}
+                        selectedId={draftDefinitionPick}
+                        disabled={busy}
+                        onSelect={setDraftDefinitionPick}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {error !== null ? (
+              <p className="text-xs text-[var(--ui-danger)]" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </DialogBody>
 
           <DialogFooter>
             {webhookRevealed !== null ? (
@@ -1825,6 +1837,16 @@ export function RoutinesListPage({
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  // The centered/side-sheet Dialog overlay only dims the page (50% black,
+  // a 2px blur) rather than occluding it — nowhere near enough to hide a
+  // bordered card like RichEmptyState, whose center falls outside the
+  // dialog's own bounds because it's centered within the stage column
+  // (offset right of viewport-center by col1+col2) rather than the
+  // viewport the dialog centers on. Rather than paper over that with a
+  // heavier overlay, the stage content is taken out of the picture
+  // entirely — visually and from focus/AT — for as long as a dialog owns
+  // the page, so there is nothing left to bleed through.
+  const dialogOpen = createOpen || editOpen;
   const [createPrefill, setCreatePrefill] = useState<RoutinePrefill | null>(
     null,
   );
@@ -1915,8 +1937,9 @@ export function RoutinesListPage({
       />
       {selected !== null && routinePausedMessage(selected) !== null ? (
         <div
-          className="mx-4 mt-3 flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
+          className="stage-content mx-4 mt-3 flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
           role="alert"
+          inert={dialogOpen}
         >
           <p className="m-0 font-medium text-destructive">
             {routinePausedMessage(selected)}
@@ -1958,7 +1981,10 @@ export function RoutinesListPage({
       ) : null}
 
       {/* List lives in shell col2; stage is detail only. */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div
+        className="stage-content flex min-h-0 flex-1 flex-col"
+        inert={dialogOpen}
+      >
         {selected === null ? (
           <div className="flex flex-1 items-center justify-center p-6">
             {routines.kind === "ready" && routines.data.length === 0 ? (

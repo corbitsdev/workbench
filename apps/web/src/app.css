@@ -610,6 +610,17 @@ html {
   background: var(--muted-foreground);
 }
 
+/* A New Routine / Edit dialog owns the page while open — its own overlay
+   only dims (50% black, 2px blur), not enough to hide a bordered card
+   like RichEmptyState whose center falls outside the dialog's own
+   footprint. `inert` already pulls this content out of focus and
+   assistive tech; fading it here removes the leftover visual "ghost"
+   rather than trusting the overlay to cover it. */
+.stage-content[inert] {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
 .stage-top-bar-sub {
   min-width: 0;
   overflow: hidden;
