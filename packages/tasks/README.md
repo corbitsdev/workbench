@@ -17,11 +17,20 @@ completedAt`. `plannerRunId` is nullable and set post-hoc by a planner —
   Postgres schema (`tasks`), own migration ledger — see
   `docs/package-migrations.md`. The task id is hand-prefixed (`task_` +
   16 hex bytes) because `@intx/hub-common`'s `generateId` has no "task"
-  kind — [Intx gap] CL-6056 tracks adding one. **Phase-3 note:** `runId`
-  is a unique column today — one task, one run. Task _chains_ (phase 3)
-  break that cardinality; they need a `task_run` join table (task →
-  ordered runs) and a migration off the unique index before any chain
-  work starts.
+  kind — [Intx gap] CL-6056 tracks adding one. The task's own `runId`
+  names its first run and never changes; `task_leg` is the authority on
+  every run a task spans.
+- **`task_leg` table** (`./src/schema.ts`) — one row per agent run a task
+  is carried out by, in `position` order: a single-agent task has exactly
+  one leg, a chained one has a leg per hand-off. `parentRunId` names the
+  run whose output this leg works from, and `messageId`
+  (`chain:{taskId}:{position}`, unique per task) is the leg's delivery
+  identity — together they carry the platform's own
+  `(anchorRunId, messageId)` idempotency contract into this package.
+  `runId` is unique and null until the leg launches; `leaseExpiresAt`
+  bounds a claim; `startedAt` records the moment the leg's agent was
+  actually handed its prompt; `status`, `errorMessage` and `settledAt`
+  are the leg's own outcome, independent of the task's.
 - **`TaskStore`** (`./src/store.ts`) — `createDrizzleTaskStore` (production)
   and `createMemoryTaskStore` (tests/local smoke), same interface.
 - **`launchTask`** (`./src/launcher.ts`) — the launch primitive. Looks up the
@@ -53,6 +62,9 @@ completedAt`. `plannerRunId` is nullable and set post-hoc by a planner —
   `handleFinalizedTurn`, wired the same way chat wires
   `createArtifactDeliveryHandler`). The notification's dedupe key is
   `task-result:{taskId}`, stable across delivery attempts.
+- **`advanceChain`** (`./src/chain.ts`) and **`createStuckLegSweep`**
+  (`./src/stuck-legs.ts`) — the hand-off itself and the pass that gives up
+  on one that was never carried out. See "Chains" below.
 - **`createTaskRoutes`** (`./src/routes.ts`) — `POST /`, `GET /`, `GET /:id`,
   tenant-scoped, `requireGrant`-gated exactly like every other package's
   routes — and deliberately tighter than the grant alone: **tasks are
@@ -118,6 +130,62 @@ model against the tenant catalog (`resolveDefinitionSources`'
 definition's own declared model gets — never a `SourcesOverride`, which
 would bypass the catalog. No preference means the definition's baked-in
 model, exactly like `launchInvite`.
+
+## Chains
+
+A task can name agents to hand its work on to after the first. Every leg
+is written at launch — the opening one already running, the rest
+`pending` — so the plan is durable before any hand-off happens. Each
+leg's terminal event settles that leg, and `advanceChain`
+(`./src/chain.ts`) turns "leg N finished" into "leg N+1 is running",
+exactly once, with any leg's failure failing the whole task.
+
+The leg state machine, and what each state promises:
+
+| state         | what it means                                                           |
+| ------------- | ----------------------------------------------------------------------- |
+| `pending`     | declared at launch, nobody has taken it                                 |
+| `dispatching` | claimed under a lease; may already carry a `runId`, never a `startedAt` |
+| `running`     | its agent has the prompt in hand (`startedAt` stamped)                  |
+| `done`        | its agent's run ended successfully                                      |
+| `failed`      | its agent failed, or it never started at all                            |
+
+Three rules hold the whole thing together:
+
+- **A claim can only be won once.** `claimLegDispatch` matches a
+  `pending` leg, or a `dispatching` one whose lease has passed _and_ that
+  never recorded a `runId`. So an expired lease redelivers a launch that
+  never happened, and can never re-launch one that did.
+- **The run id is recorded before the prompt is sent; the leg starts
+  after.** A run committed but unrecorded would be launched a second
+  time by the next claim, so `runId` is stamped inside the launch
+  transaction while the leg is still `dispatching`. The leg becomes
+  `running` only once `sendFoldedMailWithRetry` has delivered the
+  opening prompt. A send that fails therefore leaves a leg the failure
+  path can still settle honestly — and a task's `runIds` counts only
+  legs that really started, so the Inbox never claims the work reached
+  an agent that was never told what to do.
+- **A hand-off nobody is carrying is given up on out loud.** The only
+  thing that ever claims a leg is the settlement of the leg before it,
+  and that settlement happens once — so a claim abandoned by a crashed
+  process has no second claimant coming. `listStuckLegDispatches` finds
+  legs still claimed well past their lease, and the sweep in
+  `./src/stuck-legs.ts` (`createStuckLegSweep`, started by the host
+  alongside its other periodic sweeps) fails them, fails the task, and
+  writes one plain-language Inbox item.
+
+**What this design does not do:** survive a hub restart in the middle of
+a hand-off by resuming it. The platform's own durable delivery
+(`workflow_run_dispatch`) cannot reach a folded run today — it delivers
+only to an anchor holding a `sidecar_allocation` row, which a folded run
+never has — and the workflow runtime's `action` primitive is left
+unbound by the production host, so the hand-off runs in-process instead.
+The claim/lease/redelivery logic in `./src/store.ts` is a bounded,
+temporary reimplementation of the platform's own dispatch pattern, kept
+deliberately small: **CL-6059** and **CL-6060** track closing that gap,
+and this is the code that gets revisited when they do. Until then, a
+restart mid-hand-off is caught by the stuck-hand-off sweep rather than
+resumed.
 
 ## Lifecycle visibility: delivered on completion only
 

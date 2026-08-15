@@ -17,8 +17,16 @@
 // contract those paths use — a delivery keyed on
 // `(parentRunId, messageId)`, a lease that redelivers an unfinished
 // attempt, and a claim that can only be won once. What it does not
-// inherit is survival across a hub restart mid-hand-off; see the
-// package README section on chains.
+// inherit is survival across a hub restart mid-hand-off; the sweep in
+// `./stuck-legs.ts` is what stops that from being silent. See the
+// package README's "Chains" section.
+//
+// The claim/lease/redelivery logic in `./store.ts` is therefore a
+// bounded, deliberately temporary reimplementation of the platform's
+// own dispatch pattern, not a second design: CL-6059 and CL-6060 are
+// the tracking tickets for closing this gap, and this module and those
+// store operations are what gets revisited — and largely retired —
+// when they do.
 import { getLogger } from "@intx/log";
 
 import type { TaskLegRecord, TaskRecord, TaskStore } from "./store";
