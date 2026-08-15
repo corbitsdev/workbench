@@ -407,6 +407,40 @@ describe("TaskComposerDialog", () => {
     expect(createdCount).toBe(0);
   });
 
+  test("the prompt textarea is labeled and the footer has Cancel and Start task", async () => {
+    mount(baseProps());
+    await settle();
+
+    const textarea =
+      document.body.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea?.id).toBeTruthy();
+    const label = document.body.querySelector(`label[for="${textarea?.id}"]`);
+    expect(label?.textContent).toBe("Prompt");
+
+    const buttons = [...document.body.querySelectorAll("button")].map(
+      (button) => button.textContent,
+    );
+    expect(buttons).toContain("Cancel");
+    expect(buttons).toContain("Start task");
+  });
+
+  test("the manual agent list renders as a labeled radiogroup", async () => {
+    mount(
+      baseProps({
+        agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
+          { id: "wfd_1", name: "incident-bot", description: "Incident bot" },
+          { id: "wfd_2", name: "digest-bot" },
+        ]),
+      }),
+    );
+    await settle();
+
+    const group = document.body.querySelector('[role="radiogroup"]');
+    expect(group).not.toBeNull();
+    const radios = group?.querySelectorAll('input[type="radio"]');
+    expect(radios).toHaveLength(2);
+  });
+
   test("the error prop renders as an alert inside the dialog", async () => {
     mount(baseProps({ error: "The task couldn't start. Try again." }));
     await settle();

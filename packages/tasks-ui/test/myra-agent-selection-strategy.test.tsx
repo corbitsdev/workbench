@@ -77,6 +77,26 @@ describe("createMyraAgentSelectionStrategy", () => {
       'input[name="task-agent-mode"]',
     );
     expect(myraRadio?.checked).toBe(true);
+
+    // The two options render as a labeled radiogroup, each option's own
+    // description as separate secondary text — not one inline run-on
+    // sentence (CL-6066: this used to render as bare `<label>` prose).
+    const group = document.body.querySelector(
+      '[role="radiogroup"][aria-label="Agent selection mode"]',
+    );
+    expect(group).not.toBeNull();
+    expect(group?.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+    const titles = [
+      ...document.body.querySelectorAll(".tasks-radio-option-title"),
+    ].map((el) => el.textContent);
+    expect(titles).toEqual(["Let Myra choose", "Choose an agent yourself"]);
+    const descriptions = document.body.querySelectorAll(
+      ".tasks-radio-option-desc",
+    );
+    expect(descriptions).toHaveLength(1);
+    expect(descriptions[0]?.textContent).toBe(
+      "Myra reads your prompt and picks or creates the right agent.",
+    );
   });
 
   test("one click on Choose an agent yourself reveals the manual list, picking forwards the real id", async () => {
