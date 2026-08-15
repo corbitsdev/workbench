@@ -1222,18 +1222,6 @@ html {
   white-space: nowrap;
 }
 
-/* Mock .shared-badge — only rendered when shared metadata exists. */
-.shell-ch-shared-badge {
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--info, #1f5fa8);
-  background: color-mix(in srgb, var(--info, #1f5fa8) 10%, transparent);
-  padding: 0.1rem 0.3rem;
-  flex-shrink: 0;
-}
-
 /* Mock .live — activity pulse; only when live signal exists and no unread. */
 .shell-ch-live {
   width: 0.4rem;
@@ -1265,20 +1253,6 @@ html {
 .shell-ch-time {
   font-size: 0.66rem;
   color: var(--muted-foreground, var(--ui-fg-muted));
-}
-
-/* Mock .badge — unread count; only when count > 0. */
-.shell-ch-badge {
-  min-width: 1.15rem;
-  height: 1.15rem;
-  padding: 0 0.3rem;
-  border-radius: 0;
-  background: var(--primary, #e98428);
-  color: var(--primary-foreground, #2b2627);
-  font-size: 0.62rem;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
 }
 
 .shell-ch-row-wrap {
