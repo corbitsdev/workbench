@@ -91,6 +91,7 @@ import { ThreadDepthCapError } from "./threads";
 import type { ChannelShareStore } from "./channel-share";
 import { monogramFromName } from "./channel-share";
 import type { FederationTrustStore } from "./federation-trust";
+import type { InvitableDefinition as InvitableDefinitionRecord } from "./platform-port";
 
 export type {
   ChannelActivitySummary,
@@ -120,6 +121,15 @@ export type CreateChatRoutesDeps = {
    */
   tenancy: ChannelTenancyStore;
   requireGrant: RequireGrant;
+  /**
+   * The host's verdict on whether a deployed definition belongs in the
+   * agent pickers (new-chat and invite). The platform already excludes
+   * channel-host anchors; this is where the host prunes its automations
+   * (e.g. workbench passes "not automatable in the workflow catalog").
+   * Required, never defaulted: an unfiltered picker is what let
+   * schedulable workflows masquerade as chat partners.
+   */
+  isInvitableDefinition: (definition: InvitableDefinitionRecord) => boolean;
   /** Per-occurrence timeout for the channel host's step. */
   turnTimeoutMs: number;
   /**
@@ -1852,7 +1862,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     async (c) => {
       const tenant = c.get("tenant");
       const items = await deps.platform.listInvitableDefinitions(tenant.id);
-      return c.json({ items });
+      return c.json({ items: items.filter(deps.isInvitableDefinition) });
     },
   );
 
@@ -1866,7 +1876,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
       const items = await deps.platform.listInvitableDefinitions(tenant.id);
-      return c.json({ items });
+      return c.json({ items: items.filter(deps.isInvitableDefinition) });
     },
   );
 

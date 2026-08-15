@@ -31,6 +31,9 @@ export interface LaunchedInvite {
 export interface InvitableDefinition {
   readonly id: string;
   readonly name: string;
+  /** The definition's human display name (e.g. "Myra" for the
+   * `assistant` asset); absent when the deploy carried none. */
+  readonly description?: string;
 }
 
 export interface SentMail {

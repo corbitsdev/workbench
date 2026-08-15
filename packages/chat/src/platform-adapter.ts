@@ -40,8 +40,8 @@ import { extractPartByPath } from "@intx/mime";
 import { channelLaunch } from "./schema";
 import { summarizeChannelActivity } from "./channel-activity";
 import {
-  CHANNEL_HOST_ASSET_NAME_PREFIX,
   channelHostAssetName,
+  isChannelHostDefinitionName,
 } from "./channel-host-naming";
 import { ensureWorkflowDefinitionForAsset } from "@intx/hub-sessions";
 import type {
@@ -388,8 +388,14 @@ export function createHubChatPlatform(
         orderBy: desc(workflowDefinition.createdAt),
       });
       return rows
-        .filter((row) => !row.name.startsWith(CHANNEL_HOST_ASSET_NAME_PREFIX))
-        .map((row) => ({ id: row.id, name: row.name }));
+        .filter((row) => !isChannelHostDefinitionName(row.name))
+        .map((row) => ({
+          id: row.id,
+          name: row.name,
+          ...(typeof row.description === "string" && row.description !== ""
+            ? { description: row.description }
+            : {}),
+        }));
     },
 
     async sendMail(input): Promise<SentMail> {

@@ -86,6 +86,7 @@ import {
   createWebhookTriggerRoutes,
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
+import { isAutomatableWorkflowName } from "@corbits/workflow-catalog";
 import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
@@ -640,6 +641,10 @@ export async function createHub(config: HubConfig) {
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
     }),
+    // The chat pickers offer conversational agents only: automatable
+    // catalog workflows (routines material) never belong in a chat.
+    isInvitableDefinition: (definition) =>
+      !isAutomatableWorkflowName(definition.name),
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
     // Derived per tenant, per channel creation, from that tenant's own
     // connected catalog providers (see `@corbits/chat`'s

@@ -33,6 +33,7 @@
     "@corbits/skills": "workspace:*",
     "@corbits/slack-tag": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
+    "@corbits/workflow-catalog": "workspace:*",
     "@intx/authz": "workspace:*",
     "@intx/crypto": "workspace:*",
     "@intx/db": "workspace:*",

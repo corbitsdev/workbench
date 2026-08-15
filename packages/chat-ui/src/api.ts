@@ -155,7 +155,11 @@ const RunsResponse = Run.array();
 // `GET /channels/:id/invitable` (see packages/chat/src/routes.ts): the
 // tenant's deployed, launchable workflow definitions this channel can
 // invite an agent from — never including the channel's own host.
-const InvitableDefinition = type({ id: "string", name: "string" });
+const InvitableDefinition = type({
+  id: "string",
+  name: "string",
+  "description?": "string",
+});
 export type InvitableDefinition = typeof InvitableDefinition.infer;
 
 const InvitableDefinitionsResponse = type({

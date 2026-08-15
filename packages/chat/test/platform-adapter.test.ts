@@ -215,7 +215,13 @@ function createFakeDb(opts: {
     | { id: string; tenantId: string; status: string; assetId: string | null }
     | undefined;
   workflowDefinitionRows?:
-    | { id: string; tenantId: string; status: string; name: string }[]
+    | {
+        id: string;
+        tenantId: string;
+        status: string;
+        name: string;
+        description?: string;
+      }[]
     | undefined;
   tenantRow?: { id: string; domain: string } | undefined;
   channelLaunchRow?:

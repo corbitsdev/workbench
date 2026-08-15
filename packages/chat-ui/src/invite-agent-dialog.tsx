@@ -122,7 +122,7 @@ export function InviteAgentDialog({
                   className="chat-invitable-item"
                   data-testid="invitable-definition"
                 >
-                  <span>{definition.name}</span>
+                  <span>{definition.description ?? definition.name}</span>
                   <Button
                     variant="outline"
                     size="sm"

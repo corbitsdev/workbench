@@ -37,7 +37,7 @@ export function principal(id: string) {
 
 export function fakePlatform(
   opts: {
-    invitable?: { id: string; name: string }[];
+    invitable?: { id: string; name: string; description?: string }[];
     launchChannel?: (input: {
       tenantId: string;
       creatorPrincipalId: string;
@@ -196,6 +196,7 @@ export function buildDeps(
     requireGrant: () => async (_c, next) => {
       await next();
     },
+    isInvitableDefinition: () => true,
     turnTimeoutMs: 60_000,
     channelHostInferencePreferences: async () => [
       { provider: "anthropic", model: "claude-sonnet-5" },

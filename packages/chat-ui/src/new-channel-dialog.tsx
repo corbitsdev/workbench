@@ -557,7 +557,7 @@ function AgentPicker({
             checked={selectedId === definition.id}
             onChange={() => onSelect(definition.id)}
           />
-          {definition.name}
+          {definition.description ?? definition.name}
         </label>
       ))}
     </>

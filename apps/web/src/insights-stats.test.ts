@@ -78,7 +78,7 @@ describe("computeInsightsStats", () => {
         run({
           id: "host",
           status: "running",
-          definitionName: "ins-cd03d8e3",
+          definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
           createdAt: "2026-01-04T00:00:00.000Z",
         }),
       ],

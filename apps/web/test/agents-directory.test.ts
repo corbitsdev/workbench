@@ -24,7 +24,7 @@ const researcher: AgentDefinition = {
 const channelHostDefinition: AgentDefinition = {
   ...researcher,
   id: "wfd_2",
-  name: "ins-cd03d8e3",
+  name: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   description: null,
 };
 
@@ -43,7 +43,7 @@ const channelHostInstance: AgentInstance = {
   ...instance,
   id: "ins_2",
   definitionId: "wfd_2",
-  definitionName: "ins-cd03d8e3",
+  definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
 };
 
 describe("purposeAgentDefinitions", () => {

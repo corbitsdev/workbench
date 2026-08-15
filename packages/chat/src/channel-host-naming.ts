@@ -24,16 +24,19 @@ export function channelHostAssetName(channelId: string): string {
 
 /**
  * Every channel host's asset is named via `channelHostAssetName` off a
- * `generateId("instance")` id (`ins_<hex>`), which always yields this
- * prefix once slugified. The platform adapter uses it to exclude
- * channel hosts from the invitable set, and workflow listings use it to
- * exclude the anchor machinery's runs — no separate "is this a channel
- * host" column needed anywhere.
+ * generated channel id: `POST /channels` mints `generateId("workflowRun")`
+ * (`run_<32 hex>`), and older channels carry `generateId("instance")`
+ * (`ins_<32 hex>`). Slugified, both become `<prefix>-<32 hex>` — the
+ * exact shape this matcher recognizes. The platform adapter uses it to
+ * exclude channel hosts from the invitable set, and workflow listings
+ * use it to exclude the anchor machinery's runs — no separate "is this
+ * a channel host" column needed anywhere. Requiring the full 32-hex
+ * body keeps user-authored names like `run-my-report` out of the match.
  */
-export const CHANNEL_HOST_ASSET_NAME_PREFIX = "ins-";
+const CHANNEL_HOST_DEFINITION_NAME = /^(?:ins|run)-[0-9a-f]{32}$/;
 
 /** Whether a workflow definition name belongs to a channel-host anchor
  * rather than a purpose-run workflow. */
 export function isChannelHostDefinitionName(definitionName: string): boolean {
-  return definitionName.startsWith(CHANNEL_HOST_ASSET_NAME_PREFIX);
+  return CHANNEL_HOST_DEFINITION_NAME.test(definitionName);
 }
