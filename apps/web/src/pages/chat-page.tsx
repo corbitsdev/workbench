@@ -30,6 +30,7 @@ import {
   consumePendingNewChannel,
   NEW_CHANNEL_EVENT,
   requestNewRoutine,
+  requestNewRoutineInSpace,
 } from "../command-palette-actions";
 import {
   useOpenArtifactInCanvas,
@@ -195,6 +196,13 @@ export function ChatPage({
         requestNewRoutine({
           alreadyOnRoutines: false,
           navigateToRoutines: () => navigate("/routines"),
+        })
+      }
+      onCreateRoutineInSpace={(spaceChannelId) =>
+        requestNewRoutineInSpace({
+          alreadyOnRoutines: false,
+          navigateToRoutines: () => navigate("/routines"),
+          deliveryChannelId: spaceChannelId,
         })
       }
       presenceMembers={presenceMembers}
