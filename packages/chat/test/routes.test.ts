@@ -962,6 +962,29 @@ describe("GET /invitable-definitions", () => {
     expect(body.items).toEqual([{ id: "wfd_echo", name: "echo" }]);
   });
 
+  test("the host's isInvitableDefinition predicate prunes automations", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [
+          { id: "wfd_assistant", name: "assistant", description: "Myra" },
+          { id: "wfd_digest", name: "channel-digest" },
+        ],
+      }),
+      isInvitableDefinition: (definition) =>
+        definition.name !== "channel-digest",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request(`/invitable-definitions`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      items: { id: string; name: string; description?: string }[];
+    };
+    expect(body.items).toEqual([
+      { id: "wfd_assistant", name: "assistant", description: "Myra" },
+    ]);
+  });
+
   test("a denied grant is rejected", async () => {
     const deps = buildDeps({
       requireGrant: () => async (c) =>

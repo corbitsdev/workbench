@@ -1063,12 +1063,24 @@ describe("createHubChatPlatform", () => {
       },
       definitionId: "wfd_channel1",
       workflowDefinitionRows: [
-        { id: "wfd_echo", tenantId: "ten_1", status: "deployed", name: "echo" },
+        {
+          id: "wfd_echo",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "echo",
+          description: "Echo",
+        },
         {
           id: "wfd_host1",
           tenantId: "ten_1",
           status: "deployed",
-          name: "ins-channel1",
+          name: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        },
+        {
+          id: "wfd_host2",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "run-682bf127e22124c01b4b0996aabaab5f",
         },
       ],
     });
@@ -1082,7 +1094,9 @@ describe("createHubChatPlatform", () => {
     });
 
     const items = await platform.listInvitableDefinitions("ten_1");
-    expect(items).toEqual([{ id: "wfd_echo", name: "echo" }]);
+    expect(items).toEqual([
+      { id: "wfd_echo", name: "echo", description: "Echo" },
+    ]);
   });
 
   test("subscribeToChannel resolves the run's address and subscribes on the sidecar router", async () => {

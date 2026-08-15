@@ -297,6 +297,26 @@ describe("NewChannelDialog guided stepper", () => {
     );
     expect(backButton).toBeUndefined();
   });
+
+  test("an agent labels by its display description, falling back to the asset name", async () => {
+    stubInvitableDefinitions([
+      { id: "wfd_assistant", name: "assistant", description: "Myra" },
+      { id: "wfd_custom", name: "my-analyst" },
+    ]);
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "chat",
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain("Myra");
+    expect(document.body.textContent).not.toContain("assistant");
+    expect(document.body.textContent).toContain("my-analyst");
+  });
 });
 
 describe("NewChannelDialog counterpart picker", () => {
