@@ -302,6 +302,21 @@
   gap: 0.5rem;
 }
 
+.chat-settings-agent-block {
+  border: 1px solid var(--border);
+  border-radius: var(--ui-radius-md, 0.375rem);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chat-settings-agent-block-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
 .chat-settings-choice-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));

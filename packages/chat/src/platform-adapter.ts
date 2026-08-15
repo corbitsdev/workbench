@@ -403,6 +403,36 @@ export function createHubChatPlatform(
       return run?.definitionId ?? undefined;
     },
 
+    async refreshAgentInstanceFromDefinition(
+      tenantId,
+      _channelId,
+      address,
+    ): Promise<void> {
+      const run = await findFoldedRunByAddress(deps.db, address);
+      if (run === undefined || run.definitionId === null) return;
+
+      const definitionRow = await deps.db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, run.definitionId),
+          eq(workflowDefinition.tenantId, tenantId),
+        ),
+      });
+      if (definitionRow === undefined || definitionRow.assetId === null) {
+        return;
+      }
+
+      const definitionJSON = await readDefinitionJSON(
+        deps.assetService,
+        definitionRow.assetId,
+      );
+      const foldedBody = readFoldedBody(definitionJSON);
+
+      await deps.db
+        .update(channelLaunch)
+        .set({ foldedBody })
+        .where(eq(channelLaunch.instanceId, run.id));
+    },
+
     async sendMail(input): Promise<SentMail> {
       const run = await findFoldedRunById(deps.db, input.channelId);
       if (run === undefined) {

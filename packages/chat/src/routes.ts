@@ -274,6 +274,10 @@ const InviteAgentBody = type({
   definitionId: "string",
 });
 
+const RefreshAgentBody = type({
+  address: "string",
+});
+
 /** The message's own text, joined across every text part in send order
  * — the same shape `mentionedParticipants` reads a message's mentions
  * off of. Used only to decide whether a message opens the command
@@ -1896,14 +1900,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     },
   );
 
-  // The channel's own agent participant, resolved back to its
-  // definition id — the settings surface's Assistant section reads
-  // this before it can look up that definition's name/instructions
-  // through `@corbits/agent-directory`. Absent (404) for a channel
-  // with no agent participant, or one whose participant no longer
-  // resolves to a live definition.
+  // Every one of the channel's own agent participants, each resolved
+  // back to its definition id — the settings surface's Assistant
+  // section reads this before it can look up each definition's
+  // name/instructions through `@corbits/agent-directory`. A channel
+  // with several invited agents lists every one of them, not just the
+  // first; a participant whose address no longer resolves to a live
+  // definition is simply omitted rather than failing the whole list.
   app.get(
-    "/channels/:id/agent",
+    "/channels/:id/agents",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
@@ -1916,31 +1921,61 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
 
-      const agent = participantsOf(existing.settings).find((participant) =>
-        isAgentAddress(participant.address),
+      const agentParticipants = participantsOf(existing.settings).filter(
+        (participant) => isAgentAddress(participant.address),
       );
-      if (agent === undefined) {
+      const items = (
+        await Promise.all(
+          agentParticipants.map(async (participant) => {
+            const definitionId =
+              await deps.platform.resolveDefinitionIdByAddress(
+                participant.address,
+              );
+            return definitionId === undefined
+              ? null
+              : {
+                  address: participant.address,
+                  handle: participant.handle,
+                  definitionId,
+                };
+          }),
+        )
+      ).filter((item) => item !== null);
+
+      return c.json({ items });
+    },
+  );
+
+  // Recomputes the given agent's `channel_launch` folded body from its
+  // definition's CURRENT `workflow.json` — the lever that makes an
+  // edited system prompt reach an already-invited, already-running
+  // instance, since a wake replays whatever `channel_launch` holds
+  // verbatim and never re-reads the asset itself (see
+  // `ChatPlatform.refreshAgentInstanceFromDefinition`). The settings
+  // surface calls this right after saving through
+  // `@corbits/agent-directory`, so the change is live for this
+  // channel's agent from its next reply. A no-op (never errors) for an
+  // address this platform has no running instance for.
+  app.post(
+    "/channels/:id/agents/refresh",
+    deps.requireGrant(idResource("workflow-run", "id"), "update"),
+    async (c) => {
+      const body = RefreshAgentBody(await c.req.json().catch(() => undefined));
+      if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("not_found", "no agent in this channel"),
-          404,
+          ErrorEnvelope("bad_request", `invalid refresh body: ${body.summary}`),
+          400,
         );
       }
 
-      const definitionId = await deps.platform.resolveDefinitionIdByAddress(
-        agent.address,
+      const tenant = c.get("tenant");
+      const channelId = c.req.param("id");
+      await deps.platform.refreshAgentInstanceFromDefinition(
+        tenant.id,
+        channelId,
+        body.address,
       );
-      if (definitionId === undefined) {
-        return c.json(
-          ErrorEnvelope("not_found", "no agent in this channel"),
-          404,
-        );
-      }
-
-      return c.json({
-        address: agent.address,
-        handle: agent.handle,
-        definitionId,
-      });
+      return c.json({ ok: true });
     },
   );
 

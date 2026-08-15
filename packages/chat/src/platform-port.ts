@@ -111,6 +111,21 @@ export interface ChannelLauncher {
    * for (a human participant, or a stale/removed agent).
    */
   resolveDefinitionIdByAddress(address: string): Promise<string | undefined>;
+
+  /**
+   * Recomputes an already-invited instance's folded launch body from
+   * its definition's CURRENT asset content, and persists it so the
+   * instance's next wake uses it. A wake replays whatever the launch
+   * store holds verbatim — it never re-reads the definition's asset
+   * itself — so an edited system prompt only reaches a running
+   * instance through this seam. A no-op, never throwing, for an
+   * address with no running instance behind it.
+   */
+  refreshAgentInstanceFromDefinition(
+    tenantId: string,
+    channelId: string,
+    address: string,
+  ): Promise<void>;
 }
 
 /** Sending and reading a channel's mail, and fetching its attachment

@@ -18,18 +18,36 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-const AGENT_PARTICIPANT = { address: "myra@acme.example", handle: "myra" };
+type AgentFixture = {
+  readonly address: string;
+  readonly handle: string;
+  readonly definitionId: string;
+  name: string;
+  systemPrompt: string;
+};
+
+const MYRA: AgentFixture = {
+  address: "myra@acme.example",
+  handle: "myra",
+  definitionId: "wfd_myra",
+  name: "Myra",
+  systemPrompt: "Be a helpful assistant.",
+};
 
 function stubFetch(options: {
-  readonly participants?: readonly { address: string; handle: string }[];
-  readonly name?: string;
-  readonly systemPrompt?: string;
+  readonly agents?: readonly AgentFixture[];
   readonly saveFails?: boolean;
-  readonly onSave?: (body: { name: string; systemPrompt: string }) => void;
+  readonly onSave?: (
+    definitionId: string,
+    body: { name: string; systemPrompt: string },
+  ) => void;
+  readonly onRefresh?: (address: string) => void;
 }) {
-  const participants = options.participants ?? [AGENT_PARTICIPANT];
-  let name = options.name ?? "Myra";
-  let systemPrompt = options.systemPrompt ?? "Be a helpful assistant.";
+  // Cloned so a save in one test can never mutate a fixture another
+  // test (or another `stubFetch` call in the same test) still reads —
+  // `agents`/`MYRA` are shared object literals, not fresh per call.
+  const agents = (options.agents ?? [MYRA]).map((agent) => ({ ...agent }));
+  const refreshCalls: string[] = [];
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
@@ -45,7 +63,10 @@ function stubFetch(options: {
         title: "Talk to Myra",
         kind: "chat",
         pinned: false,
-        participants,
+        participants: agents.map((agent) => ({
+          address: agent.address,
+          handle: agent.handle,
+        })),
         settings: {},
         contextWindow: { value: 20, source: "inherit" },
       });
@@ -53,21 +74,31 @@ function stubFetch(options: {
     if (/\/chat\/bench\/settings$/.test(path)) {
       return json({ settings: {}, contextWindow: 20 });
     }
-    if (/\/chat\/channels\/[^/]+\/agent$/.test(path)) {
-      const agent = participants.find((p) => p.address.includes("@"));
+    if (/\/chat\/channels\/[^/]+\/agents\/refresh$/.test(path)) {
+      const body = JSON.parse(String(init?.body)) as { address: string };
+      refreshCalls.push(body.address);
+      options.onRefresh?.(body.address);
+      return json({ ok: true });
+    }
+    if (/\/chat\/channels\/[^/]+\/agents$/.test(path)) {
+      return json({
+        items: agents.map((agent) => ({
+          address: agent.address,
+          handle: agent.handle,
+          definitionId: agent.definitionId,
+        })),
+      });
+    }
+    const definitionMatch = /\/agent-definitions\/([^/]+)$/.exec(path);
+    if (definitionMatch !== null) {
+      const definitionId = definitionMatch[1];
+      const agent = agents.find((a) => a.definitionId === definitionId);
       if (agent === undefined) {
         return json(
-          { error: { code: "not_found", message: "no agent in this channel" } },
+          { error: { code: "not_found", message: "no such agent" } },
           404,
         );
       }
-      return json({
-        address: agent.address,
-        handle: agent.handle,
-        definitionId: "wfd_myra",
-      });
-    }
-    if (/\/agent-definitions\/wfd_myra$/.test(path)) {
       if (init?.method === "PUT") {
         if (options.saveFails === true) {
           return json({ error: { code: "internal", message: "boom" } }, 500);
@@ -76,15 +107,17 @@ function stubFetch(options: {
           name: string;
           systemPrompt: string;
         };
-        name = body.name;
-        systemPrompt = body.systemPrompt;
-        options.onSave?.(body);
-        return json({ name, systemPrompt });
+        agent.name = body.name;
+        agent.systemPrompt = body.systemPrompt;
+        options.onSave?.(definitionId as string, body);
+        return json({ name: agent.name, systemPrompt: agent.systemPrompt });
       }
-      return json({ name, systemPrompt });
+      return json({ name: agent.name, systemPrompt: agent.systemPrompt });
     }
     throw new Error(`unstubbed fetch: ${path}`);
   }) as typeof fetch;
+
+  return { refreshCalls };
 }
 
 let container: HTMLDivElement | null = null;
@@ -128,13 +161,29 @@ function baseProps(
   };
 }
 
+function setTextareaValue(textarea: HTMLTextAreaElement | null, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
+  act(() => {
+    setter?.call(textarea, value);
+    textarea?.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+function findButton(el: HTMLElement, text: string) {
+  return Array.from(
+    el.querySelectorAll(".channel-settings-panel-area button"),
+  ).find((button) => button.textContent === text) as
+    HTMLButtonElement | undefined;
+}
+
 describe("Assistant settings section", () => {
-  test("loads the agent's name and instructions and saves them", async () => {
+  test("loads the agent's name and instructions, saves them, and refreshes its running instance", async () => {
     let saved: { name: string; systemPrompt: string } | undefined;
-    stubFetch({
-      name: "Myra",
-      systemPrompt: "Be a helpful assistant.",
-      onSave: (body) => {
+    const { refreshCalls } = stubFetch({
+      onSave: (_definitionId, body) => {
         saved = body;
       },
     });
@@ -150,23 +199,10 @@ describe("Assistant settings section", () => {
     expect(nameInput?.value).toBe("Myra");
     expect(textarea?.value).toBe("Be a helpful assistant.");
 
-    act(() => {
-      textarea?.dispatchEvent(new Event("focus"));
-    });
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLTextAreaElement.prototype,
-      "value",
-    )?.set;
-    act(() => {
-      setter?.call(textarea, "Be a blunt, no-nonsense assistant.");
-      textarea?.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    setTextareaValue(textarea, "Be a blunt, no-nonsense assistant.");
     await settle();
 
-    const saveButton = Array.from(
-      el.querySelectorAll(".channel-settings-panel-area button"),
-    ).find((button) => button.textContent === "Save") as
-      HTMLButtonElement | undefined;
+    const saveButton = findButton(el, "Save");
     expect(saveButton).toBeDefined();
     act(() => {
       saveButton?.click();
@@ -177,14 +213,8 @@ describe("Assistant settings section", () => {
       name: "Myra",
       systemPrompt: "Be a blunt, no-nonsense assistant.",
     });
-    expect(
-      (
-        Array.from(
-          el.querySelectorAll(".channel-settings-panel-area button"),
-        ).find((button) => button.textContent === "Save") as
-          HTMLButtonElement | undefined
-      )?.disabled,
-    ).toBe(true);
+    expect(refreshCalls).toEqual(["myra@acme.example"]);
+    expect(findButton(el, "Save")?.disabled).toBe(true);
   });
 
   test("a failed save shows an inline error and keeps the edit", async () => {
@@ -195,20 +225,10 @@ describe("Assistant settings section", () => {
     const textarea = el.querySelector(
       ".channel-settings-panel-area textarea",
     ) as HTMLTextAreaElement | null;
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLTextAreaElement.prototype,
-      "value",
-    )?.set;
-    act(() => {
-      setter?.call(textarea, "Try to save this.");
-      textarea?.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    setTextareaValue(textarea, "Try to save this.");
     await settle();
 
-    const saveButton = Array.from(
-      el.querySelectorAll(".channel-settings-panel-area button"),
-    ).find((button) => button.textContent === "Save") as
-      HTMLButtonElement | undefined;
+    const saveButton = findButton(el, "Save");
     act(() => {
       saveButton?.click();
     });
@@ -221,7 +241,7 @@ describe("Assistant settings section", () => {
   });
 
   test("a channel with no agent participant never shows the Assistant tab", async () => {
-    stubFetch({ participants: [] });
+    stubFetch({ agents: [] });
     const el = mount(baseProps({ section: "general" }));
     await settle();
 
@@ -229,5 +249,80 @@ describe("Assistant settings section", () => {
       el.querySelectorAll(".channel-settings-nav-item"),
     ).map((item) => item.textContent);
     expect(navLabels).not.toContain("Assistant");
+  });
+
+  test("a two-agent channel shows both entries and edits the right one", async () => {
+    const second: AgentFixture = {
+      address: "researcher@acme.example",
+      handle: "researcher",
+      definitionId: "wfd_researcher",
+      name: "Researcher",
+      systemPrompt: "Dig up sources.",
+    };
+    const saves: {
+      definitionId: string;
+      body: { name: string; systemPrompt: string };
+    }[] = [];
+    stubFetch({
+      agents: [MYRA, second],
+      onSave: (definitionId, body) => {
+        saves.push({ definitionId, body });
+      },
+    });
+    const el = mount(baseProps());
+    await settle();
+
+    const titles = Array.from(
+      el.querySelectorAll(".chat-settings-agent-block-title"),
+    ).map((node) => node.textContent);
+    expect(titles.sort()).toEqual(["Myra", "Researcher"]);
+
+    const researcherBlock = Array.from(
+      el.querySelectorAll(".chat-settings-agent-block"),
+    ).find(
+      (block) =>
+        block.querySelector(".chat-settings-agent-block-title")?.textContent ===
+        "Researcher",
+    );
+    expect(researcherBlock).toBeDefined();
+    const researcherTextarea = researcherBlock?.querySelector(
+      "textarea",
+    ) as HTMLTextAreaElement | null;
+    expect(researcherTextarea?.value).toBe("Dig up sources.");
+
+    setTextareaValue(researcherTextarea, "Dig up sources, then cite them.");
+    await settle();
+
+    const researcherSave = Array.from(
+      researcherBlock?.querySelectorAll("button") ?? [],
+    ).find((button) => button.textContent === "Save") as
+      HTMLButtonElement | undefined;
+    act(() => {
+      researcherSave?.click();
+    });
+    await settle();
+
+    expect(saves).toEqual([
+      {
+        definitionId: "wfd_researcher",
+        body: {
+          name: "Researcher",
+          systemPrompt: "Dig up sources, then cite them.",
+        },
+      },
+    ]);
+
+    // Myra's own block is untouched by editing the researcher's.
+    const myraBlock = Array.from(
+      el.querySelectorAll(".chat-settings-agent-block"),
+    ).find(
+      (block) =>
+        block.querySelector(".chat-settings-agent-block-title")?.textContent ===
+        "Myra",
+    );
+    const myraTextarea = myraBlock?.querySelector(
+      "textarea",
+    ) as HTMLTextAreaElement | null;
+    expect(myraTextarea?.value).toBe("Be a helpful assistant.");
   });
 });

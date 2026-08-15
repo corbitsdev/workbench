@@ -539,11 +539,12 @@ export function inviteAgent(
   );
 }
 
-// `GET /channels/:id/agent` (see `packages/chat/src/routes.ts`): the
-// channel's agent participant, resolved back to the definition id its
-// name/instructions are read from and saved to via
+// `GET /channels/:id/agents` (see `packages/chat/src/routes.ts`): every
+// one of the channel's agent participants, each resolved to the
+// definition id its name/instructions are read from and saved to via
 // `@corbits/agent-directory`'s own routes (see `getAgentInstructions`/
-// `updateAgentInstructions` below).
+// `updateAgentInstructions` below). A channel with several invited
+// agents lists all of them, not just the first.
 const ChannelAgentWire = type({
   address: "string",
   handle: "string",
@@ -551,14 +552,35 @@ const ChannelAgentWire = type({
 });
 export type ChannelAgent = typeof ChannelAgentWire.infer;
 
-export function getChannelAgent(
+const ChannelAgentsResponse = type({ items: ChannelAgentWire.array() });
+
+export function listChannelAgents(
   tenantId: string,
   channelId: string,
-): Promise<ChannelAgent> {
+): Promise<readonly ChannelAgent[]> {
   return request(
-    `/api/tenants/${tenantId}/chat/channels/${channelId}/agent`,
-    ChannelAgentWire,
-  );
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/agents`,
+    ChannelAgentsResponse,
+  ).then((page) => page.items);
+}
+
+// `POST /channels/:id/agents/refresh` (see
+// `packages/chat/src/routes.ts`): recomputes the given agent's running
+// instance from its definition's CURRENT instructions — a wake replays
+// whatever the channel's launch record holds verbatim, so a definition
+// edit reaches a running instance only after this call. The Assistant
+// section calls it right after `updateAgentInstructions` succeeds, so
+// the change is live for this channel's agent from its next reply.
+export function refreshChannelAgent(
+  tenantId: string,
+  channelId: string,
+  address: string,
+): Promise<void> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/agents/refresh`,
+    type({ ok: "boolean" }),
+    { method: "POST", body: JSON.stringify({ address }) },
+  ).then(() => undefined);
 }
 
 // `GET`/`PUT /api/tenants/:t/agent-definitions/:id` (see

@@ -227,13 +227,14 @@ export const CHAT_STRINGS = {
   channelSettingsAssistantNameLabel: "Assistant name",
   channelSettingsAssistantInstructionsLabel: "Instructions",
   channelSettingsAssistantInstructionsHint:
-    "How this agent should act and what it knows to do — shown to the agent on every reply.",
+    "How this agent should act and what it knows to do. Applies from this agent's next reply in this channel; other channels with the same agent pick it up the next time their agent wakes.",
   channelSettingsAssistantLoadError: "Couldn't load this agent's instructions",
   channelSettingsAssistantSaveError: "Couldn't save these changes — try again.",
   channelSettingsAssistantSavedToast: "Instructions saved",
   channelSettingsAssistantSave: "Save",
   channelSettingsAssistantSaving: "Saving…",
   channelSettingsAssistantCancel: "Cancel",
+  channelSettingsAssistantNoAgents: "No agents to configure in this channel.",
   channelSettingsAccessBody:
     "Channel access follows workbench grants and membership. Manage role and member grants under Workspace → Grants.",
   channelSettingsNotificationsLabel: "Notifications",

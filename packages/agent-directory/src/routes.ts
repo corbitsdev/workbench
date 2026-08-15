@@ -21,6 +21,7 @@ import { Hono } from "hono";
 import type { DB } from "@intx/db";
 import { asset, workflowDefinition } from "@intx/db/schema";
 import type { TenantEnv, RequireGrant } from "@intx/hub-api";
+import { idResource } from "@intx/hub-api";
 import {
   AssetServiceError,
   DEFAULT_ASSET_REF,
@@ -32,6 +33,7 @@ import {
   SkillRegistryError,
   type PinnedSkillIndexEntry,
 } from "@corbits/skills";
+import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
 
 import {
   AGENT_SKILLS_ASSET_PATH,
@@ -99,6 +101,35 @@ const AGENT_DEFINITION_ASSET_PATH = "workflow.json";
 
 function errorEnvelope(code: string, message: string) {
   return { error: { code, message } };
+}
+
+/** The same 404 shape a missing definition gets — deliberately reused
+ * for a channel host's definition too (see `hostGuardedRow`), so a
+ * caller cannot distinguish "no such definition" from "that id names a
+ * channel host" by response shape alone. */
+function definitionNotFound(definitionId: string) {
+  return errorEnvelope(
+    "not_found",
+    `No agent definition "${definitionId}" in this workbench`,
+  );
+}
+
+/**
+ * A channel host is a single-step workflow definition exactly like a
+ * hand-authored agent, but it is the channel's own silent anchor, never
+ * a participant a person edits through this surface — rewriting its
+ * system prompt would turn a silent anchor into a responder. Refused
+ * the same way a missing definition is: 404, not 403, so the row's
+ * existence isn't leaked either.
+ */
+function hostGuardedRow(
+  row: { readonly name: string; readonly assetId: string | null } | undefined,
+): row is { readonly name: string; readonly assetId: string } {
+  return (
+    row !== undefined &&
+    row.assetId !== null &&
+    !isChannelHostDefinitionName(row.name)
+  );
 }
 
 export function createAgentDefinitionRoutes({
@@ -297,7 +328,7 @@ export function createAgentDefinitionRoutes({
 
   app.get(
     "/:definitionId",
-    requireGrant("workflow-definition:*", "read"),
+    requireGrant(idResource("workflow-definition", "definitionId"), "read"),
     async (c) => {
       const tenant = c.get("tenant");
       const definitionId = c.req.param("definitionId");
@@ -307,14 +338,8 @@ export function createAgentDefinitionRoutes({
           eq(workflowDefinition.tenantId, tenant.id),
         ),
       });
-      if (row === undefined || row.assetId === null) {
-        return c.json(
-          errorEnvelope(
-            "not_found",
-            `No agent definition "${definitionId}" in this workbench`,
-          ),
-          404,
-        );
+      if (!hostGuardedRow(row)) {
+        return c.json(definitionNotFound(definitionId), 404);
       }
 
       const workflowJson = new TextDecoder().decode(
@@ -334,7 +359,7 @@ export function createAgentDefinitionRoutes({
 
   app.put(
     "/:definitionId",
-    requireGrant("workflow-definition:*", "update"),
+    requireGrant(idResource("workflow-definition", "definitionId"), "update"),
     async (c) => {
       const body = UpdateAgentInstructionsInput(
         await c.req.json().catch(() => undefined),
@@ -357,14 +382,8 @@ export function createAgentDefinitionRoutes({
           eq(workflowDefinition.tenantId, tenant.id),
         ),
       });
-      if (row === undefined || row.assetId === null) {
-        return c.json(
-          errorEnvelope(
-            "not_found",
-            `No agent definition "${definitionId}" in this workbench`,
-          ),
-          404,
-        );
+      if (!hostGuardedRow(row)) {
+        return c.json(definitionNotFound(definitionId), 404);
       }
 
       const workflowJson = new TextDecoder().decode(
@@ -374,6 +393,10 @@ export function createAgentDefinitionRoutes({
         }),
       );
 
+      // Git first: the row updates below are what can still be retried
+      // safely if they fail after this succeeds (see the catch below) —
+      // the reverse order would leave a renamed row pointing at
+      // instructions that were never actually written.
       await assetService.populateAsset({
         assetId: row.assetId,
         ref: DEFAULT_ASSET_REF,
@@ -390,19 +413,33 @@ export function createAgentDefinitionRoutes({
       });
 
       const now = new Date();
-      await db
-        .update(workflowDefinition)
-        .set({ description: body.name, updatedAt: now })
-        .where(
-          and(
-            eq(workflowDefinition.id, definitionId),
-            eq(workflowDefinition.tenantId, tenant.id),
+      try {
+        await db.transaction(async (tx) => {
+          await tx
+            .update(workflowDefinition)
+            .set({ description: body.name, updatedAt: now })
+            .where(
+              and(
+                eq(workflowDefinition.id, definitionId),
+                eq(workflowDefinition.tenantId, tenant.id),
+              ),
+            );
+          await tx
+            .update(asset)
+            .set({ displayName: body.name, updatedAt: now })
+            .where(eq(asset.id, row.assetId));
+        });
+      } catch {
+        return c.json(
+          errorEnvelope(
+            "partial_failure",
+            `The instructions saved, but renaming "${row.name}" to ` +
+              `"${body.name}" failed — the agent now answers with the new ` +
+              `instructions under its old name. Retry to finish the rename.`,
           ),
+          500,
         );
-      await db
-        .update(asset)
-        .set({ displayName: body.name, updatedAt: now })
-        .where(eq(asset.id, row.assetId));
+      }
 
       return c.json({ name: body.name, systemPrompt: body.systemPrompt });
     },
@@ -410,7 +447,7 @@ export function createAgentDefinitionRoutes({
 
   app.put(
     "/:definitionId/skills",
-    requireGrant("workflow-definition:*", "update"),
+    requireGrant(idResource("workflow-definition", "definitionId"), "update"),
     async (c) => {
       const body = UpdateAgentSkillsInput(
         await c.req.json().catch(() => undefined),
