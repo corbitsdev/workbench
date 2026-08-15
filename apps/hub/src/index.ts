@@ -1326,6 +1326,16 @@ export async function createHub(config: HubConfig) {
                     foldedRuns: taskLauncherDeps.foldedRuns,
                     events: sidecarRouter.events,
                     cryptoProviders: plannerCryptoProviders,
+                    // Reuses `taskLifecycle` rather than standing up a
+                    // second idle-sleep instance: it's keyed entirely by
+                    // address, and a planner run's `triggerAddress`
+                    // (`formatRunAddress` over a freshly generated
+                    // `workflowRun` instance id) can never collide with a
+                    // task's — sharing costs nothing and keeps one sweep
+                    // instead of two.
+                    lifecycle: taskLifecycle,
+                    undeploy: (address, reason) =>
+                      sidecarRouter.sendAgentUndeploy(address, reason),
                   },
                   runnerInput,
                 ),
