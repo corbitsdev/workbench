@@ -112,6 +112,11 @@ const ALLOWLIST: readonly {
     maxOccurrences: 1,
     tables: ["user_preferences"],
   },
+  {
+    relPath: "packages/folded-runs/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["folded_run"],
+  },
 ];
 
 export async function scanFiles(

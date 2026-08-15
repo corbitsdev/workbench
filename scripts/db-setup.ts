@@ -28,6 +28,7 @@
 import path from "node:path";
 import { readdir } from "node:fs/promises";
 
+import { applyFoldedRunsMigrations } from "../packages/folded-runs/src/migrations";
 import { applyChatMigrations } from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
@@ -57,6 +58,10 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   name: string;
   apply: (databaseUrl: string) => Promise<{ applied: string[] }>;
 }[] = [
+  // Ahead of @corbits/chat and @corbits/tasks: both launch runs
+  // through @corbits/folded-runs' `launchFoldedRun`, which writes into
+  // its `folded_run` marker table unconditionally on every launch.
+  { name: "@corbits/folded-runs", apply: applyFoldedRunsMigrations },
   { name: "@corbits/chat", apply: applyChatMigrations },
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
   { name: "@corbits/routines", apply: applyRoutineMigrations },
@@ -517,6 +522,7 @@ export async function setupDatabase(
 // package's tables, not only the platform's.
 const PACKAGE_SCHEMAS = [
   "mailbox",
+  "folded_runs",
   "chat",
   "routines",
   "insights",

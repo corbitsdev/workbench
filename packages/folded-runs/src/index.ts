@@ -52,3 +52,9 @@ export {
   type OneShotRunnerDeps,
   type OneShotPromptInput,
 } from "./one-shot-reply";
+export { foldedRunsSchema, foldedRun } from "./schema";
+export {
+  createTopLevelRunRoutes,
+  listTopLevelRuns,
+  type CreateTopLevelRunRoutesDeps,
+} from "./scope-routes";
