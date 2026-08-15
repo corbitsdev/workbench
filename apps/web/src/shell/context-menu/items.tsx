@@ -59,7 +59,7 @@ function channelMenu(
   const entries: ContextMenuEntry[] = [
     contextMenuItem({
       id: "rename",
-      label: "Rename channel",
+      label: "Rename conversation",
       icon: <Pencil />,
       onSelect: () => requestChannelRename(target.id),
     }),
@@ -69,14 +69,17 @@ function channelMenu(
     entries.push(
       contextMenuItem({
         id: "pin",
-        label: target.pinned ? "Unpin channel" : "Pin channel",
+        label: target.pinned ? "Unpin conversation" : "Pin conversation",
         icon: target.pinned ? <PinOff /> : <Pin />,
         onSelect: () => {
           void patchChannelSettings(tenantId, target.id, {
             "chat/pinned": !target.pinned,
           }).then(
-            () => toast(target.pinned ? "Channel unpinned" : "Channel pinned"),
-            () => toast("Couldn't update the channel"),
+            () =>
+              toast(
+                target.pinned ? "Conversation unpinned" : "Conversation pinned",
+              ),
+            () => toast("Couldn't update the conversation"),
           );
         },
       }),
@@ -228,7 +231,7 @@ function shellMenu(actions: ShellContextMenuActions): ContextMenu {
       }),
       contextMenuItem({
         id: "channels",
-        label: "Go to channels",
+        label: "Go to spaces",
         icon: <Hash />,
         onSelect: () => actions.navigate(channelPath(null)),
       }),

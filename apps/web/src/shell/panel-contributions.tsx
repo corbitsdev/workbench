@@ -403,7 +403,7 @@ export function ChannelsBand({
       <EmptyState
         icon={<Hash />}
         title="No workbench selected"
-        description="Choose a workbench from the switcher to see its channels."
+        description="Choose a workbench from the switcher to see its spaces and chats."
       />
     );
   }
@@ -411,7 +411,7 @@ export function ChannelsBand({
     return (
       <EmptyState
         icon={<Hash />}
-        title="Couldn't load channels"
+        title="Couldn't load spaces and chats"
         description={activity.message}
       />
     );
@@ -438,8 +438,8 @@ export function ChannelsBand({
         {workingGroup}
         <EmptyState
           icon={<MessageSquare />}
-          title="No channels yet"
-          description="Create a channel to start a conversation."
+          title="No spaces or chats yet"
+          description="Create a space or start a chat to get going."
         />
       </div>
     );
@@ -478,13 +478,13 @@ export function ChannelsBand({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search…"
-          aria-label="Search channels"
+          aria-label="Search spaces and chats"
         />
       </label>
       {!hasVisibleRows ? (
         <EmptyState
           icon={<MessageSquare />}
-          title="No matching channels"
+          title="No matching spaces or chats"
           description={`Nothing matches “${query.trim()}”.`}
         />
       ) : (
@@ -621,7 +621,7 @@ export function LiveActivityBand({
       <EmptyState
         icon={<Bell />}
         title="Quiet right now"
-        description="Channels and running routines for this workbench will appear here."
+        description="Spaces, chats, and running routines for this workbench will appear here."
       />
     );
   }
@@ -645,7 +645,7 @@ export function LiveActivityBand({
       ) : null}
       {activity.channels.length > 0 ? (
         <div className="panel-stack-group">
-          <p className="panel-band-subheading">Channels</p>
+          <p className="panel-band-subheading">Spaces</p>
           {activity.channels.map((channel) => (
             <ChannelPanelRow
               key={channel.id}
@@ -710,7 +710,7 @@ export function ensurePanelContributions(): void {
         headerActions: [
           {
             id: "new-channel",
-            label: "New channel",
+            label: "New conversation",
             icon: <Plus />,
             onSelect: () => {
               window.dispatchEvent(

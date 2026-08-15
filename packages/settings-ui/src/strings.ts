@@ -17,7 +17,7 @@ export const SETTINGS_STRINGS = {
   agentAutonomyLabel: "Default behavior",
   agentAutonomyPrepare: "Prepare only — draft, never send",
   agentAutonomyGated: "Execute with gates — ask before side effects",
-  agentAutonomyAutonomous: "Autonomous in approved channels",
+  agentAutonomyAutonomous: "Autonomous in approved spaces",
   agentBriefLabel: "Morning brief",
   agentBriefOff: "Off",
   agentBrief0730: "07:30 local",
@@ -63,11 +63,11 @@ export const SETTINGS_STRINGS = {
 
   chatSectionTitle: "Conversation defaults",
   chatSectionDescription:
-    "Bench-wide defaults every chat and channel inherits, unless it sets its own override in its own settings.",
+    "Bench-wide defaults every chat and space inherits, unless it sets its own override in its own settings.",
   chatLoadError: "this bench's chat defaults",
   chatContextWindowLabel: "Default conversation memory",
   chatContextWindowDescription:
-    "How much recent conversation a mentioned agent sees, for any channel that hasn't set its own override.",
+    "How much recent conversation a mentioned agent sees, for any space that hasn't set its own override.",
   chatContextWindowDisabled: "Disabled — mentioned agents see no history",
   chatContextWindowCustom: (count: number) => `Last ${count} messages`,
   chatContextWindowPlaceholder: "20",

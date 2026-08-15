@@ -57,7 +57,7 @@ describe("channel details panel contribution", () => {
 
   test("falls back to the unnamed label for a blank title", () => {
     expect(channelDetails({ ...baseChannel, title: "" }).title).toBe(
-      "Untitled channel",
+      "Untitled conversation",
     );
   });
 

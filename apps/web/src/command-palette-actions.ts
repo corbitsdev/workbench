@@ -159,8 +159,8 @@ export type ActionCommand = {
 export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "new-channel",
-    title: "New channel",
-    subtitle: "Create conversation",
+    title: "New conversation",
+    subtitle: "Space or chat",
   },
   { id: "new-agent", title: "New agent", subtitle: "Create with v1" },
   {
@@ -193,11 +193,11 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "talk-to-myra",
     title: "Talk to Myra",
-    subtitle: "Open personal agent channel",
+    subtitle: "Open personal agent chat",
   },
   {
     id: "go-channels",
-    title: "Go to channels",
+    title: "Go to spaces",
     subtitle: "Home · conversation list",
   },
 ];

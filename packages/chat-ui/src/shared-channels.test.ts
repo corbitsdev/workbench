@@ -75,6 +75,6 @@ describe("sharedChannelsWith", () => {
 
     const result = sharedChannelsWith(channels, "viewer", "subject@x.dev");
 
-    expect(result[0]?.title).toBe("Untitled channel");
+    expect(result[0]?.title).toBe("Untitled conversation");
   });
 });

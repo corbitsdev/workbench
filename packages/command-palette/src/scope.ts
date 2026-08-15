@@ -1,4 +1,4 @@
-/** Prefix scopes the palette input recognizes: `#` channels, `@` people &
+/** Prefix scopes the palette input recognizes: `#` spaces, `@` people &
  * agents, `>` actions, `/` pages. Typing one of these as the first character
  * narrows results to that kind and strips the prefix from the match text. */
 export type PaletteScopeKind = "channels" | "people" | "actions" | "pages";
@@ -10,7 +10,7 @@ export type PaletteScope = {
 };
 
 export const PALETTE_SCOPES: readonly PaletteScope[] = [
-  { prefix: "#", kind: "channels", label: "channels" },
+  { prefix: "#", kind: "channels", label: "spaces" },
   { prefix: "@", kind: "people", label: "people & agents" },
   { prefix: ">", kind: "actions", label: "actions" },
   { prefix: "/", kind: "pages", label: "pages" },
