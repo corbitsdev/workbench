@@ -56,6 +56,7 @@ import {
   createNoopInferenceRoutes,
   isChannelHostDefinitionName,
   listConnectedProviders,
+  provisionSpaceChannel,
   startWorkflowCommand,
 } from "@corbits/chat";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
@@ -127,6 +128,7 @@ import {
   launchTaskLeg,
 } from "@corbits/tasks";
 import {
+  createMyraAgentDefinitionDrafting,
   createPlannerRoutes,
   dispatchWithPlanner,
   isPlannerCreatedDefinitionName,
@@ -1355,6 +1357,25 @@ export async function createHub(config: HubConfig) {
         return row !== undefined && row.workflowDefinitionId === definitionId;
       },
       deliveryChannelRequired: routineDeliveryChannelRequired,
+      // A routine created with no `deliveryChannelId` gets a brand-new
+      // space of its own, named after it, rather than a dead-end
+      // 400 — the same channel-provisioning core `POST /chat/channels`
+      // uses (`@corbits/chat`'s `provisionSpaceChannel`), reused here
+      // instead of reimplemented.
+      deliverySpace: {
+        createDeliverySpace: (input) =>
+          provisionSpaceChannel(
+            {
+              tenancy: chatTenancy,
+              platform: chatPlatform,
+              store: chatStore,
+              channelHostInferencePreferences:
+                chatDeps.channelHostInferencePreferences,
+              turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+            },
+            input,
+          ),
+      },
       validateRoutineInput: routineInputValid,
     }),
   );
@@ -1603,6 +1624,12 @@ export async function createHub(config: HubConfig) {
   // two lifecycles from ever contending over the same key space.
   const plannerCryptoProviders = createCryptoProviderCache();
 
+  // A separate `CryptoProviderCache` again from `plannerCryptoProviders`
+  // — an agent-definition drafting one-shot run's instance id has
+  // nothing to do with either lifecycle, same rationale as
+  // `routineDraftingCryptoProviders`' own comment above.
+  const agentDefinitionDraftingCryptoProviders = createCryptoProviderCache();
+
   app.route(
     `${TENANT_PREFIX}/planner`,
     createPlannerRoutes({
@@ -1667,6 +1694,35 @@ export async function createHub(config: HubConfig) {
           },
           input,
         ),
+      // Agent-definition drafting (CL-6074): the create-agent panel's
+      // "Create & chat" flow asks Myra for a starting system prompt from
+      // a name + plain-language purpose, mirroring the routine-drafting
+      // wiring above — resolve Myra's definition, offer her the same
+      // inventory the planner itself uses, and never trust her reply
+      // beyond what `@corbits/task-planner`'s own fail-closed validation
+      // proves. Never deploys on its own; the panel submits the
+      // validated draft through the ordinary create-agent-definition
+      // path once the person confirms.
+      draftAgentDefinition: (input) =>
+        createMyraAgentDefinitionDrafting({
+          resolveMyraDefinitionId: (tenantId) =>
+            resolveMyraDefinitionIdFromDb(db, tenantId),
+          runner: {
+            run: (runnerInput) =>
+              runOneShotFoldedPrompt(
+                {
+                  foldedRuns: taskLauncherDeps.foldedRuns,
+                  events: sidecarRouter.events,
+                  cryptoProviders: agentDefinitionDraftingCryptoProviders,
+                  lifecycle: taskLifecycle,
+                  undeploy: (address, reason) =>
+                    sidecarRouter.sendAgentUndeploy(address, reason),
+                },
+                runnerInput,
+              ),
+          },
+          inventorySources: plannerInventorySources,
+        }).propose(input),
     }),
   );
 

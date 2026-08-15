@@ -156,6 +156,40 @@ export function listCatalogModels(
   ).then((page) => page.data.filter((model) => !model.disabled));
 }
 
+const AgentDefinitionDraftResponse = type({
+  draft: {
+    systemPrompt: "string",
+    "description?": "string",
+    "modelPreference?": "string",
+    "toolPackagePins?": "string[]",
+    "skills?": "string[]",
+  },
+});
+export type AgentDefinitionDraft = typeof AgentDefinitionDraftResponse.infer.draft;
+
+/**
+ * Asks Myra to draft a starting system prompt (and optionally a
+ * refined description, a model pick, and skills) from a name and a
+ * plain-language purpose — the create-agent panel's "Create & chat"
+ * flow (CL-6074). Hits `@corbits/task-planner`'s
+ * `POST .../planner/agent-definitions/draft`; never deploys anything
+ * itself. A caller that gets a rejected promise here (Myra unavailable,
+ * the draft timing out, an unparseable or out-of-inventory reply, or a
+ * concurrent draft already in flight) should let the person write the
+ * system prompt by hand rather than retry silently — see that route's
+ * own fail-closed posture.
+ */
+export function draftAgentDefinition(
+  tenantId: string,
+  input: { readonly name: string; readonly purpose?: string },
+): Promise<AgentDefinitionDraft> {
+  return postJSON(
+    `/api/tenants/${tenantId}/planner/agent-definitions/draft`,
+    AgentDefinitionDraftResponse,
+    input,
+  ).then((body) => body.draft);
+}
+
 export type CreateAgentDefinitionInput = {
   readonly name: string;
   readonly handle: string;

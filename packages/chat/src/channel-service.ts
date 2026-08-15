@@ -1,9 +1,14 @@
 // Channel-level orchestration that sits above the platform port:
 // joining an agent into a channel (shared by chat creation and
-// `POST .../invite`), and sending a message with its full mention
-// fan-out — recipient resolution, prior-context loading, and the
-// per-recipient delivery loop. Each depends only on the platform/store
-// seams it actually calls, not the full `ChatPlatform`/`ChatStore`.
+// `POST .../invite`), sending a message with its full mention fan-out
+// — recipient resolution, prior-context loading, and the per-recipient
+// delivery loop — and provisioning a bare new space channel for a
+// caller (like a routine) that names no existing destination. Each
+// depends only on the platform/store seams it actually calls, not the
+// full `ChatPlatform`/`ChatStore`.
+import { formatRunAddress } from "@intx/types";
+import type { InferencePreference } from "@intx/agent";
+import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { decodeMail, encodeParts, senderOf } from "./codec";
 import type { Part as PartType } from "./parts";
@@ -25,15 +30,136 @@ import {
   participantsOf,
   resolveContextWindow,
 } from "./channel-settings";
+import {
+  buildChannelHostWorkflow,
+  serializeChannelHostWorkflow,
+} from "./channel-workflow";
+import { presetForKind } from "./kinds";
 import type {
   ChannelLauncher,
   ChannelMail,
   ChatChannelEvent,
   InvitableDefinition,
 } from "./platform-port";
+import type { ChannelTenancyStore } from "./channel-tenancy";
 import type { ChatStore } from "./store";
 
 const contextLog = getLogger(["chat", "context"]);
+const provisionLog = getLogger(["chat", "provision-space"]);
+
+export type ProvisionSpaceChannelDeps = {
+  readonly tenancy: Pick<
+    ChannelTenancyStore,
+    "createChannelTenant" | "compensateChannelTenant"
+  >;
+  readonly platform: ChannelLauncher;
+  readonly store: Pick<ChatStore, "createChannelSettings">;
+  readonly channelHostInferencePreferences?:
+    | ((tenantId: string) => Promise<readonly InferencePreference[]>)
+    | undefined;
+  readonly turnTimeoutMs: number;
+};
+
+export type ProvisionSpaceChannelInput = {
+  readonly tenantId: string;
+  readonly tenantDomain: string;
+  readonly creatorPrincipalId: string;
+  readonly creatorUserId: string;
+  readonly name: string;
+};
+
+export type ProvisionSpaceChannelResult = {
+  readonly channelId: string;
+  readonly compensate: () => Promise<void>;
+};
+
+/**
+ * Provisions a brand-new `kind: "channel"` space (mint the child
+ * tenant, launch its channel host, write its base settings), the same
+ * three steps `POST /channels` runs for a named space — used by a
+ * caller (a routine's create route, chiefly) that needs to hand a
+ * fresh destination to something else in the same request rather than
+ * collecting one from a picker first. Mirrors `POST /channels`'s own
+ * mint-then-compensate shape: the tenant mint is one transaction, the
+ * host launch is a separate step, and a launch failure is compensated
+ * (the orphaned tenant deleted) before the error propagates.
+ *
+ * Returns a `compensate` callback rather than compensating on every
+ * failure itself: the caller may still fail its own next step (e.g.
+ * writing the row this space is *for*) after this returns
+ * successfully, and only the caller knows when that's happened.
+ */
+export async function provisionSpaceChannel(
+  deps: ProvisionSpaceChannelDeps,
+  input: ProvisionSpaceChannelInput,
+): Promise<ProvisionSpaceChannelResult> {
+  const channelId = generateId("workflowRun");
+  const triggerAddress = formatRunAddress(channelId, input.tenantDomain);
+  const inferencePreferences =
+    (await deps.channelHostInferencePreferences?.(input.tenantId)) ?? [];
+  const definition = serializeChannelHostWorkflow(
+    buildChannelHostWorkflow({
+      triggerAddress,
+      inferencePreferences,
+      turnTimeoutMs: deps.turnTimeoutMs,
+    }),
+  );
+
+  const channelTenant = await deps.tenancy.createChannelTenant({
+    parentTenantId: input.tenantId,
+    channelId,
+    name: input.name,
+    creatorUserId: input.creatorUserId,
+  });
+
+  try {
+    await deps.platform.launchChannel({
+      tenantId: input.tenantId,
+      creatorPrincipalId: input.creatorPrincipalId,
+      channelId,
+      triggerAddress,
+      definition,
+    });
+  } catch (err) {
+    provisionLog.error(
+      "Channel host launch failed for {channelId} after minting " +
+        "{tenantId}; compensating the orphaned tenant",
+      { channelId, tenantId: channelTenant.tenantId, err },
+    );
+    try {
+      await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
+    } catch (compensationErr) {
+      provisionLog.error(
+        "Compensation failed for orphaned tenant {tenantId} after " +
+          "channel {channelId}'s launch failure; this tenant is now a " +
+          "privileged orphan with no channel pointing at it and " +
+          "requires manual cleanup",
+        { channelId, tenantId: channelTenant.tenantId, compensationErr },
+      );
+    }
+    throw err;
+  }
+
+  const preset = presetForKind("channel");
+  await deps.store.createChannelSettings({
+    tenantId: input.tenantId,
+    channelId,
+    settings: {
+      "chat/kind": "channel",
+      "chat/pinned": preset.pinned,
+      "chat/participants": [],
+      "chat/name": input.name,
+    },
+    updatedBy: input.creatorPrincipalId,
+  });
+
+  return {
+    channelId,
+    compensate: async () => {
+      await deps.tenancy.compensateChannelTenant(channelTenant.tenantId);
+    },
+  };
+}
 
 export type LaunchAndJoinAgentDeps = {
   readonly store: Pick<ChatStore, "updateChannelSettings">;

@@ -26,7 +26,7 @@ function derivePrincipalLabel(raw: string): string {
       .pop() ?? raw;
   const cleaned = segment
     .replace(/^[a-z]+_/i, "")
-    .replace(/[-_.]+/g, " ")
+    .replace(/[-_.()]+/g, " ")
     .trim();
   if (cleaned.length === 0) return "Unnamed agent";
   return cleaned

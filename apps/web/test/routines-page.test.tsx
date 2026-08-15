@@ -411,6 +411,82 @@ describe("webhook trigger panel", () => {
       container.remove();
     }
   });
+
+  test("Edit routine docks right, like New routine — not a centered modal", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(RoutinesListPage, {
+          ...listProps,
+          routines: ready([routine]),
+          selectedId: routine.id,
+          definitions: [researcherDefinition],
+        }),
+      );
+    });
+    try {
+      const editButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Edit",
+      );
+      expect(editButton).not.toBeUndefined();
+      act(() => {
+        editButton?.click();
+      });
+      const content = document.body.querySelector(
+        '[data-slot="dialog-content"]',
+      );
+      expect(content?.getAttribute("data-side")).toBe("right");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("the routine detail's 'Delivers to' line links to its space", () => {
+    let openedChannelId: string | null = null;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(RoutineDetailPage, {
+          routine: ready(routine),
+          runs: ready<readonly RoutineRun[]>([]),
+          channels: [
+            {
+              id: "ch_1",
+              title: "Ops",
+              kind: "channel" as const,
+              pinned: false,
+              participants: [],
+            },
+          ],
+          onBack: () => {},
+          onOpenRuns: () => {},
+          onOpenChannel: (channelId: string) => {
+            openedChannelId = channelId;
+          },
+          onEdit: () => Promise.resolve(),
+        }),
+      );
+    });
+    try {
+      expect(container.textContent).toContain("Delivers to");
+      const link = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Ops",
+      );
+      expect(link).not.toBeUndefined();
+      act(() => {
+        link?.click();
+      });
+      expect(openedChannelId as string | null).toBe("ch_1");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
 });
 
 describe("connectorBadgeLabel registry-drift logging", () => {

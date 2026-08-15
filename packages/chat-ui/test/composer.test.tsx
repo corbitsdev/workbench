@@ -42,6 +42,7 @@ function mount(onSend: () => Promise<boolean>) {
         onInviteAgent: () => undefined,
         onOpenAgentsSettings: () => undefined,
         onOpenRoutines: () => undefined,
+        onCreateRoutineInSpace: () => undefined,
       }),
     );
   });

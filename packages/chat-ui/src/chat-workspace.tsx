@@ -17,6 +17,7 @@ import {
   ChevronDown,
   CircleAlert,
   MessageSquare,
+  Repeat,
   SlidersHorizontal,
   UserPlus,
 } from "lucide-react";
@@ -277,6 +278,8 @@ function ChatWorkspaceInner({
   listMembers,
   registerComposerInsert,
   onOpenRoutines,
+  onRequestNewAgent,
+  onCreateRoutineInSpace,
   presenceMembers,
 }: {
   readonly tenantId: string;
@@ -330,6 +333,27 @@ function ChatWorkspaceInner({
    * route the host owns, so opening it is a host-supplied hop the same way
    * `onOpenArtifact` is. */
   readonly onOpenRoutines?: () => void;
+  /**
+   * The new-chat picker's "New agent…" affordance, beneath its agent
+   * list — omitted entirely, the row doesn't render (same contract as
+   * `listMembers`). Firing this closes this component's own
+   * `NewChannelDialog` first, then delegates to the host, which owns
+   * the actual create-agent panel (an apps/web page component this
+   * package never depends on).
+   */
+  readonly onRequestNewAgent?: () => void;
+
+  /**
+   * "New routine in this space" — the header button and the composer's
+   * `/routine` command: opens the New Routine panel with the active
+   * channel pre-bound as its destination. Host-supplied so the panel's
+   * own route (and its prefill store) stays owned by the host, the same
+   * way `onOpenRoutines` is; the active channel id is closed over here
+   * rather than passed as an argument, since only this component knows
+   * it. Omitted, the button and command are hidden — the same
+   * "no dead promise" contract `onOpenRoutines` follows.
+   */
+  readonly onCreateRoutineInSpace?: (channelId: string) => void;
   /** See `ChatWorkspace`'s prop of the same name. */
   readonly presenceMembers?: readonly PresenceMember[];
 }) {
@@ -1135,6 +1159,17 @@ function ChatWorkspaceInner({
                       {CHAT_STRINGS.inviteAgentAction}
                     </Button>
                   ) : null}
+                  {onCreateRoutineInSpace !== undefined &&
+                  activeChannelId !== null ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onCreateRoutineInSpace(activeChannelId)}
+                    >
+                      <Repeat />
+                      New routine
+                    </Button>
+                  ) : null}
                   <Button
                     variant="outline"
                     size="sm"
@@ -1233,6 +1268,16 @@ function ChatWorkspaceInner({
                       }
                       toast(CHAT_STRINGS.runRoutineUnavailable);
                     }}
+                    onCreateRoutineInSpace={() => {
+                      if (
+                        onCreateRoutineInSpace !== undefined &&
+                        activeChannelId !== null
+                      ) {
+                        onCreateRoutineInSpace(activeChannelId);
+                        return;
+                      }
+                      toast(CHAT_STRINGS.runRoutineUnavailable);
+                    }}
                   />
                 </>
               )}
@@ -1250,6 +1295,14 @@ function ChatWorkspaceInner({
         {...(listMembers !== undefined ? { listMembers } : {})}
         {...(currentUser !== undefined
           ? { currentUserPrincipalId: currentUser.principalId }
+          : {})}
+        {...(onRequestNewAgent !== undefined
+          ? {
+              onRequestNewAgent: () => {
+                setDialogOpen(false);
+                onRequestNewAgent();
+              },
+            }
           : {})}
       />
       {activeChannelId !== null ? (
@@ -1287,6 +1340,8 @@ export function ChatWorkspace({
   listMembers,
   registerComposerInsert,
   onOpenRoutines,
+  onRequestNewAgent,
+  onCreateRoutineInSpace,
   presenceMembers,
 }: {
   readonly tenant: TenantResolution;
@@ -1349,6 +1404,10 @@ export function ChatWorkspace({
   ) => void;
   /** The composer's `/run` command — see `ChatWorkspaceInner`'s prop note. */
   readonly onOpenRoutines?: () => void;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly onRequestNewAgent?: () => void;
+  /** "New routine in this space" — see `ChatWorkspaceInner`'s prop note. */
+  readonly onCreateRoutineInSpace?: (channelId: string) => void;
   /**
    * Who's live in the active channel right now, beyond the static
    * participants list — the host's `@corbits/presence/client` connection,
@@ -1388,6 +1447,10 @@ export function ChatWorkspace({
             ? { registerComposerInsert }
             : {})}
           {...(onOpenRoutines !== undefined ? { onOpenRoutines } : {})}
+          {...(onRequestNewAgent !== undefined ? { onRequestNewAgent } : {})}
+          {...(onCreateRoutineInSpace !== undefined
+            ? { onCreateRoutineInSpace }
+            : {})}
           {...(presenceMembers !== undefined ? { presenceMembers } : {})}
         />
       );

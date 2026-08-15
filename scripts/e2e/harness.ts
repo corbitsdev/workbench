@@ -280,15 +280,26 @@ export async function startHub(options: {
   const baseUrl = `http://localhost:${options.port}`;
   const app = spawnApp("hub", HUB_DIR, {
     ...osEnv(),
-    // e2e hubs always allow signup; a caller's extraEnv can still
-    // override this back to the platform default.
+    // e2e hubs always allow signup, serve apps/hub/public, and advertise
+    // BASE_URL as their own listen address by default; a caller's
+    // extraEnv can still override any of these (e.g. a real web build's
+    // dist dir, or a public BASE_URL that differs from the actual listen
+    // port — see PORT below — for a browser-driven suite fronted by a
+    // dev-server proxy).
     WORKBENCH_SIGNUP: "open",
+    HUB_STATIC_DIR: "public",
+    BASE_URL: baseUrl,
     ...options.extraEnv,
     DATABASE_URL: options.databaseUrl,
-    BASE_URL: baseUrl,
+    // Always the real bind port, independent of whatever port BASE_URL's
+    // own origin names — this is the same PORT/BASE_URL split the hub's
+    // own config already documents for a reverse proxy in front of it
+    // (config.ts's PORT field); it is what lets a caller's extraEnv
+    // point BASE_URL at a fronting dev server without also moving where
+    // the hub actually listens.
+    PORT: String(options.port),
     SESSION_SECRET: options.sessionSecret,
     HUB_DATA_DIR: options.dataDir,
-    HUB_STATIC_DIR: "public",
     // The e2e suite never configures CREDENTIAL_ENCRYPTION_KEY; opt into
     // the hub's dev/test fallback so boot doesn't hard-fail here.
     ALLOW_PLAINTEXT_SECRETS: "1",

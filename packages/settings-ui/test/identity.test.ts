@@ -29,4 +29,17 @@ describe("principalLabel", () => {
     const result = principalLabel("agt_------");
     expect(result.label).toBe("Unnamed agent");
   });
+
+  // CL-6075: a workflow principal's vendor-formatted display name is
+  // `Workflow (<runId>@<slug>.localhost)` — the derivation strips the
+  // scheme/host down to the last segment, which drags the wrapper's
+  // trailing ")" along for the ride unless parens are stripped too.
+  test("strips a trailing paren from a workflow principal's wrapped address", () => {
+    const result = principalLabel(
+      "Workflow (run_9f3a7c2e@alice-0ufqkxuy.localhost)",
+    );
+    expect(result.label).not.toContain("(");
+    expect(result.label).not.toContain(")");
+    expect(result.label).toBe("Alice 0ufqkxuy Localhost");
+  });
 });

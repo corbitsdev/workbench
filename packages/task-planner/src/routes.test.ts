@@ -10,6 +10,11 @@ import { FoldedRunTimedOutError } from "@corbits/folded-runs";
 import { PlannerReferenceOutOfInventoryError } from "./task-spec";
 import { SkillRegistryError } from "@corbits/skills";
 import {
+  AgentDefinitionDraftReferenceOutOfInventoryError,
+  MyraAgentDefinitionDraftingUnavailableError,
+  type AgentDefinitionDraft,
+} from "./agent-definition-drafting";
+import {
   createPlannerRoutes,
   type CreatePlannerRoutesDeps,
   type DispatchWithPlannerResult,
@@ -232,5 +237,156 @@ describe("POST /", () => {
       body: JSON.stringify({ outcome: "Summarize the doc" }),
     });
     expect(response.status).toBe(500);
+  });
+});
+
+const DRAFT: AgentDefinitionDraft = {
+  systemPrompt: "You review incidents.",
+  toolPackagePins: [],
+  skills: [],
+};
+
+describe("POST /agent-definitions/draft", () => {
+  test("is absent (404) when the host hasn't wired draftAgentDefinition", async () => {
+    const app = mountAs(createPlannerRoutes(buildDeps()), "prn_alice");
+
+    const response = await app.request("/agent-definitions/draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Bot", purpose: "Help with incidents" }),
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  test("drafts an agent definition and returns 201 with the draft", async () => {
+    const deps = buildDeps({ draftAgentDefinition: async () => DRAFT });
+    const app = mountAs(createPlannerRoutes(deps), "prn_alice");
+
+    const response = await app.request("/agent-definitions/draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Bot", purpose: "Help with incidents" }),
+    });
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { draft: AgentDefinitionDraft };
+    expect(body.draft).toEqual(DRAFT);
+  });
+
+  test("a malformed body is rejected with the structured error envelope", async () => {
+    const deps = buildDeps({ draftAgentDefinition: async () => DRAFT });
+    const app = mountAs(createPlannerRoutes(deps), "prn_alice");
+
+    const response = await app.request("/agent-definitions/draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "" }),
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("bad_request");
+  });
+
+  test("a name-only body (no purpose) is accepted — the happy path is name-only", async () => {
+    let received: { readonly purpose?: string } | undefined;
+    const deps = buildDeps({
+      draftAgentDefinition: async (input) => {
+        received = input;
+        return DRAFT;
+      },
+    });
+    const app = mountAs(createPlannerRoutes(deps), "prn_alice");
+
+    const response = await app.request("/agent-definitions/draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Bot" }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(received?.purpose).toBeUndefined();
+  });
+
+  test.each([
+    [
+      "MyraAgentDefinitionDraftingUnavailableError",
+      () =>
+        new MyraAgentDefinitionDraftingUnavailableError(
+          "tnt_1",
+          "no deployed Myra",
+        ),
+    ],
+    ["FoldedRunTimedOutError", () => new FoldedRunTimedOutError(60_000)],
+    [
+      "AgentDefinitionDraftReferenceOutOfInventoryError",
+      () =>
+        new AgentDefinitionDraftReferenceOutOfInventoryError(
+          "modelPreference",
+          "made-up/model",
+        ),
+    ],
+  ])("%s maps to a plain-language 422", async (_name, makeError) => {
+    const deps = buildDeps({
+      draftAgentDefinition: async () => {
+        throw makeError();
+      },
+    });
+    const app = mountAs(createPlannerRoutes(deps), "prn_alice");
+
+    const response = await app.request("/agent-definitions/draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Bot", purpose: "Help with incidents" }),
+    });
+
+    expect(response.status).toBe(422);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("drafting_failed");
+    expect(body.error.message).not.toContain("made-up/model");
+  });
+
+  test("a second concurrent draft request from the same principal is rejected while the first is in flight", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let draftCalls = 0;
+    const deps = buildDeps({
+      draftAgentDefinition: async () => {
+        draftCalls += 1;
+        if (draftCalls === 1) {
+          await firstGate;
+        }
+        return DRAFT;
+      },
+    });
+    const app = mountAs(createPlannerRoutes(deps), "prn_alice");
+
+    const firstRequest = app.request("/agent-definitions/draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Bot", purpose: "Help with incidents" }),
+    });
+    await Promise.resolve();
+
+    const secondResponse = await app.request("/agent-definitions/draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Bot", purpose: "Help with incidents" }),
+    });
+    expect(secondResponse.status).toBe(409);
+    const secondBody = (await secondResponse.json()) as {
+      error: { code: string };
+    };
+    expect(secondBody.error.code).toBe("dispatch_in_progress");
+
+    releaseFirst?.();
+    const firstResponse = await firstRequest;
+    expect(firstResponse.status).toBe(201);
+    expect(draftCalls).toBe(1);
   });
 });

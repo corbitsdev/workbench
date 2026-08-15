@@ -28,3 +28,6 @@ tmp/
 # Local agent scratch (not product source; breaks prettier --check .)
 .mb-scratch/
 .corbits/
+
+# Browser walkthrough harness screenshots + run summary (CL-6072)
+scripts/e2e/browser/shots/

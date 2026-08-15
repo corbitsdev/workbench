@@ -86,6 +86,43 @@ export function requestMakeRoutine(args: {
   });
 }
 
+/**
+ * Requests the agent create affordance — the same off-route-safe hop
+ * `runActionCommand("new-agent", …)` uses, pulled out so a caller with no
+ * command-palette context (the recurring-task trigger field's "no
+ * taskable agents yet" dead end) can request it too.
+ */
+export function requestNewAgent(args: {
+  readonly alreadyOnAgentsSettings: boolean;
+  readonly navigateToAgentsSettings: () => void;
+}): void {
+  newAgentRequest.request({
+    alreadyOnTargetRoute: args.alreadyOnAgentsSettings,
+    navigateToTargetRoute: args.navigateToAgentsSettings,
+    dispatch: () => window.dispatchEvent(new CustomEvent(NEW_AGENT_EVENT)),
+  });
+}
+
+/**
+ * Requests the routine create flow with this space pre-bound as the
+ * destination ("New routine in this space" — a channel header action or
+ * the composer's `/routine` command). The same off-route-safe hop
+ * `requestNewRoutine` uses, carrying only a `deliveryChannelId` via
+ * routine-prefill.ts — the picker opens on this space selected, not
+ * committed; the person can still pick something else.
+ */
+export function requestNewRoutineInSpace(args: {
+  readonly alreadyOnRoutines: boolean;
+  readonly navigateToRoutines: () => void;
+  readonly deliveryChannelId: string;
+}): void {
+  setPendingRoutinePrefill({ deliveryChannelId: args.deliveryChannelId });
+  requestNewRoutine({
+    alreadyOnRoutines: args.alreadyOnRoutines,
+    navigateToRoutines: args.navigateToRoutines,
+  });
+}
+
 /** Test helper — drop leftover pending state between cases. */
 export function resetPendingDialogRequests(): void {
   newChannelRequest.resetPending();

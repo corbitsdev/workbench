@@ -594,6 +594,83 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
+  test("/routine opens the New Routine panel pre-bound to the active channel", async () => {
+    stubFetch();
+    const opened: string[] = [];
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      onCreateRoutineInSpace: (channelId: string) => {
+        opened.push(channelId);
+      },
+    });
+    await harness.settle();
+
+    const textarea = typeInComposer(harness.container, "/routine");
+    pressEnter(textarea);
+    await harness.settle();
+
+    expect(opened).toEqual(["ch_1"]);
+    expect(textarea.value).toBe("");
+    harness.unmount();
+  });
+
+  test("/routine with no host-supplied hop wired falls back to the same unavailable toast /run uses", async () => {
+    stubFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    const textarea = typeInComposer(harness.container, "/routine");
+    pressEnter(textarea);
+    await harness.settle();
+
+    expect(textarea.value).toBe("");
+    harness.unmount();
+  });
+
+  test("'New routine' header button calls the host's hop with the active channel", async () => {
+    stubFetch();
+    const opened: string[] = [];
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      onCreateRoutineInSpace: (channelId: string) => {
+        opened.push(channelId);
+      },
+    });
+    await harness.settle();
+
+    const button = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((element) => element.textContent?.trim() === "New routine");
+    expect(button).not.toBeUndefined();
+    act(() => {
+      button?.click();
+    });
+    await harness.settle();
+
+    expect(opened).toEqual(["ch_1"]);
+    harness.unmount();
+  });
+
+  test("the 'New routine' header button is hidden when the host has not wired the hop", async () => {
+    stubFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    const button = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((element) => element.textContent?.trim() === "New routine");
+    expect(button).toBeUndefined();
+    harness.unmount();
+  });
+
   test("/summarize addresses the channel's actual first agent participant and sends", async () => {
     const sentMessages: unknown[] = [];
     stubFetch(sentMessages, CHANNEL_WITH_AGENT_WIRE);

@@ -101,6 +101,14 @@ export type ProviderTestConfig = {
 
 const ANTHROPIC_VERSION = "2023-06-01";
 
+// The one model this repo's own catalog (`CATALOG_SEEDS["opencode-zen"]`)
+// confirms Zen actually serves — never an empty or foreign model id. Zen's
+// own error-message templating leaves an unrendered `{{model}}` in its
+// response when a request omits `model` entirely, so the probe must always
+// name a real one, not rely on Zen's missing-field validation to prove the
+// key.
+const OPENCODE_ZEN_PROBE_MODEL = "claude-sonnet-5";
+
 const GoogleErrorBody = type({ "error?": { "status?": "string" } });
 
 // xAI's list-models rejection carries the message as a bare string
@@ -192,12 +200,16 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     displayName: "Opencode Zen",
     baseURL: "https://opencode.ai/zen/v1",
     adapterPlugin: "openai-compatible",
-    probeModel: "claude-sonnet-5",
+    probeModel: OPENCODE_ZEN_PROBE_MODEL,
     // Zen's `/v1/models` is likewise a public, unauthenticated catalog.
-    // Its gateway checks auth before it checks the request body, so an
-    // empty chat-completion POST still 401s on a bad key without ever
-    // reaching a model — the same "prove the key, spend nothing"
-    // guarantee the GET probes give the other providers.
+    // Its gateway checks auth before it checks the request body, so a
+    // deliberately empty *messages* array still 401s on a bad key without
+    // ever running inference — the same "prove the key, spend nothing"
+    // guarantee the GET probes give the other providers. `model` is always
+    // a real, catalog-confirmed id (never omitted): an absent `model`
+    // trips Zen's own error-message templating, which leaks an unrendered
+    // `{{model}}` placeholder into the response body instead of naming
+    // anything real.
     buildProbeRequest: (apiKey) => ({
       url: "https://opencode.ai/zen/v1/chat/completions",
       method: "POST",
@@ -205,12 +217,12 @@ export const PROVIDER_TEST_CONFIG: Readonly<
         Authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
       },
-      body: "{}",
+      body: JSON.stringify({ model: OPENCODE_ZEN_PROBE_MODEL, messages: [] }),
     }),
     // A real key clears auth and reaches Zen's payload validation, which
-    // rejects the deliberately empty body with 400 ("Model ... is not
-    // supported") — that 400, not a 2xx, is this probe's proof the key
-    // works, since the body never carries enough to reach a 2xx.
+    // rejects the deliberately empty `messages` array with 400 — that 400,
+    // not a 2xx, is this probe's proof the key works, since the body never
+    // carries enough to reach a 2xx.
     isKeyAccepted: (status) => status === 400,
     isKeyRejected: (status) => status === 401,
   },
@@ -309,6 +321,20 @@ const ErrorBody = type({ "error?": { "message?": "string" } });
 // nested shape above doesn't match.
 const FlatErrorBody = type({ "error?": "string" });
 
+// A provider's error body is data, not copy: some providers (Zen among
+// them) build their error text with their own server-side templating, and
+// that templating can leak an unrendered `{{placeholder}}` when the field
+// it names was never supplied. Template syntax must never reach the user
+// as if it were a real error — this is the only gate every provider
+// message passes through before display.
+const UNRENDERED_TEMPLATE_PATTERN = /\{\{\s*\S+?\s*\}\}/;
+
+function sanitizeProviderText(displayName: string, text: string): string {
+  return UNRENDERED_TEMPLATE_PATTERN.test(text)
+    ? `${displayName} rejected the request but its response did not explain why.`
+    : text;
+}
+
 function providerErrorMessage(
   displayName: string,
   status: number,
@@ -318,11 +344,11 @@ function providerErrorMessage(
     const parsedJson: unknown = JSON.parse(body);
     const nested = ErrorBody(parsedJson);
     if (!(nested instanceof type.errors) && nested.error?.message) {
-      return nested.error.message;
+      return sanitizeProviderText(displayName, nested.error.message);
     }
     const flat = FlatErrorBody(parsedJson);
     if (!(flat instanceof type.errors) && flat.error) {
-      return flat.error;
+      return sanitizeProviderText(displayName, flat.error);
     }
   } catch {
     // Not JSON, or didn't match either shape — fall through to the
@@ -382,8 +408,12 @@ export async function testProviderCredential(
       message: providerErrorMessage(config.displayName, response.status, body),
     };
   }
+  // Not a rejected key — the provider's own auth layer let this request
+  // through — so this is a working key hitting some other problem, not a
+  // bad credential. Say so plainly instead of a generic "unexpected
+  // error" that reads as if the key itself might be at fault.
   return {
     ok: false,
-    message: `${config.displayName} returned an unexpected error (not a rejected key): ${providerErrorMessage(config.displayName, response.status, body)}`,
+    message: `Your ${config.displayName} key works — the test request itself failed: ${providerErrorMessage(config.displayName, response.status, body)}`,
   };
 }

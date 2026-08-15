@@ -275,6 +275,9 @@ export const Composer = forwardRef<
     readonly onOpenAgentsSettings: () => void;
     /** `/run` — the cheapest real hop to running a routine: Routines, create/run open. */
     readonly onOpenRoutines: () => void;
+    /** `/routine` — opens the New Routine panel with this channel
+     * pre-bound as its destination. */
+    readonly onCreateRoutineInSpace: () => void;
     /** Defaults to the generic channel copy — a chat passes one naming its counterpart. */
     readonly placeholder?: string;
   }
@@ -285,6 +288,7 @@ export const Composer = forwardRef<
     onInviteAgent,
     onOpenAgentsSettings,
     onOpenRoutines,
+    onCreateRoutineInSpace,
     placeholder = CHAT_STRINGS.composerPlaceholder,
   },
   ref,
@@ -362,6 +366,9 @@ export const Composer = forwardRef<
         return;
       case "run":
         onOpenRoutines();
+        return;
+      case "routine":
+        onCreateRoutineInSpace();
         return;
       case "summarize":
         void summarizeThread();

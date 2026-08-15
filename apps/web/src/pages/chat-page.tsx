@@ -5,11 +5,14 @@
 
 import { libraryArtifactPath } from "@corbits/artifact-ui";
 import { ChatWorkspace, fetchChannelBlob, type Part } from "@corbits/chat-ui";
+import { toast } from "@corbits/react-ui";
 import { listPrincipals } from "@corbits/settings-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchArtifactDetail } from "../api";
+import { launchAgentChat } from "../agent-chat-launch";
+import { CreateAgentPanel } from "./create-agent-panel";
 import { createChatApprovalActions } from "../approval-actions";
 import { createChatBlockResponseActions } from "../block-response-actions";
 import { useBench } from "../bench-context";
@@ -30,6 +33,7 @@ import {
   consumePendingNewChannel,
   NEW_CHANNEL_EVENT,
   requestNewRoutine,
+  requestNewRoutineInSpace,
 } from "../command-palette-actions";
 import {
   useOpenArtifactInCanvas,
@@ -57,6 +61,7 @@ export function ChatPage({
   const principalId = bench.selectedPrincipalId ?? undefined;
   const queryClient = useQueryClient();
   const tenantId = bench.selectedTenantId;
+  const [createAgentOpen, setCreateAgentOpen] = useState(false);
   // Who's live in this channel right now, beyond the static participants
   // list — the server derives displayName/color, so no identity data
   // needs resolving here (see `usePresenceRoom`).
@@ -164,7 +169,7 @@ export function ChatPage({
     }
   }, []);
 
-  return (
+  const workspace = (
     <ChatWorkspace
       tenant={tenant}
       {...(principalId !== undefined ? { currentUser: { principalId } } : {})}
@@ -197,7 +202,35 @@ export function ChatPage({
           navigateToRoutines: () => navigate("/routines"),
         })
       }
+      onCreateRoutineInSpace={(spaceChannelId) =>
+        requestNewRoutineInSpace({
+          alreadyOnRoutines: false,
+          navigateToRoutines: () => navigate("/routines"),
+          deliveryChannelId: spaceChannelId,
+        })
+      }
       presenceMembers={presenceMembers}
+      {...(tenantId !== null
+        ? { onRequestNewAgent: () => setCreateAgentOpen(true) }
+        : {})}
     />
+  );
+
+  return (
+    <>
+      {workspace}
+      {tenantId !== null ? (
+        <CreateAgentPanel
+          open={createAgentOpen}
+          onOpenChange={setCreateAgentOpen}
+          tenantId={tenantId}
+          onCreated={(definition) => {
+            launchAgentChat(tenantId, definition.id, navigate).catch(() => {
+              toast("Created the agent, but couldn't open a chat with it.");
+            });
+          }}
+        />
+      ) : null}
+    </>
   );
 }

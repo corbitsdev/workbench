@@ -54,6 +54,18 @@ export {
   type CreatePlannerRoutesDeps,
   type DispatchWithPlannerResult,
 } from "./routes";
+export {
+  createMyraAgentDefinitionDrafting,
+  parseAgentDefinitionDraftReply,
+  validateAgentDefinitionDraftReplyAgainstInventory,
+  AgentDefinitionDraftReplyUnparseableError,
+  AgentDefinitionDraftReferenceOutOfInventoryError,
+  MyraAgentDefinitionDraftingUnavailableError,
+  type AgentDefinitionDraft,
+  type AgentDefinitionDraftReply,
+  type AgentDefinitionDraftingPort,
+  type AgentDefinitionDraftingRunnerDeps,
+} from "./agent-definition-drafting";
 
 import { runPlanner, type PlannerRunDeps } from "./planner-run";
 import { spawnFromTaskSpec, type SpawnDeps } from "./spawn";

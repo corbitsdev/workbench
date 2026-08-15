@@ -148,6 +148,7 @@ export {
   launchAndJoinAgent,
   sendChannelMessage,
   startWorkflowCommand,
+  provisionSpaceChannel,
 } from "./channel-service";
 export type {
   LaunchAndJoinAgentDeps,
@@ -159,6 +160,9 @@ export type {
   StartWorkflowCommandDeps,
   StartWorkflowCommandInput,
   StartWorkflowCommandResult,
+  ProvisionSpaceChannelDeps,
+  ProvisionSpaceChannelInput,
+  ProvisionSpaceChannelResult,
 } from "./channel-service";
 
 export {
