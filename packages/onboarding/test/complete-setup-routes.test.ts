@@ -538,6 +538,15 @@ describe("POST /complete-setup", () => {
     hub.post(`/api/tenants/${TENANT_ID}/git-tokens`, (c) =>
       c.json({ id: "tok_1", secret: "s3cret" }, 201),
     );
+    // The corbits-tools registry publish `seedTenant` now runs ahead of
+    // any workflow deploy: stands in for the real tarball-upload REST
+    // route so that publish succeeds without asserting anything about
+    // its content — this test's own assertions are about deploy
+    // idempotency, not about publishing.
+    hub.put(
+      `/api/tenants/${TENANT_ID}/assets/:assetId/tarballs/:filename`,
+      (c) => c.json({ commit: "deadbeef", integrity: "sha512-test" }, 200),
+    );
     hub.post(`/api/tenants/${TENANT_ID}/workflows/deployments`, async (c) => {
       deploymentCreatePosts += 1;
       const body = (await c.req.json()) as { assetId: string };
@@ -585,10 +594,14 @@ describe("POST /complete-setup", () => {
       expect(secondBody.kind).toBe("seeded");
 
       // Every ensure-then-create helper hit its 409 branch on the
-      // overlapping call — nothing was ever planted twice.
-      expect(assetCreatePosts).toBe(DEFAULT_WORKFLOWS.length);
+      // overlapping call — nothing was ever planted twice. One extra
+      // asset beyond the workflow set is the tenant's own
+      // corbits-tools package-registry asset, which `seedTenant`
+      // publishes ahead of any workflow deploy and which shares this
+      // fake hub's one `/assets` create route with the workflow assets.
+      expect(assetCreatePosts).toBe(DEFAULT_WORKFLOWS.length + 1);
       expect(deploymentCreatePosts).toBe(DEFAULT_WORKFLOWS.length);
-      expect(assets.length).toBe(DEFAULT_WORKFLOWS.length);
+      expect(assets.length).toBe(DEFAULT_WORKFLOWS.length + 1);
       expect(deployments.length).toBe(DEFAULT_WORKFLOWS.length);
     } finally {
       server.stop(true);

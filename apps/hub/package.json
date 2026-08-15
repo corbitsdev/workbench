@@ -33,6 +33,7 @@
     "@corbits/routines": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/slack-tag": "workspace:*",
+    "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/tasks": "workspace:*",
     "@corbits/turn-artifacts": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",

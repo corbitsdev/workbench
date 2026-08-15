@@ -55,6 +55,7 @@ import {
   type SeedTenantArgs,
   type SupportedCredentialProvider,
   type TestProviderCredentialArgs,
+  type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { personalTenantSlug } from "./provision";
@@ -91,6 +92,8 @@ type CommonArgs = {
   cookies: string[];
   hubUrl: string;
   pushWorkflow: WorkflowPusher;
+  /** Passed through to `seedTenant`; a test double replaces the real corbits-tools publish the same way `pushWorkflow` replaces the real git push. */
+  publishToolRegistry?: ToolRegistryPublisher;
   log: (line: string) => void;
 };
 
@@ -255,6 +258,9 @@ export async function ensureSeeded(
     },
     model: modelSourceFor(args.provider, args.apiKey),
     pushWorkflow: args.pushWorkflow,
+    ...(args.publishToolRegistry !== undefined
+      ? { publishToolRegistry: args.publishToolRegistry }
+      : {}),
     log: args.log,
     workflows: DEFAULT_WORKFLOWS,
     confirmDeployments: false,
@@ -284,6 +290,9 @@ export async function completeCredentialSetup(
     cookies: args.cookies,
     hubUrl: args.hubUrl,
     pushWorkflow: args.pushWorkflow,
+    ...(args.publishToolRegistry !== undefined
+      ? { publishToolRegistry: args.publishToolRegistry }
+      : {}),
     log: args.log,
     tenant: persisted,
     provider: args.provider,
