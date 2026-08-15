@@ -1,7 +1,9 @@
-// A passed test result is only valid for the exact string it tested — any
-// keystroke after that invalidates it (canSave already goes false), but
-// nothing told a person why Save just grayed out. Confirms the quiet
-// inline nudge appears, and stays out of the way until it's needed.
+// CL-6077: one primary action, not test-then-save — the wizard's own
+// onboarding step already combines "test key and run my first routine"
+// into a single button, and this dialog now matches that: pasting a key
+// and pressing the one primary action tests it for real and only stores
+// it once that test passes. A rejected key never reaches
+// `completeConnectorCredential`, so nothing gets sealed on a bad key.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -38,7 +40,10 @@ function typeInto(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-function mount(): { container: HTMLDivElement; root: Root } {
+function mount(onConnected: () => void = () => undefined): {
+  container: HTMLDivElement;
+  root: Root;
+} {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -49,7 +54,7 @@ function mount(): { container: HTMLDivElement; root: Root } {
         mode="connect"
         tenantId="ten_1"
         onClose={() => undefined}
-        onConnected={() => undefined}
+        onConnected={onConnected}
       />,
     );
   });
@@ -59,34 +64,92 @@ function mount(): { container: HTMLDivElement; root: Root } {
 const settle = () =>
   act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
-describe("ConnectorCredentialDialog key-changed nudge", () => {
-  test("shows quiet copy once an edit invalidates a passed test", async () => {
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      })) as unknown as typeof fetch;
+function primaryButton(): HTMLButtonElement {
+  const button = [...document.body.querySelectorAll("button")].find(
+    (candidate) =>
+      candidate.textContent === "Test key and connect" ||
+      candidate.textContent === "Testing and connecting…",
+  );
+  expect(button).not.toBeUndefined();
+  return button as HTMLButtonElement;
+}
+
+describe("ConnectorCredentialDialog", () => {
+  test("offers exactly one primary action — no separate Test and Save buttons", () => {
+    const { container, root } = mount();
+    try {
+      const labels = [...document.body.querySelectorAll("button")].map(
+        (button) => button.textContent,
+      );
+      expect(labels).not.toContain("Test connection");
+      expect(labels).not.toContain("Save");
+      expect(labels).toContain("Test key and connect");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("a passing test stores the key and reports success, in one click", async () => {
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = String(input);
+      calls.push(path);
+      if (path.endsWith("/credential/test")) {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify({ credentialId: "cred_1", status: "active" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as typeof fetch;
+
+    let connected = false;
+    const { container, root } = mount(() => {
+      connected = true;
+    });
+    try {
+      const input = document.body.querySelector("input[type=password]");
+      act(() => typeInto(input as HTMLInputElement, "sk-good"));
+      act(() => primaryButton().click());
+      await settle();
+
+      expect(calls.some((path) => path.endsWith("/credential/test"))).toBe(
+        true,
+      );
+      expect(calls.some((path) => path.endsWith("/complete"))).toBe(true);
+      expect(connected).toBe(true);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("a failing test shows the rejection and never calls complete", async () => {
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = String(input);
+      calls.push(path);
+      return new Response(
+        JSON.stringify({
+          error: { code: "invalid_credential", message: "That key doesn't work." },
+        }),
+        { status: 422, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as typeof fetch;
 
     const { container, root } = mount();
     try {
       const input = document.body.querySelector("input[type=password]");
-      expect(input).not.toBeNull();
-      act(() => typeInto(input as HTMLInputElement, "sk-original"));
-
-      const testButton = [...document.body.querySelectorAll("button")].find(
-        (button) => button.textContent === "Test connection",
-      );
-      act(() => {
-        testButton?.click();
-      });
+      act(() => typeInto(input as HTMLInputElement, "sk-bad"));
+      act(() => primaryButton().click());
       await settle();
-      expect(document.body.textContent).toContain("Key works.");
 
-      act(() => typeInto(input as HTMLInputElement, "sk-original-edited"));
-
-      expect(document.body.textContent).toContain(
-        "Key changed — test it again before saving",
-      );
+      expect(document.body.textContent).toContain("That key doesn't work.");
+      expect(calls.some((path) => path.endsWith("/complete"))).toBe(false);
     } finally {
       act(() => root.unmount());
       container.remove();

@@ -536,68 +536,45 @@ export function ConnectorCredentialDialog({
 }) {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
-  const [testedKey, setTestedKey] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testMessage, setTestMessage] = useState<{
-    readonly kind: "success" | "error";
-    readonly text: string;
-  } | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     setApiKey("");
     setShowKey(false);
-    setTestedKey(null);
-    setTesting(false);
-    setTestMessage(null);
-    setSaving(false);
-    setSaveError(null);
+    setSubmitting(false);
+    setSubmitError(null);
   }, [descriptor]);
 
   const open = descriptor !== null;
-  // The exact string that was tested must be the exact string being
-  // saved — any edit after a successful test invalidates it.
-  const canSave = testedKey !== null && testedKey === apiKey && !saving;
-  const keyChangedSinceTest = testedKey !== null && testedKey !== apiKey;
+  const canSubmit = apiKey.trim() !== "" && !submitting;
 
-  function handleTest() {
+  // One primary action, not test-then-save: it proves the key with a real
+  // call before ever storing it, so a rejected key never reaches
+  // `completeConnectorCredential` and nothing gets sealed on a bad key.
+  function handleSubmit() {
     if (descriptor === null) return;
-    setTesting(true);
-    setTestMessage(null);
+    setSubmitting(true);
+    setSubmitError(null);
     testConnectorCredential(tenantId, descriptor.id, apiKey)
       .then((result) => {
-        if (result.ok) {
-          setTestedKey(apiKey);
-          setTestMessage({
-            kind: "success",
-            text: SETTINGS_STRINGS.connectionsTestSuccess,
-          });
-        } else {
-          setTestedKey(null);
-          setTestMessage({ kind: "error", text: result.message });
+        if (!result.ok) {
+          setSubmitError(result.message);
+          return;
         }
-      })
-      .catch((cause: unknown) => {
-        setTestedKey(null);
-        setTestMessage({ kind: "error", text: errorMessage(cause) });
-      })
-      .finally(() => setTesting(false));
-  }
-
-  function handleSave() {
-    if (descriptor === null) return;
-    setSaving(true);
-    setSaveError(null);
-    completeConnectorCredential(tenantId, descriptor.id, apiKey)
-      .then(() => {
-        toast(
-          SETTINGS_STRINGS.connectionsConnectedToast(descriptor.displayName),
+        return completeConnectorCredential(tenantId, descriptor.id, apiKey).then(
+          () => {
+            toast(
+              SETTINGS_STRINGS.connectionsConnectedToast(
+                descriptor.displayName,
+              ),
+            );
+            onConnected();
+          },
         );
-        onConnected();
       })
-      .catch(() => setSaveError(SETTINGS_STRINGS.connectionsSaveError))
-      .finally(() => setSaving(false));
+      .catch((cause: unknown) => setSubmitError(errorMessage(cause)))
+      .finally(() => setSubmitting(false));
   }
 
   return (
@@ -633,7 +610,7 @@ export function ConnectorCredentialDialog({
                 value={apiKey}
                 onChange={(event) => {
                   setApiKey(event.target.value);
-                  setTestMessage(null);
+                  setSubmitError(null);
                 }}
                 autoComplete="off"
               />
@@ -647,36 +624,9 @@ export function ConnectorCredentialDialog({
               </Button>
             </div>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={apiKey.trim() === "" || testing}
-            onClick={handleTest}
-          >
-            {testing
-              ? SETTINGS_STRINGS.connectionsTesting
-              : SETTINGS_STRINGS.connectionsTestAction}
-          </Button>
-          {testMessage !== null && (
-            <p
-              className={
-                testMessage.kind === "error"
-                  ? "settings-inline-error"
-                  : undefined
-              }
-              role={testMessage.kind === "error" ? "alert" : undefined}
-            >
-              {testMessage.text}
-            </p>
-          )}
-          {testMessage === null && keyChangedSinceTest && (
-            <p className="settings-inline-hint">
-              {SETTINGS_STRINGS.connectionsKeyChangedHint}
-            </p>
-          )}
-          {saveError !== null && (
+          {submitError !== null && (
             <p className="settings-inline-error" role="alert">
-              {saveError}
+              {submitError}
             </p>
           )}
         </DialogBody>
@@ -684,10 +634,14 @@ export function ConnectorCredentialDialog({
           <Button variant="ghost" onClick={onClose}>
             {SETTINGS_STRINGS.connectionsCancel}
           </Button>
-          <Button variant="primary" disabled={!canSave} onClick={handleSave}>
-            {saving
-              ? SETTINGS_STRINGS.connectionsSaving
-              : SETTINGS_STRINGS.connectionsSaveAction}
+          <Button
+            variant="primary"
+            disabled={!canSubmit}
+            onClick={handleSubmit}
+          >
+            {submitting
+              ? SETTINGS_STRINGS.connectionsTestAndSaving
+              : SETTINGS_STRINGS.connectionsTestAndSaveAction}
           </Button>
         </DialogFooter>
       </DialogContent>

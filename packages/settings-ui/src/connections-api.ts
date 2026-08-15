@@ -4,7 +4,8 @@
 // error class convention, arktype at the trust boundary.
 
 import { type } from "arktype";
-import type { ArkErrors } from "arktype";
+
+import { apiRequest, type Validator } from "./api-request";
 
 export class ConnectionsApiError extends Error {
   constructor(
@@ -15,13 +16,6 @@ export class ConnectionsApiError extends Error {
   }
 }
 
-const ErrorEnvelope = type({
-  error: {
-    code: "string",
-    message: "string",
-  },
-});
-
 const TestResult = type({ ok: "true" });
 
 const CompleteResult = type({
@@ -31,47 +25,13 @@ const CompleteResult = type({
 
 const OAuthConfiguredResult = type("Record<string, boolean>");
 
-type Validator<T> = (data: unknown) => T | ArkErrors;
-
-async function request<T>(
+function request<T>(
   path: string,
   schema: Validator<T>,
+  verb: string,
   init?: RequestInit,
 ): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      ...init,
-      headers: { "content-type": "application/json", ...init?.headers },
-    });
-  } catch (cause) {
-    throw new ConnectionsApiError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
-  }
-  if (response.status === 401) {
-    throw new ConnectionsApiError(`Not signed in for ${path}.`, 401);
-  }
-  if (response.status === 403) {
-    throw new ConnectionsApiError(`Not permitted to view ${path}.`, 403);
-  }
-  if (!response.ok) {
-    const body: unknown = await response.json().catch(() => undefined);
-    const envelope = ErrorEnvelope(body);
-    const message =
-      envelope instanceof type.errors
-        ? `The hub answered ${response.status} for ${path}.`
-        : envelope.error.message;
-    throw new ConnectionsApiError(message, response.status);
-  }
-  const body: unknown = await response.json().catch(() => undefined);
-  const parsed = schema(body);
-  if (parsed instanceof type.errors) {
-    throw new ConnectionsApiError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
-    );
-  }
-  return parsed;
+  return apiRequest(path, schema, verb, ConnectionsApiError, init);
 }
 
 /**
@@ -90,6 +50,7 @@ export async function testConnectorCredential(
     await request(
       `/api/tenants/${tenantId}/connections/${connectorId}/credential/test`,
       TestResult,
+      "testing that connection",
       { method: "POST", body: JSON.stringify({ apiKey }) },
     );
     return { ok: true };
@@ -114,6 +75,7 @@ export function fetchOAuthConfigured(
   return request(
     `/api/tenants/${tenantId}/connections/oauth-configured`,
     OAuthConfiguredResult,
+    "loading connection status",
   );
 }
 
@@ -125,6 +87,7 @@ export function completeConnectorCredential(
   return request(
     `/api/tenants/${tenantId}/connections/${connectorId}/complete`,
     CompleteResult,
+    "saving that connection",
     { method: "POST", body: JSON.stringify({ apiKey }) },
   );
 }

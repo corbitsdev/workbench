@@ -75,6 +75,20 @@ describe("listCredentials", () => {
       CredentialsApiError,
     );
   });
+
+  test("a fallback error message never leaks the raw route", async () => {
+    stubFetch(() => json(undefined, 401));
+    try {
+      await listCredentials("tnt_1");
+      throw new Error("expected listCredentials to reject");
+    } catch (cause) {
+      expect(cause).toBeInstanceOf(CredentialsApiError);
+      expect((cause as Error).message).not.toContain("/api/");
+      expect((cause as Error).message).toBe(
+        "The server answered 401 while loading credentials.",
+      );
+    }
+  });
 });
 
 describe("listProviders", () => {

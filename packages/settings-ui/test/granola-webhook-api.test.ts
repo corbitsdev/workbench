@@ -75,6 +75,21 @@ describe("listGranolaWebhookTriggers", () => {
       GranolaWebhookApiError,
     );
   });
+
+  test("falls back to a path-free message when the body has no envelope", async () => {
+    globalThis.fetch = (async () =>
+      jsonResponse(401, {})) as unknown as typeof fetch;
+    try {
+      await listGranolaWebhookTriggers("ten_1");
+      throw new Error("expected listGranolaWebhookTriggers to reject");
+    } catch (cause) {
+      expect(cause).toBeInstanceOf(GranolaWebhookApiError);
+      expect((cause as Error).message).toBe(
+        "The server answered 401 while loading webhooks.",
+      );
+      expect((cause as Error).message).not.toContain("/api/");
+    }
+  });
 });
 
 describe("createGranolaWebhookTrigger", () => {

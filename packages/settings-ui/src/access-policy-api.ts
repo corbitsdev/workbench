@@ -5,7 +5,8 @@
 // already holds for the native routes.
 
 import { type } from "arktype";
-import type { ArkErrors } from "arktype";
+
+import { apiRequest, type Validator } from "./api-request";
 
 export const AccessPolicy = type({
   selfSignup: "'off' | 'allowed-domains' | 'open'",
@@ -43,59 +44,33 @@ export class AccessPolicyApiError extends Error {
   }
 }
 
-type Validator<T> = (data: unknown) => T | ArkErrors;
-
-async function request<T>(
+function request<T>(
   path: string,
   schema: Validator<T>,
+  verb: string,
   init?: RequestInit,
 ): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      ...init,
-      headers: { "content-type": "application/json", ...init?.headers },
-    });
-  } catch (cause) {
-    throw new AccessPolicyApiError(
-      cause instanceof Error ? cause.message : String(cause),
-    );
-  }
-  if (response.status === 401) {
-    throw new AccessPolicyApiError(`Not signed in for ${path}.`, 401);
-  }
-  if (response.status === 403) {
-    throw new AccessPolicyApiError(`Not permitted to view ${path}.`, 403);
-  }
-  if (!response.ok) {
-    throw new AccessPolicyApiError(
-      `The hub answered ${response.status} for ${path}.`,
-      response.status,
-    );
-  }
-  if (response.status === 204) return undefined as T;
-  const body: unknown = await response.json().catch(() => undefined);
-  const parsed = schema(body);
-  if (parsed instanceof type.errors) {
-    throw new AccessPolicyApiError(
-      `Unexpected response shape from ${path}: ${parsed.summary}`,
-    );
-  }
-  return parsed;
+  return apiRequest(path, schema, verb, AccessPolicyApiError, init);
 }
 
 export function getAccessPolicy(tenantId: string): Promise<AccessPolicy> {
-  return request(`/api/tenants/${tenantId}/access-policy`, AccessPolicy);
+  return request(
+    `/api/tenants/${tenantId}/access-policy`,
+    AccessPolicy,
+    "loading who can join",
+  );
 }
 
 export function updateAccessPolicy(
   tenantId: string,
   patch: UpdateAccessPolicy,
 ): Promise<AccessPolicy> {
-  return request(`/api/tenants/${tenantId}/access-policy`, AccessPolicy, {
-    method: "PATCH",
-    body: JSON.stringify(patch),
-  });
+  return request(
+    `/api/tenants/${tenantId}/access-policy`,
+    AccessPolicy,
+    "saving who can join",
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
 }
 
 export function listPendingInvites(
@@ -104,6 +79,7 @@ export function listPendingInvites(
   return request(
     `/api/tenants/${tenantId}/access-policy/pending-invites`,
     PendingInvitesPage,
+    "loading pending invites",
   ).then((page) => page.data);
 }
 
@@ -114,6 +90,7 @@ export function createPendingInvite(
   return request(
     `/api/tenants/${tenantId}/access-policy/pending-invites`,
     PendingInvite,
+    "adding that invite",
     { method: "POST", body: JSON.stringify(input) },
   );
 }
@@ -125,6 +102,7 @@ export function deletePendingInvite(
   return request<void>(
     `/api/tenants/${tenantId}/access-policy/pending-invites/${id}`,
     (data) => data as void,
+    "removing that invite",
     { method: "DELETE" },
   );
 }

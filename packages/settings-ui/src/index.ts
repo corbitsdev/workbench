@@ -17,7 +17,6 @@ export {
 export { BenchSection, BenchSectionView } from "./bench-section";
 export { ChatSection, ChatSectionView } from "./chat-section";
 export { AccountSection, AccountSectionView } from "./account-section";
-export { AgentSection } from "./agent-section";
 export { NotificationsSection } from "./notifications-section";
 export { AuditSection } from "./audit-section";
 export { AccessPolicyBlock, AccessPolicyEditor } from "./access-policy";
@@ -50,7 +49,11 @@ export {
 
 export { GranolaWebhookCard } from "./granola-webhook-card";
 
-export { CopyButton, WebhookSecretPanel } from "./webhook-secret-panel";
+export {
+  CopyButton,
+  CopyableCodeRow,
+  WebhookSecretPanel,
+} from "./webhook-secret-panel";
 
 export {
   grantPreviewSentence,

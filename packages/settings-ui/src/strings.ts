@@ -134,7 +134,7 @@ export const SETTINGS_STRINGS = {
   accessPolicyNote:
     "Closed by default: no open signup, no self-serve sub-workbenches. These settings apply to this workbench.",
   accessPolicyEnvOverrideNotice:
-    "The operator has sign-up switched off at the server level, so people still can't create an account yet — even though this setting would otherwise allow it. Ask the operator to turn on WORKBENCH_SIGNUP.",
+    "The operator has sign-up switched off at the server level, so people still can't create an account yet — even though this setting would otherwise allow it. Ask whoever manages this deployment to enable self-signup.",
 
   rolesSectionTitle: "Roles",
   rolesSectionDescription: "This bench's roles and who they're assigned to.",
@@ -183,7 +183,10 @@ export const SETTINGS_STRINGS = {
     "Grant exactly one role or one person a resource and action.",
   grantsTargetTypeLabel: "Applies to",
   grantsTargetTypeRole: "A role",
-  grantsTargetTypePrincipal: "A person",
+  grantsTargetTypeRoleDescription: "Everyone assigned this role.",
+  grantsTargetTypePrincipal: "A person, agent, or workflow",
+  grantsTargetTypePrincipalDescription:
+    "One specific account — human or machine.",
   grantsTargetLabel: "Target",
   grantsResourceLabel: "Resource",
   grantsActionLabel: "Action",
@@ -255,17 +258,13 @@ export const SETTINGS_STRINGS = {
   connectionsDialogConnectTitle: (name: string) => `Connect ${name}`,
   connectionsDialogReconnectTitle: (name: string) => `Reconnect ${name}`,
   connectionsDialogDescription:
-    "Sealed on save — this key is never shown again after create. Paste it and test it first.",
+    "Sealed on save — this key is never shown again after create. It's tested before it's stored, so a bad key never gets saved.",
   connectionsKeyLabel: "API key",
-  connectionsTestAction: "Test connection",
-  connectionsTesting: "Testing…",
-  connectionsTestSuccess: "Key works.",
-  connectionsKeyChangedHint: "Key changed — test it again before saving.",
-  connectionsSaveAction: "Save",
+  connectionsTestAndSaveAction: "Test key and connect",
+  connectionsTestAndSaving: "Testing and connecting…",
   connectionsSaving: "Saving…",
   connectionsCancel: "Cancel",
   connectionsConnectedToast: (name: string) => `${name} connected`,
-  connectionsSaveError: "Couldn't save that connection — try again.",
   connectionsAdvancedSummary:
     "All credentials — including certificates and other types",
   connectionsWebhookLoadError: "Couldn't load the Granola webhook",
@@ -281,6 +280,10 @@ export const SETTINGS_STRINGS = {
   connectionsWebhookDialogTitle: "Granola inbound webhook",
   connectionsWebhookDialogDescription:
     "This address is yours to give to Granola — nothing to paste from Granola's side. The signing secret proves a delivery really came from Granola; it's shown once, right after you create or rotate it.",
+  connectionsWebhookHookUrlLabel: "Hook URL",
+  connectionsWebhookCopyHookUrl: "Copy hook URL",
+  connectionsWebhookSigningSecretLabel: "Signing secret",
+  connectionsWebhookCopySigningSecret: "Copy signing secret",
   connectionsWebhookNoRoutine:
     "No Granola call-notes routine yet. Create one from Routines, then come back here to wire its inbound webhook.",
   connectionsWebhookCreateAction: "Create",

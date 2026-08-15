@@ -2,6 +2,13 @@
 // instructions, pinned skills, and inference dials. No hub preference store
 // exists yet for these fields — the form is interactive for layout parity and
 // holds draft state only; save is honest about that.
+//
+// REMOVED FROM THE SETTINGS REGISTRY (see section-registry.tsx): six fields
+// that save nothing are fake controls, not a settings section — honest
+// absence beats that. Re-add the "agent" section to
+// `SETTINGS_SECTION_GROUPS`'s "personal" group only once a hub preference
+// store exists for these fields and `handleSave` actually persists them,
+// not before.
 
 import { Button, Input, SettingsPanel } from "@corbits/react-ui";
 import { useState } from "react";
