@@ -11,7 +11,7 @@ import {
   TriageListItem,
   TriagePane,
 } from "@corbits/react-ui";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -21,9 +21,11 @@ import { listTenantInvitableDefinitions } from "@corbits/chat-ui";
 import {
   createManualAgentSelectionStrategy,
   createTask,
+  getTask,
   listCatalogModels,
   TaskComposerDialog,
 } from "@corbits/tasks-ui";
+import type { Task } from "@corbits/tasks-ui";
 
 import { approveApproval, rejectApproval, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
@@ -31,7 +33,9 @@ import { channelPath } from "../channel-path";
 import {
   consumePendingNewTask,
   NEW_TASK_EVENT,
+  requestMakeRoutine,
 } from "../command-palette-actions";
+import { suggestRoutineNameFromPrompt } from "../routines-api";
 import {
   loadMostRecentTaskAgent,
   saveMostRecentTaskAgent,
@@ -52,6 +56,7 @@ import {
   markInboxItemDone,
   runRefFromItem,
   snoozeInboxItem,
+  taskRefFromItem,
   type InboxCounts,
   type InboxFilterGroup,
   type InboxItem,
@@ -140,6 +145,7 @@ function FactsGrid({ item }: { readonly item: InboxItemDetail }) {
 }
 
 function InboxDetail({
+  tenantId,
   detail,
   busy,
   actionError,
@@ -150,7 +156,9 @@ function InboxDetail({
   onOpenRun,
   onOpenChannel,
   onOpenArtifact,
+  onMakeRoutine,
 }: {
+  readonly tenantId: string | null;
   readonly detail: APIQuery<InboxItemDetail>;
   readonly busy: boolean;
   readonly actionError: string | null;
@@ -161,7 +169,20 @@ function InboxDetail({
   readonly onOpenRun: (runId: string) => void;
   readonly onOpenChannel: (channelId: string) => void;
   readonly onOpenArtifact: (artifactId: string) => void;
+  readonly onMakeRoutine: (task: Task) => void;
 }) {
+  // A task-result item's own ref never carries the task's prompt or
+  // status (see packages/notify's render.ts) — only its id, so "Make this
+  // a routine" resolves the full record before it can gate on
+  // `status === "done"`.
+  const taskRef = detail.kind === "ready" ? taskRefFromItem(detail.data) : null;
+  const taskQuery = useQuery({
+    queryKey: ["task-for-inbox-item", tenantId, taskRef?.id ?? null],
+    enabled: tenantId !== null && taskRef !== null,
+    queryFn: () => getTask(tenantId ?? "", taskRef?.id ?? ""),
+  });
+  const task = taskQuery.data ?? null;
+
   if (detail.kind === "loading") {
     return (
       <div className="flex flex-col gap-3 p-4">
@@ -258,6 +279,15 @@ function InboxDetail({
             onClick={() => onOpenRun(run.id)}
           >
             View run trace
+          </Button>
+        )}
+        {task !== null && task.status === "done" && (
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => onMakeRoutine(task)}
+          >
+            Make this a routine
           </Button>
         )}
         {channel !== null && (
@@ -513,6 +543,7 @@ export function InboxPage({
         detail={
           selectedId === null ? null : (
             <InboxDetail
+              tenantId={selectedTenantId}
               detail={detailQuery}
               busy={busy}
               actionError={actionError}
@@ -552,6 +583,19 @@ export function InboxPage({
               }}
               onOpenArtifact={(artifactId) => {
                 navigate(libraryArtifactPath(artifactId));
+              }}
+              onMakeRoutine={(task) => {
+                requestMakeRoutine({
+                  // This callback only ever fires from the Inbox page, so
+                  // the hop to Routines is always off-route.
+                  alreadyOnRoutines: false,
+                  navigateToRoutines: () => navigate("/routines"),
+                  prefill: {
+                    definitionId: task.definitionId,
+                    name: suggestRoutineNameFromPrompt(task.prompt),
+                    input: { prompt: task.prompt },
+                  },
+                });
               }}
             />
           )

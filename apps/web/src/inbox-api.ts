@@ -120,6 +120,22 @@ export function channelRefFromItem(
     : { id: ref.id, label: ref.label };
 }
 
+/** A task-result item's own task (`packages/notify`'s render.ts stamps a
+ * `{ kind: "task", id: event.taskId }` ref alongside the run/artifact refs)
+ * — the id a caller resolves into the full task record to read its prompt,
+ * agent, and status ("Make this a routine" only applies once that status is
+ * `done`). */
+export function taskRefFromItem(
+  item: Pick<InboxItem, "refs">,
+): { id: string; label?: string } | null {
+  if (item.refs === undefined) return null;
+  const ref = item.refs.find((r) => r.kind === "task");
+  if (ref === undefined) return null;
+  return ref.label === undefined
+    ? { id: ref.id }
+    : { id: ref.id, label: ref.label };
+}
+
 /** Every Library artifact a task-result (or any other) item references —
  * each becomes a chip in the detail pane deep-linking into the Library. */
 export function artifactRefsFromItem(

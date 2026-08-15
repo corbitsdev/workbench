@@ -12,6 +12,7 @@ import { type } from "arktype";
 
 import { RoutineTriggerWire, type RoutineTriggerT } from "./trigger";
 
+export { suggestRoutineNameFromPrompt } from "./suggest-name";
 export {
   RoutineTrigger,
   RoutineTriggerWire,

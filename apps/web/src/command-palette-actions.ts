@@ -21,6 +21,11 @@ import {
 } from "./channel-path";
 import { ensureMyraChannel } from "./myra-channel";
 import { requestLibraryUpload } from "./library-upload";
+import {
+  resetPendingRoutinePrefill,
+  setPendingRoutinePrefill,
+} from "./routine-prefill";
+import type { RoutinePrefill } from "./routine-prefill";
 
 export const NEW_CHANNEL_EVENT = "workbench:chat:new-channel";
 export const NEW_AGENT_EVENT = "workbench:agents:create";
@@ -63,6 +68,24 @@ export function requestNewRoutine(args: {
   });
 }
 
+/**
+ * Requests the routine create flow pre-filled from a completed task result
+ * ("Make this a routine" — see inbox-page.tsx) — the same off-route-safe
+ * hop `requestNewRoutine` uses, carrying the task's agent, prompt, and a
+ * suggested name alongside it via routine-prefill.ts.
+ */
+export function requestMakeRoutine(args: {
+  readonly alreadyOnRoutines: boolean;
+  readonly navigateToRoutines: () => void;
+  readonly prefill: RoutinePrefill;
+}): void {
+  setPendingRoutinePrefill(args.prefill);
+  requestNewRoutine({
+    alreadyOnRoutines: args.alreadyOnRoutines,
+    navigateToRoutines: args.navigateToRoutines,
+  });
+}
+
 /** Test helper — drop leftover pending state between cases. */
 export function resetPendingDialogRequests(): void {
   newChannelRequest.resetPending();
@@ -70,6 +93,7 @@ export function resetPendingDialogRequests(): void {
   newRoutineRequest.resetPending();
   newSkillRequest.resetPending();
   newTaskRequest.resetPending();
+  resetPendingRoutinePrefill();
 }
 
 export type ActionCommandId =

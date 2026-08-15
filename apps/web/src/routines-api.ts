@@ -51,6 +51,7 @@ import type { CatalogFields } from "./purpose-definitions";
 
 export {
   DraftedStep,
+  suggestRoutineNameFromPrompt,
   type CreateDraftInput,
   type CreateRoutineInput,
   type Routine,

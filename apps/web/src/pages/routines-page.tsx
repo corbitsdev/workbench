@@ -56,6 +56,8 @@ import type { WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
 import { consumePendingNewRoutine } from "../command-palette-actions";
+import { consumePendingRoutinePrefill } from "../routine-prefill";
+import type { RoutinePrefill } from "../routine-prefill";
 import { tenantKeys } from "../query-client";
 import { cadenceLabel } from "../routine-trigger";
 import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
@@ -603,6 +605,9 @@ function CreateRoutineDialog({
   onDiscardDraft,
   open: openProp,
   onOpenChange,
+  initialDefinitionId = null,
+  initialName = null,
+  initialInput = null,
 }: {
   readonly tenantId?: string | null;
   readonly definitions: readonly WorkflowDefinitionSummary[];
@@ -617,6 +622,13 @@ function CreateRoutineDialog({
   readonly onDiscardDraft: (draftId: string) => Promise<void>;
   readonly open?: boolean;
   readonly onOpenChange?: (open: boolean) => void;
+  /** "Make this a routine" seam (see inbox-page.tsx): opens the dialog
+   * already on the given catalog pick and name, its stored input carrying
+   * the source task's prompt. The person still picks cadence and confirms
+   * — nothing here creates a routine on its own. */
+  readonly initialDefinitionId?: string | null;
+  readonly initialName?: string | null;
+  readonly initialInput?: Record<string, unknown> | null;
 }) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = openProp ?? uncontrolledOpen;
@@ -650,6 +662,19 @@ function CreateRoutineDialog({
       setDeliveryChannelId(channels[0].id);
     }
   }, [channels, deliveryChannelId]);
+
+  // "Make this a routine" seeds the catalog pick and name once, the
+  // instant the dialog opens with a prefill — after that the person edits
+  // freely, same as any other field in this stepper.
+  useEffect(() => {
+    if (!open) return;
+    if (initialDefinitionId !== null) {
+      setPath("catalog");
+      setDefinitionId(initialDefinitionId);
+    }
+    if (initialName !== null) setName(initialName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const selectedDefinition =
     definitions.find((d) => d.id === definitionId) ?? null;
@@ -726,13 +751,20 @@ function CreateRoutineDialog({
     // Threads the same field values a manual "Run once now" collects into
     // the stored routine.input record — the one seam the fire path
     // (packages/routines' POST /routines -> RoutineLauncher.launchRoutineRun)
-    // actually reads from a create request.
-    const triggerInput =
+    // actually reads from a create request. A "Make this a routine" prefill
+    // (initialInput — the source task's prompt) merges underneath: the
+    // picked workflow's own trigger fields, if any, take precedence over
+    // it rather than the reverse.
+    const triggerFieldInput =
       selectedDefinition.triggerFields.length > 0
         ? triggerFieldsInput(
             selectedDefinition.triggerFields,
             triggerFieldValues,
           )
+        : undefined;
+    const triggerInput =
+      initialInput !== null || triggerFieldInput !== undefined
+        ? { ...(initialInput ?? {}), ...triggerFieldInput }
         : undefined;
 
     if (runMode === "webhook") {
@@ -1520,19 +1552,30 @@ export function RoutinesListPage({
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [createPrefill, setCreatePrefill] = useState<RoutinePrefill | null>(
+    null,
+  );
 
   useEffect(() => {
-    const onCreateEvent = () => setCreateOpen(true);
+    const onCreateEvent = () => {
+      setCreatePrefill(consumePendingRoutinePrefill());
+      setCreateOpen(true);
+    };
     window.addEventListener("workbench:routines:create", onCreateEvent);
     return () =>
       window.removeEventListener("workbench:routines:create", onCreateEvent);
   }, []);
 
-  // The command palette may have requested "New routine" from another page,
-  // before this listener existed to catch the dispatch — see
-  // pending-dialog-request.ts. Consume that flag now that we've mounted.
+  // The command palette (or "Make this a routine" — see inbox-page.tsx)
+  // may have requested "New routine" from another page, before this
+  // listener existed to catch the dispatch — see pending-dialog-request.ts.
+  // Consume that flag, and any prefill stashed alongside it, now that
+  // we've mounted.
   useEffect(() => {
-    if (consumePendingNewRoutine()) setCreateOpen(true);
+    if (consumePendingNewRoutine()) {
+      setCreatePrefill(consumePendingRoutinePrefill());
+      setCreateOpen(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -1607,7 +1650,15 @@ export function RoutinesListPage({
         onApproveDraft={onApproveDraft}
         onDiscardDraft={onDiscardDraft}
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(next) => {
+          setCreateOpen(next);
+          // A cancelled or completed prefilled session must not haunt the
+          // next blank "New routine" open.
+          if (!next) setCreatePrefill(null);
+        }}
+        initialDefinitionId={createPrefill?.definitionId ?? null}
+        initialName={createPrefill?.name ?? null}
+        initialInput={createPrefill?.input ?? null}
       />
       {selected !== null ? (
         <EditRoutineDialog
