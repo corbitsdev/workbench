@@ -15,6 +15,7 @@ import {
   RichEmptyState,
   SidebarItemRow,
   formatRelativeTime,
+  toast,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import { Bot, Copy, MessageSquare, Plus, Search, Users } from "lucide-react";
@@ -37,11 +38,12 @@ import {
   purposeAgentInstances,
 } from "../agents-directory";
 import { channelPath } from "../channel-path";
+import { launchAgentChat } from "../agent-chat-launch";
 import { consumePendingNewAgent } from "../command-palette-actions";
 import { tenantKeys } from "../query-client";
 import { ListSkeleton } from "@corbits/api-query";
 import { AgentSkillsPicker } from "./agent-skills-picker";
-import { CreateAgentDialog } from "./create-agent-dialog";
+import { CreateAgentPanel } from "./create-agent-panel";
 
 /** A row of skill chips, or nothing at all when a definition carries none —
  * this never renders an empty "Skills" label for the common case. */
@@ -468,19 +470,24 @@ export function AgentsSettingsSection({
 
   const createDialog =
     canCreate && directory.data.tenantId !== "" ? (
-      <CreateAgentDialog
+      <CreateAgentPanel
         open={createOpen}
         onOpenChange={setCreateOpen}
         tenantId={directory.data.tenantId}
-        models={directory.data.models}
-        {...(directory.data.modelsError !== undefined
-          ? { modelsError: directory.data.modelsError }
-          : {})}
         onCreated={(definition) => {
           void queryClient.invalidateQueries({
             queryKey: tenantKeys.agentDirectory(directory.data.tenantId),
           });
-          select(definition.id);
+          if (navigate === undefined) {
+            select(definition.id);
+            return;
+          }
+          launchAgentChat(directory.data.tenantId, definition.id, navigate).catch(
+            () => {
+              toast("Created the agent, but couldn't open a chat with it.");
+              select(definition.id);
+            },
+          );
         }}
       />
     ) : null;
