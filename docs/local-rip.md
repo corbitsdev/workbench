@@ -8,8 +8,9 @@ proves the same path with a stubbed provider probe and a scratch database
 (see its own header comment); this doc is the honest, no-shortcuts version
 for a person, not CI.
 
-This covers the whole path: sign-up through a fully connected bench,
-then dispatching and reading back your first task.
+This covers the whole path: sign-up through a fully connected bench, then
+dispatching a task — by hand or by letting Myra pick the agent — reading
+its trace, and turning it into a routine.
 
 ## Prerequisites
 
@@ -85,7 +86,11 @@ Either path:
 2. plants it as a credential on your bench alongside that provider's
    curated model catalog;
 3. deploys and (unlike the OAuth callback's own fast half) confirms every
-   default workflow the platform ships, including **assistant**.
+   default workflow the platform ships: **echo**, **assistant**,
+   **channel-digest**, and **recurring-task** — the last one deployed but
+   never run directly; it exists only so "Make this a routine" (see
+   below) always has a definition to prefill against
+   (`packages/hub-client/src/seed.ts`'s `DEFAULT_WORKFLOWS`).
 
 Expect the page to show a short "setting up your workbench" wait while
 `/complete-setup` polls, then land on a "Your first routines are running"
@@ -104,8 +109,8 @@ itself — via `@corbits/tool-registry-publish`, which bundles
 inlined, so the closure resolver has nothing further to fetch) and pushes
 it through the hub's native asset REST routes — ahead of deploying any
 workflow, so this step needs nothing from you: **echo**, **channel-digest**,
-and **assistant** all come up live. `scripts/e2e/local-rip.test.ts`
-asserts exactly that.
+**assistant**, and **recurring-task** all come up live.
+`scripts/e2e/local-rip.test.ts` asserts exactly that.
 
 ## 5. Check the Connections surface
 
@@ -123,13 +128,38 @@ end.
 ## 6. Dispatch a task
 
 Press Cmd/Ctrl+T (or the "New task" control in the shell) to open the task
-composer: pick a taskable agent — **echo** is always available — and send
-it a prompt. This calls the real `@corbits/tasks` HTTP surface
-(`packages/tasks/src/routes.ts`): `POST /api/tenants/:id/tasks` launches a
-one-shot folded run with no channel involved (`launchTask`,
-`packages/tasks/src/launcher.ts` — the run's own `workflowRun` id comes
-from `@intx/hub-common`'s `generateId`, mirroring `@corbits/chat`'s own
-invite-launch shape).
+composer (`TaskComposerDialog`, `packages/tasks-ui`). It offers two ways to
+pick who does the work (`createMyraAgentSelectionStrategy`,
+`packages/tasks-ui/src/myra-agent-selection-strategy.tsx`):
+
+- **Choose an agent yourself** — pick a taskable agent from the manual list
+  (**echo** is always available) and send it a prompt. This calls the real
+  `@corbits/tasks` HTTP surface (`packages/tasks/src/routes.ts`):
+  `POST /api/tenants/:id/tasks` launches a one-shot folded run with no
+  channel involved (`launchTask`, `packages/tasks/src/launcher.ts` — the
+  run's own `workflowRun` id comes from `@intx/hub-common`'s `generateId`,
+  mirroring `@corbits/chat`'s own invite-launch shape).
+- **Let Myra choose** (the composer's default) — type an outcome instead of
+  picking an agent, and Myra turns it into a plan herself:
+  `POST /api/tenants/:id/planner` (`dispatchPlanner`,
+  `packages/tasks-ui/src/api.ts`, mounted by
+  `@corbits/task-planner`'s `createPlannerRoutes`). Server-side, Myra's own
+  one-shot run (`runOneShotFoldedPrompt`, `@corbits/folded-runs`) turns
+  your outcome plus the tenant's real inventory of agents/tools/skills into
+  a `TaskSpec` (`packages/task-planner/src/planner-run.ts`), which then
+  dispatches exactly like a manually-launched task — a real task row, and
+  (for a plan that names a brand-new agent) a freshly deployed agent
+  definition. Any failure along that path — Myra unavailable, her reply
+  timing out or unparseable, a plan referencing something outside the
+  inventory, a denied create grant — reads back as one honest `422
+planning_failed` response, never a partially-trusted plan
+  (`isPlanningFailure`, `packages/task-planner/src/routes.ts`).
+  `scripts/e2e/local-rip.test.ts`'s planner leg proves the fail-closed
+  half of this against the suite's stub credential (Myra's own call to
+  the real Anthropic host draws the same real 401 the task leg does, which
+  can never parse as a `TaskSpec`) — swap in your own real key, as this
+  walkthrough does, and the identical route instead returns a real plan
+  and a real dispatch.
 
 The task starts `running` immediately — the HTTP response only proves the
 opening prompt reached the agent's session, not that its turn finished.
@@ -172,3 +202,48 @@ shift which code it uses for an invalid key), which
 category the retry policy never retries. A hang, a timeout, or a
 different status code the assertion doesn't recognize points at the
 provider or the network path, not at `@corbits/tasks`.
+
+## 7. Read the trace
+
+Once the task's Inbox item lands, its detail view offers a "View run
+trace" button (`apps/web/src/pages/inbox-page.tsx`) that navigates to
+`/insights/runs/:runId` — the same target `InsightsLanding`'s own run rows
+open into. That page (`InsightsRunDetailRoute`,
+`apps/web/src/pages/insights-page.tsx`) reads
+`GET /api/tenants/:id/insights/runs/:runId/trace`
+(`packages/insights/src/routes.ts`, `insightsRunTracePath` in
+`apps/web/src/insights-api.ts`), served off the platform's own
+`inference_turn`/`turn_part` rows — no separate tracing store
+(`createDrizzleRunTraceReader`, `packages/insights/src/trace-reader.ts`).
+One span per turn the run took, with tool-call and error sub-spans nested
+under it; a run outside your tenant, or that never existed, reads back as
+`404`, never a fabricated empty trace.
+
+A dispatched task's run is deliberately absent from the Insights landing
+page's own top-level feed (`GET /api/tenants/:id/top-level-runs`,
+`packages/folded-runs/src/scope-routes.ts`) — that feed is scoped to
+genuine top-level deployments (channels, scheduled routines), and a task
+is folded-run plumbing the same way an invited channel participant is
+(`launchTask` shares `launchFoldedRun` with `@corbits/chat`'s own invite
+path, which is what plants the marker this scoping query excludes on).
+The trace link is the one path back to a task's own run detail.
+`scripts/e2e/local-rip.test.ts`'s trace leg proves both halves of this
+against the same real run: the trace route resolves it with real span
+rows, and the top-level-runs listing never surfaces it.
+
+## 8. Turn it into a routine
+
+A completed task's Inbox item also offers a "Make this a routine" button
+(`apps/web/src/pages/inbox-page.tsx`, shown once `status === "done"`),
+which opens the Routines page's create dialog prefilled with that task's
+agent and prompt, targeting the tenant's already-deployed
+**recurring-task** definition (`RoutinePrefill`,
+`apps/web/src/routine-prefill.ts`) — the same definition step 4 deployed
+for you, never run directly on its own. Saving that dialog schedules a
+routine that dispatches through the same `launchTask` a manual task does
+(`apps/hub/src/routine-launcher.ts`), delivering to your Inbox on the same
+schedule, never a channel. `scripts/e2e/recurring-task-routine.test.ts`
+proves the scheduled-fire path end to end against a real hub, sidecar, and
+Postgres: a routine with no delivery channel at all, a forced-due fire
+that dispatches a real task rather than a folded run of its own, and that
+task's terminal delivery landing in the routine creator's Inbox.
