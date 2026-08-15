@@ -103,31 +103,45 @@ export function createMyraAgentSelectionStrategy(
 
     return (
       <>
-        <label
-          className="tasks-radio-option"
-          data-testid="new-task-agent-option"
+        <div
+          role="radiogroup"
+          aria-label="Agent selection mode"
+          className="tasks-radio-group"
         >
-          <input
-            type="radio"
-            name="task-agent-mode"
-            checked={mode === "myra"}
-            onChange={chooseMyra}
-          />
-          Let Myra choose — Myra reads your prompt and picks or creates the
-          right agent.
-        </label>
-        <label
-          className="tasks-radio-option"
-          data-testid="new-task-agent-option"
-        >
-          <input
-            type="radio"
-            name="task-agent-mode"
-            checked={mode === "manual"}
-            onChange={chooseManually}
-          />
-          Choose an agent yourself
-        </label>
+          <label
+            className="tasks-radio-option"
+            data-testid="new-task-agent-option"
+          >
+            <input
+              type="radio"
+              name="task-agent-mode"
+              checked={mode === "myra"}
+              onChange={chooseMyra}
+            />
+            <span className="tasks-radio-option-text">
+              <span className="tasks-radio-option-title">Let Myra choose</span>
+              <span className="tasks-radio-option-desc">
+                Myra reads your prompt and picks or creates the right agent.
+              </span>
+            </span>
+          </label>
+          <label
+            className="tasks-radio-option"
+            data-testid="new-task-agent-option"
+          >
+            <input
+              type="radio"
+              name="task-agent-mode"
+              checked={mode === "manual"}
+              onChange={chooseManually}
+            />
+            <span className="tasks-radio-option-text">
+              <span className="tasks-radio-option-title">
+                Choose an agent yourself
+              </span>
+            </span>
+          </label>
+        </div>
         {mode === "manual" ? (
           <ManualStrategy
             tenantId={tenantId}

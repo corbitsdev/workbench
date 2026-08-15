@@ -1,0 +1,124 @@
+/* Task composer — layout glue only: visual styling comes from
+   `@corbits/react-ui`'s prebuilt stylesheet and the theme's tokens.
+   Mirrors packages/chat-ui/src/styles.css's field/radio/textarea
+   conventions (.chat-form-field, .chat-field-label, .chat-radio-option,
+   .chat-textarea) so this dialog's markup renders identically to every
+   other guided dialog in the app instead of drifting into its own
+   unstyled vocabulary. */
+
+.tasks-composer-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.tasks-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* Matches the app's established uppercase-label convention
+   (.panel-band-heading in apps/web/src/app.css, .chat-field-label in
+   packages/chat-ui/src/styles.css). react-ui ships an equivalent
+   DialogFieldLabel, but it renders a <label>, which can't wrap the
+   fieldset's <legend> here without nesting form-control elements — this
+   class carries the same visual treatment onto whichever element is
+   semantically correct instead. */
+.tasks-field-label {
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.tasks-field-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.tasks-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tasks-radio-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.tasks-radio-option input[type="radio"] {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.tasks-radio-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.tasks-radio-option-title {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.tasks-radio-option-desc {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.tasks-textarea {
+  width: 100%;
+  resize: vertical;
+  border-radius: var(--radius, 0.375rem);
+  border: 1px solid var(--input);
+  background: var(--card);
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+
+.tasks-select {
+  width: 100%;
+  border-radius: var(--radius, 0.375rem);
+  border: 1px solid var(--input);
+  background: var(--card);
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+
+.tasks-dialog-error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: 0.875rem;
+}
+
+.tasks-myra-choice-summary {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+
+.tasks-link-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

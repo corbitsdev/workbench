@@ -112,7 +112,7 @@ export function createManualAgentSelectionStrategy(
       );
     }
     return (
-      <>
+      <div role="radiogroup" aria-label="Agent" className="tasks-radio-group">
         {state.items.map((agent) => (
           <label
             key={agent.id}
@@ -125,10 +125,14 @@ export function createManualAgentSelectionStrategy(
               checked={selectedId === agent.id}
               onChange={() => onSelect(agent.id)}
             />
-            {agent.description ?? agent.name}
+            <span className="tasks-radio-option-text">
+              <span className="tasks-radio-option-title">
+                {agent.description ?? agent.name}
+              </span>
+            </span>
           </label>
         ))}
-      </>
+      </div>
     );
   };
 }

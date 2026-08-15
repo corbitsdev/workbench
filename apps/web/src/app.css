@@ -9,6 +9,7 @@
 @import "@corbits/chat-ui/styles.css";
 @import "@corbits/bench-ui/styles.css";
 @import "@corbits/settings-ui/styles.css";
+@import "@corbits/tasks-ui/styles.css";
 
 /* Mock chrome: 15px root so rem-based density matches the interactive mock. */
 html {
@@ -466,6 +467,14 @@ html {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--muted-foreground);
+}
+
+/* Stacks the activity band's ApprovalCards — a plain flex column so
+   consecutive cards read as a list rather than running edge to edge. */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .panel-muted {
