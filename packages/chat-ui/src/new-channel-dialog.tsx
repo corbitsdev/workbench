@@ -316,7 +316,7 @@ export function NewChannelDialog({
         if (!next) reset();
       }}
     >
-      <DialogContent>
+      <DialogContent side="right">
         <DialogHeader>
           <DialogTitle>
             {kind === "chat"

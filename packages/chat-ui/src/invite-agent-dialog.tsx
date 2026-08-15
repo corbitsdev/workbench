@@ -20,7 +20,11 @@ import {
 import { CircleAlert, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { ChatApiError, describeChatError, listInvitableDefinitions } from "./api";
+import {
+  ChatApiError,
+  describeChatError,
+  listInvitableDefinitions,
+} from "./api";
 import type { InvitableDefinition } from "./api";
 import { CHAT_STRINGS } from "./strings";
 
@@ -87,7 +91,7 @@ export function InviteAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent side="right">
         <DialogHeader>
           <DialogTitle>{CHAT_STRINGS.inviteAgentDialogTitle}</DialogTitle>
           <DialogDescription>
