@@ -31,6 +31,7 @@
     "postgres": "catalog:"
   },
   "devDependencies": {
+    "@corbits/chat": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

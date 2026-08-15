@@ -92,6 +92,26 @@ const ALLOWLIST: readonly {
     maxOccurrences: 1,
     tables: ["task"],
   },
+  {
+    relPath: "packages/onboarding/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["pending_seed"],
+  },
+  {
+    relPath: "packages/slack-tag/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["slack_channel_binding"],
+  },
+  {
+    relPath: "packages/skills/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["skill_access"],
+  },
+  {
+    relPath: "packages/preferences/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["user_preferences"],
+  },
 ];
 
 export async function scanFiles(
