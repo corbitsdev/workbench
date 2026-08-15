@@ -71,6 +71,7 @@ describeIfDb("createDrizzleTaskStore", () => {
         tenantId: TENANT_A,
         principalId: "prn_1",
         definitionId: "wfd_agent",
+        agentName: "Agent",
         prompt: "Summarize the incident.",
         modelPreference: null,
         runId: "run_1",

@@ -51,6 +51,7 @@ const plannerTaskResponse = {
   task: {
     id: "task_2",
     definitionId: "wfd_created",
+    agentName: "Researcher",
     prompt: "Refined outcome",
     modelPreference: null,
     status: "queued",
