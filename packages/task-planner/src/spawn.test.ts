@@ -643,4 +643,84 @@ describe("spawnFromTaskSpec — chain", () => {
     expect(deployAgentDefinition).not.toHaveBeenCalled();
     expect(await store.listTasks("tnt_1")).toEqual([]);
   });
+
+  test("an all-{use} chain never consults the create-grant", async () => {
+    const db = createFakeDb();
+    const store = storeOverInserts(db);
+    const requireDefinitionCreateGrant = allowDefinitionCreateGrant();
+
+    const record = await spawnFromTaskSpec(
+      {
+        taskLauncherDeps: createTaskLauncherDeps(db) as never,
+        store,
+        deployAgentDefinition: mock(async () => ({
+          definitionId: "wfd_never",
+        })),
+        requireDefinitionCreateGrant,
+        undeployAgentDefinition: neverCalledUndeploy(),
+      },
+      {
+        ...INPUT_BASE,
+        spec: {
+          kind: "chain",
+          steps: [
+            { use: "wfd_agent", refinedOutcome: "Research the outage" },
+            { use: "wfd_reviewer", refinedOutcome: "Review the research" },
+          ],
+        },
+      },
+    );
+
+    expect(record.stepCount).toBe(2);
+    expect(requireDefinitionCreateGrant).not.toHaveBeenCalled();
+  });
+
+  test("a later step's unavailable credential binding fails the chain closed before any step deploys", async () => {
+    const db = createFakeDb();
+    const store = storeOverInserts(db);
+    const deployAgentDefinition = mock(async () => ({
+      definitionId: "wfd_never",
+    }));
+
+    await expect(
+      spawnFromTaskSpec(
+        {
+          taskLauncherDeps: createTaskLauncherDeps(db) as never,
+          store,
+          deployAgentDefinition,
+          requireDefinitionCreateGrant: allowDefinitionCreateGrant(),
+          undeployAgentDefinition: neverCalledUndeploy(),
+        },
+        {
+          ...INPUT_BASE,
+          spec: {
+            kind: "chain",
+            steps: [
+              {
+                create: {
+                  name: "Researcher",
+                  systemPrompt: "You research.",
+                  toolPackagePins: [],
+                  skills: [],
+                },
+                refinedOutcome: "Research the outage",
+              },
+              {
+                create: {
+                  name: "Drafter",
+                  systemPrompt: "You draft memos.",
+                  toolPackagePins: ["@corbits/absent-tools"],
+                  skills: [],
+                },
+                refinedOutcome: "Draft a memo",
+              },
+            ],
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(PlannerCredentialBindingUnavailableError);
+
+    expect(deployAgentDefinition).not.toHaveBeenCalled();
+    expect(await store.listTasks("tnt_1")).toEqual([]);
+  });
 });
