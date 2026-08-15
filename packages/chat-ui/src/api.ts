@@ -219,6 +219,30 @@ function channelsPath(tenantId: string, kind: ChannelKind): string {
   return `/api/tenants/${tenantId}/chat/channels?kind=${kind}`;
 }
 
+/**
+ * The shared TanStack Query key for `listChannels(tenantId, kind)` —
+ * defined here (not in the app's own key module) because this package owns
+ * both the endpoint and `ChannelKind`. Every surface that lists channels of
+ * a given kind (the shell's bench-activity, the command palette, the
+ * Routines picker, this package's own `ChatWorkspace` sidebar) keys its
+ * query with this function so they all subscribe to the one cached fetch
+ * per (tenantId, kind) instead of each firing its own.
+ */
+export function channelsQueryKey(
+  tenantId: string,
+  kind: ChannelKind,
+): readonly [string, string, string, ChannelKind] {
+  return ["tenant", tenantId, "channels", kind] as const;
+}
+
+/** Prefix covering every `channelsQueryKey` kind for a tenant — invalidate
+ * this after a mutation (create, rename, pin) to refetch both kinds. */
+export function channelsQueryKeyPrefix(
+  tenantId: string,
+): readonly [string, string, string] {
+  return ["tenant", tenantId, "channels"] as const;
+}
+
 export function listChannels(
   tenantId: string,
   kind: ChannelKind,

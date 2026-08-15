@@ -20,11 +20,14 @@ import {
   SlidersHorizontal,
   UserPlus,
 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
   ChatApiError,
+  channelsQueryKey,
+  channelsQueryKeyPrefix,
   createChannel,
   forkThread,
   inviteAgent,
@@ -192,28 +195,40 @@ function sortMessagesOldestFirst(items: readonly MessageItem[]): MessageItem[] {
   );
 }
 
-function useChannelLists(tenantId: string, refreshKey: number) {
-  const [state, setState] = useState<ChannelsState>({ kind: "loading" });
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+/**
+ * Channels and chats via TanStack Query, keyed with `channelsQueryKey` —
+ * the same key `apps/web`'s shell bands and command palette use, so this
+ * sidebar shares one in-flight fetch per (tenantId, kind) with the rest of
+ * the shell rather than firing its own independent request on every mount.
+ */
+function useChannelLists(tenantId: string) {
+  const channels = useQuery({
+    queryKey: channelsQueryKey(tenantId, "channel"),
+    queryFn: () => listChannels(tenantId, "channel"),
+  });
+  const chats = useQuery({
+    queryKey: channelsQueryKey(tenantId, "chat"),
+    queryFn: () => listChannels(tenantId, "chat"),
+  });
 
   const reload = useCallback(async () => {
-    setState({ kind: "loading" });
-    try {
-      const [channels, chats] = await Promise.all([
-        listChannels(tenantId, "channel"),
-        listChannels(tenantId, "chat"),
-      ]);
-      setState({ kind: "ready", channels, chats });
-    } catch (cause) {
-      setState({
-        kind: "error",
-        message: cause instanceof Error ? cause.message : String(cause),
-      });
-    }
-  }, [tenantId]);
+    await Promise.all([channels.refetch(), chats.refetch()]);
+  }, [channels.refetch, chats.refetch]);
 
-  useEffect(() => {
-    void reload();
-  }, [reload, refreshKey]);
+  let state: ChannelsState;
+  if (channels.isError) {
+    state = { kind: "error", message: errorMessage(channels.error) };
+  } else if (chats.isError) {
+    state = { kind: "error", message: errorMessage(chats.error) };
+  } else if (channels.data === undefined || chats.data === undefined) {
+    state = { kind: "loading" };
+  } else {
+    state = { kind: "ready", channels: channels.data, chats: chats.data };
+  }
 
   return { state, reload };
 }
@@ -292,11 +307,14 @@ function ChatWorkspaceInner({
   /** See `ChatWorkspace`'s prop of the same name. */
   readonly presenceMembers?: readonly PresenceMember[];
 }) {
-  const [channelsRefresh, setChannelsRefresh] = useState(0);
-  const { state: channelsState, reload: reloadChannels } = useChannelLists(
-    tenantId,
-    channelsRefresh,
-  );
+  const queryClient = useQueryClient();
+  const refreshChannelLists = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: channelsQueryKeyPrefix(tenantId),
+    });
+  }, [queryClient, tenantId]);
+  const { state: channelsState, reload: reloadChannels } =
+    useChannelLists(tenantId);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(
     null,
   );
@@ -660,7 +678,7 @@ function ChatWorkspaceInner({
         }
       }
       setDialogOpen(false);
-      setChannelsRefresh((value) => value + 1);
+      refreshChannelLists();
       setActiveChannelId(created.id);
       toast(CHAT_STRINGS.channelCreatedToast(created.title));
     } catch (cause) {
@@ -687,7 +705,7 @@ function ChatWorkspaceInner({
     // The invited agent's address lands on the channel's participants
     // (the mention popover picks it up via the reload below) and its
     // join event lands on the timeline.
-    setChannelsRefresh((value) => value + 1);
+    refreshChannelLists();
     await loadMessages(activeChannelId);
   }
 
@@ -866,7 +884,7 @@ function ChatWorkspaceInner({
               onSettingsOpenChange?.(false);
               setInviteDialogOpen(true);
             }}
-            onSaved={() => setChannelsRefresh((value) => value + 1)}
+            onSaved={refreshChannelLists}
           />
         </div>
         <NewChannelDialog
