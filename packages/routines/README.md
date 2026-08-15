@@ -52,7 +52,7 @@ next attempt; a fire that succeeds (including "run now") clears it. Once
 routine dead-letters — the scheduler stops claiming it until a person
 re-enables or edits it — and a synthetic `schedule-failed` run row (with the
 launch failure's own `error` text) is recorded so `GET /routines/:id/runs`
-shows *why*, not just *that* it stopped.
+shows _why_, not just _that_ it stopped.
 
 ## Triggers
 

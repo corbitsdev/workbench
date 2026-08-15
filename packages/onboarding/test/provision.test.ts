@@ -662,8 +662,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(retry).toEqual({ kind: "existing-member", seeded: true });
     // Attempt 1 fails creating the echo asset. The retry re-runs from
     // scratch: one create call per default workflow — echo, assistant,
-    // channel-digest — on top of the one failed attempt.
-    expect(assetCreateAttempts).toBe(4);
+    // channel-digest, recurring-task — on top of the one failed attempt.
+    expect(assetCreateAttempts).toBe(5);
   });
 
   test("a fully seeded personal bench reports existing-member with seeded: true", async () => {

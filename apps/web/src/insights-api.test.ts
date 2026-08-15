@@ -43,9 +43,7 @@ describe("insights path range contract", () => {
 describe("insightsTopLevelRunsPath", () => {
   test("hits the tenant-scoped top-level-runs route, not /me/workflows/runs", () => {
     const path = insightsTopLevelRunsPath("tenant-1");
-    expect(path.startsWith("/api/tenants/tenant-1/top-level-runs?")).toBe(
-      true,
-    );
+    expect(path.startsWith("/api/tenants/tenant-1/top-level-runs?")).toBe(true);
     expect(path).not.toContain("/me/workflows/runs");
   });
 });

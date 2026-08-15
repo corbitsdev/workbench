@@ -24,7 +24,7 @@ plan is dispatched exactly like a manually-launched task.
   the boundary, exactly like a request body) and throws
   `PlannerReplyUnparseableError` on anything that isn't valid JSON matching
   one of three `kind`-discriminated shapes: `{kind: "task", use,
-  refinedOutcome}`, `{kind: "task", create, refinedOutcome}`, or
+refinedOutcome}`, `{kind: "task", create, refinedOutcome}`, or
   `{kind: "chain", steps}` (CL-6052) — an ordered array of 2 to 5 steps,
   each step the same `{use, refinedOutcome}` / `{create, refinedOutcome}`
   shape the single-task variants use, reused verbatim (`TaskStep`) rather

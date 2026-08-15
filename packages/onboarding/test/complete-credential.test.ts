@@ -177,7 +177,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant", "channel-digest"],
+      workflows: ["echo", "assistant", "channel-digest", "recurring-task"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
@@ -222,7 +222,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant", "channel-digest"],
+      workflows: ["echo", "assistant", "channel-digest", "recurring-task"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls).toHaveLength(1);
@@ -267,7 +267,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: ["echo", "assistant", "channel-digest"],
+      workflows: ["echo", "assistant", "channel-digest", "recurring-task"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedCatalogCalls[0]?.provider).toBe("groq");
@@ -597,7 +597,12 @@ describe("completeCredentialSetup", () => {
 
     expect(result.kind).toBe("seeded");
     if (result.kind === "seeded") {
-      expect(result.workflows).toEqual(["echo", "assistant", "channel-digest"]);
+      expect(result.workflows).toEqual([
+        "echo",
+        "assistant",
+        "channel-digest",
+        "recurring-task",
+      ]);
     }
   });
 
@@ -985,14 +990,14 @@ describe("completeCredentialSetup", () => {
     // Every ensure-then-create helper hit its 409 branch on the second
     // pass and listed the row it already created on the first — nothing
     // was ever created twice.
-    expect(assetCreatePosts).toBe(3);
-    expect(deploymentCreatePosts).toBe(3);
+    expect(assetCreatePosts).toBe(4);
+    expect(deploymentCreatePosts).toBe(4);
     expect(catalogModelCreatePosts).toBe(1);
     expect(catalogProviderCreatePosts).toBe(1);
     expect(catalogOfferingCreatePosts).toBe(1);
     expect(credentialCreatePosts).toBe(1);
-    expect(assets.length).toBe(3);
-    expect(deployments.length).toBe(3);
+    expect(assets.length).toBe(4);
+    expect(deployments.length).toBe(4);
   });
 
   test("a pasted key with no metadata stays an ordinary api_key credential", async () => {
@@ -1178,7 +1183,7 @@ describe("ensureSeeded (the slow half)", () => {
 
     expect(result).toEqual({
       kind: "seeded",
-      workflows: ["echo", "assistant", "channel-digest"],
+      workflows: ["echo", "assistant", "channel-digest", "recurring-task"],
     });
     expectNoConfirmation(seedTenantCalls);
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
@@ -1337,9 +1342,9 @@ describe("ensureSeeded (the slow half)", () => {
 
     expect(first.kind).toBe("seeded");
     expect(second.kind).toBe("seeded");
-    expect(assetCreatePosts).toBe(3);
-    expect(deploymentCreatePosts).toBe(3);
-    expect(assets.length).toBe(3);
-    expect(deployments.length).toBe(3);
+    expect(assetCreatePosts).toBe(4);
+    expect(deploymentCreatePosts).toBe(4);
+    expect(assets.length).toBe(4);
+    expect(deployments.length).toBe(4);
   });
 });
