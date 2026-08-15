@@ -429,6 +429,115 @@ describe("createRoutineRoutes", () => {
     });
     expect(second.status).toBe(404);
   });
+
+  describe("deliveryChannelRequired", () => {
+    test("rejects a create with no deliveryChannelId when no port is wired (prior behavior)", async () => {
+      const deps = buildDeps();
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const {
+        name: _name,
+        deliveryChannelId: _drop,
+        ...withoutChannel
+      } = VALID_BODY;
+      const { response, body } = await createRoutine(app, {
+        ...withoutChannel,
+        name: "No channel",
+      });
+      expect(response.status).toBe(400);
+      expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+        "bad_request",
+      );
+    });
+
+    test("rejects a create with no deliveryChannelId when the port says this definition requires one", async () => {
+      const deps = buildDeps({ deliveryChannelRequired: async () => true });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const { response } = await createRoutine(app, {
+        ...withoutChannel,
+        name: "Still requires a channel",
+      });
+      expect(response.status).toBe(400);
+    });
+
+    test("accepts a create with no deliveryChannelId when the port says this definition never delivers to a channel", async () => {
+      const deps = buildDeps({ deliveryChannelRequired: async () => false });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const { response, body } = await createRoutine(app, {
+        ...withoutChannel,
+        name: "Inbox delivery",
+      });
+      expect(response.status).toBe(201);
+      expect(body["deliveryChannelId"]).toBe(null);
+    });
+
+    test("'run now' on a channel-less routine succeeds once the port says a channel isn't required", async () => {
+      const launcher = fakeLauncher();
+      const deps = buildDeps({
+        launcher,
+        deliveryChannelRequired: async () => false,
+      });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { deliveryChannelId: _drop, ...withoutChannel } = VALID_BODY;
+      const { body: created } = await createRoutine(app, {
+        ...withoutChannel,
+        name: "Inbox delivery",
+      });
+
+      const runResponse = await app.request(`/routines/${created["id"]}/run`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(runResponse.status).toBe(201);
+      expect(launcher.calls).toBe(1);
+    });
+  });
+
+  describe("validateRoutineInput", () => {
+    test("creates without validation when no port is wired (prior behavior)", async () => {
+      const deps = buildDeps();
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { response } = await createRoutine(app, {
+        ...VALID_BODY,
+        input: {},
+      });
+      expect(response.status).toBe(201);
+    });
+
+    test("rejects a create when the port says the input is invalid, surfacing its message", async () => {
+      const deps = buildDeps({
+        validateRoutineInput: async () => ({
+          ok: false,
+          message: '"Agent" is required',
+        }),
+      });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { response, body } = await createRoutine(app, VALID_BODY);
+      expect(response.status).toBe(400);
+      expect((body["error"] as Record<string, unknown>)["message"]).toBe(
+        '"Agent" is required',
+      );
+    });
+
+    test("accepts a create when the port says the input is valid", async () => {
+      let seenInput: Record<string, unknown> | undefined;
+      const deps = buildDeps({
+        validateRoutineInput: async (_tenantId, _definitionId, input) => {
+          seenInput = input;
+          return { ok: true };
+        },
+      });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { response } = await createRoutine(app, {
+        ...VALID_BODY,
+        input: { agent: "wfd_agent", prompt: "Do it" },
+      });
+      expect(response.status).toBe(201);
+      expect(seenInput).toEqual({ agent: "wfd_agent", prompt: "Do it" });
+    });
+  });
 });
 
 describe("fireScheduledRoutine", () => {
@@ -481,5 +590,53 @@ describe("fireScheduledRoutine", () => {
       ),
     ).rejects.toThrow(/disabled/);
     expect(launcher.calls).toBe(0);
+  });
+
+  test("refuses to fire a channel-less routine when no deliveryChannelRequired port is wired (prior behavior)", async () => {
+    const store = createInMemoryRoutineStore();
+    const launcher = fakeLauncher();
+    const created = await store.createRoutine({
+      tenantId: TENANT.id,
+      name: "Channel-less digest",
+      definitionId: "def_digest",
+      trigger: { kind: "daily", hour: 9, minute: 0 },
+      scope: "bench",
+      input: {},
+      createdBy: "user_1",
+    });
+
+    await expect(
+      fireScheduledRoutine(
+        { store, launcher },
+        { tenantId: TENANT.id, routine: created },
+      ),
+    ).rejects.toThrow(/deliveryChannelId/);
+    expect(launcher.calls).toBe(0);
+  });
+
+  test("fires a channel-less routine when the port says its definition never delivers to a channel", async () => {
+    const store = createInMemoryRoutineStore();
+    const launcher = fakeLauncher();
+    const created = await store.createRoutine({
+      tenantId: TENANT.id,
+      name: "Recurring task",
+      definitionId: "def_recurring_task",
+      trigger: { kind: "daily", hour: 9, minute: 0 },
+      scope: "bench",
+      input: { agent: "wfd_agent", prompt: "Do it" },
+      createdBy: "user_1",
+    });
+
+    const launched = await fireScheduledRoutine(
+      {
+        store,
+        launcher,
+        deliveryChannelRequired: async () => false,
+      },
+      { tenantId: TENANT.id, routine: created },
+    );
+
+    expect(launcher.calls).toBe(1);
+    expect(launched.runId).toBeTruthy();
   });
 });

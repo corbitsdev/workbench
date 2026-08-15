@@ -67,6 +67,7 @@ function taskRecord(overrides: {
     item: {
       id: overrides.id,
       definitionId: "wfd_summarizer",
+      agentName: "Incident Summarizer",
       prompt: TASK_PROMPT,
       modelPreference: null,
       status: overrides.status,

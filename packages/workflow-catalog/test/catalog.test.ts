@@ -4,8 +4,10 @@ import { describe, expect, test } from "bun:test";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 
 import {
+  deliveryChannelRequiredForWorkflowName,
   isAutomatableWorkflowName,
   RECURRING_TASK_ASSET_NAME,
+  validateTriggerFieldsInput,
   workflowDisplayName,
   workflowCatalogEntry,
   WorkflowTriggerField,
@@ -101,6 +103,39 @@ describe("workflow catalog", () => {
     }
   });
 
+  describe("deliveryMode", () => {
+    test("every catalog entry declares a delivery mode", () => {
+      for (const entry of WORKFLOW_CATALOG) {
+        expect(["channel", "inbox"]).toContain(entry.deliveryMode);
+      }
+    });
+
+    test("recurring-task is the only inbox-delivering entry", () => {
+      const inboxEntries = WORKFLOW_CATALOG.filter(
+        (entry) => entry.deliveryMode === "inbox",
+      );
+      expect(inboxEntries.map((entry) => entry.assetName)).toEqual([
+        RECURRING_TASK_ASSET_NAME,
+      ]);
+    });
+
+    test("deliveryChannelRequiredForWorkflowName is false only for recurring-task", () => {
+      expect(
+        deliveryChannelRequiredForWorkflowName(RECURRING_TASK_ASSET_NAME),
+      ).toBe(false);
+      expect(deliveryChannelRequiredForWorkflowName("channel-digest")).toBe(
+        true,
+      );
+      expect(deliveryChannelRequiredForWorkflowName("heartbeat")).toBe(true);
+    });
+
+    test("an unknown workflow name defaults to channel-required", () => {
+      expect(deliveryChannelRequiredForWorkflowName("unknown-workflow")).toBe(
+        true,
+      );
+    });
+  });
+
   test("every catalog entry carries honest demo-card copy", () => {
     for (const entry of WORKFLOW_CATALOG) {
       expect(entry.whatItDoes.trim().length).toBeGreaterThan(0);
@@ -193,6 +228,7 @@ describe("workflow catalog", () => {
       expect(entry?.triggerFields).toEqual([
         {
           key: "topic",
+          kind: "text",
           label: "Topic",
           placeholder: "AI coding agents",
           required: true,
@@ -200,6 +236,7 @@ describe("workflow catalog", () => {
         },
         {
           key: "focus",
+          kind: "text",
           label: "Focus",
           placeholder: "Competing launches",
           required: false,
@@ -240,6 +277,15 @@ describe("workflow catalog", () => {
       }
     });
 
+    test("recurring-task's agent field is kind 'agent' (a picker), its prompt field is plain text", () => {
+      const entry = workflowCatalogEntry(RECURRING_TASK_ASSET_NAME);
+      const byKey = new Map(
+        (entry?.triggerFields ?? []).map((f) => [f.key, f]),
+      );
+      expect(byKey.get("agent")?.kind).toBe("agent");
+      expect(byKey.get("prompt")?.kind).toBe("text");
+    });
+
     test("workflows with no named trigger inputs declare no triggerFields", () => {
       // Heartbeat and channel-digest take no human-supplied content at
       // create time — heartbeat ignores its trigger entirely, and
@@ -249,6 +295,56 @@ describe("workflow catalog", () => {
       expect(
         workflowCatalogEntry("channel-digest")?.triggerFields,
       ).toBeUndefined();
+    });
+  });
+
+  describe("validateTriggerFieldsInput", () => {
+    const fields = workflowCatalogEntry(RECURRING_TASK_ASSET_NAME)
+      ?.triggerFields as readonly WorkflowTriggerField[];
+
+    test("accepts input with every required field non-empty", () => {
+      expect(
+        validateTriggerFieldsInput(fields, {
+          agent: "wfd_1",
+          prompt: "Do it",
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    test("rejects a missing required field, naming it", () => {
+      const result = validateTriggerFieldsInput(fields, { prompt: "Do it" });
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.message).toContain("Agent");
+    });
+
+    test("rejects a blank (whitespace-only) required field", () => {
+      const result = validateTriggerFieldsInput(fields, {
+        agent: "   ",
+        prompt: "Do it",
+      });
+      expect(result.ok).toBe(false);
+    });
+
+    test("rejects a non-string value for a required field", () => {
+      const result = validateTriggerFieldsInput(fields, {
+        agent: 12345,
+        prompt: "Do it",
+      });
+      expect(result.ok).toBe(false);
+    });
+
+    test("an optional field's absence never fails validation", () => {
+      const optionalFields = workflowCatalogEntry("last-30-days-research")
+        ?.triggerFields as readonly WorkflowTriggerField[];
+      expect(
+        validateTriggerFieldsInput(optionalFields, { topic: "AI agents" }),
+      ).toEqual({ ok: true });
+    });
+
+    test("no declared fields means any input passes", () => {
+      expect(validateTriggerFieldsInput([], { anything: "goes" })).toEqual({
+        ok: true,
+      });
     });
   });
 });

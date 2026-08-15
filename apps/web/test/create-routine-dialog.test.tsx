@@ -96,6 +96,7 @@ const definitions = [
   {
     id: "wfd_1",
     assetName: "researcher",
+    deliveryMode: "channel",
     name: "Researcher",
     status: "deployed",
     description: "Pulls research",
@@ -108,6 +109,7 @@ const definitions = [
   {
     id: "wfd_2",
     assetName: "summarizer",
+    deliveryMode: "channel",
     name: "Summarizer",
     status: "deployed",
     whatItDoes: "Summarizes a document into a short brief.",
@@ -119,6 +121,7 @@ const definitions = [
   {
     id: "wfd_3",
     assetName: "last-30-days-research",
+    deliveryMode: "channel",
     name: "Last 30 days research report",
     status: "deployed",
     whatItDoes: "Researches a topic over the last 30 days.",
@@ -128,6 +131,7 @@ const definitions = [
     triggerFields: [
       {
         key: "topic",
+        kind: "text",
         label: "Topic",
         placeholder: "AI coding agents",
         required: true,
@@ -135,6 +139,7 @@ const definitions = [
       },
       {
         key: "focus",
+        kind: "text",
         label: "Focus",
         placeholder: "Competing launches",
         required: false,
@@ -149,6 +154,7 @@ const definitions = [
     // automatable) agent id.
     id: "wfd_recurring_task",
     assetName: "recurring-task",
+    deliveryMode: "inbox",
     name: "Recurring task",
     status: "deployed",
     whatItDoes: "Runs a task prompt through a picked agent on a schedule.",
@@ -158,6 +164,7 @@ const definitions = [
     triggerFields: [
       {
         key: "agent",
+        kind: "agent",
         label: "Agent",
         placeholder: "wfd_...",
         required: true,
@@ -165,6 +172,7 @@ const definitions = [
       },
       {
         key: "prompt",
+        kind: "text",
         label: "Prompt",
         placeholder: "Summarize last night's incidents",
         required: true,
@@ -690,6 +698,51 @@ describe("'Make this a routine' prefill", () => {
     },
   };
 
+  test("the 'agent' trigger field renders as a picker of taskable agents, showing real names once fetched", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/chat/invitable-definitions")) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              { id: "wfd_summarizer", name: "Incident Summarizer" },
+              { id: "wfd_researcher", name: "Researcher" },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return Promise.reject(new Error(`unrouted fetch: ${url}`));
+    }) as typeof fetch;
+
+    try {
+      requestMakeRoutine({
+        alreadyOnRoutines: false,
+        navigateToRoutines: () => {},
+        prefill,
+      });
+      mount({ ...baseProps({}), tenantId: "tnt_1" });
+      await settle();
+      act(() => {
+        buttonWithText("Next")?.click();
+      });
+      await settle();
+      await settle();
+
+      // The prefilled agent id resolves to its real name, proving this
+      // is a picker over real taskable agents, not a raw-id text box —
+      // the same listing "New task" itself picks an agent from.
+      expect(document.body.textContent).toContain("Incident Summarizer");
+      const agentPickerTrigger = [
+        ...document.body.querySelectorAll("button"),
+      ].find((button) => button.textContent === "Incident Summarizer");
+      expect(agentPickerTrigger).not.toBeUndefined();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
   test("opens the dialog with the recurring-task card picked, its trigger fields rendered, and its name pre-filled", async () => {
     requestMakeRoutine({
       alreadyOnRoutines: false,
@@ -713,6 +766,11 @@ describe("'Make this a routine' prefill", () => {
     // proof the dialog is not stuck with an unresolved definitionId.
     expect(document.body.textContent).toContain("Agent");
     expect(document.body.textContent).toContain("Prompt");
+    // Honest delivery destination: no channel picker for a workflow
+    // that only ever delivers to the Inbox — never a silent-discard
+    // channel step it would never actually use.
+    expect(document.body.textContent).toContain("Results land in your Inbox");
+    expect(document.body.querySelector("#routine-delivery-label")).toBeNull();
 
     act(() => {
       buttonWithText("Next")?.click();
@@ -769,6 +827,12 @@ describe("'Make this a routine' prefill", () => {
     expect((created as CreateRoutineInput | null)?.input).toEqual(
       prefill.input,
     );
+    // Never a silent-discard deliveryChannelId — this workflow only
+    // ever delivers to the creator's Inbox, so the create request omits
+    // the field entirely rather than sending an unused channel pick.
+    expect(
+      (created as CreateRoutineInput | null)?.deliveryChannelId,
+    ).toBeUndefined();
   });
 
   test("cancelling a prefilled dialog creates nothing", async () => {
