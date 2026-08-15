@@ -29,6 +29,12 @@ import {
 import { SkillRegistryError } from "@corbits/skills";
 import type { TaskRecord } from "@corbits/tasks";
 import type { PlannerInventory } from "./inventory";
+import {
+  AgentDefinitionDraftReferenceOutOfInventoryError,
+  AgentDefinitionDraftReplyUnparseableError,
+  MyraAgentDefinitionDraftingUnavailableError,
+  type AgentDefinitionDraft,
+} from "./agent-definition-drafting";
 
 const log = getLogger(["task-planner", "routes"]);
 
@@ -53,6 +59,14 @@ const CreatePlanBody = type({
   outcome: "string > 0",
 });
 
+const DRAFT_FAILED_MESSAGE =
+  "Myra couldn't draft a starting prompt for that. Write one yourself, or try again.";
+
+const CreateAgentDefinitionDraftBody = type({
+  name: "string > 0",
+  "purpose?": "string > 0",
+});
+
 export type CreatePlannerRoutesDeps = {
   requireGrant: RequireGrant;
   /**
@@ -67,7 +81,38 @@ export type CreatePlannerRoutesDeps = {
     readonly principalId: string;
     readonly outcome: string;
   }): Promise<DispatchWithPlannerResult>;
+  /**
+   * The agent-definition drafting port (CL-6074) — omitted entirely on
+   * a host that hasn't wired Myra drafting up yet, in which case this
+   * route 404s rather than pretending to draft and always failing.
+   * Mirrors `dispatch`'s stub-testable shape: the route never touches
+   * `./agent-definition-drafting.ts`'s runner/inventory machinery
+   * directly.
+   */
+  draftAgentDefinition?(input: {
+    readonly tenantId: string;
+    readonly principalId: string;
+    readonly name: string;
+    readonly purpose?: string;
+  }): Promise<AgentDefinitionDraft>;
 };
+
+/** Every fail-closed error the agent-definition drafting path can throw
+ * — Myra unresolvable, the run timing out or failing, an unparseable
+ * reply, or an out-of-inventory model/tool package/skill reference —
+ * reads as the same honest "couldn't draft" 422 to the person who typed
+ * the description: from their point of view it is still "Myra's draft
+ * didn't work out," never a REST-shaped bad request they authored
+ * themselves. */
+function isDraftingFailure(err: unknown): boolean {
+  return (
+    err instanceof MyraAgentDefinitionDraftingUnavailableError ||
+    err instanceof FoldedRunTimedOutError ||
+    err instanceof FoldedRunFailedError ||
+    err instanceof AgentDefinitionDraftReplyUnparseableError ||
+    err instanceof AgentDefinitionDraftReferenceOutOfInventoryError
+  );
+}
 
 /** Every fail-closed error this package's planning path can throw —
  * Myra unresolvable, the run timing out or failing, an unparseable
@@ -158,6 +203,72 @@ export function createPlannerRoutes(
       inFlightPrincipals.delete(principal.id);
     }
   });
+
+  // A separate in-flight set from `inFlightPrincipals` above — drafting
+  // an agent and letting Myra choose a task are independent actions a
+  // principal could otherwise race against each other; each gets its
+  // own single-in-flight guard, released in a `finally` once the draft
+  // settles.
+  const inFlightDraftingPrincipals = new Set<string>();
+
+  if (deps.draftAgentDefinition !== undefined) {
+    const draftAgentDefinition = deps.draftAgentDefinition;
+    app.post(
+      "/agent-definitions/draft",
+      deps.requireGrant("workflow-definition:*", "create"),
+      async (c) => {
+        const body = CreateAgentDefinitionDraftBody(
+          await c.req.json().catch(() => undefined),
+        );
+        if (body instanceof type.errors) {
+          return c.json(
+            ErrorEnvelope(
+              "bad_request",
+              `This couldn't be read: ${body.summary}`,
+            ),
+            400,
+          );
+        }
+
+        const tenant = c.get("tenant");
+        const principal = c.get("principal");
+
+        if (inFlightDraftingPrincipals.has(principal.id)) {
+          return c.json(
+            ErrorEnvelope(
+              "dispatch_in_progress",
+              "Myra is already drafting your last agent.",
+            ),
+            409,
+          );
+        }
+        inFlightDraftingPrincipals.add(principal.id);
+
+        try {
+          const draft = await draftAgentDefinition({
+            tenantId: tenant.id,
+            principalId: principal.id,
+            name: body.name,
+            ...(body.purpose !== undefined ? { purpose: body.purpose } : {}),
+          });
+          return c.json({ draft }, 201);
+        } catch (err) {
+          log.error`agent definition drafting failed for tenant ${tenant.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`;
+          if (isDraftingFailure(err)) {
+            return c.json(
+              ErrorEnvelope("drafting_failed", DRAFT_FAILED_MESSAGE),
+              422,
+            );
+          }
+          throw err;
+        } finally {
+          inFlightDraftingPrincipals.delete(principal.id);
+        }
+      },
+    );
+  }
 
   return app;
 }
