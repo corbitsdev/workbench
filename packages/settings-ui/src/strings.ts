@@ -183,7 +183,10 @@ export const SETTINGS_STRINGS = {
     "Grant exactly one role or one person a resource and action.",
   grantsTargetTypeLabel: "Applies to",
   grantsTargetTypeRole: "A role",
-  grantsTargetTypePrincipal: "A person",
+  grantsTargetTypeRoleDescription: "Everyone assigned this role.",
+  grantsTargetTypePrincipal: "A person, agent, or workflow",
+  grantsTargetTypePrincipalDescription:
+    "One specific account — human or machine.",
   grantsTargetLabel: "Target",
   grantsResourceLabel: "Resource",
   grantsActionLabel: "Action",
@@ -277,6 +280,10 @@ export const SETTINGS_STRINGS = {
   connectionsWebhookDialogTitle: "Granola inbound webhook",
   connectionsWebhookDialogDescription:
     "This address is yours to give to Granola — nothing to paste from Granola's side. The signing secret proves a delivery really came from Granola; it's shown once, right after you create or rotate it.",
+  connectionsWebhookHookUrlLabel: "Hook URL",
+  connectionsWebhookCopyHookUrl: "Copy hook URL",
+  connectionsWebhookSigningSecretLabel: "Signing secret",
+  connectionsWebhookCopySigningSecret: "Copy signing secret",
   connectionsWebhookNoRoutine:
     "No Granola call-notes routine yet. Create one from Routines, then come back here to wire its inbound webhook.",
   connectionsWebhookCreateAction: "Create",

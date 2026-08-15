@@ -51,6 +51,33 @@ export function CopyButton({
 }
 
 /**
+ * A labeled, copyable value in a bordered field row — the Hook URL and
+ * Signing secret rows share this shape whether the secret is freshly
+ * revealed (`WebhookSecretPanel`) or the field is a persistent read of a
+ * value that's always safe to show (a hook URL never rotates). Zero
+ * radius, like every other settings surface — see `styles.css`.
+ */
+export function CopyableCodeRow({
+  label,
+  value,
+  copyLabel,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly copyLabel: string;
+}) {
+  return (
+    <div className="settings-webhook-field">
+      <span className="settings-webhook-field-label">{label}</span>
+      <div className="settings-webhook-field-box">
+        <code className="settings-webhook-field-code">{value}</code>
+        <CopyButton value={value} label={copyLabel} />
+      </div>
+    </div>
+  );
+}
+
+/**
  * The generated hook URL, a freshly-issued secret, and (optionally) a
  * sample payload — shown right after create or rotate. The secret shown
  * here is never fetched back later: the hub returns it exactly once, so
@@ -71,24 +98,12 @@ export function WebhookSecretPanel({
         This secret is shown once — copy it now. It signs every delivery to this
         URL; losing it means rotating for a new one.
       </p>
-      <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium">Hook URL</span>
-        <div className="flex items-center gap-1.5 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-1.5">
-          <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--ui-fg)]">
-            {url}
-          </code>
-          <CopyButton value={url} label="Copy hook URL" />
-        </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium">Signing secret</span>
-        <div className="flex items-center gap-1.5 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] px-2.5 py-1.5">
-          <code className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--ui-fg)]">
-            {secret}
-          </code>
-          <CopyButton value={secret} label="Copy signing secret" />
-        </div>
-      </div>
+      <CopyableCodeRow label="Hook URL" value={url} copyLabel="Copy hook URL" />
+      <CopyableCodeRow
+        label="Signing secret"
+        value={secret}
+        copyLabel="Copy signing secret"
+      />
       {samplePayload !== undefined && (
         <div className="flex flex-col gap-1">
           <span className="text-xs font-medium">Example payload</span>
