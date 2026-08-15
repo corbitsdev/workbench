@@ -26,6 +26,8 @@ import { ensurePanelContributions } from "./panel-contributions";
 
 ensurePanelContributions();
 
+const PINS_STORAGE_KEY = "workbench.shell.pins";
+
 export function ContextualPanel({
   id,
   path,
@@ -44,7 +46,9 @@ export function ContextualPanel({
     title: "Workbench",
   };
   const pageSpecific = contribution?.pageSpecific?.(renderCtx) ?? null;
-  const [pins] = useState<readonly Pin[]>(() => loadPins());
+  const [pins] = useState<readonly Pin[]>(() =>
+    loadPins(globalThis.localStorage, PINS_STORAGE_KEY),
+  );
   const { col2Collapsed, toggleCol2 } = useStageChrome();
 
   const headerAction = (

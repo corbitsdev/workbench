@@ -1,6 +1,8 @@
 // User-curated global pins for the contextual panel middle band. Same list
-// on every page. Persistence is localStorage so pins survive reloads without
-// a hub endpoint yet.
+// on every page. Persistence is host-supplied storage (typically
+// `localStorage`) under a host-supplied key — this module has no branded
+// storage key of its own, so two hosts (or a host and its tests) never
+// collide on the same key by accident.
 
 import { type } from "arktype";
 
@@ -15,13 +17,11 @@ export const Pin = type({
 });
 export type Pin = typeof Pin.infer;
 
-const STORAGE_KEY = "workbench.shell.pins";
-
 export function loadPins(
-  storage: Pick<Storage, "getItem"> = globalThis.localStorage,
+  storage: Pick<Storage, "getItem">,
+  key: string,
 ): readonly Pin[] {
-  if (typeof storage?.getItem !== "function") return [];
-  const raw = storage.getItem(STORAGE_KEY);
+  const raw = storage.getItem(key);
   if (raw === null || raw === "") return [];
   let parsed: unknown;
   try {
@@ -41,10 +41,10 @@ export function loadPins(
 
 export function savePins(
   pins: readonly Pin[],
-  storage: Pick<Storage, "setItem"> = globalThis.localStorage,
+  storage: Pick<Storage, "setItem">,
+  key: string,
 ): void {
-  if (typeof storage?.setItem !== "function") return;
-  storage.setItem(STORAGE_KEY, JSON.stringify(pins));
+  storage.setItem(key, JSON.stringify(pins));
 }
 
 export function togglePin(pins: readonly Pin[], pin: Pin): readonly Pin[] {

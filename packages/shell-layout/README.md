@@ -56,11 +56,22 @@ take raw pixel widths; the compact/narrow thresholds (`COMPACT_MAX_WIDTH`,
 `NARROW_MAX_WIDTH`) are exported constants a host can read but not
 override — one breakpoint contract for every consumer.
 
-**Pin storage** — `loadPins`/`savePins`/`togglePin` read and write a
-`Pin` (`{ id, kind, label, href }`) list through an injectable
-`Storage`-shaped object (defaulting to `localStorage`), so a host can pass
-a test double or a different persistence layer without forking the
-module.
+**Pin storage** — `loadPins`/`savePins` read and write a `Pin` (`{ id,
+kind, label, href }`) list through a host-supplied `Storage`-shaped object
+_and_ a host-supplied storage key, both required with no default — so two
+hosts (or a host and its own tests) can never collide on a shared,
+package-branded key, and a host can pass a test double or a different
+persistence layer without forking the module:
+
+```ts
+import { loadPins, savePins } from "@corbits/shell-layout";
+
+const PINS_KEY = "myhost.shell.pins";
+const pins = loadPins(localStorage, PINS_KEY);
+savePins(nextPins, localStorage, PINS_KEY);
+```
+
+`togglePin` is pure list math and takes no storage at all.
 
 **Dialog-request handling** — `createPendingDialogRequest()` returns an
 isolated `{ request, consumePending, resetPending }` instance per call; a
