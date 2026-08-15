@@ -53,6 +53,7 @@ export {
   type OneShotPromptInput,
 } from "./one-shot-reply";
 export { foldedRunsSchema, foldedRun } from "./schema";
+export { lookupFoldedRunReconnectKey } from "./reconnect";
 export {
   createTopLevelRunRoutes,
   listTopLevelRuns,
