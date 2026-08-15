@@ -13,6 +13,11 @@ export type APIQuery<T> =
       readonly kind: "error";
       readonly message: string;
       readonly retry: () => void;
+      /** The response status when the failure was an HTTP error (absent for
+       * network failures) — lets a caller tell "404, genuinely not found"
+       * apart from "500, something is actually broken" instead of
+       * collapsing every failure into the same generic error state. */
+      readonly status?: number;
     }
   | { readonly kind: "ready"; readonly data: T };
 
@@ -66,6 +71,17 @@ export function toAPIQuery<T>(result: {
   if (result.isError) {
     if (result.error instanceof UnauthenticatedError) {
       return { kind: "unauthenticated" };
+    }
+    if (
+      result.error instanceof ApiQueryError &&
+      result.error.status !== undefined
+    ) {
+      return {
+        kind: "error",
+        message: describeQueryError(result.error),
+        retry: result.refetch,
+        status: result.error.status,
+      };
     }
     return {
       kind: "error",
