@@ -5,8 +5,11 @@
 // drafting flow with its name+purpose prefilled, and a failed draft
 // fails closed — Advanced opens with a manual system prompt field
 // rather than falling back to a silent template. A separate, non-DOM
-// test asserts Settings and the chat page share this exact module
-// (CL-6074's "single shared form" requirement).
+// test asserts Settings still owns this form (CL-6074's original entry
+// point); the chat page's "+ New chat" picker moved to instant creation
+// (CL-6081) and no longer opens it — see `instant-agent-create.ts`, which
+// reuses this panel's own draft-then-create calls instead of duplicating
+// them.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -332,17 +335,21 @@ describe("CreateAgentPanel drafting failure — fails closed", () => {
   });
 });
 
-describe("single shared form", () => {
-  test("Settings and the chat page both wire the same CreateAgentPanel module", () => {
+describe("agent creation entry points", () => {
+  test("Settings still wires this form", () => {
     const settingsSource = readFileSync(
       new URL("../src/pages/agents-settings-section.tsx", import.meta.url),
       "utf8",
     );
+    expect(settingsSource).toContain('from "./create-agent-panel"');
+  });
+
+  test("the chat page's new-chat picker skips this form for instant creation", () => {
     const chatPageSource = readFileSync(
       new URL("../src/pages/chat-page.tsx", import.meta.url),
       "utf8",
     );
-    expect(settingsSource).toContain('from "./create-agent-panel"');
-    expect(chatPageSource).toContain('from "./create-agent-panel"');
+    expect(chatPageSource).not.toContain('from "./create-agent-panel"');
+    expect(chatPageSource).toContain('from "../instant-agent-create"');
   });
 });
