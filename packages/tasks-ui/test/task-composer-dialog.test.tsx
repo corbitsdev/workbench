@@ -424,7 +424,7 @@ describe("TaskComposerDialog", () => {
     expect(buttons).toContain("Start task");
   });
 
-  test("the manual agent list renders as a labeled radiogroup", async () => {
+  test("the manual agent list renders inside a legend-labeled Agent fieldset, each option its own name and description", async () => {
     mount(
       baseProps({
         agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
@@ -435,10 +435,24 @@ describe("TaskComposerDialog", () => {
     );
     await settle();
 
-    const group = document.body.querySelector('[role="radiogroup"]');
-    expect(group).not.toBeNull();
-    const radios = group?.querySelectorAll('input[type="radio"]');
+    // Group semantics come from the fieldset/legend — the manual list
+    // itself carries no redundant nested ARIA group (CL-6066 follow-up).
+    const fieldset = document.body.querySelector("fieldset");
+    expect(fieldset?.querySelector("legend")?.textContent).toBe("Agent");
+    expect(fieldset?.querySelector('[role="radiogroup"]')).toBeNull();
+
+    const radios = fieldset?.querySelectorAll('input[type="radio"]');
     expect(radios).toHaveLength(2);
+
+    const titles = [
+      ...document.body.querySelectorAll(".tasks-radio-option-title"),
+    ].map((el) => el.textContent);
+    expect(titles).toEqual(["incident-bot", "digest-bot"]);
+    const descriptions = document.body.querySelectorAll(
+      ".tasks-radio-option-desc",
+    );
+    expect(descriptions).toHaveLength(1);
+    expect(descriptions[0]?.textContent).toBe("Incident bot");
   });
 
   test("the error prop renders as an alert inside the dialog", async () => {
