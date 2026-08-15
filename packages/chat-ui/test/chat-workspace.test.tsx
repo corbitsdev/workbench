@@ -847,6 +847,89 @@ describe("a stale thread reference self-heals instead of dead-ending", () => {
   });
 });
 
+describe("a channel-level 404 offers a way out instead of retrying forever", () => {
+  // CL-6077: the routed channel itself is gone (deleted, or a stale id from
+  // a Recents entry that outlived it), not a transient load failure — a
+  // dead-end "Try again" button would just re-request the same gone
+  // channel forever. The workspace tells the host (so it can drop the
+  // stale Recents entry) and offers "Back to Spaces" instead of retry.
+  function stubFetchWithMissingChannel() {
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/channels\?kind=channel$/.test(path)) {
+        return json({ items: [CHANNEL_WIRE] });
+      }
+      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
+      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/pins$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+        return json({
+          ...CHANNEL_WIRE,
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
+  }
+
+  test("reports the dead id to the host and renders Back to Spaces instead of Try again", async () => {
+    stubFetchWithMissingChannel();
+    const notFoundIds: string[] = [];
+    let backToSpacesClicks = 0;
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      onChannelNotFound: (channelId: string) => notFoundIds.push(channelId),
+      onBackToChannelList: () => {
+        backToSpacesClicks += 1;
+      },
+    });
+    await harness.settle();
+
+    // A background refresh (SSE reconnect/poll) can independently retry and
+    // re-report the same dead id — purging is idempotent either way, so
+    // this only asserts every report named the right channel, not a count.
+    expect(notFoundIds.length).toBeGreaterThan(0);
+    expect(new Set(notFoundIds)).toEqual(new Set(["ch_1"]));
+    expect(harness.container.textContent).not.toContain("Try again");
+    expect(harness.container.textContent).toContain("Back to Spaces");
+
+    const backButton = Array.from(
+      harness.container.querySelectorAll("button"),
+    ).find((button) => button.textContent?.includes("Back to Spaces"));
+    expect(backButton).toBeDefined();
+    act(() => {
+      backButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(backToSpacesClicks).toBe(1);
+
+    harness.unmount();
+  });
+});
+
 describe("chat error copy never leaks a raw API path", () => {
   test("a genuine load failure renders plain-language copy, never a raw /api/ path or bare status code", async () => {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;

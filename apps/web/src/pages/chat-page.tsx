@@ -35,6 +35,7 @@ import {
   requestNewRoutine,
   requestNewRoutineInSpace,
 } from "../command-palette-actions";
+import { reportChannelNotFound } from "../channel-not-found-event";
 import {
   useOpenArtifactInCanvas,
   useOpenProfileInCanvas,
@@ -213,6 +214,8 @@ export function ChatPage({
       {...(tenantId !== null
         ? { onRequestNewAgent: () => setCreateAgentOpen(true) }
         : {})}
+      onChannelNotFound={reportChannelNotFound}
+      onBackToChannelList={() => navigate(channelPath(null))}
     />
   );
 

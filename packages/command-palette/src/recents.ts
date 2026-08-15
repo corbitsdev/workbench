@@ -27,6 +27,16 @@ export function addRecentEntry(
   return [entry, ...withoutEntry].slice(0, max);
 }
 
+/** Drops the entry matching `kind`+`id`, if present. Pure, the same way
+ * `addRecentEntry` is — used to self-heal a Recents list once the entity it
+ * points at is confirmed gone (e.g. a channel that 404s). */
+export function removeRecentEntry(
+  entries: readonly RecentEntry[],
+  entry: Pick<RecentEntry, "kind" | "id">,
+): readonly RecentEntry[] {
+  return entries.filter((existing) => recentKey(existing) !== recentKey(entry));
+}
+
 /** The bare persistence surface `createRecentsStore` needs — `localStorage`
  * satisfies this, and so does any in-memory fake a test hands in. */
 export type RecentsStorage = {
@@ -37,6 +47,9 @@ export type RecentsStorage = {
 export type RecentsStore = {
   readonly load: () => readonly RecentEntry[];
   readonly push: (entry: RecentEntry) => readonly RecentEntry[];
+  readonly remove: (
+    entry: Pick<RecentEntry, "kind" | "id">,
+  ) => readonly RecentEntry[];
 };
 
 function isRecentEntry(value: unknown): value is RecentEntry {
@@ -86,5 +99,17 @@ export function createRecentsStore(
     return next;
   }
 
-  return { load, push };
+  function remove(
+    entry: Pick<RecentEntry, "kind" | "id">,
+  ): readonly RecentEntry[] {
+    const next = removeRecentEntry(load(), entry);
+    try {
+      storage.setItem(storageKey, JSON.stringify(next));
+    } catch {
+      // As above — loses persistence, not function.
+    }
+    return next;
+  }
+
+  return { load, push, remove };
 }
