@@ -38,6 +38,7 @@ jobs:
       - run: bun run check:browser-safe-subpaths
       - run: bun run check:web-utilities
       - run: bun run check:ui-vocabulary
+      - run: bun run check:react-ui-drift
 
   walking-skeleton:
     runs-on: ubuntu-latest
