@@ -16,6 +16,7 @@ import {
   Input,
   SidebarItemRow,
   Skeleton,
+  StatusDot,
 } from "@corbits/react-ui";
 import {
   routineCadenceSummary,
@@ -193,15 +194,10 @@ export function RoutinesFeedBand({
                 </span>
               }
               meta={
-                <span
-                  className={
-                    routine.enabled
-                      ? "panel-status is-ok"
-                      : "panel-status is-muted"
-                  }
-                >
-                  {routine.enabled ? "On" : "Off"}
-                </span>
+                <StatusDot
+                  tone={routine.enabled ? "success" : "neutral"}
+                  label={routine.enabled ? "On" : "Off"}
+                />
               }
               selected={selectedId === routine.id}
               onSelect={() => onNavigate(routinePath(routine.id))}
