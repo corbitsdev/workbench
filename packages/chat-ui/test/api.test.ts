@@ -10,6 +10,7 @@ import {
   runDisplayName,
   inviteAgent,
   listChannels,
+  listAllChannels,
   listRuns,
   listInvitableDefinitions,
   listTenantInvitableDefinitions,
@@ -93,6 +94,34 @@ describe("listChannels", () => {
     await expect(listChannels("tenant_1", "chat")).rejects.toThrow(
       /Not signed in/,
     );
+  });
+});
+
+describe("listAllChannels", () => {
+  test("fetches every channel kind with no kind query param", async () => {
+    const calls = stubFetch(() =>
+      json({
+        items: [
+          {
+            id: "c1",
+            title: "General",
+            kind: "channel",
+            pinned: true,
+            participants: [],
+          },
+          {
+            id: "c2",
+            title: "echo",
+            kind: "chat",
+            pinned: false,
+            participants: [],
+          },
+        ],
+      }),
+    );
+    const channels = await listAllChannels("tenant_1");
+    expect(calls[0]?.path).toBe("/api/tenants/tenant_1/chat/channels");
+    expect(channels.map((c) => c.id)).toEqual(["c1", "c2"]);
   });
 });
 

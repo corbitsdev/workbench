@@ -227,14 +227,33 @@ export async function launchFoldedRun(
       updatedAt: now,
     });
 
-    // The folded run IS the launched instance: `anchorRunId` is null
-    // (a folded run has no deployment anchor), which is what puts it in
-    // the address family the platform's run-scoped mail surfaces
-    // actually resolve.
+    // The folded run IS the launched instance, so its own id is a
+    // valid, vendor-native "deployed" anchor — the same shape
+    // `workflow-allocation-service.ts`'s deploy path mints
+    // (`anchorRunId: args.anchorRunId`, its own id). A null anchor was
+    // the prior design, but `hub-session-lookups.ts`'s
+    // `receiveWorkflowRunPack` requires the live run at the source
+    // address to satisfy `anchorRunId === id` before it will accept a
+    // workflow-run mail pack; a null anchor never satisfies that, so
+    // every chat agent's pack was permanently rejected. Self-anchoring
+    // satisfies the check. [Intx gap] CL-6044: vendor's
+    // `receiveWorkflowRunPack` has no concept of a self-anchored run
+    // that isn't also a top-level deployment, so workbench's
+    // folded-run family must mimic the deployment anchor shape exactly
+    // to be accepted; tracked upstream, do not attempt to fix vendor
+    // here.
+    //
+    // Self-anchoring also takes this run out of reach of vendor's
+    // push-based credential rotation (`credential-push.ts` only
+    // targets `anchorRunId IS NULL` rows), but folded runs never
+    // depended on that push: `deployAtHead` re-resolves inference
+    // sources fresh from the tenant catalog (or a caller-pinned
+    // `SourcesOverride`) on every launch and every wake, so rotation
+    // already happens at redeploy time regardless of the push.
     await tx.insert(workflowRun).values({
       id: params.instanceId,
       definitionId: params.definitionId,
-      anchorRunId: null,
+      anchorRunId: params.instanceId,
       tenantId: params.tenantId,
       principalId: instancePrincipalId,
       address: params.triggerAddress,

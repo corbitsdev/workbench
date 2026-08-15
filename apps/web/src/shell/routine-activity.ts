@@ -25,8 +25,19 @@ function toRoutineActivityItem(run: Run): RoutineActivityItem {
   };
 }
 
+/**
+ * `excludeRunIds` drops the tenant's folded/chat runs (channel hosts and
+ * invited agents — see `@corbits/chat-ui`'s `foldedRunIdsFromChannels`):
+ * they self-anchor like a real deployment (`packages/folded-runs/src/
+ * launch.ts`), so the deployments listing this reads now includes them,
+ * and they would otherwise show up in the shell's "Running" band as if
+ * they were routine runs.
+ */
 export function listRoutineActivity(
   tenantId: string,
+  excludeRunIds: ReadonlySet<string>,
 ): Promise<readonly RoutineActivityItem[]> {
-  return listRuns(tenantId).then((runs) => runs.map(toRoutineActivityItem));
+  return listRuns(tenantId).then((runs) =>
+    runs.filter((run) => !excludeRunIds.has(run.id)).map(toRoutineActivityItem),
+  );
 }

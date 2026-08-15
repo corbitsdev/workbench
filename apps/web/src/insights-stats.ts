@@ -54,11 +54,24 @@ export type InsightsStats = {
 /** Cap recent-run table rows so the page stays scannable. */
 export const INSIGHTS_RECENT_LIMIT = 12;
 
-/** Purpose runs only — drop channel-host anchors the same way Home does. */
+/**
+ * Purpose runs only — drop channel-host anchors the same way Home does,
+ * plus (given `foldedRunIds`) invited-agent chat runs, which self-anchor
+ * like a real deployment (see `packages/folded-runs/src/launch.ts`) and
+ * launch under a real `definitionId` `isChannelHostDefinitionName` never
+ * catches. Defaults to an empty set: today's caller (`insights-page.tsx`)
+ * reads `/me/workflows/runs`, which selects `anchorRunId IS NULL` and so
+ * never surfaces a self-anchored folded run in the first place.
+ */
 export function purposeRunsForInsights(
   runs: readonly WorkflowRun[],
+  foldedRunIds: ReadonlySet<string> = new Set(),
 ): readonly WorkflowRun[] {
-  return runs.filter((run) => !isChannelHostDefinitionName(run.definitionName));
+  return runs.filter(
+    (run) =>
+      !isChannelHostDefinitionName(run.definitionName) &&
+      !foldedRunIds.has(run.id),
+  );
 }
 
 /**

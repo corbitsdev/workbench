@@ -11,18 +11,37 @@ import type { AgentDefinition, AgentInstance } from "./agents-api";
 
 /** Every definition and instance a bench holds, minus the chat anchor
  * machinery's channel hosts — those are internal plumbing, never a
- * user-facing agent. */
+ * user-facing agent. Definitions never need the folded-run-id filter
+ * `purposeAgentInstances` below takes: `WorkflowDefinition` rows aren't
+ * `workflowRun` rows, so the self-anchor leak (a run's own id newly
+ * matching a run-scoped predicate) can't reach this listing — an
+ * invited agent's real `definitionId` stays a legitimate, reusable
+ * template even though its *instance* is chat plumbing. */
 export function purposeAgentDefinitions(
   definitions: readonly AgentDefinition[],
 ): readonly AgentDefinition[] {
   return definitions.filter((d) => !isChannelHostDefinitionName(d.name));
 }
 
+/**
+ * `foldedRunIds` additionally excludes invited-agent chat runs: since
+ * `packages/folded-runs/src/launch.ts` self-anchors every folded run
+ * (`anchorRunId === id`, matching a real deployment's shape), the tenant
+ * runs listing this reads from now includes them too, and they launch
+ * under a real, user-authored `definitionId` (see
+ * `packages/chat/src/platform-adapter.ts`'s `launchInvite`) that
+ * `isChannelHostDefinitionName` never catches. Defaults to an empty set
+ * so callers that haven't threaded the fetch through yet keep today's
+ * behavior rather than failing to compile.
+ */
 export function purposeAgentInstances(
   instances: readonly AgentInstance[],
+  foldedRunIds: ReadonlySet<string> = new Set(),
 ): readonly AgentInstance[] {
   return instances.filter(
-    (instance) => !isChannelHostDefinitionName(instance.definitionName),
+    (instance) =>
+      !isChannelHostDefinitionName(instance.definitionName) &&
+      !foldedRunIds.has(instance.id),
   );
 }
 
