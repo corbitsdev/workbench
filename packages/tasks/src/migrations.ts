@@ -49,6 +49,82 @@ export const tasksMigrations: readonly TaskMigration[] = [
       ALTER TABLE "tasks"."task" ALTER COLUMN "agent_name" DROP DEFAULT;
     `,
   },
+  {
+    // Task→run goes from one-to-one to one-to-many. Every task that
+    // already exists is a one-leg chain, so the backfill mints its
+    // position-0 leg from the columns the task already carries — a
+    // task written before this migration reads back identically
+    // afterwards, run id and all.
+    name: "0004_task_leg",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "tasks"."task_leg" (
+        "id" text PRIMARY KEY,
+        "task_id" text NOT NULL,
+        "tenant_id" text NOT NULL,
+        "position" integer NOT NULL,
+        "definition_id" text NOT NULL,
+        "prompt" text NOT NULL,
+        "model_preference" text,
+        "parent_run_id" text,
+        "message_id" text NOT NULL,
+        "run_id" text,
+        "status" text NOT NULL,
+        "lease_expires_at" timestamptz,
+        "error_message" text,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        "settled_at" timestamptz
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "task_leg_task_position_uidx"
+        ON "tasks"."task_leg" ("task_id", "position");
+      CREATE UNIQUE INDEX IF NOT EXISTS "task_leg_task_message_uidx"
+        ON "tasks"."task_leg" ("task_id", "message_id");
+      CREATE UNIQUE INDEX IF NOT EXISTS "task_leg_run_id_uidx"
+        ON "tasks"."task_leg" ("run_id");
+      CREATE INDEX IF NOT EXISTS "task_leg_task_idx"
+        ON "tasks"."task_leg" ("task_id");
+
+      INSERT INTO "tasks"."task_leg" (
+        "id", "task_id", "tenant_id", "position", "definition_id",
+        "prompt", "model_preference", "parent_run_id", "message_id",
+        "run_id", "status", "created_at", "settled_at"
+      )
+      SELECT
+        'tleg_' || replace(gen_random_uuid()::text, '-', ''),
+        t."id",
+        t."tenant_id",
+        0,
+        t."definition_id",
+        t."prompt",
+        t."model_preference",
+        NULL,
+        'chain:' || t."id" || ':0',
+        t."run_id",
+        CASE t."status"
+          WHEN 'done' THEN 'done'
+          WHEN 'failed' THEN 'failed'
+          ELSE 'running'
+        END,
+        t."created_at",
+        t."completed_at"
+      FROM "tasks"."task" t
+      ON CONFLICT DO NOTHING;
+    `,
+  },
+  {
+    // "The agent was given its prompt" stops being inferrable from the
+    // leg's status the moment the leg settles, so it gets its own
+    // column. Every leg that already carries a run id was written by
+    // the pre-chain one-leg path, which only ever recorded a run after
+    // its prompt had gone out — those legs really did start.
+    name: "0005_task_leg_started_at",
+    sql: `
+      ALTER TABLE "tasks"."task_leg"
+        ADD COLUMN IF NOT EXISTS "started_at" timestamptz;
+      UPDATE "tasks"."task_leg"
+        SET "started_at" = "created_at"
+        WHERE "run_id" IS NOT NULL AND "started_at" IS NULL;
+    `,
+  },
 ];
 
 const LEDGER_TABLE = "tasks_migrations";

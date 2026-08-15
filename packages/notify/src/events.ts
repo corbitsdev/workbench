@@ -71,7 +71,14 @@ export const TaskResultNotification = type({
   kind: '"task-result"',
   tenantId: "string > 0",
   taskId: "string > 0",
-  runId: "string > 0",
+  /** Every run the task spanned, in order — one for a single-agent
+   * task, one per hand-off for a task carried through several agents.
+   * The trace surfaces navigate by these. */
+  runIds: type("string > 0").array().atLeastLength(1),
+  /** How many agents the task was launched to run through, whether or
+   * not each got that far. `runIds.length < stepCount` on a failure
+   * says exactly where it stopped. */
+  stepCount: "number >= 1",
   agentName: "string > 0",
   status: '"done" | "failed"',
   "replyText?": "string",

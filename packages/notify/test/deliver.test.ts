@@ -214,7 +214,8 @@ describe("deliverNotification", () => {
       kind: "task-result",
       tenantId: "tnt_1",
       taskId: "task_1",
-      runId: "run_1",
+      runIds: ["run_1"],
+      stepCount: 1,
       agentName: "Incident Summarizer",
       status: "done",
       replyText: "All clear, no action needed.",
@@ -247,7 +248,8 @@ describe("deliverNotification", () => {
       kind: "task-result",
       tenantId: "tnt_1",
       taskId: "task_2",
-      runId: "run_2",
+      runIds: ["run_2"],
+      stepCount: 1,
       agentName: "Incident Summarizer",
       status: "failed",
       errorMessage: "tool call exploded",
@@ -260,6 +262,75 @@ describe("deliverNotification", () => {
     expect(written[0]?.subject).toBe("“Incident Summarizer” failed your task");
     expect(written[0]?.body).toContain("tool call exploded");
     expect(written[0]?.body).not.toContain("Artifacts:");
+  });
+
+  test("a task carried through several agents refs every run it spanned", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverTaskResultMail(deps, {
+      kind: "task-result",
+      tenantId: "tnt_1",
+      taskId: "task_3",
+      runIds: ["run_3a", "run_3b", "run_3c"],
+      stepCount: 3,
+      agentName: "Release Notes Writer",
+      status: "done",
+      replyText: "Notes are ready.",
+      elapsedMs: 60_000,
+      artifacts: [],
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-14T11:00:00.000Z",
+    });
+
+    for (const runId of ["run_3a", "run_3b", "run_3c"]) {
+      expect(written[0]?.refs).toContainEqual({ kind: "run", id: runId });
+    }
+    expect(written[0]?.body).toContain("passed through 3 agents in turn");
+  });
+
+  test("a chained task that stopped early says which agent it stopped at", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverTaskResultMail(deps, {
+      kind: "task-result",
+      tenantId: "tnt_1",
+      taskId: "task_4",
+      runIds: ["run_4a", "run_4b"],
+      stepCount: 3,
+      agentName: "Release Notes Writer",
+      status: "failed",
+      errorMessage: "the model refused the request",
+      elapsedMs: 20_000,
+      artifacts: [],
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-14T11:05:00.000Z",
+    });
+
+    expect(written[0]?.body).toContain("it stopped at agent 2");
+    expect(written[0]?.body).toContain("the model refused the request");
+    expect(written[0]?.refs).toContainEqual({ kind: "run", id: "run_4b" });
+  });
+
+  test("a single-agent task's copy is unchanged by chains existing", async () => {
+    const { mail, written } = recordingMailbox();
+    const deps = depsWith(mail);
+    await deliverTaskResultMail(deps, {
+      kind: "task-result",
+      tenantId: "tnt_1",
+      taskId: "task_5",
+      runIds: ["run_5"],
+      stepCount: 1,
+      agentName: "Incident Summarizer",
+      status: "done",
+      replyText: "All clear.",
+      elapsedMs: 1_000,
+      artifacts: [],
+      recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+      createdAt: "2026-08-14T11:10:00.000Z",
+    });
+
+    expect(written[0]?.body).not.toContain("agents in turn");
+    expect(written[0]?.refs).toHaveLength(2);
   });
 
   test("re-notifying the same still-expired credential dedupes on the credential, not the tick", async () => {
