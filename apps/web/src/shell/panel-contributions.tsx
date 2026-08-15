@@ -409,11 +409,10 @@ export function ChannelsBand({
     activity.workingTasks.length > 0 ? (
       <div className="panel-stack-group">
         <p className="panel-band-subheading">Working</p>
-        {activity.workingTasks.map(({ task, displayName }) => (
+        {activity.workingTasks.map((task) => (
           <WorkingTaskRow
             key={task.id}
             task={task}
-            displayName={displayName}
             onSelect={() => onNavigate("/inbox")}
           />
         ))}

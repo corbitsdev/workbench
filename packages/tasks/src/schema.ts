@@ -29,13 +29,20 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
  * the value exists for a future UI that wants to reflect it without a
  * schema change. `plannerRunId` is set when a planner run chose this
  * task's agent — see CL-6051 — and is null for a task launched by a
- * direct manual pick.
+ * direct manual pick. `agentName` is the launched definition's name at
+ * launch time (`definitionRow.name` — the same source the result-mail
+ * notification already reads), stored on the row so a listing never
+ * has to re-resolve it against a definitions catalog that may exclude
+ * the definition by the time anyone reads the row (a planner-created
+ * agent, for instance, never appears in the invitable-definitions
+ * listing — see CL-6051).
  */
 export const task = tasksSchema.table("task", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
   principalId: text("principal_id").notNull(),
   definitionId: text("definition_id").notNull(),
+  agentName: text("agent_name").notNull(),
   prompt: text("prompt").notNull(),
   modelPreference: text("model_preference"),
   status: text("status").notNull().$type<TaskStatus>(),

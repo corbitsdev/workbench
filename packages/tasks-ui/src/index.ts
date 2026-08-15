@@ -24,7 +24,8 @@ export {
 } from "./myra-agent-selection-strategy";
 export {
   isWorkingTask,
-  toWorkingTaskViews,
-  type WorkingTaskView,
+  workingTasks,
+  type WorkingTask,
+  type WorkingTaskStatus,
 } from "./working-task";
 export { WorkingTaskRow } from "./working-task-row";

@@ -42,6 +42,13 @@ export const tasksMigrations: readonly TaskMigration[] = [
       ALTER TABLE "tasks"."task" ADD COLUMN IF NOT EXISTS "planner_run_id" text;
     `,
   },
+  {
+    name: "0003_agent_name",
+    sql: `
+      ALTER TABLE "tasks"."task" ADD COLUMN IF NOT EXISTS "agent_name" text NOT NULL DEFAULT '';
+      ALTER TABLE "tasks"."task" ALTER COLUMN "agent_name" DROP DEFAULT;
+    `,
+  },
 ];
 
 const LEDGER_TABLE = "tasks_migrations";
