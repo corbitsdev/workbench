@@ -1882,6 +1882,28 @@
   background: var(--shell-accent, var(--primary));
 }
 
+/* An optional step gets a dashed rail regardless of fill state — visually
+   honest that it's skippable, not just labeled so. */
+.dialog-stepper-segment[data-optional="true"] {
+  background: repeating-linear-gradient(
+    to right,
+    var(--border) 0,
+    var(--border) 3px,
+    transparent 3px,
+    transparent 6px
+  );
+}
+
+.dialog-stepper-segment[data-optional="true"][data-filled="true"] {
+  background: repeating-linear-gradient(
+    to right,
+    var(--shell-accent, var(--primary)) 0,
+    var(--shell-accent, var(--primary)) 3px,
+    transparent 3px,
+    transparent 6px
+  );
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dialog-stepper-segment {
     transition: none;

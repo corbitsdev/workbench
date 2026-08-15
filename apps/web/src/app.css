@@ -1751,67 +1751,6 @@ html {
   }
 }
 
-/* Restrained progress affordance: an uppercase step label over a thin
-   segmented rail, filled in brand orange as the wizard advances — the
-   direct replacement for the numbered-circle stepper. */
-.onboarding-progress {
-  margin-bottom: 2rem;
-}
-
-.onboarding-progress-label {
-  margin: 0 0 0.625rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-
-.onboarding-progress-track {
-  display: flex;
-  gap: 0.375rem;
-}
-
-.onboarding-progress-segment {
-  height: 3px;
-  flex: 1;
-  border-radius: 0;
-  background: var(--border);
-  transition: background-color 0.3s ease;
-}
-
-.onboarding-progress-segment[data-filled="true"] {
-  background: var(--shell-accent, #e98428);
-}
-
-/* The one step that never gates progress gets a dashed rail regardless of
-   fill state — visually honest that it's skippable, not just labeled so. */
-.onboarding-progress-segment[data-optional="true"] {
-  background: repeating-linear-gradient(
-    to right,
-    var(--border) 0,
-    var(--border) 3px,
-    transparent 3px,
-    transparent 6px
-  );
-}
-
-.onboarding-progress-segment[data-optional="true"][data-filled="true"] {
-  background: repeating-linear-gradient(
-    to right,
-    var(--shell-accent, #e98428) 0,
-    var(--shell-accent, #e98428) 3px,
-    transparent 3px,
-    transparent 6px
-  );
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .onboarding-progress-segment {
-    transition: none;
-  }
-}
-
 /* One focused question per phase, large type, no card chrome around it —
    the whitespace of the form column does the framing. */
 .onboarding-title {
