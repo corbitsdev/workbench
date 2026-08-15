@@ -5,6 +5,7 @@ import { FoldedRunTimedOutError } from "@corbits/folded-runs";
 import {
   assembleRoutineDraftInventory,
   createMyraRoutineDrafting,
+  parseRoutineDraftReply,
   MyraRoutineDraftingUnavailableError,
   RoutineDraftReferenceOutOfInventoryError,
   RoutineDraftReplyUnparseableError,
@@ -197,6 +198,27 @@ describe("createMyraRoutineDrafting", () => {
     );
   });
 
+  test("a webhook-kind cadence is rejected by the reply schema — Myra can never propose a webhook binding", async () => {
+    const deps = buildDeps({
+      runner: {
+        run: async () => ({
+          content: JSON.stringify({
+            steps: [{ title: "do the thing" }],
+            cadence: {
+              kind: "webhook",
+              webhookTriggerId: "not-offered-anywhere",
+            },
+          }),
+          runId: "wfr_draft_webhook",
+        }),
+      },
+    });
+    const drafting = createMyraRoutineDrafting(deps);
+    await expect(drafting.propose(INPUT)).rejects.toBeInstanceOf(
+      RoutineDraftReplyUnparseableError,
+    );
+  });
+
   test("a reply missing cadence entirely fails closed as unparseable", async () => {
     const deps = buildDeps({
       runner: {
@@ -294,6 +316,18 @@ describe("assembleRoutineDraftInventory", () => {
     const inventory = await assembleRoutineDraftInventory(sources, "tnt_1");
     expect(inventory.agents[0]?.description).toBe(
       "Line one Line two Line three",
+    );
+  });
+});
+
+describe("parseRoutineDraftReply", () => {
+  test("a webhook-kind cadence with an arbitrary webhookTriggerId is rejected at parse time, before any inventory check runs", () => {
+    const raw = JSON.stringify({
+      steps: [{ title: "do the thing" }],
+      cadence: { kind: "webhook", webhookTriggerId: "not-offered-anywhere" },
+    });
+    expect(() => parseRoutineDraftReply(raw)).toThrow(
+      RoutineDraftReplyUnparseableError,
     );
   });
 });

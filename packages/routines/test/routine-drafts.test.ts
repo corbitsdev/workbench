@@ -186,3 +186,188 @@ describe("POST /routine-drafts with a Myra-backed drafting port", () => {
     expect(response.status).toBe(500);
   });
 });
+
+describe("in-flight drafting guard", () => {
+  test("a second concurrent draft request from the same principal gets 409 while Myra is still working", async () => {
+    let releaseFirst: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const drafting: RoutineDraftingPort = {
+      async propose() {
+        await gate;
+        return { steps: [{ title: "step one" }], trigger: null };
+      },
+    };
+    const app = mountAs(createRoutineRoutes(buildDeps(drafting)), "prn_1");
+
+    const first = createDraft(app, DRAFT_BODY);
+    // Give the first request a tick to register itself as in-flight
+    // before the second one races it.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const second = await createDraft(app, DRAFT_BODY);
+
+    expect(second.response.status).toBe(409);
+    expect(second.body).toEqual({
+      error: {
+        code: "dispatch_in_progress",
+        message: "Myra is already working on your last request.",
+      },
+    });
+
+    releaseFirst();
+    const firstResult = await first;
+    expect(firstResult.response.status).toBe(201);
+  });
+
+  test("a different principal is never blocked by another principal's in-flight draft", async () => {
+    let releaseFirst: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const drafting: RoutineDraftingPort = {
+      async propose({ principalId }) {
+        // Only Alice's call blocks on the gate — Bob's own request must
+        // never wait on a lock it doesn't hold.
+        if (principalId === "prn_alice") await gate;
+        return { steps: [{ title: "step one" }], trigger: null };
+      },
+    };
+    const routes = createRoutineRoutes(buildDeps(drafting));
+    const appAsAlice = mountAs(routes, "prn_alice");
+    const appAsBob = mountAs(routes, "prn_bob");
+
+    const first = createDraft(appAsAlice, DRAFT_BODY);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const second = await createDraft(appAsBob, DRAFT_BODY);
+
+    expect(second.response.status).toBe(201);
+    releaseFirst();
+    await first;
+  });
+
+  test("the guard is released after a drafting failure, so a retry is never permanently blocked", async () => {
+    const drafting: RoutineDraftingPort = {
+      async propose() {
+        throw new FoldedRunTimedOutError(60_000);
+      },
+    };
+    const app = mountAs(createRoutineRoutes(buildDeps(drafting)), "prn_1");
+
+    const first = await createDraft(app, DRAFT_BODY);
+    expect(first.response.status).toBe(422);
+
+    const second = await createDraft(app, DRAFT_BODY);
+    expect(second.response.status).toBe(422);
+  });
+});
+
+describe("POST /routine-drafts/:id/approve webhook defense in depth", () => {
+  test("a drafted webhook trigger is checked against webhookTriggerInTenant, and rejected when it does not resolve — never a corrupt routine", async () => {
+    let webhookCheckCalls = 0;
+    const drafting: RoutineDraftingPort = {
+      async propose() {
+        return {
+          steps: [{ title: "step one" }],
+          definitionId: "def_1",
+          trigger: { kind: "webhook", webhookTriggerId: "not-a-real-trigger" },
+        };
+      },
+    };
+    const store = createInMemoryRoutineStore();
+    const app = mountAs(
+      createRoutineRoutes(
+        buildDeps(drafting, {
+          store,
+          webhookTriggerInTenant: async () => {
+            webhookCheckCalls += 1;
+            return false;
+          },
+        }),
+      ),
+      "prn_1",
+    );
+
+    const { response: createRes, body: createBody } = await createDraft(
+      app,
+      DRAFT_BODY,
+    );
+    expect(createRes.status).toBe(201);
+    const draftId = createBody.id as string;
+
+    const approveRes = await app.request(`/routine-drafts/${draftId}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(webhookCheckCalls).toBe(1);
+    expect(approveRes.status).toBe(404);
+    expect(await store.listRoutines(TENANT.id)).toEqual([]);
+  });
+
+  test("a drafted webhook trigger that does resolve in this tenant approves normally", async () => {
+    const drafting: RoutineDraftingPort = {
+      async propose() {
+        return {
+          steps: [{ title: "step one" }],
+          definitionId: "def_1",
+          trigger: { kind: "webhook", webhookTriggerId: "wht_real" },
+        };
+      },
+    };
+    const app = mountAs(
+      createRoutineRoutes(
+        buildDeps(drafting, { webhookTriggerInTenant: async () => true }),
+      ),
+      "prn_1",
+    );
+
+    const { body: createBody } = await createDraft(app, DRAFT_BODY);
+    const draftId = createBody.id as string;
+
+    const approveRes = await app.request(`/routine-drafts/${draftId}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(approveRes.status).toBe(201);
+  });
+});
+
+describe("POST /routine-drafts/:id/approve definitionId recovery", () => {
+  test("a draft with no definitionId is approvable once the request body supplies one — no dead end", async () => {
+    const drafting: RoutineDraftingPort = {
+      async propose() {
+        return { steps: [{ title: "step one" }], trigger: null };
+      },
+    };
+    const app = mountAs(createRoutineRoutes(buildDeps(drafting)), "prn_1");
+
+    const { body: createBody } = await createDraft(app, DRAFT_BODY);
+    const draftId = createBody.id as string;
+    expect(createBody.definitionId).toBeNull();
+
+    const withoutPick = await app.request(
+      `/routine-drafts/${draftId}/approve`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(withoutPick.status).toBe(400);
+
+    const withPick = await app.request(`/routine-drafts/${draftId}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "def_picked" }),
+    });
+    expect(withPick.status).toBe(201);
+    const approved = (await withPick.json()) as {
+      routine: { definitionId: string };
+    };
+    expect(approved.routine.definitionId).toBe("def_picked");
+  });
+});
