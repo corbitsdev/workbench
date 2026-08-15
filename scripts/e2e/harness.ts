@@ -110,9 +110,17 @@ export function createCleanupHarness(): {
 } {
   const cleanups: (() => Promise<void>)[] = [];
 
+  // Each tracked app's own `stop()` can take up to 5s (SIGTERM, then
+  // SIGKILL after a 5s timeout) before it resolves; a suite that tracks
+  // more than one — e.g. a restart-shaped suite stopping an old hub, a
+  // fresh hub, and a sidecar — can exceed bun's own 5s default hook
+  // timeout purely on cleanup, never on the suite's own assertions.
+  // Generous enough for a handful of tracked apps stopping in the worst
+  // case (every one hitting its own SIGKILL fallback) without becoming
+  // the outer suite timeout itself.
   afterAll(async () => {
     await runCleanups(cleanups);
-  });
+  }, 30_000);
 
   return {
     async tempDir(prefix) {

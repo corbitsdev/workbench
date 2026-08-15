@@ -31,7 +31,7 @@ import type {
   ChannelKind,
   InvitableDefinition,
 } from "./api";
-import { listTenantInvitableDefinitions } from "./api";
+import { describeChatError, listTenantInvitableDefinitions } from "./api";
 import { DialogStepper } from "./dialog-stepper";
 import type { DialogStepperStep } from "./dialog-stepper";
 import { CHAT_STRINGS } from "./strings";
@@ -214,7 +214,7 @@ export function NewChannelDialog({
         if (!cancelled) {
           setAgentState({
             kind: "error",
-            message: cause instanceof Error ? cause.message : String(cause),
+            message: describeChatError(cause, "Couldn't load agents."),
           });
         }
       });
@@ -249,7 +249,7 @@ export function NewChannelDialog({
         if (!cancelled) {
           setPersonState({
             kind: "error",
-            message: cause instanceof Error ? cause.message : String(cause),
+            message: describeChatError(cause, "Couldn't load people."),
           });
         }
       });

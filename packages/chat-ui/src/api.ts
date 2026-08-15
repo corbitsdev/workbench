@@ -178,6 +178,31 @@ export class ChatApiError extends Error {
   }
 }
 
+/**
+ * Plain-language copy for a failed chat request — never `error.message`
+ * or `String(error)` verbatim, which for a `ChatApiError` embeds the raw
+ * request path (see `request()` below). Every chat-ui/chat-adjacent
+ * catch block that surfaces an error to the user should call this
+ * rather than format one of its own, so the class of leak (a raw
+ * `/api/...` URL or bare status code in user-facing copy) has exactly
+ * one place to fix.
+ */
+export function describeChatError(cause: unknown, fallback: string): string {
+  if (!(cause instanceof ChatApiError)) return fallback;
+  switch (cause.status) {
+    case 401:
+      return "You're signed out. Sign in again to continue.";
+    case 403:
+      return "You don't have access to this.";
+    case undefined:
+      return "Couldn't reach the server. Check your connection and try again.";
+    default:
+      return cause.status >= 500
+        ? "Something went wrong on our end. Try again in a moment."
+        : fallback;
+  }
+}
+
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
 async function request<T>(
