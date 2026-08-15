@@ -11,10 +11,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useState } from "react";
 
+import {
+  COMPACT_MAX_WIDTH,
+  Col2EdgeHandle,
+  NARROW_MAX_WIDTH,
+  StageChromeProvider,
+} from "@corbits/shell-layout";
 import { AppShell } from "../src/shell/app-shell";
-import { COMPACT_MAX_WIDTH, NARROW_MAX_WIDTH } from "../src/shell/breakpoints";
 import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
-import { Col2EdgeHandle, StageChromeProvider } from "../src/shell/stage-chrome";
 import { StageCrumbs, StageTopBar } from "../src/shell/stage-top-bar";
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
