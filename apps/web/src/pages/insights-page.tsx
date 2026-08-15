@@ -36,17 +36,20 @@ import {
 
 import { SignedOutNotice, type APIQuery } from "@corbits/api-query";
 
-import { RunsSchema, useAPIQuery, type WorkflowRun } from "../api";
+import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import {
   ActivityResponseSchema,
   OverallUsageSchema,
   RunTraceSchema,
   ToolsResponseSchema,
+  TopLevelRunsSchema,
   insightsActivityPath,
   insightsRunTracePath,
   insightsToolsPath,
+  insightsTopLevelRunsPath,
   insightsUsagePath,
+  type InsightsRun,
   type RunTrace,
   type ToolCall,
 } from "../insights-api";
@@ -307,7 +310,7 @@ function RecentRunRows({
   onOpenRun,
   onOpenRuns,
 }: {
-  readonly runs: readonly WorkflowRun[];
+  readonly runs: readonly InsightsRun[];
   readonly onOpenRun: (id: string) => void;
   readonly onOpenRuns: () => void;
 }) {
@@ -323,9 +326,7 @@ function RecentRunRows({
         >
           <span className="insights-run-meta">
             <strong>{row.definitionName}</strong>
-            <span>
-              {formatWhen(row.createdAt)} · {row.tenantName}
-            </span>
+            <span>{formatWhen(row.createdAt)}</span>
           </span>
           <Badge tone={statusTone(row.status)}>{row.status}</Badge>
         </button>
@@ -359,7 +360,7 @@ function InsightsLanding({
   readonly activity: readonly DayActivity[] | null;
   readonly byModel: readonly ModelUsage[] | null;
   readonly byTool: readonly ToolCall[] | null;
-  readonly runs: readonly WorkflowRun[];
+  readonly runs: readonly InsightsRun[];
   readonly routines: readonly Routine[];
   /** Same 7-day window as usage/activity/tools requests. */
   readonly range: InsightsRange;
@@ -484,7 +485,7 @@ function InsightsRunsHistory({
   onOpenRun,
   onBack,
 }: {
-  readonly runs: readonly WorkflowRun[];
+  readonly runs: readonly InsightsRun[];
   readonly loading: boolean;
   readonly onOpenRun: (id: string) => void;
   readonly onBack: () => void;
@@ -526,9 +527,7 @@ function InsightsRunsHistory({
                   >
                     <span className="insights-run-meta">
                       <strong>{row.definitionName}</strong>
-                      <span>
-                        {formatWhen(row.createdAt)} · {row.tenantName}
-                      </span>
+                      <span>{formatWhen(row.createdAt)}</span>
                     </span>
                     <Badge tone={statusTone(row.status)}>{row.status}</Badge>
                   </button>
@@ -549,7 +548,7 @@ export function InsightsRunDetail({
   onBack,
 }: {
   readonly runId: string;
-  readonly run: WorkflowRun | null;
+  readonly run: InsightsRun | null;
   readonly trace: APIQuery<RunTrace>;
   readonly onBack: () => void;
 }) {
@@ -576,7 +575,7 @@ export function InsightsRunDetail({
         <PageShell width="full" className="page-fill">
           <div className="insights-layout">
             <div className="insights-stat-row">
-              {/* Owner is not carried by WorkflowRunSummary yet — dash, not
+              {/* Owner is not carried by WorkflowRunResponse yet — dash, not
                   a fabricated identity. */}
               <InsightsStat label="Owner" value="—" />
               <InsightsStat
@@ -673,7 +672,7 @@ export function InsightsPage({
   readonly summary: APIQuery<OverallUsage>;
   readonly activity: APIQuery<readonly DayActivity[]>;
   readonly byTool: APIQuery<readonly ToolCall[]>;
-  readonly runs: APIQuery<{ data: readonly WorkflowRun[] }>;
+  readonly runs: APIQuery<{ data: readonly InsightsRun[] }>;
   readonly routines: APIQuery<readonly Routine[]>;
   /** Stable 7-day window created once per route mount. */
   readonly range: InsightsRange;
@@ -795,7 +794,7 @@ function InsightsRunDetailRoute({
   onBack,
 }: {
   readonly runId: string;
-  readonly run: WorkflowRun | null;
+  readonly run: InsightsRun | null;
   readonly tenantId: string | null;
   readonly onBack: () => void;
 }) {
@@ -832,7 +831,12 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     selectedTenantId === null ? "" : insightsToolsPath(selectedTenantId, range),
     ToolsResponseSchema,
   );
-  const runs = useAPIQuery("/api/me/workflows/runs", RunsSchema);
+  const runs = useAPIQuery(
+    selectedTenantId === null
+      ? ""
+      : insightsTopLevelRunsPath(selectedTenantId),
+    TopLevelRunsSchema,
+  );
   const routines = useTenantQuery(
     selectedTenantId === null
       ? ["tenant", "none", "routines"]
@@ -854,8 +858,8 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       ? { kind: "ready", data: toolsRaw.data.tools }
       : toolsRaw;
 
-  // No tenant: zero usage defaults so the page can still show me-scoped
-  // purpose runs without inventing nonzero bench usage.
+  // No tenant: zero usage/run defaults so the page shows an honest empty
+  // state without inventing nonzero bench usage or runs.
   const emptySummary: APIQuery<OverallUsage> =
     selectedTenantId === null
       ? { kind: "ready", data: EMPTY_OVERALL_USAGE }
@@ -864,6 +868,10 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     selectedTenantId === null
       ? ({ kind: "ready", data: [] as unknown as T } as APIQuery<T>)
       : q;
+  const runsForPage: APIQuery<{ data: readonly InsightsRun[] }> =
+    selectedTenantId === null
+      ? { kind: "ready", data: { data: [], nextCursor: null } }
+      : runs;
 
   return (
     <InsightsPage
@@ -871,7 +879,7 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       summary={emptySummary}
       activity={emptyList(activity)}
       byTool={emptyList(byTool)}
-      runs={runs}
+      runs={runsForPage}
       routines={routinesForPage}
       range={range}
     />

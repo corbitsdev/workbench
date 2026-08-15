@@ -8,8 +8,12 @@
 //   GET /activity → { days: DayActivity[] }
 //   GET /tools → { tools: ToolCallSummary[] }
 //   GET /runs/:runId/trace → RunTrace | { runId, spans: null, absent }
+// Plus one tenant-scoped route outside `/insights`, reused as Insights' run
+// feed: GET /top-level-runs → Paginated<WorkflowRunResponse>
+// (packages/folded-runs/src/scope-routes.ts).
 
 import { type } from "arktype";
+import { WorkflowRunResponse, paginatedSchema } from "@intx/types";
 
 import type { InsightsRange } from "@corbits/insights/client";
 
@@ -131,4 +135,25 @@ export function insightsToolsPath(
 
 export function insightsRunTracePath(tenantId: string, runId: string): string {
   return `/api/tenants/${tenantId}/insights/runs/${encodeURIComponent(runId)}/trace`;
+}
+
+export type InsightsRun = typeof WorkflowRunResponse.infer;
+
+/** GET /top-level-runs envelope. */
+export const TopLevelRunsSchema = paginatedSchema(WorkflowRunResponse);
+
+// The REST pagination ceiling (see `vendor/intx/hub-api/src/pagination.ts`) —
+// same limit `agents-api.ts`'s `listTopLevelRuns` uses for this route.
+const TOP_LEVEL_RUNS_LIMIT = 100;
+
+/**
+ * Insights' run feed (CL-6062): the tenant's genuine top-level deployment
+ * runs, every folded run (channel host, invited agent, task) already
+ * excluded server-side by `@corbits/folded-runs`'s `scope-routes.ts`. Used
+ * in place of the dead `/me/workflows/runs` — its `anchorRunId IS NULL`
+ * filter never matches, because every addressed run self-anchors at
+ * creation, so that feed always came back empty.
+ */
+export function insightsTopLevelRunsPath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/top-level-runs?limit=${TOP_LEVEL_RUNS_LIMIT}`;
 }

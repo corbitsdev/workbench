@@ -8,6 +8,7 @@ import {
 import {
   insightsActivityPath,
   insightsToolsPath,
+  insightsTopLevelRunsPath,
   insightsUsagePath,
 } from "./insights-api";
 
@@ -36,5 +37,15 @@ describe("insights path range contract", () => {
     expect(tools.startsWith("/api/tenants/tenant-1/insights/tools?")).toBe(
       true,
     );
+  });
+});
+
+describe("insightsTopLevelRunsPath", () => {
+  test("hits the tenant-scoped top-level-runs route, not /me/workflows/runs", () => {
+    const path = insightsTopLevelRunsPath("tenant-1");
+    expect(path.startsWith("/api/tenants/tenant-1/top-level-runs?")).toBe(
+      true,
+    );
+    expect(path).not.toContain("/me/workflows/runs");
   });
 });

@@ -1,13 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import type { WorkflowRun } from "./api";
 import {
   computeInsightsStats,
   computeTraceStats,
   filterRunsByCreatedAt,
   purposeRunsForInsights,
 } from "./insights-stats";
-import type { RunTraceSpan } from "./insights-api";
+import type { InsightsRun, RunTraceSpan } from "./insights-api";
 import type { Routine } from "./routines-api";
 
 function span(
@@ -28,15 +27,15 @@ function span(
 }
 
 function run(
-  partial: Partial<WorkflowRun> & Pick<WorkflowRun, "id" | "status">,
-): WorkflowRun {
+  partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "status">,
+): InsightsRun {
   return {
     tenantId: "t1",
-    tenantName: "Bench",
     definitionId: "def",
     definitionName: partial.definitionName ?? "research-brief",
     address: "addr",
     createdAt: partial.createdAt ?? "2026-01-02T00:00:00.000Z",
+    updatedAt: partial.updatedAt ?? "2026-01-02T00:00:00.000Z",
     ...partial,
   };
 }
@@ -120,33 +119,20 @@ describe("purposeRunsForInsights", () => {
     status: "running",
     definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
   });
-  const invitedAgent = run({
-    id: "ins_invited",
-    status: "running",
-    definitionName: "Researcher",
-  });
   const deployment = run({ id: "ins_deployed", status: "running" });
 
-  test("drops a channel-host run with no folded-run-id set given", () => {
+  test("drops a channel-host run by its definition-name pattern", () => {
     expect(purposeRunsForInsights([deployment, channelHost])).toEqual([
       deployment,
     ]);
   });
 
-  test("drops an invited-agent run under a real definitionId when its id is in the folded-run-id set", () => {
-    const result = purposeRunsForInsights(
-      [deployment, invitedAgent],
-      new Set([invitedAgent.id]),
-    );
-    expect(result).toEqual([deployment]);
+  test("leaves an ordinary top-level deployment run alone", () => {
+    expect(purposeRunsForInsights([deployment])).toEqual([deployment]);
   });
 
-  test("leaves an ordinary top-level deployment run alone", () => {
-    const result = purposeRunsForInsights(
-      [deployment],
-      new Set([invitedAgent.id]),
-    );
-    expect(result).toEqual([deployment]);
+  test("an empty feed (server already scoped out everything) reads as zero, not an error", () => {
+    expect(purposeRunsForInsights([])).toEqual([]);
   });
 });
 

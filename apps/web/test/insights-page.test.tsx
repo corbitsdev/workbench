@@ -115,12 +115,12 @@ describe("InsightsPage usage honesty", () => {
 const purposeRun = {
   id: "run_1",
   tenantId: "tnt_1",
-  tenantName: "Test Bench",
   definitionId: "wfd_1",
   definitionName: "Morning brief",
   address: "run@agents.example",
   status: "running",
   createdAt: "2026-01-15T12:00:00.000Z",
+  updatedAt: "2026-01-15T12:00:00.000Z",
 } as const;
 
 function renderAtPath(path: string): string {
@@ -184,7 +184,7 @@ describe("InsightsPage run-detail stat strip", () => {
       />,
     );
     expect(markup).toContain(">…<");
-    // Owner is genuinely absent from WorkflowRunSummary today (not a
+    // Owner is genuinely absent from WorkflowRunResponse today (not a
     // loading state), so it keeps its dash even while the trace loads.
     expect(markup).toContain(">—<");
   });
