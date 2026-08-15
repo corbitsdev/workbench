@@ -96,6 +96,13 @@ must still parse it even if a cron/timezone check has since tightened.
   route in `routes.ts`.
 - `routineCreatedToast`, `routineRunStartedToast` — the confirmation copy
   a create/run-now flow shows.
+- `suggestRoutineNameFromPrompt` — a default routine name derived from
+  free-form prompt text (first line, truncated), for a create flow that
+  starts from a prompt rather than a picked catalog entry — e.g.
+  "Make this a routine" on a completed task result, which prefills the
+  create dialog with that task's agent, prompt, and this suggested name.
+  The person still confirms (or edits) it; nothing here creates a routine
+  on its own.
 - Re-exported from `./trigger`: `RoutineTrigger`, `RoutineTriggerT`,
   `RoutineTriggerWire`, `RoutineTriggerWireT`,
   `computeNextFireAt`, `cronExpressionForTrigger`, `routineCadenceLabel`,
