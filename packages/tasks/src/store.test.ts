@@ -1,0 +1,149 @@
+import { describe, expect, test } from "bun:test";
+
+import { createMemoryTaskStore } from "./store";
+
+const TENANT_A = "tnt_a";
+const TENANT_B = "tnt_b";
+
+describe("createMemoryTaskStore", () => {
+  test("createTask persists a running task scoped to its tenant", async () => {
+    const store = createMemoryTaskStore();
+    const record = await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+    });
+
+    expect(record.status).toBe("running");
+    expect(record.resultMailId).toBeNull();
+    expect(record.completedAt).toBeNull();
+
+    const fetched = await store.getTask(TENANT_A, "task_1");
+    expect(fetched).toEqual(record);
+  });
+
+  test("getTask never returns a task belonging to a different tenant", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+    });
+
+    expect(await store.getTask(TENANT_B, "task_1")).toBeNull();
+  });
+
+  test("getTaskByRunId finds a task by its folded run id", async () => {
+    const store = createMemoryTaskStore();
+    const record = await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      prompt: "Summarize the incident.",
+      modelPreference: "anthropic/claude-sonnet",
+      runId: "run_abc",
+    });
+
+    expect(await store.getTaskByRunId("run_abc")).toEqual(record);
+    expect(await store.getTaskByRunId("run_missing")).toBeNull();
+  });
+
+  test("listTasks returns a tenant's tasks newest first", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      prompt: "first",
+      modelPreference: null,
+      runId: "run_1",
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    await store.createTask({
+      id: "task_2",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      prompt: "second",
+      modelPreference: null,
+      runId: "run_2",
+      createdAt: new Date("2026-01-02T00:00:00Z"),
+    });
+    await store.createTask({
+      id: "task_3",
+      tenantId: TENANT_B,
+      principalId: "prn_2",
+      definitionId: "wfd_agent",
+      prompt: "other tenant",
+      modelPreference: null,
+      runId: "run_3",
+    });
+
+    const items = await store.listTasks(TENANT_A);
+    expect(items.map((item) => item.id)).toEqual(["task_2", "task_1"]);
+  });
+
+  test("completeTask flips status, stamps resultMailId and completedAt", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+    });
+
+    const completed = await store.completeTask({
+      tenantId: TENANT_A,
+      id: "task_1",
+      status: "done",
+      resultMailId: "mail_1",
+    });
+
+    expect(completed?.status).toBe("done");
+    expect(completed?.resultMailId).toBe("mail_1");
+    expect(completed?.completedAt).not.toBeNull();
+  });
+
+  test("completeTask returns null for an unknown task or wrong tenant", async () => {
+    const store = createMemoryTaskStore();
+    await store.createTask({
+      id: "task_1",
+      tenantId: TENANT_A,
+      principalId: "prn_1",
+      definitionId: "wfd_agent",
+      prompt: "Summarize the incident.",
+      modelPreference: null,
+      runId: "run_1",
+    });
+
+    expect(
+      await store.completeTask({
+        tenantId: TENANT_B,
+        id: "task_1",
+        status: "failed",
+        resultMailId: null,
+      }),
+    ).toBeNull();
+    expect(
+      await store.completeTask({
+        tenantId: TENANT_A,
+        id: "task_missing",
+        status: "failed",
+        resultMailId: null,
+      }),
+    ).toBeNull();
+  });
+});

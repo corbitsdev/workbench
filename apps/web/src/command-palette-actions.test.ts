@@ -6,6 +6,7 @@ import {
   consumePendingNewChannel,
   consumePendingNewRoutine,
   consumePendingNewSkill,
+  consumePendingNewTask,
   requestNewRoutine,
   resetPendingDialogRequests,
   runActionCommand,
@@ -33,6 +34,7 @@ function context(overrides: {
     "workbench:agents:create",
     "workbench:routines:create",
     "workbench:skills:create",
+    "workbench:tasks:create",
   ]) {
     window.addEventListener(type, listener);
   }
@@ -124,6 +126,22 @@ describe("runActionCommand", () => {
     expect(dispatched).toEqual([]);
     expect(navigated).toEqual(["/settings/skills"]);
     expect(consumePendingNewSkill()).toBe(true);
+  });
+
+  test("new-task dispatches immediately when already on /inbox", async () => {
+    const { ctx, navigated, dispatched } = context({ path: "/inbox" });
+    await runActionCommand("new-task", ctx);
+    expect(dispatched).toContain("workbench:tasks:create");
+    expect(navigated).toEqual([]);
+    expect(consumePendingNewTask()).toBe(false);
+  });
+
+  test("new-task off-route navigates and records a pending flag instead of dispatching", async () => {
+    const { ctx, navigated, dispatched } = context({ path: "/library" });
+    await runActionCommand("new-task", ctx);
+    expect(dispatched).toEqual([]);
+    expect(navigated).toEqual(["/inbox"]);
+    expect(consumePendingNewTask()).toBe(true);
   });
 
   test("upload-artifact navigates to /library when off-route", async () => {
