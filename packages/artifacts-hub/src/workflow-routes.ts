@@ -31,6 +31,49 @@ import type {
 const DEFAULT_RECENT_LIMIT = 10;
 const MAX_RECENT_LIMIT = 50;
 
+// Mirrors `@corbits/memory-hub`'s `MAX_ADD_TEXT_CHARS`: 64k characters is
+// generous for any honest artifact body while still catching a model
+// that pastes an entire tool result or file verbatim instead of the
+// artifact it was asked to persist.
+const MAX_ARTIFACT_CONTENT_CHARS = 64_000;
+
+// A finalized turn can legitimately persist a handful of artifacts in
+// one burst; 30/minute per run comfortably covers that while still
+// catching a runaway loop before it floods Library storage.
+const MAX_CREATES_PER_RUN_PER_MINUTE = 30;
+const RATE_WINDOW_MS = 60_000;
+
+/**
+ * In-process sliding-window rate limiter, closed over per
+ * `createWorkflowArtifactRoutes` call — resets on hub restart, which is
+ * fine: unlike a durable redelivery-dedup claim, a rate bound only
+ * needs to hold within one process's uptime, never across it. Per-process
+ * also means per-replica: N hub replicas give one run an effective
+ * N × `MAX_CREATES_PER_RUN_PER_MINUTE` budget, since each replica counts
+ * only what it personally handled — a known fail-open gap, not a
+ * fail-closed one, so it under-limits rather than wrongly rejecting a
+ * caller a sibling replica hasn't seen yet.
+ */
+function createRunCreateRateLimiter(maxPerWindow: number) {
+  const timestampsByRunId = new Map<string, number[]>();
+  return {
+    allow(runId: string): boolean {
+      const now = Date.now();
+      const cutoff = now - RATE_WINDOW_MS;
+      const recent = (timestampsByRunId.get(runId) ?? []).filter(
+        (timestamp) => timestamp > cutoff,
+      );
+      if (recent.length >= maxPerWindow) {
+        timestampsByRunId.set(runId, recent);
+        return false;
+      }
+      recent.push(now);
+      timestampsByRunId.set(runId, recent);
+      return true;
+    },
+  };
+}
+
 export type WorkflowArtifactEnv = {
   Variables: { workflowRunScope: ResolvedWorkflowRunScope };
 };
@@ -115,6 +158,9 @@ export function createWorkflowArtifactRoutes(
   deps: CreateWorkflowArtifactRoutesDeps,
 ): Hono<WorkflowArtifactEnv> {
   const app = new Hono<WorkflowArtifactEnv>();
+  const createRateLimiter = createRunCreateRateLimiter(
+    MAX_CREATES_PER_RUN_PER_MINUTE,
+  );
 
   app.use("*", async (c, next) => {
     const authHeader = c.req.header("authorization") ?? "";
@@ -156,7 +202,38 @@ export function createWorkflowArtifactRoutes(
         400,
       );
     }
-    const created = await deps.store.create(c.get("workflowRunScope"), parsed);
+    if (parsed.content.length > MAX_ARTIFACT_CONTENT_CHARS) {
+      return c.json(
+        {
+          error: {
+            code: "content_too_large",
+            message:
+              `content is ${parsed.content.length} characters, over the ` +
+              `${MAX_ARTIFACT_CONTENT_CHARS}-character limit — shorten it ` +
+              "or split it into multiple artifacts and try again.",
+          },
+        },
+        413,
+      );
+    }
+
+    const scope = c.get("workflowRunScope");
+    if (!createRateLimiter.allow(scope.runId)) {
+      return c.json(
+        {
+          error: {
+            code: "rate_limited",
+            message:
+              `too many artifact writes for this run in the last minute ` +
+              `(limit ${MAX_CREATES_PER_RUN_PER_MINUTE}/min) — wait a ` +
+              "moment before creating more.",
+          },
+        },
+        429,
+      );
+    }
+
+    const created = await deps.store.create(scope, parsed);
     return c.json({ data: created }, 201);
   });
 

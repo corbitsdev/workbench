@@ -33,6 +33,53 @@ import type { Memory, SearchResult, TimelineEvent } from "@corbits/memory";
 const DEFAULT_SEARCH_LIMIT = 8;
 const DEFAULT_LIST_LIMIT = 20;
 
+// A memory entry is a durable note, not a document store — 64k
+// characters is generous for any honest note while still catching a
+// model that pastes an entire tool result or file verbatim instead of
+// summarizing it. Mirrors `@corbits/artifacts-hub`'s upload size caps
+// (`./routes.ts`'s `MAX_UPLOAD_BYTES`) in spirit: a bound stated here,
+// in the package, not left to the caller's judgment.
+const MAX_ADD_TEXT_CHARS = 64_000;
+
+// A finalized turn can legitimately record a handful of memory entries
+// (one per persisted artifact, plus a digest) in one burst; 30/minute
+// per run comfortably covers that while still catching a runaway loop
+// that would otherwise flood the memory plane's storage before a human
+// notices.
+const MAX_ADDS_PER_RUN_PER_MINUTE = 30;
+const RATE_WINDOW_MS = 60_000;
+
+/**
+ * In-process sliding-window rate limiter, closed over per
+ * `createWorkflowMemoryRoutes` call — resets on hub restart, which is
+ * fine: unlike the durable redelivery-dedup claim (`@corbits/chat`'s
+ * `WriteClaimStore`), a rate bound only needs to hold within one
+ * process's uptime, never across it. Per-process also means per-replica:
+ * N hub replicas give one run an effective N × `MAX_ADDS_PER_RUN_PER_MINUTE`
+ * budget, since each replica counts only what it personally handled —
+ * a known fail-open gap, not a fail-closed one, so it under-limits rather
+ * than wrongly rejecting a caller a sibling replica hasn't seen yet.
+ */
+function createRunAddRateLimiter(maxPerWindow: number) {
+  const timestampsByRunId = new Map<string, number[]>();
+  return {
+    allow(runId: string): boolean {
+      const now = Date.now();
+      const cutoff = now - RATE_WINDOW_MS;
+      const recent = (timestampsByRunId.get(runId) ?? []).filter(
+        (timestamp) => timestamp > cutoff,
+      );
+      if (recent.length >= maxPerWindow) {
+        timestampsByRunId.set(runId, recent);
+        return false;
+      }
+      recent.push(now);
+      timestampsByRunId.set(runId, recent);
+      return true;
+    },
+  };
+}
+
 export type WorkflowMemoryEnv = {
   Variables: { workflowRunScope: ResolvedWorkflowRunScope };
 };
@@ -124,6 +171,7 @@ export function createWorkflowMemoryRoutes(
   deps: CreateWorkflowMemoryRoutesDeps,
 ): Hono<WorkflowMemoryEnv> {
   const app = new Hono<WorkflowMemoryEnv>();
+  const addRateLimiter = createRunAddRateLimiter(MAX_ADDS_PER_RUN_PER_MINUTE);
 
   app.use("*", async (c, next) => {
     const authHeader = c.req.header("authorization") ?? "";
@@ -190,11 +238,42 @@ export function createWorkflowMemoryRoutes(
         400,
       );
     }
+    if (parsed.text.length > MAX_ADD_TEXT_CHARS) {
+      return c.json(
+        {
+          error: {
+            code: "text_too_large",
+            message:
+              `text is ${parsed.text.length} characters, over the ` +
+              `${MAX_ADD_TEXT_CHARS}-character limit — shorten it or split ` +
+              "it into multiple memory entries and try again.",
+          },
+        },
+        413,
+      );
+    }
+
+    const scope = c.get("workflowRunScope");
+    if (!addRateLimiter.allow(scope.runId)) {
+      return c.json(
+        {
+          error: {
+            code: "rate_limited",
+            message:
+              `too many memory writes for this run in the last minute ` +
+              `(limit ${MAX_ADDS_PER_RUN_PER_MINUTE}/min) — wait a moment ` +
+              "before adding more.",
+          },
+        },
+        429,
+      );
+    }
+
     // Explicit pick, never a spread of `parsed`: arktype does not strip
     // unvalidated keys, so a caller-supplied `tenantId`/`principalId` in
     // the body must never ride through to the store — attribution comes
     // only from the authenticated `workflowRunScope` above.
-    const added = await deps.store.add(c.get("workflowRunScope"), {
+    const added = await deps.store.add(scope, {
       title: parsed.title,
       text: parsed.text,
       ...(parsed.kind !== undefined ? { kind: parsed.kind } : {}),

@@ -39,6 +39,7 @@ import { encodeParts } from "./codec";
 import { parseParticipants } from "./participants";
 import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
+import type { WriteClaimStore } from "./write-claims";
 
 const log = getLogger(["chat", "orchestrator"]);
 
@@ -74,6 +75,16 @@ export type ChatOrchestratorDeps = {
    * anything a model supplied.
    */
   memory?: Pick<Memory, "add">;
+  /**
+   * Durable redelivery-dedup for the three finalized-turn write surfaces
+   * below (CL-6039) — see `WriteClaimStore`'s own doc comment in
+   * `./write-claims.ts`. Required (unlike `memory`, which is absent when
+   * the plane isn't mounted): every one of those surfaces claims before
+   * writing regardless of whether `memory` is configured, since
+   * `postFinalizedTurnArtifacts` claims too and has no `memory`
+   * dependency at all.
+   */
+  claims: WriteClaimStore;
 };
 
 export type ChatOrchestrator = {
@@ -232,10 +243,27 @@ async function postApproveBlock(
  * workflow-artifacts HTTP surface and returns the artifact's id/title/kind
  * in its result; this turns that into the file chip the channel sees.
  * A turn whose tool calls name no persisted artifact sends nothing.
+ *
+ * Claims `(tenantId, "artifact", "${turnId}:${channelId}")` in the durable
+ * `finalized_turn_write_claim` table (CL-6039) before each channel's
+ * send, one claim per channel rather than one for the whole turn: a
+ * claim means "won the right to attempt this send", not "this send
+ * succeeded", so a send that throws releases its own claim (in the
+ * `catch` below) before this function's own log-and-drop catch in
+ * `createArtifactDeliveryHandler` runs — a redelivery then retries only
+ * the channel that never got its message, not every channel again. A
+ * turn-wide claim would have made that choice for us: the first channel
+ * to succeed would have no way to keep its claim while a later channel's
+ * failure released the whole turn's, so a redelivery would either skip
+ * an already-delivered channel forever (claim never released) or resend
+ * to it (claim released) — this per-channel key sidesteps that
+ * trade-off entirely, at the cost of nothing this loop wasn't already
+ * paying (one channel-scoped `sendMail` call).
  */
 async function postFinalizedTurnArtifacts(
   deps: ChatOrchestratorDeps,
   agentAddress: string,
+  turnId: string,
   toolCalls: readonly FinalizedTurnToolCall[],
 ): Promise<void> {
   const parts = artifactPartsForFinalizedTurn(toolCalls);
@@ -245,12 +273,25 @@ async function postFinalizedTurnArtifacts(
   if (resolved === undefined) return;
 
   for (const channelId of resolved.channelIds) {
-    await deps.platform.sendMail({
+    const claim = {
       tenantId: resolved.tenantId,
-      channelId,
-      content: encodeParts([...parts]),
-      fromChannelId: resolved.agentChannelId,
-    });
+      surface: "artifact" as const,
+      claimKey: `${turnId}:${channelId}`,
+    };
+    const claimed = await deps.claims.tryClaim(claim);
+    if (!claimed) continue;
+
+    try {
+      await deps.platform.sendMail({
+        tenantId: resolved.tenantId,
+        channelId,
+        content: encodeParts([...parts]),
+        fromChannelId: resolved.agentChannelId,
+      });
+    } catch (error) {
+      await deps.claims.release(claim);
+      throw error;
+    }
   }
 }
 
@@ -265,10 +306,24 @@ async function postFinalizedTurnArtifacts(
  * the run has no principal to attribute the entry to — this never
  * guesses an owner. The entry records only the artifact's own
  * (id, title, kind) facts, never anything a model separately claimed.
+ *
+ * Claims `(tenantId, "memory", "${turnId}:${artifact.id}")` in the
+ * durable `finalized_turn_write_claim` table (CL-6039) before each
+ * artifact's `memory.add`, one claim per artifact rather than one for
+ * the whole turn — same reasoning as `postFinalizedTurnArtifacts`'s
+ * per-channel claim: a claim means "won the right to attempt this add",
+ * not "this add succeeded", so an add that throws releases its own
+ * claim (in the `catch` below) before this function's own log-and-drop
+ * catch in `createArtifactDeliveryHandler` runs. A turn-wide claim would
+ * force a choice between losing an already-recorded artifact forever
+ * (claim never released after a later artifact's failure) or
+ * re-recording it (claim released for the whole turn) on redelivery;
+ * per-artifact keys give exactly-once per artifact with neither.
  */
 async function postFinalizedTurnMemoryEntries(
   deps: ChatOrchestratorDeps,
   agentAddress: string,
+  turnId: string,
   toolCalls: readonly FinalizedTurnToolCall[],
 ): Promise<void> {
   if (deps.memory === undefined) return;
@@ -279,16 +334,29 @@ async function postFinalizedTurnMemoryEntries(
   if (resolved === undefined || resolved.principalId === null) return;
 
   for (const artifact of artifacts) {
-    await deps.memory.add({
+    const claim = {
       tenantId: resolved.tenantId,
-      principalId: resolved.principalId,
-      kind: "artifact",
-      content: {
-        title: artifact.title,
-        text: `Library artifact "${artifact.title}" (${artifact.kind}) was created.`,
-      },
-      attributes: { artifactId: artifact.id },
-    });
+      surface: "memory" as const,
+      claimKey: `${turnId}:${artifact.id}`,
+    };
+    const claimed = await deps.claims.tryClaim(claim);
+    if (!claimed) continue;
+
+    try {
+      await deps.memory.add({
+        tenantId: resolved.tenantId,
+        principalId: resolved.principalId,
+        kind: "artifact",
+        content: {
+          title: artifact.title,
+          text: `Library artifact "${artifact.title}" (${artifact.kind}) was created.`,
+        },
+        attributes: { artifactId: artifact.id },
+      });
+    } catch (error) {
+      await deps.claims.release(claim);
+      throw error;
+    }
   }
 }
 
@@ -303,16 +371,24 @@ async function postFinalizedTurnMemoryEntries(
  * "thread" never observably completes here, so there is no cheap event
  * to hook without inventing one. A once-per-channel-per-day bound is
  * the cheapest trigger already implied by an existing, honest concept
- * (`workflows/channel-digest`) rather than a new event bus. The guard
- * is process-local and resets on restart — an acceptable trade for
- * "at most one, not zero" over exactly-once durability, matching every
- * other idempotency guard in this file (see `postApproveBlock`'s).
+ * (`workflows/channel-digest`) rather than a new event bus. The bound is
+ * enforced by claiming `(tenantId, "digest", "${channelId}:${date}")` in
+ * the same durable `finalized_turn_write_claim` table the two posters
+ * above claim into (CL-6039) — folded in from a process-local `Set` that
+ * reset on restart (and so could double-ingest a day's first reply after
+ * every restart) into the one durable claim table every finalized-turn
+ * write surface now shares. Already one claim per channel-day (there was
+ * never a turn-wide version of this bound to narrow), but still needs
+ * the same release-on-failure `postFinalizedTurnMemoryEntries` uses: an
+ * add that throws releases its own claim before the caller's log-and-drop
+ * catch runs, so a channel whose digest add failed gets a real retry on
+ * the next reply rather than staying claimed with no digest ever
+ * written.
  */
 async function postDailyTranscriptDigest(
   deps: ChatOrchestratorDeps,
   agentAddress: string,
   content: string,
-  ingestedChannelDays: Set<string>,
 ): Promise<void> {
   if (deps.memory === undefined) return;
 
@@ -321,20 +397,29 @@ async function postDailyTranscriptDigest(
 
   const today = new Date().toISOString().slice(0, 10);
   for (const channelId of resolved.channelIds) {
-    const key = `${channelId}:${today}`;
-    if (ingestedChannelDays.has(key)) continue;
-    ingestedChannelDays.add(key);
-
-    await deps.memory.add({
+    const claim = {
       tenantId: resolved.tenantId,
-      principalId: resolved.principalId,
-      kind: "transcript-digest",
-      content: {
-        title: `Channel digest — ${today}`,
-        text: content,
-      },
-      attributes: { channelId },
-    });
+      surface: "digest" as const,
+      claimKey: `${channelId}:${today}`,
+    };
+    const claimed = await deps.claims.tryClaim(claim);
+    if (!claimed) continue;
+
+    try {
+      await deps.memory.add({
+        tenantId: resolved.tenantId,
+        principalId: resolved.principalId,
+        kind: "transcript-digest",
+        content: {
+          title: `Channel digest — ${today}`,
+          text: content,
+        },
+        attributes: { channelId },
+      });
+    } catch (error) {
+      await deps.claims.release(claim);
+      throw error;
+    }
   }
 }
 
@@ -352,19 +437,23 @@ export function createArtifactDeliveryHandler(
   deps: ChatOrchestratorDeps,
 ): (
   agentAddress: string,
-  turn: { toolCalls: FinalizedTurnToolCall[] },
+  turn: { turnId: string; toolCalls: FinalizedTurnToolCall[] },
 ) => void {
   return (agentAddress, turn) => {
-    void postFinalizedTurnArtifacts(deps, agentAddress, turn.toolCalls).catch(
-      (cause: unknown) => {
-        log.error`chat orchestrator: failed to post ${agentAddress}'s finalized-turn artifacts: ${
-          cause instanceof Error ? cause.message : String(cause)
-        }`;
-      },
-    );
+    void postFinalizedTurnArtifacts(
+      deps,
+      agentAddress,
+      turn.turnId,
+      turn.toolCalls,
+    ).catch((cause: unknown) => {
+      log.error`chat orchestrator: failed to post ${agentAddress}'s finalized-turn artifacts: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`;
+    });
     void postFinalizedTurnMemoryEntries(
       deps,
       agentAddress,
+      turn.turnId,
       turn.toolCalls,
     ).catch((cause: unknown) => {
       log.error`chat orchestrator: failed to record ${agentAddress}'s finalized-turn memory entries: ${
@@ -380,9 +469,6 @@ export function createChatOrchestrator(
   // Process-lifetime idempotency guard for `postApproveBlock` — see its own
   // doc comment for what this does and doesn't cover.
   const postedApprovalIds = new Set<string>();
-  // Process-lifetime "already ingested this channel today" guard for
-  // `postDailyTranscriptDigest` — see that function's doc comment.
-  const ingestedChannelDays = new Set<string>();
 
   const unsubscribe = deps.events.on(
     "agent.event",
@@ -400,16 +486,13 @@ export function createChatOrchestrator(
             cause instanceof Error ? cause.message : String(cause)
           }`;
         });
-        void postDailyTranscriptDigest(
-          deps,
-          agentAddress,
-          content,
-          ingestedChannelDays,
-        ).catch((cause: unknown) => {
-          log.error`chat orchestrator: failed to record ${agentAddress}'s daily transcript digest: ${
-            cause instanceof Error ? cause.message : String(cause)
-          }`;
-        });
+        void postDailyTranscriptDigest(deps, agentAddress, content).catch(
+          (cause: unknown) => {
+            log.error`chat orchestrator: failed to record ${agentAddress}'s daily transcript digest: ${
+              cause instanceof Error ? cause.message : String(cause)
+            }`;
+          },
+        );
         return;
       }
 

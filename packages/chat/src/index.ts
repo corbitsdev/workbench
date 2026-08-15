@@ -217,6 +217,17 @@ export type {
 } from "./chat-orchestrator";
 
 export {
+  createDrizzleWriteClaimStore,
+  createInMemoryWriteClaimStore,
+} from "./write-claims";
+export type {
+  WriteClaim,
+  WriteClaimDb,
+  WriteClaimStore,
+  WriteClaimSurface,
+} from "./write-claims";
+
+export {
   createChannelHostInferencePreferencesResolver,
   listConnectedProviders,
 } from "./inference-preferences";

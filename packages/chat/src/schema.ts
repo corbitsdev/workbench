@@ -354,3 +354,36 @@ export const pinnedMessages = chatSchema.table(
     index("pinned_messages_channel_idx").on(table.tenantId, table.channelId),
   ],
 );
+
+/**
+ * Durable redelivery-dedup claim for the finalized-turn write surfaces in
+ * `./chat-orchestrator.ts` (CL-6039): `postFinalizedTurnMemoryEntries`,
+ * `postFinalizedTurnArtifacts`, and `postDailyTranscriptDigest` each claim
+ * a row here — via `INSERT ... ON CONFLICT DO NOTHING`, never
+ * check-then-write — before doing their one write. A redelivered
+ * `onTurnFinalized` (sidecar reconnect, hub restart replaying the event
+ * collector) loses the claim race the second time and skips the write
+ * outright, unlike `postedApprovalIds`/`ingestedChannelDays` in
+ * `chat-orchestrator.ts`, which are process-local `Set`s that reset on
+ * restart. `surface` distinguishes the three call sites so a `memory`
+ * claim and an `artifact` claim for the same turn never collide, and
+ * `claimKey` is either the finalized turn's own `turnId` (memory/artifact)
+ * or `"${channelId}:${date}"` (digest, folding in its former per-day
+ * bound).
+ */
+export const finalizedTurnWriteClaim = chatSchema.table(
+  "finalized_turn_write_claim",
+  {
+    tenantId: text("tenant_id").notNull(),
+    surface: text("surface").notNull(),
+    claimKey: text("claim_key").notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.tenantId, table.surface, table.claimKey],
+    }),
+  ],
+);
