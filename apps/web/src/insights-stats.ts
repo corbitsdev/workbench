@@ -4,8 +4,7 @@
 
 import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
 
-import type { WorkflowRun } from "./api";
-import type { RunTraceSpan } from "./insights-api";
+import type { InsightsRun, RunTraceSpan } from "./insights-api";
 import type { Routine } from "./routines-api";
 
 export type TraceStats = {
@@ -48,35 +47,28 @@ export type InsightsStats = {
   readonly deployed: number;
   readonly routineCount: number;
   readonly enabledRoutines: number;
-  readonly recentRuns: readonly WorkflowRun[];
+  readonly recentRuns: readonly InsightsRun[];
 };
 
 /** Cap recent-run table rows so the page stays scannable. */
 export const INSIGHTS_RECENT_LIMIT = 12;
 
 /**
- * Purpose runs only — drop channel-host anchors the same way Home does,
- * plus (given `foldedRunIds`) invited-agent chat runs, which self-anchor
- * like a real deployment (see `packages/folded-runs/src/launch.ts`) and
- * launch under a real `definitionId` `isChannelHostDefinitionName` never
- * catches. `foldedRunIds` defaults to an empty set because today's
- * caller (`insights-page.tsx`) never supplies one — not because the
- * feed it reads is actually scoped. `/me/workflows/runs` selects
- * `anchorRunId IS NULL`, but every top-level run, real deployment or
- * folded alike, self-anchors (`anchorRunId === id`); no addressed run
- * ever satisfies that predicate. The feed is dead by construction, not
- * correctly filtered — tracked separately as CL-6062, out of scope
- * here. Do not read the empty default as evidence the feed works.
+ * Purpose runs only — drop channel-host anchors the same way Home does.
+ * `insights-page.tsx` sources `runs` from `insightsTopLevelRunsPath` (see
+ * `./insights-api.ts`), which already excludes every folded run (channel
+ * host, invited agent, task) server-side via `@corbits/folded-runs`'s
+ * `scope-routes.ts`. This filter is a client-side belt-and-suspenders pass
+ * against the channel-host naming pattern alone, not a second scoping
+ * layer — a caller no longer needs to (and cannot) hand this a folded-run
+ * id set. CL-6062 replaced the dead `/me/workflows/runs` feed (its
+ * `anchorRunId IS NULL` filter never matched anything, since every
+ * addressed run self-anchors at creation) with this scoped one.
  */
 export function purposeRunsForInsights(
-  runs: readonly WorkflowRun[],
-  foldedRunIds: ReadonlySet<string> = new Set(),
-): readonly WorkflowRun[] {
-  return runs.filter(
-    (run) =>
-      !isChannelHostDefinitionName(run.definitionName) &&
-      !foldedRunIds.has(run.id),
-  );
+  runs: readonly InsightsRun[],
+): readonly InsightsRun[] {
+  return runs.filter((run) => !isChannelHostDefinitionName(run.definitionName));
 }
 
 /**
@@ -84,10 +76,10 @@ export function purposeRunsForInsights(
  * Invalid timestamps are dropped so KPIs never invent rows.
  */
 export function filterRunsByCreatedAt(
-  runs: readonly WorkflowRun[],
+  runs: readonly InsightsRun[],
   fromIso: string,
   toIso: string,
-): readonly WorkflowRun[] {
+): readonly InsightsRun[] {
   const fromMs = Date.parse(fromIso);
   const toMs = Date.parse(toIso);
   if (Number.isNaN(fromMs) || Number.isNaN(toMs)) return [];
@@ -99,7 +91,7 @@ export function filterRunsByCreatedAt(
 }
 
 export function computeInsightsStats(
-  runs: readonly WorkflowRun[],
+  runs: readonly InsightsRun[],
   routines: readonly Routine[],
   recentLimit: number = INSIGHTS_RECENT_LIMIT,
 ): InsightsStats {
