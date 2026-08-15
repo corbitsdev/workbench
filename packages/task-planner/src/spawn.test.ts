@@ -1,0 +1,276 @@
+// Mirrors packages/tasks/test/launcher.test.ts's fake-db/deps shape for
+// exercising `launchTask` under the hood: `launchTask` persists the
+// task row via `persistExtra` inside the launch transaction, so the
+// `TaskStore` a test hands it must read that same row back — a plain
+// `createMemoryTaskStore` never sees a `persistExtra` insert, since
+// that insert goes through the fake db directly. `storeOverInserts`
+// (copied from `launcher.test.ts`, extended with a real
+// `linkPlannerRun`) is the same db-backed `TaskStore` view that test
+// file uses, for the same reason.
+//
+// `@corbits/folded-runs`' `launchFoldedRun`/`sendFoldedMailWithRetry`
+// are mocked directly here (rather than exercised for real, the way
+// `launcher.test.ts` does it) because `mock.module` replaces a module
+// in bun's process-wide registry for every test file in the same `bun
+// test` invocation, including ones — `one-shot-reply.test.ts` in this
+// same package — that mock the very same module with a different fake
+// before this file's own imports ever run (bun loads every test
+// file's top-level module graph before running any file's tests, so a
+// later `afterAll` restore in that file cannot undo the effect on
+// modules this file already resolved against). Rather than depend on
+// file load order, this file pins its own fake for the one call shape
+// `launchTask` needs (call `persistExtra` inside the fake db's
+// transaction, report success) — deliberately not the real
+// `deployAtHead`/`resolveDefinitionSources` path, since that path is
+// already covered by `packages/tasks/test/launcher.test.ts`.
+import { describe, expect, mock, test } from "bun:test";
+import { task as taskTable } from "@corbits/tasks";
+import type { TaskRecord, TaskStore } from "@corbits/tasks";
+
+const actualFoldedRuns = await import("@corbits/folded-runs");
+
+mock.module("@corbits/folded-runs", () => ({
+  ...actualFoldedRuns,
+  launchFoldedRun: async (
+    deps: {
+      db: { transaction(fn: (tx: unknown) => Promise<void>): Promise<void> };
+    },
+    params: { persistExtra?: (tx: unknown) => Promise<void> },
+  ) => {
+    await deps.db.transaction(async (tx) => {
+      if (params.persistExtra !== undefined) await params.persistExtra(tx);
+    });
+    return { instancePrincipalId: "prn_run", sessionId: "sess_1" };
+  },
+  sendFoldedMailWithRetry: async () => ({
+    ok: true as const,
+    mail: { id: "mail_1", createdAt: new Date().toISOString() },
+  }),
+}));
+
+const { spawnFromTaskSpec } = await import("./spawn");
+
+const AGENT_WORKFLOW_JSON = {
+  id: "wfd_agent",
+  stepOrder: ["agent"],
+  steps: {
+    agent: {
+      kind: "step",
+      agent: {
+        systemPrompt: "You summarize incidents.",
+        inference: { sources: [{ model: "declared-default-model" }] },
+      },
+    },
+  },
+};
+
+const DEFINITION_ROW = {
+  id: "wfd_agent",
+  tenantId: "tnt_1",
+  status: "deployed",
+  assetId: "ast_1",
+  name: "incident-bot",
+};
+const TENANT_ROW = { id: "tnt_1", domain: "acme.example" };
+
+type InsertChain = {
+  onConflictDoNothing(): InsertChain;
+  returning(): Promise<unknown[]>;
+};
+
+function createFakeDb() {
+  const inserted: { table: unknown; values: unknown }[] = [];
+  function insertOn(table: unknown, values: unknown): InsertChain {
+    inserted.push({ table, values });
+    const chain: InsertChain = {
+      onConflictDoNothing: () => chain,
+      returning: () => Promise.resolve([]),
+    };
+    return chain;
+  }
+  return {
+    inserted,
+    query: {
+      workflowDefinition: { findFirst: async () => DEFINITION_ROW },
+      tenant: { findFirst: async () => TENANT_ROW },
+    },
+    insert(table: unknown) {
+      return { values: (values: unknown) => insertOn(table, values) };
+    },
+    update() {
+      return { set: () => ({ where: async () => undefined }) };
+    },
+    async transaction(fn: (tx: unknown) => Promise<void>) {
+      await fn({
+        insert(table: unknown) {
+          return { values: (values: unknown) => insertOn(table, values) };
+        },
+      });
+    },
+  };
+}
+
+/** A `TaskStore` view over the fake db's recorded `task` inserts —
+ * copied from `packages/tasks/test/launcher.test.ts`'s
+ * `storeOverInserts`, extended with a real `linkPlannerRun` so
+ * `spawnFromTaskSpec`'s post-launch link is observable. */
+function storeOverInserts(db: {
+  inserted: { table: unknown; values: unknown }[];
+}): TaskStore {
+  const plannerRunIds = new Map<string, string>();
+  function rows(): TaskRecord[] {
+    return db.inserted
+      .filter((row) => row.table === taskTable)
+      .map((row) => {
+        const values = row.values as TaskRecord;
+        return {
+          ...values,
+          plannerRunId: plannerRunIds.get(values.id) ?? values.plannerRunId,
+        };
+      });
+  }
+  return {
+    async createTask() {
+      throw new Error("launchTask persists via persistExtra, never createTask");
+    },
+    async getTask(tenantId, id) {
+      return (
+        rows().find((row) => row.tenantId === tenantId && row.id === id) ?? null
+      );
+    },
+    async getTaskByRunId(runId) {
+      return rows().find((row) => row.runId === runId) ?? null;
+    },
+    async listTasks(tenantId) {
+      return rows().filter((row) => row.tenantId === tenantId);
+    },
+    async completeTask() {
+      return null;
+    },
+    async recordResultMail() {},
+    async linkPlannerRun(input) {
+      plannerRunIds.set(input.id, input.plannerRunId);
+    },
+  };
+}
+
+function createTaskLauncherDeps(db: ReturnType<typeof createFakeDb>) {
+  return {
+    db: db as never,
+    store: storeOverInserts(db),
+    foldedRuns: {
+      db: db as never,
+      sessionService: {
+        async deployInstanceAtHead() {
+          return { publicKey: "test-public-key" };
+        },
+        async sendUserMessage() {
+          return new TextEncoder().encode("raw-mime-bytes");
+        },
+        async endSession() {},
+      } as never,
+      assetService: {
+        async readAssetBlob() {
+          return new TextEncoder().encode(JSON.stringify(AGENT_WORKFLOW_JSON));
+        },
+      } as never,
+      sidecarRouter: { dispatchAgentEvent() {} } as never,
+      eventCollectors: { create() {}, abandon() {} } as never,
+    },
+    cryptoProviders: {
+      async get() {
+        return {} as never;
+      },
+    },
+    notify: {
+      mail: async () => [],
+      addressing: {
+        inbox: (r: { principalId: string }) => `${r.principalId}@inbox.test`,
+        from: (kind: string) => `${kind}@notify.test`,
+      },
+      dispatch: { enqueue: async () => undefined },
+      sinks: {},
+    } as never,
+    isTaskableDefinition: () => true,
+  };
+}
+
+const INPUT_BASE = {
+  tenantId: "tnt_1",
+  principalId: "prn_alice",
+  plannerRunId: "wfr_planner_1",
+};
+
+describe("spawnFromTaskSpec", () => {
+  test("{use} branch launches directly against the named agent and links the planner run", async () => {
+    const db = createFakeDb();
+    const store = storeOverInserts(db);
+    const deployAgentDefinition = mock(async () => ({
+      definitionId: "wfd_never",
+    }));
+
+    const record = await spawnFromTaskSpec(
+      {
+        taskLauncherDeps: createTaskLauncherDeps(db) as never,
+        store,
+        deployAgentDefinition,
+      },
+      {
+        ...INPUT_BASE,
+        spec: { use: "wfd_agent", refinedOutcome: "Summarize the incident" },
+      },
+    );
+
+    expect(record.definitionId).toBe("wfd_agent");
+    expect(record.plannerRunId).toBe("wfr_planner_1");
+    expect(deployAgentDefinition).not.toHaveBeenCalled();
+
+    const stored = await store.getTask("tnt_1", record.id);
+    expect(stored?.plannerRunId).toBe("wfr_planner_1");
+  });
+
+  test("{create} branch deploys a new definition first, then launches against it, then links the planner run", async () => {
+    const db = createFakeDb();
+    const store = storeOverInserts(db);
+    const deployAgentDefinition = mock(async () => ({
+      definitionId: "wfd_agent",
+    }));
+
+    const record = await spawnFromTaskSpec(
+      {
+        taskLauncherDeps: createTaskLauncherDeps(db) as never,
+        store,
+        deployAgentDefinition,
+      },
+      {
+        ...INPUT_BASE,
+        spec: {
+          create: {
+            name: "Incident bot",
+            systemPrompt: "You review incidents.",
+            toolPackagePins: ["@corbits/granola-tools"],
+            skills: ["incident-review"],
+            modelPreference: "anthropic/claude-sonnet-5",
+          },
+          refinedOutcome: "Review the latest incident",
+        },
+      },
+    );
+
+    expect(deployAgentDefinition).toHaveBeenCalledTimes(1);
+    expect(deployAgentDefinition).toHaveBeenCalledWith({
+      tenantId: "tnt_1",
+      principalId: "prn_alice",
+      name: "Incident bot",
+      systemPrompt: "You review incidents.",
+      toolPackagePins: ["@corbits/granola-tools"],
+      skills: ["incident-review"],
+      model: "anthropic/claude-sonnet-5",
+    });
+    expect(record.definitionId).toBe("wfd_agent");
+    expect(record.plannerRunId).toBe("wfr_planner_1");
+
+    const stored = await store.getTask("tnt_1", record.id);
+    expect(stored?.plannerRunId).toBe("wfr_planner_1");
+  });
+});

@@ -62,6 +62,22 @@ test("a supplied model becomes the agent's one inference source", () => {
   ]);
 });
 
+test("an omitted toolPackagePins leaves the agent with no pins, exactly like a definition built before this field existed", () => {
+  const definition = buildAgentDefinitionWorkflow(INPUT);
+  const step = agentStep(definition);
+  expect(step.agent.toolPackagePins).toBeUndefined();
+});
+
+test("a supplied toolPackagePins lands on the step's agent verbatim", () => {
+  const pins = [{ name: "@corbits/granola-tools", version: "^1.0.0" }];
+  const definition = buildAgentDefinitionWorkflow({
+    ...INPUT,
+    toolPackagePins: pins,
+  });
+  const step = agentStep(definition);
+  expect(step.agent.toolPackagePins).toEqual(pins);
+});
+
 test("the trigger address is derived from the handle and tenant domain", () => {
   const definition = buildAgentDefinitionWorkflow(INPUT);
   expect(definition.triggers).toEqual([
