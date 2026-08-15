@@ -138,7 +138,7 @@ describe("testProviderCredential", () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.message).toContain("not a rejected key");
+        expect(result.message).toContain("key works");
         expect(result.message).toContain("internal server error");
       }
     });
@@ -270,7 +270,7 @@ describe("testProviderCredential: xai", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.message).toContain("not a rejected key");
+      expect(result.message).toContain("key works");
       expect(result.message).toContain("server exploded");
     }
   });
@@ -289,7 +289,7 @@ describe("testProviderCredential: xai", () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.message).toContain("not a rejected key");
+    if (!result.ok) expect(result.message).toContain("key works");
   });
 
   test("probes /v1/models with GET and the real key", async () => {
@@ -317,18 +317,16 @@ describe("testProviderCredential: xai", () => {
 
 describe("testProviderCredential: opencode-zen", () => {
   // Zen's own list-models route (like OpenRouter's) answers 200 to any
-  // key, so its probe POSTs an empty chat-completion body instead — its
-  // gateway rejects a bad key with 401 before ever validating the body,
-  // proving the key with the same "spend nothing" guarantee as a GET
-  // list-models probe.
+  // key, so its probe POSTs a chat-completion body with a real, catalog-
+  // confirmed model and an empty `messages` array instead — its gateway
+  // rejects a bad key with 401 before ever validating the body, proving
+  // the key with the same "spend nothing" guarantee as a GET list-models
+  // probe.
   test("reports ok when the key is accepted", async () => {
     const fetchImpl: FetchLike = async () =>
       new Response(
         JSON.stringify({
-          error: {
-            type: "ModelError",
-            message: "Model undefined is not supported",
-          },
+          error: { type: "InvalidRequestError", message: "messages is empty" },
         }),
         { status: 400 },
       );
@@ -363,7 +361,7 @@ describe("testProviderCredential: opencode-zen", () => {
     }
   });
 
-  test("probes with an empty-body POST to the chat-completions endpoint, never GET", async () => {
+  test("probes with a real-model, empty-messages POST to the chat-completions endpoint, never GET", async () => {
     let seenMethod = "";
     let seenUrl = "";
     let seenBody: string | undefined;
@@ -372,9 +370,7 @@ describe("testProviderCredential: opencode-zen", () => {
       seenMethod = init.method;
       seenBody = init.body;
       return new Response(
-        JSON.stringify({
-          error: { message: "Model undefined is not supported" },
-        }),
+        JSON.stringify({ error: { message: "messages is empty" } }),
         { status: 400 },
       );
     };
@@ -387,7 +383,15 @@ describe("testProviderCredential: opencode-zen", () => {
 
     expect(seenMethod).toBe("POST");
     expect(seenUrl).toContain("chat/completions");
-    expect(seenBody).toBe("{}");
+    const body = JSON.parse(seenBody ?? "{}") as {
+      model?: string;
+      messages?: unknown[];
+    };
+    // Never an empty or foreign model id — CL-6076: an absent `model`
+    // trips Zen's own error-message templating, which used to leak an
+    // unrendered `{{model}}` placeholder straight through to the user.
+    expect(body.model).toBe("claude-sonnet-5");
+    expect(body.messages).toEqual([]);
   });
 
   test("sends the real API key, never a placeholder", async () => {
@@ -404,5 +408,63 @@ describe("testProviderCredential: opencode-zen", () => {
     });
 
     expect(seenHeaders["authorization"]).toContain("test-secret-key");
+  });
+
+  // CL-6076 regression: a working key that hits some other problem must
+  // never surface the provider's raw, unrendered template syntax, and its
+  // copy must say the key works rather than reading like a bad-credential
+  // error.
+  test("never surfaces a provider's unrendered template placeholder, even on an unrecognized status", async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        JSON.stringify({
+          error: { message: "Model {{model}} is not supported" },
+        }),
+        { status: 422 },
+      );
+
+    const result = await testProviderCredential({
+      provider: "opencode-zen",
+      apiKey: "test-real-key",
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).not.toContain("{{");
+      expect(result.message).not.toContain("}}");
+    }
+  });
+
+  test("tells a working key apart from a rejected one: same provider text, two different messages", async () => {
+    const workingKeyOtherProblem: FetchLike = async () =>
+      new Response(
+        JSON.stringify({ error: { message: "temporarily unavailable" } }),
+        { status: 422 },
+      );
+    const rejectedKey: FetchLike = async () =>
+      new Response(
+        JSON.stringify({ error: { message: "temporarily unavailable" } }),
+        { status: 401 },
+      );
+
+    const workingResult = await testProviderCredential({
+      provider: "opencode-zen",
+      apiKey: "test-real-key",
+      fetchImpl: workingKeyOtherProblem,
+    });
+    const rejectedResult = await testProviderCredential({
+      provider: "opencode-zen",
+      apiKey: "test-wrong-key",
+      fetchImpl: rejectedKey,
+    });
+
+    expect(workingResult.ok).toBe(false);
+    expect(rejectedResult.ok).toBe(false);
+    if (!workingResult.ok && !rejectedResult.ok) {
+      expect(workingResult.message).toContain("key works");
+      expect(rejectedResult.message).not.toContain("key works");
+      expect(workingResult.message).not.toBe(rejectedResult.message);
+    }
   });
 });
