@@ -136,4 +136,33 @@ describeIfDb("createDrizzleWriteClaimStore: concurrent tryClaim", () => {
       await sql.end();
     }
   });
+
+  // CL-6039 (critique follow-up): `release` is what turns "claim" into
+  // "claim for a write that succeeded" — a caller un-claims a key whose
+  // write threw, before redelivery is trusted to skip it again.
+  test("release deletes the claim row, so a later tryClaim for the same key wins again", async () => {
+    const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
+    try {
+      const store = createDrizzleWriteClaimStore(drizzle(sql));
+      const claim = {
+        tenantId: "ten_1",
+        surface: "memory" as const,
+        claimKey: "turn_release_1",
+      };
+
+      expect(await store.tryClaim(claim)).toBe(true);
+      expect(await store.tryClaim(claim)).toBe(false);
+
+      await store.release(claim);
+
+      const rows = await sql.unsafe(
+        `SELECT * FROM "chat"."finalized_turn_write_claim" WHERE "tenant_id" = 'ten_1' AND "surface" = 'memory' AND "claim_key" = 'turn_release_1'`,
+      );
+      expect(rows).toHaveLength(0);
+
+      expect(await store.tryClaim(claim)).toBe(true);
+    } finally {
+      await sql.end();
+    }
+  });
 });

@@ -750,6 +750,160 @@ describe("createArtifactDeliveryHandler", () => {
     expect(sentMail).toHaveLength(1);
     expect(added).toHaveLength(1);
   });
+
+  // CL-6039 (critique follow-up): a claim won for one artifact must not
+  // outlive a write that never happened. Before the release-on-failure
+  // fix, the turn-wide claim meant the SECOND artifact's failure would
+  // have permanently lost that entry (claim already held, redelivery
+  // skips it) while the FIRST artifact's success was never at risk of
+  // duplication in the first place — this test inverts that scenario:
+  // proves the failed entry recovers on redelivery, and the succeeded
+  // one is still not duplicated.
+  test("a mid-loop memory.add failure loses no entry: the failed artifact recovers on redelivery, the one that already succeeded is not duplicated", async () => {
+    const added: unknown[] = [];
+    let addCalls = 0;
+    const memory = {
+      async add(params: unknown) {
+        addCalls += 1;
+        if (addCalls === 2) throw new Error("simulated memory.add failure");
+        added.push(params);
+        return { documentId: "doc_1", versionId: "ver_1" };
+      },
+    };
+    const deps = {
+      approvals: { findByCorrelationId: async () => null },
+      db: createFakeDb({
+        id: "run_1",
+        tenantId: "ten_1",
+        principalId: "prn_1",
+      }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async () => ({
+          id: "mail_1",
+          createdAt: new Date().toISOString(),
+        }),
+      },
+      events: createSidecarEmitter(),
+      claims: fakeClaims(),
+      memory,
+    };
+    const turn = {
+      turnId: "turn_partial_1",
+      toolCalls: [
+        {
+          isError: false,
+          result: JSON.stringify({
+            id: "art_1",
+            version: 1,
+            title: "First",
+            kind: "text",
+            persisted: true,
+          }),
+        },
+        {
+          isError: false,
+          result: JSON.stringify({
+            id: "art_2",
+            version: 1,
+            title: "Second",
+            kind: "text",
+            persisted: true,
+          }),
+        },
+      ],
+    };
+    const handler = createArtifactDeliveryHandler(deps);
+
+    handler("run_1@ten1.workbench.test", turn);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // art_1 recorded; art_2's add threw, releasing its claim.
+    expect(added).toHaveLength(1);
+    expect(
+      (added[0] as { attributes: { artifactId: string } }).attributes
+        .artifactId,
+    ).toBe("art_1");
+
+    // Redelivery: art_1's claim is still held (skipped, not re-added);
+    // art_2's claim was released, so it is retried and this time
+    // succeeds (addCalls no longer lands on the throwing 2nd call).
+    handler("run_1@ten1.workbench.test", turn);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(added).toHaveLength(2);
+    expect(
+      added
+        .map(
+          (entry) =>
+            (entry as { attributes: { artifactId: string } }).attributes
+              .artifactId,
+        )
+        .sort(),
+    ).toEqual(["art_1", "art_2"]);
+  });
+
+  test("a mid-loop sendMail failure loses no FilePart: the failed channel recovers on redelivery, the one that already succeeded is not duplicated", async () => {
+    const sentMail: { channelId: string }[] = [];
+    let sendCalls = 0;
+    const handler = createArtifactDeliveryHandler({
+      approvals: { findByCorrelationId: async () => null },
+      db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+          channelRow("ins_channel2", ["run_1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async (input) => {
+          sendCalls += 1;
+          if (sendCalls === 2) throw new Error("simulated sendMail failure");
+          sentMail.push({ channelId: input.channelId });
+          return { id: "mail_1", createdAt: new Date().toISOString() };
+        },
+      },
+      events: createSidecarEmitter(),
+      claims: fakeClaims(),
+    });
+    const turn = {
+      turnId: "turn_partial_2",
+      toolCalls: [
+        {
+          isError: false,
+          result: JSON.stringify({
+            id: "art_1",
+            version: 1,
+            title: "Notes",
+            kind: "text",
+            persisted: true,
+          }),
+        },
+      ],
+    };
+
+    handler("run_1@ten1.workbench.test", turn);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // One channel got its FilePart; the other's send threw, releasing
+    // its claim.
+    expect(sentMail).toHaveLength(1);
+
+    // Redelivery: the channel that already succeeded is not resent; the
+    // one whose send failed is retried and this time succeeds.
+    handler("run_1@ten1.workbench.test", turn);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sentMail).toHaveLength(2);
+    expect(sentMail.map((m) => m.channelId).sort()).toEqual([
+      "ins_channel1",
+      "ins_channel2",
+    ]);
+  });
 });
 
 describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
@@ -900,5 +1054,70 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
     secondOrchestrator.dispose();
 
     expect(added).toHaveLength(1);
+  });
+
+  // CL-6039 (critique follow-up), the digest's narrower version of the
+  // same finding: a channel-day claim survives a `memory.add` that
+  // throws unless the write is explicitly released, which would have
+  // left that day's digest permanently un-recordable (claimed, but
+  // never written, and no later reply that day can win the same claim).
+  test("a memory.add failure releases the channel-day claim, so the next reply that day still records a digest entry", async () => {
+    let addCalls = 0;
+    const added: unknown[] = [];
+    const memory = {
+      async add(params: unknown) {
+        addCalls += 1;
+        if (addCalls === 1) throw new Error("simulated memory.add failure");
+        added.push(params);
+        return { documentId: "doc_1", versionId: "ver_1" };
+      },
+    };
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({
+        id: "ins_echo1",
+        tenantId: "ten_1",
+        principalId: "prn_1",
+      }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async () => ({
+          id: "mail_1",
+          createdAt: new Date().toISOString(),
+        }),
+      },
+      events,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+      memory,
+    });
+
+    const emitReply = (content: string) =>
+      events.emit("agent.event", {
+        agentAddress: "ins_echo1@ten1.workbench.test",
+        sessionId: "ses_1",
+        event: { type: "connector.reply", data: { content } },
+      });
+
+    emitReply("first reply of the day");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The first attempt failed, and nothing was recorded — but this
+    // must not be permanent: the claim was released on failure.
+    expect(added).toHaveLength(0);
+
+    emitReply("second reply of the day");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({
+      content: { text: "second reply of the day" },
+    });
+
+    orchestrator.dispose();
   });
 });
