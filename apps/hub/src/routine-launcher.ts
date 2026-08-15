@@ -26,6 +26,22 @@
 // this function still returns the run id on a delivery failure, after
 // exhausting `sendFoldedMailWithRetry`'s bounded retries, and only logs
 // (naming the run) rather than throwing.
+//
+// One definition short-circuits this whole folded-run path:
+// `RECURRING_TASK_ASSET_NAME` (`@corbits/workflow-catalog`) is the
+// "Make this a routine" bridge (an Inbox action on a completed task
+// result — apps/web/src/pages/inbox-page.tsx) — a task's own agent is
+// conversational, never automatable, so it can never be a routine's
+// `definitionId` itself. This placeholder definition exists only to give
+// the Routines picker a real, automatable id to schedule; firing it
+// never launches its own folded run at all. Instead, the routine's
+// stored `agent`/`prompt` trigger-field input goes straight through
+// `dispatchTask` — the exact same `@corbits/tasks` `launchTask` call
+// `POST /tasks` uses — so a scheduled recurring task lands in the
+// creator's Inbox exactly like a manual one, on the same launch path, no
+// duplicated logic. A `deliveryChannelId` picked on the routine (if any)
+// is not used for this delivery: a task result never posts to a channel,
+// only to the Inbox.
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
@@ -43,6 +59,8 @@ import { getLogger } from "@intx/log";
 import { formatRunAddress } from "@intx/types";
 import type { AssetService } from "@intx/hub-sessions";
 import { renderRoutineInput, type RoutineLauncher } from "@corbits/routines";
+import { RECURRING_TASK_ASSET_NAME } from "@corbits/workflow-catalog";
+import type { LaunchTaskInput, TaskRecord } from "@corbits/tasks";
 
 const log = getLogger(["hub", "routine-launcher"]);
 
@@ -50,12 +68,39 @@ export type CreateHubRoutineLauncherDeps = FoldedRunsDeps & {
   db: DB["db"];
   assetService: AssetService;
   cryptoProviderCache: CryptoProviderCache;
+  /** The narrow port a fired recurring-task routine dispatches through
+   * — hub wires this to `(input) => launchTask(taskLauncherDeps, input)`,
+   * the same deps object `POST /tasks` calls with. Domain logic (what a
+   * task launch is) stays entirely in `@corbits/tasks`; this port is
+   * pure composition, same as every other dep here. */
+  dispatchTask: (input: LaunchTaskInput) => Promise<TaskRecord>;
 };
+
+function recurringTaskFieldsFromInput(input: Record<string, unknown>): {
+  agent: string;
+  prompt: string;
+} {
+  const agent = input["agent"];
+  const prompt = input["prompt"];
+  if (typeof agent !== "string" || agent === "") {
+    throw new Error(
+      'recurring-task routine is missing its "agent" trigger-field input',
+    );
+  }
+  if (typeof prompt !== "string" || prompt === "") {
+    throw new Error(
+      'recurring-task routine is missing its "prompt" trigger-field input',
+    );
+  }
+  return { agent, prompt };
+}
 
 /**
  * Builds the hub's `RoutineLauncher`: every routine fire — "run now" or
  * scheduled — resolves to exactly this launch path, the same folded-run
- * launch every other agent instance in this hub goes through.
+ * launch every other agent instance in this hub goes through (except a
+ * recurring-task routine, which dispatches through `dispatchTask`
+ * instead — see this module's own doc comment).
  */
 export function createHubRoutineLauncher(
   deps: CreateHubRoutineLauncherDeps,
@@ -83,6 +128,17 @@ export function createHubRoutineLauncher(
         throw new Error(
           `definition "${input.definitionId}" has not been materialized`,
         );
+      }
+
+      if (definitionRow.name === RECURRING_TASK_ASSET_NAME) {
+        const { agent, prompt } = recurringTaskFieldsFromInput(input.input);
+        const task = await deps.dispatchTask({
+          tenantId: input.tenantId,
+          principalId: input.principalId,
+          definitionId: agent,
+          prompt,
+        });
+        return { runId: task.runId };
       }
 
       const tenantRow = await deps.db.query.tenant.findFirst({

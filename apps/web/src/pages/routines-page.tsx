@@ -673,6 +673,20 @@ function CreateRoutineDialog({
       setDefinitionId(initialDefinitionId);
     }
     if (initialName !== null) setName(initialName);
+    if (initialInput !== null) {
+      // Seeds the Configure step's own trigger-field inputs (visibly
+      // pre-filled, and counted toward `triggerFieldsSatisfied` so a
+      // fully-specified prefill can advance without retyping) — only
+      // string values, matching what a trigger field can hold; a
+      // non-string entry still reaches the created routine's `input`
+      // via createCatalogRoutine's own merge below.
+      const stringFields = Object.fromEntries(
+        Object.entries(initialInput).filter(
+          (entry): entry is [string, string] => typeof entry[1] === "string",
+        ),
+      );
+      setTriggerFieldValues((prev) => ({ ...prev, ...stringFields }));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -723,8 +737,12 @@ function CreateRoutineDialog({
     setStep(1);
   };
 
+  // A non-empty definitionId that doesn't resolve in `definitions` is a
+  // dead end further down the stepper (no selectedDefinition to launch
+  // against — see the inline message above), so it must not be treated
+  // as an honest "picked" state here.
   const canAdvanceFromSource =
-    path === "catalog" ? definitionId !== "" : prompt.trim().length > 0;
+    path === "catalog" ? selectedDefinition !== null : prompt.trim().length > 0;
 
   const draftAndAdvance = () => {
     if (deliveryChannelId === "" || prompt.trim().length === 0) return;
@@ -1036,6 +1054,15 @@ function CreateRoutineDialog({
                     role="status"
                   >
                     No automatable workflows on this workbench yet — describe it
+                    instead.
+                  </p>
+                ) : null}
+                {path === "catalog" &&
+                definitionId !== "" &&
+                selectedDefinition === null ? (
+                  <p className="text-xs text-destructive" role="alert">
+                    This workflow isn't in your automatable catalog, so it can't
+                    be scheduled — pick one of the cards above, or describe it
                     instead.
                   </p>
                 ) : null}

@@ -917,91 +917,6 @@ export async function createHub(config: HubConfig) {
       oauthEnv: { huggingfaceClientId: config.huggingfaceOAuthClientId },
     }),
   );
-  // Routines: its own grant store (routines authorize against the
-  // `workflow-run:*` resource family, the same one native run routes
-  // use — see `@corbits/routines`' routes.ts), the launcher adapter
-  // that turns a routine's `launchRoutineRun` call into a real folded
-  // run via `@corbits/folded-runs` (routine-launcher.ts), and a run
-  // summary resolver so `GET /routines/:id/runs` reports each fire's
-  // real status instead of a bare run id.
-  const routineGrantStore = createGrantStore(db);
-  const routineStore = createDrizzleRoutineStore(db);
-  const routineDraftStore = createDrizzleDraftStore(db);
-  const routineLauncher = createHubRoutineLauncher({
-    db,
-    sessionService,
-    assetService,
-    sidecarRouter,
-    eventCollectors,
-    cryptoProviderCache: foldedRunCryptoProviders,
-  });
-  // Routines routes own their `/routines` and `/routine-drafts` prefixes, so
-  // mount at the tenant root (same pattern as a package that ships absolute
-  // resource paths) rather than under a second `/routines` segment.
-  app.route(
-    TENANT_PREFIX,
-    createRoutineRoutes({
-      store: routineStore,
-      drafts: routineDraftStore,
-      // Local prompt→steps drafting until Myra owns the port. Auto-pin a
-      // definitionId only when the tenant has exactly one workflow definition
-      // so describe-to-agent drafts are approvable without a second pick.
-      // 0 or >1 → null (honest; approve path still needs an explicit pick).
-      drafting: createLocalRoutineDrafting({
-        resolveDefinitionId: async (tenantId) => {
-          const rows = await db.query.workflowDefinition.findMany({
-            where: eq(workflowDefinition.tenantId, tenantId),
-            columns: { id: true },
-            limit: 2,
-          });
-          return rows.length === 1 ? (rows[0]?.id ?? null) : null;
-        },
-      }),
-      launcher: routineLauncher,
-      requireGrant: createRequireGrant({
-        grantStore: routineGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-      runSummaryResolver: createHubRunSummaryResolver(db),
-      definitionInTenant: async (tenantId, definitionId) => {
-        const row = await db.query.workflowDefinition.findFirst({
-          where: and(
-            eq(workflowDefinition.id, definitionId),
-            eq(workflowDefinition.tenantId, tenantId),
-          ),
-          columns: { id: true },
-        });
-        return row !== undefined;
-      },
-      // A `{kind: "webhook"}` trigger's `webhookTriggerId` must resolve
-      // to a real `webhook_trigger` row in this tenant, pointed at the
-      // exact same workflow definition the routine itself runs — see
-      // `webhookTriggerValid`'s doc comment in
-      // `@corbits/routines`' routes.ts for why the two ids must agree.
-      webhookTriggerInTenant: async (
-        tenantId,
-        webhookTriggerId,
-        definitionId,
-      ) => {
-        const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
-        return row !== undefined && row.workflowDefinitionId === definitionId;
-      },
-    }),
-  );
-  // Recurring auto-fire: a minimal in-process poller (routine-scheduler.ts)
-  // over `@corbits/routines`' own `fireScheduledRoutine` — this hub has no
-  // general job-runner today, so this loop is scoped to exactly one job
-  // (fire due routines) rather than standing up a bespoke cron daemon as a
-  // hidden dependency. Every hub replica can safely run this poller: each
-  // fire is claimed with a conditional update on the routine's persisted
-  // `nextFireAt` before anything launches, so two replicas racing the same
-  // fire never both win, and a fire that falls due while every replica is
-  // down is caught up (not lost) the next time any of them polls.
-  const routineScheduler = createRoutineScheduler({
-    store: routineStore,
-    launcher: routineLauncher,
-  });
-
   // Notify-to-reconnect for an OAuth-connected credential whose token
   // expired (Hugging Face today — see docs/onboarding-huggingface-connect.md):
   // a light periodic sweep over `@corbits/notify`'s pure
@@ -1100,6 +1015,96 @@ export async function createHub(config: HubConfig) {
       launch: (input) => launchTask(taskLauncherDeps, input),
     }),
   );
+
+  // Routines: its own grant store (routines authorize against the
+  // `workflow-run:*` resource family, the same one native run routes
+  // use — see `@corbits/routines`' routes.ts), the launcher adapter
+  // that turns a routine's `launchRoutineRun` call into a real folded
+  // run via `@corbits/folded-runs` (routine-launcher.ts), and a run
+  // summary resolver so `GET /routines/:id/runs` reports each fire's
+  // real status instead of a bare run id. Constructed after
+  // `taskLauncherDeps` above (not alongside chat/connections earlier)
+  // because its `dispatchTask` port needs that object to exist first —
+  // see routine-launcher.ts's own doc for why a routine ever calls
+  // `launchTask` at all.
+  const routineGrantStore = createGrantStore(db);
+  const routineStore = createDrizzleRoutineStore(db);
+  const routineDraftStore = createDrizzleDraftStore(db);
+  const routineLauncher = createHubRoutineLauncher({
+    db,
+    sessionService,
+    assetService,
+    sidecarRouter,
+    eventCollectors,
+    cryptoProviderCache: foldedRunCryptoProviders,
+    dispatchTask: (input) => launchTask(taskLauncherDeps, input),
+  });
+  // Routines routes own their `/routines` and `/routine-drafts` prefixes, so
+  // mount at the tenant root (same pattern as a package that ships absolute
+  // resource paths) rather than under a second `/routines` segment.
+  app.route(
+    TENANT_PREFIX,
+    createRoutineRoutes({
+      store: routineStore,
+      drafts: routineDraftStore,
+      // Local prompt→steps drafting until Myra owns the port. Auto-pin a
+      // definitionId only when the tenant has exactly one workflow definition
+      // so describe-to-agent drafts are approvable without a second pick.
+      // 0 or >1 → null (honest; approve path still needs an explicit pick).
+      drafting: createLocalRoutineDrafting({
+        resolveDefinitionId: async (tenantId) => {
+          const rows = await db.query.workflowDefinition.findMany({
+            where: eq(workflowDefinition.tenantId, tenantId),
+            columns: { id: true },
+            limit: 2,
+          });
+          return rows.length === 1 ? (rows[0]?.id ?? null) : null;
+        },
+      }),
+      launcher: routineLauncher,
+      requireGrant: createRequireGrant({
+        grantStore: routineGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      runSummaryResolver: createHubRunSummaryResolver(db),
+      definitionInTenant: async (tenantId, definitionId) => {
+        const row = await db.query.workflowDefinition.findFirst({
+          where: and(
+            eq(workflowDefinition.id, definitionId),
+            eq(workflowDefinition.tenantId, tenantId),
+          ),
+          columns: { id: true },
+        });
+        return row !== undefined;
+      },
+      // A `{kind: "webhook"}` trigger's `webhookTriggerId` must resolve
+      // to a real `webhook_trigger` row in this tenant, pointed at the
+      // exact same workflow definition the routine itself runs — see
+      // `webhookTriggerValid`'s doc comment in
+      // `@corbits/routines`' routes.ts for why the two ids must agree.
+      webhookTriggerInTenant: async (
+        tenantId,
+        webhookTriggerId,
+        definitionId,
+      ) => {
+        const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
+        return row !== undefined && row.workflowDefinitionId === definitionId;
+      },
+    }),
+  );
+  // Recurring auto-fire: a minimal in-process poller (routine-scheduler.ts)
+  // over `@corbits/routines`' own `fireScheduledRoutine` — this hub has no
+  // general job-runner today, so this loop is scoped to exactly one job
+  // (fire due routines) rather than standing up a bespoke cron daemon as a
+  // hidden dependency. Every hub replica can safely run this poller: each
+  // fire is claimed with a conditional update on the routine's persisted
+  // `nextFireAt` before anything launches, so two replicas racing the same
+  // fire never both win, and a fire that falls due while every replica is
+  // down is caught up (not lost) the next time any of them polls.
+  const routineScheduler = createRoutineScheduler({
+    store: routineStore,
+    launcher: routineLauncher,
+  });
 
   // The sanctioned path for a workflow run to reach the memory plane
   // (CL-5852), mirroring `/api/workflow-artifacts` immediately above:

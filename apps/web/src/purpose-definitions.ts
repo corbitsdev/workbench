@@ -22,6 +22,12 @@ export function purposeDefinitions<T extends { readonly name: string }>(
 }
 
 export type CatalogFields = {
+  /** The raw catalog asset name (e.g. "recurring-task") — distinct from
+   * `name`, which a caller (see `listWorkflowDefinitions`) may go on to
+   * overwrite with the friendly display name for UI rendering. A caller
+   * that needs to recognize a *specific* known workflow (not just show
+   * it) must compare against this field, never `name`. */
+  readonly assetName: string;
   readonly whatItDoes: string;
   readonly requiredConnections: readonly string[];
   readonly exampleOutput: string;
@@ -47,6 +53,7 @@ export function withCatalogFields<T extends { readonly name: string }>(
     }
     return {
       ...workflow,
+      assetName: workflow.name,
       whatItDoes: entry.whatItDoes,
       requiredConnections: entry.requiredConnections,
       exampleOutput: entry.exampleOutput,

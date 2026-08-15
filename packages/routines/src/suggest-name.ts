@@ -9,6 +9,14 @@ const MAX_LENGTH = 60;
 
 export function suggestRoutineNameFromPrompt(prompt: string): string {
   const firstLine = (prompt.trim().split(/\r\n|\r|\n/)[0] ?? "").trim();
-  if (firstLine.length <= MAX_LENGTH) return firstLine;
-  return `${firstLine.slice(0, MAX_LENGTH - 1).trimEnd()}…`;
+  // Code-point-aware, not UTF-16-code-unit-aware: `.length`/`.slice` on a
+  // raw string split surrogate pairs (an emoji, or anything outside the
+  // BMP) in half, producing an unpaired surrogate — a corrupt string, not
+  // just a truncated one. `Array.from` iterates by code point.
+  const codePoints = Array.from(firstLine);
+  if (codePoints.length <= MAX_LENGTH) return firstLine;
+  return `${codePoints
+    .slice(0, MAX_LENGTH - 1)
+    .join("")
+    .trimEnd()}…`;
 }

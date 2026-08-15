@@ -56,6 +56,16 @@ export type WorkflowCatalogEntry = {
 };
 
 /**
+ * The asset name `workflows/recurring-task` deploys under, and the one
+ * name `apps/hub/src/routine-launcher.ts` recognizes to dispatch a fired
+ * routine straight through `@corbits/tasks`' `launchTask` instead of
+ * running this workflow's own (otherwise-unused) folded run — see that
+ * file's own comment for the full bridge. Exported so both sides name
+ * the same literal rather than each hand-typing `"recurring-task"`.
+ */
+export const RECURRING_TASK_ASSET_NAME = "recurring-task";
+
+/**
  * Every known workbench workflow package, keyed by the asset name seed
  * deploys under. Agent definitions created at runtime are never listed
  * here, so they cannot pass the automatable filter by accident.
@@ -214,6 +224,40 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
         placeholder: "Competing launches",
         required: false,
         help: "Optional — narrows which angle of the topic to chase.",
+      },
+    ],
+  },
+  {
+    assetName: RECURRING_TASK_ASSET_NAME,
+    displayName: "Recurring task",
+    automatable: true,
+    whatItDoes:
+      "Runs a task prompt through a picked agent on a schedule — the same launch a manual task uses, delivered to your Inbox the same way.",
+    requiredConnections: [],
+    exampleOutput: "Delivered to your Inbox, same as a manual task's reply",
+    typicalDuration: "same as the agent's own manual-task duration",
+    // The bridge "Make this a routine" (an Inbox action on a completed
+    // task result) exists for: these two fields are its whole contract.
+    // `agent` is a taskable definition id — the same id "New task"'s
+    // picker offers, never a conversational-agent-excluded automation.
+    // `apps/hub/src/routine-launcher.ts` recognizes this asset name and
+    // dispatches straight through `@corbits/tasks`' `launchTask` with
+    // these two fields, never rendering them as a first-turn mail to
+    // this workflow's own (otherwise-unused) agent step.
+    triggerFields: [
+      {
+        key: "agent",
+        label: "Agent",
+        placeholder: "wfd_...",
+        required: true,
+        help: "The agent this recurring task runs — the same one 'New task' picks from.",
+      },
+      {
+        key: "prompt",
+        label: "Prompt",
+        placeholder: "Summarize last night's incidents",
+        required: true,
+        help: "What to ask the agent to do, every time this routine fires.",
       },
     ],
   },
