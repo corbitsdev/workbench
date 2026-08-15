@@ -25,33 +25,11 @@ The one table this package owns is `skills.skill_access` — the
 visibility verdict, and nothing else. See `src/migrations.ts` and
 [docs/package-migrations.md](../../docs/package-migrations.md).
 
-Removing a skill or draft asset (discard, or publish's cleanup of its
-draft) deletes directly from the platform's own `asset` table, since
-neither `RepoStore` nor `AssetService` expose a delete primitive yet —
-tracked as CL-6040. Until that ships, the row goes but the asset's
-on-disk git repo does not: it is only unlisted, not purged, so operators
-should expect discarded and published-over draft repos to leak on disk
-rather than being garbage collected today.
-
-## Drafts, and the deviation behind them
-
-A draft's _existence_ is the pending state: while a draft exists the
-skill is invisible to `list`, `search`, and `load`, and it carries no
-`skill_access` row at all. Publishing creates the canonical asset,
-commits the drafted `SKILL.md` into it, writes the access row, and only
-then drops the draft — so a failure mid-publish leaves a retryable draft
-rather than a half-published skill. Publishing is idempotent on retry:
-if the canonical asset already exists and the draft is still there too,
-`publishDraft` treats that as an interrupted retry of the same publish
-and simply finishes by dropping the leftover draft, never re-creating or
-overwriting the canonical asset.
-
-A draft is **not** its own asset kind. The hub's asset kinds are a closed
-set (`agent-state`, `skill`, `package-registry`, `workflow`) defined in
-vendored platform code this repo never edits, so there is no
-`skill-draft` kind to create. A draft is instead a real `kind:"skill"`
-asset whose asset name carries the `draft-` prefix. That prefix is
-therefore reserved: a skill may not be named into it.
+A skill is created directly: `create` writes the `kind:"skill"` asset,
+commits its `SKILL.md`, and writes the `skill_access` row in one call —
+there is no pending or draft state in between. A name conflict, or
+`SKILL.md` frontmatter the schema rejects, fails the call before any
+asset is created, so a rejected create leaves nothing behind to clean up.
 
 ## Two surfaces
 
