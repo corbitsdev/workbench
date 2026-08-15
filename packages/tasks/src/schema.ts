@@ -86,11 +86,25 @@ export type TaskLegStatus = (typeof TASK_LEG_STATUSES)[number];
  * the unique index below means a re-run of the hand-off can only ever
  * find the row that already exists, never create a second one.
  *
- * `leaseExpiresAt` bounds a claimed-but-not-yet-launched leg. A claim
+ * A leg becomes `running` only once its agent has actually been given
+ * its prompt. `runId` is stamped while the leg is still `dispatching`,
+ * inside the launch transaction — a run committed but unrecorded would
+ * be relaunched by the next claim — and `startedAt` is stamped when the
+ * prompt lands. So a `dispatching` leg carrying a `runId` and no
+ * `startedAt` is a run that was created but never told what to do, and
+ * it is still in the one state the dispatch-failure path matches: it
+ * can be failed honestly rather than reported as an agent at work.
+ * `startedAt` is what makes that distinction durable past the leg's own
+ * terminal status, so a task's trace counts only the runs it really
+ * passed through.
+ *
+ * `leaseExpiresAt` bounds a claimed-but-not-yet-started leg. A claim
  * that dies before it records its `runId` becomes claimable again once
  * the lease passes; a claim that DID record a `runId` never does, so
  * an expired lease redelivers the launch attempt without ever running
- * the agent twice.
+ * the agent twice. A leg still `dispatching` well past its lease is
+ * going nowhere on its own — `listStuckLegDispatches` finds exactly
+ * those, and the stuck-leg sweep fails them.
  *
  * Why this table is workbench-owned rather than platform schema: it
  * records why two runs belong to one piece of work — product
@@ -116,6 +130,7 @@ export const taskLeg = tasksSchema.table(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
     settledAt: timestamp("settled_at", { withTimezone: true }),
   },
   (t) => [

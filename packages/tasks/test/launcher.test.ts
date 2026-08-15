@@ -247,9 +247,6 @@ function storeOverInserts(db: {
         settledAt: null,
       };
     },
-    async listStuckLegDispatches() {
-      throw new Error("the launcher never sweeps stuck legs");
-    },
     async settleLeg() {
       throw new Error("launchTask never settles a leg");
     },
@@ -504,12 +501,11 @@ describe("launchTaskLeg", () => {
 
     const runId = await launchTaskLeg(deps as never, LEG_INPUT);
 
-    const stamp = db.updated.find((row) => row.table === taskLegTable)
-      ?.values as { runId: string; status: string } | undefined;
-    expect(stamp?.runId).toBe(runId);
-    // Still claimed, not started: the prompt has not been delivered at
-    // the point this transaction commits.
-    expect(stamp?.status).toBe("dispatching");
+    // The transaction records the run and nothing else: the leg is
+    // still claimed, not started, because the prompt has not been
+    // delivered at the point it commits.
+    const stamp = db.updated.find((row) => row.table === taskLegTable)?.values;
+    expect(stamp).toEqual({ runId });
     expect(sendCalls).toHaveLength(1);
     expect(store.confirmedLegs).toEqual(["tleg_1"]);
   });

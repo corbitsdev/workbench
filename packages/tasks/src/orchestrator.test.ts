@@ -316,11 +316,17 @@ describe("createTaskOrchestrator", () => {
       store,
       events,
       notify: notify.deps,
+      // Mirrors `launchTaskLeg`: the run is recorded first, and the leg
+      // only starts once its prompt has been delivered.
       launchLeg: async (input) => {
         await store.recordLegRun({
           tenantId: input.tenantId,
           legId: input.legId,
           runId: "run_2",
+        });
+        await store.confirmLegDelivery({
+          tenantId: input.tenantId,
+          legId: input.legId,
         });
         return "run_2";
       },

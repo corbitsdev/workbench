@@ -103,6 +103,21 @@ export const tasksMigrations: readonly TaskMigration[] = [
       ON CONFLICT DO NOTHING;
     `,
   },
+  {
+    // "The agent was given its prompt" stops being inferrable from the
+    // leg's status the moment the leg settles, so it gets its own
+    // column. Every leg that already carries a run id was written by
+    // the pre-chain one-leg path, which only ever recorded a run after
+    // its prompt had gone out — those legs really did start.
+    name: "0004_task_leg_started_at",
+    sql: `
+      ALTER TABLE "tasks"."task_leg"
+        ADD COLUMN IF NOT EXISTS "started_at" timestamptz;
+      UPDATE "tasks"."task_leg"
+        SET "started_at" = "created_at"
+        WHERE "run_id" IS NOT NULL AND "started_at" IS NULL;
+    `,
+  },
 ];
 
 const LEDGER_TABLE = "tasks_migrations";

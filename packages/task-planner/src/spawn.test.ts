@@ -181,6 +181,9 @@ function storeOverInserts(db: {
     async recordLegRun() {
       return null;
     },
+    async confirmLegDelivery() {
+      return null;
+    },
     async settleLeg() {
       return null;
     },

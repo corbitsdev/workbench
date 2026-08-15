@@ -391,12 +391,22 @@ export type LaunchTaskLegInput = {
 };
 
 /**
- * Launches one hand-off leg of an already-running task. The leg's run
- * id is stamped onto the leg row inside the launch transaction, not
- * after it: a crash between committing the run and recording it would
- * otherwise leave the leg claimable again, and the redelivered claim
- * would launch a SECOND agent for work the first one is already doing.
- * The conditional `status = 'dispatching'` on that update is the same
+ * Launches one hand-off leg of an already-running task. Two writes, in
+ * this order, because they answer two different questions:
+ *
+ *   - the run id is stamped inside the launch transaction, while the
+ *     leg is still `dispatching` — a crash between committing the run
+ *     and recording it would leave the leg claimable again, and the
+ *     redelivered claim would launch a SECOND agent for work the first
+ *     one is already doing;
+ *   - the leg only becomes `running` after the opening prompt has been
+ *     delivered. Until then the agent has been created but told
+ *     nothing, so the leg stays in the one state the chain's failure
+ *     path can settle — a leg marked `running` on the strength of a
+ *     send that then failed would sit there forever, and the person
+ *     would be told their work stopped at an agent that never ran.
+ *
+ * Both writes are conditional on `status = 'dispatching'`, the same
  * winner-takes-all guard the task's own terminal flip uses.
  */
 export async function launchTaskLeg(
@@ -427,7 +437,7 @@ export async function launchTaskLeg(
     persistExtra: async (tx) => {
       const stamped = await tx
         .update(taskLeg)
-        .set({ runId: instanceId, status: "running", leaseExpiresAt: null })
+        .set({ runId: instanceId })
         .where(
           and(
             eq(taskLeg.id, input.legId),
@@ -444,8 +454,8 @@ export async function launchTaskLeg(
 
   if (!outcome.ok) {
     throw new Error(
-      `the next agent started but its instructions couldn't be delivered ` +
-        `after ${String(outcome.attempts)} attempts: ${
+      `the next agent's instructions couldn't be delivered after ` +
+        `${String(outcome.attempts)} attempts: ${
           outcome.error instanceof Error
             ? outcome.error.message
             : String(outcome.error)
@@ -453,6 +463,12 @@ export async function launchTaskLeg(
       { cause: outcome.error },
     );
   }
+
+  const started = await deps.store.confirmLegDelivery({
+    tenantId: input.tenantId,
+    legId: input.legId,
+  });
+  if (started === null) throw new TaskLegClaimLostError(input.legId);
 
   return instanceId;
 }

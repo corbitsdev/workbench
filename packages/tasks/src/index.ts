@@ -21,6 +21,7 @@ export {
   taskLegLaunchRows,
   type ClaimLegDispatchInput,
   type CompleteTaskInput,
+  type ConfirmLegDeliveryInput,
   type CreateTaskInput,
   type FailLegDispatchInput,
   type LinkPlannerRunInput,

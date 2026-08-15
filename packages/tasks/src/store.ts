@@ -59,6 +59,9 @@ export interface TaskLegRecord {
   readonly leaseExpiresAt: Date | null;
   readonly errorMessage: string | null;
   readonly createdAt: Date;
+  /** When this leg's agent was handed its prompt — null for a leg that
+   * never got that far, however its status later settled. */
+  readonly startedAt: Date | null;
   readonly settledAt: Date | null;
 }
 
@@ -116,6 +119,12 @@ export interface RecordLegRunInput {
   readonly runId: string;
 }
 
+export interface ConfirmLegDeliveryInput {
+  readonly tenantId: string;
+  readonly legId: string;
+  readonly startedAt?: Date;
+}
+
 export interface SettleLegInput {
   readonly tenantId: string;
   readonly legId: string;
@@ -164,11 +173,20 @@ export interface TaskStore {
    * happened and can never re-launch one that did.
    */
   claimLegDispatch(input: ClaimLegDispatchInput): Promise<TaskLegRecord | null>;
-  /** Stamps the launched run onto a claimed leg and starts it running. */
+  /**
+   * Stamps the launched run onto a claimed leg. The leg stays
+   * `dispatching`: the run exists, but its agent has not been given the
+   * prompt yet, and a leg that never gets one must remain in the state
+   * `failLegDispatch` can settle.
+   */
   recordLegRun(input: RecordLegRunInput): Promise<TaskLegRecord | null>;
+  /** Starts a claimed leg whose agent has now received its prompt. */
+  confirmLegDelivery(
+    input: ConfirmLegDeliveryInput,
+  ): Promise<TaskLegRecord | null>;
   /** Flips a still-`running` leg terminal, winner-takes-all per leg. */
   settleLeg(input: SettleLegInput): Promise<TaskLegRecord | null>;
-  /** Fails a claimed leg whose launch never produced a run. */
+  /** Fails a claimed leg whose agent never received its prompt. */
   failLegDispatch(input: FailLegDispatchInput): Promise<TaskLegRecord | null>;
 }
 
@@ -196,6 +214,7 @@ function toLegRecord(row: typeof taskLeg.$inferSelect): TaskLegRecord {
     leaseExpiresAt: row.leaseExpiresAt,
     errorMessage: row.errorMessage,
     createdAt: row.createdAt,
+    startedAt: row.startedAt,
     settledAt: row.settledAt,
   };
 }
@@ -218,7 +237,12 @@ function toRecord(
     modelPreference: row.modelPreference,
     status: row.status,
     runId: row.runId,
+    // Only legs whose agent actually received its prompt: a run that
+    // was created and never told what to do is not a run this task
+    // passed through, and counting it would report the work stopping
+    // one agent later than it did.
     runIds: ordered
+      .filter((leg) => leg.startedAt !== null)
       .map((leg) => leg.runId)
       .filter((runId): runId is string => runId !== null),
     stepCount: ordered.length,
@@ -254,6 +278,7 @@ export function taskLegLaunchRows(
     leaseExpiresAt: null,
     errorMessage: null,
     createdAt,
+    startedAt: createdAt,
     settledAt: null,
   };
   const followOn = (input.followOn ?? []).map((spec, index) => {
@@ -273,6 +298,7 @@ export function taskLegLaunchRows(
       leaseExpiresAt: null,
       errorMessage: null,
       createdAt,
+      startedAt: null,
       settledAt: null,
     };
     return row;
@@ -457,7 +483,26 @@ export function createDrizzleTaskStore<TSchema extends Record<string, unknown>>(
     async recordLegRun(input) {
       const [row] = await db
         .update(taskLeg)
-        .set({ runId: input.runId, status: "running", leaseExpiresAt: null })
+        .set({ runId: input.runId })
+        .where(
+          and(
+            eq(taskLeg.tenantId, input.tenantId),
+            eq(taskLeg.id, input.legId),
+            eq(taskLeg.status, "dispatching"),
+          ),
+        )
+        .returning();
+      return row === undefined ? null : toLegRecord(row);
+    },
+
+    async confirmLegDelivery(input) {
+      const [row] = await db
+        .update(taskLeg)
+        .set({
+          status: "running",
+          leaseExpiresAt: null,
+          startedAt: input.startedAt ?? new Date(),
+        })
         .where(
           and(
             eq(taskLeg.tenantId, input.tenantId),
@@ -565,6 +610,7 @@ export function createMemoryTaskStore(): TaskStore {
           leaseExpiresAt: leg.leaseExpiresAt ?? null,
           errorMessage: leg.errorMessage ?? null,
           createdAt,
+          startedAt: leg.startedAt ?? null,
           settledAt: leg.settledAt ?? null,
         });
       }
@@ -664,11 +710,25 @@ export function createMemoryTaskStore(): TaskStore {
       ) {
         return null;
       }
+      const updated: TaskLegRecord = { ...leg, runId: input.runId };
+      legs.set(leg.id, updated);
+      return updated;
+    },
+
+    async confirmLegDelivery(input) {
+      const leg = legs.get(input.legId);
+      if (
+        leg === undefined ||
+        leg.tenantId !== input.tenantId ||
+        leg.status !== "dispatching"
+      ) {
+        return null;
+      }
       const updated: TaskLegRecord = {
         ...leg,
-        runId: input.runId,
         status: "running",
         leaseExpiresAt: null,
+        startedAt: input.startedAt ?? new Date(),
       };
       legs.set(leg.id, updated);
       return updated;
