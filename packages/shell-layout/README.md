@@ -18,7 +18,7 @@ import { registerPanelContribution } from "@corbits/shell-layout";
 registerPanelContribution({
   id: "channels",
   match: (path) => path.startsWith("/c"),
-  pageBand: (ctx) => ({ title: "Channels" }),
+  pageBand: (ctx) => ({ title: "Spaces" }),
   pageSpecific: (ctx) => <ChannelsBand path={ctx.path} onNavigate={ctx.onNavigate} />,
 });
 ```

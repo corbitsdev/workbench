@@ -57,9 +57,9 @@ import { OnboardingProgress } from "../onboarding/onboarding-progress";
 const GUIDANCE_CARDS = [
   {
     icon: <MessageSquare />,
-    title: "Channels",
+    title: "Spaces",
     description:
-      "Conversations with your team and your agents live in channels. Your starter channel is ready — head there to send your first message.",
+      "Spaces hold your channels and chats — conversations with your team and your agents. Your starter channel is ready; head there to send your first message.",
   },
   {
     icon: <Bot />,

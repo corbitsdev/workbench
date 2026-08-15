@@ -1,7 +1,7 @@
 // The route table: one entry per screen, consumed by both the sidebar (label,
 // icon) and the route switch (render), so navigation and pages cannot drift
 // apart. Settings is a rail footer destination (mock chrome). Channel deep
-// links (`/c/:channelId`) stay routable; Channels on the rail lands Myra via
+// links (`/c/:channelId`) stay routable; Spaces on the rail lands Myra via
 // `/`. Approvals has no page — the Activity band owns them. `/` is the Myra
 // land hop (ensure + open channel), not a Home dashboard. Agents and Skills
 // are no longer rail destinations (CL-5990) — they are Settings sections;
@@ -42,7 +42,7 @@ export const ONBOARDING_PATH = "/onboarding";
 export const SETTINGS_PATH = "/settings";
 
 /**
- * Mock rail primary stack (top → spacer): Channels, Routines, Library,
+ * Mock rail primary stack (top → spacer): Spaces, Routines, Library,
  * Insights. Inbox sits below the spacer with Search / Settings / theme /
  * avatar (composed in the rail, not this set). Owner ruling (CL-5990): the
  * rail is core actions only — Agents and Skills moved into Settings.
@@ -68,7 +68,7 @@ export type AppRoute = {
 
 /**
  * Matches nested product paths (`/routines/:id`, `/insights/...`, `/inbox/...`)
- * plus channel deep links. Channels also lights when Myra land (`/`) is active.
+ * plus channel deep links. Spaces also lights when Myra land (`/`) is active.
  * Other routes are exact path matches.
  */
 export function matchesRoute(routePath: string, path: string): boolean {
@@ -98,7 +98,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   },
   {
     path: CHANNEL_PATH_PREFIX,
-    label: "Channels",
+    label: "Spaces",
     icon: <MessageSquare />,
     render: (path: string, navigate: (to: string) => void) => (
       <ChatPage path={path} navigate={navigate} />

@@ -104,7 +104,7 @@ describe("Rail", () => {
 
   test("command palette destinations include every NAV_ROUTES label", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toContain("Settings");
-    expect(NAV_ROUTES.map((route) => route.label)).toContain("Channels");
+    expect(NAV_ROUTES.map((route) => route.label)).toContain("Spaces");
   });
 
   test("never shows the account id", () => {

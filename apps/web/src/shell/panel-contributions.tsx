@@ -439,7 +439,7 @@ function ChannelsBand({
   const hasVisibleRows = filtered.length > 0;
 
   return (
-    <div className="panel-stack" aria-label="Channels">
+    <div className="panel-stack" aria-label="Spaces">
       <label className="shell-panel-search">
         <Search aria-hidden="true" />
         <Input
@@ -674,7 +674,7 @@ export function ensurePanelContributions(): void {
     pageBand: (ctx) => {
       return {
         // Header title must stay a string for SidebarPanelHeader (react-ui pin).
-        title: "Channels",
+        title: "Spaces",
         headerActions: [
           {
             id: "new-channel",
@@ -749,7 +749,7 @@ export function ensurePanelContributions(): void {
       actions: [
         {
           id: "library-qa-channels",
-          label: "Channels",
+          label: "Spaces",
           onSelect: () => ctx.onNavigate(channelPath(null)),
         },
         {
