@@ -22,6 +22,15 @@ import {
 import { parseBlock } from "../src/blocks";
 import { decodeParts, type MailContent } from "../src/codec";
 import type { ChannelSettingsRow } from "../src/store";
+import { createInMemoryWriteClaimStore } from "../src/write-claims";
+
+// A fresh claim store per test, unless a test explicitly wants to share
+// one across two separately-constructed orchestrators/handlers to prove
+// a claim survives what a hub restart looks like from their point of
+// view (see the "restart-shaped redelivery" tests below).
+function fakeClaims() {
+  return createInMemoryWriteClaimStore();
+}
 
 function approvalRow(overrides?: {
   id?: string;
@@ -130,6 +139,7 @@ describe("createChatOrchestrator", () => {
         },
       },
       events,
+      claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
     });
 
@@ -170,6 +180,7 @@ describe("createChatOrchestrator", () => {
         },
       },
       events,
+      claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
     });
 
@@ -198,6 +209,7 @@ describe("createChatOrchestrator", () => {
       store: { listChannelSettings: async () => [] },
       platform: { sendMail: async () => sentMail.push(1) as never },
       events,
+      claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
       recordActivity: (address) => recordActivityCalls.push(address),
     });
@@ -224,6 +236,7 @@ describe("createChatOrchestrator", () => {
       store: { listChannelSettings: async () => [] },
       platform: { sendMail: async () => sentMail.push(1) as never },
       events,
+      claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
     });
 
@@ -252,6 +265,7 @@ describe("createChatOrchestrator", () => {
       },
       platform: { sendMail: async () => sentMail.push(1) as never },
       events,
+      claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
     });
 
@@ -291,6 +305,7 @@ describe("createChatOrchestrator", () => {
         },
       },
       events,
+      claims: fakeClaims(),
       approvals: {
         findByCorrelationId: async (correlationId) => {
           findByCorrelationIdCalls.push(correlationId);
@@ -344,6 +359,7 @@ describe("createChatOrchestrator", () => {
       },
       platform: { sendMail: async () => sentMail.push(1) as never },
       events,
+      claims: fakeClaims(),
       approvals: {
         findByCorrelationId: async () => {
           throw new Error("should never be consulted for a non-approval gate");
@@ -379,6 +395,7 @@ describe("createChatOrchestrator", () => {
       },
       platform: { sendMail: async () => sentMail.push(1) as never },
       events,
+      claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => approvalRow() },
     });
 
@@ -418,6 +435,7 @@ describe("createChatOrchestrator", () => {
       },
       platform: { sendMail: async () => sentMail.push(1) as never },
       events,
+      claims: fakeClaims(),
       approvals: {
         findByCorrelationId: async () => approvalRow({ status: "approved" }),
       },
@@ -458,9 +476,11 @@ describe("createArtifactDeliveryHandler", () => {
         },
       },
       events: createSidecarEmitter(),
+      claims: fakeClaims(),
     });
 
     handler("run_1@ten1.workbench.test", {
+      turnId: "turn_1",
       toolCalls: [
         {
           isError: false,
@@ -502,9 +522,11 @@ describe("createArtifactDeliveryHandler", () => {
       },
       platform: { sendMail: async () => sentMail.push(1) as never },
       events: createSidecarEmitter(),
+      claims: fakeClaims(),
     });
 
     handler("run_1@ten1.workbench.test", {
+      turnId: "turn_1",
       toolCalls: [{ isError: false, result: "{}" }],
     });
 
@@ -534,10 +556,12 @@ describe("createArtifactDeliveryHandler", () => {
         }),
       },
       events: createSidecarEmitter(),
+      claims: fakeClaims(),
       memory,
     });
 
     handler("run_1@ten1.workbench.test", {
+      turnId: "turn_1",
       toolCalls: [
         {
           isError: false,
@@ -592,10 +616,12 @@ describe("createArtifactDeliveryHandler", () => {
         }),
       },
       events: createSidecarEmitter(),
+      claims: fakeClaims(),
     });
 
     // No throw, no memory dependency touched — `deps.memory` is absent.
     handler("run_1@ten1.workbench.test", {
+      turnId: "turn_1",
       toolCalls: [
         {
           isError: false,
@@ -634,10 +660,12 @@ describe("createArtifactDeliveryHandler", () => {
         }),
       },
       events: createSidecarEmitter(),
+      claims: fakeClaims(),
       memory,
     });
 
     handler("run_1@ten1.workbench.test", {
+      turnId: "turn_1",
       toolCalls: [
         {
           isError: false,
@@ -655,6 +683,72 @@ describe("createArtifactDeliveryHandler", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(added).toHaveLength(0);
+  });
+
+  // CL-6039: mirrors `createChatOrchestrator`'s own "a redelivered
+  // gate-blocked event does not post a second card" test above, but for
+  // the finalized-turn write surfaces, and one step further —
+  // `postedApprovalIds` there is a plain `Set` scoped to one
+  // orchestrator instance, so that test only proves same-process
+  // redelivery is deduped. Here the SAME `claims` store is handed to two
+  // separately-constructed handlers, simulating what a hub restart looks
+  // like from the write surfaces' point of view (a fresh process, a
+  // fresh in-memory `Set` if there were one — but the durable claim
+  // table survives), proving the dedup holds even then.
+  test("a redelivered finalized turn posts no second FilePart and records no second memory entry, even across a restart-shaped new handler instance", async () => {
+    const sentMail: unknown[] = [];
+    const { memory, added } = fakeMemory();
+    const claims = fakeClaims();
+    const deps = {
+      approvals: { findByCorrelationId: async () => null },
+      db: createFakeDb({
+        id: "run_1",
+        tenantId: "ten_1",
+        principalId: "prn_1",
+      }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async () => {
+          sentMail.push(1);
+          return { id: "mail_1", createdAt: new Date().toISOString() };
+        },
+      },
+      events: createSidecarEmitter(),
+      claims,
+      memory,
+    };
+    const turn = {
+      turnId: "turn_restart_1",
+      toolCalls: [
+        {
+          isError: false,
+          result: JSON.stringify({
+            id: "art_1",
+            version: 1,
+            title: "Notes",
+            kind: "text",
+            persisted: true,
+          }),
+        },
+      ],
+    };
+
+    const firstHandler = createArtifactDeliveryHandler(deps);
+    firstHandler("run_1@ten1.workbench.test", turn);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // A brand-new handler, built fresh the way the hub would after a
+    // restart — but backed by the same durable `claims` store.
+    const secondHandler = createArtifactDeliveryHandler(deps);
+    secondHandler("run_1@ten1.workbench.test", turn);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sentMail).toHaveLength(1);
+    expect(added).toHaveLength(1);
   });
 });
 
@@ -680,6 +774,7 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
         }),
       },
       events,
+      claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
       memory,
     });
@@ -728,6 +823,7 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
         }),
       },
       events,
+      claims: fakeClaims(),
       approvals: { findByCorrelationId: async () => null },
     });
 
@@ -740,5 +836,69 @@ describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     orchestrator.dispose();
+  });
+
+  // CL-6039: the digest's once-per-channel-per-day bound used to be the
+  // process-local `ingestedChannelDays` Set documented (before this
+  // change) as "resets on restart". Folded into the same durable
+  // `claims` store the two posters above use, so — unlike before — a
+  // restart no longer risks a second digest entry for a day already
+  // ingested.
+  test("still records at most one digest entry per channel per day across a restart-shaped new orchestrator instance", async () => {
+    const { memory, added } = fakeMemory();
+    const claims = fakeClaims();
+    const deps = {
+      db: createFakeDb({
+        id: "ins_echo1",
+        tenantId: "ten_1",
+        principalId: "prn_1",
+      }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async () => ({
+          id: "mail_1",
+          createdAt: new Date().toISOString(),
+        }),
+      },
+      approvals: { findByCorrelationId: async () => null },
+      claims,
+      memory,
+    };
+
+    const firstEvents = createSidecarEmitter();
+    const firstOrchestrator = createChatOrchestrator({
+      ...deps,
+      events: firstEvents,
+    });
+    firstEvents.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "connector.reply", data: { content: "first reply" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    firstOrchestrator.dispose();
+
+    // A brand-new orchestrator, built fresh the way the hub would after
+    // a restart — but backed by the same durable `claims` store, so its
+    // own fresh (and here entirely absent) in-process state can't
+    // re-ingest the day's digest.
+    const secondEvents = createSidecarEmitter();
+    const secondOrchestrator = createChatOrchestrator({
+      ...deps,
+      events: secondEvents,
+    });
+    secondEvents.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "connector.reply", data: { content: "second reply" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    secondOrchestrator.dispose();
+
+    expect(added).toHaveLength(1);
   });
 });

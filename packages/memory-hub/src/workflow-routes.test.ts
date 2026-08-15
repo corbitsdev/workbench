@@ -140,6 +140,98 @@ describe("POST /add", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  test("rejects text over 64,000 characters with a 413 that tells the model to shorten or split it", async () => {
+    const { store, calls } = fakeStore();
+    const res = await appFor(store).request("/add", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${GOOD_TOKEN}`,
+        "x-workflow-run-address": GOOD_ADDRESS,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ title: "Note", text: "a".repeat(64_001) }),
+    });
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("text_too_large");
+    expect(body.error.message).toMatch(/shorten|split/);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("accepts text at exactly the 64,000-character limit", async () => {
+    const { store } = fakeStore();
+    const res = await appFor(store).request("/add", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${GOOD_TOKEN}`,
+        "x-workflow-run-address": GOOD_ADDRESS,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ title: "Note", text: "a".repeat(64_000) }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test("rejects the 31st add for the same run within a minute with a 429", async () => {
+    const { store } = fakeStore();
+    const app = appFor(store);
+    const request = () =>
+      app.request("/add", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${GOOD_TOKEN}`,
+          "x-workflow-run-address": GOOD_ADDRESS,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ title: "Note", text: "hello" }),
+      });
+
+    for (let i = 0; i < 30; i++) {
+      const res = await request();
+      expect(res.status).toBe(201);
+    }
+    const limited = await request();
+    expect(limited.status).toBe(429);
+    const body = (await limited.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("rate_limited");
+    expect(body.error.message).toMatch(/wait/i);
+  });
+
+  test("rate-limits per run, not globally — a different run's 1st add still succeeds", async () => {
+    const { store } = fakeStore();
+    const app = createWorkflowMemoryRoutes({
+      authenticator: {
+        async resolve(token, address) {
+          if (token !== GOOD_TOKEN) return null;
+          if (address === GOOD_ADDRESS) return SCOPE;
+          if (address === "run_2@workflow") return OTHER_SCOPE;
+          return null;
+        },
+      },
+      store,
+    });
+    const addFor = (address: string) =>
+      app.request("/add", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${GOOD_TOKEN}`,
+          "x-workflow-run-address": address,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ title: "Note", text: "hello" }),
+      });
+
+    for (let i = 0; i < 30; i++) {
+      expect((await addFor(GOOD_ADDRESS)).status).toBe(201);
+    }
+    expect((await addFor(GOOD_ADDRESS)).status).toBe(429);
+    expect((await addFor("run_2@workflow")).status).toBe(201);
+  });
 });
 
 describe("POST /search", () => {

@@ -119,6 +119,75 @@ describe("POST / (create)", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  test("rejects content over 64,000 characters with a 413 that tells the model to shorten or split it", async () => {
+    const { store, created } = fakeStore();
+    const res = await appFor(store).request("/", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${GOOD_TOKEN}`,
+        "x-workflow-run-address": GOOD_ADDRESS,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        title: "Notes",
+        kind: "text",
+        content: "a".repeat(64_001),
+      }),
+    });
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("content_too_large");
+    expect(body.error.message).toMatch(/shorten|split/);
+    expect(created).toHaveLength(0);
+  });
+
+  test("accepts content at exactly the 64,000-character limit", async () => {
+    const { store } = fakeStore();
+    const res = await appFor(store).request("/", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${GOOD_TOKEN}`,
+        "x-workflow-run-address": GOOD_ADDRESS,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        title: "Notes",
+        kind: "text",
+        content: "a".repeat(64_000),
+      }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test("rejects the 31st create for the same run within a minute with a 429", async () => {
+    const { store } = fakeStore();
+    const app = appFor(store);
+    const request = () =>
+      app.request("/", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${GOOD_TOKEN}`,
+          "x-workflow-run-address": GOOD_ADDRESS,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ title: "Notes", kind: "text", content: "hi" }),
+      });
+
+    for (let i = 0; i < 30; i++) {
+      const res = await request();
+      expect(res.status).toBe(201);
+    }
+    const limited = await request();
+    expect(limited.status).toBe(429);
+    const body = (await limited.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("rate_limited");
+    expect(body.error.message).toMatch(/wait/i);
+  });
 });
 
 describe("GET /recent (list)", () => {

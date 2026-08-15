@@ -36,6 +36,7 @@ const migrationNames = [
   "0013_pinned_messages",
   "0014_channel_share",
   "0015_channel_share_member",
+  "0016_finalized_turn_write_claim",
 ];
 
 describeIfDb("applyChatMigrations", () => {
@@ -87,7 +88,7 @@ describeIfDb("applyChatMigrations", () => {
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'chat' AND table_name IN ` +
-          `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy', 'chat_bench_settings', 'channel_threads', 'channel_thread_messages', 'message_reactions', 'pinned_messages')`,
+          `('channel_settings', 'channel_read_state', 'channel_launch', 'channel_tenancy', 'chat_bench_settings', 'channel_threads', 'channel_thread_messages', 'message_reactions', 'pinned_messages', 'finalized_turn_write_claim')`,
       );
       expect(tables.map((row) => String(row["table_name"])).sort()).toEqual(
         [
@@ -100,6 +101,7 @@ describeIfDb("applyChatMigrations", () => {
           "chat_bench_settings",
           "message_reactions",
           "pinned_messages",
+          "finalized_turn_write_claim",
         ].sort(),
       );
 
