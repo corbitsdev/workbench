@@ -92,15 +92,17 @@ export function createTaskRoutes(deps: CreateTaskRoutesDeps): Hono<TenantEnv> {
     const principal = c.get("principal");
 
     try {
-      const record = await deps.launch({
+      const launchBase = {
         tenantId: tenant.id,
         principalId: principal.id,
         definitionId: body.definitionId,
         prompt: body.prompt,
-        ...(body.modelPreference !== undefined
-          ? { modelPreference: body.modelPreference }
-          : {}),
-      });
+      };
+      const launchInput: LaunchTaskInput =
+        body.modelPreference !== undefined
+          ? { ...launchBase, modelPreference: body.modelPreference }
+          : launchBase;
+      const record = await deps.launch(launchInput);
       return c.json({ item: taskView(record) }, 201);
     } catch (err) {
       log.error`task create failed for ${body.definitionId}: ${

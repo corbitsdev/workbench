@@ -216,11 +216,16 @@ export function mountWorkbenchSlack(
 ): MountedSlackTag {
   const credentials = parseSlackCredentials(deps.slack);
 
-  return mountSlackTag(app, {
+  const base = {
     userName: deps.botName ?? DEFAULT_BOT_NAME,
     state: deps.state,
     slack: credentials,
-    ...(deps.path !== undefined ? { path: deps.path } : {}),
+  };
+  const withPath =
+    deps.path !== undefined ? { ...base, path: deps.path } : base;
+
+  return mountSlackTag(app, {
+    ...withPath,
     thinkingIndicator: true,
     onTag: (event, thread) => dispatchWorkbenchSlackEvent(deps, event, thread),
     onThreadMessage: (event, thread) =>

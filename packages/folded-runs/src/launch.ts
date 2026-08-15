@@ -288,7 +288,7 @@ export async function launchFoldedRun(
     // (health, SSE replay) is read off the collector by address, and a
     // launch that never opens one reads as permanently "not_ready" and
     // leaks into the generic instance list with broken health.
-    await deployAtHead(deps, {
+    const deployAtHeadParams = {
       tenantId: params.tenantId,
       instanceId: params.instanceId,
       triggerAddress: params.triggerAddress,
@@ -296,8 +296,13 @@ export async function launchFoldedRun(
       sessionId,
       foldedBody: params.foldedBody,
       launchLabel: params.launchLabel,
-      ...(params.sources !== undefined ? { sources: params.sources } : {}),
-    });
+    };
+    await deployAtHead(
+      deps,
+      params.sources !== undefined
+        ? { ...deployAtHeadParams, sources: params.sources }
+        : deployAtHeadParams,
+    );
   } catch (err) {
     // Mirrors the reference route's failure-path cleanup: a deploy
     // failure must not leave the just-committed principal/session/run

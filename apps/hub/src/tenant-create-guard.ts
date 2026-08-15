@@ -114,17 +114,23 @@ export async function decideTenantCreate(
     request.parentId === undefined ||
     request.parentId === deps.operatorTenantId
   ) {
-    const gate = await checkSignupGate({
+    type MutableSignupGateArgs = {
+      -readonly [K in keyof Parameters<typeof checkSignupGate>[0]]: Parameters<
+        typeof checkSignupGate
+      >[0][K];
+    };
+    const gateArgs: MutableSignupGateArgs = {
       store: deps.store,
       envSignupMode: deps.envSignupMode,
       envAllowedDomains: deps.envAllowedDomains,
       email: request.userEmail,
       emailVerified: request.userEmailVerified,
       allowUnverifiedEmails: deps.allowUnverifiedEmails,
-      ...(deps.operatorTenantId !== undefined
-        ? { operatorTenantId: deps.operatorTenantId }
-        : {}),
-    });
+    };
+    if (deps.operatorTenantId !== undefined) {
+      gateArgs.operatorTenantId = deps.operatorTenantId;
+    }
+    const gate = await checkSignupGate(gateArgs);
     if (!gate.allowed) {
       return {
         allowed: false,
@@ -201,12 +207,15 @@ export function guardedHubApp(
       .catch(() => ({}));
 
     const parentId = parseParentId(body);
-    const verdict = await decideTenantCreate(deps, {
+    const decideRequest: Parameters<typeof decideTenantCreate>[1] = {
       userId: user.id,
       userEmail: user.email,
       userEmailVerified: user.emailVerified,
-      ...(parentId !== undefined ? { parentId } : {}),
-    });
+    };
+    if (parentId !== undefined) {
+      decideRequest.parentId = parentId;
+    }
+    const verdict = await decideTenantCreate(deps, decideRequest);
     if (!verdict.allowed) {
       return c.json(
         { error: { code: verdict.code, message: verdict.message } },

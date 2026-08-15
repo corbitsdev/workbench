@@ -125,21 +125,18 @@ function buildApp(
     oauthEnv?: Readonly<Record<string, string | undefined>>;
   } = {},
 ) {
-  const routes = createConnectionRoutes({
+  const routeArgs: Parameters<typeof createConnectionRoutes>[0] = {
     hubUrl: "http://hub.test",
     requireGrant: overrides.requireGrant ?? allowAll,
     log: () => {},
     registry: FAKE_REGISTRY,
-    ...(overrides.ensureProviderFn !== undefined
-      ? { ensureProviderFn: overrides.ensureProviderFn }
-      : {}),
-    ...(overrides.ensureCredentialFn !== undefined
-      ? { ensureCredentialFn: overrides.ensureCredentialFn }
-      : {}),
-    ...(overrides.oauthEnv !== undefined
-      ? { oauthEnv: overrides.oauthEnv }
-      : {}),
-  });
+  };
+  if (overrides.ensureProviderFn !== undefined)
+    routeArgs.ensureProviderFn = overrides.ensureProviderFn;
+  if (overrides.ensureCredentialFn !== undefined)
+    routeArgs.ensureCredentialFn = overrides.ensureCredentialFn;
+  if (overrides.oauthEnv !== undefined) routeArgs.oauthEnv = overrides.oauthEnv;
+  const routes = createConnectionRoutes(routeArgs);
   return mountAs(routes);
 }
 

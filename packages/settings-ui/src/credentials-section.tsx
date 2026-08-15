@@ -122,15 +122,18 @@ export function CredentialsSection({
     if (tenantId === null) return;
     setCreating(true);
     setCreateError(null);
-    createCredential(tenantId, {
+    const base = {
       providerId: input.providerId,
       name: input.name,
       type: input.type,
       secret: input.secret,
-      ...(input.description.trim() !== ""
-        ? { description: input.description.trim() }
-        : {}),
-    })
+    };
+    createCredential(
+      tenantId,
+      input.description.trim() !== ""
+        ? { ...base, description: input.description.trim() }
+        : base,
+    )
       .then(() => {
         setCreateOpen(false);
         reload();

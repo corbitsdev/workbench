@@ -66,12 +66,11 @@ async function runWebSearch(
   }
   const numResults = call.arguments["numResults"];
   try {
+    const params =
+      typeof numResults === "number" ? { query, numResults } : { query };
     const results = await searchWeb(
       { fetchImpl: credential.fetchImpl },
-      {
-        query,
-        ...(typeof numResults === "number" ? { numResults } : {}),
-      },
+      params,
     );
     return { callId: call.id, content: JSON.stringify({ results }) };
   } catch (err) {

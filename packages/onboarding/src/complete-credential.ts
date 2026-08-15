@@ -217,7 +217,7 @@ export async function testAndPersistCredential(
   const tenant = await findPersonalTenant(args.api, args.cookies, expectedSlug);
   if (!tenant) return { kind: "no-personal-bench" };
 
-  await runSeedCatalog({
+  const seedCatalogArgs = {
     api: args.api,
     cookies: args.cookies,
     tenantId: tenant.tenantId,
@@ -225,11 +225,15 @@ export async function testAndPersistCredential(
     apiKey: args.apiKey,
     log: args.log,
     credentialType:
-      args.credentialMetadata !== undefined ? "oauth_token" : "api_key",
-    ...(args.credentialMetadata !== undefined
-      ? { credentialMetadata: args.credentialMetadata }
-      : {}),
-  });
+      args.credentialMetadata !== undefined
+        ? ("oauth_token" as const)
+        : ("api_key" as const),
+  };
+  await runSeedCatalog(
+    args.credentialMetadata !== undefined
+      ? { ...seedCatalogArgs, credentialMetadata: args.credentialMetadata }
+      : seedCatalogArgs,
+  );
 
   return { kind: "connected", ...tenant };
 }
@@ -247,7 +251,7 @@ export async function ensureSeeded(
 ): Promise<EnsureSeededResult> {
   const runSeedTenant = args.seedTenantFn ?? seedTenant;
 
-  await runSeedTenant({
+  const seedTenantArgs = {
     api: args.api,
     cookies: args.cookies,
     hubUrl: args.hubUrl,
@@ -258,13 +262,15 @@ export async function ensureSeeded(
     },
     model: modelSourceFor(args.provider, args.apiKey),
     pushWorkflow: args.pushWorkflow,
-    ...(args.publishToolRegistry !== undefined
-      ? { publishToolRegistry: args.publishToolRegistry }
-      : {}),
     log: args.log,
     workflows: DEFAULT_WORKFLOWS,
     confirmDeployments: false,
-  });
+  };
+  await runSeedTenant(
+    args.publishToolRegistry !== undefined
+      ? { ...seedTenantArgs, publishToolRegistry: args.publishToolRegistry }
+      : seedTenantArgs,
+  );
 
   return {
     kind: "seeded",
@@ -285,22 +291,25 @@ export async function completeCredentialSetup(
   const persisted = await testAndPersistCredential(args);
   if (persisted.kind !== "connected") return persisted;
 
-  const seeded = await ensureSeeded({
+  const ensureSeededArgs = {
     api: args.api,
     cookies: args.cookies,
     hubUrl: args.hubUrl,
     pushWorkflow: args.pushWorkflow,
-    ...(args.publishToolRegistry !== undefined
-      ? { publishToolRegistry: args.publishToolRegistry }
-      : {}),
     log: args.log,
     tenant: persisted,
     provider: args.provider,
     apiKey: args.apiKey,
-    ...(args.seedTenantFn !== undefined
-      ? { seedTenantFn: args.seedTenantFn }
-      : {}),
-  });
+  };
+  const withPublishToolRegistry =
+    args.publishToolRegistry !== undefined
+      ? { ...ensureSeededArgs, publishToolRegistry: args.publishToolRegistry }
+      : ensureSeededArgs;
+  const seeded = await ensureSeeded(
+    args.seedTenantFn !== undefined
+      ? { ...withPublishToolRegistry, seedTenantFn: args.seedTenantFn }
+      : withPublishToolRegistry,
+  );
 
   return {
     kind: "seeded",

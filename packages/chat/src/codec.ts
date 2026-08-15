@@ -54,10 +54,8 @@ export function encodeParts(
   const replyTo = opts?.replyTo;
 
   if (parts.length === 1 && parts[0]?.kind === "text") {
-    return {
-      content: parts[0].text,
-      ...(replyTo !== undefined ? { replyTo } : {}),
-    };
+    const base = { content: parts[0].text };
+    return replyTo !== undefined ? { ...base, replyTo } : base;
   }
 
   const attachments = parts.map((part, index) => {
@@ -75,11 +73,8 @@ export function encodeParts(
     };
   });
 
-  return {
-    content: "",
-    attachments,
-    ...(replyTo !== undefined ? { replyTo } : {}),
-  };
+  const base = { content: "", attachments };
+  return replyTo !== undefined ? { ...base, replyTo } : base;
 }
 
 /**

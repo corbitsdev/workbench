@@ -168,13 +168,17 @@ export function createAgentDefinitionRoutes({
     const principal = c.get("principal");
 
     const skills = body.skills ?? [];
-    const definition = buildAgentDefinitionWorkflow({
+    const baseDefinitionInput = {
       handle: body.handle,
       tenantDomain: tenant.domain,
       description: body.description ?? "",
       systemPrompt: body.systemPrompt,
-      ...(body.model !== undefined ? { model: body.model } : {}),
-    });
+    };
+    const definition = buildAgentDefinitionWorkflow(
+      body.model !== undefined
+        ? { ...baseDefinitionInput, model: body.model }
+        : baseDefinitionInput,
+    );
     // The definition's own system prompt is what the author typed; the
     // pinned-skills index is appended on the way to the asset so the
     // stored prompt always describes exactly the skills the definition

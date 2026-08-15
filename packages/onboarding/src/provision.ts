@@ -251,7 +251,7 @@ export async function provisionPersonalTenantIfNeeded(
       tenantResponse.data,
       "tenant response",
     );
-    await seedTenant({
+    const existingMemberSeedArgs = {
       api: args.api,
       cookies: args.cookies,
       hubUrl: args.hubUrl,
@@ -262,12 +262,17 @@ export async function provisionPersonalTenantIfNeeded(
       },
       model: args.seedModel,
       pushWorkflow: args.pushWorkflow,
-      ...(args.publishToolRegistry !== undefined
-        ? { publishToolRegistry: args.publishToolRegistry }
-        : {}),
       log: args.log,
       workflows: DEFAULT_WORKFLOWS,
-    });
+    };
+    await seedTenant(
+      args.publishToolRegistry !== undefined
+        ? {
+            ...existingMemberSeedArgs,
+            publishToolRegistry: args.publishToolRegistry,
+          }
+        : existingMemberSeedArgs,
+    );
     return { kind: "existing-member", seeded: true };
   }
 
@@ -299,17 +304,19 @@ export async function provisionPersonalTenantIfNeeded(
   }
 
   if (args.accessPolicy !== undefined) {
-    const gate = await checkSignupGate({
+    const signupGateArgs = {
       store: args.accessPolicy.store,
       envSignupMode: args.accessPolicy.envSignupMode,
       envAllowedDomains: args.accessPolicy.envAllowedDomains,
       email: args.userEmail,
       emailVerified: args.userEmailVerified,
       allowUnverifiedEmails: args.accessPolicy.allowUnverifiedEmails,
-      ...(args.operatorTenantId !== undefined
-        ? { operatorTenantId: args.operatorTenantId }
-        : {}),
-    });
+    };
+    const gate = await checkSignupGate(
+      args.operatorTenantId !== undefined
+        ? { ...signupGateArgs, operatorTenantId: args.operatorTenantId }
+        : signupGateArgs,
+    );
     if (!gate.allowed) {
       throw new ProvisionError(
         "signup_not_allowed",
@@ -378,7 +385,7 @@ export async function provisionPersonalTenantIfNeeded(
     };
   }
 
-  await seedTenant({
+  const provisionedSeedArgs = {
     api: args.api,
     cookies: args.cookies,
     hubUrl: args.hubUrl,
@@ -389,12 +396,17 @@ export async function provisionPersonalTenantIfNeeded(
     },
     model: args.seedModel,
     pushWorkflow: args.pushWorkflow,
-    ...(args.publishToolRegistry !== undefined
-      ? { publishToolRegistry: args.publishToolRegistry }
-      : {}),
     log: args.log,
     workflows: DEFAULT_WORKFLOWS,
-  });
+  };
+  await seedTenant(
+    args.publishToolRegistry !== undefined
+      ? {
+          ...provisionedSeedArgs,
+          publishToolRegistry: args.publishToolRegistry,
+        }
+      : provisionedSeedArgs,
+  );
 
   return {
     kind: "provisioned",

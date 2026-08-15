@@ -26,12 +26,13 @@ async function probe(
 ): Promise<CredentialTestResult> {
   let response: Response;
   try {
-    response = await fetchImpl(url, {
+    const fetchArgs: Parameters<FetchLike>[1] = {
       method: init.method,
       headers: new Headers(init.headers),
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-      ...(init.body !== undefined ? { body: init.body } : {}),
-    });
+    };
+    if (init.body !== undefined) fetchArgs.body = init.body;
+    response = await fetchImpl(url, fetchArgs);
   } catch (cause) {
     return {
       ok: false,

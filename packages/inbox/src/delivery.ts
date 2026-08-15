@@ -46,7 +46,7 @@ export function createWorkbenchMailboxDelivery(
           // A ref's display label (an artifact's title, say) rides
           // along so the inbox detail can render a chip without a
           // second lookup — dropped only when the writer had none.
-          ...(ref.label !== undefined ? { label: ref.label } : {}),
+          label: ref.label,
         })),
         classification: classificationFromRefs(refs),
         status: "open",

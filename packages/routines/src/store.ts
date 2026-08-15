@@ -302,22 +302,26 @@ export function createDrizzleRoutineStore<
           : (existing.trigger as RoutineTriggerT);
       const mergedEnabled =
         patch.enabled !== undefined ? patch.enabled : existing.enabled;
+      let update: UpdateRoutineInput & {
+        updatedAt: Date;
+        nextFireAt?: Date | null;
+        consecutiveFailures?: number;
+        deadLetteredAt?: Date | null;
+      } = { ...patch, updatedAt: now };
+      if (recomputeNextFire) {
+        update = {
+          ...update,
+          nextFireAt: mergedEnabled
+            ? computeNextFireAt(mergedTrigger, now)
+            : null,
+        };
+      }
+      if (clearFailures) {
+        update = { ...update, consecutiveFailures: 0, deadLetteredAt: null };
+      }
       const [row] = await db
         .update(routine)
-        .set({
-          ...patch,
-          ...(recomputeNextFire
-            ? {
-                nextFireAt: mergedEnabled
-                  ? computeNextFireAt(mergedTrigger, now)
-                  : null,
-              }
-            : {}),
-          ...(clearFailures
-            ? { consecutiveFailures: 0, deadLetteredAt: null }
-            : {}),
-          updatedAt: now,
-        })
+        .set(update)
         .where(and(eq(routine.tenantId, tenantId), eq(routine.id, routineId)))
         .returning();
       if (row === undefined) {
@@ -568,21 +572,18 @@ export function createInMemoryRoutineStore(): RoutineStore {
         patch.trigger !== undefined ? patch.trigger : existing.trigger;
       const mergedEnabled =
         patch.enabled !== undefined ? patch.enabled : existing.enabled;
-      const row: RoutineRow = {
-        ...existing,
-        ...patch,
-        ...(recomputeNextFire
-          ? {
-              nextFireAt: mergedEnabled
-                ? computeNextFireAt(mergedTrigger, now)
-                : null,
-            }
-          : {}),
-        ...(clearFailures
-          ? { consecutiveFailures: 0, deadLetteredAt: null }
-          : {}),
-        updatedAt: now,
-      };
+      let row: RoutineRow = { ...existing, ...patch, updatedAt: now };
+      if (recomputeNextFire) {
+        row = {
+          ...row,
+          nextFireAt: mergedEnabled
+            ? computeNextFireAt(mergedTrigger, now)
+            : null,
+        };
+      }
+      if (clearFailures) {
+        row = { ...row, consecutiveFailures: 0, deadLetteredAt: null };
+      }
       routinesById.set(routineId, row);
       return row;
     },

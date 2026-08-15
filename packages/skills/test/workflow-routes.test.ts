@@ -50,7 +50,7 @@ async function request(
   return await app.request(path, {
     method: init.method ?? "GET",
     headers,
-    ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
 }
 

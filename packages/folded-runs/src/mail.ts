@@ -41,20 +41,25 @@ export async function sendFoldedMail(
   const mailId = crypto.randomUUID();
   const now = new Date();
 
-  const rawMIME = await deps.sessionService.sendUserMessage({
+  const userMessageParams = {
     agentAddress: params.agentAddress,
     from: params.from,
     messageId: `<${mailId}@${params.domain}>`,
     date: now,
     content: params.content,
-    ...(params.attachments !== undefined
-      ? { attachments: params.attachments }
-      : {}),
-    ...(params.replyTo !== undefined ? { inReplyTo: params.replyTo } : {}),
     sessionId: params.sessionId,
     tenantId: params.tenantId,
     cryptoProvider: params.cryptoProvider,
-  });
+  };
+  const withAttachments =
+    params.attachments !== undefined
+      ? { ...userMessageParams, attachments: params.attachments }
+      : userMessageParams;
+  const withReplyTo =
+    params.replyTo !== undefined
+      ? { ...withAttachments, inReplyTo: params.replyTo }
+      : withAttachments;
+  const rawMIME = await deps.sessionService.sendUserMessage(withReplyTo);
 
   await deps.db.insert(sessionMail).values({
     id: mailId,
@@ -183,10 +188,7 @@ export async function listFoldedMail(
   }));
 
   const last = page.length > 0 ? page[page.length - 1] : undefined;
-  return {
-    items,
-    ...(hasMore && last !== undefined
-      ? { nextCursor: encodeCursor(last.createdAt, last.id) }
-      : {}),
-  };
+  return hasMore && last !== undefined
+    ? { items, nextCursor: encodeCursor(last.createdAt, last.id) }
+    : { items };
 }

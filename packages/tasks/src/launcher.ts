@@ -279,51 +279,55 @@ export async function launchTask(
   const createdAt = new Date();
   const followOn = input.followOn ?? [];
 
-  const outcome = await launchRun(deps, {
+  const persistTaskLaunch: LaunchRunInput["persistExtra"] = async (tx) => {
+    await tx.insert(task).values({
+      id: taskId,
+      tenantId: input.tenantId,
+      principalId: input.principalId,
+      definitionId: input.definitionId,
+      agentName: target.definitionRow.name,
+      prompt: input.prompt,
+      modelPreference: input.modelPreference ?? null,
+      status: "running",
+      runId: instanceId,
+      resultMailId: null,
+      createdAt,
+      completedAt: null,
+    });
+    await tx.insert(taskLeg).values(
+      taskLegLaunchRows(
+        {
+          id: taskId,
+          tenantId: input.tenantId,
+          principalId: input.principalId,
+          definitionId: input.definitionId,
+          agentName: target.definitionRow.name,
+          prompt: input.prompt,
+          modelPreference: input.modelPreference ?? null,
+          runId: instanceId,
+          followOn,
+        },
+        createdAt,
+      ),
+    );
+  };
+  const launchRunBase = {
     tenantId: input.tenantId,
     principalId: input.principalId,
     definitionId: input.definitionId,
     prompt: input.prompt,
-    ...(input.modelPreference !== undefined
-      ? { modelPreference: input.modelPreference }
-      : {}),
     domain: target.domain,
     foldedBody: target.foldedBody,
     instanceId,
     cryptoKey: taskId,
-    persistExtra: async (tx) => {
-      await tx.insert(task).values({
-        id: taskId,
-        tenantId: input.tenantId,
-        principalId: input.principalId,
-        definitionId: input.definitionId,
-        agentName: target.definitionRow.name,
-        prompt: input.prompt,
-        modelPreference: input.modelPreference ?? null,
-        status: "running",
-        runId: instanceId,
-        resultMailId: null,
-        createdAt,
-        completedAt: null,
-      });
-      await tx.insert(taskLeg).values(
-        taskLegLaunchRows(
-          {
-            id: taskId,
-            tenantId: input.tenantId,
-            principalId: input.principalId,
-            definitionId: input.definitionId,
-            agentName: target.definitionRow.name,
-            prompt: input.prompt,
-            modelPreference: input.modelPreference ?? null,
-            runId: instanceId,
-            followOn,
-          },
-          createdAt,
-        ),
-      );
-    },
-  });
+    persistExtra: persistTaskLaunch,
+  };
+  const outcome = await launchRun(
+    deps,
+    input.modelPreference !== undefined
+      ? { ...launchRunBase, modelPreference: input.modelPreference }
+      : launchRunBase,
+  );
 
   if (!outcome.ok) {
     // The run, the task row and its legs are already committed —
@@ -415,28 +419,28 @@ export async function launchTaskLeg(
   deps: TaskLauncherDeps,
   input: LaunchTaskLegInput,
 ): Promise<string> {
-  const target = await resolveLaunchTarget(deps, {
+  const resolveTargetBase = {
     tenantId: input.tenantId,
     definitionId: input.definitionId,
-    ...(input.modelPreference !== null
-      ? { modelPreference: input.modelPreference }
-      : {}),
-  });
+  };
+  const target = await resolveLaunchTarget(
+    deps,
+    input.modelPreference !== null
+      ? { ...resolveTargetBase, modelPreference: input.modelPreference }
+      : resolveTargetBase,
+  );
   const instanceId = generateId("workflowRun");
 
-  const outcome = await launchRun(deps, {
+  const launchRunBase = {
     tenantId: input.tenantId,
     principalId: input.principalId,
     definitionId: input.definitionId,
     prompt: input.prompt,
-    ...(input.modelPreference !== null
-      ? { modelPreference: input.modelPreference }
-      : {}),
     domain: target.domain,
     foldedBody: target.foldedBody,
     instanceId,
     cryptoKey: input.legId,
-    persistExtra: async (tx) => {
+    persistExtra: async (tx: Parameters<LaunchRunInput["persistExtra"]>[0]) => {
       const stamped = await tx
         .update(taskLeg)
         .set({ runId: instanceId })
@@ -452,7 +456,13 @@ export async function launchTaskLeg(
         throw new TaskLegClaimLostError(input.legId);
       }
     },
-  });
+  };
+  const outcome = await launchRun(
+    deps,
+    input.modelPreference !== null
+      ? { ...launchRunBase, modelPreference: input.modelPreference }
+      : launchRunBase,
+  );
 
   if (!outcome.ok) {
     throw new Error(

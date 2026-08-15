@@ -264,23 +264,32 @@ export function buildAgentDefinitionWorkflow(
           : [],
     },
   });
-  return defineWorkflow({
-    id: `wf_agent_${input.handle}`,
-    trigger: { type: "mail", to: `${input.handle}@${input.tenantDomain}` },
-    ...(input.credentialBindings !== undefined &&
+  const trigger = {
+    type: "mail" as const,
+    to: `${input.handle}@${input.tenantDomain}`,
+  };
+  const steps = {
+    [AGENT_DEFINITION_STEP_ID]: step({
+      agent:
+        input.toolPackagePins !== undefined
+          ? { ...agent, toolPackagePins: input.toolPackagePins }
+          : agent,
+      timeout: AGENT_DEFINITION_TURN_TIMEOUT_MS,
+    }),
+  };
+  return input.credentialBindings !== undefined &&
     input.credentialBindings.length > 0
-      ? { credentialBindings: input.credentialBindings }
-      : {}),
-    steps: {
-      [AGENT_DEFINITION_STEP_ID]: step({
-        agent:
-          input.toolPackagePins !== undefined
-            ? { ...agent, toolPackagePins: input.toolPackagePins }
-            : agent,
-        timeout: AGENT_DEFINITION_TURN_TIMEOUT_MS,
-      }),
-    },
-  });
+    ? defineWorkflow({
+        id: `wf_agent_${input.handle}`,
+        trigger,
+        credentialBindings: input.credentialBindings,
+        steps,
+      })
+    : defineWorkflow({
+        id: `wf_agent_${input.handle}`,
+        trigger,
+        steps,
+      });
 }
 
 const AGENT_DEFINITION_TURN_TIMEOUT_MS = 2 * 60 * 1000;

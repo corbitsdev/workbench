@@ -343,7 +343,7 @@ export function createSidecarSubstrateFactory(
         })
       : undefined;
 
-    const buildStepEnv = createSidecarStepBuildEnv({
+    const buildStepEnvBaseOpts = {
       dataDir: validated.SIDECAR_DATA_DIR,
       workflowRunRepoId,
       signer: conversationSigner,
@@ -356,8 +356,12 @@ export function createSidecarSubstrateFactory(
       toolless: false,
       hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
-      ...(durableConversation !== undefined ? { durableConversation } : {}),
-    });
+    };
+    const buildStepEnv = createSidecarStepBuildEnv(
+      durableConversation !== undefined
+        ? { ...buildStepEnvBaseOpts, durableConversation }
+        : buildStepEnvBaseOpts,
+    );
 
     // Credential provider registry: the platform's built-in `http`
     // (Bearer) provider (`@intx/harness`'s `builtinCredentialProviders`)
@@ -513,17 +517,25 @@ export function createSidecarSubstrateFactory(
       warmCache,
       sourcesRef,
       credentialWiring,
-    ) =>
-      createWorkflowStepInvoker({
+    ) => {
+      const stepInvokerBaseOpts = {
         workflowAuthorize: authorize,
-        buildEnv: (buildReq) =>
+        buildEnv: (buildReq: Parameters<typeof buildStepEnv>[0]) =>
           buildStepEnv(buildReq, sourcesRef, credentialWiring),
         agentFactory: stepAgentFactory,
         onEvent,
         sourcesRef,
-        ...(warmCache !== undefined ? { warmCache } : {}),
-        ...(onRunBoundary !== undefined ? { onRunBoundary } : {}),
-      })(req);
+      };
+      const stepInvokerOptsWithWarmCache =
+        warmCache !== undefined
+          ? { ...stepInvokerBaseOpts, warmCache }
+          : stepInvokerBaseOpts;
+      const stepInvokerOpts =
+        onRunBoundary !== undefined
+          ? { ...stepInvokerOptsWithWarmCache, onRunBoundary }
+          : stepInvokerOptsWithWarmCache;
+      return createWorkflowStepInvoker(stepInvokerOpts)(req);
+    };
 
     const evaluateGrantsAdapter: GrantEvaluator = async ({
       resource,
@@ -607,7 +619,7 @@ export function createSidecarSubstrateFactory(
               { recursive: true, force: true },
             );
 
-    const bindings: RunWorkflowChildBindings = {
+    const bindingsBase = {
       substrate,
       workflowRunRepoId,
       workflowRunRef: validated.WORKFLOW_RUN_REF,
@@ -620,8 +632,11 @@ export function createSidecarSubstrateFactory(
       spawnSuspendableChild,
       scheduler,
       evaluateGrants: evaluateGrantsAdapter,
-      ...(cleanupRunStorage !== undefined ? { cleanupRunStorage } : {}),
     };
+    const bindings: RunWorkflowChildBindings =
+      cleanupRunStorage !== undefined
+        ? { ...bindingsBase, cleanupRunStorage }
+        : bindingsBase;
     return bindings;
   };
 }

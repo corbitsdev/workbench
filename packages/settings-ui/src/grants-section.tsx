@@ -139,16 +139,22 @@ export function GrantsSection({
     if (tenantId === null) return;
     setCreating(true);
     setCreateError(null);
-    createGrant(tenantId, {
-      ...(input.targetType === "role"
-        ? { roleId: input.targetId }
-        : { principalId: input.targetId }),
+    const shared = {
       resource: input.resource,
       action: input.action,
       effect: input.effect,
       origin: input.origin,
-      ...(input.expiresAt !== null ? { expiresAt: input.expiresAt } : {}),
-    })
+    };
+    const target =
+      input.targetType === "role"
+        ? { ...shared, roleId: input.targetId }
+        : { ...shared, principalId: input.targetId };
+    createGrant(
+      tenantId,
+      input.expiresAt !== null
+        ? { ...target, expiresAt: input.expiresAt }
+        : target,
+    )
       .then(() => {
         setCreateOpen(false);
         reload();

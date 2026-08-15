@@ -464,18 +464,26 @@ export function createToolBearingAgentFactory(deps: {
     // incoming def. `defineAgent` owns the contravariance escape for
     // the `BaseEnv`-typed loader factories (see its `EnvRequiredByAll`
     // machinery).
-    const toolDef = defineAgent({
+    const toolDefBaseConfig = {
       id: def.id,
       systemPrompt: def.systemPrompt,
       tools: factoriesWithCapture,
       capabilities: [...def.capabilities],
       inference: { sources: [...def.inference.sources] },
-      ...(def.description !== undefined
-        ? { description: def.description }
-        : {}),
-      ...(def.director !== undefined ? { director: def.director } : {}),
-      ...(def.tags !== undefined ? { tags: def.tags } : {}),
-    });
+    };
+    const toolDefConfigWithDescription =
+      def.description !== undefined
+        ? { ...toolDefBaseConfig, description: def.description }
+        : toolDefBaseConfig;
+    const toolDefConfigWithDirector =
+      def.director !== undefined
+        ? { ...toolDefConfigWithDescription, director: def.director }
+        : toolDefConfigWithDescription;
+    const toolDefConfig =
+      def.tags !== undefined
+        ? { ...toolDefConfigWithDirector, tags: def.tags }
+        : toolDefConfigWithDirector;
+    const toolDef = defineAgent(toolDefConfig);
 
     // Instantiate plugin factories one at a time so each successive
     // factory sees the prior plugins' instances on `env.plugins`:

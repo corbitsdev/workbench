@@ -628,7 +628,7 @@ export async function createHub(config: HubConfig) {
   // `recordActivity` call. `approvals` is the same `ApprovalStore` the
   // platform's own approve/reject routes read and write — this
   // orchestrator only ever reads it.
-  const chatOrchestrator = createChatOrchestrator({
+  const chatOrchestratorDeps: Parameters<typeof createChatOrchestrator>[0] = {
     db,
     store: chatStore,
     platform: chatPlatform,
@@ -636,21 +636,31 @@ export async function createHub(config: HubConfig) {
     approvals: createApprovalStore(db),
     recordActivity: chatPlatform.recordActivity,
     claims: writeClaims,
-    ...(memoryHandle !== undefined ? { memory: memoryHandle.memory } : {}),
-  });
+  };
+  if (memoryHandle !== undefined) {
+    chatOrchestratorDeps.memory = memoryHandle.memory;
+  }
+  const chatOrchestrator = createChatOrchestrator(chatOrchestratorDeps);
   // Now that `chatStore`/`chatPlatform` exist, arm the finalized-turn
   // artifact-delivery ref declared beside `eventCollectors` above.
   // `memory` (absent when the plane isn't mounted) lets this handler
   // also record a memory entry for each persisted artifact (CL-5852).
-  artifactDeliveryHandlerRef.current = createArtifactDeliveryHandler({
+  const artifactDeliveryHandlerDeps: Parameters<
+    typeof createArtifactDeliveryHandler
+  >[0] = {
     db,
     store: chatStore,
     platform: chatPlatform,
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
     claims: writeClaims,
-    ...(memoryHandle !== undefined ? { memory: memoryHandle.memory } : {}),
-  });
+  };
+  if (memoryHandle !== undefined) {
+    artifactDeliveryHandlerDeps.memory = memoryHandle.memory;
+  }
+  artifactDeliveryHandlerRef.current = createArtifactDeliveryHandler(
+    artifactDeliveryHandlerDeps,
+  );
   // The one SSE subscriber registry for this process's channel events
   // (see `@corbits/chat`'s `channel-events.ts`), constructed here in
   // the composition root and shared by both consumers below: the
@@ -1224,14 +1234,18 @@ export async function createHub(config: HubConfig) {
       if (!isAutomatableWorkflowName(row.name)) continue;
       const entry = workflowCatalogEntry(row.name);
       if (entry === undefined) continue;
-      out.push({
+      const workflow = {
         definitionId: row.id,
         assetName: row.name,
         displayName: workflowDisplayName(row.name, row.description),
         deliveryMode: entry.deliveryMode,
         triggerFields: entry.triggerFields ?? [],
-        ...(row.description !== null ? { description: row.description } : {}),
-      });
+      };
+      out.push(
+        row.description !== null
+          ? { ...workflow, description: row.description }
+          : workflow,
+      );
     }
     return out;
   }
@@ -1357,12 +1371,17 @@ export async function createHub(config: HubConfig) {
     });
     return rows
       .filter((row) => isPickerListableDefinition(row))
-      .map((row) => ({
-        id: row.id,
-        name: row.name,
-        displayName: workflowDisplayName(row.name, row.description),
-        ...(row.description !== null ? { description: row.description } : {}),
-      }));
+      .map((row) => {
+        const agent = {
+          id: row.id,
+          name: row.name,
+          displayName: workflowDisplayName(row.name, row.description),
+        };
+        if (row.description !== null) {
+          return { ...agent, description: row.description };
+        }
+        return agent;
+      });
   }
 
   async function listMyraUsableToolPackages(
@@ -1408,10 +1427,13 @@ export async function createHub(config: HubConfig) {
     const rows = await db.query.model.findMany({
       where: and(eq(model.tenantId, tenantId), eq(model.disabled, false)),
     });
-    return rows.map((row) => ({
-      canonicalName: row.canonicalName,
-      ...(row.displayName !== null ? { displayName: row.displayName } : {}),
-    }));
+    return rows.map((row) => {
+      const entry = { canonicalName: row.canonicalName };
+      if (row.displayName !== null) {
+        return { ...entry, displayName: row.displayName };
+      }
+      return entry;
+    });
   }
 
   const plannerInventorySources: InventorySources = {
@@ -1468,24 +1490,30 @@ export async function createHub(config: HubConfig) {
           )
         : [];
 
-    const definition = buildAgentDefinitionWorkflow({
+    type MutableBuildAgentDefinitionInput = {
+      -readonly [
+        K in keyof Parameters<typeof buildAgentDefinitionWorkflow>[0]
+      ]: Parameters<typeof buildAgentDefinitionWorkflow>[0][K];
+    };
+    const buildInput: MutableBuildAgentDefinitionInput = {
       handle,
       tenantDomain: tenantRow.domain,
       description: "",
       systemPrompt: input.systemPrompt,
-      ...(input.model !== undefined ? { model: input.model } : {}),
-      ...(input.toolPackagePins.length > 0
-        ? {
-            toolPackagePins: input.toolPackagePins.map((name) => ({
-              name,
-              version: "*",
-            })),
-          }
-        : {}),
-      ...(input.credentialBindings.length > 0
-        ? { credentialBindings: input.credentialBindings }
-        : {}),
-    });
+    };
+    if (input.model !== undefined) {
+      buildInput.model = input.model;
+    }
+    if (input.toolPackagePins.length > 0) {
+      buildInput.toolPackagePins = input.toolPackagePins.map((name) => ({
+        name,
+        version: "*",
+      }));
+    }
+    if (input.credentialBindings.length > 0) {
+      buildInput.credentialBindings = input.credentialBindings;
+    }
+    const definition = buildAgentDefinitionWorkflow(buildInput);
     const workflowJson = reindexPinnedSkills(
       serializeAgentDefinitionWorkflow(definition),
       skillEntries,
@@ -1818,7 +1846,7 @@ export async function createHub(config: HubConfig) {
   // outer wrap rather than an `app.use()` added here: the native route
   // is already registered by the time `createApp()` returns above, and
   // Hono composes handlers in registration order.
-  const guardedApp = guardedHubApp(app, {
+  const guardDeps: Parameters<typeof guardedHubApp>[1] = {
     store: accessPolicyStore,
     resolveCallerRoleNames: (tenantId, userId) =>
       resolveCallerRoleNames(db, tenantId, userId),
@@ -1835,10 +1863,11 @@ export async function createHub(config: HubConfig) {
           }
         : undefined;
     },
-    ...(config.operatorTenantId !== undefined
-      ? { operatorTenantId: config.operatorTenantId }
-      : {}),
-  });
+  };
+  if (config.operatorTenantId !== undefined) {
+    guardDeps.operatorTenantId = config.operatorTenantId;
+  }
+  const guardedApp = guardedHubApp(app, guardDeps);
 
   return {
     app: guardedApp,

@@ -79,12 +79,13 @@ export async function listRecentLinearIssues(
   params: { readonly since?: string } = {},
 ): Promise<readonly LinearIssue[]> {
   const doFetch = config.fetchImpl ?? fetch;
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (config.apiKey !== undefined) headers.authorization = config.apiKey;
   const response = await doFetch(config.baseUrl ?? DEFAULT_BASE_URL, {
     method: "POST",
-    headers: {
-      ...(config.apiKey !== undefined ? { authorization: config.apiKey } : {}),
-      "content-type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       query: RECENT_ISSUES_QUERY,
       variables: { updatedAfter: params.since },

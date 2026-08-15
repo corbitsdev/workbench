@@ -532,17 +532,17 @@ export function createDrizzleChannelTenancyStore<
           parseGrantRow(row),
         );
 
+        const evalOptionsBase = {
+          principalId: destinationPrincipal.id,
+          tenantId: newParentTenantId,
+        };
         const decision = await evaluateGrants(
           grantRules,
           MOVE_DESTINATION_RESOURCE,
           MOVE_DESTINATION_ACTION,
-          {
-            principalId: destinationPrincipal.id,
-            tenantId: newParentTenantId,
-            ...(authz.conditionRegistry
-              ? { registry: authz.conditionRegistry }
-              : {}),
-          },
+          authz.conditionRegistry
+            ? { ...evalOptionsBase, registry: authz.conditionRegistry }
+            : evalOptionsBase,
         );
         if (decision.effect !== "allow") {
           return { kind: "forbidden" as const };

@@ -266,17 +266,21 @@ export function createInMemoryAccessPolicyStore(): AccessPolicyStore {
         input.matchType === "email"
           ? input.value.trim().toLowerCase()
           : input.value.trim().toLowerCase().replace(/^@/, "");
-      const invite: PendingInvite = {
+      const baseInvite = {
         id: generatePendingInviteId(),
         tenantId,
         matchType: input.matchType,
         value,
         createdAt: new Date(),
-        ...(input.roleId !== undefined ? { roleId: input.roleId } : {}),
-        ...(input.invitedBy !== undefined
-          ? { invitedBy: input.invitedBy }
-          : {}),
       };
+      const invite: PendingInvite =
+        input.roleId !== undefined && input.invitedBy !== undefined
+          ? { ...baseInvite, roleId: input.roleId, invitedBy: input.invitedBy }
+          : input.roleId !== undefined
+            ? { ...baseInvite, roleId: input.roleId }
+            : input.invitedBy !== undefined
+              ? { ...baseInvite, invitedBy: input.invitedBy }
+              : baseInvite;
       invites.set(invite.id, invite);
       return invite;
     },

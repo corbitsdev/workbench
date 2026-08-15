@@ -18,6 +18,7 @@ import {
   type DeriveStepRepoId,
   type DispatchTimingMark,
   type HubTransportMailBusAdapter,
+  type PrincipalSigner,
   type SubprocessSpawner,
   type WorkflowSupervisor,
 } from "@intx/workflow-host";
@@ -158,12 +159,12 @@ export function createSidecarWorkflowSupervisor(
     kind: "supervisor",
     anchorRunId: opts.deploymentId,
   };
-  const supervisor = createWorkflowSupervisor({
+  const supervisorBaseConfig = {
     repoStore: opts.repoStore,
-    signAsPrincipal: async (kind, payload) => {
+    signAsPrincipal: (async (kind, payload) => {
       const sig = await signEd25519(opts.signingKeySeed, payload);
       return { sig, principalKind: kind };
-    },
+    }) satisfies PrincipalSigner,
     mailBus,
     subprocessSpawner: opts.subprocessSpawner ?? defaultSubprocessSpawner,
     binaryPath: opts.binaryPath ?? SIDECAR_WORKFLOW_CHILD_BINARY,
@@ -176,23 +177,44 @@ export function createSidecarWorkflowSupervisor(
     deploymentMailAddress: opts.deploymentMailAddress,
     readPrincipal: supervisorPrincipal,
     deriveStepAddress: opts.deriveStepAddress,
-    ...(opts.deriveStepRepoId !== undefined
-      ? { deriveStepRepoId: opts.deriveStepRepoId }
-      : {}),
     deriveMailAuditRef: deriveSidecarMailAuditRef(opts.deploymentId),
-    ...(opts.onDispatchTiming !== undefined
-      ? { onDispatchTiming: opts.onDispatchTiming }
-      : {}),
-    ...(opts.repackEveryMessages !== undefined
-      ? { repackEveryMessages: opts.repackEveryMessages }
-      : {}),
-    ...(opts.consumedRetentionMs !== undefined
-      ? { consumedRetentionMs: opts.consumedRetentionMs }
-      : {}),
-    ...(opts.readyTimeoutMs !== undefined
-      ? { readyTimeoutMs: opts.readyTimeoutMs }
-      : {}),
-  });
+  };
+  const supervisorConfigWithDeriveStepRepoId =
+    opts.deriveStepRepoId !== undefined
+      ? {
+          ...supervisorBaseConfig,
+          deriveStepRepoId: opts.deriveStepRepoId,
+        }
+      : supervisorBaseConfig;
+  const supervisorConfigWithOnDispatchTiming =
+    opts.onDispatchTiming !== undefined
+      ? {
+          ...supervisorConfigWithDeriveStepRepoId,
+          onDispatchTiming: opts.onDispatchTiming,
+        }
+      : supervisorConfigWithDeriveStepRepoId;
+  const supervisorConfigWithRepackEveryMessages =
+    opts.repackEveryMessages !== undefined
+      ? {
+          ...supervisorConfigWithOnDispatchTiming,
+          repackEveryMessages: opts.repackEveryMessages,
+        }
+      : supervisorConfigWithOnDispatchTiming;
+  const supervisorConfigWithConsumedRetentionMs =
+    opts.consumedRetentionMs !== undefined
+      ? {
+          ...supervisorConfigWithRepackEveryMessages,
+          consumedRetentionMs: opts.consumedRetentionMs,
+        }
+      : supervisorConfigWithRepackEveryMessages;
+  const supervisorConfig =
+    opts.readyTimeoutMs !== undefined
+      ? {
+          ...supervisorConfigWithConsumedRetentionMs,
+          readyTimeoutMs: opts.readyTimeoutMs,
+        }
+      : supervisorConfigWithConsumedRetentionMs;
+  const supervisor = createWorkflowSupervisor(supervisorConfig);
   return {
     supervisor,
     routeInbound(message) {

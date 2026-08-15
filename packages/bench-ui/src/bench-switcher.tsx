@@ -156,10 +156,15 @@ export function BenchSwitcher({
         // than reporting a creation failure that didn't happen.
         if (purpose !== undefined || benchType !== undefined) {
           try {
-            await patchBenchSettings(bench.id, {
-              ...(purpose !== undefined ? { purpose } : {}),
-              ...(benchType !== undefined ? { type: benchType } : {}),
-            });
+            const patch =
+              purpose !== undefined && benchType !== undefined
+                ? { purpose, type: benchType }
+                : purpose !== undefined
+                  ? { purpose }
+                  : benchType !== undefined
+                    ? { type: benchType }
+                    : {};
+            await patchBenchSettings(bench.id, patch);
           } catch {
             // best-effort, see comment above
           }

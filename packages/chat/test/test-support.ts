@@ -135,16 +135,19 @@ export function fakePlatform(
       }
     },
     async sendMail(input) {
-      sentMail.push({
+      const sentMailEntryBase = {
         channelId: input.channelId,
-        ...(input.principalId !== undefined
-          ? { principalId: input.principalId }
-          : {}),
         content: input.content,
-        ...(input.fromChannelId !== undefined
-          ? { fromChannelId: input.fromChannelId }
-          : {}),
-      });
+      };
+      const withPrincipal =
+        input.principalId !== undefined
+          ? { ...sentMailEntryBase, principalId: input.principalId }
+          : sentMailEntryBase;
+      sentMail.push(
+        input.fromChannelId !== undefined
+          ? { ...withPrincipal, fromChannelId: input.fromChannelId }
+          : withPrincipal,
+      );
       const id = `mail_${++mailCounter}`;
       const createdAt = new Date().toISOString();
       const list = mailByChannel.get(input.channelId) ?? [];

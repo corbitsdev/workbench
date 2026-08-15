@@ -21,7 +21,12 @@ import {
 } from "@corbits/folded-runs";
 
 import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
-import type { RoutineRow, RoutineRunRow, RoutineStore } from "./store";
+import type {
+  RoutineRow,
+  RoutineRunRow,
+  RoutineStore,
+  UpdateRoutineInput,
+} from "./store";
 import {
   MyraRoutineDraftingUnavailableError,
   RoutineDraftReferenceOutOfInventoryError,
@@ -254,13 +259,13 @@ async function runView(
   resolver: RunSummaryResolver | undefined,
 ) {
   const summary = await resolver?.resolveRunSummary(row.tenantId, row.runId);
-  return {
+  const base = {
     runId: row.runId,
     triggeredBy: row.triggeredBy,
     error: row.error,
     createdAt: row.createdAt.toISOString(),
-    ...(summary !== undefined ? { run: summary } : {}),
   };
+  return summary !== undefined ? { ...base, run: summary } : base;
 }
 
 /**
@@ -297,12 +302,16 @@ async function launchAndCorrelate(
   ) {
     // runRef is stable per fire attempt: routine id + triggeredBy + time bucket
     const runRef = `${input.routineId}:${input.triggeredBy}:${Date.now()}`;
-    const thread = await deps.deliveryThreads.createDeliveryThread({
+    const createDeliveryThreadInput = {
       tenantId: input.tenantId,
       channelId: input.deliveryChannelId,
       runRef,
-      ...(input.routineName !== undefined ? { title: input.routineName } : {}),
-    });
+    };
+    const thread = await deps.deliveryThreads.createDeliveryThread(
+      input.routineName !== undefined
+        ? { ...createDeliveryThreadInput, title: input.routineName }
+        : createDeliveryThreadInput,
+    );
     deliveryThreadId = thread.id;
   }
 
@@ -331,10 +340,9 @@ async function launchAndCorrelate(
     );
   }
   await deps.store.clearFireFailures(input.routineId);
-  return {
-    runId: launched.runId,
-    ...(deliveryThreadId !== undefined ? { deliveryThreadId } : {}),
-  };
+  return deliveryThreadId !== undefined
+    ? { runId: launched.runId, deliveryThreadId }
+    : { runId: launched.runId };
 }
 
 /**
@@ -546,17 +554,20 @@ export function createRoutineRoutes(
         );
       }
 
-      const row = await deps.store.updateRoutine(tenant.id, routineId, {
-        ...(body.name !== undefined ? { name: body.name } : {}),
-        ...(body.trigger !== undefined
-          ? { trigger: body.trigger as RoutineTriggerT }
-          : {}),
-        ...(body.input !== undefined ? { input: body.input } : {}),
-        ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
-        ...(body.deliveryChannelId !== undefined
-          ? { deliveryChannelId: body.deliveryChannelId }
-          : {}),
-      });
+      let patch: UpdateRoutineInput = {};
+      if (body.name !== undefined) patch = { ...patch, name: body.name };
+      if (body.trigger !== undefined) {
+        patch = { ...patch, trigger: body.trigger as RoutineTriggerT };
+      }
+      if (body.input !== undefined) patch = { ...patch, input: body.input };
+      if (body.enabled !== undefined) {
+        patch = { ...patch, enabled: body.enabled };
+      }
+      if (body.deliveryChannelId !== undefined) {
+        patch = { ...patch, deliveryChannelId: body.deliveryChannelId };
+      }
+
+      const row = await deps.store.updateRoutine(tenant.id, routineId, patch);
 
       return c.json(routineView(row));
     },
@@ -661,12 +672,12 @@ export function createRoutineRoutes(
       );
 
       return c.json(
-        {
-          runId: launched.runId,
-          ...(launched.deliveryThreadId !== undefined
-            ? { deliveryThreadId: launched.deliveryThreadId }
-            : {}),
-        },
+        launched.deliveryThreadId !== undefined
+          ? {
+              runId: launched.runId,
+              deliveryThreadId: launched.deliveryThreadId,
+            }
+          : { runId: launched.runId },
         201,
       );
     },
@@ -865,10 +876,10 @@ export function createRoutineRoutes(
         definitionId,
         trigger,
         scope: draft.scope,
-        input: {
-          draftedSteps: draft.proposedSteps,
-          ...(draft.autonomy !== null ? { autonomy: draft.autonomy } : {}),
-        },
+        input:
+          draft.autonomy !== null
+            ? { draftedSteps: draft.proposedSteps, autonomy: draft.autonomy }
+            : { draftedSteps: draft.proposedSteps },
         deliveryChannelId: draft.deliveryChannelId,
         createdBy: principal.id,
       });

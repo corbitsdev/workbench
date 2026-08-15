@@ -60,10 +60,8 @@ async function runMemorySearch(
   const limitArg = call.arguments["limit"];
   const limit = typeof limitArg === "number" ? limitArg : undefined;
   try {
-    const items = await searchMemory(clientConfig(env), {
-      query,
-      ...(limit !== undefined ? { limit } : {}),
-    });
+    const searchInput = limit !== undefined ? { query, limit } : { query };
+    const items = await searchMemory(clientConfig(env), searchInput);
     return {
       callId: call.id,
       isError: false,
@@ -89,11 +87,9 @@ async function runMemoryAdd(
   const kindArg = call.arguments["kind"];
   const kind = typeof kindArg === "string" ? kindArg : undefined;
   try {
-    const added = await addMemory(clientConfig(env), {
-      title,
-      text,
-      ...(kind !== undefined ? { kind } : {}),
-    });
+    const addInput =
+      kind !== undefined ? { title, text, kind } : { title, text };
+    const added = await addMemory(clientConfig(env), addInput);
     return { callId: call.id, isError: false, content: JSON.stringify(added) };
   } catch (err) {
     return errorResult(call.id, err);

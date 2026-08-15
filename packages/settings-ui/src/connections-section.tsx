@@ -260,15 +260,18 @@ export function ConnectionsSection({
   }) {
     setCreating(true);
     setCreateError(null);
-    createCredential(currentTenantId, {
+    const base = {
       providerId: input.providerId,
       name: input.name,
       type: input.type,
       secret: input.secret,
-      ...(input.description.trim() !== ""
-        ? { description: input.description.trim() }
-        : {}),
-    })
+    };
+    createCredential(
+      currentTenantId,
+      input.description.trim() !== ""
+        ? { ...base, description: input.description.trim() }
+        : base,
+    )
       .then(() => {
         setCreateOpen(false);
         reload();

@@ -97,29 +97,29 @@ export async function assembleInventory(
   ]);
 
   return {
-    agents: agents.map((agent) => ({
-      ...agent,
-      ...(agent.description !== undefined
+    agents: agents.map((agent) =>
+      agent.description !== undefined
         ? {
+            ...agent,
             description: sanitizeInventoryText(
               agent.description,
               MAX_DESCRIPTION_LENGTH,
             ),
           }
-        : {}),
-    })),
+        : agent,
+    ),
     toolPackages,
-    skills: skills.map((skill) => ({
-      ...skill,
-      ...(skill.description !== undefined
+    skills: skills.map((skill) =>
+      skill.description !== undefined
         ? {
+            ...skill,
             description: sanitizeInventoryText(
               skill.description,
               MAX_DESCRIPTION_LENGTH,
             ),
           }
-        : {}),
-    })),
+        : skill,
+    ),
     memoryAvailable: sources.memoryAvailable,
     models,
   };
