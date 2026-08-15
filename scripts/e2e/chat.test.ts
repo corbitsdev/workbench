@@ -657,7 +657,18 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
         .map((p) => p.text),
     );
-    expect(invitedTexts.some((text) => text.endsWith(mentionText))).toBe(true);
+    // Exactly once, not merely "at least once": before CL-6043's
+    // self-anchor fix, an invited agent's own run wrote
+    // `anchorRunId: null` (see `packages/folded-runs/src/launch.ts`),
+    // which `receiveWorkflowRunPack`
+    // (`vendor/intx/hub-sessions/src/hub-session-lookups.ts`)
+    // permanently rejects — the hub then redelivers the same mail
+    // pack on every retry, so a still-broken anchor would show up
+    // here as a duplicate, not a missing message.
+    const deliveredMentions = invitedTexts.filter((text) =>
+      text.endsWith(mentionText),
+    );
+    expect(deliveredMentions).toHaveLength(1);
   }, 90_000);
 
   async function echoDefinitionId(): Promise<string> {
@@ -774,7 +785,13 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         .filter((p): p is Extract<Part, { kind: "text" }> => p.kind === "text")
         .map((p) => p.text),
     );
-    expect(agentTexts).toContain(unmentionedText);
+    // Exactly once — see the same note on the invited-agent mention
+    // assertion above: a redelivered duplicate here would mean this
+    // chat agent's own folded run is still failing the live-anchor
+    // check on its workflow-run mail pack.
+    expect(agentTexts.filter((text) => text === unmentionedText)).toHaveLength(
+      1,
+    );
   }, 90_000);
 
   // Settings is exercised last: `PATCH .../settings` folds the patch
@@ -831,5 +848,44 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         `no channel.membership-changed event on the timeline: ${JSON.stringify(items)}`,
       );
     }
+  });
+
+  // Every chat/folded run above (the channel anchor, the mentioned
+  // second channel, the invited echo agent, the auto-invited chat
+  // agent) writes its own `workflow-run` mail pack over the course of
+  // this suite. Before CL-6043's self-anchor fix, every one of those
+  // packs was permanently rejected — `receiveWorkflowRunPack`
+  // (vendor/intx/hub-sessions/src/hub-session-lookups.ts) requires the
+  // live run at the source address to satisfy `anchorRunId === id`,
+  // and a folded run was written with `anchorRunId: null` (see
+  // `packages/folded-runs/src/launch.ts`).
+  //
+  // Asserting on the hub's own log was tried first, as the most direct
+  // proof, but the hub side is not a clean signal: a brand-new run —
+  // folded or a plain top-level deployment alike — can lose a benign,
+  // pre-existing race where its very first pack push reaches the hub
+  // before that run's own DB row has committed, logging the identical
+  // "no live deployment anchor" warning; the hub's redelivery retries
+  // it and it self-heals within a second or two. That race reproduces
+  // for the echo workflow's plain native deployment too (which has
+  // always self-anchored), so it is orthogonal to CL-6043 and made a
+  // hub-log assertion flake (confirmed empirically: 4 such transient
+  // warnings even with the fix applied and every test green).
+  //
+  // The sidecar side is the clean signal instead: a permanently
+  // rejected pack surfaces there as
+  // `enqueueInbox failed, withholding ack` (the hub never acks, so it
+  // keeps redelivering) and, once the run later goes idle and wakes,
+  // `rejecting inbound mail ...: workflow run ... is terminal` (see
+  // `vendor/intx/workflow-host/src/supervisor/supervisor.ts`) — never
+  // logged for a transient, self-healing DB-commit race. Verified by
+  // temporarily reverting the self-anchor fix locally: the sidecar log
+  // then carries ten `enqueueInbox failed, withholding ack` lines, one
+  // per rejected pack, for this same suite; with the fix applied, zero.
+  test("no chat/folded run's workflow-run pack was ever permanently rejected", () => {
+    const sidecarOutput = sidecar.output();
+    expect(sidecarOutput).not.toContain("enqueueInbox failed");
+    expect(sidecarOutput).not.toContain("withholding ack");
+    expect(sidecarOutput).not.toContain("rejecting inbound mail");
   });
 });
