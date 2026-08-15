@@ -117,6 +117,23 @@ export const RoutineTrigger = IntervalTrigger.or(DailyTrigger)
 
 export type RoutineTriggerT = typeof RoutineTrigger.infer;
 
+/**
+ * The schedule-only subset of `RoutineTrigger`: every cadence preset a
+ * routine can be scheduled on, plus `null` for manual — deliberately
+ * excluding the webhook binding. A webhook trigger points at a real
+ * `@corbits/webhook-triggers` row whose own `workflowDefinitionId` must
+ * already agree with the routine's (see `routes.ts`'s
+ * `webhookTriggerValid`); it is never something a free-text proposal —
+ * Myra's drafting reply (`./myra-drafting.ts`) included — gets to
+ * invent or pick on its own.
+ */
+export const RoutineScheduleTrigger = IntervalTrigger.or(DailyTrigger)
+  .or(WeeklyTrigger)
+  .or(CronTrigger)
+  .or("null");
+
+export type RoutineScheduleTriggerT = typeof RoutineScheduleTrigger.infer;
+
 const DailyTriggerWire = type({
   kind: "'daily'",
   hour: "0 <= number.integer <= 23",

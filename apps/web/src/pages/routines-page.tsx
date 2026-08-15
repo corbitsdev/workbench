@@ -696,6 +696,91 @@ export function connectorBadgeLabel(connectorId: string): string {
   return entry.displayName;
 }
 
+/**
+ * The automatable-workflow card grid: shared by the Source step's
+ * catalog picker and the describe path's review-step fallback (a draft
+ * with no `definitionId` — Myra didn't pin one, a valid honest outcome
+ * — must still let the person pick a workflow rather than dead-end at
+ * a permanently-disabled Approve). One rendering, two call sites, so
+ * the two pickers can never drift apart.
+ */
+function WorkflowPickerCards({
+  definitions,
+  connections,
+  selectedId,
+  disabled,
+  onSelect,
+}: {
+  readonly definitions: readonly WorkflowDefinitionSummary[];
+  readonly connections: {
+    readonly credentials: readonly Credential[];
+    readonly providers: readonly Provider[];
+  } | null;
+  readonly selectedId: string;
+  readonly disabled: boolean;
+  readonly onSelect: (definitionId: string) => void;
+}) {
+  return (
+    <>
+      {definitions.map((definition) => (
+        <button
+          key={definition.id}
+          type="button"
+          disabled={disabled}
+          aria-pressed={selectedId === definition.id}
+          onClick={() => onSelect(definition.id)}
+          className={[
+            "flex flex-col gap-1 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
+            selectedId === definition.id
+              ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
+              : "border-[var(--ui-border)]",
+          ].join(" ")}
+        >
+          <span className="font-medium text-[var(--ui-fg)]">
+            {definition.name}
+          </span>
+          {definition.whatItDoes !== "" ? (
+            <span className="text-[var(--ui-fg-muted)]">
+              {definition.whatItDoes}
+            </span>
+          ) : null}
+          <span className="inline-flex items-center gap-1 text-[var(--ui-fg-muted)]">
+            <Clock className="size-3" />
+            {definition.typicalDuration}
+          </span>
+          {definition.requiredConnections.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {definition.requiredConnections.map((connectorId) => {
+                const result =
+                  connections === null
+                    ? { status: "not_connected" as const }
+                    : connectorStatus(
+                        connectorBadgeLabel(connectorId),
+                        connections.credentials,
+                        connections.providers,
+                      );
+                return (
+                  <Badge
+                    key={connectorId}
+                    tone={result.status === "connected" ? "success" : "neutral"}
+                  >
+                    {connectorBadgeLabel(connectorId)}
+                  </Badge>
+                );
+              })}
+            </div>
+          ) : null}
+          {definition.exampleOutput !== "" ? (
+            <span className="line-clamp-2 whitespace-pre-line text-[11px] text-[var(--ui-fg-muted)]">
+              {definition.exampleOutput}
+            </span>
+          ) : null}
+        </button>
+      ))}
+    </>
+  );
+}
+
 function CreateRoutineDialog({
   tenantId,
   definitions,
@@ -720,7 +805,13 @@ function CreateRoutineDialog({
     definitionId: string;
   }) => Promise<{ id: string; secret: string }>;
   readonly onDescribe: (input: CreateDraftInput) => Promise<RoutineDraft>;
-  readonly onApproveDraft: (draftId: string) => Promise<void>;
+  /** `definitionId` is passed only when the draft itself has none
+   * (Myra didn't pin a workflow) and the review step's own fallback
+   * picker collected one — see the "no dead end" fallback below. */
+  readonly onApproveDraft: (
+    draftId: string,
+    definitionId?: string,
+  ) => Promise<void>;
   readonly onDiscardDraft: (draftId: string) => Promise<void>;
   readonly open?: boolean;
   readonly onOpenChange?: (open: boolean) => void;
@@ -755,6 +846,12 @@ function CreateRoutineDialog({
     channels[0]?.id ?? "",
   );
   const [pendingDraft, setPendingDraft] = useState<RoutineDraft | null>(null);
+  // The review step's own fallback pick when the draft has no
+  // `definitionId` — Myra didn't pin a workflow, a valid honest
+  // outcome, not an error. Distinct from `definitionId` (the catalog
+  // path's own state) so the two pickers never share, and clashing,
+  // state.
+  const [draftDefinitionPick, setDraftDefinitionPick] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [webhookRevealed, setWebhookRevealed] = useState<{
@@ -820,6 +917,7 @@ function CreateRoutineDialog({
     setPrompt("");
     setDeliveryChannelId(channels[0]?.id ?? "");
     setPendingDraft(null);
+    setDraftDefinitionPick("");
     setError(null);
     setWebhookRevealed(null);
   };
@@ -833,6 +931,7 @@ function CreateRoutineDialog({
     const draft = pendingDraft;
     if (draft === null) return;
     setPendingDraft(null);
+    setDraftDefinitionPick("");
     void onDiscardDraft(draft.id).catch(() => {
       // Discard best-effort; the draft simply stays orphaned server-side.
     });
@@ -951,9 +1050,13 @@ function CreateRoutineDialog({
 
   const approveDraft = () => {
     if (pendingDraft === null) return;
+    const definitionOverride =
+      pendingDraft.definitionId === null && draftDefinitionPick !== ""
+        ? draftDefinitionPick
+        : undefined;
     setBusy(true);
     setError(null);
-    void onApproveDraft(pendingDraft.id)
+    void onApproveDraft(pendingDraft.id, definitionOverride)
       .then(() => closeDialog())
       .catch((cause: unknown) => {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -1028,7 +1131,16 @@ function CreateRoutineDialog({
     primaryOnClick = createCatalogRoutine;
   } else if (step === 3 && path === "describe") {
     primaryLabel = busy ? "Approving…" : "Approve";
-    primaryDisabled = busy || pendingDraft === null;
+    // A draft with no definitionId (Myra didn't pin a workflow) is a
+    // dead end unless the fallback picker below has collected one —
+    // Approve stays disabled until it does, never clickable into a
+    // guaranteed 400 with no recovery.
+    const needsDefinitionPick =
+      pendingDraft !== null && pendingDraft.definitionId === null;
+    primaryDisabled =
+      busy ||
+      pendingDraft === null ||
+      (needsDefinitionPick && draftDefinitionPick === "");
     primaryOnClick = approveDraft;
   }
 
@@ -1083,71 +1195,17 @@ function CreateRoutineDialog({
                   aria-labelledby="routine-source-label"
                   className="grid grid-cols-2 gap-2"
                 >
-                  {definitions.map((definition) => (
-                    <button
-                      key={definition.id}
-                      type="button"
-                      disabled={busy}
-                      aria-pressed={
-                        path === "catalog" && definitionId === definition.id
-                      }
-                      onClick={() => {
-                        setPath("catalog");
-                        setDefinitionId(definition.id);
-                        setTriggerFieldValues({});
-                      }}
-                      className={[
-                        "flex flex-col gap-1 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
-                        path === "catalog" && definitionId === definition.id
-                          ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
-                          : "border-[var(--ui-border)]",
-                      ].join(" ")}
-                    >
-                      <span className="font-medium text-[var(--ui-fg)]">
-                        {definition.name}
-                      </span>
-                      {definition.whatItDoes !== "" ? (
-                        <span className="text-[var(--ui-fg-muted)]">
-                          {definition.whatItDoes}
-                        </span>
-                      ) : null}
-                      <span className="inline-flex items-center gap-1 text-[var(--ui-fg-muted)]">
-                        <Clock className="size-3" />
-                        {definition.typicalDuration}
-                      </span>
-                      {definition.requiredConnections.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {definition.requiredConnections.map((connectorId) => {
-                            const result =
-                              connections === null
-                                ? { status: "not_connected" as const }
-                                : connectorStatus(
-                                    connectorBadgeLabel(connectorId),
-                                    connections.credentials,
-                                    connections.providers,
-                                  );
-                            return (
-                              <Badge
-                                key={connectorId}
-                                tone={
-                                  result.status === "connected"
-                                    ? "success"
-                                    : "neutral"
-                                }
-                              >
-                                {connectorBadgeLabel(connectorId)}
-                              </Badge>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                      {definition.exampleOutput !== "" ? (
-                        <span className="line-clamp-2 whitespace-pre-line text-[11px] text-[var(--ui-fg-muted)]">
-                          {definition.exampleOutput}
-                        </span>
-                      ) : null}
-                    </button>
-                  ))}
+                  <WorkflowPickerCards
+                    definitions={definitions}
+                    connections={connections}
+                    selectedId={path === "catalog" ? definitionId : ""}
+                    disabled={busy}
+                    onSelect={(id) => {
+                      setPath("catalog");
+                      setDefinitionId(id);
+                      setTriggerFieldValues({});
+                    }}
+                  />
                   <button
                     type="button"
                     disabled={busy}
@@ -1451,6 +1509,32 @@ function CreateRoutineDialog({
               <p className="text-xs text-[var(--ui-fg-muted)]">
                 From: {draft?.prompt}
               </p>
+              {draft !== null && draft.definitionId === null ? (
+                <div className="flex flex-col gap-1.5">
+                  <span
+                    id="draft-workflow-pick-label"
+                    className="text-xs font-medium"
+                  >
+                    Workflow
+                  </span>
+                  <p className="text-xs text-[var(--ui-fg-muted)]">
+                    Myra didn't pin a workflow — pick one.
+                  </p>
+                  <div
+                    role="group"
+                    aria-labelledby="draft-workflow-pick-label"
+                    className="grid grid-cols-2 gap-2"
+                  >
+                    <WorkflowPickerCards
+                      definitions={definitions}
+                      connections={connections}
+                      selectedId={draftDefinitionPick}
+                      disabled={busy}
+                      onSelect={setDraftDefinitionPick}
+                    />
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -1725,7 +1809,10 @@ export function RoutinesListPage({
   readonly webhookTrigger: APIQuery<WebhookTrigger> | null;
   readonly onRotateWebhookSecret: () => Promise<{ secret: string }>;
   readonly onDescribe: (input: CreateDraftInput) => Promise<RoutineDraft>;
-  readonly onApproveDraft: (draftId: string) => Promise<void>;
+  readonly onApproveDraft: (
+    draftId: string,
+    definitionId?: string,
+  ) => Promise<void>;
   readonly onDiscardDraft: (draftId: string) => Promise<void>;
   readonly onToggleEnabled: (routine: Routine, enabled: boolean) => void;
   readonly onRunNow: (routine: Routine) => Promise<void>;
@@ -2379,10 +2466,14 @@ export function RoutinesRoute({
           throw new Error("No workbench to draft this in yet");
         return createRoutineDraft(tenantId, input);
       }}
-      onApproveDraft={async (draftId) => {
+      onApproveDraft={async (draftId, definitionId) => {
         if (tenantId === null)
           throw new Error("No workbench to approve this draft in yet");
-        const result = await approveRoutineDraft(tenantId, draftId);
+        const result = await approveRoutineDraft(
+          tenantId,
+          draftId,
+          definitionId,
+        );
         invalidateRoutines();
         navigate(
           `${ROUTINES_PATH_PREFIX}/${encodeURIComponent(result.routine.id)}`,

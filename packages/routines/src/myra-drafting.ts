@@ -16,7 +16,7 @@ import {
 } from "@corbits/workflow-catalog";
 
 import { DraftedStepSchema, type RoutineDraftingPort } from "./drafts";
-import { RoutineTrigger } from "./trigger";
+import { RoutineScheduleTrigger } from "./trigger";
 
 const DEFAULT_DRAFTING_TIMEOUT_MS = 60_000;
 const MAX_DESCRIPTION_LENGTH = 200;
@@ -118,19 +118,25 @@ export async function assembleRoutineDraftInventory(
 
 /**
  * Myra's reply shape: proposed steps, an optional suggested name, an
- * optional catalog workflow pick, a cadence decision (a trigger preset
- * or `null` for a manual, run-now-only routine — required, never
- * omitted, so a draft always states its scheduling intent explicitly),
- * and trigger-field values for the picked workflow when it declares
- * any. Reuses `DraftedStepSchema` (`./drafts.ts`) and `RoutineTrigger`
- * (`./trigger.ts`) verbatim — the same shapes the rest of the drafting
- * pipeline already validates against, never a parallel definition.
+ * optional catalog workflow pick, a cadence decision (a schedule
+ * preset or `null` for a manual, run-now-only routine — required,
+ * never omitted, so a draft always states its scheduling intent
+ * explicitly), and trigger-field values for the picked workflow when
+ * it declares any. Reuses `DraftedStepSchema` (`./drafts.ts`) and
+ * `RoutineScheduleTrigger` (`./trigger.ts`) verbatim — the same
+ * schedule-only shapes the rest of the drafting pipeline validates
+ * against, never a parallel definition. Deliberately
+ * `RoutineScheduleTrigger`, not the full `RoutineTrigger` union: a
+ * webhook binding names a real `@corbits/webhook-triggers` row this
+ * package never offered Myra, so the schema itself makes that reply
+ * shape unparseable rather than relying on inventory validation to
+ * catch it after the fact.
  */
 export const RoutineDraftReply = type({
   steps: DraftedStepSchema.array().atLeastLength(1),
   "name?": "string > 0",
   "definitionId?": "string > 0",
-  cadence: RoutineTrigger,
+  cadence: RoutineScheduleTrigger,
   "triggerInput?": "Record<string, string>",
 });
 export type RoutineDraftReply = typeof RoutineDraftReply.infer;
