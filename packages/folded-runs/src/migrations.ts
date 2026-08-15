@@ -36,6 +36,74 @@ function quoteQualified(schema: string, name: string): string {
   return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
 }
 
+// The synthetic ledger entry the one-time backfill records once it
+// completes, so a re-run is a no-op — the same ledger table and the
+// same "already applied, skip" contract every entry in
+// `foldedRunsMigrations` follows, just driven from outside the literal
+// SQL list since its input (which ids to backfill) comes from other
+// packages' own schemas, not this package's.
+const BACKFILL_MIGRATION_NAME = "0002_backfill_existing_folded_runs";
+
+export interface FoldedRunSeed {
+  readonly id: string;
+  readonly tenantId: string;
+}
+
+export interface BackfillFoldedRunMarkersReport {
+  readonly applied: boolean;
+  readonly inserted: number;
+}
+
+/**
+ * One-time backfill for every folded run launched before this
+ * package's own `folded_run` marker table existed (CL-6061). Those
+ * runs are still recorded — just in each launching package's own
+ * table (`@corbits/chat`'s `channel_launch`, `@corbits/tasks`' `task`
+ * and `task_leg`) — so this package never reads them itself: chat and
+ * tasks both depend on `@corbits/folded-runs` already, and reading
+ * their schemas from here would close that into a cycle. Instead the
+ * caller (scripts/db-setup.ts, the one place that already knows and
+ * sequences every installed package's migrations) sources `seeds` from
+ * each package's own exported lister
+ * (`listChannelLaunchFoldedRunIds`, `listTaskFoldedRunIds`) and this
+ * function only ever inserts into its own table. Ledgered under
+ * `BACKFILL_MIGRATION_NAME` so a second call — the very next
+ * `db-setup` run, or the next deploy — is a no-op rather than
+ * re-scanning every installed package's tables forever.
+ */
+export async function backfillFoldedRunMarkers(
+  databaseUrl: string,
+  seeds: readonly FoldedRunSeed[],
+): Promise<BackfillFoldedRunMarkersReport> {
+  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
+  try {
+    const already = await sql.unsafe(
+      `SELECT 1 FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)} WHERE name = $1`,
+      [BACKFILL_MIGRATION_NAME],
+    );
+    if (already.length > 0) return { applied: false, inserted: 0 };
+
+    let inserted = 0;
+    await sql.begin(async (tx) => {
+      for (const seed of seeds) {
+        const result = await tx.unsafe(
+          `INSERT INTO ${quoteQualified(SCHEMA, "folded_run")} ` +
+            `("id", "tenant_id") VALUES ($1, $2) ON CONFLICT ("id") DO NOTHING`,
+          [seed.id, seed.tenantId],
+        );
+        inserted += result.count;
+      }
+      await tx.unsafe(
+        `INSERT INTO ${quoteQualified(SCHEMA, LEDGER_TABLE)} (name) VALUES ($1)`,
+        [BACKFILL_MIGRATION_NAME],
+      );
+    });
+    return { applied: true, inserted };
+  } finally {
+    await sql.end();
+  }
+}
+
 export interface ApplyFoldedRunsMigrationsReport {
   applied: string[];
   alreadyApplied: string[];

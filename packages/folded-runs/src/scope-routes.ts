@@ -18,6 +18,7 @@
 // ever minted.
 import { and, desc, eq, isNotNull, notExists } from "drizzle-orm";
 import { Hono } from "hono";
+import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { DB } from "@intx/db";
 import { workflowDefinition, workflowRun } from "@intx/db/schema";
@@ -29,6 +30,19 @@ export type CreateTopLevelRunRoutesDeps = {
   db: DB["db"];
   requireGrant: RequireGrant;
 };
+
+// A positive integer parsed straight out of the raw query string —
+// arktype's own `string.integer.parse` morph (validate-then-coerce in
+// one step, matching how `c.req.query()` bodies are parsed elsewhere
+// in this codebase, e.g. `@corbits/insights`' `RangeQuery` in its
+// routes.ts) rather than a hand-rolled `Number()`/`Number.isInteger`
+// check. `> 0` cannot chain directly onto a morph in arktype's string
+// syntax, hence the `.narrow` — the fluent equivalent of the same
+// bound.
+const PositiveInteger = type("string.integer.parse").narrow((n) => n > 0);
+const LimitQuery = type({
+  "limit?": PositiveInteger,
+});
 
 // Mirrors `vendor/intx/hub-api/src/routes/run-view.ts`'s
 // `mapRunStatusToViewStatus` (not published from `@intx/hub-api`, so
@@ -131,10 +145,15 @@ export function createTopLevelRunRoutes(
 
   app.get("/", deps.requireGrant("workflow-run:*", "read"), async (c) => {
     const tenant = c.get("tenant");
-    const rawLimit = Number(c.req.query("limit"));
-    const limit =
-      Number.isInteger(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
-    const data = await listTopLevelRuns(deps.db, tenant.id, limit);
+    const rawLimit = c.req.query("limit");
+    const query = LimitQuery(rawLimit === undefined ? {} : { limit: rawLimit });
+    if (query instanceof type.errors) {
+      return c.json(
+        { error: { code: "bad_request", message: query.summary } },
+        400,
+      );
+    }
+    const data = await listTopLevelRuns(deps.db, tenant.id, query.limit);
     return c.json({ data, nextCursor: null });
   });
 
