@@ -1,10 +1,12 @@
 export {
   createTask,
+  dispatchPlanner,
   getTask,
   listCatalogModels,
   listTasks,
   TasksApiError,
   type CatalogModel,
+  type PlannerTask,
   type Task,
   type TaskStatus,
 } from "./api";
@@ -15,6 +17,11 @@ export {
   type AgentSelectionStrategyProps,
   type TaskAgentOption,
 } from "./agent-selection-strategy";
+export {
+  createMyraAgentSelectionStrategy,
+  MyraChoiceSummary,
+  MYRA_AUTO_SELECTION_ID,
+} from "./myra-agent-selection-strategy";
 export {
   isWorkingTask,
   toWorkingTaskViews,

@@ -14,10 +14,10 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { createManualAgentSelectionStrategy } from "./agent-selection-strategy";
-import type { AgentSelectionStrategy } from "./agent-selection-strategy";
-import { TaskComposerDialog } from "./task-composer-dialog";
-import type { CatalogModel } from "./api";
+import { createManualAgentSelectionStrategy } from "../src/agent-selection-strategy";
+import type { AgentSelectionStrategy } from "../src/agent-selection-strategy";
+import { TaskComposerDialog } from "../src/task-composer-dialog";
+import type { CatalogModel } from "../src/api";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;

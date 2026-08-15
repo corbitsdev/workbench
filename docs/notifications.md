@@ -85,6 +85,6 @@ own named error: `NotifyGrantMissingError`,
 ## What a person sees
 
 Subjects and bodies are written for a reader: `Approve "send_invoice"?`,
-`"Nightly digest" failed`, `Sawyer mentioned you in "Launch plan"`. Identifiers
+`"Nightly digest" failed`, `Noor mentioned you in "Launch plan"`. Identifiers
 never appear in what is displayed — they travel in the message's `refs`, where
 the interface uses them to navigate and nothing else.

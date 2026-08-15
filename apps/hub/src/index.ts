@@ -8,16 +8,20 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { createApprovalStore, createDB, createGrantStore } from "@intx/db";
-import { workflowDefinition } from "@intx/db/schema";
+import {
+  model,
+  tenant as tenantTable,
+  workflowDefinition,
+} from "@intx/db/schema";
 import { and, eq } from "drizzle-orm";
 import {
   createEnvKeyCredentialCipher,
   createNoopCredentialCipher,
   generateKeyPair,
 } from "@intx/crypto";
-import { timeWindowEvaluator } from "@intx/authz";
+import { authorize, timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
-import type { CredentialCipher } from "@intx/types";
+import type { CredentialBinding, CredentialCipher } from "@intx/types";
 import {
   createApp,
   createRequireGrant,
@@ -25,7 +29,14 @@ import {
   type TenantEnv,
 } from "@intx/hub-api";
 
-import { createAgentDefinitionRoutes } from "@corbits/agent-directory";
+import {
+  AGENT_SKILLS_ASSET_PATH,
+  buildAgentDefinitionWorkflow,
+  createAgentDefinitionRoutes,
+  reindexPinnedSkills,
+  serializeAgentDefinitionWorkflow,
+  serializeAgentSkills,
+} from "@corbits/agent-directory";
 
 import {
   createArtifactDeliveryHandler,
@@ -42,6 +53,7 @@ import {
   createDrizzleThreadStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
+  isChannelHostDefinitionName,
   listConnectedProviders,
   startWorkflowCommand,
 } from "@corbits/chat";
@@ -86,7 +98,10 @@ import {
   createWebhookTriggerRoutes,
   launchWebhookTrigger,
 } from "@corbits/webhook-triggers";
-import { isAutomatableWorkflowName } from "@corbits/workflow-catalog";
+import {
+  isAutomatableWorkflowName,
+  workflowDisplayName,
+} from "@corbits/workflow-catalog";
 import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
@@ -99,6 +114,18 @@ import {
   createTaskRoutes,
   launchTask,
 } from "@corbits/tasks";
+import {
+  createPlannerRoutes,
+  dispatchWithPlanner,
+  isPlannerCreatedDefinitionName,
+  PlannerDefinitionGrantDeniedError,
+  resolveMyraDefinitionIdFromDb,
+  runOneShotFoldedPrompt,
+  type InventoryAgent,
+  type InventoryModel,
+  type InventorySources,
+  type InventoryToolPackage,
+} from "@corbits/task-planner";
 
 import {
   createAgentRepoStore,
@@ -109,6 +136,8 @@ import {
   createSessionService,
   createSidecarRouter,
   createSidecarTokenAuthenticator,
+  DEFAULT_ASSET_REF,
+  ensureWorkflowDefinitionForAsset,
   type WsHandle,
 } from "@intx/hub-sessions";
 import { getLogger, setup } from "@intx/log";
@@ -137,6 +166,7 @@ import {
   createOnboardingRoutes,
 } from "@workbench/onboarding";
 import { createConnectionRoutes } from "@workbench/connections";
+import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import {
   applyAccessPolicyMigrations,
   createAccessPolicyRoutes,
@@ -167,6 +197,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
 import { upgradeWebSocket, websocket } from "hono/bun";
+import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 import { readHubConfig, type HubConfig } from "./config";
 import { createLocalRoutineDrafting } from "./local-routine-drafting";
 import { createHubRoutineLauncher } from "./routine-launcher";
@@ -188,10 +219,12 @@ const REGISTRIES = new Map([["npmjs", { url: "https://registry.npmjs.org" }]]);
 // npm publishing the CL-5999 capability audit called for. Routing the
 // `@corbits` scope at this registry name means a `@corbits/*` pin
 // resolves only once an operator seeds a `package-registry` asset named
-// `CORBITS_TOOLS_REGISTRY` with the package's tarball; until then,
-// resolution fails loud rather than silently falling through to npmjs
-// (which could never carry an unpublished scope anyway).
-const CORBITS_TOOLS_REGISTRY = "corbits-tools";
+// `CORBITS_TOOLS_REGISTRY` with the package's tarball — `workbench
+// seed`'s `seedTenant` does exactly that, via
+// `@corbits/tool-registry-publish`, ahead of deploying any workflow
+// that pins a `@corbits/*` package; until then, resolution fails loud
+// rather than silently falling through to npmjs (which could never
+// carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
 const SIGN_UP_EMAIL_PATH = "/sign-up/email";
 const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
@@ -636,11 +669,33 @@ export async function createHub(config: HubConfig) {
   );
 
   // The one "is this a conversational agent?" ruling, shared by every
-  // picker that offers agents to a person — chat's invite/new-chat
-  // pickers and the task composer alike: automatable catalog workflows
-  // (routines material) belong in neither.
+  // picker that offers agents to a person AND every taskability gate —
+  // chat's invite/new-chat pickers, the task composer, and task-planner's
+  // {use} target validation alike: automatable catalog workflows
+  // (routines material) and channel-host anchor definitions (chat's own
+  // plumbing, never a person-facing agent) belong in neither.
   const isConversationalAgentDefinition = (definition: { name: string }) =>
-    !isAutomatableWorkflowName(definition.name);
+    !isAutomatableWorkflowName(definition.name) &&
+    !isChannelHostDefinitionName(definition.name);
+
+  // A second, narrower ruling layered on top of the taskability gate
+  // above, for LISTING/PICKER surfaces only — never for taskability
+  // itself. A planner-created agent (CL-6051's `{create}` branch, see
+  // `@corbits/task-planner`'s `planner-created-naming.ts`) exists for
+  // exactly one task; it must stay fully launchable (`spawnFromTaskSpec`
+  // calls `launchTask` against the definition it just created) but must
+  // never clutter a picker meant for agents a person deliberately keeps
+  // around. Wired into every picker surface: chat's invite/new-chat
+  // dialogs (`chatDeps.isInvitableDefinition` below) and the planner's
+  // own inventory (`listMyraConversationalAgents` below) — the manual
+  // task composer's picker (`apps/web`'s
+  // `listTenantInvitableDefinitions`) calls the same chat route, so it
+  // inherits this for free. `@corbits/agent-directory` has no listing
+  // route of its own today (only create/read-skills/update-skills), so
+  // there is no third surface to thread this through there yet.
+  const isPickerListableDefinition = (definition: { name: string }) =>
+    isConversationalAgentDefinition(definition) &&
+    !isPlannerCreatedDefinitionName(definition.name);
 
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
     store: chatStore,
@@ -655,7 +710,7 @@ export async function createHub(config: HubConfig) {
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
     }),
-    isInvitableDefinition: isConversationalAgentDefinition,
+    isInvitableDefinition: isPickerListableDefinition,
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
     // Derived per tenant, per channel creation, from that tenant's own
     // connected catalog providers (see `@corbits/chat`'s
@@ -1098,6 +1153,263 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       launch: (input) => launchTask(taskLauncherDeps, input),
+    }),
+  );
+
+  // Myra auto-dispatch (CL-6051): a typed outcome becomes a validated
+  // task plan via `@corbits/task-planner`, dispatched exactly like a
+  // manually-launched task. Every inventory lister below generalizes a
+  // pattern that already lives elsewhere in this composition root
+  // (`isConversationalAgentDefinition`, `chatDeps.channelHostInferencePreferences`'s
+  // per-tenant connected-provider derivation) — this package owns the
+  // inventory's shape, never the listing logic.
+  const memoryToolPackageName = "@corbits/memory-tools";
+
+  async function listMyraConversationalAgents(
+    tenantId: string,
+  ): Promise<readonly InventoryAgent[]> {
+    const rows = await db.query.workflowDefinition.findMany({
+      where: and(
+        eq(workflowDefinition.tenantId, tenantId),
+        eq(workflowDefinition.status, "deployed"),
+      ),
+    });
+    return rows
+      .filter((row) => isPickerListableDefinition(row))
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        displayName: workflowDisplayName(row.name, row.description),
+        ...(row.description !== null ? { description: row.description } : {}),
+      }));
+  }
+
+  async function listMyraUsableToolPackages(
+    tenantId: string,
+  ): Promise<readonly InventoryToolPackage[]> {
+    const connectedConnectorIds = await listConnectedProviders(db, tenantId);
+    const entries: InventoryToolPackage[] = [];
+    for (const connectorId of connectedConnectorIds) {
+      const descriptor = CONNECTOR_REGISTRY[connectorId];
+      if (descriptor === undefined) continue;
+      for (const toolPackageName of descriptor.feedsTools) {
+        // This listing is already scoped to connections registry ∩
+        // tenant credentials that exist (`listConnectedProviders`), so
+        // every entry it returns necessarily has a live credential —
+        // the binding mirrors `workflows/granola-call`'s
+        // `GRANOLA_CALL_CREDENTIAL_BINDINGS` exactly: `handle`/`provider`
+        // both equal the connector id.
+        entries.push({
+          name: toolPackageName,
+          connectorId: descriptor.id,
+          credentialBinding: {
+            package: toolPackageName,
+            handle: descriptor.id,
+            provider: descriptor.id,
+            locator: "tenant",
+          },
+        });
+      }
+    }
+    if (memoryHandle !== undefined) {
+      entries.push({
+        name: memoryToolPackageName,
+        connectorId: "memory",
+        credentialBinding: null,
+      });
+    }
+    return entries;
+  }
+
+  async function listMyraModels(
+    tenantId: string,
+  ): Promise<readonly InventoryModel[]> {
+    const rows = await db.query.model.findMany({
+      where: and(eq(model.tenantId, tenantId), eq(model.disabled, false)),
+    });
+    return rows.map((row) => ({
+      canonicalName: row.canonicalName,
+      ...(row.displayName !== null ? { displayName: row.displayName } : {}),
+    }));
+  }
+
+  const plannerInventorySources: InventorySources = {
+    listConversationalAgents: listMyraConversationalAgents,
+    listUsableToolPackages: listMyraUsableToolPackages,
+    listSkills: (caller) => skills.registry.list(caller),
+    memoryAvailable: memoryHandle !== undefined,
+    listModels: listMyraModels,
+  };
+
+  // Mirrors `@corbits/agent-directory`'s own private
+  // `AGENT_DEFINITION_ASSET_PATH` constant (not exported — the route
+  // module keeps it internal), kept in lockstep by convention since
+  // this is the same asset-tree contract `ensureWorkflowDefinitionForAsset`
+  // reads back from.
+  const PLANNER_AGENT_DEFINITION_ASSET_PATH = "workflow.json";
+
+  /**
+   * Wraps the same sequence `@corbits/agent-directory`'s `POST /`
+   * handler runs (`buildAgentDefinitionWorkflow` → `reindexPinnedSkills`
+   * when skills are present → `createAsset` + `populateAsset` →
+   * `ensureWorkflowDefinitionForAsset`), reusing the exact `db`,
+   * `assetService`, and `skills.skillIndex` already in scope — never a
+   * second instance of any of them. The one addition beyond that route's
+   * own input is `toolPackagePins`, which the REST boundary deliberately
+   * has no field for (see `@corbits/agent-directory`'s `validation.ts`)
+   * since only this in-process planner caller needs it.
+   */
+  async function deployAgentDefinition(input: {
+    readonly tenantId: string;
+    readonly principalId: string;
+    readonly name: string;
+    readonly handle: string;
+    readonly systemPrompt: string;
+    readonly toolPackagePins: readonly string[];
+    readonly skills: readonly string[];
+    readonly credentialBindings: readonly CredentialBinding[];
+    readonly model?: string;
+  }): Promise<{ readonly definitionId: string }> {
+    const tenantRow = await db.query.tenant.findFirst({
+      where: eq(tenantTable.id, input.tenantId),
+    });
+    if (tenantRow === undefined) {
+      throw new Error(`No tenant "${input.tenantId}"`);
+    }
+
+    const handle = input.handle;
+    const skillEntries =
+      input.skills.length > 0
+        ? await skills.skillIndex.resolve(
+            input.tenantId,
+            input.principalId,
+            input.skills,
+          )
+        : [];
+
+    const definition = buildAgentDefinitionWorkflow({
+      handle,
+      tenantDomain: tenantRow.domain,
+      description: "",
+      systemPrompt: input.systemPrompt,
+      ...(input.model !== undefined ? { model: input.model } : {}),
+      ...(input.toolPackagePins.length > 0
+        ? {
+            toolPackagePins: input.toolPackagePins.map((name) => ({
+              name,
+              version: "*",
+            })),
+          }
+        : {}),
+      ...(input.credentialBindings.length > 0
+        ? { credentialBindings: input.credentialBindings }
+        : {}),
+    });
+    const workflowJson = reindexPinnedSkills(
+      serializeAgentDefinitionWorkflow(definition),
+      skillEntries,
+    );
+    const skillsJson = serializeAgentSkills(input.skills);
+
+    const created = await assetService.createAsset({
+      tenantId: input.tenantId,
+      kind: "workflow",
+      name: handle,
+      displayName: input.name,
+      creatorPrincipalId: input.principalId,
+    });
+
+    await assetService.populateAsset({
+      assetId: created.id,
+      ref: DEFAULT_ASSET_REF,
+      principal: { kind: "hub" },
+      tree: {
+        files: {
+          [PLANNER_AGENT_DEFINITION_ASSET_PATH]: workflowJson,
+          [AGENT_SKILLS_ASSET_PATH]: skillsJson,
+        },
+        message: `Define agent ${input.name}`,
+      },
+    });
+
+    const { definitionId } = await ensureWorkflowDefinitionForAsset(
+      db,
+      created.id,
+    );
+    return { definitionId };
+  }
+
+  // A separate `CryptoProviderCache` from the task launcher's own
+  // (`taskLauncherDeps.cryptoProviders`): a planning run's instance id
+  // is never a real task's, but the cache is keyed by instance id
+  // regardless, and a planning run's one-shot prompt/reply cadence has
+  // nothing to do with a launched task's — separate caches keep the
+  // two lifecycles from ever contending over the same key space.
+  const plannerCryptoProviders = createCryptoProviderCache();
+
+  app.route(
+    `${TENANT_PREFIX}/planner`,
+    createPlannerRoutes({
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      dispatch: (input) =>
+        dispatchWithPlanner(
+          {
+            db,
+            runner: {
+              run: (runnerInput) =>
+                runOneShotFoldedPrompt(
+                  {
+                    foldedRuns: taskLauncherDeps.foldedRuns,
+                    events: sidecarRouter.events,
+                    cryptoProviders: plannerCryptoProviders,
+                    // Reuses `taskLifecycle` rather than standing up a
+                    // second idle-sleep instance: it's keyed entirely by
+                    // address, and a planner run's `triggerAddress`
+                    // (`formatRunAddress` over a freshly generated
+                    // `workflowRun` instance id) can never collide with a
+                    // task's — sharing costs nothing and keeps one sweep
+                    // instead of two.
+                    lifecycle: taskLifecycle,
+                    undeploy: (address, reason) =>
+                      sidecarRouter.sendAgentUndeploy(address, reason),
+                  },
+                  runnerInput,
+                ),
+            },
+            inventorySources: plannerInventorySources,
+            resolveMyraDefinitionId: (tenantId) =>
+              resolveMyraDefinitionIdFromDb(db, tenantId),
+            taskLauncherDeps,
+            store: taskStore,
+            deployAgentDefinition,
+            // The `{create}` branch's own grant, checked deep inside
+            // `dispatch` rather than at route-middleware time — the
+            // definitional plan (`{use}` vs `{create}`) is only known
+            // after Myra's reply resolves. Same `chatGrantStore`/
+            // `chatConditionRegistry` every other `requireGrant` call
+            // site in this file uses, called through `authorize`
+            // directly (the standalone, non-middleware primitive
+            // `createRequireGrant`'s own middleware wraps) since this
+            // is not a route boundary.
+            requireDefinitionCreateGrant: async ({ tenantId, principalId }) => {
+              const result = await authorize(
+                chatGrantStore,
+                principalId,
+                tenantId,
+                "workflow-definition:*",
+                "create",
+                chatConditionRegistry,
+              );
+              if (result.effect !== "allow") {
+                throw new PlannerDefinitionGrantDeniedError(principalId);
+              }
+            },
+          },
+          input,
+        ),
     }),
   );
 

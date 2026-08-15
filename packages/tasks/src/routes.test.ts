@@ -51,6 +51,7 @@ function buildDeps(
       status: "running",
       runId: "run_1",
       resultMailId: null,
+      plannerRunId: null,
       createdAt: new Date(),
       completedAt: null,
     }),

@@ -241,6 +241,13 @@ function createFakeDb(opts: {
     return {
       set(values: unknown) {
         updated.push({ table, values });
+        // `channelLaunchRow` backs every subsequent `select().from(channelLaunch)`
+        // by reference (see below) — mutating it in place here is what lets a
+        // test prove a write is actually visible to a later read, not just that
+        // `update` was called with the right shape.
+        if (table === channelLaunch && opts.channelLaunchRow !== undefined) {
+          Object.assign(opts.channelLaunchRow, values as object);
+        }
         return { where: async () => undefined };
       },
     };
@@ -1588,6 +1595,157 @@ describe("createHubChatPlatform", () => {
       } finally {
         globalThis.setInterval = originalSetInterval;
       }
+    });
+  });
+
+  // Proves the actual lever an edited system prompt reaches a running
+  // instance through: `wakeFoldedRun` (exercised via `sendMail`'s
+  // wake-on-send path above) replays `channel_launch.foldedBody`
+  // verbatim and never reads the definition's asset itself, so a
+  // definition edit only reaches a running instance if something
+  // recomputes that row from the definition's current asset content —
+  // this is that something.
+  describe("refreshAgentInstanceFromDefinition", () => {
+    const NEW_WORKFLOW_JSON = JSON.stringify({
+      id: "wf_agent1",
+      stepOrder: ["agent"],
+      steps: {
+        agent: {
+          kind: "step",
+          agent: {
+            systemPrompt: "You are now a blunt, no-nonsense assistant.",
+            toolPackagePins: [],
+            inference: { sources: [{ model: "claude-sonnet-5" }] },
+          },
+        },
+      },
+      grantRequirements: [],
+      credentialBindings: [],
+    });
+
+    function buildRefreshableDb() {
+      return createFakeDb({
+        // Unused by this describe block's tests (no launch/asset-creation
+        // path is exercised) — required only because `createFakeDb`'s
+        // options type demands them for the launchChannel-shaped tests
+        // above.
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: null,
+          name: "unused",
+          displayName: null,
+        },
+        definitionId: "wfd_unused",
+        workflowRunRow: {
+          id: "run_agent1",
+          address: "agent1@ten1.workbench.test",
+          principalId: "prin_agent1",
+          definitionId: "wfd_agent1",
+        },
+        workflowDefinitionRow: {
+          id: "wfd_agent1",
+          tenantId: "ten_1",
+          status: "deployed",
+          assetId: "asst_agent1",
+        },
+        channelLaunchRow: {
+          tenantId: "ten_1",
+          instanceId: "run_agent1",
+          foldedBody: {
+            systemPrompt: "You are a careful research assistant.",
+            model: "claude-sonnet-5",
+            toolPackagePins: [],
+            grantRequirements: [],
+            credentialBindings: [],
+          },
+        },
+      });
+    }
+
+    test("recomputes and persists the folded body from the definition's current asset", async () => {
+      const db = buildRefreshableDb();
+      const platform = createHubChatPlatform({
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService: createFakeSessionService(),
+        assetService: createFakeAssetService({
+          assetBlob: new TextEncoder().encode(NEW_WORKFLOW_JSON),
+        }),
+        sidecarRouter: createFakeSidecarRouter(),
+        eventCollectors: createFakeEventCollectors(),
+      });
+
+      await platform.refreshAgentInstanceFromDefinition(
+        "ten_1",
+        "ch_1",
+        "agent1@ten1.workbench.test",
+      );
+
+      const launchUpdate = db.updated.find(
+        (row) => row.table === channelLaunch,
+      );
+      expect(
+        (launchUpdate?.values as { foldedBody: { systemPrompt: string } })
+          .foldedBody.systemPrompt,
+      ).toBe("You are now a blunt, no-nonsense assistant.");
+    });
+
+    test("a refreshed instance's next wake uses the new system prompt, not the one frozen at launch", async () => {
+      resolveDefinitionSourcesResult = {
+        ok: true,
+        sources: [
+          {
+            id: "off_1",
+            provider: "anthropic",
+            baseURL: "https://inference.invalid",
+            apiKey: "placeholder",
+            model: "claude-sonnet-5",
+          },
+        ],
+        defaultSource: "off_1",
+      };
+
+      const db = buildRefreshableDb();
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_agent1", principalId: "prin_agent1" },
+      });
+      const sessionService = createFakeSessionService();
+      const platform = createHubChatPlatform({
+        db: db as never,
+        noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+        sessionService,
+        assetService: createFakeAssetService({
+          assetBlob: new TextEncoder().encode(NEW_WORKFLOW_JSON),
+        }),
+        // Not in the sidecar's routable set: the instance is asleep, so
+        // the next send must wake it — reading whatever
+        // `channel_launch` holds at that moment.
+        sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+        eventCollectors: createFakeEventCollectors(),
+        lifecycle: { idleSleepMs: 60_000 },
+      });
+
+      await platform.refreshAgentInstanceFromDefinition(
+        "ten_1",
+        "ch_1",
+        "agent1@ten1.workbench.test",
+      );
+
+      await platform.sendMail({
+        tenantId: "ten_1",
+        channelId: "run_agent1",
+        principalId: "prin_sender",
+        content: { content: "hello" },
+      });
+
+      expect(sessionService.deployInstanceAtHeadCalls).toHaveLength(1);
+      const deployed = sessionService.deployInstanceAtHeadCalls[0] as {
+        config: { systemPrompt: string };
+      };
+      expect(deployed.config.systemPrompt).toBe(
+        "You are now a blunt, no-nonsense assistant.",
+      );
     });
   });
 });

@@ -5,7 +5,13 @@
 import { CHAT_STRINGS } from "../strings";
 
 export type ChannelSettingsSectionId =
-  "general" | "members" | "agents" | "access" | "notifications" | "danger";
+  | "general"
+  | "members"
+  | "agents"
+  | "assistant"
+  | "access"
+  | "notifications"
+  | "danger";
 
 export type ChannelSettingsSectionGroup = "shared" | "personal" | "danger";
 
@@ -28,10 +34,19 @@ export type ChannelSettingsSection = {
  * — and the invite-agent affordance it renders — has nothing to show.
  * Defaults to `false` so every existing call site (agent chats,
  * channels) keeps exactly the section list it already had.
+ *
+ * `hasAgent` gates Assistant on its own, narrower signal: whether this
+ * channel actually carries an agent participant right now, not merely
+ * whether one could ever be invited. Unlike Agents (always offered,
+ * empty or not, for anything that isn't a human DM), Assistant has
+ * nothing to show — no name, no instructions — until a real agent is
+ * there to edit. Defaults to `false`, an inert control being worse
+ * than a hidden one.
  */
 export function channelSettingsSections(
   channelKind: string,
   isDm = false,
+  hasAgent = false,
 ): readonly ChannelSettingsSection[] {
   const sections: ChannelSettingsSection[] = [
     {
@@ -51,6 +66,13 @@ export function channelSettingsSections(
     sections.push({
       id: "agents",
       label: CHAT_STRINGS.channelSettingsSectionAgents,
+      group: "shared",
+    });
+  }
+  if (hasAgent) {
+    sections.push({
+      id: "assistant",
+      label: CHAT_STRINGS.channelSettingsSectionAssistant,
       group: "shared",
     });
   }

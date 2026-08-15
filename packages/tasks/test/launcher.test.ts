@@ -177,6 +177,9 @@ function storeOverInserts(db: {
     async recordResultMail(input) {
       resultMailIds.set(input.id, input.resultMailId);
     },
+    async linkPlannerRun() {
+      throw new Error("launchTask never calls linkPlannerRun");
+    },
   };
 }
 

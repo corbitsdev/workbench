@@ -51,6 +51,35 @@ describe("channelSettingsSections", () => {
     ]);
   });
 
+  test("Assistant is absent by default — no agent, nothing to edit", () => {
+    expect(channelSettingsSections("chat").map((s) => s.id)).not.toContain(
+      "assistant",
+    );
+    expect(channelSettingsSections("channel").map((s) => s.id)).not.toContain(
+      "assistant",
+    );
+  });
+
+  test("Assistant appears right after Agents when the channel has one", () => {
+    expect(
+      channelSettingsSections("channel", false, true).map((s) => s.id),
+    ).toEqual([
+      "general",
+      "members",
+      "agents",
+      "assistant",
+      "access",
+      "notifications",
+      "danger",
+    ]);
+  });
+
+  test("an agent chat with hasAgent shows Assistant even though Members is trimmed", () => {
+    expect(
+      channelSettingsSections("chat", false, true).map((s) => s.id),
+    ).toEqual(["general", "agents", "assistant", "access", "notifications"]);
+  });
+
   test("groups sections Shared / Personal / Danger for the nav", () => {
     const groups = channelSettingsSections("channel").map((s) => s.group);
     expect(groups).toEqual([
