@@ -1,12 +1,14 @@
 // Proves the gap CL-6038 closes: a routine's stored `input` (the
 // stepper-collected topic/focus a routine's creator recorded) reaches
-// the launched run as its first-turn mail, via the same `sendFoldedMail`
-// seam every other folded-run first message goes through. `@corbits/folded-runs`
-// is real here except for `launchFoldedRun`/`sendFoldedMail`/
+// the launched run as its first-turn mail, via the same
+// `sendFoldedMailWithRetry` seam every other folded-run first message
+// goes through — and that a delivery failure past launch never un-does
+// or hides the already-real run. `@corbits/folded-runs` is real here
+// except for `launchFoldedRun`/`sendFoldedMailWithRetry`/
 // `readDefinitionJSON`, which would otherwise need a real tenant catalog
 // and asset store — the same "swap the one export that needs a join"
 // approach `packages/folded-runs/test/launch.test.ts` and
-// `packages/webhook-triggers/src/launch.test.ts` use.
+// `packages/webhook-triggers/test/launch.test.ts` use.
 import { describe, expect, mock, test } from "bun:test";
 
 const actualFoldedRuns = await import("@corbits/folded-runs");
@@ -19,8 +21,14 @@ const FOLDED_BODY = {
   model: "claude-sonnet-5",
 };
 
+const FRAME_HEADER = "Input from this routine's setup:";
+
 let launchFoldedRunCalls: unknown[] = [];
-let sendFoldedMailCalls: unknown[] = [];
+let sendFoldedMailWithRetryCalls: unknown[] = [];
+let sendFoldedMailWithRetryResult: unknown = {
+  ok: true,
+  mail: { id: "m_1", createdAt: new Date().toISOString() },
+};
 
 mock.module("@corbits/folded-runs", () => ({
   ...actualFoldedRuns,
@@ -30,9 +38,9 @@ mock.module("@corbits/folded-runs", () => ({
     launchFoldedRunCalls.push(args);
     return { instancePrincipalId: "prn_run1", sessionId: "ses_run1" };
   },
-  sendFoldedMail: async (...args: unknown[]) => {
-    sendFoldedMailCalls.push(args);
-    return { id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+  sendFoldedMailWithRetry: async (...args: unknown[]) => {
+    sendFoldedMailWithRetryCalls.push(args);
+    return sendFoldedMailWithRetryResult;
   },
   createCryptoProviderCache: () => ({
     get: async () => ({ __fakeCryptoProvider: true }) as never,
@@ -82,29 +90,35 @@ function baseInput(input: Record<string, unknown>) {
   };
 }
 
+function buildLauncher() {
+  return createHubRoutineLauncher({
+    db: createFakeDb() as never,
+    sessionService: {} as never,
+    assetService: {} as never,
+    sidecarRouter: {} as never,
+    eventCollectors: {} as never,
+    cryptoProviderCache: { get: async () => ({}) as never },
+  });
+}
+
 describe("createHubRoutineLauncher", () => {
   test("threads the routine's stored input into the run's first-turn mail", async () => {
     launchFoldedRunCalls = [];
-    sendFoldedMailCalls = [];
+    sendFoldedMailWithRetryCalls = [];
+    sendFoldedMailWithRetryResult = {
+      ok: true,
+      mail: { id: "m_1", createdAt: new Date().toISOString() },
+    };
 
-    const launcher = createHubRoutineLauncher({
-      db: createFakeDb() as never,
-      sessionService: {} as never,
-      assetService: {} as never,
-      sidecarRouter: {} as never,
-      eventCollectors: {} as never,
-      cryptoProviderCache: { get: async () => ({}) as never },
-    });
-
-    const result = await launcher.launchRoutineRun(
+    const result = await buildLauncher().launchRoutineRun(
       baseInput({ topic: "AI coding agents", focus: "Competing launches" }),
     );
 
     expect(result.runId).toBeTruthy();
     expect(launchFoldedRunCalls).toHaveLength(1);
-    expect(sendFoldedMailCalls).toHaveLength(1);
+    expect(sendFoldedMailWithRetryCalls).toHaveLength(1);
 
-    const [, params] = sendFoldedMailCalls[0] as [
+    const [, params] = sendFoldedMailWithRetryCalls[0] as [
       unknown,
       {
         sessionId: string;
@@ -118,27 +132,36 @@ describe("createHubRoutineLauncher", () => {
     expect(params.domain).toBe("acme.workbench.test");
     expect(params.from).toBe("usr_1@acme.workbench.test");
     expect(params.content).toBe(
-      "topic: AI coding agents\nfocus: Competing launches",
+      `${FRAME_HEADER}\ntopic: AI coding agents\nfocus: Competing launches`,
     );
   });
 
   test("sends no mail when the routine's stored input is empty", async () => {
     launchFoldedRunCalls = [];
-    sendFoldedMailCalls = [];
+    sendFoldedMailWithRetryCalls = [];
 
-    const launcher = createHubRoutineLauncher({
-      db: createFakeDb() as never,
-      sessionService: {} as never,
-      assetService: {} as never,
-      sidecarRouter: {} as never,
-      eventCollectors: {} as never,
-      cryptoProviderCache: { get: async () => ({}) as never },
-    });
-
-    const result = await launcher.launchRoutineRun(baseInput({}));
+    const result = await buildLauncher().launchRoutineRun(baseInput({}));
 
     expect(result.runId).toBeTruthy();
     expect(launchFoldedRunCalls).toHaveLength(1);
-    expect(sendFoldedMailCalls).toHaveLength(0);
+    expect(sendFoldedMailWithRetryCalls).toHaveLength(0);
+  });
+
+  test("still returns the run id when input delivery fails after every retry — the run is never hidden or un-launched", async () => {
+    launchFoldedRunCalls = [];
+    sendFoldedMailWithRetryCalls = [];
+    sendFoldedMailWithRetryResult = {
+      ok: false,
+      error: new Error("sidecar unreachable"),
+      attempts: 3,
+    };
+
+    const result = await buildLauncher().launchRoutineRun(
+      baseInput({ topic: "AI coding agents" }),
+    );
+
+    expect(result.runId).toBeTruthy();
+    expect(launchFoldedRunCalls).toHaveLength(1);
+    expect(sendFoldedMailWithRetryCalls).toHaveLength(1);
   });
 });

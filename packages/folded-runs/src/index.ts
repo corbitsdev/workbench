@@ -31,7 +31,10 @@ export {
 export { wakeFoldedRun, type WakeFoldedRunParams } from "./wake";
 export {
   sendFoldedMail,
+  sendFoldedMailWithRetry,
   listFoldedMail,
+  DEFAULT_SEND_FOLDED_MAIL_ATTEMPTS,
   type SendFoldedMailParams,
+  type SendFoldedMailAttemptResult,
   type ListFoldedMailParams,
 } from "./mail";

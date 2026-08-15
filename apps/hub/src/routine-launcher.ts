@@ -10,13 +10,22 @@
 //
 // After launch, a non-empty stored `input` (the stepper-collected
 // topic/focus a routine's creator recorded) is delivered as the run's
-// first inbound mail via `sendFoldedMail` — the same seam
+// first inbound mail via `sendFoldedMailWithRetry` — the same seam
 // `@corbits/webhook-triggers`' `launchWebhookTrigger` uses for its own
-// rendered input. Both "run now" and a scheduled fire land here (see
-// `@corbits/routines`' `launchAndCorrelate`), so this one call covers
-// both; a webhook-triggered routine's fire never reaches this adapter at
-// all (`launchWebhookTrigger` launches directly), so its own input
-// delivery is that package's concern, not this one's.
+// rendered input (both hardened identically; see that file's own note).
+// Both "run now" and a scheduled fire land here (see `@corbits/routines`'
+// `launchAndCorrelate`), so this one call covers both; a
+// webhook-triggered routine's fire never reaches this adapter at all
+// (`launchWebhookTrigger` launches directly), so its own input delivery
+// is that package's concern, not this one's.
+//
+// A run is already real (principal/session/workflow_run rows committed,
+// the sidecar deployed) the moment `launchFoldedRun` returns, so a
+// delivery failure past that point must never un-launch it or hide it
+// from `@corbits/routines`' correlation (`GET /routines/:id/runs`) —
+// this function still returns the run id on a delivery failure, after
+// exhausting `sendFoldedMailWithRetry`'s bounded retries, and only logs
+// (naming the run) rather than throwing.
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
@@ -25,14 +34,17 @@ import {
   launchFoldedRun,
   readDefinitionJSON,
   readFoldedBody,
-  sendFoldedMail,
+  sendFoldedMailWithRetry,
   type CryptoProviderCache,
   type FoldedRunsDeps,
 } from "@corbits/folded-runs";
 import { generateId } from "@intx/hub-common";
+import { getLogger } from "@intx/log";
 import { formatRunAddress } from "@intx/types";
 import type { AssetService } from "@intx/hub-sessions";
 import { renderRoutineInput, type RoutineLauncher } from "@corbits/routines";
+
+const log = getLogger(["hub", "routine-launcher"]);
 
 export type CreateHubRoutineLauncherDeps = FoldedRunsDeps & {
   db: DB["db"];
@@ -103,7 +115,7 @@ export function createHubRoutineLauncher(
       const content = renderRoutineInput(input.input);
       if (content !== "") {
         const cryptoProvider = await deps.cryptoProviderCache.get(instanceId);
-        await sendFoldedMail(deps, {
+        const result = await sendFoldedMailWithRetry(deps, {
           tenantId: input.tenantId,
           sessionId: launched.sessionId,
           agentAddress: triggerAddress,
@@ -112,6 +124,13 @@ export function createHubRoutineLauncher(
           content,
           cryptoProvider,
         });
+        if (!result.ok) {
+          const reason =
+            result.error instanceof Error
+              ? result.error.message
+              : String(result.error);
+          log.error`routine run ${instanceId} launched but its stored input failed to deliver after ${result.attempts} attempts: ${reason}`;
+        }
       }
 
       return { runId: instanceId };

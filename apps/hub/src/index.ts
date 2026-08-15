@@ -842,7 +842,12 @@ export async function createHub(config: HubConfig) {
     db,
     credentialCipher,
   );
-  const webhookCryptoProviders = createCryptoProviderCache();
+  // Shared by every folded-run first-turn mail send below (webhook
+  // triggers and routines alike) — a `CryptoProviderCache` is keyed by
+  // instance id, which is globally unique across this hub regardless of
+  // which caller minted the run, so one cache serves both without
+  // collision risk.
+  const foldedRunCryptoProviders = createCryptoProviderCache();
   app.route(
     `${TENANT_PREFIX}/webhook-triggers`,
     createWebhookTriggerRoutes({
@@ -875,7 +880,7 @@ export async function createHub(config: HubConfig) {
             assetService,
             sidecarRouter,
             eventCollectors,
-            cryptoProviderCache: webhookCryptoProviders,
+            cryptoProviderCache: foldedRunCryptoProviders,
           },
           trigger,
           payload,
@@ -911,14 +916,13 @@ export async function createHub(config: HubConfig) {
   const routineGrantStore = createGrantStore(db);
   const routineStore = createDrizzleRoutineStore(db);
   const routineDraftStore = createDrizzleDraftStore(db);
-  const routineCryptoProviders = createCryptoProviderCache();
   const routineLauncher = createHubRoutineLauncher({
     db,
     sessionService,
     assetService,
     sidecarRouter,
     eventCollectors,
-    cryptoProviderCache: routineCryptoProviders,
+    cryptoProviderCache: foldedRunCryptoProviders,
   });
   // Routines routes own their `/routines` and `/routine-drafts` prefixes, so
   // mount at the tenant root (same pattern as a package that ships absolute

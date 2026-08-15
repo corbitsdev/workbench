@@ -3,11 +3,14 @@
 // pair, with the hub's own noop-inference endpoint standing in for a
 // model provider (zero-cost, same pattern as `routine-repeat.test.ts`
 // and `smoke-webhook.test.ts`): "run now" and a scheduled fire both
-// deliver the routine's stored `input` as the launched run's first
-// inbound mail (via `apps/hub/src/routine-launcher.ts`'s new
-// `sendFoldedMail` call); a webhook fire delivers its trigger's rendered
-// `inputTemplate` the same way (pre-existing behavior in
-// `@corbits/webhook-triggers`, reconfirmed here for parity).
+// deliver the routine's stored `input` as the launched run's actual
+// first message (via `apps/hub/src/routine-launcher.ts`'s
+// `sendFoldedMailWithRetry` call); a webhook fire delivers its
+// trigger's rendered `inputTemplate` the same way (pre-existing
+// behavior in `@corbits/webhook-triggers`, reconfirmed here for
+// parity). Each assertion checks the mailbox's first message
+// specifically, not merely that a matching message exists somewhere in
+// it.
 //
 // No route exposes a run's mailbox by definition-scoped id today (see
 // `smoke-webhook.test.ts`'s own note on this), so every mailbox
@@ -59,20 +62,23 @@ function stringField(data: unknown, field: string, what: string): string {
   );
 }
 
+type MailboxMessage = { raw: string; direction: string };
+
 /**
- * Reads every `session_mail.raw` (the signed MIME body) delivered to the
- * folded run whose `workflow_run.id` is `instanceId`, joined through
- * `agent_session` on the run's own principal — the same principal both
- * rows share, per `launchFoldedRun`'s self-anchored shape.
+ * Reads every `session_mail` row (signed MIME body plus direction)
+ * delivered to the folded run whose `workflow_run.id` is `instanceId`,
+ * joined through `agent_session` on the run's own principal — the same
+ * principal both rows share, per `launchFoldedRun`'s self-anchored
+ * shape — oldest first, so index 0 is the run's actual first message.
  */
-async function readMailboxRawBodies(
+async function readMailbox(
   url: string,
   instanceId: string,
-): Promise<string[]> {
+): Promise<MailboxMessage[]> {
   const sql = await connectE2eDb(url);
   try {
     const rows = await sql.unsafe(
-      `SELECT sm.raw AS raw
+      `SELECT sm.raw AS raw, sm.direction AS direction
          FROM session_mail sm
          JOIN agent_session ags ON ags.id = sm.session_id
          JOIN workflow_run wr ON wr.principal_id = ags.principal_id
@@ -80,10 +86,29 @@ async function readMailboxRawBodies(
         ORDER BY sm.created_at ASC`,
       [instanceId],
     );
-    return rows.map((row) => String((row as { raw: unknown }).raw));
+    return rows.map((row) => {
+      const typed = row as { raw: unknown; direction: unknown };
+      return { raw: String(typed.raw), direction: String(typed.direction) };
+    });
   } finally {
     await sql.end();
   }
+}
+
+/**
+ * `true` when the mailbox's very first message (not merely "some"
+ * message) is inbound and carries every one of `substrings` — proving
+ * the routine's stored input landed as the run's actual first-turn
+ * content, matching this file's own claim, not just present somewhere
+ * in the mailbox.
+ */
+function firstMessageIsInboundAndContains(
+  mailbox: MailboxMessage[],
+  ...substrings: string[]
+): boolean {
+  const first = mailbox[0];
+  if (first === undefined || first.direction !== "inbound") return false;
+  return substrings.every((substring) => first.raw.includes(substring));
 }
 
 describe.skipIf(databaseUrl === undefined)(
@@ -377,23 +402,23 @@ describe.skipIf(databaseUrl === undefined)(
         const runId = stringField(fired.data, "runId", "run-now fire");
 
         const deadline = Date.now() + 30_000;
-        let mailboxBodies: string[] = [];
+        let mailbox: MailboxMessage[] = [];
         while (Date.now() < deadline) {
-          mailboxBodies = await readMailboxRawBodies(url, runId);
-          if (mailboxBodies.length > 0) break;
+          mailbox = await readMailbox(url, runId);
+          if (mailbox.length > 0) break;
           await Bun.sleep(500);
         }
 
         if (
-          !mailboxBodies.some(
-            (raw) =>
-              raw.includes("topic: AI coding agents") &&
-              raw.includes("focus: Competing launches"),
+          !firstMessageIsInboundAndContains(
+            mailbox,
+            "topic: AI coding agents",
+            "focus: Competing launches",
           )
         ) {
           throw new Error(
-            `run ${runId}'s mailbox never received the routine's stored ` +
-              `input: ${JSON.stringify(mailboxBodies)}`,
+            `run ${runId}'s first mailbox message was not the routine's ` +
+              `stored input: ${JSON.stringify(mailbox)}`,
           );
         }
       });
@@ -456,19 +481,19 @@ describe.skipIf(databaseUrl === undefined)(
         }
 
         const mailboxDeadline = Date.now() + 15_000;
-        let mailboxBodies: string[] = [];
+        let mailbox: MailboxMessage[] = [];
         while (Date.now() < mailboxDeadline) {
-          mailboxBodies = await readMailboxRawBodies(url, runId);
-          if (mailboxBodies.length > 0) break;
+          mailbox = await readMailbox(url, runId);
+          if (mailbox.length > 0) break;
           await Bun.sleep(500);
         }
 
         if (
-          !mailboxBodies.some((raw) => raw.includes("topic: Scheduled digest"))
+          !firstMessageIsInboundAndContains(mailbox, "topic: Scheduled digest")
         ) {
           throw new Error(
-            `scheduled run ${runId}'s mailbox never received the ` +
-              `routine's stored input: ${JSON.stringify(mailboxBodies)}`,
+            `scheduled run ${runId}'s first mailbox message was not the ` +
+              `routine's stored input: ${JSON.stringify(mailbox)}`,
           );
         }
       });
@@ -543,27 +568,24 @@ describe.skipIf(databaseUrl === undefined)(
         }
 
         const deadline = Date.now() + 15_000;
-        let mailboxBodies: string[] = [];
+        let mailbox: MailboxMessage[] = [];
         while (Date.now() < deadline) {
-          mailboxBodies = await readMailboxRawBodies(
-            url,
-            deliveredData.instanceId,
-          );
-          if (mailboxBodies.length > 0) break;
+          mailbox = await readMailbox(url, deliveredData.instanceId);
+          if (mailbox.length > 0) break;
           await Bun.sleep(500);
         }
 
         if (
-          !mailboxBodies.some(
-            (raw) =>
-              raw.includes("topic: Deploy finished") &&
-              raw.includes("source: ci"),
+          !firstMessageIsInboundAndContains(
+            mailbox,
+            "topic: Deploy finished",
+            "source: ci",
           )
         ) {
           throw new Error(
-            `webhook run ${deliveredData.instanceId}'s mailbox never ` +
-              `received the trigger's rendered fields: ` +
-              JSON.stringify(mailboxBodies),
+            `webhook run ${deliveredData.instanceId}'s first mailbox ` +
+              `message was not the trigger's rendered fields: ` +
+              JSON.stringify(mailbox),
           );
         }
       });
