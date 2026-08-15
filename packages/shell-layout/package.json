@@ -1,7 +1,7 @@
 {
-  "name": "@corbits/context-menu",
+  "name": "@corbits/shell-layout",
   "private": true,
-  "description": "The global right-click context-menu system: resolving a DOM event to a typed target, deciding whether a modal overlay should suppress it, and the open/position state a react-ui Menu renders from",
+  "description": "The generic shell layout mechanics a second Interchange deployment needs: the panel-contribution registry, responsive breakpoints, the canvas column and col2-width state machines, focus rescue, scroll reset, pins, and the pending-dialog-request pattern. Composition (registrations, per-page bands, app policy) stays in the consuming app.",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
@@ -13,7 +13,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/react-ui": "github:corbitsdev/react-ui#c454615ac77ff33c1c53beb520aee831f889efad",
+    "arktype": "catalog:",
+    "lucide-react": "^1.27.0",
     "react": "^19.2.0"
   },
   "devDependencies": {

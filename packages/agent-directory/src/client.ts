@@ -16,23 +16,40 @@ export type UserFacingAgentDefinition = {
 };
 
 export type UserFacingAgentInstance = {
+  readonly id: string;
   readonly definitionId: string;
   readonly definitionName: string;
+  readonly address?: string;
 };
 
 /** Every definition, minus the chat anchor machinery's channel hosts —
- * those are internal plumbing, never a user-facing agent. */
+ * those are internal plumbing, never a user-facing agent. Definitions
+ * never need the run-id filter `purposeAgentInstances` below takes:
+ * definition rows aren't run rows, so a folded run's own id can never
+ * match here — an invited agent's real `definitionId` stays a
+ * legitimate, reusable template even though its *instance* is chat
+ * plumbing. */
 export function purposeAgentDefinitions<T extends UserFacingAgentDefinition>(
   definitions: readonly T[],
 ): readonly T[] {
   return definitions.filter((d) => !isChannelHostDefinitionName(d.name));
 }
 
+/**
+ * `excludeRunIds` additionally drops folded chat runs (invited agents):
+ * they self-anchor like a real deployment and launch under a real,
+ * user-authored `definitionId` that `isChannelHostDefinitionName` never
+ * catches, so the host names them by id instead. Defaults to an empty
+ * set so callers without a folded-run source keep the name-only filter.
+ */
 export function purposeAgentInstances<T extends UserFacingAgentInstance>(
   instances: readonly T[],
+  excludeRunIds: ReadonlySet<string> = new Set(),
 ): readonly T[] {
   return instances.filter(
-    (instance) => !isChannelHostDefinitionName(instance.definitionName),
+    (instance) =>
+      !isChannelHostDefinitionName(instance.definitionName) &&
+      !excludeRunIds.has(instance.id),
   );
 }
 

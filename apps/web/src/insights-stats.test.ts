@@ -5,6 +5,7 @@ import {
   computeInsightsStats,
   computeTraceStats,
   filterRunsByCreatedAt,
+  purposeRunsForInsights,
 } from "./insights-stats";
 import type { RunTraceSpan } from "./insights-api";
 import type { Routine } from "./routines-api";
@@ -108,6 +109,42 @@ describe("computeInsightsStats", () => {
     const stats = computeInsightsStats(runs, [], 2);
     expect(stats.recentRuns).toHaveLength(2);
     expect(stats.deployed).toBe(5);
+  });
+});
+
+describe("purposeRunsForInsights", () => {
+  const channelHost = run({
+    id: "host",
+    status: "running",
+    definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  });
+  const invitedAgent = run({
+    id: "ins_invited",
+    status: "running",
+    definitionName: "Researcher",
+  });
+  const deployment = run({ id: "ins_deployed", status: "running" });
+
+  test("drops a channel-host run with no folded-run-id set given", () => {
+    expect(purposeRunsForInsights([deployment, channelHost])).toEqual([
+      deployment,
+    ]);
+  });
+
+  test("drops an invited-agent run under a real definitionId when its id is in the folded-run-id set", () => {
+    const result = purposeRunsForInsights(
+      [deployment, invitedAgent],
+      new Set([invitedAgent.id]),
+    );
+    expect(result).toEqual([deployment]);
+  });
+
+  test("leaves an ordinary top-level deployment run alone", () => {
+    const result = purposeRunsForInsights(
+      [deployment],
+      new Set([invitedAgent.id]),
+    );
+    expect(result).toEqual([deployment]);
   });
 });
 

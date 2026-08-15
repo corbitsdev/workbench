@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { APIQuery } from "../src/api";
+import type { APIQuery } from "@corbits/api-query";
 import {
   RoutineDetailPage,
   RoutinesListPage,

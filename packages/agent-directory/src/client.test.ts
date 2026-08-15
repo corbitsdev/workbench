@@ -26,6 +26,7 @@ const instance = {
   id: "ins_1",
   definitionId: "wfd_1",
   definitionName: "Researcher",
+  address: "ins_1@acme.localhost",
 };
 
 const channelHostInstance = {
@@ -42,9 +43,45 @@ describe("purposeAgentDefinitions", () => {
   });
 });
 
+const invitedAgentInstance = {
+  ...instance,
+  id: "ins_3",
+  definitionId: "wfd_1",
+  definitionName: "Researcher",
+};
+
 describe("purposeAgentInstances", () => {
   test("drops channel-host instances", () => {
     const result = purposeAgentInstances([instance, channelHostInstance]);
+    expect(result).toEqual([instance]);
+  });
+
+  test("with no folded-run-id set, leaves an ordinary top-level deployment alone", () => {
+    const result = purposeAgentInstances([instance]);
+    expect(result).toEqual([instance]);
+  });
+
+  test("drops an invited-agent chat run whose id is in the folded-run-id set, even under a real definitionId", () => {
+    const result = purposeAgentInstances(
+      [instance, invitedAgentInstance],
+      new Set([invitedAgentInstance.id]),
+    );
+    expect(result).toEqual([instance]);
+  });
+
+  test("still drops a channel host when a folded-run-id set is also given", () => {
+    const result = purposeAgentInstances(
+      [instance, channelHostInstance, invitedAgentInstance],
+      new Set([invitedAgentInstance.id]),
+    );
+    expect(result).toEqual([instance]);
+  });
+
+  test("does not exclude an ordinary deployment merely because a different id is in the set", () => {
+    const result = purposeAgentInstances(
+      [instance],
+      new Set([invitedAgentInstance.id]),
+    );
     expect(result).toEqual([instance]);
   });
 });
@@ -80,8 +117,9 @@ describe("filterInstances", () => {
     expect(filterInstances([instance], "research")).toEqual([instance]);
   });
 
-  test("never matches on the raw id", () => {
+  test("never matches on the raw id or address", () => {
     expect(filterInstances([instance], "ins_1")).toEqual([]);
+    expect(filterInstances([instance], "acme.localhost")).toEqual([]);
   });
 
   test("preserves extra fields callers have attached", () => {

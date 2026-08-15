@@ -21,10 +21,17 @@ export function purposeAgentDefinitions(
   return purposeAgentDefinitionsShared(definitions);
 }
 
+/**
+ * `foldedRunIds` excludes invited-agent chat runs — see
+ * `packages/folded-runs/src/launch.ts` (self-anchoring) and
+ * `packages/chat/src/platform-adapter.ts`'s `launchInvite` for why the
+ * shared name-based filter alone can't catch them.
+ */
 export function purposeAgentInstances(
   instances: readonly AgentInstance[],
+  foldedRunIds: ReadonlySet<string> = new Set(),
 ): readonly AgentInstance[] {
-  return purposeAgentInstancesShared(instances);
+  return purposeAgentInstancesShared(instances, foldedRunIds);
 }
 
 export function filterDefinitions(

@@ -6,7 +6,37 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import type { ProfileSubject } from "@corbits/chat-ui";
-import type { CanvasArtifactContent } from "./canvas-column-state";
+import type { ArtifactRendererKind } from "@corbits/artifact-ui";
+import type { CanvasColumnState } from "@corbits/shell-layout";
+
+/** The canvas's typed-artifact pane: a title, the already-resolved
+ * renderer selection (see `@corbits/artifact-ui`'s `resolveArtifactRendererKind`
+ * / `resolveRendererKindFromMediaType`), and the content string those
+ * renderers read.
+ *
+ * `canEdit` (CL-5958 phase 2) opts a text-kind ("doc") artifact into
+ * `ArtifactTextEditor` instead of the read-only `ArtifactRenderer` —
+ * defaults to `false`/absent so every existing caller keeps rendering
+ * read-only with zero behavior change. The presence `/update` route's own
+ * `asset:*`/"write" grant check is the real security boundary regardless
+ * of this flag; `canEdit` only decides which component a capable viewer
+ * sees, never whether a write actually lands. */
+export type CanvasArtifactContent = {
+  readonly id: string;
+  readonly title: string;
+  readonly rendererKind: ArtifactRendererKind;
+  readonly content: string;
+  readonly unavailableReason?: string;
+  readonly canEdit?: boolean;
+};
+
+/** Workbench's concrete instantiation of `@corbits/shell-layout`'s generic
+ * canvas state — a `ProfileSubject` for the profile pane, this app's own
+ * `CanvasArtifactContent` for the artifact pane. */
+export type AppCanvasColumnState = CanvasColumnState<
+  ProfileSubject,
+  CanvasArtifactContent
+>;
 
 export type CanvasHost = {
   readonly allowed: boolean;

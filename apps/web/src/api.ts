@@ -23,8 +23,6 @@ import {
 } from "@corbits/api-query";
 import { pathToQueryKey } from "./query-client";
 
-export type { APIQuery } from "@corbits/api-query";
-
 export const ProfileSchema = UserProfile;
 export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
 export const RunsSchema = paginatedSchema(WorkflowRunSummary);

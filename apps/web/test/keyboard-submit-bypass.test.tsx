@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type { APIQuery } from "../src/api";
+import type { APIQuery } from "@corbits/api-query";
 import { RoutinesListPage } from "../src/pages/routines-page";
 import type {
   CreateRoutineInput,
