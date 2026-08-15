@@ -6,7 +6,6 @@
 
 import {
   Bell,
-  Bot,
   Home,
   List,
   Plug,
@@ -18,7 +17,6 @@ import {
 
 import { AccountSection } from "./account-section";
 import type { TenancyAccess } from "./access";
-import { AgentSection } from "./agent-section";
 import { AuditSection } from "./audit-section";
 import { BenchSection } from "./bench-section";
 import { ChatSection } from "./chat-section";
@@ -46,13 +44,9 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
   {
     id: "personal",
     label: SETTINGS_STRINGS.groupPersonalLabel,
+    // No "Your agent" section here: it has no preference store to back it —
+    // see agent-section.tsx's header comment for the re-add condition.
     sections: [
-      {
-        id: "agent",
-        title: SETTINGS_STRINGS.agentSectionTitle,
-        icon: Bot,
-        render: () => <AgentSection />,
-      },
       {
         id: "chat",
         title: SETTINGS_STRINGS.notificationsSectionTitle,
