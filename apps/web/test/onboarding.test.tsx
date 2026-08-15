@@ -349,7 +349,7 @@ describe("App at the onboarding path", () => {
     const markup = renderOnboarding();
     expect(markup).toContain("Step 1 of 4");
     expect(markup).toContain("Name your workbench");
-    expect(markup).toContain("onboarding-progress-track");
+    expect(markup).toContain("dialog-stepper-track");
   });
 });
 
