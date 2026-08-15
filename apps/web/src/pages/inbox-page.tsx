@@ -17,10 +17,20 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
 import { QueryView, SignedOutNotice } from "@corbits/api-query";
+import { listTenantInvitableDefinitions } from "@corbits/chat-ui";
+import {
+  createTask,
+  listCatalogModels,
+  TaskComposerDialog,
+} from "@corbits/tasks-ui";
 
 import { approveApproval, rejectApproval, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
+import {
+  consumePendingNewTask,
+  NEW_TASK_EVENT,
+} from "../command-palette-actions";
 import {
   InboxCountsSchema,
   InboxItemDetailSchema,
@@ -274,6 +284,16 @@ export function InboxPage({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [taskSubmitting, setTaskSubmitting] = useState(false);
+  const [taskError, setTaskError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (consumePendingNewTask()) setTaskDialogOpen(true);
+    const onEvent = () => setTaskDialogOpen(true);
+    window.addEventListener(NEW_TASK_EVENT, onEvent);
+    return () => window.removeEventListener(NEW_TASK_EVENT, onEvent);
+  }, []);
 
   const countsQuery = useAPIQuery(
     selectedTenantId === null ? "" : inboxCountsPath(selectedTenantId),
@@ -350,6 +370,28 @@ export function InboxPage({
       .finally(() => setBusy(false));
   }
 
+  function handleCreateTask(input: {
+    readonly definitionId: string;
+    readonly prompt: string;
+    readonly modelPreference?: string;
+  }) {
+    if (selectedTenantId === null) return;
+    setTaskSubmitting(true);
+    setTaskError(null);
+    createTask(selectedTenantId, input)
+      .then(() => {
+        setTaskDialogOpen(false);
+      })
+      .catch((cause: unknown) => {
+        setTaskError(
+          cause instanceof Error
+            ? cause.message
+            : "That task didn't start — try again.",
+        );
+      })
+      .finally(() => setTaskSubmitting(false));
+  }
+
   if (selectedTenantId === null || listQuery.kind === "unauthenticated") {
     return (
       <div className="flex h-full items-center justify-center p-6">
@@ -360,6 +402,16 @@ export function InboxPage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <TaskComposerDialog
+        open={taskDialogOpen}
+        onOpenChange={setTaskDialogOpen}
+        onCreate={handleCreateTask}
+        tenantId={selectedTenantId}
+        submitting={taskSubmitting}
+        error={taskError}
+        listAgents={listTenantInvitableDefinitions}
+        listModels={listCatalogModels}
+      />
       <StageTopBar
         title="Inbox"
         subtitle={
@@ -369,6 +421,13 @@ export function InboxPage({
         }
         actions={
           <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setTaskDialogOpen(true)}
+            >
+              New task
+            </Button>
             <Button
               variant="secondary"
               size="sm"

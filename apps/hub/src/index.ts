@@ -92,6 +92,13 @@ import {
   createDrizzleRoutineStore,
   createRoutineRoutes,
 } from "@corbits/routines";
+import { createAgentLifecycle } from "@corbits/agent-lifecycle";
+import {
+  createDrizzleTaskStore,
+  createTaskOrchestrator,
+  createTaskRoutes,
+  launchTask,
+} from "@corbits/tasks";
 
 import {
   createAgentRepoStore,
@@ -1014,6 +1021,83 @@ export async function createHub(config: HubConfig) {
       sinks: createSinkRegistry(),
     },
   });
+
+  // Spawn-and-return agent tasks (`@corbits/tasks`, CL-6049): a prompt
+  // plus an agent definition launches a one-shot folded run with no
+  // channel, and its finalized reply lands in the Inbox through the
+  // same notify delivery adapter `credentialExpirySweep` uses above.
+  // Own idle-sleep lifecycle instance (same `@corbits/agent-lifecycle`
+  // package chat's platform adapter drives, a separate instance since
+  // chat's own lifecycle isn't part of `HubChatPlatform`'s public
+  // surface) — `wake` is never actually called: a task's run only ever
+  // needs waking to deliver a follow-up message, and a one-shot task
+  // never sends one after its opening prompt.
+  const taskStore = createDrizzleTaskStore(db);
+  const taskLifecycle = createAgentLifecycle({
+    idleSleepMs: CHAT_IDLE_SLEEP_MS,
+    isRoutable: (address) =>
+      sidecarRouter.getRoutableAddresses().includes(address),
+    undeploy: (address, reason) =>
+      sidecarRouter.sendAgentUndeploy(address, reason),
+    wake: () => {
+      throw new Error(
+        "a task-launched run is never woken after its opening prompt",
+      );
+    },
+    isBusy: (address) =>
+      typeof eventCollectors.getCurrentTurnId(address) === "string",
+    log: getLogger(["tasks", "lifecycle"]),
+  });
+  // The task picker offers the same conversational agents chat's
+  // invite picker does: not an automatable catalog workflow (routines
+  // material never belongs in either picker).
+  const isTaskableDefinition = (definition: { name: string }) =>
+    !isAutomatableWorkflowName(definition.name);
+  const taskLauncherDeps = {
+    db,
+    store: taskStore,
+    foldedRuns: {
+      db,
+      sessionService,
+      assetService,
+      sidecarRouter,
+      eventCollectors,
+    },
+    cryptoProviders: createCryptoProviderCache(),
+    isTaskableDefinition,
+    lifecycle: taskLifecycle,
+  };
+  const taskOrchestrator = createTaskOrchestrator({
+    db,
+    store: taskStore,
+    events: sidecarRouter.events,
+    notify: {
+      mail: mailboxDelivery,
+      addressing: {
+        inbox: (recipient) => `${recipient.principalId}@inbox.${notifyHost}`,
+        from: (kind) => `${kind}@notify.${notifyHost}`,
+      },
+      dispatch: createInMemoryNotifyDispatchStore(),
+      sinks: createSinkRegistry(),
+    },
+    recordActivity: (address) => taskLifecycle.recordActivity(address),
+  });
+  const chatFinalizedTurnHandler = artifactDeliveryHandlerRef.current;
+  artifactDeliveryHandlerRef.current = (agentAddress, turn) => {
+    chatFinalizedTurnHandler?.(agentAddress, turn);
+    taskOrchestrator.handleFinalizedTurn(agentAddress, turn);
+  };
+  app.route(
+    `${TENANT_PREFIX}/tasks`,
+    createTaskRoutes({
+      store: taskStore,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      launch: (input) => launchTask(taskLauncherDeps, input),
+    }),
+  );
 
   // The sanctioned path for a workflow run to reach the memory plane
   // (CL-5852), mirroring `/api/workflow-artifacts` immediately above:

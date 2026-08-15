@@ -28,6 +28,7 @@
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
     "@corbits/shell-layout": "workspace:*",
+    "@corbits/tasks-ui": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#4c1214298e6f7005da01918c7d5a68230f7109cc",
     "@intx/types": "workspace:*",
     "@workbench/connections": "workspace:*",

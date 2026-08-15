@@ -12,6 +12,7 @@ export {
   NotificationEvent,
   NotifyRecipient,
   RunFailureNotification,
+  TaskResultNotification,
   parseNotificationEvent,
 } from "./events";
 export {
@@ -52,6 +53,7 @@ export {
   deliverMentionMail,
   deliverNotification,
   deliverRunFailureMail,
+  deliverTaskResultMail,
   type NotifyDeliveryDeps,
   type NotifyDeliveryReport,
 } from "./deliver";

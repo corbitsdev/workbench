@@ -60,9 +60,32 @@ export const CredentialExpiredNotification = type({
   createdAt: "string.date.iso",
 });
 
+/** A one-shot task (`@corbits/tasks`) finished — its run reached a
+ * terminal state, `"done"` or `"failed"`, and the person who launched
+ * it is the sole recipient. `artifacts` mirrors the same
+ * `PersistedArtifact` shape chat's finalized-turn delivery already
+ * uses (see `@corbits/chat`'s `artifact-delivery.ts`), kept here as a
+ * plain structural echo rather than importing chat's type, so
+ * `@corbits/notify` never depends on `@corbits/chat`. */
+export const TaskResultNotification = type({
+  kind: '"task-result"',
+  tenantId: "string > 0",
+  taskId: "string > 0",
+  runId: "string > 0",
+  agentName: "string > 0",
+  status: '"done" | "failed"',
+  "replyText?": "string",
+  "errorMessage?": "string",
+  elapsedMs: "number >= 0",
+  artifacts: type({ id: "string > 0", title: "string > 0" }).array(),
+  recipients: NotifyRecipient.array(),
+  createdAt: "string.date.iso",
+});
+
 export const NotificationEvent = ApprovalNotification.or(RunFailureNotification)
   .or(MentionNotification)
-  .or(CredentialExpiredNotification);
+  .or(CredentialExpiredNotification)
+  .or(TaskResultNotification);
 
 export type NotifyRecipient = typeof NotifyRecipient.infer;
 export type ApprovalNotification = typeof ApprovalNotification.infer;
@@ -70,6 +93,7 @@ export type RunFailureNotification = typeof RunFailureNotification.infer;
 export type MentionNotification = typeof MentionNotification.infer;
 export type CredentialExpiredNotification =
   typeof CredentialExpiredNotification.infer;
+export type TaskResultNotification = typeof TaskResultNotification.infer;
 export type NotificationEvent = typeof NotificationEvent.infer;
 
 export class InvalidNotificationEventError extends Error {

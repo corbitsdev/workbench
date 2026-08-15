@@ -67,14 +67,53 @@ export function renderNotification(
       refs: [{ kind: "credential", id: event.credentialId }],
     };
   }
+  if (event.kind === "mention") {
+    return {
+      subject: `${event.mentionedBy} mentioned you in “${event.threadLabel}”`,
+      body: [
+        `${event.mentionedBy} mentioned you in “${event.threadLabel}”.`,
+        event.excerpt === "" ? "The message has no text." : event.excerpt,
+      ].join("\n\n"),
+      refs: [{ kind: "thread", id: event.threadId }],
+    };
+  }
   return {
-    subject: `${event.mentionedBy} mentioned you in “${event.threadLabel}”`,
+    subject:
+      event.status === "done"
+        ? `“${event.agentName}” finished your task`
+        : `“${event.agentName}” failed your task`,
     body: [
-      `${event.mentionedBy} mentioned you in “${event.threadLabel}”.`,
-      event.excerpt === "" ? "The message has no text." : event.excerpt,
-    ].join("\n\n"),
-    refs: [{ kind: "thread", id: event.threadId }],
+      `Agent: ${event.agentName} · Elapsed: ${formatElapsed(event.elapsedMs)}`,
+      event.status === "done"
+        ? (event.replyText ?? "The agent finished without a reply.")
+        : (event.errorMessage ??
+          "The task run failed without a reported error."),
+      event.artifacts.length > 0
+        ? `Artifacts: ${event.artifacts.map((artifact) => artifact.title).join(", ")}`
+        : "",
+    ]
+      .filter((line) => line !== "")
+      .join("\n\n"),
+    refs: [
+      { kind: "task", id: event.taskId },
+      { kind: "run", id: event.runId },
+      ...event.artifacts.map((artifact) => ({
+        kind: "artifact",
+        id: artifact.id,
+        label: artifact.title,
+      })),
+    ],
   };
+}
+
+/** `"3m 12s"`-style duration, floored to the second — never a raw
+ * millisecond count in front of a person. */
+function formatElapsed(elapsedMs: number): string {
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
 }
 
 /**
@@ -88,5 +127,6 @@ export function notificationExternalId(event: NotificationEvent): string {
   if (event.kind === "approval") return event.approvalId;
   if (event.kind === "run-failure") return `${event.runId}:${event.createdAt}`;
   if (event.kind === "credential-expired") return event.credentialId;
-  return `${event.threadId}:${event.createdAt}`;
+  if (event.kind === "mention") return `${event.threadId}:${event.createdAt}`;
+  return `${event.taskId}:${event.createdAt}`;
 }
