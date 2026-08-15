@@ -462,10 +462,20 @@ describe.skipIf(databaseUrl === undefined)(
             const items = (tasks.data as { items: Record<string, unknown>[] })
               .items;
             task = items.find((item) => item["runId"] === runId);
-            if (task !== undefined && task["status"] === "done") break;
+            // The orchestrator flips `status` before it records
+            // `resultMailId` — wait for BOTH, exactly like local-rip's
+            // task leg, or this read races the mail-id write.
+            if (
+              task !== undefined &&
+              task["status"] === "done" &&
+              typeof task["resultMailId"] === "string" &&
+              task["resultMailId"] !== ""
+            ) {
+              break;
+            }
             if (Date.now() > deadline) {
               throw new Error(
-                `no task with runId ${runId} reached status "done" within the poll deadline; ` +
+                `no task with runId ${runId} reached status "done" with a recorded resultMailId within the poll deadline; ` +
                   `last seen: ${JSON.stringify(task ?? items)}`,
               );
             }
