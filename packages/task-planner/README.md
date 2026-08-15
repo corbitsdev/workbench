@@ -23,19 +23,19 @@ plan is dispatched exactly like a manually-launched task.
   `parseTaskSpec` reads Myra's reply as untrusted model output (arktype at
   the boundary, exactly like a request body) and throws
   `PlannerReplyUnparseableError` on anything that isn't valid JSON matching
-  the `{use, refinedOutcome}` / `{create, refinedOutcome}` union.
+  one of three `kind`-discriminated shapes: `{kind: "task", use,
+  refinedOutcome}`, `{kind: "task", create, refinedOutcome}`, or
+  `{kind: "chain", steps}` (CL-6052) — an ordered array of 2 to 5 steps,
+  each step the same `{use, refinedOutcome}` / `{create, refinedOutcome}`
+  shape the single-task variants use, reused verbatim (`TaskStep`) rather
+  than duplicated, each carrying its own `refinedOutcome` so a later step
+  is never left inferring its prompt from an earlier one's.
   `validateTaskSpecAgainstInventory` then asserts every reference a
   validated-shape spec makes — an agent id, tool package names, skill
-  names, a model name — actually appears in the inventory that was offered,
-  throwing `PlannerReferenceOutOfInventoryError` on the first violation.
-  Neither function partially trusts a near-miss. `kind: "task"` is a
-  discriminant reserved for CL-5917 (routine chains, not yet built) to add
-  a `"chain"` variant additively — the validation/dispatch PATTERN this
-  package proves out is what CL-5917 reuses, never this schema directly; a
-  chain is a materially different shape (an ordered sequence of
-  `TaskSpec`-like steps, not one), so `kind` exists to let a future union
-  branch land without reshaping this one, not to imply the schema itself
-  is meant to grow into chains.
+  names, a model name — actually appears in the inventory that was
+  offered, throwing `PlannerReferenceOutOfInventoryError` on the first
+  violation; for a chain, every step is checked, in order, before any of
+  them is trusted. Neither function partially trusts a near-miss.
 - **The one-shot reply wrapper** now lives in `@corbits/folded-runs`
   (`packages/folded-runs/src/one-shot-reply.ts`) — `runOneShotFoldedPrompt`
   launches a folded run, sends one prompt, and resolves a promise with the
@@ -73,6 +73,20 @@ plan is dispatched exactly like a manually-launched task.
   branches link the launched task back to the planner run that chose its
   agent (`TaskStore.linkPlannerRun`) before returning. Any `launchTask`
   failure propagates unchanged.
+  A `{kind: "chain"}` spec maps onto `@corbits/tasks`' chain machinery
+  (CL-6052): every step's definition is resolved and, for a `{create}`
+  step, deployed up front, all-or-nothing — every step's bounds and
+  credential bindings validate before ANY step deploys, one
+  `requireDefinitionCreateGrant` check covers every `{create}` step (never
+  one per step), and if a later step's deploy call itself fails, every
+  definition this spawn already deployed is undeployed
+  (`undeployAgentDefinition`) before the error propagates. Only then does
+  leg 1 launch through the same `launchTask` path a single-task spec
+  uses, with steps 2..N riding along as `launchTask`'s own `followOn` —
+  ONE task, N pending legs, never one task per step. `advanceChain`
+  (`@corbits/tasks`' `chain.ts`) hands the work to each pending leg, one
+  at a time, as the leg before it settles; this package never reimplements
+  that hand-off.
 - **Planner-created agent naming** (`./src/planner-created-naming.ts`) —
   every `{create}`-branch definition deploys under a
   `myra-task-<slug>-<8hex>` handle. `isPlannerCreatedDefinitionName` is
@@ -133,12 +147,20 @@ Pick<AgentLifecycle, "track" | "recordActivity" | "untrack">`) — the same
   and the `CredentialBinding[]` it already resolved from the inventory —
   never derives either itself. This package never reimplements that path
   in parallel.
-- `requireDefinitionCreateGrant({tenantId, principalId})` — checked only
-  on the `{create}` branch, before `deployAgentDefinition`; the
-  production implementation calls `@intx/authz`'s `authorize` directly
-  against `workflow-definition:*`/`create`, the same grant store and
-  condition registry every other `requireGrant` call site in
+- `requireDefinitionCreateGrant({tenantId, principalId})` — checked
+  whenever the spec takes at least one `{create}` step, before any
+  `deployAgentDefinition` call; the production implementation calls
+  `@intx/authz`'s `authorize` directly against
+  `workflow-definition:*`/`create`, the same grant store and condition
+  registry every other `requireGrant` call site in
   `apps/hub/src/index.ts` uses.
+- `undeployAgentDefinition({tenantId, definitionId})` — a chain spawn's
+  cleanup half: flips a definition this same spawn just deployed off
+  `workflowDefinition`'s `"deployed"` status when a LATER step in the
+  same chain fails to validate or deploy. Never called for a single-task
+  `{create}` spec. The production implementation
+  (`apps/hub/src/index.ts`) sets `status: "stopped"`, the same enum a
+  definition already carries when it isn't launchable.
 - `taskLauncherDeps: TaskLauncherDeps` and `store: TaskStore` — the same
   objects `@corbits/tasks` itself takes, unchanged.
 - `requireGrant` (for the routes) — the same `createRequireGrant(...)`
