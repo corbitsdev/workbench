@@ -238,7 +238,7 @@ function onRowActivate(onActivate: () => void) {
   return {
     role: "button" as const,
     tabIndex: 0,
-    className: "cursor-pointer",
+    className: "cursor-pointer insights-row-clickable",
     onClick: onActivate,
     onKeyDown: (event: React.KeyboardEvent<HTMLTableRowElement>) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -271,7 +271,10 @@ function ModelCostTable({
   readonly models: readonly ModelUsage[];
 }) {
   return (
-    <Table aria-label="Cost by model">
+    <Table
+      aria-label="Cost by model"
+      className="insights-data-table insights-table-inert"
+    >
       <TableHeader>
         <TableRow>
           <TableHead>Model</TableHead>
@@ -302,7 +305,10 @@ function ModelCostTable({
 
 function ToolCallsTable({ tools }: { readonly tools: readonly ToolCall[] }) {
   return (
-    <Table aria-label="Calls by tool">
+    <Table
+      aria-label="Calls by tool"
+      className="insights-data-table insights-table-inert"
+    >
       <TableHeader>
         <TableRow>
           <TableHead>Tool</TableHead>
@@ -335,7 +341,7 @@ function RecentRunRows({
   readonly onOpenRuns: () => void;
 }) {
   return (
-    <Table aria-label="Recent runs">
+    <Table aria-label="Recent runs" className="insights-data-table">
       <TableBody>
         {runs.map((row) => (
           <TableRow
@@ -527,7 +533,7 @@ function DefinitionRunTable({
   return (
     <section className="insights-panel" data-definition-group={definitionId}>
       <h3>{definitionName}</h3>
-      <Table aria-label={definitionName}>
+      <Table aria-label={definitionName} className="insights-data-table">
         <TableHeader>
           <TableRow>
             <TableHead>Status</TableHead>

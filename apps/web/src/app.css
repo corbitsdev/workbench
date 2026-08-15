@@ -2270,6 +2270,56 @@ html {
   color: var(--muted-foreground, #8a8080);
 }
 
+/* BarChart's own figcaption title (ChartFrame) doesn't share .insights-panel
+   h3's small-caps treatment — re-assert it here instead of carrying two
+   different section-title styles side by side in the same grid. */
+.insights-panel figcaption > span:first-child {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground, #8a8080);
+}
+
+/* react-ui's StatGridItem hardcodes rounded-[12px] (stat-grid.tsx) instead
+   of consuming var(--radius), so it never picks up the app-wide zero-radius
+   re-assertion above — every KPI tile renders rounded while every
+   neighboring panel is square. Re-assert zero radius here, scoped to the
+   insights stat grids, until StatGridItem consumes var(--radius) upstream. */
+.insights-layout [data-slot="stat-grid-item"] {
+  border-radius: 0;
+}
+
+/* react-ui's Table/TableRow ships one row treatment for every row, clickable
+   or not (unconditional hover:bg-muted). The house distinction — an
+   orange-tinted hover only on rows that actually navigate, and no hover cue
+   at all on inert data rows — lived in the deleted bespoke CSS and has to be
+   re-asserted here. */
+tr.insights-row-clickable:hover {
+  background-color: color-mix(in srgb, var(--primary, #e98428) 8%, transparent);
+}
+
+.insights-table-inert tr:hover {
+  background-color: transparent;
+}
+
+/* Dashboard-density header/cell treatment for the insights data tables —
+   scoped to this wrapper class so react-ui's roomier Table defaults stand
+   everywhere else. */
+.insights-data-table th {
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground, #8a8080);
+  background: color-mix(in srgb, var(--foreground, #2b2627) 4%, transparent);
+  padding: 0.55rem 0.7rem;
+}
+
+.insights-data-table td {
+  padding: 0.55rem 0.7rem;
+}
+
 .insights-section {
   padding-top: 0.25rem;
 }
