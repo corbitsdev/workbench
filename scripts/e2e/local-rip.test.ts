@@ -84,6 +84,30 @@
 // end to end, with the one leg (the model call itself) this suite
 // cannot make real without a paid key standing in for its own honest,
 // self-reported failure.
+//
+// Phase C (CL-6055, the trace and planner legs) closes out the rest of
+// the /goal ladder in the same scripted pass:
+//
+//   - the trace leg proves the task→trace click-path server-side: the
+//     dispatched task's run is readable through Insights' real trace
+//     route (packages/insights/src/trace-reader.ts, over the platform's
+//     own inference_turn/turn_part rows — no new storage) with real
+//     span rows, while CL-6061's scoped top-level-runs listing
+//     (packages/folded-runs/src/scope-routes.ts) never surfaces it, the
+//     same "genuine top-level runs only" contract the Insights landing
+//     page's own feed relies on.
+//   - the planner leg proves "Let Myra choose" (the Cmd/Ctrl+T
+//     composer's other path alongside manually picking an agent —
+//     packages/tasks-ui/src/myra-agent-selection-strategy.tsx) fails
+//     closed against the same stub credential: Myra's own one-shot run
+//     draws the identical real 401 the task leg's opening turn does,
+//     which `runPlanner` can only ever read as an unparseable reply, so
+//     `@corbits/task-planner`'s route (packages/task-planner/src/
+//     routes.ts) answers the honest `planning_failed` 422 it's built
+//     for — never a task row, an agent definition, or an Inbox
+//     delivery. A real key instead yields a valid `TaskSpec` and a real
+//     dispatch, mirroring this suite's phase-A/B stub-key honesty
+//     convention throughout.
 
 import { describe, expect, test } from "bun:test";
 
@@ -780,6 +804,206 @@ describe.skipIf(databaseUrl === undefined)(
             outsider.cookies,
           );
           expectStatus("outsider reads creator's task", res, 404);
+        },
+      );
+
+      // --- Phase C, trace leg (CL-6055): the task→trace click-path,
+      // server-side (CL-6061's "genuine top-level runs" scoping). ---
+
+      await hop(
+        "the dispatched task's run trace is readable through the insights trace route, with real span rows, and the run is absent from the tenant's scoped top-level-runs listing (CL-6061)",
+        async () => {
+          // `@corbits/insights`' `GET /runs/:runId/trace`
+          // (packages/insights/src/routes.ts), mounted at
+          // `${TENANT_PREFIX}/insights` in apps/hub/src/index.ts — the
+          // same route the Inbox's "View run trace" button
+          // (apps/web/src/pages/inbox-page.tsx) resolves through
+          // `insightsRunTracePath`. The task's opening turn drew a real
+          // 401 from the real Anthropic host (see the task leg's own
+          // comments above), which the inference harness turns into a
+          // completed turn — so `inference_turn`/`turn_part` rows exist
+          // for this run regardless of the stub key, proving the reader
+          // itself, not merely a happy-path reply.
+          const traceRes = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/insights/runs/${launched.runId}/trace`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus("get run trace", traceRes, 200);
+          const trace = traceRes.data as {
+            runId: string;
+            spans: unknown[];
+          };
+          expect(trace.runId).toBe(launched.runId);
+          if (!Array.isArray(trace.spans) || trace.spans.length === 0) {
+            throw new Error(
+              `expected real span rows for run ${launched.runId}, got: ${JSON.stringify(trace)}`,
+            );
+          }
+
+          // CL-6061's contract: `listTopLevelRuns`
+          // (packages/folded-runs/src/scope-routes.ts) excludes every
+          // folded run — a task's run included, since `launchTask`
+          // (packages/tasks/src/launcher.ts) launches through the same
+          // `launchFoldedRun` that plants the `folded_run` marker row
+          // this predicate's `NOT EXISTS` checks. The trace route above
+          // proves the run is still reachable by id; this proves it
+          // never leaks into the tenant's genuine-top-level-runs feed —
+          // the two routes' complementary contracts, both proven
+          // against the same real run.
+          const topLevelRes = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/top-level-runs`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus("list top-level runs", topLevelRes, 200);
+          const topLevel = (topLevelRes.data as { data: { id: string }[] })
+            .data;
+          const leaked = topLevel.find((row) => row.id === launched.runId);
+          if (leaked !== undefined) {
+            throw new Error(
+              `task run ${launched.runId} leaked into the scoped top-level-runs listing: ${JSON.stringify(leaked)}`,
+            );
+          }
+        },
+      );
+
+      // --- Phase C, planner leg (CL-6055): the Myra "Let Myra choose"
+      // route (packages/task-planner/src/routes.ts), proven fail-closed
+      // against the same stub credential. ---
+
+      await hop(
+        "Myra's planner route fails closed with the stub credential — a 422 planning_failed envelope, no task created, no agent definition deployed, no inbox delivery",
+        async () => {
+          // `createPlannerRoutes`' one route, `POST /`, mounted at
+          // `${TENANT_PREFIX}/planner` in apps/hub/src/index.ts — the
+          // same route `packages/tasks-ui/src/api.ts`'s `dispatchPlanner`
+          // calls when a person picks "Let Myra choose" in the Cmd/Ctrl+T
+          // composer (`createMyraAgentSelectionStrategy`,
+          // packages/tasks-ui/src/myra-agent-selection-strategy.tsx).
+          //
+          // With a real key, `dispatchWithPlanner` (packages/task-
+          // planner/src/index.ts) resolves Myra's one-shot reply into a
+          // validated `TaskSpec` and dispatches it exactly like a
+          // manually-launched task — a real task row, a live agent
+          // definition (for a `{create}` plan), and, once that task
+          // reaches a terminal state, an Inbox delivery, mirroring the
+          // task leg above.
+          //
+          // The stub key can't produce any of that: Myra's own one-shot
+          // run (`runOneShotFoldedPrompt`, @corbits/folded-runs) dials
+          // the same real Anthropic host with the same stub key as the
+          // task leg, drawing the same real 401 — classified
+          // `credential_failure` and folded into a *completed* turn
+          // carrying a self-describing credential-error report as its
+          // reply content (not a failed run bracket; see the task leg's
+          // own comment for why). `runPlanner` (planner-run.ts) then
+          // hands that content straight to `parseTaskSpec`
+          // (task-spec.ts), which can only ever produce a `TaskSpec` or
+          // throw `PlannerReplyUnparseableError` — a credential-error
+          // report is neither valid JSON nor either `TaskSpec` shape, so
+          // it throws. `PlannerReplyUnparseableError` is one of
+          // `isPlanningFailure`'s named cases (routes.ts), so the route
+          // never reaches `spawnFromTaskSpec` at all: it answers the
+          // same honest `{error: {code: "planning_failed", message:
+          // "Myra couldn't turn that into a task. Try rephrasing, or
+          // pick an agent yourself."}}` envelope, 422, that a genuinely
+          // unparseable reply from a real key would also produce —
+          // proven empirically against this exact stub key, not
+          // assumed.
+          const tasksBefore = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/tasks`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus("list tasks before planner dispatch", tasksBefore, 200);
+          const taskCountBefore = (tasksBefore.data as { items: unknown[] })
+            .items.length;
+
+          const definitionsBefore = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/workflows/definitions`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus(
+            "list workflow definitions before planner dispatch",
+            definitionsBefore,
+            200,
+          );
+          const definitionCountBefore = (
+            definitionsBefore.data as { data: unknown[] }
+          ).data.length;
+
+          const inboxBefore = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/inbox`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus("list inbox before planner dispatch", inboxBefore, 200);
+          const inboxCountBefore = (inboxBefore.data as { items: unknown[] })
+            .items.length;
+
+          const planRes = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${tenant.tenantId}/planner`,
+            { outcome: `local-rip planner leg ${crypto.randomUUID()}` },
+            user.cookies,
+          );
+          expectStatus("planner dispatch with stub credential", planRes, 422);
+          const body = planRes.data as { error: { code: string } };
+          expect(body.error.code).toBe("planning_failed");
+
+          const tasksAfter = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/tasks`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus("list tasks after planner dispatch", tasksAfter, 200);
+          const taskCountAfter = (tasksAfter.data as { items: unknown[] }).items
+            .length;
+          expect(taskCountAfter).toBe(taskCountBefore);
+
+          const definitionsAfter = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/workflows/definitions`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus(
+            "list workflow definitions after planner dispatch",
+            definitionsAfter,
+            200,
+          );
+          const definitionCountAfter = (
+            definitionsAfter.data as { data: unknown[] }
+          ).data.length;
+          expect(definitionCountAfter).toBe(definitionCountBefore);
+
+          const inboxAfter = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/inbox`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus("list inbox after planner dispatch", inboxAfter, 200);
+          const inboxCountAfter = (inboxAfter.data as { items: unknown[] })
+            .items.length;
+          expect(inboxCountAfter).toBe(inboxCountBefore);
         },
       );
     }, 180_000);
