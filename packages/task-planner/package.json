@@ -1,7 +1,7 @@
 {
-  "name": "@corbits/folded-runs",
+  "name": "@corbits/task-planner",
   "private": true,
-  "description": "Launch, wake, and mail machinery for folded interactive workflow runs, hosted-service-agnostic",
+  "description": "Myra auto-dispatch: turns a typed outcome into a validated TaskSpec (use an existing agent, or create a new one) and dispatches it exactly like a manually-launched task.",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
@@ -13,20 +13,24 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/agent-lifecycle": "workspace:*",
-    "@intx/crypto": "workspace:*",
+    "@corbits/agent-directory": "workspace:*",
+    "@corbits/folded-runs": "workspace:*",
+    "@corbits/skills": "workspace:*",
+    "@corbits/tasks": "workspace:*",
+    "@corbits/workflow-catalog": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "workspace:*",
-    "@intx/mime": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",
     "arktype": "catalog:",
-    "drizzle-orm": "catalog:"
+    "drizzle-orm": "catalog:",
+    "hono": "^4.11.9"
   },
   "devDependencies": {
+    "@corbits/chat": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

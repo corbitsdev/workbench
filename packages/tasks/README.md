@@ -11,7 +11,9 @@ same idle-sleep lifecycle chat already uses.
 
 - **`task` table** (`./src/schema.ts`, `./src/migrations.ts`) — one row per
   launched task: `id, tenantId, principalId, definitionId, prompt,
-modelPreference, status, runId, resultMailId, createdAt, completedAt`. Own
+modelPreference, status, runId, resultMailId, plannerRunId, createdAt,
+completedAt`. `plannerRunId` is nullable and set post-hoc by a planner —
+  see CL-6051. Own
   Postgres schema (`tasks`), own migration ledger — see
   `docs/package-migrations.md`. The task id is hand-prefixed (`task_` +
   16 hex bytes) because `@intx/hub-common`'s `generateId` has no "task"

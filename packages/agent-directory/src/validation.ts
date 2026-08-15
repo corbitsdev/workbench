@@ -49,6 +49,14 @@ export const CreateAgentDefinitionInput = type({
   systemPrompt: boundedNonBlankString(8000),
   "model?": boundedNonBlankString(200),
   "skills?": SkillNameArray,
+  // No `toolPackagePins` field, deliberately: this is the HTTP route
+  // for a person hand-authoring an agent through a form, which has no
+  // affordance for typing an arbitrary tool-package pin. The one
+  // caller that needs `buildAgentDefinitionWorkflow`'s optional
+  // `toolPackagePins` (CL-6051's `{create}` planner branch, see
+  // `@corbits/task-planner`) calls that builder directly, in-process,
+  // never through this REST boundary — so parity here isn't needed
+  // unless a future UI grows a "pin a tool package" field of its own.
 });
 export type CreateAgentDefinitionInput =
   typeof CreateAgentDefinitionInput.infer;

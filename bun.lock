@@ -42,6 +42,7 @@
         "@corbits/routines": "workspace:*",
         "@corbits/skills": "workspace:*",
         "@corbits/slack-tag": "workspace:*",
+        "@corbits/task-planner": "workspace:*",
         "@corbits/tasks": "workspace:*",
         "@corbits/turn-artifacts": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
@@ -176,6 +177,7 @@
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
+        "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
@@ -472,11 +474,13 @@
       "name": "@corbits/folded-runs",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/agent-lifecycle": "workspace:*",
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
@@ -789,6 +793,32 @@
         "postgres": "catalog:",
       },
       "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/task-planner": {
+      "name": "@corbits/task-planner",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/agent-directory": "workspace:*",
+        "@corbits/folded-runs": "workspace:*",
+        "@corbits/skills": "workspace:*",
+        "@corbits/tasks": "workspace:*",
+        "@corbits/workflow-catalog": "workspace:*",
+        "@intx/db": "workspace:*",
+        "@intx/hub-api": "workspace:*",
+        "@intx/hub-common": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@intx/workflow-deploy": "workspace:*",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "^4.11.9",
+      },
+      "devDependencies": {
+        "@corbits/chat": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -1511,6 +1541,8 @@
     "@corbits/skills": ["@corbits/skills@workspace:packages/skills"],
 
     "@corbits/slack-tag": ["@corbits/slack-tag@workspace:packages/slack-tag"],
+
+    "@corbits/task-planner": ["@corbits/task-planner@workspace:packages/task-planner"],
 
     "@corbits/tasks": ["@corbits/tasks@workspace:packages/tasks"],
 

@@ -111,6 +111,18 @@ describeIfDb("createDrizzleTaskStore", () => {
         "mail_1",
       );
 
+      await store.linkPlannerRun({
+        tenantId: TENANT_A,
+        id: "task_1",
+        plannerRunId: "plan_1",
+      });
+      expect((await store.getTask(TENANT_A, "task_1"))?.plannerRunId).toBe(
+        "plan_1",
+      );
+      expect(
+        (await store.getTask(TENANT_B, "task_1"))?.plannerRunId,
+      ).toBeUndefined();
+
       const listed = await store.listTasks(TENANT_A);
       expect(listed.map((item) => item.id)).toEqual(["task_1"]);
     } finally {

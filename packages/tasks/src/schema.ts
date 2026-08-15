@@ -27,7 +27,9 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
  * "needs-you" from this package's own code — a mid-task approval is
  * surfaced by the existing needs-you inbox flow, not by this table;
  * the value exists for a future UI that wants to reflect it without a
- * schema change.
+ * schema change. `plannerRunId` is set when a planner run chose this
+ * task's agent — see CL-6051 — and is null for a task launched by a
+ * direct manual pick.
  */
 export const task = tasksSchema.table("task", {
   id: text("id").primaryKey(),
@@ -39,6 +41,7 @@ export const task = tasksSchema.table("task", {
   status: text("status").notNull().$type<TaskStatus>(),
   runId: text("run_id").notNull(),
   resultMailId: text("result_mail_id"),
+  plannerRunId: text("planner_run_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
