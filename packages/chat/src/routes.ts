@@ -1296,28 +1296,35 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (thread === undefined || thread.channelId !== channelId) {
         return c.json(ErrorEnvelope("not_found", "thread not found"), 404);
       }
-      const messageIds = await deps.threads.listMessageIds(tenant.id, threadId);
+      // A message's thread is the one it was assigned to, or the root
+      // thread when it was never assigned at all — `channel_thread_messages`
+      // states that default ("root feed by default"), and this is the
+      // one place that resolves it. `POST /messages` is the only caller
+      // that records membership, so every agent-originated message
+      // (`chat-orchestrator`'s reply/approve-block/artifact posters,
+      // `channel-service`'s join and leave notices) arrives with none:
+      // listing a feed by membership rows alone would silently hide all
+      // of them, a fresh chat's very first agent reply included.
+      const root = await deps.threads.ensureRootThread(tenant.id, channelId);
+      const assignments = await deps.threads.listThreadAssignments(
+        tenant.id,
+        channelId,
+      );
       const listed = await deps.platform.listMail({
         tenantId: tenant.id,
         channelId,
       });
-      const byId = new Map(listed.items.map((item) => [item.id, item]));
       const items = await Promise.all(
-        messageIds.flatMap((id) => {
-          const item = byId.get(id);
-          if (item === undefined) return [];
-          return [
-            (async () => ({
-              id: item.id,
-              createdAt: item.createdAt,
-              sender: senderOf(item.mail),
-              parts: await decodeMail(item.mail, {
-                fetchBlob: (blobId) =>
-                  deps.platform.fetchBlob(channelId, blobId),
-              }),
-            }))(),
-          ];
-        }),
+        listed.items
+          .filter((item) => (assignments.get(item.id) ?? root.id) === threadId)
+          .map(async (item) => ({
+            id: item.id,
+            createdAt: item.createdAt,
+            sender: senderOf(item.mail),
+            parts: await decodeMail(item.mail, {
+              fetchBlob: (blobId) => deps.platform.fetchBlob(channelId, blobId),
+            }),
+          })),
       );
       return c.json({
         thread: {

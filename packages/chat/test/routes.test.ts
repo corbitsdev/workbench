@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import { InferenceResolutionError } from "@corbits/folded-runs";
+import { encodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createChatRoutes } from "../src/routes";
 import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
@@ -1047,6 +1048,86 @@ describe("threads — root feed vs reply membership (4a)", () => {
         (t) => t.id === replySent.threadId && t.kind === "reply",
       ),
     ).toBe(true);
+  });
+
+  // CL-6080: the root thread IS the channel feed, so a message that
+  // carries no thread membership belongs to it — the contract
+  // `channel_thread_messages` states ("root feed by default"). Every
+  // agent-originated message reaches the channel through
+  // `ChatPlatform.sendMail` alone (`chat-orchestrator`'s `postReply`
+  // for a `connector.reply` event, its approve-block and
+  // finalized-turn-artifact posters, `channel-service`'s join/leave
+  // notices): none of them go through `POST /messages`, the only
+  // caller that assigns membership. Listing the root feed by
+  // membership rows alone therefore hid every one of them — a fresh
+  // chat's very first agent reply included, which is what the browser
+  // walkthrough sees as silence after "hi".
+  test("a reply posted through the platform, never through POST /messages, still lands in the root feed", async () => {
+    const deps = buildDeps({ threads: createInMemoryThreadStore() });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const asked = await sendText(app, channel.id, "hi");
+    expect(asked.status).toBe(201);
+    const askedSent = (await asked.json()) as {
+      id: string;
+      threadId: string;
+    };
+
+    const replied = await deps.platform.sendMail({
+      tenantId: TENANT.id,
+      channelId: channel.id,
+      content: encodeParts([{ kind: "text", text: "hello back" }]),
+      fromChannelId: "run_agent1",
+    });
+
+    const rootFeed = await app.request(
+      `/channels/${channel.id}/threads/${askedSent.threadId}/messages`,
+    );
+    expect(rootFeed.status).toBe(200);
+    const rootBody = (await rootFeed.json()) as {
+      items: { id: string; parts: Part[] }[];
+    };
+    expect(rootBody.items.map((i) => i.id).sort()).toEqual(
+      [askedSent.id, replied.id].sort(),
+    );
+    expect(
+      rootBody.items.find((i) => i.id === replied.id)?.parts,
+    ).toEqual([{ kind: "text", text: "hello back" }]);
+  });
+
+  test("an unassigned message stays out of a reply thread's own feed", async () => {
+    const deps = buildDeps({ threads: createInMemoryThreadStore() });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const asked = await sendText(app, channel.id, "hi");
+    const askedSent = (await asked.json()) as { id: string };
+    const inThread = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "in the thread" }],
+        inReplyToMessageId: askedSent.id,
+      }),
+    });
+    const threadSent = (await inThread.json()) as {
+      id: string;
+      threadId: string;
+    };
+
+    await deps.platform.sendMail({
+      tenantId: TENANT.id,
+      channelId: channel.id,
+      content: encodeParts([{ kind: "text", text: "channel-level reply" }]),
+      fromChannelId: "run_agent1",
+    });
+
+    const replyFeed = await app.request(
+      `/channels/${channel.id}/threads/${threadSent.threadId}/messages`,
+    );
+    const replyBody = (await replyFeed.json()) as { items: { id: string }[] };
+    expect(replyBody.items.map((i) => i.id)).toEqual([threadSent.id]);
   });
 });
 
