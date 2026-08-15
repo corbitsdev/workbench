@@ -65,7 +65,7 @@ export function ShellChromeProvider({
   const [canvasState, setCanvasState] = useState<AppCanvasColumnState>(
     initialCanvasColumnState<ProfileSubject, CanvasArtifactContent>,
   );
-  const [userCollapsedCol2, setUserCollapsedCol2] = useState(false);
+  const [userCollapsedCol2, setUserCollapsedCol2] = useState(true);
   const [narrowPanelOpen, setNarrowPanelOpen] = useState(false);
 
   // Tracks the last workbench we applied so a real switch (A→B) can drop
@@ -92,9 +92,7 @@ export function ShellChromeProvider({
     void getPreferences(selectedTenantId)
       .then((preferences) => {
         if (cancelled) return;
-        if (col2CollapsedFromPreferences(preferences)) {
-          setUserCollapsedCol2(true);
-        }
+        setUserCollapsedCol2(col2CollapsedFromPreferences(preferences));
       })
       .catch(() => undefined);
     return () => {

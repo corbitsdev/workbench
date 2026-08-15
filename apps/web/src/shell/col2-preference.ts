@@ -5,11 +5,13 @@
 
 export const COL2_COLLAPSED_PREFERENCE_KEY = "shell.col2Collapsed";
 
-/** Only an explicit `true` hydrates as collapsed — any other stored value
- * (absent, `false`, or a foreign shape from a future key change) defaults
- * to open, matching `userCollapsedCol2`'s own `useState(false)` default. */
+/** Only an explicit `false` hydrates as open — any other stored value
+ * (absent, `true`, or a foreign shape from a future key change) defaults
+ * to collapsed, matching `userCollapsedCol2`'s own `useState(true)` default.
+ * A persisted `false` means the user explicitly reopened col2, and that
+ * choice wins over the default. */
 export function col2CollapsedFromPreferences(
   preferences: Record<string, unknown>,
 ): boolean {
-  return preferences[COL2_COLLAPSED_PREFERENCE_KEY] === true;
+  return preferences[COL2_COLLAPSED_PREFERENCE_KEY] !== false;
 }
