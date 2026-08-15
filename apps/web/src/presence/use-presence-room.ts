@@ -72,12 +72,18 @@ export function usePresenceRoom(
       handleRef.current = null;
       return;
     }
-    const handle = connectPresence({
+    const connectOptions: {
+      roomUrl: string;
+      onSaved: (info: { version: number; savedAt: number }) => void;
+      displayName?: string;
+      doc?: Y.Doc;
+    } = {
       roomUrl: `/api/tenants/${tenantId}/presence/rooms/${surface}`,
-      ...(displayName !== undefined ? { displayName } : {}),
-      ...(doc !== undefined ? { doc } : {}),
       onSaved: (info) => onSavedRef.current?.(info),
-    });
+    };
+    if (displayName !== undefined) connectOptions.displayName = displayName;
+    if (doc !== undefined) connectOptions.doc = doc;
+    const handle = connectPresence(connectOptions);
     handleRef.current = handle;
     const unsubscribe = handle.subscribe((snapshot) =>
       setMembers(snapshot as readonly PresenceRoomMember[]),
