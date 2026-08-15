@@ -26,6 +26,7 @@ import {
   type ActionCommandId,
 } from "./command-palette-actions";
 import { OPEN_COMMAND_PALETTE_EVENT } from "./command-palette-events";
+import { CHANNEL_NOT_FOUND_EVENT } from "./channel-not-found-event";
 import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
 import { isNewTaskShortcutEvent } from "./task-shortcut";
@@ -92,6 +93,30 @@ export function CommandPaletteProvider({
     },
     [recentsStore],
   );
+
+  const removeRecent = useCallback(
+    (entry: Pick<RecentEntry, "kind" | "id">) => {
+      if (recentsStore === null) return;
+      setRecents(recentsStore.remove(entry));
+    },
+    [recentsStore],
+  );
+
+  // A channel-level 404 (`chat-page.tsx`, via `ChatWorkspace`'s
+  // `onChannelNotFound`) means a Recents entry outlived the channel it
+  // points at — drop it so re-opening the palette never offers a dead end
+  // again. See `channel-not-found-event.ts` for why this is an event
+  // rather than a prop: the chat route and this provider are siblings.
+  useEffect(() => {
+    function onChannelNotFound(event: Event) {
+      const channelId = (event as CustomEvent<string>).detail;
+      removeRecent({ kind: "channels", id: `entity:channels:${channelId}` });
+    }
+    window.addEventListener(CHANNEL_NOT_FOUND_EVENT, onChannelNotFound);
+    return () => {
+      window.removeEventListener(CHANNEL_NOT_FOUND_EVENT, onChannelNotFound);
+    };
+  }, [removeRecent]);
 
   // Reads through `queryClient` at the shared `tenantKeys.channels` key
   // (rather than calling `listChannels` directly) so a re-search — every

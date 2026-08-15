@@ -119,12 +119,23 @@ type ChannelsState =
 
 export type MessagesState =
   | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly message: string }
+  | {
+      readonly kind: "error";
+      readonly message: string;
+      /** The channel itself 404s, not just this load — retrying with the
+       * same id can never succeed, so the UI trades "Try again" for an
+       * honest way out instead. */
+      readonly channelNotFound: boolean;
+    }
   | { readonly kind: "ready"; readonly items: readonly MessageItem[] };
 
 export type MessagesLoadOutcome =
   | { readonly kind: "success"; readonly items: readonly MessageItem[] }
-  | { readonly kind: "error"; readonly message: string };
+  | {
+      readonly kind: "error";
+      readonly message: string;
+      readonly channelNotFound: boolean;
+    };
 
 /**
  * A background refresh (SSE/poll) never shows the loading skeleton and
@@ -142,7 +153,11 @@ export function nextMessagesState(
     return { kind: "ready", items: outcome.items };
   }
   if (background) return current;
-  return { kind: "error", message: outcome.message };
+  return {
+    kind: "error",
+    message: outcome.message,
+    channelNotFound: outcome.channelNotFound,
+  };
 }
 
 /**
@@ -164,10 +179,14 @@ export function canInviteAgent(kind: string | undefined): boolean {
  * counterpart is a person, not an agent. A channel (or a surface that
  * hasn't resolved yet) keeps the generic, mention-driven copy.
  */
-export function composerPlaceholderFor(channel: {
-  readonly kind: string;
-  readonly title: string;
-} | undefined): string {
+export function composerPlaceholderFor(
+  channel:
+    | {
+        readonly kind: string;
+        readonly title: string;
+      }
+    | undefined,
+): string {
   if (channel === undefined || channel.kind !== "chat") {
     return CHAT_STRINGS.composerPlaceholder;
   }
@@ -217,7 +236,6 @@ function sortMessagesOldestFirst(items: readonly MessageItem[]): MessageItem[] {
       : a.createdAt.localeCompare(b.createdAt),
   );
 }
-
 
 /**
  * Channels and chats via TanStack Query, keyed with `channelsQueryKey` —
@@ -278,6 +296,8 @@ function ChatWorkspaceInner({
   registerComposerInsert,
   onOpenRoutines,
   presenceMembers,
+  onChannelNotFound,
+  onBackToChannelList,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
@@ -332,6 +352,13 @@ function ChatWorkspaceInner({
   readonly onOpenRoutines?: () => void;
   /** See `ChatWorkspace`'s prop of the same name. */
   readonly presenceMembers?: readonly PresenceMember[];
+  /** Fired when the routed channel 404s — a deleted channel, or a stale
+   * Recents entry that outlived it. The host owns Recents (this package
+   * never touches localStorage), so it's told rather than reaching out. */
+  readonly onChannelNotFound?: (channelId: string) => void;
+  /** The dead-channel empty state's way out — navigate to the bare channel
+   * list instead of retrying an id that can never resolve. */
+  readonly onBackToChannelList?: () => void;
 }) {
   const queryClient = useQueryClient();
   const refreshChannelLists = useCallback(() => {
@@ -548,7 +575,8 @@ function ChatWorkspaceInner({
           const fallbackTarget = resolveMessageFeedTarget({
             openThreadId: target.kind === "thread" ? null : openThreadId,
             pendingParentMessageId,
-            rootThreadId: target.kind === "root-thread" ? null : resolvedRootThreadId,
+            rootThreadId:
+              target.kind === "root-thread" ? null : resolvedRootThreadId,
           });
           items = await fetchTarget(fallbackTarget);
         }
@@ -571,13 +599,30 @@ function ChatWorkspaceInner({
         if (cause instanceof ChatApiError && cause.status === 401) {
           unauthorizedRef.current = true;
         }
+        // A 404 here means the channel itself is gone (deleted, or a stale
+        // id from a Recents entry that outlived it) — not a transient load
+        // failure a retry could fix. Tell the host so it can drop the dead
+        // Recents entry the same way it dropped the dead thread ref above.
+        const channelNotFound =
+          cause instanceof ChatApiError && cause.status === 404;
+        if (channelNotFound) onChannelNotFound?.(channelId);
         const message = describeChatError(cause, "Couldn't load messages.");
         setMessagesState((current) =>
-          nextMessagesState(current, { kind: "error", message }, background),
+          nextMessagesState(
+            current,
+            { kind: "error", message, channelNotFound },
+            background,
+          ),
         );
       }
     },
-    [tenantId, openThreadId, pendingParentMessageId, rootThreadId],
+    [
+      tenantId,
+      openThreadId,
+      pendingParentMessageId,
+      rootThreadId,
+      onChannelNotFound,
+    ],
   );
 
   useEffect(() => {
@@ -1147,6 +1192,20 @@ function ChatWorkspaceInner({
               </div>
               {messagesState.kind === "loading" ? (
                 <Skeleton className="query-skeleton" />
+              ) : messagesState.kind === "error" &&
+                messagesState.channelNotFound ? (
+                <EmptyState
+                  icon={<CircleAlert />}
+                  title={CHAT_STRINGS.channelNotFoundTitle}
+                  description={CHAT_STRINGS.channelNotFoundDescription}
+                  action={
+                    onBackToChannelList !== undefined ? (
+                      <Button variant="outline" onClick={onBackToChannelList}>
+                        {CHAT_STRINGS.channelNotFoundAction}
+                      </Button>
+                    ) : undefined
+                  }
+                />
               ) : messagesState.kind === "error" ? (
                 <EmptyState
                   icon={<CircleAlert />}
@@ -1288,6 +1347,8 @@ export function ChatWorkspace({
   registerComposerInsert,
   onOpenRoutines,
   presenceMembers,
+  onChannelNotFound,
+  onBackToChannelList,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -1356,6 +1417,10 @@ export function ChatWorkspace({
    * header looks exactly as it did before presence existed).
    */
   readonly presenceMembers?: readonly PresenceMember[];
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly onChannelNotFound?: (channelId: string) => void;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly onBackToChannelList?: () => void;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -1389,6 +1454,10 @@ export function ChatWorkspace({
             : {})}
           {...(onOpenRoutines !== undefined ? { onOpenRoutines } : {})}
           {...(presenceMembers !== undefined ? { presenceMembers } : {})}
+          {...(onChannelNotFound !== undefined ? { onChannelNotFound } : {})}
+          {...(onBackToChannelList !== undefined
+            ? { onBackToChannelList }
+            : {})}
         />
       );
     case "empty":

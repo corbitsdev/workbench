@@ -43,5 +43,9 @@ export type {
   PaletteSource,
 } from "./command-groups";
 
-export { addRecentEntry, createRecentsStore } from "./recents";
+export {
+  addRecentEntry,
+  createRecentsStore,
+  removeRecentEntry,
+} from "./recents";
 export type { RecentEntry, RecentsStorage, RecentsStore } from "./recents";

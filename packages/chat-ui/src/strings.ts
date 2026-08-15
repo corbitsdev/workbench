@@ -59,6 +59,10 @@ export const CHAT_STRINGS = {
     "Choose a channel or chat from the sidebar, or start a new one.",
   couldNotLoadChannels: "channels",
   couldNotLoadMessages: "messages",
+  channelNotFoundTitle: "This chat isn't here anymore",
+  channelNotFoundDescription:
+    "It may have been deleted, or the link is out of date.",
+  channelNotFoundAction: "Back to Spaces",
   composerPlaceholder:
     "Message this channel… use @ to mention an agent, / for commands",
   composerPlaceholderChat: (name: string) => `Message ${name}… / for commands`,

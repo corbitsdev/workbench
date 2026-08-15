@@ -31,6 +31,7 @@ import {
   NEW_CHANNEL_EVENT,
   requestNewRoutine,
 } from "../command-palette-actions";
+import { reportChannelNotFound } from "../channel-not-found-event";
 import {
   useOpenArtifactInCanvas,
   useOpenProfileInCanvas,
@@ -198,6 +199,8 @@ export function ChatPage({
         })
       }
       presenceMembers={presenceMembers}
+      onChannelNotFound={reportChannelNotFound}
+      onBackToChannelList={() => navigate(channelPath(null))}
     />
   );
 }
