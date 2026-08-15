@@ -113,6 +113,7 @@ import {
   createTaskOrchestrator,
   createTaskRoutes,
   launchTask,
+  launchTaskLeg,
 } from "@corbits/tasks";
 import {
   createPlannerRoutes,
@@ -202,6 +203,7 @@ import { createLocalRoutineDrafting } from "./local-routine-drafting";
 import { createHubRoutineLauncher } from "./routine-launcher";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
 import { createRoutineScheduler } from "./routine-scheduler";
+import { startWorkflowDispatch } from "./workflow-dispatch";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -401,6 +403,11 @@ export async function createHub(config: HubConfig) {
     eventCollectors,
     agentRepoStore,
   });
+  const workflowDispatch = startWorkflowDispatch({
+    db,
+    router: sidecarRouter,
+    events: sidecarRouter.events,
+  });
   const sessionService = createSessionService({
     sidecarRouter,
     agentRepoStore,
@@ -470,6 +477,7 @@ export async function createHub(config: HubConfig) {
     eventCollectors,
     assetService,
     repoStore: agentRepoStore.repoStore,
+    workflowDispatchService: workflowDispatch.service,
     maxTarballBytes: MAX_TARBALL_BYTES,
     sidecarWsHandler: upgradeWebSocket((_c) => {
       let handle: WsHandle;
@@ -1135,6 +1143,7 @@ export async function createHub(config: HubConfig) {
     events: sidecarRouter.events,
     notify: taskNotifyDeps,
     recordActivity: (address) => taskLifecycle.recordActivity(address),
+    launchLeg: (input) => launchTaskLeg(taskLauncherDeps, input),
   });
   const chatFinalizedTurnHandler = artifactDeliveryHandlerRef.current;
   artifactDeliveryHandlerRef.current = (agentAddress, turn) => {
