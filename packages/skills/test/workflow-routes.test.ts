@@ -60,18 +60,18 @@ beforeEach(async () => {
     access: createFakeSkillAccess(),
   });
   const author = { tenantId: "tenant_1", principalId: "principal_author" };
-  await registry.createDraft(author, {
+  await registry.create(author, {
     name: "triage",
     description: "Sorts inbound issues.",
     body: "Read the report. Pick one label.",
+    scope: "private",
   });
-  await registry.publishDraft(author, "triage", "private");
-  await registry.createDraft(author, {
+  await registry.create(author, {
     name: "summarize",
     description: "Condenses a long thread.",
     body: "Collect decisions and owners.",
+    scope: "tenant",
   });
-  await registry.publishDraft(author, "summarize", "tenant");
   app = createWorkflowSkillRoutes({ authenticator, registry });
 });
 

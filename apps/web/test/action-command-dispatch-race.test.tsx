@@ -58,13 +58,11 @@ describe("runActionCommand off-route dispatch ordering", () => {
     // the route switch on the next tick) does the section actually mount.
     // The section reads the registry on mount; serve it an empty one so
     // the test exercises the pending-flag path, not a network failure.
-    globalThis.fetch = (async (input: RequestInfo | URL) =>
-      new Response(
-        JSON.stringify(
-          String(input).endsWith("/drafts") ? { drafts: [] } : { skills: [] },
-        ),
-        { status: 200, headers: { "content-type": "application/json" } },
-      )) as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ skills: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
 
     container = document.createElement("div");
     document.body.appendChild(container);
