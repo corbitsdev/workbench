@@ -127,6 +127,68 @@ test("multi-line template literals are still scanned", () => {
   expect(report.violations).toHaveLength(1);
 });
 
+test("a reintroduced Channels nav band label is a violation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/routes.tsx",
+      contents: `label: "Channels",`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("apps/web/src/routes.tsx");
+  expect(report.violations[0]).toContain("Channels");
+});
+
+test("a reintroduced Channels page band title is a violation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/panel-contributions.tsx",
+      contents: `title: "Channels",`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+});
+
+test("a reintroduced Channels aria-label is a violation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/panel-contributions.tsx",
+      contents: `<div className="panel-stack" aria-label="Channels">`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+});
+
+test("prose that merely mentions Channels is not a band-label violation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/panel-contributions.tsx",
+      contents: `description="Channels and running routines for this workbench will appear here."`,
+    },
+  ]);
+  expect(report.violations).toEqual([]);
+});
+
+test("a command palette heading grouping channel search results is not a band-label violation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/command-palette-provider.tsx",
+      contents: `heading: "Channels",`,
+    },
+  ]);
+  expect(report.violations).toEqual([]);
+});
+
+test("chat-ui's channel-kind section label is not a band-label violation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "packages/chat-ui/src/strings.ts",
+      contents: `channelsSectionLabel: "Channels",`,
+    },
+  ]);
+  expect(report.violations).toEqual([]);
+});
+
 test("stripNonUserFacing preserves line and column positions", () => {
   const source = [
     "// a comment about the hub",
