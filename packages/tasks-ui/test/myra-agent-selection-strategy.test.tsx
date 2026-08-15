@@ -12,12 +12,12 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type { TaskAgentOption } from "./agent-selection-strategy";
+import type { TaskAgentOption } from "../src/agent-selection-strategy";
 import {
   createMyraAgentSelectionStrategy,
   MyraChoiceSummary,
   MYRA_AUTO_SELECTION_ID,
-} from "./myra-agent-selection-strategy";
+} from "../src/myra-agent-selection-strategy";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
