@@ -219,6 +219,49 @@ describe("advanceChain", () => {
     expect(legs[1]?.errorMessage).toContain("no longer available");
     expect(legs[1]?.runId).toBeNull();
   });
+
+  test("a hand-off whose prompt never reaches its agent fails the leg, never strands it", async () => {
+    const store = createMemoryTaskStore();
+    await seedChain(store, 1);
+    const settledLeg = await settleFirstLeg(store);
+    const task = await store.getTask(TENANT, "task_1");
+    if (task === null) throw new Error("no task");
+
+    // Exactly what `launchTaskLeg` does when the run commits but its
+    // opening prompt cannot be delivered: the run id is recorded (so a
+    // redelivered claim can never launch a second agent), the leg is
+    // never confirmed as started, and the launch throws.
+    const advance = await advanceChain(
+      {
+        store,
+        launchLeg: async (input) => {
+          await store.recordLegRun({
+            tenantId: input.tenantId,
+            legId: input.legId,
+            runId: "run_leg1",
+          });
+          throw new Error("its instructions couldn't be delivered");
+        },
+      },
+      { task, settledLeg },
+    );
+
+    expect(advance.kind).toBe("dispatch-failed");
+
+    const legs = await store.listLegs(TENANT, "task_1");
+    expect(legs[1]?.status).toBe("failed");
+    expect(legs[1]?.errorMessage).toContain("couldn't be delivered");
+    expect(legs[1]?.startedAt).toBeNull();
+
+    // The orphan run is kept on the row for tracing, but a run that was
+    // never prompted is not a run the task actually passed through —
+    // counting it would tell the person their work stopped one agent
+    // later than it did.
+    expect(legs[1]?.runId).toBe("run_leg1");
+    expect((await store.getTask(TENANT, "task_1"))?.runIds).toEqual([
+      "run_leg0",
+    ]);
+  });
 });
 
 describe("settleLeg", () => {

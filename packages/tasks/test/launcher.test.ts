@@ -47,6 +47,7 @@ mock.module("@intx/hub-api", () => ({
 
 const {
   launchTask,
+  launchTaskLeg,
   PROMPT_DELIVERY_FAILED_MESSAGE,
   TaskDefinitionNotFoundError,
   TaskDefinitionNotLaunchableError,
@@ -85,6 +86,13 @@ function createFakeDb(opts: {
   tenantRow?: { id: string; domain: string } | undefined;
 }) {
   const inserted: { table: unknown; values: unknown }[] = [];
+  const updated: { table: unknown; values: unknown }[] = [];
+  function updateOn(table: unknown, values: unknown) {
+    updated.push({ table, values });
+    return {
+      where: () => ({ returning: async () => [{ id: "tleg_1" }] }),
+    };
+  }
   function insertOn(table: unknown, values: unknown): InsertChain {
     inserted.push({ table, values });
     const chain: InsertChain = {
@@ -95,6 +103,7 @@ function createFakeDb(opts: {
   }
   return {
     inserted,
+    updated,
     query: {
       workflowDefinition: {
         findFirst: async () => opts.workflowDefinitionRow,
@@ -112,6 +121,9 @@ function createFakeDb(opts: {
         insert(table: unknown) {
           return { values: (values: unknown) => insertOn(table, values) };
         },
+        update(table: unknown) {
+          return { set: (values: unknown) => updateOn(table, values) };
+        },
       });
     },
   };
@@ -124,10 +136,14 @@ function createFakeDb(opts: {
  */
 function storeOverInserts(db: {
   inserted: { table: unknown; values: unknown }[];
-}): TaskStore & { completed: { id: string; status: string }[] } {
+}): TaskStore & {
+  completed: { id: string; status: string }[];
+  confirmedLegs: string[];
+} {
   const statusOverride = new Map<string, "done" | "failed">();
   const resultMailIds = new Map<string, string>();
   const completed: { id: string; status: string }[] = [];
+  const confirmedLegs: string[] = [];
   function legRows(): TaskLegRecord[] {
     return db.inserted
       .filter((row) => row.table === taskLegTable)
@@ -161,6 +177,7 @@ function storeOverInserts(db: {
   }
   return {
     completed,
+    confirmedLegs,
     async createTask() {
       throw new Error("launchTask persists via persistExtra, never createTask");
     },
@@ -207,6 +224,31 @@ function storeOverInserts(db: {
     },
     async recordLegRun() {
       throw new Error("launchTask records its own leg run in the launch tx");
+    },
+    async confirmLegDelivery(input) {
+      confirmedLegs.push(input.legId);
+      const startedAt = new Date();
+      return {
+        id: input.legId,
+        taskId: "task_1",
+        tenantId: input.tenantId,
+        position: 1,
+        definitionId: "wfd_agent",
+        prompt: "Continue the work.",
+        modelPreference: null,
+        parentRunId: "run_leg0",
+        messageId: "chain:task_1:1",
+        runId: "run_leg1",
+        status: "running",
+        leaseExpiresAt: null,
+        errorMessage: null,
+        createdAt: startedAt,
+        startedAt,
+        settledAt: null,
+      };
+    },
+    async listStuckLegDispatches() {
+      throw new Error("the launcher never sweeps stuck legs");
     },
     async settleLeg() {
       throw new Error("launchTask never settles a leg");
@@ -440,5 +482,51 @@ describe("launchTask", () => {
     expect(resolveDefinitionSourcesCalls[1]?.fallbackModel).toBe(
       "declared-default-model",
     );
+  });
+});
+
+const LEG_INPUT = {
+  tenantId: "tnt_1",
+  principalId: "prn_alice",
+  legId: "tleg_1",
+  definitionId: "wfd_agent",
+  prompt: "Continue the work.",
+  modelPreference: null,
+};
+
+describe("launchTaskLeg", () => {
+  test("the run id is recorded in the launch transaction, but the leg only starts once its prompt is delivered", async () => {
+    const db = createFakeDb({
+      workflowDefinitionRow: DEPLOYED_DEFINITION,
+      tenantRow: TENANT,
+    });
+    const { deps, store, sendCalls } = createDeps({ db });
+
+    const runId = await launchTaskLeg(deps as never, LEG_INPUT);
+
+    const stamp = db.updated.find((row) => row.table === taskLegTable)
+      ?.values as { runId: string; status: string } | undefined;
+    expect(stamp?.runId).toBe(runId);
+    // Still claimed, not started: the prompt has not been delivered at
+    // the point this transaction commits.
+    expect(stamp?.status).toBe("dispatching");
+    expect(sendCalls).toHaveLength(1);
+    expect(store.confirmedLegs).toEqual(["tleg_1"]);
+  });
+
+  test("a prompt that cannot be delivered throws and leaves the leg unstarted", async () => {
+    const db = createFakeDb({
+      workflowDefinitionRow: DEPLOYED_DEFINITION,
+      tenantRow: TENANT,
+    });
+    const { deps, store } = createDeps({ db, sendUserMessageFails: true });
+
+    await expect(launchTaskLeg(deps as never, LEG_INPUT)).rejects.toThrow(
+      /couldn't be delivered/,
+    );
+
+    // Nothing marked this leg as started, so the chain's own failure
+    // path still finds a claimed leg it can fail honestly.
+    expect(store.confirmedLegs).toEqual([]);
   });
 });
