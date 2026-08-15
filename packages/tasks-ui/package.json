@@ -13,7 +13,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/chat-ui": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#4c1214298e6f7005da01918c7d5a68230f7109cc",
     "arktype": "catalog:",
     "lucide-react": "^1.27.0",

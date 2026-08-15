@@ -3,19 +3,38 @@
 // strategy that resolves an agent programmatically, without reworking
 // `TaskComposerDialog`'s own layout, submit, or model-select logic.
 // Today's only strategy is `createManualAgentSelectionStrategy`: a
-// fetched definition list, click-to-select, exactly what the composer
+// fetched agent list, click-to-select, exactly what the composer
 // already did before this seam existed. The seam is deliberately
 // invisible to today's user — there is no "let the agent choose for
 // me" affordance anywhere in this package yet.
 import { EmptyState, Skeleton } from "@corbits/react-ui";
-import type { InvitableDefinition } from "@corbits/chat-ui";
 import { CircleAlert, Users } from "lucide-react";
 import { useEffect, useState, type ComponentType } from "react";
+
+/**
+ * One offerable agent, structurally — the same `{id, name,
+ * description?}` shape chat-ui's invitable listing resolves, named
+ * here rather than imported so this package carries no dependency on
+ * `@corbits/chat-ui`: a host wires whatever listing satisfies it.
+ */
+export type TaskAgentOption = {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+};
 
 export type AgentSelectionStrategyProps = {
   readonly tenantId: string;
   readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
+  /**
+   * Reports the ids this strategy can actually produce, once it knows
+   * them (the manual picker calls it when its fetched list resolves).
+   * The dialog uses it to reconcile a preseeded selection (the
+   * most-recently-used default) against reality — a remembered agent
+   * that no longer exists must never ride a submit.
+   */
+  readonly onOptionsResolved: (ids: readonly string[]) => void;
 };
 
 /**
@@ -34,17 +53,18 @@ type ListState<T> =
   | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "ready"; readonly items: readonly T[] };
 
-/** The default, and today's only, strategy: fetch the tenant's
- * invitable definitions and let the person click one. */
+/** The default, and today's only, strategy: fetch the workbench's
+ * offerable agents and let the person click one. */
 export function createManualAgentSelectionStrategy(
-  listAgents: (tenantId: string) => Promise<readonly InvitableDefinition[]>,
+  listAgents: (tenantId: string) => Promise<readonly TaskAgentOption[]>,
 ): AgentSelectionStrategy {
   return function ManualAgentSelectionStrategy({
     tenantId,
     selectedId,
     onSelect,
+    onOptionsResolved,
   }) {
-    const [state, setState] = useState<ListState<InvitableDefinition>>({
+    const [state, setState] = useState<ListState<TaskAgentOption>>({
       kind: "loading",
     });
 
@@ -53,7 +73,9 @@ export function createManualAgentSelectionStrategy(
       setState({ kind: "loading" });
       listAgents(tenantId)
         .then((items) => {
-          if (!cancelled) setState({ kind: "ready", items });
+          if (cancelled) return;
+          setState({ kind: "ready", items });
+          onOptionsResolved(items.map((item) => item.id));
         })
         .catch((cause: unknown) => {
           if (!cancelled) {
@@ -66,7 +88,7 @@ export function createManualAgentSelectionStrategy(
       return () => {
         cancelled = true;
       };
-    }, [tenantId]);
+    }, [tenantId, onOptionsResolved]);
 
     if (state.kind === "loading") {
       return <Skeleton className="query-skeleton" />;
@@ -91,19 +113,19 @@ export function createManualAgentSelectionStrategy(
     }
     return (
       <>
-        {state.items.map((definition) => (
+        {state.items.map((agent) => (
           <label
-            key={definition.id}
+            key={agent.id}
             className="tasks-radio-option"
             data-testid="new-task-agent-option"
           >
             <input
               type="radio"
               name="task-agent"
-              checked={selectedId === definition.id}
-              onChange={() => onSelect(definition.id)}
+              checked={selectedId === agent.id}
+              onChange={() => onSelect(agent.id)}
             />
-            {definition.description ?? definition.name}
+            {agent.description ?? agent.name}
           </label>
         ))}
       </>

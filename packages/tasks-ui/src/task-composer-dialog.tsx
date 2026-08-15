@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@corbits/react-ui";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { AgentSelectionStrategy } from "./agent-selection-strategy";
 import type { CatalogModel } from "./api";
@@ -83,6 +83,17 @@ export function TaskComposerDialog({
     if (open) setDefinitionId(initialDefinitionId);
   }, [open, initialDefinitionId]);
 
+  // The preseeded default is a *memory*, not a fact — the remembered
+  // agent may have been deleted since. Once the strategy reports what
+  // it can actually offer, a selection outside that set is cleared so
+  // a stale default can never ride a submit. A person's own click is
+  // always inside the set, so this only ever clears the seed.
+  const handleOptionsResolved = useCallback((ids: readonly string[]) => {
+    setDefinitionId((current) =>
+      current !== null && !ids.includes(current) ? null : current,
+    );
+  }, []);
+
   function reset() {
     setDefinitionId(initialDefinitionId);
     setPrompt("");
@@ -112,13 +123,16 @@ export function TaskComposerDialog({
 
   const canSubmit = canSubmitTask(definitionId, prompt);
 
+  // The one submit gate, shared by the button, the form submit, and
+  // the Cmd/Ctrl+Enter path — `submitting` included, so a keyboard
+  // submit can never re-fire `onCreate` while a launch is in flight
+  // the way only the button's `disabled` attribute used to prevent.
   function handleSubmit() {
+    if (!canSubmit || submitting) return;
     if (definitionId === null) return;
-    const trimmedPrompt = prompt.trim();
-    if (trimmedPrompt.length === 0) return;
     onCreate({
       definitionId,
-      prompt: trimmedPrompt,
+      prompt: prompt.trim(),
       ...(modelPreference.trim().length > 0
         ? { modelPreference: modelPreference.trim() }
         : {}),
@@ -160,6 +174,7 @@ export function TaskComposerDialog({
                   tenantId={tenantId}
                   selectedId={definitionId}
                   onSelect={setDefinitionId}
+                  onOptionsResolved={handleOptionsResolved}
                 />
               ) : null}
             </fieldset>
@@ -196,7 +211,7 @@ export function TaskComposerDialog({
                   value={modelPreference}
                   onChange={(event) => setModelPreference(event.target.value)}
                 >
-                  <option value="">Bench default</option>
+                  <option value="">Workbench default</option>
                   {modelState.items.map((model) => (
                     <option key={model.id} value={model.canonicalName}>
                       {model.displayName ?? model.canonicalName}

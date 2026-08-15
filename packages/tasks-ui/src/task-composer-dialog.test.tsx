@@ -317,6 +317,105 @@ describe("TaskComposerDialog", () => {
     expect(radios[1]?.checked).toBe(true);
   });
 
+  test("a remembered agent absent from the resolved list is cleared, never submittable", async () => {
+    let created: unknown;
+    mount(
+      baseProps({
+        agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
+          { id: "wfd_1", name: "incident-bot" },
+        ]),
+        initialDefinitionId: "wfd_deleted",
+        onCreate: (input) => {
+          created = input;
+        },
+      }),
+    );
+    await settle();
+
+    // The stale seed cleared once the list resolved: nothing checked.
+    const radios = [
+      ...document.body.querySelectorAll<HTMLInputElement>(
+        'input[name="task-agent"]',
+      ),
+    ];
+    expect(radios.some((radio) => radio.checked)).toBe(false);
+
+    const textarea =
+      document.body.querySelector<HTMLTextAreaElement>("textarea");
+    act(() => {
+      setTextareaValue(textarea, "Summarize the incident.");
+    });
+    await settle();
+
+    const submit = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Start task",
+    );
+    expect(submit?.hasAttribute("disabled")).toBe(true);
+
+    const form = document.body.querySelector("form");
+    act(() => {
+      form?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+    });
+    await settle();
+    expect(created).toBeUndefined();
+  });
+
+  test("Cmd/Ctrl+Enter cannot re-fire onCreate while a launch is in flight", async () => {
+    let createdCount = 0;
+    mount(
+      baseProps({
+        agentSelectionStrategy: createManualAgentSelectionStrategy(async () => [
+          { id: "wfd_1", name: "incident-bot" },
+        ]),
+        submitting: true,
+        onCreate: () => {
+          createdCount += 1;
+        },
+      }),
+    );
+    await settle();
+
+    const radio = document.body.querySelector<HTMLInputElement>(
+      'input[name="task-agent"]',
+    );
+    act(() => {
+      radio?.click();
+    });
+    const textarea =
+      document.body.querySelector<HTMLTextAreaElement>("textarea");
+    act(() => {
+      setTextareaValue(textarea, "Summarize the incident.");
+    });
+    await settle();
+
+    for (let i = 0; i < 3; i++) {
+      act(() => {
+        textarea?.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Enter",
+            metaKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      });
+    }
+    await settle();
+
+    expect(createdCount).toBe(0);
+  });
+
+  test("the error prop renders as an alert inside the dialog", async () => {
+    mount(baseProps({ error: "The task couldn't start. Try again." }));
+    await settle();
+
+    const alert = document.body.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert?.textContent).toBe("The task couldn't start. Try again.");
+  });
+
   test("an injected strategy stands in for the manual picker — the seam is real", async () => {
     const seen: {
       props: { tenantId: string; selectedId: string | null } | null;

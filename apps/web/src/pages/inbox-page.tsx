@@ -36,11 +36,13 @@ import {
   loadMostRecentTaskAgent,
   saveMostRecentTaskAgent,
 } from "../task-mru-agent";
+import { libraryArtifactPath } from "@corbits/artifact-ui";
 import {
   InboxCountsSchema,
   InboxItemDetailSchema,
   InboxListSchema,
   approvalIdFromItem,
+  artifactRefsFromItem,
   channelRefFromItem,
   clearDoneInbox,
   inboxCountsPath,
@@ -147,6 +149,7 @@ function InboxDetail({
   onSnooze,
   onOpenRun,
   onOpenChannel,
+  onOpenArtifact,
 }: {
   readonly detail: APIQuery<InboxItemDetail>;
   readonly busy: boolean;
@@ -157,6 +160,7 @@ function InboxDetail({
   readonly onSnooze: (id: string) => void;
   readonly onOpenRun: (runId: string) => void;
   readonly onOpenChannel: (channelId: string) => void;
+  readonly onOpenArtifact: (artifactId: string) => void;
 }) {
   if (detail.kind === "loading") {
     return (
@@ -183,6 +187,7 @@ function InboxDetail({
   const approvalId = approvalIdFromItem(item);
   const run = runRefFromItem(item);
   const channel = channelRefFromItem(item);
+  const artifacts = artifactRefsFromItem(item);
 
   return (
     <article
@@ -203,6 +208,25 @@ function InboxDetail({
           {item.body}
         </pre>
       </div>
+      {artifacts.length > 0 && (
+        <div
+          className="flex flex-wrap gap-2"
+          data-testid="inbox-artifact-chips"
+          aria-label="Artifacts"
+        >
+          {artifacts.map((artifact) => (
+            <Button
+              key={artifact.id}
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => onOpenArtifact(artifact.id)}
+            >
+              {artifact.label ?? "Open in Library"}
+            </Button>
+          ))}
+        </div>
+      )}
       {actionError !== null && (
         <p className="m-0 text-sm text-destructive" role="alert">
           {actionError}
@@ -422,7 +446,12 @@ export function InboxPage({
     <div className="flex h-full min-h-0 flex-col">
       <TaskComposerDialog
         open={taskDialogOpen}
-        onOpenChange={setTaskDialogOpen}
+        onOpenChange={(next) => {
+          setTaskDialogOpen(next);
+          // A failed attempt's message must not greet the next open —
+          // the error belongs to the attempt, not to the dialog.
+          if (!next) setTaskError(null);
+        }}
         onCreate={handleCreateTask}
         tenantId={selectedTenantId}
         submitting={taskSubmitting}
@@ -520,6 +549,9 @@ export function InboxPage({
               }}
               onOpenChannel={(channelId) => {
                 navigate(channelPath(channelId));
+              }}
+              onOpenArtifact={(artifactId) => {
+                navigate(libraryArtifactPath(artifactId));
               }}
             />
           )

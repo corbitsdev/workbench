@@ -131,3 +131,16 @@ export function channelRefFromItem(
     ? { id: ref.id }
     : { id: ref.id, label: ref.label };
 }
+
+/** Every Library artifact a task-result (or any other) item references —
+ * each becomes a chip in the detail pane deep-linking into the Library. */
+export function artifactRefsFromItem(
+  item: Pick<InboxItem, "refs">,
+): readonly { id: string; label?: string }[] {
+  if (item.refs === undefined) return [];
+  return item.refs
+    .filter((r) => r.kind === "artifact")
+    .map((r) =>
+      r.label === undefined ? { id: r.id } : { id: r.id, label: r.label },
+    );
+}

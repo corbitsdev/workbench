@@ -12,4 +12,5 @@ export {
   createManualAgentSelectionStrategy,
   type AgentSelectionStrategy,
   type AgentSelectionStrategyProps,
+  type TaskAgentOption,
 } from "./agent-selection-strategy";

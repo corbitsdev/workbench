@@ -40,7 +40,14 @@ export function createWorkbenchMailboxDelivery(
         body: item.body,
         source: item.source,
         externalId: item.externalId,
-        refs: refs.map((ref) => ({ kind: ref.kind, id: ref.id })),
+        refs: refs.map((ref) => ({
+          kind: ref.kind,
+          id: ref.id,
+          // A ref's display label (an artifact's title, say) rides
+          // along so the inbox detail can render a chip without a
+          // second lookup — dropped only when the writer had none.
+          ...(ref.label !== undefined ? { label: ref.label } : {}),
+        })),
         classification: classificationFromRefs(refs),
         status: "open",
       };
