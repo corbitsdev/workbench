@@ -8,6 +8,7 @@ export {
   type CatalogModel,
   type PlannerTask,
   type Task,
+  type TaskStatus,
 } from "./api";
 export { canSubmitTask, TaskComposerDialog } from "./task-composer-dialog";
 export {
@@ -21,3 +22,10 @@ export {
   MyraChoiceSummary,
   MYRA_AUTO_SELECTION_ID,
 } from "./myra-agent-selection-strategy";
+export {
+  isWorkingTask,
+  workingTasks,
+  type WorkingTask,
+  type WorkingTaskStatus,
+} from "./working-task";
+export { WorkingTaskRow } from "./working-task-row";

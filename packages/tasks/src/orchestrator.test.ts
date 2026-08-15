@@ -79,6 +79,7 @@ async function seedRunningTask(
     tenantId: "tnt_1",
     principalId: "prn_alice",
     definitionId: "wfd_agent",
+    agentName: "Agent",
     prompt: "Summarize the incident.",
     modelPreference: null,
     runId: "run_1",

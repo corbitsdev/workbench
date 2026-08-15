@@ -26,6 +26,7 @@ export interface TaskRecord {
   readonly tenantId: string;
   readonly principalId: string;
   readonly definitionId: string;
+  readonly agentName: string;
   readonly prompt: string;
   readonly modelPreference: string | null;
   readonly status: TaskStatus;
@@ -77,6 +78,7 @@ export interface CreateTaskInput {
   readonly tenantId: string;
   readonly principalId: string;
   readonly definitionId: string;
+  readonly agentName: string;
   readonly prompt: string;
   readonly modelPreference: string | null;
   readonly plannerRunId?: string | null;
@@ -246,6 +248,7 @@ function toRecord(
     tenantId: row.tenantId,
     principalId: row.principalId,
     definitionId: row.definitionId,
+    agentName: row.agentName,
     prompt: row.prompt,
     modelPreference: row.modelPreference,
     status: row.status,
@@ -363,6 +366,7 @@ export function createDrizzleTaskStore<TSchema extends Record<string, unknown>>(
             tenantId: input.tenantId,
             principalId: input.principalId,
             definitionId: input.definitionId,
+            agentName: input.agentName,
             prompt: input.prompt,
             modelPreference: input.modelPreference,
             status: "running",
@@ -611,6 +615,7 @@ export function createMemoryTaskStore(): TaskStore {
         tenantId: input.tenantId,
         principalId: input.principalId,
         definitionId: input.definitionId,
+        agentName: input.agentName,
         prompt: input.prompt,
         modelPreference: input.modelPreference,
         status: "running",

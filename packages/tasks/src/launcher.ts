@@ -297,6 +297,7 @@ export async function launchTask(
         tenantId: input.tenantId,
         principalId: input.principalId,
         definitionId: input.definitionId,
+        agentName: definitionRow.name,
         prompt: input.prompt,
         modelPreference: input.modelPreference ?? null,
         status: "running",

@@ -2600,6 +2600,17 @@ button.insights-stat:hover {
   color: var(--shell-panel-faint);
 }
 
+/* A working-task row's meta slot (`@corbits/tasks-ui`'s `WorkingTaskRow`):
+   elapsed time beside the optional needs-you badge. */
+.panel-task-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--shell-panel-faint);
+}
+
 /* Global context menu (`shell/context-menu`): the keyboard shortcut hint
    right-aligned in a menu row. Everything else about the menu's look is
    react-ui's Menu component. */

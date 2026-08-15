@@ -1,26 +1,26 @@
-// CL-6055 phase A: the scripted onboard→connect leg of the local-rip
-// proof — everything a brand-new person does before ever touching a
-// task. One sequential scenario against a real hub, a real sidecar,
-// and a real Postgres: closed-by-default signup is respected → sign
-// up → first-login provisioning mints a personal bench, unseeded (no
-// hub-owned seed model) → connecting a real inference credential
-// through the key path (`POST /api/onboarding/complete`'s own
-// machinery, called directly — see the stubbing note below) seeds
-// every default workflow with no unresolvable tool pin → the
+// CL-6055: the scripted local-rip proof — everything a brand-new
+// person does from sign-up through their first dispatched task. One
+// sequential scenario against a real hub, a real sidecar, and a real
+// Postgres.
+//
+// Phase A (onboard → connect): closed-by-default signup is respected
+// → sign up → first-login provisioning mints a personal bench,
+// unseeded (no hub-owned seed model) → connecting a real inference
+// credential through the key path (`POST /api/onboarding/complete`'s
+// own machinery, called directly — see the stubbing note below) fully
+// seeds every default workflow, including "assistant" → the
 // Connections surface (the tenant's own credentials list, the same
 // route `connectorStatus` in `@workbench/settings-ui` reads) honestly
-// reflects the connected credential. Phase B (once CL-6049's task leg
-// merges) appends the task leg at the marked point at the bottom of
-// this scenario; this file proves onboarding→connect only.
+// reflects the connected credential.
 //
-// Known gap this suite documents rather than hides: the "assistant"
-// default workflow does not deploy today. See the long comment above
-// the "corbits-tools registry gap" hop below for the full account —
-// short version, its `@corbits/memory-tools` tool pin has no seeded
-// registry anywhere in this repo, and building one is its own
-// substantial, unscoped body of work. `bun run check`'s green result
-// for this file proves the gap is real and unchanged, not that
-// onboarding fully seeds a bench yet.
+// Until CL-6057, this suite documented a real platform gap instead of
+// hiding it: the "assistant" default workflow pins
+// `@corbits/memory-tools`, and that pin only resolved once an operator
+// had published a `package-registry`-kind asset named "corbits-tools"
+// carrying its tarball. `seedTenant` now publishes that asset itself
+// (`@corbits/tool-registry-publish`, wired in at
+// `packages/hub-client/src/seed.ts`) ahead of deploying any workflow,
+// so this suite asserts a full seed rather than a documented skip.
 //
 // Stubbing note: proving a pasted key means an outbound call to the
 // provider's own auth layer (`testProviderCredential`, hit through
@@ -36,17 +36,54 @@
 // the seam that module's header comment documents existing precisely
 // so an OAuth callback route can run only the fast half — is stubbed,
 // to a fixed `{ ok: true }`, so this suite never dials a real
-// provider. The stubbed key itself is never sent anywhere: the
-// resulting deployments carry it as a stored, never-triggered source
-// (`confirmDeployments: false`, matching onboarding's own connect
-// flow — see `ensureSeeded`'s doc comment), so a made-up key is exactly
-// as good as a real one for proving this leg.
+// provider during phase A. The stubbed key itself is never sent
+// anywhere in phase A: the resulting deployments carry it as a
+// stored, never-triggered source (`confirmDeployments: false`,
+// matching onboarding's own connect flow — see `ensureSeeded`'s doc
+// comment), so a made-up key is exactly as good as a real one for
+// proving that leg.
 //
 // The deployed sources' `baseURL` is the real Anthropic host
-// (`CATALOG_SEEDS`), which is the honest key-path behavior — this
-// suite deliberately does not run those sources through
+// (`CATALOG_SEEDS`), which is the honest key-path behavior — phase A
+// deliberately does not run those sources through
 // `assertNeverRealProvider`, since flagging a real provider host here
 // would be a false positive: it is never called, only stored.
+//
+// Phase B (CL-6055, the task leg): what a person does after Cmd/Ctrl+T
+// — dispatch a task at the seeded, taskable "echo" agent through
+// `@corbits/tasks`'s real HTTP routes (packages/tasks/src/routes.ts),
+// drive it to a terminal state, and prove creator-only privacy. Unlike
+// phase A, this leg does make one real, secret-free outbound call: a
+// task's opening turn genuinely dials the connected credential's real
+// Anthropic host with the stub key from phase A, exactly the way
+// `chat.test.ts`'s echo-invite test already does with a placeholder
+// credential ("its own reply attempt errors, which is expected and
+// irrelevant to this assertion" — see that test's own comment). A
+// stub key is not a secret — nothing this suite sends is ever valid —
+// so this stays a zero-secret suite; it is simply no longer a
+// zero-network-call one. The host's real 401 classifies as
+// `credential_failure` (`vendor/intx/inference/src/errors.ts`), which
+// the inference harness turns into a completed turn carrying a
+// self-describing credential-error report, rather than failing the
+// run's own bracket — so the task's terminal status is "done", not
+// "failed" (empirically confirmed, not assumed: see the task leg's
+// own comments below for the exact delivered body). This is the one
+// deterministic terminal outcome a stub credential dialing a real
+// host produces; the leg asserts it honestly, by checking the
+// delivered body names the credential error, rather than treating any
+// terminal status as good enough.
+//
+// IMPORTANT: this "done" carries a credential-error report, not a real
+// reply — an artifact of the stub key, not a platform defect. Swap the
+// stub for a real, working credential (the local, no-shortcuts
+// walkthrough in docs/local-rip.md does exactly that) and the
+// identical task dispatch, terminal-poll, and inbox-delivery machinery
+// this leg exercises completes the same run "done" with a real reply
+// instead. Nothing below should be read as "tasks are broken"; it
+// proves the dispatch → terminal-state → inbox-delivery → privacy path
+// end to end, with the one leg (the model call itself) this suite
+// cannot make real without a paid key standing in for its own honest,
+// self-reported failure.
 
 import { describe, expect, test } from "bun:test";
 
@@ -134,9 +171,9 @@ async function signUp(
 }
 
 describe.skipIf(databaseUrl === undefined)(
-  "local-rip: onboard → connect",
+  "local-rip: onboard → connect → task",
   () => {
-    test("a brand-new person signs up, gets a personal bench, and connects a real provider through the key path", async () => {
+    test("a brand-new person signs up, gets a personal bench, connects a real provider through the key path, and dispatches a task", async () => {
       const url = databaseUrl;
       if (url === undefined) throw new Error("unreachable: suite is skipped");
 
@@ -335,38 +372,6 @@ describe.skipIf(databaseUrl === undefined)(
       // CliError rather than a response this suite can branch on. Every
       // step ensureSeeded/seedTenant takes is itself ensure-then-create,
       // so retrying the whole call is safe.
-      //
-      // A real, pre-existing platform gap surfaces here too, and this
-      // suite documents it rather than papering over it: the "assistant"
-      // default workflow pins `@corbits/memory-tools`
-      // (`workflows/assistant/src/index.ts`), and that pin only resolves
-      // once an operator has published a `package-registry`-kind asset
-      // named "corbits-tools" carrying its tarball — see
-      // `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` comment. No
-      // such asset exists anywhere (nothing in this repo publishes one —
-      // confirmed by exhaustive search), and building the packaging
-      // pipeline for it (which would also need `@intx/agent`'s and
-      // `@intx/types`'s own dependency closure packaged as real npm
-      // tarballs, since the sidecar's tool loader materializes every
-      // transitive dependency) is its own substantial, unscoped body of
-      // work — well outside this onboard→connect leg. This suite proves
-      // the real, unmodified `ensureSeeded` hits exactly that gap (not
-      // some other regression), then separately proves the two default
-      // workflows with no unresolvable tool pin (echo, channel-digest)
-      // deploy and go live for real.
-      // Matched without the surrounding quote characters: the CliError's
-      // message embeds the hub's JSON error body via `JSON.stringify`,
-      // which re-escapes the nested message's own quotes as `\"` — a
-      // needle with real quote characters would never match that
-      // escaped text.
-      const CORBITS_TOOLS_GAP_NEEDLE = "unknown registry";
-      function isCorbitsToolsRegistryGap(message: string): boolean {
-        return (
-          message.includes(CORBITS_TOOLS_GAP_NEEDLE) &&
-          message.includes("corbits-tools")
-        );
-      }
-
       async function deploySeededWorkflows(
         workflows: typeof DEFAULT_WORKFLOWS,
       ): Promise<Awaited<ReturnType<typeof seedTenant>>> {
@@ -394,27 +399,32 @@ describe.skipIf(databaseUrl === undefined)(
               confirmDeployments: false,
             });
           } catch (cause) {
-            const message =
-              cause instanceof Error ? cause.message : String(cause);
-            if (isCorbitsToolsRegistryGap(message)) throw cause;
             if (Date.now() > deadline) throw cause;
             await Bun.sleep(1000);
           }
         }
       }
 
+      // CL-6057 closed the platform gap the earlier version of this
+      // suite documented: `seedTenant` (via `ensureSeeded`) now
+      // publishes the tenant's `corbits-tools` package-registry asset
+      // — packing `@corbits/memory-tools` into a self-contained
+      // tarball through `@corbits/tool-registry-publish` — ahead of
+      // deploying any workflow, so the "assistant" default workflow's
+      // `@corbits/memory-tools` pin resolves instead of failing the
+      // closure resolver with "unknown registry". This hop proves the
+      // real, unmodified connect flow fully seeds a fresh bench: every
+      // default workflow deploys, with none skipped.
       await hop(
-        "the real, unmodified connect flow hits the known corbits-tools registry gap on 'assistant', not a regression",
+        "the real, unmodified connect flow fully seeds every default workflow, including 'assistant'",
         async () => {
           const deadline = Date.now() + 60_000;
-          let threw: unknown;
           for (;;) {
             if (sidecar.exited()) {
               throw new Error(
                 `sidecar exited before ensureSeeded could run; output:\n${sidecar.output()}`,
               );
             }
-            threw = undefined;
             try {
               await ensureSeeded({
                 api: hubApi,
@@ -426,44 +436,20 @@ describe.skipIf(databaseUrl === undefined)(
                 provider: "anthropic",
                 apiKey: STUB_API_KEY,
               });
+              break;
             } catch (cause) {
-              threw = cause;
+              if (Date.now() > deadline) throw cause;
+              await Bun.sleep(1000);
             }
-            if (threw === undefined) break;
-            const message =
-              threw instanceof Error ? threw.message : String(threw);
-            // The known, permanent gap this hop documents — stop retrying,
-            // it is the expected outcome.
-            if (isCorbitsToolsRegistryGap(message)) break;
-            // Any other failure is either the sidecar's dial-in still in
-            // flight (retry) or a real deadline overrun (surface it).
-            if (Date.now() > deadline) break;
-            await Bun.sleep(1000);
-          }
-          if (threw === undefined) {
-            throw new Error(
-              "ensureSeeded succeeded — the corbits-tools registry gap this " +
-                "suite documents appears to be fixed; replace this hop with " +
-                "the full isFullySeeded assertion below instead of skipping " +
-                "'assistant'",
-            );
-          }
-          const message =
-            threw instanceof Error ? threw.message : String(threw);
-          if (!isCorbitsToolsRegistryGap(message)) {
-            throw threw;
           }
         },
       );
 
       await hop(
-        "echo and channel-digest — the default workflows with no unresolvable tool pin — deploy and go live",
+        "every default workflow — echo, channel-digest, and assistant — deploys and goes live",
         async () => {
-          const deployable = DEFAULT_WORKFLOWS.filter(
-            (workflow) => workflow.assetName !== "assistant",
-          );
-          await deploySeededWorkflows(deployable);
-          for (const workflow of deployable) {
+          await deploySeededWorkflows(DEFAULT_WORKFLOWS);
+          for (const workflow of DEFAULT_WORKFLOWS) {
             const assetsRes = await api(
               hub.baseUrl,
               "GET",
@@ -545,7 +531,257 @@ describe.skipIf(databaseUrl === undefined)(
         },
       );
 
-      // --- phase B appends the task leg here (CL-6055, once CL-6049 merges) ---
+      // --- Phase B: the task dispatch leg (CL-6055) ---
+
+      const echoDefinitionId = await hop(
+        "the seeded echo agent is discoverable as a workflow definition",
+        async () => {
+          const res = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/workflows/definitions`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus("list workflow definitions", res, 200);
+          const rows = (
+            res.data as {
+              data: { id: string; name: string; status: string }[];
+            }
+          ).data;
+          const echo = rows.find((row) => row.name === "echo");
+          if (echo === undefined) {
+            throw new Error(
+              `no "echo" workflow definition on the tenant: ${JSON.stringify(rows)}`,
+            );
+          }
+          expect(echo.status).toBe("deployed");
+          return echo.id;
+        },
+      );
+
+      // A second principal, invited and explicitly granted `task:*`
+      // read — so the privacy check below proves `@corbits/tasks`'s
+      // own ownership filter (routes.ts: a colleague's task 404s, it
+      // never 403s, so the response never leaks that the task exists),
+      // not merely the absence of a grant.
+      const outsider = await hop(
+        "a second principal is invited, activated, and granted task read access",
+        async () => {
+          const email = `local-rip-outsider-${crypto.randomUUID()}@example.invalid`;
+          const password = `pw-${crypto.randomUUID()}`;
+          const signedUp = await api(
+            hub.baseUrl,
+            "POST",
+            "/api/auth/sign-up/email",
+            { name: "Local Rip Outsider", email, password },
+          );
+          expectStatus("outsider sign-up", signedUp, 200);
+          if (signedUp.cookies.length === 0) {
+            throw new Error("outsider sign-up returned no session cookie");
+          }
+
+          const invited = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${tenant.tenantId}/members/invite`,
+            { email },
+            user.cookies,
+          );
+          expectStatus("invite outsider", invited, 201);
+          const principalId = stringField(
+            invited.data,
+            "id",
+            "invite outsider",
+          );
+
+          const activated = await api(
+            hub.baseUrl,
+            "PATCH",
+            `/api/tenants/${tenant.tenantId}/principals/${principalId}`,
+            { status: "active" },
+            user.cookies,
+          );
+          expectStatus("activate outsider", activated, 200);
+
+          const granted = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${tenant.tenantId}/grants`,
+            {
+              principalId,
+              resource: "task:*",
+              action: "read",
+              effect: "allow",
+              origin: "creator",
+            },
+            user.cookies,
+          );
+          expectStatus("grant task read to outsider", granted, 201);
+
+          return { cookies: signedUp.cookies };
+        },
+      );
+
+      const launched = await hop(
+        "creating a task through the real HTTP route launches it against the seeded echo agent",
+        async () => {
+          const res = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${tenant.tenantId}/tasks`,
+            {
+              definitionId: echoDefinitionId,
+              prompt: `local-rip task leg ${crypto.randomUUID()}`,
+            },
+            user.cookies,
+          );
+          expectStatus("create task", res, 201);
+          const item = (res.data as { item: Record<string, unknown> }).item;
+          const id = stringField(item, "id", "create task");
+          const runId = stringField(item, "runId", "create task");
+          // `launchTask`'s own HTTP response only proves the opening
+          // prompt was accepted by the session — the run's own inference
+          // turn (and its terminal outcome) is still in flight.
+          expect(item.status).toBe("running");
+          return { id, runId };
+        },
+      );
+
+      // The tenant's connected credential is the phase-A stub key
+      // against the real Anthropic host (see this file's header
+      // comment), so this run's opening turn draws a real 401. The
+      // inference harness reports that gracefully rather than failing
+      // the run's own bracket: the turn still completes, with a
+      // self-describing credential-error report standing in for a
+      // reply, so `message.run.ended` carries `status: "completed"`
+      // and the task's own terminal status is "done" — empirically
+      // confirmed against this exact stub key, not assumed. ("failed"
+      // is still reachable — the opening prompt itself failing to
+      // send, in `launcher.ts`, or a run whose own bracket genuinely
+      // ends `status: "failed"` — just not by this path.) What proves
+      // this "done" is the honest stub-key artifact, not a masked
+      // platform bug, is the delivered body itself: a real credential
+      // in the same seat produces a real reply here instead of a
+      // credential-error report.
+      const terminal = await hop(
+        "the task reaches a terminal state — 'done', with a delivered body honestly reporting the phase-A stub credential's real 401 against the real Anthropic host",
+        async () => {
+          const deadline = Date.now() + 30_000;
+          for (;;) {
+            const res = await api(
+              hub.baseUrl,
+              "GET",
+              `/api/tenants/${tenant.tenantId}/tasks/${launched.id}`,
+              undefined,
+              user.cookies,
+            );
+            expectStatus("get task", res, 200);
+            const item = (res.data as { item: Record<string, unknown> }).item;
+            // The orchestrator flips `status` (`completeTask`) before it
+            // records the delivered mail id (`recordResultMail`) — see
+            // orchestrator.ts's `deliverTerminalTask` — so a terminal
+            // status can briefly precede a populated `resultMailId`.
+            // Keep polling through that gap rather than treating it as
+            // a failure.
+            const resultMailId = item.resultMailId;
+            if (
+              (item.status === "done" || item.status === "failed") &&
+              typeof resultMailId === "string" &&
+              resultMailId !== ""
+            ) {
+              expect(item.status).toBe("done");
+              expect(item.runId).toBe(launched.runId);
+              return { resultMailId };
+            }
+            if (Date.now() > deadline) {
+              throw new Error(
+                `task ${launched.id} never reached a fully-recorded terminal state within 30s: ${JSON.stringify(item)}`,
+              );
+            }
+            await Bun.sleep(500);
+          }
+        },
+      );
+
+      await hop(
+        "the terminal task-result lands in the Inbox exactly once, carrying the same run id the task holds and the honest stub-key credential-error report",
+        async () => {
+          const res = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/inbox`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus("list inbox", res, 200);
+          const items = (
+            res.data as {
+              items: { id: string; refs?: { kind: string; id: string }[] }[];
+            }
+          ).items;
+          const matches = items.filter((item) =>
+            (item.refs ?? []).some(
+              (ref) => ref.kind === "run" && ref.id === launched.runId,
+            ),
+          );
+          // Exactly once, not merely "at least once" — the orchestrator's
+          // store-level winner-takes-all guard (`completeTask`'s
+          // conditional UPDATE, see orchestrator.ts) is what this
+          // asserts: a redelivered terminal event can never double-mail.
+          expect(matches).toHaveLength(1);
+          const delivered = matches[0];
+          if (delivered === undefined) {
+            throw new Error("unreachable: matches has length 1");
+          }
+          expect(delivered.id).toBe(terminal.resultMailId);
+
+          // The delivered content is what proves this run's "done" is
+          // the honest stub-key artifact, not a silently swallowed
+          // failure: it names the real credential error the phase-A
+          // stub key drew from the real Anthropic host. The list
+          // projection above doesn't always carry a snippet; the
+          // detail route does.
+          const detailRes = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/inbox/${delivered.id}`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus("get task-result inbox item", detailRes, 200);
+          const body = stringField(
+            detailRes.data,
+            "body",
+            "task-result inbox item",
+          );
+          // The status code is 401 today, but Anthropic controls it —
+          // 403 is the same `credential_failure` category in the
+          // vendor retry policy (`vendor/intx/inference/src/errors.ts`
+          // classifies both identically), so accept either without
+          // loosening the substantive check: the body must still name
+          // a credential error, not merely any 4xx.
+          if (!body.includes("credential error") || !/40[13]/.test(body)) {
+            throw new Error(
+              `expected the delivered task-result to report the stub key's credential error, got: ${JSON.stringify(detailRes.data)}`,
+            );
+          }
+        },
+      );
+
+      await hop(
+        "a second principal cannot read the task — creator-only privacy, not merely a missing grant",
+        async () => {
+          const res = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/tasks/${launched.id}`,
+            undefined,
+            outsider.cookies,
+          );
+          expectStatus("outsider reads creator's task", res, 404);
+        },
+      );
     }, 180_000);
   },
 );

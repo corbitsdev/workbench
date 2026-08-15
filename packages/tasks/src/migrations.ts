@@ -43,12 +43,19 @@ export const tasksMigrations: readonly TaskMigration[] = [
     `,
   },
   {
+    name: "0003_agent_name",
+    sql: `
+      ALTER TABLE "tasks"."task" ADD COLUMN IF NOT EXISTS "agent_name" text NOT NULL DEFAULT '';
+      ALTER TABLE "tasks"."task" ALTER COLUMN "agent_name" DROP DEFAULT;
+    `,
+  },
+  {
     // Task→run goes from one-to-one to one-to-many. Every task that
     // already exists is a one-leg chain, so the backfill mints its
     // position-0 leg from the columns the task already carries — a
     // task written before this migration reads back identically
     // afterwards, run id and all.
-    name: "0003_task_leg",
+    name: "0004_task_leg",
     sql: `
       CREATE TABLE IF NOT EXISTS "tasks"."task_leg" (
         "id" text PRIMARY KEY,
@@ -109,7 +116,7 @@ export const tasksMigrations: readonly TaskMigration[] = [
     // column. Every leg that already carries a run id was written by
     // the pre-chain one-leg path, which only ever recorded a run after
     // its prompt had gone out — those legs really did start.
-    name: "0004_task_leg_started_at",
+    name: "0005_task_leg_started_at",
     sql: `
       ALTER TABLE "tasks"."task_leg"
         ADD COLUMN IF NOT EXISTS "started_at" timestamptz;

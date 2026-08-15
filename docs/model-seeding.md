@@ -50,8 +50,8 @@ model/provider name in the codebase is a literal string someone typed in.
 
 ## What upstream's inference-discovery/inference-testing packages are
 
-Read at `/Users/thegreataxios/abklabs/interchange/packages/` (upstream, not
-vendored into this repo): `inference-discovery`,
+Read from the upstream Interchange checkout's `packages/` directory (upstream,
+not vendored into this repo): `inference-discovery`,
 `inference-discovery-{anthropic,google-genai,openai}`, and
 `inference-testing`. There is no `@intx/inference-catalog` package — it does
 not exist upstream or on npm (confirmed via `npm view`).

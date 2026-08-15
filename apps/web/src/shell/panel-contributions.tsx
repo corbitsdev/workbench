@@ -20,6 +20,7 @@ import {
   registerPanelContribution,
   type PanelRenderContext,
 } from "@corbits/shell-layout";
+import { WorkingTaskRow } from "@corbits/tasks-ui";
 import {
   Bell,
   Hash,
@@ -369,7 +370,7 @@ export function assignChannelBucket(
   return "internal";
 }
 
-function ChannelsBand({
+export function ChannelsBand({
   path,
   onNavigate,
 }: {
@@ -404,13 +405,30 @@ function ChannelsBand({
   }
 
   const all = [...activity.channels, ...activity.chats];
+  const workingGroup =
+    activity.workingTasks.length > 0 ? (
+      <div className="panel-stack-group">
+        <p className="panel-band-subheading">Working</p>
+        {activity.workingTasks.map((task) => (
+          <WorkingTaskRow
+            key={task.id}
+            task={task}
+            onSelect={() => onNavigate("/inbox")}
+          />
+        ))}
+      </div>
+    ) : null;
+
   if (all.length === 0) {
     return (
-      <EmptyState
-        icon={<MessageSquare />}
-        title="No channels yet"
-        description="Create a channel to start a conversation."
-      />
+      <div className="panel-stack" aria-label="Spaces">
+        {workingGroup}
+        <EmptyState
+          icon={<MessageSquare />}
+          title="No channels yet"
+          description="Create a channel to start a conversation."
+        />
+      </div>
     );
   }
 
@@ -440,6 +458,7 @@ function ChannelsBand({
 
   return (
     <div className="panel-stack" aria-label="Spaces">
+      {workingGroup}
       <label className="shell-panel-search">
         <Search aria-hidden="true" />
         <Input

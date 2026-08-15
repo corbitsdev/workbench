@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_WORKFLOWS } from "@workbench/hub-client";
 import type { ApiCall } from "@workbench/hub-client";
-import type { WorkflowPusher } from "@workbench/hub-client";
+import type {
+  WorkflowPusher,
+  ToolRegistryPublisher,
+} from "@workbench/hub-client";
 import {
   personalTenantSlug,
   provisionPersonalTenantIfNeeded,
@@ -20,6 +23,7 @@ const MODEL = {
 };
 
 const noopPush: WorkflowPusher = async () => "pushed";
+const noopPublishToolRegistry: ToolRegistryPublisher = async () => undefined;
 
 function collector() {
   const lines: string[] = [];
@@ -77,6 +81,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -136,6 +141,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       displayName: "Alice's Lab",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -171,6 +177,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         userEmailVerified: true,
         displayName: "Alice's Lab",
         pushWorkflow: noopPush,
+        publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
       }),
     ).rejects.toThrow(/slug conflict/);
@@ -241,6 +248,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       displayName: "Alice's Lab",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log,
     });
 
@@ -278,6 +286,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log,
     });
 
@@ -441,6 +450,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       operatorTenantId: "ten_operator",
       seedModel: MODEL,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log,
     });
 
@@ -629,6 +639,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       displayName: "Alice's Lab",
       seedModel: MODEL,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
     await expect(firstAttempt).rejects.toThrow(/asset service unavailable/);
@@ -644,6 +655,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       seedModel: MODEL,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log,
     });
 
@@ -726,6 +738,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       // No seedModel needed: nothing left to seed.
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -786,6 +799,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       // No seedModel — hub without ANTHROPIC_API_KEY.
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -962,6 +976,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       seedModel: MODEL,
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 

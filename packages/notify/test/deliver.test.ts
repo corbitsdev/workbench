@@ -169,7 +169,7 @@ describe("deliverNotification", () => {
       tenantId: "tnt_1",
       threadId: "thr_3",
       threadLabel: "Launch plan",
-      mentionedBy: "Sawyer",
+      mentionedBy: "Noor",
       excerpt: "can you take this one?",
       recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
       createdAt: "2026-08-08T12:00:00.000Z",
@@ -177,7 +177,7 @@ describe("deliverNotification", () => {
 
     expect(written[0]?.subject).toBe("“Nightly digest” failed");
     expect(written[0]?.externalId).toBe("run_9:2026-08-08T11:00:00.000Z");
-    expect(written[1]?.subject).toBe("Sawyer mentioned you in “Launch plan”");
+    expect(written[1]?.subject).toBe("Noor mentioned you in “Launch plan”");
     for (const item of written) {
       expect(item.subject).not.toContain("_");
     }

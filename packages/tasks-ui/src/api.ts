@@ -10,10 +10,12 @@ import type { ArkErrors } from "arktype";
 const TaskStatus = type(
   '"queued" | "running" | "needs-you" | "done" | "failed"',
 );
+export type TaskStatus = typeof TaskStatus.infer;
 
 const Task = type({
   id: "string",
   definitionId: "string",
+  agentName: "string",
   prompt: "string",
   modelPreference: "string | null",
   status: TaskStatus,
@@ -50,6 +52,7 @@ const CatalogModelsPage = type({ data: CatalogModel.array() });
 const PlannerTask = type({
   id: "string",
   definitionId: "string",
+  agentName: "string",
   prompt: "string",
   modelPreference: "string | null",
   status: TaskStatus,

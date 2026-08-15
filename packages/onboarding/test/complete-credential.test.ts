@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { ApiCall, WorkflowPusher } from "@workbench/hub-client";
+import type {
+  ApiCall,
+  ToolRegistryPublisher,
+  WorkflowPusher,
+} from "@workbench/hub-client";
 import {
   completeCredentialSetup,
   ensureSeeded,
@@ -22,6 +26,7 @@ const PRINCIPAL_ID = "prn_personal";
 const TENANT_SLUG = "alice-user1";
 
 const noopPush: WorkflowPusher = async () => "pushed";
+const noopPublishToolRegistry: ToolRegistryPublisher = async () => undefined;
 
 function collector() {
   const lines: string[] = [];
@@ -82,6 +87,7 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-bad",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({
         ok: false,
@@ -123,6 +129,7 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({ ok: true }),
     });
@@ -155,6 +162,7 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
@@ -199,6 +207,7 @@ describe("completeCredentialSetup", () => {
       provider: "openai",
       apiKey: "sk-good",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
@@ -243,6 +252,7 @@ describe("completeCredentialSetup", () => {
       provider: "groq",
       apiKey: "gsk-good",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
@@ -291,6 +301,7 @@ describe("completeCredentialSetup", () => {
       apiKey: "hf_oauth_minted",
       credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
@@ -450,6 +461,7 @@ describe("completeCredentialSetup", () => {
       apiKey: "hf_freshly_minted_token",
       credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({ ok: true }),
       // The real seedCatalog runs here (not mocked) so the rotation
@@ -577,6 +589,7 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({ ok: true }),
       seedCatalogFn: async () => {},
@@ -959,6 +972,7 @@ describe("completeCredentialSetup", () => {
         provider: "anthropic",
         apiKey: "sk-ant-good",
         pushWorkflow: noopPush,
+        publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
         testCredential: async () => ({ ok: true }),
       });
@@ -1002,6 +1016,7 @@ describe("completeCredentialSetup", () => {
       provider: "huggingface",
       apiKey: "hf_pasted_pat",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
@@ -1081,6 +1096,7 @@ describe("testAndPersistCredential (the fast half)", () => {
       provider: "anthropic",
       apiKey: "sk-ant-bad",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({ ok: false, message: "invalid x-api-key" }),
     });
@@ -1113,6 +1129,7 @@ describe("testAndPersistCredential (the fast half)", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       testCredential: async () => ({ ok: true }),
     });
@@ -1149,6 +1166,7 @@ describe("ensureSeeded (the slow half)", () => {
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
       pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       tenant: TENANT,
       provider: "anthropic",
@@ -1302,6 +1320,7 @@ describe("ensureSeeded (the slow half)", () => {
         cookies: ["session=abc"],
         hubUrl: "http://localhost:3000",
         pushWorkflow: noopPush,
+        publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
         tenant: TENANT,
         provider: "anthropic",

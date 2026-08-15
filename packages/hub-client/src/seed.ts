@@ -39,6 +39,10 @@ import {
   serializeHeartbeatWorkflow,
 } from "@corbits/heartbeat-workflow";
 import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
+import {
+  publishCorbitsToolsRegistry,
+  type PublishCorbitsToolsRegistryArgs,
+} from "@corbits/tool-registry-publish";
 import { CliError } from "./errors";
 import { parseAs, type ApiCall } from "./hub";
 import { CATALOG_SEEDS } from "./catalog-seed-data";
@@ -565,6 +569,17 @@ export type SeedTenant = {
   domain: string;
 };
 
+/**
+ * Publishes the tenant's `corbits-tools` package-registry asset ahead
+ * of any workflow deploy. Defaults to the real
+ * `publishCorbitsToolsRegistry`; a test double can replace it so a
+ * unit test never bundles a real tarball or dials the hub's tarball
+ * REST routes, the same way `pushWorkflow` replaces the real git push.
+ */
+export type ToolRegistryPublisher = (
+  args: Omit<PublishCorbitsToolsRegistryArgs, "fetchImpl">,
+) => Promise<unknown>;
+
 export type SeedTenantArgs = {
   api: ApiCall;
   cookies: string[];
@@ -572,6 +587,7 @@ export type SeedTenantArgs = {
   tenant: SeedTenant;
   model: ModelSource;
   pushWorkflow: WorkflowPusher;
+  publishToolRegistry?: ToolRegistryPublisher;
   log: (line: string) => void;
   workflows?: readonly DefaultWorkflow[];
   sleep?: (ms: number) => Promise<void>;
@@ -634,6 +650,33 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
         action: grant.action,
       },
       log,
+    );
+  }
+
+  // Deploying any workflow that pins a `@corbits/*` tool package (the
+  // "assistant" default workflow pins `@corbits/memory-tools`) needs
+  // the tenant's `corbits-tools` package-registry asset to already
+  // carry that package's tarball, or the closure resolver fails the
+  // launch with "unknown registry". Publishing ahead of the deploy
+  // loop below — idempotent, and cheap relative to a workflow deploy —
+  // means every seed run is a full seed, not one that skips whichever
+  // workflow happens to pin an unresolved package.
+  const publishToolRegistry =
+    args.publishToolRegistry ?? publishCorbitsToolsRegistry;
+  try {
+    await publishToolRegistry({
+      api,
+      cookies,
+      hubUrl,
+      tenantId: tenant.tenantId,
+      log,
+    });
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new CliError(
+      `publishing the corbits-tools package-registry asset failed: ${message}`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+      { cause },
     );
   }
 
