@@ -13,6 +13,7 @@
 // comment) never appears in this scoped listing, while a genuine
 // top-level deployment run does.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { createDB, runMigrations, dropSchema } from "@intx/db";
 import { schema } from "@intx/db";
 
@@ -39,6 +40,23 @@ describeIfDb("listTopLevelRuns", () => {
   });
 
   afterAll(async () => {
+    // `applyFoldedRunsMigrations` always lands `folded_run` in its own
+    // fixed, global `folded_runs` schema — unlike the platform tables
+    // above, it is never scoped by `SCHEMA` — so dropping `SCHEMA`
+    // alone would leave this suite's marker rows behind for the next
+    // run against the same shared e2e database to collide with.
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      for (const id of [
+        "run_channel_host1",
+        "run_invited_agent1",
+        "run_task1",
+      ]) {
+        await db.delete(foldedRun).where(eq(foldedRun.id, id));
+      }
+    } finally {
+      await close();
+    }
     await dropSchema(target, { schema: SCHEMA });
   });
 

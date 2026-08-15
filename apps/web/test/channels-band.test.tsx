@@ -79,6 +79,8 @@ function runningTask(overrides: Record<string, unknown> = {}) {
     modelPreference: null,
     status: "running",
     runId: "run_1",
+    runIds: ["run_1"],
+    stepCount: 1,
     resultMailId: null,
     createdAt: "2026-08-14T00:00:00.000Z",
     completedAt: null,
