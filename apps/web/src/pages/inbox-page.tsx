@@ -19,9 +19,11 @@ import type { APIQuery } from "@corbits/api-query";
 import { QueryView, SignedOutNotice } from "@corbits/api-query";
 import { listTenantInvitableDefinitions } from "@corbits/chat-ui";
 import {
-  createManualAgentSelectionStrategy,
+  createMyraAgentSelectionStrategy,
   createTask,
+  dispatchPlanner,
   listCatalogModels,
+  MYRA_AUTO_SELECTION_ID,
   TaskComposerDialog,
 } from "@corbits/tasks-ui";
 
@@ -187,6 +189,9 @@ function InboxDetail({
   const approvalId = approvalIdFromItem(item);
   const run = runRefFromItem(item);
   const channel = channelRefFromItem(item);
+  // `MyraChoiceSummary` ("why this agent?") needs a `plannerRunId` on
+  // the inbox item, which `InboxItemDetail` doesn't carry today — no
+  // backend surface threads it through yet. CL-6051 follow-up.
   const artifacts = artifactRefsFromItem(item);
 
   return (
@@ -407,9 +412,19 @@ export function InboxPage({
     if (selectedTenantId === null) return;
     setTaskSubmitting(true);
     setTaskError(null);
-    createTask(selectedTenantId, input)
+    // "Let Myra choose" (the sentinel `definitionId`) routes to the
+    // planner instead of launching a real agent directly — Myra picks
+    // or creates the agent and dispatches it herself. Only a real,
+    // manually-picked `definitionId` is worth remembering as the MRU
+    // agent; the sentinel would corrupt that convention.
+    const dispatch =
+      input.definitionId === MYRA_AUTO_SELECTION_ID
+        ? dispatchPlanner(selectedTenantId, { outcome: input.prompt })
+        : createTask(selectedTenantId, input).then(() => {
+            saveMostRecentTaskAgent(selectedTenantId, input.definitionId);
+          });
+    dispatch
       .then(() => {
-        saveMostRecentTaskAgent(selectedTenantId, input.definitionId);
         setTaskDialogOpen(false);
       })
       .catch((cause: unknown) => {
@@ -424,13 +439,14 @@ export function InboxPage({
 
   // A stable strategy reference across renders — recreating it every
   // render would remount the strategy component on every parent
-  // re-render, refetching the agent list mid-composer. Wired to the
-  // manual picker here, explicitly, per `AgentSelectionStrategy`'s own
-  // "no default, no fallback" contract — a future strategy (CL-6050)
-  // is a different value passed to this same prop, never a change to
-  // TaskComposerDialog itself.
+  // re-render, refetching the agent list mid-composer. Wired to
+  // `createMyraAgentSelectionStrategy` (CL-6051): "Let Myra choose" is
+  // the default, one click away from the same manual list the prior
+  // strategy rendered — `TaskComposerDialog` needs no change either
+  // way, per `AgentSelectionStrategy`'s own "no default, no fallback"
+  // contract.
   const taskAgentSelectionStrategy = useMemo(
-    () => createManualAgentSelectionStrategy(listTenantInvitableDefinitions),
+    () => createMyraAgentSelectionStrategy(listTenantInvitableDefinitions),
     [],
   );
 
