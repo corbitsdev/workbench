@@ -146,6 +146,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   let tenantId: string;
   let domain: string;
   let channelId: string;
+  let chatId: string;
 
   beforeAll(async () => {
     const url = databaseUrl;
@@ -693,48 +694,6 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     return echoDefinition.id;
   }
 
-  test("kind filter excludes and includes by kind", async () => {
-    const throwaway = await createChannel({
-      kind: "chat",
-      definitionId: await echoDefinitionId(),
-    });
-    expectStatus("create throwaway chat", throwaway, 201);
-    const throwawayId = stringField(
-      throwaway.data,
-      "id",
-      "create throwaway chat",
-    );
-
-    const channelKindListed = await api(
-      "GET",
-      `/api/tenants/${tenantId}/chat/channels?kind=channel`,
-      undefined,
-      user1.cookies,
-    );
-    expectStatus("list kind=channel", channelKindListed, 200);
-    const channelKindIds = arrayField(
-      channelKindListed.data,
-      "items",
-      "list kind=channel",
-    ).map((item) => (item as { id: string }).id);
-    expect(channelKindIds).not.toContain(throwawayId);
-    expect(channelKindIds).toContain(channelId);
-
-    const chatKindListed = await api(
-      "GET",
-      `/api/tenants/${tenantId}/chat/channels?kind=chat`,
-      undefined,
-      user1.cookies,
-    );
-    expectStatus("list kind=chat", chatKindListed, 200);
-    const chatKindIds = arrayField(
-      chatKindListed.data,
-      "items",
-      "list kind=chat",
-    ).map((item) => (item as { id: string }).id);
-    expect(chatKindIds).toContain(throwawayId);
-  }, 90_000);
-
   test("a chat auto-invites the echo agent and delivers un-mentioned messages to it", async () => {
     const chatCreated = await createChannel({
       kind: "chat",
@@ -743,7 +702,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     expectStatus("create chat", chatCreated, 201);
     expect(stringField(chatCreated.data, "kind", "create chat")).toBe("chat");
     expect(stringField(chatCreated.data, "title", "create chat")).toBe("echo");
-    const chatId = stringField(chatCreated.data, "id", "create chat");
+    chatId = stringField(chatCreated.data, "id", "create chat");
 
     const chatParticipants = arrayField(
       chatCreated.data,
@@ -792,6 +751,54 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     expect(agentTexts.filter((text) => text === unmentionedText)).toHaveLength(
       1,
     );
+  }, 90_000);
+
+  // Runs after the echo chat above so its own create call — same
+  // tenant, same agent — proves the find-or-create path (CL-6070): a
+  // chat with an agent already talked to reopens that chat rather than
+  // forking a duplicate, so this asserts 200 and the same id back,
+  // never a fresh 201.
+  test("kind filter excludes and includes by kind, and re-creating an existing agent chat reuses it", async () => {
+    const reopened = await createChannel({
+      kind: "chat",
+      definitionId: await echoDefinitionId(),
+    });
+    expectStatus("re-create existing agent chat", reopened, 200);
+    expect(stringField(reopened.data, "id", "re-create existing agent chat")).toBe(
+      chatId,
+    );
+
+    const channelKindListed = await api(
+      "GET",
+      `/api/tenants/${tenantId}/chat/channels?kind=channel`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus("list kind=channel", channelKindListed, 200);
+    const channelKindIds = arrayField(
+      channelKindListed.data,
+      "items",
+      "list kind=channel",
+    ).map((item) => (item as { id: string }).id);
+    expect(channelKindIds).not.toContain(chatId);
+    expect(channelKindIds).toContain(channelId);
+
+    const chatKindListed = await api(
+      "GET",
+      `/api/tenants/${tenantId}/chat/channels?kind=chat`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus("list kind=chat", chatKindListed, 200);
+    const chatKindIds = arrayField(
+      chatKindListed.data,
+      "items",
+      "list kind=chat",
+    ).map((item) => (item as { id: string }).id);
+    // Exactly one row for the echo agent chat — not two — is the whole
+    // point of CL-6070: the sidebar never shows a duplicate for an agent
+    // already talked to.
+    expect(chatKindIds.filter((id) => id === chatId)).toHaveLength(1);
   }, 90_000);
 
   // Settings is exercised last: `PATCH .../settings` folds the patch

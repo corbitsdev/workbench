@@ -244,6 +244,177 @@ describe("POST /channels", () => {
   });
 });
 
+describe("POST /channels — agent chat is find-or-create, not create (CL-6070)", () => {
+  test("creating a chat with the same agent twice reuses the first chat instead of forking a duplicate", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const first = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    expect(first.response.status).toBe(201);
+
+    const second = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    expect(second.response.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+    expect(second.body.kind).toBe("chat");
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.launchInviteCalls).toHaveLength(1);
+    const chats = await deps.store.listChannelSettings(TENANT.id, "chat");
+    expect(chats).toHaveLength(1);
+  });
+
+  test("a new agent chat records its definitionId for future dedup", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { body } = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    const stored = await deps.store.getChannelSettings(TENANT.id, body.id);
+    expect(stored?.settings["chat/definitionId"]).toBe("wfd_echo");
+  });
+
+  test("a chat minted before chat/definitionId existed is still found, by reverse-resolving its agent participant's address", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        resolveDefinitionIdByAddress: async (address) =>
+          address === "ins_legacy@acme.example" ? "wfd_echo" : undefined,
+      }),
+    });
+    const legacyChannelId = "run_legacy1";
+    const legacyTenant = await deps.tenancy.createChannelTenant({
+      parentTenantId: TENANT.id,
+      channelId: legacyChannelId,
+      name: "echo",
+      creatorUserId: "prn_alice",
+    });
+    await deps.store.createChannelSettings({
+      tenantId: TENANT.id,
+      channelId: legacyChannelId,
+      settings: {
+        "chat/kind": "chat",
+        "chat/pinned": false,
+        "chat/name": "echo",
+        "chat/participants": [
+          { address: "ins_legacy@acme.example", handle: "echo" },
+        ],
+      },
+      updatedBy: "prn_alice",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const { response, body } = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    expect(response.status).toBe(200);
+    expect(body.id).toBe(legacyChannelId);
+    expect(body.tenancy).toEqual({
+      tenantId: legacyTenant.tenantId,
+      parentTenantId: TENANT.id,
+      slug: legacyTenant.slug,
+    });
+    const chats = await deps.store.listChannelSettings(TENANT.id, "chat");
+    expect(chats).toHaveLength(1);
+  });
+
+  test("two pre-existing duplicate chats for the same agent resolve to the oldest, not whichever the caller hits first", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const olderChannelId = "run_older1";
+    await deps.tenancy.createChannelTenant({
+      parentTenantId: TENANT.id,
+      channelId: olderChannelId,
+      name: "echo",
+      creatorUserId: "prn_alice",
+    });
+    await deps.store.createChannelSettings({
+      tenantId: TENANT.id,
+      channelId: olderChannelId,
+      settings: {
+        "chat/kind": "chat",
+        "chat/pinned": false,
+        "chat/name": "echo",
+        "chat/definitionId": "wfd_echo",
+        "chat/participants": [],
+      },
+      updatedBy: "prn_alice",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const newerChannelId = "run_newer1";
+    await deps.tenancy.createChannelTenant({
+      parentTenantId: TENANT.id,
+      channelId: newerChannelId,
+      name: "echo",
+      creatorUserId: "prn_alice",
+    });
+    await deps.store.createChannelSettings({
+      tenantId: TENANT.id,
+      channelId: newerChannelId,
+      settings: {
+        "chat/kind": "chat",
+        "chat/pinned": false,
+        "chat/name": "echo",
+        "chat/definitionId": "wfd_echo",
+        "chat/participants": [],
+      },
+      updatedBy: "prn_alice",
+    });
+
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { response, body } = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    expect(response.status).toBe(200);
+    expect(body.id).toBe(olderChannelId);
+  });
+
+  test("a message sent to the found-or-created chat still auto-responds without a mention", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const first = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    const second = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    expect(second.response.status).toBe(200);
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const mailBefore = platform.sentMail.length;
+    await sendText(app, second.body.id, "hello");
+
+    expect(platform.sentMail.length).toBeGreaterThan(mailBefore);
+    const fanOut = platform.sentMail[platform.sentMail.length - 1];
+    expect(fanOut?.channelId).toBe("ins_invited1");
+    expect(fanOut?.fromChannelId).toBe(first.body.id);
+  });
+});
+
 describe("POST /channels — chat with a person (DM)", () => {
   function registerBob(deps: ReturnType<typeof buildDeps>) {
     const tenancy = deps.tenancy as ReturnType<
