@@ -304,6 +304,15 @@ describe("GranolaWebhookCard", () => {
         "stops verifying immediately",
       );
 
+      // The bound-and-hidden state reuses the same react-ui-backed field
+      // row the rest of the dialog uses (see webhook-secret-panel.tsx),
+      // not a hand-rolled Tailwind box — and that row is zero-radius like
+      // every other settings surface.
+      expect(document.body.innerHTML).toContain("settings-webhook-field-box");
+      expect(document.body.innerHTML).not.toContain("rounded-[var(--ui-radius");
+      expect(document.body.textContent).toContain("Hook URL");
+      expect(document.body.textContent).toContain("Signing secret");
+
       const rotateButton = [...document.body.querySelectorAll("button")].find(
         (button) => button.textContent === "Rotate secret",
       );
