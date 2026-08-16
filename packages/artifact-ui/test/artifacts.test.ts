@@ -1,15 +1,10 @@
-// The Library page's domain rules, tested at the seam: sorting, filtering,
-// and kind-to-color assignment never touch a network call, so they are
-// exercised directly against fixture `ArtifactSummary` rows.
+// The Library page's domain rules, tested at the seam: parsing, sorting,
+// and filtering never touch a network call, so they are exercised directly
+// against fixture `ArtifactSummary` rows.
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  ArtifactSummary,
-  artifactKindColor,
-  filterArtifacts,
-  sortArtifacts,
-} from "../src/index";
+import { ArtifactSummary, filterArtifacts, sortArtifacts } from "../src/index";
 
 function artifact(
   overrides: Partial<ArtifactSummary> & { readonly id: string },
@@ -90,15 +85,5 @@ describe("filterArtifacts", () => {
 
   test("no match empties the result rather than falling back to all", () => {
     expect(filterArtifacts([report, csv], "nonexistent")).toEqual([]);
-  });
-});
-
-describe("artifactKindColor", () => {
-  test("is deterministic for the same kind", () => {
-    expect(artifactKindColor("deck")).toBe(artifactKindColor("deck"));
-  });
-
-  test("assigns a color class", () => {
-    expect(artifactKindColor("deck")).toMatch(/^bg-/);
   });
 });
