@@ -73,8 +73,18 @@ const OAUTH_CARDS: readonly OAuthConnectorCard[] = [
   { id: "huggingface", displayName: "Hugging Face" },
 ];
 
-function oauthStartHref(connectorId: string): string {
-  return `/api/onboarding/oauth/${connectorId}/start?return=%2Fsettings%2Fconnections`;
+/**
+ * Exported so other surfaces (the plugins gallery's connect panel) can send
+ * the same OAuth connectors through the same existing onboarding route
+ * instead of re-deriving this URL — see the comment above `OAUTH_CARDS` for
+ * why this still targets `/api/onboarding/oauth/...` rather than the
+ * generalized per-connector factory.
+ */
+export function oauthStartHref(
+  connectorId: string,
+  returnPath = "/settings/connections",
+): string {
+  return `/api/onboarding/oauth/${connectorId}/start?return=${encodeURIComponent(returnPath)}`;
 }
 
 type ConnectionsData = {

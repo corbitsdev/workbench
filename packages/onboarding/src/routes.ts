@@ -42,6 +42,7 @@ import {
 import {
   CONNECTOR_REGISTRY,
   createOAuthConnectRoutes,
+  DEFAULT_RETURN_PATH_ALLOWLIST,
   type ConnectorDescriptor,
   type OAuthExchangeResult,
 } from "@workbench/connections";
@@ -535,6 +536,12 @@ export function createOnboardingRoutes(
       recentlyConnected,
       afterConnected,
       defaultReturnPath: "/onboarding",
+      // The plugins gallery (CL-6090) reuses this same onboarding OAuth
+      // route for its one-flow connect panel — `/plugins` joins the
+      // default allowlist rather than widening
+      // `DEFAULT_RETURN_PATH_ALLOWLIST` itself, per that constant's own
+      // doc comment.
+      returnPathAllowlist: [...DEFAULT_RETURN_PATH_ALLOWLIST, "/plugins"],
     }),
   );
 
