@@ -65,14 +65,22 @@ function Shell({
   readonly onSignOut: () => void;
 }) {
   // One client per signed-in shell mount — above BenchProvider so principals
-  // and every tenant-scoped page share the same cache.
-  const queryClient = useMemo(() => createAppQueryClient(), []);
+  // and every tenant-scoped page share the same cache. Wired to the same
+  // `onSignOut` the account menu uses: any query or mutation that
+  // discovers the session is no longer valid (a hub restarted on an empty
+  // DB, a cookie for a deleted user, an expired session) routes the whole
+  // shell back to login instead of leaving one panel stuck showing "sign
+  // in required" beside chrome that still renders as if signed in.
+  const queryClient = useMemo(
+    () => createAppQueryClient(onSignOut),
+    [onSignOut],
+  );
   const route = APP_ROUTES.find((candidate) =>
     matchesRoute(candidate.path, path),
   );
   return (
     <QueryClientProvider client={queryClient}>
-      <NavigationProvider navigate={navigate}>
+      <NavigationProvider navigate={navigate} onSignOut={onSignOut}>
         <BenchProvider>
           <ProviderHealthProvider>
             <ComposerInsertionProvider>

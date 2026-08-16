@@ -5,6 +5,10 @@
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
+import { useEffect, useState } from "react";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { App } from "../src/app";
@@ -85,6 +89,73 @@ describe("session probe", () => {
     const state = await fetchSession();
     expect(state.kind).toBe("error");
   });
+
+  // CL-6105: a session body that parses as JSON but carries no usable
+  // `user` (the shape a hub restarted against an empty DB, or a cookie
+  // for a since-deleted user, can answer with) must still land on login
+  // — never the "connection lost" error screen, which would strand the
+  // app in a broken half-state instead of the auth screen.
+  test("a session body with no user means signed out, not a connectivity error", async () => {
+    stubFetch(() => json({ session: { id: "sess_1" } }));
+    const state = await fetchSession();
+    expect(state).toEqual({ kind: "signed-out" });
+  });
+});
+
+/** Mirrors `main.tsx`'s `Root`'s own probe-on-mount wiring, minus history
+ * and provisioning — the minimum needed to prove a real DOM mount, driven
+ * by the real `fetchSession`, never renders the shell for an invalid
+ * session. */
+function ProbedApp() {
+  const [session, setSession] = useState<SessionState>({ kind: "loading" });
+  useEffect(() => {
+    void fetchSession().then(setSession);
+  }, []);
+  return (
+    <ThemeProvider>
+      <App
+        path="/"
+        navigate={noop}
+        session={session}
+        onSignedIn={noop}
+        onSignOut={noop}
+        onRetry={noop}
+      />
+    </ThemeProvider>
+  );
+}
+
+describe("an invalid session always lands on login", () => {
+  let container: HTMLDivElement | null = null;
+  let root: Root | null = null;
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    if (root !== null) {
+      act(() => root?.unmount());
+      root = null;
+    }
+    if (container !== null) {
+      container.remove();
+      container = null;
+    }
+  });
+
+  test("a null session probe renders the login screen, never the shell", async () => {
+    stubFetch(() => json(null));
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(<ProbedApp />);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(container.querySelector('[data-testid="shell-sidebar"]')).toBeNull();
+    expect(container.textContent).toContain("Welcome back");
+  });
 });
 
 describe("email and password calls", () => {
@@ -142,13 +213,13 @@ describe("the gate", () => {
     expect(markup).not.toContain("Sign out");
   });
 
-  test("signed in renders the shell with the sidebar and avatar settings control", () => {
+  test("signed in renders the shell with the sidebar and the avatar's account menu trigger", () => {
     const markup = renderApp({ kind: "signed-in", user });
-    // The one sidebar plus the account affordance → settings (sign-out is
-    // context-menu only — no visible "Sign out" chrome in the mock).
+    // The one sidebar plus the account affordance — a menu (Settings, Sign
+    // out), not a plain link straight to settings (CL-6105).
     expect(markup).toContain('data-testid="shell-sidebar"');
     expect(markup).toContain("shell-sidebar-avatar-btn");
-    expect(markup).toContain('aria-label="ada · Settings"');
+    expect(markup).toContain('aria-label="ada · Account menu"');
     expect(markup).not.toContain("user_1");
   });
 

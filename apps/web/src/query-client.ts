@@ -2,7 +2,7 @@
 // tenant-scoped reads, so navigating between pages reuses data and a bench
 // switch can drop the previous bench's tenant keys in a single call.
 
-import { QueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 
 import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
 import { channelsQueryKey } from "@corbits/chat-ui";
@@ -25,8 +25,45 @@ export function shouldRetryQuery(
   return failureCount < 3;
 }
 
-export function createAppQueryClient(): QueryClient {
+/**
+ * True for any error this app's hub requests throw to mean "the hub no
+ * longer recognizes this session" — a 401 from `useAPIQuery` surfaces as
+ * `UnauthenticatedError`, everywhere else (mutations, hand-rolled fetches
+ * in `agents-api.ts`/`routines-api.ts`/etc.) as an `ApiQueryError` whose
+ * `status` is 401. Both mean the same thing: the DB was reset, the
+ * session's user was deleted, or the cookie simply expired mid-session.
+ */
+export function isAuthInvalidError(error: unknown): boolean {
+  if (error instanceof UnauthenticatedError) return true;
+  return error instanceof ApiQueryError && error.status === 401;
+}
+
+/**
+ * One QueryClient for the signed-in shell, wired so ANY query or mutation
+ * that discovers the session is no longer valid — a restarted hub on an
+ * empty DB, a cookie for a deleted user, a session that simply expired —
+ * routes the whole app back to the login screen, not just the one widget
+ * that happened to notice. Without this, a query that 401s renders its own
+ * local "sign in required" box while the rest of the shell (nav, other
+ * panels) keeps rendering as if nothing happened — the broken half-state
+ * this hook exists to prevent. `onAuthInvalid` is called at most once per
+ * invalid-session discovery; the caller is responsible for making it
+ * idempotent (main.tsx's `handleSignOut` already is).
+ */
+export function createAppQueryClient(
+  onAuthInvalid: () => void = () => undefined,
+): QueryClient {
   return new QueryClient({
+    queryCache: new QueryCache({
+      onError: (error) => {
+        if (isAuthInvalidError(error)) onAuthInvalid();
+      },
+    }),
+    mutationCache: new MutationCache({
+      onError: (error) => {
+        if (isAuthInvalidError(error)) onAuthInvalid();
+      },
+    }),
     defaultOptions: {
       queries: {
         staleTime: 30_000,

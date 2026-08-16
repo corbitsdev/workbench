@@ -41,12 +41,13 @@ export async function fetchSession(): Promise<SessionState> {
     const body: unknown = await response.json();
     if (body === null) return { kind: "signed-out" };
     const parsed = SessionPayload(body);
-    if (parsed instanceof type.errors) {
-      return {
-        kind: "error",
-        message: `Unexpected session shape: ${parsed.summary}`,
-      };
-    }
+    // A session payload that parses but is missing its user (or is
+    // shaped unrecognizably) means the hub answered without a session
+    // this app can use — a restarted hub on an empty DB, or a cookie for
+    // a user that no longer exists. That is "no session", not a genuine
+    // connectivity failure: it routes to the login screen exactly like a
+    // 401 or a `null` body, never to the "connection lost" error state.
+    if (parsed instanceof type.errors) return { kind: "signed-out" };
     return { kind: "signed-in", user: parsed.user };
   } catch (cause) {
     return {
