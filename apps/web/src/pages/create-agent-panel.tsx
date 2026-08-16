@@ -1,9 +1,15 @@
-// The agent-create panel (CL-6074): the shared component behind both
-// Settings → Agents' "New agent" action and the new-chat picker's
-// "New agent…" affordance — one component, one create path, wired to
-// land the person in a chat with the agent it just created (see each
-// entry point's `onCreated`, and `../agent-chat-launch.ts` for the
-// shared "exact same path picking an existing agent uses" hop).
+// The agent-create panel (CL-6074): built for Settings → Agents' create
+// action, since retired (CL-6121) — agent configuration lives
+// per-workbench now. The "+ New workbench" picker also used to open this
+// panel, then moved to instant creation (CL-6081) and, since CL-6138, to
+// THE one creation verb: `instant-agent-create.ts` mints straight off the
+// account's default setup template, no drafting, no dialog. This
+// component itself is unreachable from any entry point today, kept only
+// as `describe-first-workbench.tsx` (CL-6104) once needed drafting
+// machinery — should a future entry point want an explicit, drafted
+// agent again, this is where that lands the person in a chat with it
+// (see `../agent-chat-launch.ts` for the shared "exact same path picking
+// an existing agent uses" hop).
 //
 // Deliberately small above the fold: an identity swatch, a Name field,
 // and "Get started" is the whole happy path — a plain-language purpose
@@ -389,7 +395,7 @@ export function CreateAgentPanel({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent side="right">
         <DialogHeader>
-          <DialogTitle>New agent</DialogTitle>
+          <DialogTitle>New workbench</DialogTitle>
           <DialogDescription>
             A name is enough to start — Myra drafts the starting instructions,
             and you teach it the rest in conversation.
@@ -411,7 +417,7 @@ export function CreateAgentPanel({
           <div className="create-agent-identity">
             <Avatar
               initials={initialsFromName(values.name)}
-              label={values.name.trim() === "" ? "New agent" : values.name}
+              label={values.name.trim() === "" ? "New workbench" : values.name}
               tone={tone}
               size="lg"
             />

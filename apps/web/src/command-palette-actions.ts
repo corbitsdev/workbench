@@ -1,62 +1,63 @@
 // The command palette's `>` action commands: everything the shell mock's
 // `buildCmdkEntries` lists under "Commands" that this app can actually wire
-// today. Most create commands use the off-route-safe pending-flag pattern
-// `library-upload.ts` established: the palette can fire from any page,
-// before the target page (and its window-event listener) has mounted, so a
-// same-tick `dispatchEvent` would be a race the listener always loses.
-// `pending-dialog-request.ts` generalizes that pattern; the target
-// pages/sections (skills-settings-section.tsx, chat-page.tsx) consume the
-// pending flag on mount. Skills moved from its own route into a Settings
-// section (CL-5990) — "New skill" lands on `/settings/skills`. The global
-// agents settings tab was later removed (CL-6121); "New agent" now mints a
-// fresh workbench, same as "New workbench". "New thread" is out of scope
-// (killed by owner decision).
+// today. Skills and tasks still use the off-route-safe pending-flag
+// pattern `library-upload.ts` established: the palette can fire from any
+// page, before the target page (and its window-event listener) has
+// mounted, so a same-tick `dispatchEvent` would be a race the listener
+// always loses. `pending-dialog-request.ts` generalizes that pattern; the
+// target pages/sections (skills-settings-section.tsx, inbox-page.tsx)
+// consume the pending flag on mount. Skills moved from its own route into
+// a Settings section (CL-5990) — "New skill" lands on `/settings/skills`.
 //
-// "New routine" (CL-6125) needs none of that: it opens the canvas column's
-// routine pane, and canvas state lives in `ShellChromeProvider` above every
-// route, not inside a page that has to mount first — so `requestNewRoutine`
-// just calls the caller's own `openRoutine` (from `useOpenRoutineInCanvas`)
-// synchronously, no pending flag, no window event.
+// Workbench creation is not one of those — there is no dialog to race, no
+// page to mount first: one click mints a fresh Myra workbench and
+// navigates straight into it (CL-6138, superseding the CL-6089/CL-6121
+// picker-and-dialog design). "new-channel" and "new-agent" both funnel
+// through `requestNewWorkbench`, the same one-creation-verb hop the
+// sidebar's own "+" control uses. "New thread" is out of scope (killed by
+// owner decision).
+//
+// "New routine" (CL-6125) needs none of the pending-flag machinery either:
+// it opens the canvas column's routine pane, and canvas state lives in
+// `ShellChromeProvider` above every route, not inside a page that has to
+// mount first — so `requestNewRoutine` just calls the caller's own
+// `openRoutine` (from `useOpenRoutineInCanvas`) synchronously, no pending
+// flag, no window event.
+
+import { toast } from "@corbits/react-ui";
 
 import { createPendingDialogRequest } from "@corbits/shell-layout";
-import {
-  CHANNEL_PATH_PREFIX,
-  channelPath,
-  isChannelPath,
-} from "./channel-path";
+import { CHANNEL_PATH_PREFIX, channelPath } from "./channel-path";
+import { createAgentAndLaunch } from "./instant-agent-create";
 import { ensureMyraChannel } from "./myra-channel";
 import { requestLibraryUpload } from "./library-upload";
 import type { RoutinePanelSubject } from "./shell/canvas-availability";
 
-export const NEW_CHANNEL_EVENT = "workbench:chat:new-channel";
 export const NEW_SKILL_EVENT = "workbench:skills:create";
 export const NEW_TASK_EVENT = "workbench:tasks:create";
 
-const newChannelRequest = createPendingDialogRequest();
 const newSkillRequest = createPendingDialogRequest();
 const newTaskRequest = createPendingDialogRequest();
 
-/** Consumed by chat-page.tsx on mount. */
-export const consumePendingNewChannel = newChannelRequest.consumePending;
-
 /**
- * Requests the new-workbench picker — the same off-route-safe hop
- * `runActionCommand("new-channel", …)` uses, pulled out so every other
- * caller with no command-palette context (the sidebar's own "+ New
- * workbench" control, the "New agent" command, the routines page's "no
- * taskable agents" empty state) can request it too. Agent creation has no
- * route of its own — per the product model, "create an agent" mints a
- * fresh workbench.
+ * The one creation verb: mints a fresh Myra workbench and navigates
+ * straight into it — no dialog, no picker. Every "create a workbench"
+ * affordance in the app (the sidebar's own "+" control, the command
+ * palette's "New workbench", the routines page's "no taskable agents"
+ * empty state) funnels through this one function. Fails closed with a
+ * toast rather than a silent no-op, e.g. a bench that predates seeding
+ * and has no default setup template.
  */
-export function requestNewWorkbench(args: {
-  readonly alreadyOnConversation: boolean;
-  readonly navigateToConversations: () => void;
-}): void {
-  newChannelRequest.request({
-    alreadyOnTargetRoute: args.alreadyOnConversation,
-    navigateToTargetRoute: args.navigateToConversations,
-    dispatch: () => window.dispatchEvent(new CustomEvent(NEW_CHANNEL_EVENT)),
-  });
+export async function requestNewWorkbench(args: {
+  readonly tenantId: string | null;
+  readonly navigate: (to: string) => void;
+}): Promise<void> {
+  if (args.tenantId === null) return;
+  try {
+    await createAgentAndLaunch(args.tenantId, args.navigate);
+  } catch {
+    toast("Couldn't create the workbench — try again.");
+  }
 }
 /** Consumed by skills-settings-section.tsx on mount. */
 export const consumePendingNewSkill = newSkillRequest.consumePending;
@@ -81,7 +82,9 @@ export function requestNewRoutine(args: {
   args.navigateToRoutines();
   args.openRoutine({
     routineId: null,
-    ...(args.initialName !== undefined ? { initialName: args.initialName } : {}),
+    ...(args.initialName !== undefined
+      ? { initialName: args.initialName }
+      : {}),
     ...(args.initialInstruction !== undefined
       ? { initialInstruction: args.initialInstruction }
       : {}),
@@ -90,7 +93,6 @@ export function requestNewRoutine(args: {
 
 /** Test helper — drop leftover pending state between cases. */
 export function resetPendingDialogRequests(): void {
-  newChannelRequest.resetPending();
   newSkillRequest.resetPending();
   newTaskRequest.resetPending();
 }
@@ -122,9 +124,13 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "new-channel",
     title: "New workbench",
-    subtitle: "Search or create an agent",
+    subtitle: "Mint a fresh workbench with Myra",
   },
-  { id: "new-agent", title: "New agent", subtitle: "Create with v1" },
+  {
+    id: "new-agent",
+    title: "New workbench",
+    subtitle: "Mint a fresh workbench with Myra",
+  },
   {
     id: "new-routine",
     title: "New routine",
@@ -174,30 +180,23 @@ export type ActionCommandContext = {
 };
 
 /**
- * Runs one action command. The four create commands go through a pending
- * flag when the palette fires them off-route (see the module doc), so the
- * target page's own mount effect opens the dialog instead of a dispatch
- * racing against that page's not-yet-mounted listener.
+ * Runs one action command. "new-channel" and "new-agent" both mint
+ * directly — see `requestNewWorkbench`'s doc; "new-skill" and "new-task"
+ * still go through a pending flag when the palette fires them off-route
+ * (see the module doc), so the target page's own mount effect opens the
+ * dialog instead of a dispatch racing against that page's not-yet-mounted
+ * listener.
  */
 export async function runActionCommand(
   id: ActionCommandId,
   ctx: ActionCommandContext,
 ): Promise<void> {
   switch (id) {
-    case "new-channel": {
-      requestNewWorkbench({
-        alreadyOnConversation: isChannelPath(ctx.path),
-        navigateToConversations: () => ctx.navigate(channelPath(null)),
-      });
-      return;
-    }
+    case "new-channel":
     case "new-agent": {
-      // The global agents settings tab is gone — per the product model,
-      // "Create new agent" mints a fresh workbench (same hop as
-      // "New workbench"/the sidebar's own control).
-      requestNewWorkbench({
-        alreadyOnConversation: isChannelPath(ctx.path),
-        navigateToConversations: () => ctx.navigate(channelPath(null)),
+      await requestNewWorkbench({
+        tenantId: ctx.tenantId,
+        navigate: ctx.navigate,
       });
       return;
     }

@@ -4,10 +4,10 @@ import type * as React from "react";
 // segmented rail filled in the host's accent color, and one calm sentence
 // of per-step guidance underneath. This is generic dialog chrome with no
 // chat-specific behavior; it lives here only because `chat-ui` is the
-// lowest common package every current caller — `NewChannelDialog` and
-// `CreateRoutineDialog` in this package's own tree, plus the onboarding
-// wizard in `apps/web` (which already depends on `chat-ui`) — can reach
-// without adding a new package dependency. It belongs in
+// lowest common package every current caller — `CreateRoutineDialog` in
+// this package's own tree, plus the onboarding wizard in `apps/web`
+// (which already depends on `chat-ui`) — can reach without adding a new
+// package dependency. It belongs in
 // `@corbits/react-ui` long-term as a shared primitive; flagged here, not
 // lifted, since that repo is out of bounds for this change.
 export interface DialogStepperStep {

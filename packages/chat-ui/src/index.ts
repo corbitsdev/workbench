@@ -37,10 +37,8 @@ export type {
   ComposerHandle,
   ComposerSendVisualState,
 } from "./composer";
-export { FirstRunComposer, textWithAttachments } from "./first-run-composer";
 export { renamePayload, rowMenuLabels } from "./sidebar";
 
-export { NewChannelDialog } from "./new-channel-dialog";
 export { InviteAgentDialog } from "./invite-agent-dialog";
 export { DialogStepper, DialogStepAccordion } from "./dialog-stepper";
 export type {

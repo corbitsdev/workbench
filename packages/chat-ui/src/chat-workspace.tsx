@@ -31,7 +31,6 @@ import {
   ChatApiError,
   channelsQueryKey,
   channelsQueryKeyPrefix,
-  createChannel,
   describeChatError,
   forkThread,
   inviteAgent,
@@ -41,7 +40,6 @@ import {
   listPinnedMessages,
   listThreadMessages,
   listThreads,
-  patchChannelSettings,
   pinMessage,
   putReadState,
   sendMessage,
@@ -53,7 +51,6 @@ import {
 import type {
   Channel,
   ChannelThread,
-  CreateChannelInput,
   MessageItem,
   ParticipantRecord,
   Part,
@@ -69,9 +66,7 @@ import type {
 } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
-import type { MentionInviteIntent } from "./mentions";
-import { NewChannelDialog } from "./new-channel-dialog";
-import type { PersonOption } from "./new-channel-dialog";
+import type { BringInMember, MentionInviteIntent } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
 import { CHAT_STRINGS } from "./strings";
 import { useStreamingReply } from "./streaming-reply";
@@ -432,10 +427,9 @@ function ChatWorkspaceInner({
   approvalActions,
   blockResponses,
   headerLeading,
-  listMembers,
   registerComposerInsert,
   onOpenRoutines,
-  onRequestNewAgent,
+  listMembers,
   onCreateRoutineInSpace,
   onOpenInsights,
   presenceMembers,
@@ -478,10 +472,6 @@ function ChatWorkspaceInner({
   readonly approvalActions?: ApprovalActions;
   readonly blockResponses?: BlockResponseActions;
   readonly headerLeading?: ReactNode;
-  /** The bench's people, for the new-chat dialog's People tab — see
-   * `NewChannelDialog`'s own prop note. Host-supplied, the same way
-   * `currentUser`/`tenant` are. */
-  readonly listMembers?: (tenantId: string) => Promise<readonly PersonOption[]>;
   /**
    * Hands the host a function that inserts text into the active channel's
    * composer, or `null` while no composer is mounted (loading/error states,
@@ -496,15 +486,10 @@ function ChatWorkspaceInner({
    * route the host owns, so opening it is a host-supplied hop the same way
    * `onOpenArtifact` is. */
   readonly onOpenRoutines?: () => void;
-  /**
-   * The new-chat picker's "New agent…" affordance, beneath its agent
-   * list — omitted entirely, the row doesn't render (same contract as
-   * `listMembers`). Firing this closes this component's own
-   * `NewChannelDialog` first, then delegates to the host, which owns
-   * the actual create-agent panel (an apps/web page component this
-   * package never depends on).
-   */
-  readonly onRequestNewAgent?: () => void;
+  /** Workspace members the mention popover's "Bring in…" group can
+   * offer — the same reduced listing the shell already fetches for its
+   * People views. Absent, the group only offers invitable agents. */
+  readonly listMembers?: (tenantId: string) => Promise<readonly BringInMember[]>;
 
   /**
    * "New routine in this space" — the header button and the composer's
@@ -559,11 +544,6 @@ function ChatWorkspaceInner({
   const [messagesState, setMessagesState] = useState<MessagesState>({
     kind: "loading",
   });
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [createChannelError, setCreateChannelError] = useState<string | null>(
-    null,
-  );
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   // null = channel root feed. A concrete id opens that thread in the same
   // geometry (timeline + composer). pendingParentMessageId is set when the
@@ -814,21 +794,13 @@ function ChatWorkspaceInner({
   );
 
   // Picking a default channel is this component's own fallback for "no
-  // channel named in the URL yet" — it must never fire while the New
-  // Channel dialog is open. That dialog's own submit is the user
-  // explicitly picking a channel; letting this effect's own
-  // `setActiveChannelId`/`onChannelChange` (and therefore `navigate`) fire
-  // concurrently with the dialog's in-flight create raced the two against
-  // each other over the same `activeChannelId`/URL (CL-6087). Once the
-  // dialog closes (submitted or cancelled) this re-evaluates and still
-  // covers the plain "no channel in the URL, nothing else going on" case.
+  // channel named in the URL yet".
   useEffect(() => {
     if (channelsState.kind !== "ready") return;
     if (activeChannelId !== null) return;
-    if (dialogOpen) return;
     const first = channelsState.channels[0] ?? channelsState.chats[0];
     if (first !== undefined) setActiveChannelId(first.id);
-  }, [channelsState, activeChannelId, dialogOpen]);
+  }, [channelsState, activeChannelId]);
 
   useEffect(() => {
     unauthorizedRef.current = false;
@@ -847,17 +819,6 @@ function ChatWorkspaceInner({
     if (activeChannelId === null) return;
     void loadMessages(activeChannelId);
   }, [openThreadId, pendingParentMessageId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Host shell opens the new-channel dialog from the contextual panel action.
-  useEffect(() => {
-    const onNewChannel = () => {
-      setCreateChannelError(null);
-      setDialogOpen(true);
-    };
-    window.addEventListener("workbench:chat:new-channel", onNewChannel);
-    return () =>
-      window.removeEventListener("workbench:chat:new-channel", onNewChannel);
-  }, []);
 
   const refreshUnlessUnauthorized = () => {
     if (unauthorizedRef.current) return;
@@ -952,43 +913,6 @@ function ChatWorkspaceInner({
     },
     refreshUnlessUnauthorized,
   );
-
-  async function handleCreateChannel(
-    input: CreateChannelInput,
-    purpose?: string,
-  ) {
-    setCreating(true);
-    setCreateChannelError(null);
-    try {
-      const created = await createChannel(tenantId, input);
-      // `POST /channels` carries no purpose field (see
-      // `NewChannelDialog`'s `onCreate` doc comment) — persisted with a
-      // follow-up settings PATCH once the channel exists. Best-effort: the
-      // channel itself was already created successfully, so a failure to
-      // save its purpose shouldn't surface as a channel-creation error.
-      if (purpose !== undefined) {
-        try {
-          await patchChannelSettings(tenantId, created.id, {
-            "chat/purpose": purpose,
-          });
-        } catch {
-          // best-effort, see comment above
-        }
-      }
-      setDialogOpen(false);
-      refreshChannelLists();
-      setActiveChannelId(created.id);
-      toast(CHAT_STRINGS.channelCreatedToast(created.title));
-    } catch (cause) {
-      const message =
-        cause instanceof ChatApiError && cause.status === 400
-          ? CHAT_STRINGS.newChannelMissingAgentError
-          : CHAT_STRINGS.newChannelCreateError;
-      setCreateChannelError(message);
-    } finally {
-      setCreating(false);
-    }
-  }
 
   /** The one door into the channel settings surface — the gear button and
    * the composer's `/agents` command both go through this so the section
@@ -1278,29 +1202,6 @@ function ChatWorkspaceInner({
               : {})}
           />
         </div>
-        <NewChannelDialog
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          onCreate={(input, purpose) =>
-            void handleCreateChannel(input, purpose)
-          }
-          tenantId={tenantId}
-          submitting={creating}
-          error={createChannelError}
-          initialKind="chat"
-          {...(listMembers !== undefined ? { listMembers } : {})}
-          {...(currentUser !== undefined
-            ? { currentUserPrincipalId: currentUser.principalId }
-            : {})}
-          {...(onRequestNewAgent !== undefined
-            ? {
-                onRequestNewAgent: () => {
-                  setDialogOpen(false);
-                  onRequestNewAgent();
-                },
-              }
-            : {})}
-        />
         <InviteAgentDialog
           open={inviteDialogOpen}
           onOpenChange={setInviteDialogOpen}
@@ -1670,27 +1571,6 @@ function ChatWorkspaceInner({
           )}
         </div>
       </div>
-      <NewChannelDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onCreate={(input, purpose) => void handleCreateChannel(input, purpose)}
-        tenantId={tenantId}
-        submitting={creating}
-        error={createChannelError}
-        initialKind="chat"
-        {...(listMembers !== undefined ? { listMembers } : {})}
-        {...(currentUser !== undefined
-          ? { currentUserPrincipalId: currentUser.principalId }
-          : {})}
-        {...(onRequestNewAgent !== undefined
-          ? {
-              onRequestNewAgent: () => {
-                setDialogOpen(false);
-                onRequestNewAgent();
-              },
-            }
-          : {})}
-      />
       {activeChannelId !== null ? (
         <InviteAgentDialog
           open={inviteDialogOpen}
@@ -1724,10 +1604,9 @@ export function ChatWorkspace({
   approvalActions,
   blockResponses,
   headerLeading,
-  listMembers,
   registerComposerInsert,
   onOpenRoutines,
-  onRequestNewAgent,
+  listMembers,
   onCreateRoutineInSpace,
   onOpenInsights,
   presenceMembers,
@@ -1785,13 +1664,6 @@ export function ChatWorkspace({
    * shell's single col2 toggle, so chat carries the same top-bar chrome as
    * every other stage surface. */
   readonly headerLeading?: ReactNode;
-  /**
-   * The bench's people — the same source Settings → People renders from
-   * — so the new-chat dialog can offer "chat with a teammate" alongside
-   * "chat with an agent". Host-supplied, the same way `tenant` is; omitted
-   * entirely, the dialog's People tab does not render at all.
-   */
-  readonly listMembers?: (tenantId: string) => Promise<readonly PersonOption[]>;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly registerComposerInsert?: (
     insert: ((text: string) => void) | null,
@@ -1799,7 +1671,7 @@ export function ChatWorkspace({
   /** The composer's `/run` command — see `ChatWorkspaceInner`'s prop note. */
   readonly onOpenRoutines?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
-  readonly onRequestNewAgent?: () => void;
+  readonly listMembers?: (tenantId: string) => Promise<readonly BringInMember[]>;
   /** "New routine in this space" — see `ChatWorkspaceInner`'s prop note. */
   readonly onCreateRoutineInSpace?: (channelId: string) => void;
   /**
@@ -1852,12 +1724,11 @@ export function ChatWorkspace({
             : {})}
           {...(onFixConnection !== undefined ? { onFixConnection } : {})}
           {...(headerLeading !== undefined ? { headerLeading } : {})}
-          {...(listMembers !== undefined ? { listMembers } : {})}
           {...(registerComposerInsert !== undefined
             ? { registerComposerInsert }
             : {})}
           {...(onOpenRoutines !== undefined ? { onOpenRoutines } : {})}
-          {...(onRequestNewAgent !== undefined ? { onRequestNewAgent } : {})}
+          {...(listMembers !== undefined ? { listMembers } : {})}
           {...(onCreateRoutineInSpace !== undefined
             ? { onCreateRoutineInSpace }
             : {})}

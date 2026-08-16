@@ -2,19 +2,72 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   ACTION_COMMANDS,
-  consumePendingNewChannel,
   consumePendingNewSkill,
   consumePendingNewTask,
   requestNewRoutine,
+  requestNewWorkbench,
   resetPendingDialogRequests,
   runActionCommand,
 } from "./command-palette-actions";
 import { resetPendingLibraryUpload } from "./library-upload";
 
+const realFetch = globalThis.fetch;
+
 afterEach(() => {
   resetPendingDialogRequests();
   resetPendingLibraryUpload();
+  globalThis.fetch = realFetch;
 });
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/**
+ * Stubs the two calls `createAgentAndLaunch` makes: the account's
+ * deployed definitions (finds the seeded `assistant`) and `POST
+ * /channels` (mints the workbench). Every "new-channel"/"new-agent" test
+ * below wires this so `requestNewWorkbench` resolves for real instead of
+ * hitting a real network call.
+ */
+function stubInstantCreate(): void {
+  globalThis.fetch = ((input: RequestInfo | URL) => {
+    const path = typeof input === "string" ? input : String(input);
+    if (path.includes("/workflows/definitions")) {
+      return Promise.resolve(
+        json({
+          data: [
+            {
+              id: "wfd_assistant",
+              tenantId: "tenant-1",
+              name: "assistant",
+              currentVersion: "1",
+              status: "deployed",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          nextCursor: null,
+        }),
+      );
+    }
+    if (path.endsWith("/chat/channels")) {
+      return Promise.resolve(
+        json({
+          id: "chan_new",
+          title: "New Workbench",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        }),
+      );
+    }
+    throw new Error(`unexpected fetch: ${path}`);
+  }) as typeof fetch;
+}
 
 function context(overrides: {
   readonly path: string;
@@ -27,12 +80,7 @@ function context(overrides: {
   let canvasClosed = false;
   const openedRoutines: (string | null)[] = [];
   const listener = (event: Event) => dispatched.push(event.type);
-  for (const type of [
-    "workbench:chat:new-channel",
-    "workbench:agents:create",
-    "workbench:skills:create",
-    "workbench:tasks:create",
-  ]) {
+  for (const type of ["workbench:skills:create", "workbench:tasks:create"]) {
     window.addEventListener(type, listener);
   }
   const ctx = {
@@ -80,33 +128,30 @@ describe("ACTION_COMMANDS", () => {
 });
 
 describe("runActionCommand", () => {
-  test("new-channel dispatches immediately when already on a channel path", async () => {
-    const { ctx, navigated, dispatched } = context({ path: "/c/abc" });
-    await runActionCommand("new-channel", ctx);
-    expect(dispatched).toContain("workbench:chat:new-channel");
-    expect(navigated).toEqual([]);
-    expect(consumePendingNewChannel()).toBe(false);
-  });
-
-  test("new-channel off-route navigates and records a pending flag instead of dispatching", async () => {
+  test("new-channel mints a fresh Myra workbench directly — no dialog, no pending flag (CL-6138)", async () => {
+    stubInstantCreate();
     const { ctx, navigated, dispatched } = context({ path: "/library" });
     await runActionCommand("new-channel", ctx);
     expect(dispatched).toEqual([]);
-    expect(navigated).toEqual(["/c"]);
-    expect(consumePendingNewChannel()).toBe(true);
+    expect(navigated).toEqual(["/c/chan_new"]);
   });
 
-  test("new-agent retargets to the new-workbench flow — the global agents settings tab is gone, and 'Create new agent' mints a fresh workbench", async () => {
-    const onChannel = context({ path: "/c/abc" });
-    await runActionCommand("new-agent", onChannel.ctx);
-    expect(onChannel.navigated).toEqual([]);
-    expect(onChannel.dispatched).toContain("workbench:chat:new-channel");
+  test("new-agent is the same one creation verb as new-channel — mints a fresh Myra workbench directly", async () => {
+    stubInstantCreate();
+    const { ctx, navigated, dispatched } = context({ path: "/c/abc" });
+    await runActionCommand("new-agent", ctx);
+    expect(dispatched).toEqual([]);
+    expect(navigated).toEqual(["/c/chan_new"]);
+  });
 
-    const elsewhere = context({ path: "/library" });
-    await runActionCommand("new-agent", elsewhere.ctx);
-    expect(elsewhere.navigated).toEqual(["/c"]);
-    expect(elsewhere.dispatched).toEqual([]);
-    expect(consumePendingNewChannel()).toBe(true);
+  test("requestNewWorkbench does nothing without a selected bench", async () => {
+    stubInstantCreate();
+    const navigated: string[] = [];
+    await requestNewWorkbench({
+      tenantId: null,
+      navigate: (to) => navigated.push(to),
+    });
+    expect(navigated).toEqual([]);
   });
 
   test("new-routine navigates to /routines and opens the routine panel synchronously — no pending flag", async () => {

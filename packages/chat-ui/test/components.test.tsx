@@ -7,10 +7,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { MessageItem } from "../src/api";
 import { Composer } from "../src/composer";
-import {
-  canSubmitNewChannel,
-  newChannelPayload,
-} from "../src/new-channel-dialog";
 import { profileSubjectFromParticipant } from "../src/profile-subject";
 import { renamePayload, rowMenuLabels } from "../src/sidebar";
 import {
@@ -493,77 +489,6 @@ describe("Composer", () => {
     expect(markup).toContain("chat-composer-status");
     expect(markup).not.toContain("Preparing attachments");
     expect(markup).not.toContain('role="alert"');
-  });
-});
-
-// `NewChannelDialog` itself renders through `@corbits/react-ui`'s Radix
-// `Dialog.Portal`, which needs a real DOM container and produces no markup
-// under `renderToStaticMarkup` — same reason `InviteAgentDialog` has never
-// had a render test here. Its create-eligibility and payload-shaping logic
-// is pulled out as pure functions instead (mirrors `nextMessagesState` and
-// `draftAfterSend`) and tested directly.
-describe("canSubmitNewChannel / newChannelPayload (the new-chat create flow)", () => {
-  const echo = { kind: "agent" as const, definitionId: "wfd_echo" };
-  const bob = {
-    kind: "person" as const,
-    principalId: "prn_bob",
-    displayName: "Bob",
-  };
-
-  test("a channel needs a name", () => {
-    expect(canSubmitNewChannel("channel", "", null)).toBe(false);
-    expect(canSubmitNewChannel("channel", "  ", null)).toBe(false);
-    expect(canSubmitNewChannel("channel", "Ops", null)).toBe(true);
-  });
-
-  test("a chat needs a counterpart picked, not a name — either an agent or a person", () => {
-    expect(canSubmitNewChannel("chat", "", null)).toBe(false);
-    expect(canSubmitNewChannel("chat", "", echo)).toBe(true);
-    expect(canSubmitNewChannel("chat", "", bob)).toBe(true);
-    expect(canSubmitNewChannel("chat", "My chat", null)).toBe(false);
-  });
-
-  test("a channel's payload never carries a counterpart", () => {
-    expect(newChannelPayload("channel", "Ops", null)).toEqual({
-      kind: "channel",
-      name: "Ops",
-    });
-    expect(newChannelPayload("channel", "  ", null)).toBeNull();
-  });
-
-  test("an agent chat's payload includes the picked definitionId with no name when none was typed", () => {
-    expect(newChannelPayload("chat", "", echo)).toEqual({
-      kind: "chat",
-      definitionId: "wfd_echo",
-    });
-  });
-
-  test("an agent chat's payload includes a typed name alongside the definitionId, never guessing one when blank", () => {
-    expect(newChannelPayload("chat", "My research chat", echo)).toEqual({
-      kind: "chat",
-      definitionId: "wfd_echo",
-      name: "My research chat",
-    });
-  });
-
-  test("a person chat's payload defaults its title to the picked member's display name when none was typed", () => {
-    expect(newChannelPayload("chat", "", bob)).toEqual({
-      kind: "chat",
-      principalId: "prn_bob",
-      name: "Bob",
-    });
-  });
-
-  test("a person chat's payload keeps a typed title over the member's display name", () => {
-    expect(newChannelPayload("chat", "Bob's questions", bob)).toEqual({
-      kind: "chat",
-      principalId: "prn_bob",
-      name: "Bob's questions",
-    });
-  });
-
-  test("a chat with no counterpart picked yields no payload at all", () => {
-    expect(newChannelPayload("chat", "My research chat", null)).toBeNull();
   });
 });
 

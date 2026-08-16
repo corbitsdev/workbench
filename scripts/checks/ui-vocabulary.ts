@@ -67,6 +67,14 @@ const BANNED_TERMS: readonly { name: string; pattern: RegExp }[] = [
   // this cannot false-positive on the legal word the same way "bench"
   // above does not match inside "workbench".
   { name: "workspace", pattern: /\bworkspaces?\b/i },
+  // CL-6138: one creation verb. "agent" alone stays legal copy — it's a
+  // starting point you pick, not something you mint ("Search or create
+  // agents", "No agents available") — but the two-and-three-word
+  // creation-verb phrases below are banned outright: "New workbench" is
+  // the only mint action a person ever sees, so nothing may offer "New
+  // agent" or "Create new agent" as a second one.
+  { name: "new agent", pattern: /\bnew agent\b/i },
+  { name: "create new agent", pattern: /\bcreate new agent\b/i },
 ];
 
 /**

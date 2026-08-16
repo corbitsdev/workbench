@@ -2,62 +2,14 @@
 // The package underneath calls everything a "channel" — a `kind` string of
 // "channel" or "chat" — but the app decides what a human reads: a
 // "workbench" is the product word for a conversation with an agent (each
-// one its own tenancy), and "Pinned" survives for the pinned,
-// broadcast-style kind (its own creation step is dead — see
-// `new-channel-dialog.tsx`'s module doc — but the strings still exist for a
-// future caller that reaches it). Nothing in the chat/* components inlines
-// its own copy; it imports from here.
+// one its own tenancy). Nothing in the chat/* components inlines its own
+// copy; it imports from here. There is no in-package new-workbench dialog
+// any more (CL-6138): the one creation verb mints and navigates directly —
+// see `apps/web/src/instant-agent-create.ts`.
 
 export const CHAT_STRINGS = {
   channelsSectionLabel: "Pinned",
   chatsSectionLabel: "Workbenches",
-  newChannelAction: "New conversation",
-  newChannelDialogTitle: "New conversation",
-  newChannelDialogDescription:
-    "Give it a name and choose whether it is a pinned, shared conversation or an ordinary workbench.",
-  newChannelNameLabel: "Name",
-  newChannelNamePlaceholder: "e.g. Launch planning",
-  newChannelKindLabel: "Type",
-  newChannelKindChannel: "Pinned",
-  newChannelKindChannelDesc: "Pinned, for the whole workbench",
-  newChannelKindChat: "Workbench",
-  newChannelKindChatDesc: "A direct conversation with an agent or teammate",
-  newChannelPurposeLabel: "Purpose (optional)",
-  newChannelPurposePlaceholder: "What is this for?",
-  newChannelSubmit: "Create",
-  newChannelSubmitting: "Creating…",
-  newChannelCancel: "Cancel",
-  newChannelBack: "Back",
-  newChannelNext: "Next",
-  newChannelStepKindLabel: "Kind",
-  newChannelStepKindGuidance:
-    "Choose a pinned conversation shared with everyone, or a direct workbench.",
-  newChannelStepDetailsLabel: "Details",
-  newChannelStepChannelGuidance: "Name it and add an optional purpose.",
-  newChannelStepChatGuidance:
-    "Pick an agent to start a workbench with, or a teammate to talk to directly — the workbench's name defaults to theirs, and you can always rename it.",
-  newChatDialogTitle: "New workbench",
-  newChatDialogDescription:
-    "Every pick starts a new workbench — an agent is a starting point, not a conversation you're reopening.",
-  newChatNameLabel: "Name (optional)",
-  newChatNamePlaceholder: "Defaults to the agent's name",
-  newChatCounterpartTabAgent: "Agents",
-  newChatCounterpartTabPerson: "People",
-  newChatAgentLabel: "Agent",
-  newChatAgentComboboxPlaceholder: "Search or create agents",
-  newChatAgentComboboxEmpty: "No agents match.",
-  newChatAgentLoadError: "Couldn't load agents",
-  newChatAgentEmptyTitle: "No agents available",
-  newChatAgentEmptyDescription:
-    "Add an agent here before opening a workbench with it.",
-  newChatPersonLabel: "Person",
-  newChatPersonLoadError: "Couldn't load teammates",
-  newChatPersonEmptyTitle: "No teammates available",
-  newChatPersonEmptyDescription:
-    "Invite teammates here before opening a direct workbench with one.",
-  newChatCreateAgentAffordance: "Create new agent",
-  newChannelMissingAgentError: "Choose an agent or teammate to get started.",
-  newChannelSelfDmError: "You can't open a workbench with yourself.",
   noChannelsTitle: "No workbenches yet",
   noChannelsDescription: "Create one to get started.",
   noChatSelectedTitle: "Select a conversation",
@@ -131,7 +83,6 @@ export const CHAT_STRINGS = {
   inviteAgentInviting: "Inviting…",
   inviteAgentInviteError: "Couldn't invite that agent — try again.",
   inviteAgentConflictError: "This workbench already has its agent.",
-  newChannelCreateError: "Couldn't create that — try again.",
   forkThreadAction: "Fork",
   forkThreadError: "Couldn't fork that message into a thread — try again.",
   replyInThreadAction: "Reply in thread",
