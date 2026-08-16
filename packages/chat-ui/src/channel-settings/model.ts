@@ -12,7 +12,6 @@ export type ChannelSettingsSectionId =
   | "keys-plugins"
   | "inference"
   | "capacity"
-  | "access"
   | "notifications"
   | "danger";
 
@@ -93,11 +92,6 @@ export function channelSettingsSections(
     {
       id: "capacity",
       label: CHAT_STRINGS.channelSettingsSectionCapacity,
-      group: "shared",
-    },
-    {
-      id: "access",
-      label: CHAT_STRINGS.channelSettingsSectionAccess,
       group: "shared",
     },
     {

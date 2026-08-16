@@ -226,7 +226,6 @@ export const CHAT_STRINGS = {
   channelSettingsSectionKeysPlugins: "Keys & plugins",
   channelSettingsSectionInference: "Inference",
   channelSettingsSectionCapacity: "Capacity",
-  channelSettingsSectionAccess: "Access",
   channelSettingsSectionNotifications: "Notifications",
   channelSettingsSectionDanger: "Danger zone",
   channelSettingsNameLabel: "Name",
@@ -294,8 +293,6 @@ export const CHAT_STRINGS = {
   channelSettingsAssistantHistoryRestoring: "Restoring…",
   channelSettingsAssistantHistoryRestoreError:
     "Couldn't restore that version — try again.",
-  channelSettingsAccessBody:
-    "Access follows workbench grants and membership. Manage role and member grants under Shared Settings.",
   channelSettingsNotificationsLabel: "Notifications",
   channelSettingsNotifyAll: "All messages",
   channelSettingsNotifyMentions: "Mentions only",

@@ -25,7 +25,6 @@ import {
 } from "../api";
 import type { ChannelSettings } from "../api";
 import { CHAT_STRINGS } from "../strings";
-import { AccessSection } from "./access-section";
 import { AgentsSection } from "./agents-section";
 import { AssistantSection } from "./assistant-section";
 import { CapacitySection } from "./capacity-section";
@@ -333,8 +332,6 @@ export function ChannelSettingsSurface({
               {activeSection.id === "capacity" ? (
                 <CapacitySection tenantId={tenantId} />
               ) : null}
-
-              {activeSection.id === "access" ? <AccessSection /> : null}
 
               {activeSection.id === "notifications" ? (
                 <NotificationsSection
