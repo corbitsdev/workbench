@@ -169,7 +169,10 @@ describe("keyboard-submit bypass of required triggerFields gating", () => {
     await settle();
 
     // Still on Configure, nothing created.
-    expect(document.body.textContent).toContain("Step 2 of 3");
+    const configure = document.querySelector(
+      '[data-step="configure"][data-status="current"], [data-status="current"]',
+    );
+    expect(configure?.textContent ?? "").toContain("Configure");
     expect(created).toBeNull();
   });
 });

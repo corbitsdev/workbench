@@ -613,7 +613,7 @@ function RoutineScopePicker({
           aria-pressed={value === "bench"}
           onClick={() => onChange("bench")}
         >
-          Everyone on this bench
+          Everyone in this workbench
         </Button>
       </div>
     </div>

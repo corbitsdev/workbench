@@ -1317,7 +1317,7 @@ describe("routine scope (review addendum)", () => {
     const personalButton = buttonWithText("Just for you");
     expect(personalButton?.getAttribute("aria-pressed")).toBe("true");
     expect(
-      buttonWithText("Everyone on this bench")?.getAttribute("aria-pressed"),
+      buttonWithText("Everyone in this workbench")?.getAttribute("aria-pressed"),
     ).toBe("false");
 
     act(() => {
@@ -1332,7 +1332,7 @@ describe("routine scope (review addendum)", () => {
     expect((created as CreateRoutineInput | null)?.scope).toBe("personal");
   });
 
-  test("choosing 'Everyone on this bench' widens the created routine's scope", async () => {
+  test("choosing 'Everyone in this workbench' widens the created routine's scope", async () => {
     let created: CreateRoutineInput | null = null;
     mount(
       baseProps({
@@ -1356,7 +1356,7 @@ describe("routine scope (review addendum)", () => {
     });
     await settle();
     act(() => {
-      buttonWithText("Everyone on this bench")?.click();
+      buttonWithText("Everyone in this workbench")?.click();
     });
     act(() => {
       buttonWithText("Next")?.click();
