@@ -2,20 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   createAgentAndLaunch,
-  DEFAULT_AGENT_NAME,
-  handleAttempt,
+  NEW_WORKBENCH_TITLE,
 } from "./instant-agent-create";
-
-describe("handleAttempt", () => {
-  test("the first attempt keeps the bare handle", () => {
-    expect(handleAttempt("new-agent", 0)).toBe("new-agent");
-  });
-
-  test("later attempts number the handle", () => {
-    expect(handleAttempt("new-agent", 1)).toBe("new-agent-2");
-    expect(handleAttempt("new-agent", 2)).toBe("new-agent-3");
-  });
-});
 
 describe("createAgentAndLaunch", () => {
   const realFetch = globalThis.fetch;
@@ -43,10 +31,10 @@ describe("createAgentAndLaunch", () => {
       headers: { "content-type": "application/json" },
     });
 
-  const definitionWire = {
-    id: "def-1",
+  const assistantDefinitionWire = {
+    id: "def-assistant",
     tenantId: "tnt_1",
-    name: DEFAULT_AGENT_NAME,
+    name: "assistant",
     currentVersion: "1",
     status: "deployed",
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -54,19 +42,16 @@ describe("createAgentAndLaunch", () => {
     skills: [] as readonly string[],
   };
 
-  test("drafts, creates with the default name's handle, and launches the chat", async () => {
+  test("launches a New Workbench chat against the default setup template, no definition drafted", async () => {
     const navigated: string[] = [];
     const calls = stubFetch((path) => {
-      if (path.endsWith("/planner/agent-definitions/draft")) {
-        return json({ draft: { systemPrompt: "You are New agent." } });
-      }
-      if (path.endsWith("/agent-definitions")) {
-        return json(definitionWire);
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
       }
       if (path.endsWith("/chat/channels")) {
         return json({
           id: "chan-1",
-          title: DEFAULT_AGENT_NAME,
+          title: NEW_WORKBENCH_TITLE,
           kind: "chat",
           pinned: false,
           participants: [],
@@ -78,44 +63,29 @@ describe("createAgentAndLaunch", () => {
     await createAgentAndLaunch("tnt_1", (to) => navigated.push(to));
 
     const createCall = calls.find((call) =>
-      call.path.endsWith("/agent-definitions"),
+      call.path.endsWith("/chat/channels"),
     );
     expect(JSON.parse(String(createCall?.init?.body))).toEqual({
-      name: DEFAULT_AGENT_NAME,
-      handle: "new-agent",
-      systemPrompt: "You are New agent.",
+      kind: "chat",
+      definitionId: "def-assistant",
+      name: NEW_WORKBENCH_TITLE,
     });
+    expect(calls.some((call) => call.path.includes("/agent-definitions"))).toBe(
+      false,
+    );
     expect(navigated).toEqual(["/c/chan-1"]);
   });
 
-  test("retries with a numbered handle on a 409 conflict", async () => {
-    const navigated: string[] = [];
-    let createAttempts = 0;
+  test("throws when the tenant has no deployed setup template", async () => {
     stubFetch((path) => {
-      if (path.endsWith("/planner/agent-definitions/draft")) {
-        return json({ draft: { systemPrompt: "You are New agent." } });
-      }
-      if (path.endsWith("/agent-definitions")) {
-        createAttempts += 1;
-        return createAttempts === 1
-          ? json({ error: "handle taken" }, 409)
-          : json(definitionWire);
-      }
-      if (path.endsWith("/chat/channels")) {
-        return json({
-          id: "chan-2",
-          title: DEFAULT_AGENT_NAME,
-          kind: "chat",
-          pinned: false,
-          participants: [],
-        });
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [], nextCursor: null });
       }
       throw new Error(`unexpected fetch: ${path}`);
     });
 
-    await createAgentAndLaunch("tnt_1", (to) => navigated.push(to));
-
-    expect(createAttempts).toBe(2);
-    expect(navigated).toEqual(["/c/chan-2"]);
+    await expect(createAgentAndLaunch("tnt_1", () => {})).rejects.toThrow(
+      "No default setup agent found for this workbench.",
+    );
   });
 });

@@ -109,6 +109,13 @@ export function canSubmitNewChannel(
  * dialog already knows the chosen member's display name (it fetched the
  * list to render), so it always sends a title, defaulting to that name
  * rather than leaving the server to fall back to the bare principal id.
+ *
+ * An agent row picked here deliberately omits `reuseExisting` (CL-6089):
+ * "+ New Workbench" always mints a fresh workbench, using the picked
+ * agent as a template, never reopening a prior conversation with it —
+ * picking the same agent twice is two independent workbenches, each
+ * disambiguated by title in the sidebar. Only the home-workbench land-hop
+ * (`default-agent-channel.ts`'s `ensure`) opts into reuse.
  */
 export function newChannelPayload(
   kind: ChannelKind,

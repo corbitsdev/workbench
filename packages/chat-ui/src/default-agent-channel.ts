@@ -12,6 +12,19 @@
 // agent mention-gated and silent. A channel-kind match with no agent
 // participant is a husk that can't answer under either kind, so it is
 // left alone and the real chat is created.
+//
+// This is the one deliberate find-or-create path in the product (CL-6089):
+// the account's home-workbench land-hop (Myra), where landing twice must
+// mean the same conversation, never two. Every other agent-chat creation
+// — "+ New Workbench" picking an agent as a template, a freshly drafted
+// agent's own launch — always mints a new workbench instead. The dedup
+// here is `ensure`'s own title match above, not the server's
+// `reuseExisting` flag on `POST /channels` (see `packages/chat/src/routes.ts`
+// `findExistingAgentChat`): by the time `createChannel` below is reached,
+// `ensure` has already exhausted its own by-title lookup and found no
+// match, so a further server-side reuse pass here would only matter for
+// a chat renamed away from the agent's title — an edge case this ticket
+// leaves as-is rather than threading `reuseExisting` through here too.
 
 import { isAgentAddress } from "@corbits/chat/mentions";
 

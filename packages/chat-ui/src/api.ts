@@ -301,12 +301,19 @@ export function listAllChannels(tenantId: string): Promise<readonly Channel[]> {
 // omitted). A channel is the pinned, multiplayer kind: name-only, no
 // counterpart attached at creation. See `packages/chat/src/routes.ts`
 // `POST /channels` for the server side of this union.
+//
+// An agent chat always mints a new workbench (CL-6089) — the agent is a
+// template, not a conversation being reopened — unless the caller opts
+// into `reuseExisting: true`, reserved for the one deliberate
+// find-or-create caller: the home-workbench land-hop
+// (`default-agent-channel.ts`'s `ensure`).
 export type CreateChannelInput =
   | { readonly kind: "channel"; readonly name: string }
   | {
       readonly kind: "chat";
       readonly definitionId: string;
       readonly name?: string;
+      readonly reuseExisting?: boolean;
     }
   | {
       readonly kind: "chat";
