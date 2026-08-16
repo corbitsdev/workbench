@@ -58,6 +58,12 @@ export const SETTINGS_STRINGS = {
   benchLoadError: "this bench",
   benchNoneSelectedTitle: "No bench selected",
   benchNoneSelectedDescription: "Choose a bench from the switcher first.",
+
+  sidecarPlacementAdvancedSummary: "Advanced",
+  sidecarPlacementLabel: "Run this workbench on its own sidecar",
+  sidecarPlacementHint:
+    "Gives this workbench dedicated infrastructure instead of sharing one with other workbenches. An operator must configure a provisioner for this to take effect.",
+  sidecarPlacementSaveError: "Couldn't save this setting. Try again.",
   benchSaveError: "Couldn't rename this bench — try again.",
   settingsSavedToast: "Settings saved",
 

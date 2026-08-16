@@ -457,3 +457,27 @@
   flex-direction: column;
   gap: 0.75rem;
 }
+
+.settings-bench-advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.settings-bench-advanced > summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.settings-bench-advanced-body {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-form-field-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}

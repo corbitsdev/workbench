@@ -96,6 +96,10 @@ import {
   createBenchRoutes,
   createPostgresBenchSettingsStore,
 } from "@corbits/bench";
+import {
+  createDrizzleSidecarPlacementStore,
+  createSidecarPlacementRoutes,
+} from "@corbits/sidecar-placement";
 import { generateId } from "@intx/hub-common";
 import {
   createInMemoryMailboxEventBus,
@@ -978,6 +982,16 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/bench-settings`,
     createBenchRoutes({
       store: benchSettings.store,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
+  app.route(
+    `${TENANT_PREFIX}/sidecar-placement`,
+    createSidecarPlacementRoutes({
+      store: createDrizzleSidecarPlacementStore(db),
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,

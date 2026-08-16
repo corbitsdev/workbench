@@ -21,6 +21,7 @@ import {
   Input,
   SettingsPanel,
   Skeleton,
+  Switch,
   toast,
 } from "@corbits/react-ui";
 import { CircleAlert } from "lucide-react";
@@ -28,6 +29,7 @@ import { useEffect, useState } from "react";
 
 import { renameBench } from "./api";
 import { errorMessage, type LoadState } from "./load-state";
+import { getSidecarPlacement, setSidecarPlacement } from "./sidecar-placement-api";
 import { SETTINGS_STRINGS } from "./strings";
 
 const ICON_SWATCHES = [
@@ -60,13 +62,22 @@ export function BenchSection({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [sidecarPlacementEnabled, setSidecarPlacementEnabled] = useState(false);
+  const [sidecarPlacementSaving, setSidecarPlacementSaving] = useState(false);
+  const [sidecarPlacementError, setSidecarPlacementError] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     if (tenantId === null) return;
     let cancelled = false;
     setState({ kind: "loading" });
-    Promise.all([listMyMemberships(), getBenchSettings(tenantId)])
-      .then(([memberships, settings]) => {
+    Promise.all([
+      listMyMemberships(),
+      getBenchSettings(tenantId),
+      getSidecarPlacement(tenantId),
+    ])
+      .then(([memberships, settings, sidecarPlacement]) => {
         if (cancelled) return;
         const current = memberships.find((m) => m.tenantId === tenantId);
         if (current === undefined) {
@@ -79,6 +90,7 @@ export function BenchSection({
         setName(current.tenantName);
         setPurpose(settings.purpose ?? "");
         setSavedPurpose(settings.purpose ?? "");
+        setSidecarPlacementEnabled(sidecarPlacement.enabled);
         setState({ kind: "ready", data: current });
       })
       .catch((cause: unknown) => {
@@ -90,6 +102,16 @@ export function BenchSection({
       cancelled = true;
     };
   }, [tenantId]);
+
+  function handleSidecarPlacementChange(enabled: boolean) {
+    if (tenantId === null) return;
+    setSidecarPlacementSaving(true);
+    setSidecarPlacementError(null);
+    setSidecarPlacement(tenantId, enabled)
+      .then((result) => setSidecarPlacementEnabled(result.enabled))
+      .catch(() => setSidecarPlacementError(SETTINGS_STRINGS.sidecarPlacementSaveError))
+      .finally(() => setSidecarPlacementSaving(false));
+  }
 
   if (tenantId === null) {
     return (
@@ -173,6 +195,10 @@ export function BenchSection({
           setName(state.data.tenantName);
           setPurpose(savedPurpose);
         }}
+        sidecarPlacementEnabled={sidecarPlacementEnabled}
+        sidecarPlacementSaving={sidecarPlacementSaving}
+        sidecarPlacementError={sidecarPlacementError}
+        onSidecarPlacementChange={handleSidecarPlacementChange}
       />
       <MembersPanel tenantId={tenantId} />
     </>
@@ -199,6 +225,10 @@ export function BenchSectionView({
   onIconColorChange,
   onSave,
   onReset,
+  sidecarPlacementEnabled = false,
+  sidecarPlacementSaving = false,
+  sidecarPlacementError = null,
+  onSidecarPlacementChange,
 }: {
   readonly name: string;
   readonly purpose?: string;
@@ -213,6 +243,13 @@ export function BenchSectionView({
   readonly onIconColorChange?: (color: string) => void;
   readonly onSave: () => void;
   readonly onReset: () => void;
+  /** Saves immediately on toggle — a Switch, not a form field (see
+   * @corbits/react-ui's Switch doc comment). Defaults reflect an
+   * un-loaded/off state; the caller supplies real values once fetched. */
+  readonly sidecarPlacementEnabled?: boolean;
+  readonly sidecarPlacementSaving?: boolean;
+  readonly sidecarPlacementError?: string | null;
+  readonly onSidecarPlacementChange?: (enabled: boolean) => void;
 }) {
   return (
     <SettingsPanel
@@ -270,6 +307,31 @@ export function BenchSectionView({
         <span>{SETTINGS_STRINGS.benchAddressLabel}</span>
         <Input value={slug} disabled readOnly />
       </label>
+      <details className="settings-bench-advanced">
+        <summary>{SETTINGS_STRINGS.sidecarPlacementAdvancedSummary}</summary>
+        <div className="settings-bench-advanced-body">
+          <div className="settings-form-field settings-form-field-row">
+            <Switch
+              id="sidecar-placement-switch"
+              checked={sidecarPlacementEnabled}
+              onCheckedChange={(checked) =>
+                onSidecarPlacementChange?.(checked)
+              }
+              disabled={sidecarPlacementSaving}
+              describedBy="sidecar-placement-hint"
+            />
+            <label htmlFor="sidecar-placement-switch">
+              {SETTINGS_STRINGS.sidecarPlacementLabel}
+            </label>
+          </div>
+          <p id="sidecar-placement-hint" className="settings-field-hint">
+            {SETTINGS_STRINGS.sidecarPlacementHint}
+          </p>
+          {sidecarPlacementError !== null ? (
+            <p className="settings-inline-error">{sidecarPlacementError}</p>
+          ) : null}
+        </div>
+      </details>
     </SettingsPanel>
   );
 }

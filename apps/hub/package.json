@@ -32,6 +32,7 @@
     "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",
     "@corbits/routines": "workspace:*",
+    "@corbits/sidecar-placement": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/slack-tag": "workspace:*",
     "@corbits/task-planner": "workspace:*",
