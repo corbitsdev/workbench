@@ -1563,10 +1563,12 @@
   margin-left: 0;
 }
 
-/* Reaction chips + pin toggle, indented to align under the bubble text
-   the same way `.chat-thread-affordance` does. Chips always show; the
-   add-reaction trigger and pin toggle fade in on hover/focus so a quiet
-   channel doesn't carry a permanent row of controls under every line. */
+/* Existing reaction chips + pin toggle, indented to align under the bubble
+   text the same way `.chat-thread-affordance` does. Chips are content —
+   they always show once a reaction exists. The pin toggle fades in on
+   hover/focus so a quiet channel doesn't carry a permanent row of controls
+   under every line. Adding a *new* reaction, replying, and the ellipsis
+   menu live in `.chat-hover-toolbar` instead — see below. */
 .chat-message-actions {
   display: flex;
   align-items: center;
@@ -1619,7 +1621,6 @@
   display: inline-flex;
 }
 
-.chat-reaction-add,
 .chat-pin-toggle {
   display: inline-flex;
   align-items: center;
@@ -1638,22 +1639,17 @@
     color 120ms ease;
 }
 
-.chat-reaction-add svg,
 .chat-pin-toggle svg {
   width: 0.9rem;
   height: 0.9rem;
 }
 
-.chat-message-group:hover .chat-reaction-add,
-.chat-message-group:focus-within .chat-reaction-add,
 .chat-message-group:hover .chat-pin-toggle,
 .chat-message-group:focus-within .chat-pin-toggle,
-.chat-reaction-add[aria-expanded="true"],
 .chat-pin-toggle[data-pinned="true"] {
   opacity: 1;
 }
 
-.chat-reaction-add:hover,
 .chat-pin-toggle:hover {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
   color: var(--foreground);
@@ -1661,6 +1657,76 @@
 
 .chat-pin-toggle[data-pinned="true"] {
   color: var(--accent, var(--primary));
+}
+
+/* Mock's hover toolbar: the compact trailing-edge cluster (add-reaction,
+   reply-in-thread, ellipsis) that replaces the old persistent inline
+   "Reply in thread" link and the standalone add-reaction trigger. Floats
+   over the message's top-right corner, fading in on hover/focus-within
+   like `.chat-pin-toggle` above, plus `data-open` so it stays put while its
+   own picker or menu is open even if focus moves into a portaled menu. */
+.chat-message-group {
+  position: relative;
+}
+
+.chat-hover-toolbar {
+  position: absolute;
+  top: -0.4rem;
+  right: 0.4rem;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  border: 1px solid var(--border, transparent);
+  border-radius: var(--ui-radius-sm, 0.25rem);
+  background: var(--background);
+  padding: 0.15rem;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 2px 10px color-mix(in srgb, black 14%, transparent);
+  transition: opacity 120ms ease;
+}
+
+.chat-message-group:hover .chat-hover-toolbar,
+.chat-message-group:focus-within .chat-hover-toolbar,
+.chat-hover-toolbar[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chat-hover-toolbar .chat-reaction-add,
+.chat-hover-reply,
+.chat-hover-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 0;
+  border-radius: var(--ui-radius-sm, 0.25rem);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  opacity: 1;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.chat-hover-toolbar .chat-reaction-add svg,
+.chat-hover-reply svg,
+.chat-hover-ellipsis svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.chat-hover-toolbar .chat-reaction-add:hover,
+.chat-hover-reply:hover,
+.chat-hover-ellipsis:hover,
+.chat-hover-toolbar .chat-reaction-add[aria-expanded="true"],
+.chat-hover-ellipsis[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
 }
 
 .chat-reaction-picker {

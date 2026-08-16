@@ -449,12 +449,15 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
       await sleep(30);
     });
 
-    // Inside the thread, every message's affordance is now Fork.
+    // Inside the thread, every message's hover-toolbar reply action forks
+    // instead of replying — the persistent "Reply in thread" row only
+    // renders once a thread already has replies (see `MessageHoverToolbar`
+    // and `ThreadAffordance` in `timeline.tsx`), so a fresh message's fork
+    // affordance lives in the hover cluster, not a `.chat-thread-open` row.
     const forkButton = harness.container.querySelector(
-      '.chat-thread-affordance[data-thread-affordance-mode="fork"] .chat-thread-open',
+      '.chat-hover-toolbar[data-thread-affordance-mode="fork"] .chat-hover-reply',
     ) as HTMLButtonElement;
     expect(forkButton).not.toBeNull();
-    expect(forkButton.textContent).toBe("Fork");
     await act(async () => {
       forkButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await sleep(30);
@@ -489,7 +492,7 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
       await sleep(30);
     });
     const forkButton = harness.container.querySelector(
-      '.chat-thread-affordance[data-thread-affordance-mode="fork"] .chat-thread-open',
+      '.chat-hover-toolbar[data-thread-affordance-mode="fork"] .chat-hover-reply',
     ) as HTMLButtonElement;
     await act(async () => {
       forkButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -643,9 +646,9 @@ describe("composer slash commands — each wired command's real action", () => {
     });
     await harness.settle();
 
-    const button = [
-      ...harness.container.querySelectorAll("button"),
-    ].find((element) => element.textContent?.trim() === "New routine");
+    const button = [...harness.container.querySelectorAll("button")].find(
+      (element) => element.textContent?.trim() === "New routine",
+    );
     expect(button).not.toBeUndefined();
     act(() => {
       button?.click();
@@ -664,9 +667,9 @@ describe("composer slash commands — each wired command's real action", () => {
     });
     await harness.settle();
 
-    const button = [
-      ...harness.container.querySelectorAll("button"),
-    ].find((element) => element.textContent?.trim() === "New routine");
+    const button = [...harness.container.querySelectorAll("button")].find(
+      (element) => element.textContent?.trim() === "New routine",
+    );
     expect(button).toBeUndefined();
     harness.unmount();
   });
