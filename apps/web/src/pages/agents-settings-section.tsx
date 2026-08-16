@@ -327,7 +327,7 @@ function AgentDetailPanel({
             onClick={handleOpenInChannel}
             aria-label="Open its workbench"
           >
-            <Users /> Open workbench
+            <Users /> Open its workbench
           </Button>
         </div>
         {error !== null && (
