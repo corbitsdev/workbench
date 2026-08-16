@@ -59,6 +59,7 @@ export interface RoutineLauncher {
     deliveryChannelId?: string | null | undefined;
     deliveryThreadId?: string | null | undefined;
     runRef?: string | undefined;
+    routineName?: string | undefined;
   }): Promise<LaunchedRoutineRun>;
 }
 
@@ -358,6 +359,7 @@ export async function launchAndCorrelate(
     deliveryChannelId: input.deliveryChannelId,
     deliveryThreadId: deliveryThreadId !== undefined ? deliveryThreadId : null,
     runRef: deliveryThreadId !== undefined ? input.routineId : undefined,
+    routineName: input.routineName,
   });
   try {
     await deps.store.recordRoutineRun({

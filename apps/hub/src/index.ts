@@ -56,6 +56,7 @@ import {
   createChatOrchestrator,
   createChatRoutes,
   createDeliveryThread,
+  joinRunParticipant,
   createDrizzleBlockResponseStore,
   createDrizzleChannelTenancyStore,
   createDrizzleChatStore,
@@ -1620,6 +1621,8 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     cryptoProviderCache: foldedRunCryptoProviders,
     dispatchTask: (input) => launchTask(taskLauncherDeps, input),
+    joinDeliveryChannel: (input) =>
+      joinRunParticipant({ store: chatStore }, input),
   });
   // Routines routes own their `/routines` and `/routine-drafts` prefixes, so
   // mount at the tenant root (same pattern as a package that ships absolute

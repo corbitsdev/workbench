@@ -58,6 +58,7 @@ import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { formatRunAddress } from "@intx/types";
 import type { AssetService } from "@intx/hub-sessions";
+import { handleFromName } from "@corbits/chat";
 import { renderRoutineInput, type RoutineLauncher } from "@corbits/routines";
 import { RECURRING_TASK_ASSET_NAME } from "@corbits/workflow-catalog";
 import type { LaunchTaskInput, TaskRecord } from "@corbits/tasks";
@@ -74,6 +75,19 @@ export type CreateHubRoutineLauncherDeps = FoldedRunsDeps & {
    * task launch is) stays entirely in `@corbits/tasks`; this port is
    * pure composition, same as every other dep here. */
   dispatchTask: (input: LaunchTaskInput) => Promise<TaskRecord>;
+  /** Adds the launched run's address to the routine's delivery channel
+   * as a participant — hub wires this to `@corbits/chat`'s
+   * `joinRunParticipant`. Membership is what makes the chat
+   * orchestrator post the run's replies into that channel: a routine
+   * delivers into a workbench through the exact same participant path
+   * an invited agent's replies take, never a second posting mechanism. */
+  joinDeliveryChannel: (input: {
+    tenantId: string;
+    channelId: string;
+    principalId: string;
+    address: string;
+    handle: string;
+  }) => Promise<void>;
 };
 
 function recurringTaskFieldsFromInput(input: Record<string, unknown>): {
@@ -165,6 +179,25 @@ export function createHubRoutineLauncher(
         foldedBody,
         launchLabel: "a routine",
       });
+
+      if (
+        input.deliveryChannelId !== undefined &&
+        input.deliveryChannelId !== null &&
+        input.deliveryChannelId !== ""
+      ) {
+        try {
+          await deps.joinDeliveryChannel({
+            tenantId: input.tenantId,
+            channelId: input.deliveryChannelId,
+            principalId: input.principalId,
+            address: triggerAddress,
+            handle: handleFromName(input.routineName ?? "", triggerAddress),
+          });
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          log.error`routine run ${instanceId} launched but could not join delivery channel ${input.deliveryChannelId}: ${reason}`;
+        }
+      }
 
       // Empty/absent stored input keeps prior behavior: no mail, the
       // agent starts from its system prompt alone.
