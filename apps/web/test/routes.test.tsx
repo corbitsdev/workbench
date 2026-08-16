@@ -65,6 +65,7 @@ function activeFooterLabel(markup: string): string | undefined {
 const FOOTER_LABELS: Record<string, string> = {
   "/inbox": "Inbox",
   "/insights": "Insights",
+  "/plugins": "Plugins",
   "/settings": "Settings",
 };
 
@@ -79,6 +80,7 @@ describe("route table", () => {
       "/agents",
       "/skills",
       "/insights",
+      "/plugins",
       "/settings",
     ]);
   });
