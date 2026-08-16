@@ -367,7 +367,7 @@ function AgentDetailPanel({
 /**
  * Settings · Agents: definitions only. `tenantId`, `navigate`, and
  * `entityId` come from the settings section context (see
- * `../settings-workspace-sections.tsx`); this component owns its own
+ * `../settings-everyone-sections.tsx`); this component owns its own
  * fetch, search, selection, and create dialog since a settings section has
  * no separate col2 list to lean on.
  */

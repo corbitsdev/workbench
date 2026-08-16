@@ -473,7 +473,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
           <RichEmptyState
             icon={<FileStack />}
             title="Library not configured"
-            description="Library isn't set up yet. Ask your workspace admin to finish setup."
+            description="Library isn't set up yet. Ask your workbench admin to finish setup."
           />
         </PageShell>
       </div>

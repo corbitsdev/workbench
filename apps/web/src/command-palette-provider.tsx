@@ -5,6 +5,8 @@ import {
 } from "@corbits/react-ui";
 import type { CommandPaletteGroup } from "@corbits/react-ui";
 import { listChannels } from "@corbits/chat-ui";
+import { filterWorkbenchMemberships, listChannelTenantIds } from "@corbits/bench-ui";
+import { useQuery } from "@tanstack/react-query";
 import {
   buildCommandPaletteGroups,
   buildStaticCommands,
@@ -34,7 +36,7 @@ import { useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
 import { listRoutines, runRoutineNow, useTenantQuery } from "./routines-api";
 import { listSkills } from "./skills-api";
-import { tenantKeys } from "./query-client";
+import { meKeys, tenantKeys } from "./query-client";
 import type { Navigate } from "./navigation";
 
 const STATIC_COMMANDS = buildStaticCommands(
@@ -65,7 +67,7 @@ export function CommandPaletteProvider({
   readonly path: string;
   readonly navigate: Navigate;
 }) {
-  const { selectedTenantId } = useBench();
+  const { memberships, selectedTenantId, selectTenant } = useBench();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -240,6 +242,40 @@ export function CommandPaletteProvider({
     ArtifactListPageSchema,
   );
 
+  // CL-6089's hidden escape hatch: the sidebar dropped its bench switcher
+  // (a workbench IS a conversation now, one per account in the common
+  // case), but a multi-bench install still needs a way in. Plainly
+  // labeled, cycling to the next workbench in membership order — the
+  // simplest honest thing a single command-palette entry can do without
+  // reinventing a picker. Absent entirely for the common one-workbench
+  // account, same principle the old dock used to hide itself by.
+  const workbenchMembershipTenantIds =
+    memberships.kind === "ready"
+      ? memberships.data.data.map((membership) => membership.tenantId)
+      : [];
+  const channelTenancyKinds = useQuery({
+    queryKey: meKeys.channelTenancyKinds(workbenchMembershipTenantIds),
+    queryFn: () => listChannelTenantIds(workbenchMembershipTenantIds),
+    enabled: workbenchMembershipTenantIds.length > 0,
+  });
+  const workbenchMemberships =
+    memberships.kind === "ready"
+      ? filterWorkbenchMemberships(
+          memberships.data.data,
+          channelTenancyKinds.data ?? new Set(),
+        )
+      : [];
+  const nextWorkbench =
+    workbenchMemberships.length > 1
+      ? workbenchMemberships[
+          (workbenchMemberships.findIndex(
+            (membership) => membership.tenantId === selectedTenantId,
+          ) +
+            1) %
+            workbenchMemberships.length
+        ]
+      : undefined;
+
   useCommandShortcut(() => setOpen((current) => !current));
 
   // Global "New task" shortcut (Cmd+T / Ctrl+T), mounted at the same
@@ -310,8 +346,18 @@ export function CommandPaletteProvider({
             subtitle: "Run this routine now",
           }))
         : [];
-    return [...commands, ...runNow];
-  }, [routinesQuery]);
+    const switchWorkbench =
+      nextWorkbench !== undefined
+        ? [
+            {
+              id: "action:switch-workbench",
+              title: "Switch workbench",
+              subtitle: `Next: ${nextWorkbench.tenantName}`,
+            },
+          ]
+        : [];
+    return [...commands, ...runNow, ...switchWorkbench];
+  }, [routinesQuery, nextWorkbench]);
 
   const channelItems = useMemo<readonly PaletteResultItem[]>(() => {
     if (bareScopeKind === "channels") return bareChannels;
@@ -450,7 +496,9 @@ export function CommandPaletteProvider({
 
   const handleSelect = useCallback(
     (id: string) => {
-      if (id.startsWith("action:run-routine:")) {
+      if (id === "action:switch-workbench") {
+        if (nextWorkbench !== undefined) selectTenant(nextWorkbench.tenantId);
+      } else if (id.startsWith("action:run-routine:")) {
         const routineId = id.slice("action:run-routine:".length);
         if (selectedTenantId !== null) {
           void runRoutineNow(selectedTenantId, routineId);
@@ -524,6 +572,8 @@ export function CommandPaletteProvider({
       routineItems,
       skillItems,
       libraryItems,
+      nextWorkbench,
+      selectTenant,
     ],
   );
 

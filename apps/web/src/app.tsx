@@ -29,10 +29,16 @@ import { ShellChromeProvider } from "./shell/shell-chrome-provider";
  * account with no completed onboarding must never see "Select a workbench";
  * the wizard is the only thing on screen until it hands off to `/`.
  */
-function OnboardingGate({ navigate }: { readonly navigate: Navigate }) {
+function OnboardingGate({
+  navigate,
+  user,
+}: {
+  readonly navigate: Navigate;
+  readonly user: SessionUser;
+}) {
   return (
     <NavigationProvider navigate={navigate}>
-      <OnboardingPage />
+      <OnboardingPage user={user} />
     </NavigationProvider>
   );
 }
@@ -145,7 +151,7 @@ export function App({
       );
     case "signed-in":
       if (path === ONBOARDING_PATH) {
-        return <OnboardingGate navigate={navigate} />;
+        return <OnboardingGate navigate={navigate} user={session.user} />;
       }
       return (
         <Shell

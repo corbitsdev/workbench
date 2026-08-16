@@ -1,10 +1,10 @@
-// This app's own additions to the Workspace settings group: Agents and
+// This app's own additions to the Everyone settings group: Agents and
 // Skills (CL-5990). `@corbits/settings-ui` stays generic — it owns the
-// Personal/Workspace shell and gating, never a specific app's domain
+// Account/Everyone shell and gating, never a specific app's domain
 // sections — so these two are assembled here and spliced in via the
-// package's `insertWorkspaceSections`, the same seam `settings-page.tsx`
+// package's `insertEveryoneSections`, the same seam `settings-page.tsx`
 // and `pages/settings-nav.tsx` both call so the stage and its section nav
-// can never drift on what Workspace contains.
+// can never drift on what Everyone contains.
 
 import type { SettingsSection } from "@corbits/settings-ui";
 import { Bot, Sparkles } from "lucide-react";
@@ -15,7 +15,7 @@ import { SkillsSettingsSection } from "./pages/skills-settings-section";
 export const AGENTS_SECTION_ID = "agents";
 export const SKILLS_SECTION_ID = "skills";
 
-export function workspaceExtraSections(): readonly SettingsSection[] {
+export function everyoneExtraSections(): readonly SettingsSection[] {
   return [
     {
       id: AGENTS_SECTION_ID,

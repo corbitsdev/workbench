@@ -278,7 +278,7 @@ export const CHAT_STRINGS = {
   channelSettingsAssistantHistoryRestoreError:
     "Couldn't restore that version — try again.",
   channelSettingsAccessBody:
-    "Access follows workbench grants and membership. Manage role and member grants under Workspace → Grants.",
+    "Access follows workbench grants and membership. Manage role and member grants under Settings → Everyone.",
   channelSettingsNotificationsLabel: "Notifications",
   channelSettingsNotifyAll: "All messages",
   channelSettingsNotifyMentions: "Mentions only",

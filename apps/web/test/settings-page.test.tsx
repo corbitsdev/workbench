@@ -96,7 +96,7 @@ describe("SettingsRoute section-id redirect", () => {
 
   test("an always-allowed section id does not redirect", async () => {
     const navigated: string[] = [];
-    await mount("/settings/bench", navigated);
+    await mount("/settings/account", navigated);
     expect(navigated).toEqual([]);
   });
 });

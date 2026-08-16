@@ -3,12 +3,12 @@
 
 export const SETTINGS_STRINGS = {
   pageTitle: "Settings",
-  pageSubtitle: "Personal preferences and shared workspace configuration",
+  pageSubtitle: "Your account and everyone on your workbench",
   sectionsNavLabel: "Settings sections",
   emptySectionsTitle: "Nothing to show",
   emptySectionsDescription: "No settings sections are available right now.",
-  groupPersonalLabel: "Personal · only you",
-  groupWorkspaceLabel: "Workspace · shared",
+  groupAccountLabel: "Account · only you",
+  groupEveryoneLabel: "Everyone · shared",
 
   agentSectionTitle: "Your agent",
   agentSectionDescription:

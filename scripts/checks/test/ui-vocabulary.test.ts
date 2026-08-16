@@ -252,11 +252,22 @@ test("a reintroduced 'space' in user-facing prose is a violation (CL-6081: the s
   expect(report.violations[0]).toContain("space");
 });
 
-test("'workspace' itself never false-matches 'space'", () => {
+test("'workspace' is its own banned term, not just a 'space' false-match (CL-6089)", () => {
   const report = auditUiVocabulary([
     {
       relPath: "apps/web/src/pages/onboarding-page.tsx",
       contents: `description="This workspace is ready to go."`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("workspace");
+});
+
+test("'workbench' never false-matches the 'workspace' ban", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/pages/onboarding-page.tsx",
+      contents: `description="This workbench is ready to go."`,
     },
   ]);
   expect(report.violations).toEqual([]);

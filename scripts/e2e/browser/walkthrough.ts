@@ -442,7 +442,6 @@ async function run(): Promise<void> {
 
     const email = `browser-e2e-${crypto.randomUUID()}@example.invalid`;
     const password = `pw-${crypto.randomUUID()}`;
-    const workbenchName = "Browser Harness Bench";
     const stubApiKey = "sk-e2e-stub-not-real";
 
     // --- Step 1: signup -> onboarding -> connect provider (stub key) -> shell
@@ -461,11 +460,11 @@ async function run(): Promise<void> {
       return { status: "pass", detail: `signed up as ${email}, reached onboarding` };
     });
 
-    await step(() => page, "02-onboarding-naming", async () => {
-      await page.waitForSelector("#onboarding-workbench-name", { timeout: 10_000 });
-      await page.type("#onboarding-workbench-name", workbenchName);
-      await clickByText(page, "button[type=submit]", "Continue");
-      // Credential step renders next: an inference-provider radiogroup.
+    await step(() => page, "02-onboarding-provisioning", async () => {
+      // CL-6089 dropped the naming step: provisioning now fires
+      // automatically, under a default name derived from the account, the
+      // moment the wizard mounts. This step just waits for it to land on
+      // the credential step next — an inference-provider radiogroup.
       await page.waitForSelector('[aria-label="Inference provider"]', {
         timeout: 15_000,
       });
