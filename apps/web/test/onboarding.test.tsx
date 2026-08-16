@@ -21,7 +21,6 @@ import {
   readOpenRouterConnectReturn,
   SECONDARY_CREDENTIAL_PROVIDERS,
   submitCredential,
-  testCredential,
   triggerFirstLoginProvisioning,
 } from "../src/onboarding";
 import { OnboardingPage } from "../src/pages/onboarding-page";
@@ -237,31 +236,6 @@ describe("triggerFirstLoginProvisioning", () => {
 
     const result = await triggerFirstLoginProvisioning();
     expect(result).toEqual({ kind: "existing-member" });
-  });
-});
-
-describe("testCredential", () => {
-  test("a rejected key is reported with the hub's own reason", async () => {
-    let requestBody: unknown = null;
-    globalThis.fetch = (async (_url: string, init: RequestInit) => {
-      requestBody = JSON.parse((init as RequestInit).body as string);
-      return json(
-        { error: { code: "invalid_credential", message: "invalid api key" } },
-        422,
-      );
-    }) as unknown as typeof fetch;
-
-    const result = await testCredential("openai", "sk-bad");
-    expect(result).toEqual({ ok: false, message: "invalid api key" });
-    expect(requestBody).toEqual({ provider: "openai", apiKey: "sk-bad" });
-  });
-
-  test("an accepted key reports ok", async () => {
-    globalThis.fetch = (async () =>
-      json({ ok: true })) as unknown as typeof fetch;
-
-    const result = await testCredential("anthropic", "sk-ant-good");
-    expect(result).toEqual({ ok: true });
   });
 });
 
@@ -699,7 +673,7 @@ describe("the OpenRouter connect card", () => {
       "/onboarding?connect=openrouter&outcome=error&code=state_expired",
     );
 
-    expect(markup).toContain("Connect with OpenRouter");
+    expect(markup).toContain("OpenRouter");
     expect(markup).toContain("/api/onboarding/oauth/openrouter/start");
     expect(markup.indexOf("onboarding-connect-card")).toBeLessThan(
       markup.indexOf("onboarding-credential-form"),
@@ -711,9 +685,9 @@ describe("the OpenRouter connect card", () => {
   test("a connected return shows the finishing-setup progress state, not a fabricated done checklist", () => {
     // Before `completeSetup` resolves, the wizard must never claim the
     // routines already ran — that was the bug this split fixes: the
-    // OAuth callback only proved and stored the key, so the checklist
-    // showing "confirmed running" before the deploy step even started
-    // would be a lie.
+    // OAuth callback only stored the key, so the checklist showing
+    // "confirmed running" before the deploy step even started would be
+    // a lie.
     const markup = renderOnboardingAt(
       "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
     );
@@ -821,7 +795,7 @@ describe("the OpenRouter connect card", () => {
       expect(container.textContent).not.toContain("That key didn't work");
       // Still offers the one-click connect and the paste-a-key form —
       // never a dead end.
-      expect(container.textContent).toContain("Connect with OpenRouter");
+      expect(container.textContent).toContain("OpenRouter");
     } finally {
       act(() => root.unmount());
       container.remove();

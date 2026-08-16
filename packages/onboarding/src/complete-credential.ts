@@ -1,33 +1,38 @@
 // The guided credential step of first-run: a signed-in user who reached
 // onboarding with no seed model configured picks a provider — any of
-// `supportedCredentialProviders()` — and pastes their own key. The key is
-// proven with a real, free call before anything is stored (see
-// `@workbench/hub-client`'s `testProviderCredential`, which probes that
-// provider's own auth-gated endpoint), and only once it's proven does
-// this seed the caller's own personal bench — the same `seedCatalog` +
-// `seedTenant` the first-login hook runs when a hub-owned key is
-// configured, so a self-served key and an operator-configured one land
-// the same bench. Both plant the credential through the hub's native
-// `POST /api/tenants/:id/credentials` route (see `seedCatalog`'s
-// `ensureCredential`) — this module never stores a secret itself.
+// `supportedCredentialProviders()` — and pastes their own key. CL-6123
+// dropped the blocking probe that used to sit in front of this: an
+// onboarding submission is accepted and stored immediately, with no
+// live call to the provider gating it. A key that turns out to be wrong
+// is caught later, the first time it is actually dialed for real
+// inference, and surfaces in-chat through the existing credential-error
+// + "Fix this connection" flow (CL-6092) — that is the designed place to
+// catch a bad key, not a synchronous check onboarding makes someone wait
+// on. Storing plants the credential and its catalog through the hub's
+// native `POST /api/tenants/:id/credentials` route (see `seedCatalog`'s
+// `ensureCredential`) — this module never stores a secret itself — the
+// same `seedCatalog` + `seedTenant` the first-login hook runs when a
+// hub-owned key is configured, so a self-served key and an
+// operator-configured one land the same bench.
 //
 // Two halves, on purpose. `testAndPersistCredential` — the fast half —
-// proves the key and plants the credential and its catalog; it is the
-// only half an OAuth callback route runs before redirecting, because
-// nothing in it ever deploys a workflow. `ensureSeeded` — the slow half
-// — is the workflow-deploy step that used to run inline in the same
-// request: minutes of deploy calls a browser had no business waiting on
+// plants the credential and its catalog; it is the only half an OAuth
+// callback route runs before redirecting, because nothing in it ever
+// deploys a workflow. `ensureSeeded` — the slow half — is the
+// workflow-deploy step that used to run inline in the same request:
+// minutes of deploy calls a browser had no business waiting on
 // mid-redirect. A pasted-key submission (`/complete`, a plain fetch, not
 // a redirect the browser can double-fire) still runs both halves
 // synchronously through `completeCredentialSetup` below, unchanged.
 //
-// `ensureSeeded` runs with `confirmDeployments: false`: the probe
-// already proved the key is valid, so there is nothing left to confirm
-// by triggering a real, billed inference call against the account the
-// user just connected — only insufficient credit or a busy sidecar for
-// a fully valid key to fail on, surfacing as a false "setup failed".
-// Deployment itself still runs (it is configuration, not inference), so
-// the bench's default workflows are genuinely usable once this returns.
+// `ensureSeeded` runs with `confirmDeployments: false`: there is nothing
+// to confirm by triggering a real, billed inference call against an
+// account whose key was never probed — only insufficient credit, a bad
+// key, or a busy sidecar for `confirmDeployments: true` to fail
+// spuriously on. Deployment itself still runs (it is configuration, not
+// inference), so the bench's default workflows are genuinely usable
+// once this returns; whether the key actually works is proven the first
+// time a workflow really dials it.
 //
 // The workflows deploy against the connected provider's own default
 // model — read straight out of `CATALOG_SEEDS` (`catalog-seed-data.ts`),
@@ -49,13 +54,11 @@ import {
   seedCatalog,
   seedTenant,
   supportedCredentialProviders,
-  testProviderCredential,
   type ApiCall,
   type ModelSource,
   type SeedCatalogArgs,
   type SeedTenantArgs,
   type SupportedCredentialProvider,
-  type TestProviderCredentialArgs,
   type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@workbench/hub-client";
@@ -69,6 +72,13 @@ export type PersonalTenant = {
 };
 
 export type TestAndPersistCredentialResult =
+  /**
+   * Kept for API compatibility with dependents that accept it as a
+   * possible outcome (`@workbench/connections`' `OAuthStoreOutcome`,
+   * matched "exactly" per that module's own doc comment) — the default
+   * implementation below never produces it, since CL-6123 dropped the
+   * probe that used to be the only thing that could.
+   */
   | { readonly kind: "invalid-credential"; readonly message: string }
   | { readonly kind: "no-personal-bench" }
   | ({ readonly kind: "connected" } & PersonalTenant);
@@ -110,9 +120,6 @@ export type TestAndPersistCredentialArgs = CommonArgs & {
    * pasted key or a durable-key connect flow (OpenRouter).
    */
   credentialMetadata?: Record<string, unknown>;
-  testCredential?: (
-    args: TestProviderCredentialArgs,
-  ) => ReturnType<typeof testProviderCredential>;
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
 };
 
@@ -129,9 +136,6 @@ export type CompleteCredentialArgs = CommonArgs & {
   provider: SupportedCredentialProvider;
   apiKey: string;
   credentialMetadata?: Record<string, unknown>;
-  testCredential?: (
-    args: TestProviderCredentialArgs,
-  ) => ReturnType<typeof testProviderCredential>;
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
   seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
 };
@@ -189,8 +193,8 @@ export async function findPersonalTenant(
 
 /** The `ModelSource` `ensureSeeded` deploys every default workflow
  * against: the connected provider's own curated default model
- * (`CATALOG_SEEDS`), paired with the plaintext key that proved itself
- * against that same provider. */
+ * (`CATALOG_SEEDS`), paired with the plaintext key stored for that same
+ * provider — never probed against it before this point. */
 export function modelSourceFor(
   provider: SupportedCredentialProvider,
   apiKey: string,
@@ -211,26 +215,17 @@ export function modelSourceFor(
 }
 
 /**
- * The fast half: proves an onboarding user's key with a real call
- * against the provider they picked, then plants it as a credential on
+ * The fast half: plants an onboarding user's key as a credential on
  * their own personal bench, alongside that provider's curated model
- * catalog. A bad key never reaches the tenant at all — the credential
- * test runs first and short-circuits everything else. Never deploys a
- * workflow — that is `ensureSeeded`'s job, deliberately kept out of this
- * half so an OAuth callback route can run only this and redirect
- * immediately.
+ * catalog — immediately, with no live call to the provider gating it
+ * (CL-6123). Never deploys a workflow — that is `ensureSeeded`'s job,
+ * deliberately kept out of this half so an OAuth callback route can run
+ * only this and redirect immediately.
  */
 export async function testAndPersistCredential(
   args: TestAndPersistCredentialArgs,
 ): Promise<TestAndPersistCredentialResult> {
-  const testCredential = args.testCredential ?? testProviderCredential;
   const runSeedCatalog = args.seedCatalogFn ?? seedCatalog;
-
-  const test = await testCredential({
-    provider: args.provider,
-    apiKey: args.apiKey,
-  });
-  if (!test.ok) return { kind: "invalid-credential", message: test.message };
 
   const expectedSlug = personalTenantSlug(args.userEmail, args.userId);
   const tenant = await findPersonalTenant(args.api, args.cookies, expectedSlug);
@@ -248,9 +243,12 @@ export async function testAndPersistCredential(
       args.credentialMetadata !== undefined
         ? ("oauth_token" as const)
         : ("api_key" as const),
-    // `test` above already proved `args.apiKey` against the provider's
-    // own probe, so a name conflict on an api_key credential (a
-    // regenerated key, or a retry after a bad paste) is safe to rotate.
+    // An explicit user submission through a connect UI — a pasted key or
+    // a completed OAuth exchange — always rotates a name-conflicting
+    // api_key credential (a regenerated key, or a retry after a bad
+    // paste), independent of whether the key was ever probed: see
+    // `ensureCredential`'s own `verified` doc comment in
+    // `@workbench/hub-client`'s `seed.ts` for the full rotation rule.
     credentialVerified: true,
   };
   await runSeedCatalog(

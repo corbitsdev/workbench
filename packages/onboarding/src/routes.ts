@@ -14,7 +14,6 @@ import {
   inferenceCredentialName,
   parseAs,
   supportedCredentialProviders,
-  testProviderCredential,
   type ApiCall,
   type ModelSource,
   type SupportedCredentialProvider,
@@ -77,10 +76,11 @@ export type CreateOnboardingRoutesDeps = {
   logError?: (line: string) => void;
   openrouterConnect?: {
     exchange?: typeof exchangeCodeForKey;
-    /** The fast half only — proves the code-exchanged key and persists
-     * it as a credential. Never deploys a workflow; see
-     * `complete-credential.ts`'s module comment for why the callback
-     * route must never run more than this before redirecting. */
+    /** The fast half only — persists the code-exchanged key as a
+     * credential, no probe gating it (CL-6123). Never deploys a
+     * workflow; see `complete-credential.ts`'s module comment for why
+     * the callback route must never run more than this before
+     * redirecting. */
     connectCredential?: typeof testAndPersistCredential;
   };
   /** The public OAuth app id from huggingface.co/settings/applications
@@ -366,9 +366,9 @@ export function createOnboardingRoutes(
   // `createOAuthConnectRoutes` — state sealing, PKCE, cookies, rate
   // limiting, and the duplicate-callback recovery shape all live there
   // now, driven by `CONNECTOR_REGISTRY`'s `openrouter`/`huggingface`
-  // entries. What stays here, unchanged: proving and persisting the
-  // exchanged material (`testAndPersistCredential`, the fast half —
-  // never a workflow deploy), the duplicate-callback recovery lookup
+  // entries. What stays here, unchanged: persisting the exchanged
+  // material (`testAndPersistCredential`, the fast half — no probe, no
+  // workflow deploy), the duplicate-callback recovery lookup
   // (`recentlyConnectedCredential`, below), and writing the pending-seed
   // row the deferred `/complete-setup` deploy step reads (see
   // `./pending-seed.ts`). Every test seam this package's deps already
@@ -459,7 +459,7 @@ export function createOnboardingRoutes(
     },
   };
 
-  /** The fast half only — proves and persists the exchanged material,
+  /** The fast half only — persists the exchanged material, no probe,
    * never deploys a workflow. Dispatches to whichever provider's own
    * test-seam override (`deps.openrouterConnect`/`deps.huggingfaceConnect`)
    * applies, defaulting both to `testAndPersistCredential`. */
@@ -563,47 +563,6 @@ export function createOnboardingRoutes(
     }),
   );
 
-  // A pure test: proves a key against the provider's real API before the
-  // caller commits to anything. No credential is stored here — storage
-  // and the rest of seeding only happen from `/complete`, and even that
-  // stores through the hub's own `POST /api/tenants/:id/credentials`
-  // route (see `complete-credential.ts`), never by reimplementing it.
-  app.post("/credential/test", async (c) => {
-    const user = c.get("user");
-    if (!user) {
-      return c.json(
-        { error: { code: "unauthorized", message: "Authentication required" } },
-        401,
-      );
-    }
-
-    const body: unknown = await c.req.json().catch(() => null);
-    const parsed = SubmitCredential(body);
-    if (parsed instanceof type.errors) {
-      return c.json(
-        {
-          error: {
-            code: "invalid_request",
-            message: `A provider and an API key are required: ${parsed.summary}`,
-          },
-        },
-        400,
-      );
-    }
-
-    const result = await testProviderCredential({
-      provider: parsed.provider,
-      apiKey: parsed.apiKey,
-    });
-    if (!result.ok) {
-      return c.json(
-        { error: { code: "invalid_credential", message: result.message } },
-        422,
-      );
-    }
-    return c.json({ ok: true }, 200);
-  });
-
   app.post("/complete", async (c) => {
     const user = c.get("user");
     if (!user) {
@@ -676,8 +635,8 @@ export function createOnboardingRoutes(
       // sentence rather than leaking an internal error shape at a user.
       const shown =
         cause instanceof ProvisionError
-          ? `The key checked out, but setting up your workbench failed: ${cause.message}.`
-          : "The key checked out, but setting up your workbench failed. " +
+          ? `Your key was added, but setting up your workbench failed: ${cause.message}.`
+          : "Your key was added, but setting up your workbench failed. " +
             "The hub log has the underlying error.";
       return c.json(
         {
