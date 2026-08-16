@@ -103,8 +103,13 @@ function dispatchTask(input: unknown) {
   return Promise.resolve(dispatchTaskResult as never);
 }
 
+let joinDeliveryChannelCalls: unknown[] = [];
+
 function buildLauncher(overrides: { definition?: unknown } = {}) {
   return createHubRoutineLauncher({
+    joinDeliveryChannel: async (input: unknown) => {
+      joinDeliveryChannelCalls.push(input);
+    },
     db: createFakeDb(overrides) as never,
     sessionService: {} as never,
     assetService: {} as never,
@@ -188,6 +193,55 @@ const RECURRING_TASK_DEFINITION_ROW = {
   name: RECURRING_TASK_ASSET_NAME,
 };
 
+describe("createHubRoutineLauncher — delivery channel", () => {
+  test("joins the launched run into the routine's delivery channel so the orchestrator posts its replies there", async () => {
+    launchFoldedRunCalls = [];
+    joinDeliveryChannelCalls = [];
+
+    const result = await buildLauncher().launchRoutineRun({
+      ...baseInput({}),
+      deliveryChannelId: "chn_delivery",
+      routineName: "Daily GTM digest",
+    });
+
+    expect(joinDeliveryChannelCalls).toEqual([
+      {
+        tenantId: "ten_1",
+        channelId: "chn_delivery",
+        principalId: "usr_1",
+        address: `${result.runId}@acme.workbench.test`,
+        handle: "daily-gtm-digest",
+      },
+    ]);
+  });
+
+  test("joins nothing when the routine has no delivery channel", async () => {
+    joinDeliveryChannelCalls = [];
+    await buildLauncher().launchRoutineRun(baseInput({}));
+    expect(joinDeliveryChannelCalls).toHaveLength(0);
+  });
+
+  test("a join failure never un-launches or hides the run", async () => {
+    const launcher = createHubRoutineLauncher({
+      joinDeliveryChannel: async () => {
+        throw new Error("settings write failed");
+      },
+      db: createFakeDb() as never,
+      sessionService: {} as never,
+      assetService: {} as never,
+      sidecarRouter: {} as never,
+      eventCollectors: {} as never,
+      cryptoProviderCache: { get: async () => ({}) as never },
+      dispatchTask: dispatchTask as never,
+    });
+    const result = await launcher.launchRoutineRun({
+      ...baseInput({}),
+      deliveryChannelId: "chn_delivery",
+    });
+    expect(result.runId).toBeTruthy();
+  });
+});
+
 describe("createHubRoutineLauncher — recurring-task bridge", () => {
   test("dispatches through dispatchTask instead of launching its own folded run", async () => {
     launchFoldedRunCalls = [];
@@ -196,6 +250,7 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
     dispatchTaskResult = { runId: "wfr_task1" };
 
     const result = await createHubRoutineLauncher({
+      joinDeliveryChannel: async () => {},
       db: createFakeDb({ definition: RECURRING_TASK_DEFINITION_ROW }) as never,
       sessionService: {} as never,
       assetService: {} as never,
@@ -231,6 +286,7 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
     );
 
     const launcher = createHubRoutineLauncher({
+      joinDeliveryChannel: async () => {},
       db: createFakeDb({ definition: RECURRING_TASK_DEFINITION_ROW }) as never,
       sessionService: {} as never,
       assetService: {} as never,
@@ -255,6 +311,7 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
     dispatchTaskResult = { runId: "wfr_task2" };
 
     const result = await createHubRoutineLauncher({
+      joinDeliveryChannel: async () => {},
       db: createFakeDb({ definition: RECURRING_TASK_DEFINITION_ROW }) as never,
       sessionService: {} as never,
       assetService: {} as never,
@@ -284,6 +341,7 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
     dispatchTaskCalls = [];
 
     const launcher = createHubRoutineLauncher({
+      joinDeliveryChannel: async () => {},
       db: createFakeDb({ definition: RECURRING_TASK_DEFINITION_ROW }) as never,
       sessionService: {} as never,
       assetService: {} as never,
@@ -303,6 +361,7 @@ describe("createHubRoutineLauncher — recurring-task bridge", () => {
     dispatchTaskCalls = [];
 
     const launcher = createHubRoutineLauncher({
+      joinDeliveryChannel: async () => {},
       db: createFakeDb({ definition: RECURRING_TASK_DEFINITION_ROW }) as never,
       sessionService: {} as never,
       assetService: {} as never,
