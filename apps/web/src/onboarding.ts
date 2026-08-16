@@ -376,9 +376,10 @@ export type CredentialOutcome =
   | {
       readonly kind: "seeded";
       /** Absent only for a response older than this field existing --
-       * every current `/complete` response carries it. Consumers (the
-       * onboarding wizard's optional "Connect your tools" phase) treat
-       * a missing id as "skip that phase," never as an error. */
+       * every current `/complete` response carries it. The wizard itself
+       * no longer branches on it (CL-6104 dropped the optional "Connect
+       * your tools" phase this once fed) — it stays parsed because the
+       * server response carries it regardless. */
       readonly tenantId?: string;
       readonly tenantSlug: string;
       readonly workflows: string[];

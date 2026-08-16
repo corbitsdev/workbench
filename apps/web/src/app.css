@@ -1603,6 +1603,7 @@ html {
 /* Square corners throughout the wizard's own inputs and buttons — the one
    deliberate departure from the app's default `--radius`. */
 .onboarding-content input,
+.onboarding-content textarea,
 .onboarding-content button,
 .onboarding-content [role="radiogroup"] button {
   border-radius: 0;
@@ -1657,14 +1658,16 @@ html {
 }
 
 .onboarding-name-form,
-.onboarding-credential-form {
+.onboarding-credential-form,
+.onboarding-describe-form {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
 }
 
 .onboarding-name-form label,
-.onboarding-credential-form label {
+.onboarding-credential-form label,
+.onboarding-describe-form label {
   font-size: 0.8125rem;
   font-weight: 600;
 }
@@ -1677,9 +1680,19 @@ html {
 }
 
 .onboarding-name-form button[type="submit"],
-.onboarding-credential-form button[type="submit"] {
+.onboarding-credential-form button[type="submit"],
+.onboarding-describe-form button[type="submit"] {
   margin-top: 0.5rem;
   align-self: flex-start;
+}
+
+.onboarding-describe-form textarea {
+  resize: vertical;
+  min-height: 6rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--background);
+  font: inherit;
 }
 
 .onboarding-provider-picker {
@@ -1763,15 +1776,6 @@ html {
   border-top-color: var(--shell-accent, #e98428);
   border-radius: 50%;
   animation: onboarding-spin 0.8s linear infinite;
-}
-
-/* Reserves the ready grid's rough footprint so the "Skip for now" /
-   "Continue" button doesn't jump down once the connectors finish loading. */
-.onboarding-connect-tools-loading {
-  display: flex;
-  min-height: 14rem;
-  align-items: center;
-  justify-content: center;
 }
 
 @keyframes onboarding-spin {

@@ -98,10 +98,12 @@ type ConnectionsData = {
  * fetch, the connect/reconnect dialog, and disconnect all owned here so
  * a caller only supplies the data it already has and a place to send a
  * reload/error signal. `ConnectionsSection` composes this with the OAuth
- * card row and the advanced credentials table for the full settings
- * page; the onboarding wizard's "Connect your tools" step (CL-6028)
- * renders this alone, filtered to `feedsTools`-bearing connectors, with
- * nothing else around it. Renders bare `ConnectorCard`s — not wrapped in
+ * card row and the advanced credentials table for the full Settings >
+ * Connections page — its one consumer today. The onboarding wizard's own
+ * "Connect your tools" step (CL-6028), which once rendered this alone
+ * filtered to `feedsTools`-bearing connectors, was dropped in CL-6104:
+ * connecting tools now lives only in Settings and the Plugins gallery,
+ * never in onboarding. Renders bare `ConnectorCard`s — not wrapped in
  * `.settings-connections-grid` itself — so a caller controls the grid
  * container (and can put other cards, like the OAuth pair, in the same
  * grid alongside these).

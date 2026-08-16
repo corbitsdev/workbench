@@ -4,7 +4,9 @@
 // routes — Inbox, Insights, and Settings are reached from its footer, and
 // everything here also stays reachable by deep link and the palette.
 // Conversation deep links (`/c/:channelId`) stay routable; `/` is the Myra
-// land hop (ensure + open her conversation), not a Home dashboard.
+// land hop (ensure + open her conversation) for a bench with a workbench
+// already, or the guided first-workbench describe screen for a bench with
+// none (CL-6104) — never a Home dashboard.
 // Approvals has no page — the Activity band owns them. Agents and Skills
 // are Settings sections; `/agents` and `/skills` stay routable only as
 // redirects to their new home, so old links and bookmarks still land
