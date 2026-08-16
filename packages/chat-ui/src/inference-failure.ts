@@ -20,7 +20,11 @@
 // "aborted" preambles those other categories get — a false match here
 // would offer "Fix this connection" on a turn that was never a
 // connection problem.
-const CLASSIFIED_INFERENCE_FAILURE_PREAMBLES: readonly string[] = [
+// Exported so `test/inference-preamble-drift.test.ts` can assert these
+// stay byte-for-byte identical to the vendored source they're copied
+// from, rather than each preamble living only as an inline literal no
+// test can reach.
+export const CLASSIFIED_INFERENCE_FAILURE_PREAMBLES: readonly string[] = [
   "This agent could not complete your request due to a credential error",
   "This agent could not complete your request because the API quota has been exhausted",
 ];
