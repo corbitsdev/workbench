@@ -2,6 +2,7 @@
 // "what's already wired up" strip, distinct from the search/category grid
 // below it. Icon chip + a status dot, never a second copy of the card.
 
+import { Button } from "@corbits/react-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
 
 import { pluginIcon } from "./plugin-meta";
@@ -34,14 +35,16 @@ export function InstalledStrip({
       {installed.map((plugin) => {
         const Icon = pluginIcon(plugin.descriptor.id);
         return (
-          <button
+          <Button
             key={plugin.descriptor.id}
             type="button"
+            variant="outline"
+            size="icon"
             title={`${plugin.descriptor.displayName} — ${
               plugin.status === "connected" ? "connected" : "needs attention"
             }`}
             onClick={() => onOpen(plugin)}
-            className="relative flex size-8 items-center justify-center border border-border text-muted-foreground transition-colors hover:text-foreground"
+            className="relative text-muted-foreground hover:text-foreground"
           >
             <Icon className="size-4" />
             <span
@@ -49,7 +52,7 @@ export function InstalledStrip({
               data-state={plugin.status}
               className="absolute -bottom-0.5 -right-0.5 size-2 border border-background data-[state=connected]:bg-success data-[state=needs_attention]:bg-destructive"
             />
-          </button>
+          </Button>
         );
       })}
     </div>

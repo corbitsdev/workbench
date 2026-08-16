@@ -123,6 +123,40 @@ describe("PluginConnectPanel", () => {
     expect(container.textContent).toContain("Inbound webhook");
   });
 
+  test("a failed disconnect shows an inline error, not a silent no-op", async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: "nope" }), { status: 500 }),
+      )) as unknown as typeof fetch;
+
+    const container = render({
+      descriptor: descriptor("github", "GitHub", "api-key"),
+      status: "connected",
+      provenance: "this-workbench",
+      credentialId: "cred_github",
+      credentialName: "GitHub",
+    });
+
+    const disconnectButton = [
+      ...container.querySelectorAll("button"),
+    ].find((button) => button.textContent?.includes("Disconnect") === true);
+    expect(disconnectButton).not.toBeUndefined();
+
+    act(() => {
+      disconnectButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    act(() => {
+      disconnectButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    await settle();
+
+    expect(container.textContent).toContain("Couldn't disconnect");
+  });
+
   test("nothing renders when no plugin is selected", () => {
     const container = render(null);
     expect(container.querySelector('input[type="password"]')).toBeNull();
