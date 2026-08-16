@@ -54,6 +54,7 @@ import type {
   ChannelThread,
   CreateChannelInput,
   MessageItem,
+  ParticipantRecord,
   Part,
   PinnedMessage,
 } from "./api";
@@ -71,6 +72,8 @@ import { NewChannelDialog } from "./new-channel-dialog";
 import type { PersonOption } from "./new-channel-dialog";
 import { PinnedStrip } from "./pinned-strip";
 import { CHAT_STRINGS } from "./strings";
+import { useStreamingReply } from "./streaming-reply";
+import type { StreamingReplyState } from "./streaming-reply";
 import { AgentBadge, ChannelTimeline, messageDomId } from "./timeline";
 import type {
   CurrentUser,
@@ -307,6 +310,46 @@ export function mergePendingSends(
     pendingNonce: pending.nonce,
   }));
   return [...items, ...pendingItems];
+}
+
+/** The one client-side id `mergeStreamingReply` gives its synthetic
+ * timeline item — stable across renders (React's reconciliation key) and
+ * never mistaken for a server-issued message id (those come back from
+ * `POST`/`GET` routes with a different shape). */
+const STREAMING_REPLY_ITEM_ID = "streaming_reply";
+
+/**
+ * Folds the active turn's in-progress reply onto the end of the timeline,
+ * exactly the way `mergePendingSends` folds this reader's own optimistic
+ * sends — except this synthetic item is the *other* side's message, so it
+ * needs a sender to attribute it to. `chat.agent` events carry no sender
+ * (the raw `InferenceEvent` union has no such field, see
+ * `streaming-reply.ts`), so this picks the channel's first agent
+ * participant as the best available attribution; channels with more than
+ * one invited agent are a known approximation here, not a regression —
+ * today's non-streaming refetch has the same "which agent replied" gap
+ * until the persisted message's real sender lands.
+ */
+export function mergeStreamingReply(
+  items: readonly TimelineMessageItem[],
+  streamingReply: StreamingReplyState,
+  participants: readonly ParticipantRecord[],
+): readonly TimelineMessageItem[] {
+  if (streamingReply === null) return items;
+  const agent = participants.find((participant) =>
+    isAgentAddress(participant.address),
+  );
+  if (agent === undefined) return items;
+  return [
+    ...items,
+    {
+      id: STREAMING_REPLY_ITEM_ID,
+      createdAt: new Date().toISOString(),
+      parts: [{ kind: "text", text: streamingReply.text }],
+      sender: { name: null, address: agent.address },
+      streaming: true,
+    },
+  ];
 }
 
 /**
@@ -888,11 +931,14 @@ function ChatWorkspaceInner({
 
   const { typingState, handleStreamEvent: handleTypingEvent } =
     useTypingIndicator(currentUser?.principalId, activeChannelId);
+  const { streamingReply, handleStreamEvent: handleStreamingReplyEvent } =
+    useStreamingReply(activeChannelId);
 
   useChannelStream(
     activeChannelId !== null ? channelStreamUrl(tenantId, activeChannelId) : "",
     (eventType, data) => {
       handleTypingEvent(eventType, data);
+      handleStreamingReplyEvent(eventType, data);
       if (eventType !== "chat.typing") refreshUnlessUnauthorized();
       if (eventType === "chat.pin" && activeChannelId !== null) {
         void loadPins(activeChannelId);
@@ -1499,10 +1545,14 @@ function ChatWorkspaceInner({
                     </div>
                   ) : null}
                   <ChannelTimeline
-                    items={mergePendingSends(
-                      messagesState.items,
-                      pendingSends,
-                      currentUser?.principalId,
+                    items={mergeStreamingReply(
+                      mergePendingSends(
+                        messagesState.items,
+                        pendingSends,
+                        currentUser?.principalId,
+                      ),
+                      streamingReply,
+                      activeChannel?.participants ?? [],
                     )}
                     participants={activeChannel?.participants ?? []}
                     {...(currentUser !== undefined ? { currentUser } : {})}
