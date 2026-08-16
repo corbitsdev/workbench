@@ -4,7 +4,7 @@
 // tenant-seeding logic is implemented once.
 
 export type { ApiCall, ApiResult, Session } from "./hub";
-export { authenticate, createHubAPI, parseAs } from "./hub";
+export { authenticate, createHubAPI, parseAs, signIn } from "./hub";
 export { CliError, isCliError } from "./errors";
 export type {
   DefaultWorkflow,
