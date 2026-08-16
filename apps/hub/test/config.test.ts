@@ -275,7 +275,8 @@ describe("readHubConfig", () => {
     test("is read from HUB_SIDECAR_WEBSOCKET_URL when set", () => {
       const config = readHubConfig({
         ...validEnv,
-        HUB_SIDECAR_WEBSOCKET_URL: "ws://sidecar-host.internal:3000/api/sidecars/ws",
+        HUB_SIDECAR_WEBSOCKET_URL:
+          "ws://sidecar-host.internal:3000/api/sidecars/ws",
       });
       expect(config.sidecarWebSocketUrl).toBe(
         "ws://sidecar-host.internal:3000/api/sidecars/ws",

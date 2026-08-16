@@ -67,7 +67,9 @@ test("a non-ok response throws SidecarPlacementApiError with the status", async 
 });
 
 test("a malformed response body throws rather than returning garbage", async () => {
-  stubFetch(() => Response.json({ enabled: "yes", provisionerAvailable: true }));
+  stubFetch(() =>
+    Response.json({ enabled: "yes", provisionerAvailable: true }),
+  );
   await expect(getSidecarPlacement("tnt_1")).rejects.toBeInstanceOf(
     SidecarPlacementApiError,
   );

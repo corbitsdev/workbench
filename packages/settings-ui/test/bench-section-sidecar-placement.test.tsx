@@ -9,9 +9,10 @@ import type { Root } from "react-dom/client";
 
 import { BenchSectionView } from "../src/bench-section";
 
-function mount(
-  props: Partial<Parameters<typeof BenchSectionView>[0]> = {},
-): { container: HTMLDivElement; root: Root } {
+function mount(props: Partial<Parameters<typeof BenchSectionView>[0]> = {}): {
+  container: HTMLDivElement;
+  root: Root;
+} {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -90,9 +91,8 @@ describe("BenchSectionView sidecar placement", () => {
       },
     });
     try {
-      const toggle = document.body.querySelector<HTMLButtonElement>(
-        '[role="switch"]',
-      );
+      const toggle =
+        document.body.querySelector<HTMLButtonElement>('[role="switch"]');
       act(() => toggle?.click());
       expect(lastValue).toBe(true);
     } finally {
@@ -121,9 +121,8 @@ describe("BenchSectionView sidecar placement", () => {
   test("disables the switch and shows an honest hint when provisionerAvailable is false", () => {
     const { container, root } = mount({ sidecarPlacementAvailable: false });
     try {
-      const toggle = document.body.querySelector<HTMLButtonElement>(
-        '[role="switch"]',
-      );
+      const toggle =
+        document.body.querySelector<HTMLButtonElement>('[role="switch"]');
       expect(toggle?.disabled).toBe(true);
       expect(document.body.textContent).toContain(
         "Not available on this server yet — ask your operator to enable isolated capacity.",

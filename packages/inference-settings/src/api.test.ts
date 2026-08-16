@@ -294,7 +294,9 @@ describe("shadowOffering mint chain", () => {
 
   test("threads an explicit fetchImpl through every call, including the rollback DELETE, never touching the global fetch", async () => {
     globalThis.fetch = (() => {
-      throw new Error("global fetch must not be called when fetchImpl is passed");
+      throw new Error(
+        "global fetch must not be called when fetchImpl is passed",
+      );
     }) as unknown as typeof fetch;
 
     const calls: Call[] = [];
@@ -330,9 +332,7 @@ describe("shadowOffering mint chain", () => {
       throw new Error(`unexpected fetch: ${method} ${path}`);
     }) as typeof fetch;
 
-    await expect(
-      shadowOffering(TENANT_ID, INPUT, fakeFetch),
-    ).rejects.toThrow();
+    await expect(shadowOffering(TENANT_ID, INPUT, fakeFetch)).rejects.toThrow();
 
     const deleteCall = calls.find((c) => c.method === "DELETE");
     expect(deleteCall).toEqual({

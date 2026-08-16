@@ -8,8 +8,14 @@ import type {
 } from "@intx/hub-sessions";
 
 import { createBunCommandRunner, type CommandRunner } from "./command-runner";
-import { readDockerProvisionerConfig, type DockerProvisionerConfig } from "./config";
-import { createAllocationStateStore, type AllocationStateStore } from "./state-store";
+import {
+  readDockerProvisionerConfig,
+  type DockerProvisionerConfig,
+} from "./config";
+import {
+  createAllocationStateStore,
+  type AllocationStateStore,
+} from "./state-store";
 
 const PROVISIONER_API_VERSION: 1 = 1;
 
@@ -276,16 +282,15 @@ function validateEnsureRequest(request: EnsureSidecarRequest): string | null {
   if (request.allocationId === "") return "allocationId must not be empty";
   if (request.sidecarId === "") return "sidecarId must not be empty";
   if (request.token === "") return "token must not be empty";
-  if (request.hubWebSocketUrl === "") return "hubWebSocketUrl must not be empty";
+  if (request.hubWebSocketUrl === "")
+    return "hubWebSocketUrl must not be empty";
   if (!Number.isInteger(request.generation) || request.generation <= 0) {
     return "generation must be a positive integer";
   }
   return null;
 }
 
-function validateDestroyRequest(
-  request: DestroySidecarRequest,
-): string | null {
+function validateDestroyRequest(request: DestroySidecarRequest): string | null {
   if (request.allocationId === "") return "allocationId must not be empty";
   if (request.sidecarId === "") return "sidecarId must not be empty";
   if (!Number.isInteger(request.generation) || request.generation <= 0) {

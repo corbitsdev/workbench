@@ -29,7 +29,10 @@ import { useEffect, useState } from "react";
 
 import { renameBench } from "./api";
 import { errorMessage, type LoadState } from "./load-state";
-import { getSidecarPlacement, setSidecarPlacement } from "./sidecar-placement-api";
+import {
+  getSidecarPlacement,
+  setSidecarPlacement,
+} from "./sidecar-placement-api";
 import { SETTINGS_STRINGS } from "./strings";
 
 const ICON_SWATCHES = [
@@ -343,9 +346,7 @@ export function BenchSectionView({
             <Switch
               id="sidecar-placement-switch"
               checked={sidecarPlacementEnabled}
-              onCheckedChange={(checked) =>
-                onSidecarPlacementChange?.(checked)
-              }
+              onCheckedChange={(checked) => onSidecarPlacementChange?.(checked)}
               disabled={sidecarPlacementSaving || !sidecarPlacementAvailable}
               describedBy="sidecar-placement-hint"
             />

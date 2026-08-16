@@ -33,7 +33,7 @@ workflow deploys.
 - `routes.ts` — `POST /provision`, mounted outside tenant-prefixed routes
   since a brand-new user belongs to no tenant yet.
 - `complete-credential.ts` — the guided credential step: `
-  testAndPersistCredential` (fast, safe for an OAuth callback to await)
+testAndPersistCredential` (fast, safe for an OAuth callback to await)
   and `ensureSeeded` (slow, the workflow-deploy half, run separately so a
   browser is never left waiting mid-redirect).
 - `pending-seed.ts` — server-side custody of a just-connected credential's

@@ -31,10 +31,13 @@ const LOG_PREFIX = "[docker-sidecar-smoke]";
 
 async function dockerAvailable(): Promise<boolean> {
   try {
-    const proc = Bun.spawn(["docker", "version", "--format", "{{.Server.Version}}"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      ["docker", "version", "--format", "{{.Server.Version}}"],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const exitCode = await proc.exited;
     return exitCode === 0;
   } catch {
@@ -110,7 +113,9 @@ async function main(): Promise<void> {
   };
 
   try {
-    console.log(`${LOG_PREFIX} create: requesting a sidecar container from ${image}`);
+    console.log(
+      `${LOG_PREFIX} create: requesting a sidecar container from ${image}`,
+    );
     const ensureResult = await provisioner.ensure(request);
     if (ensureResult.kind !== "accepted") {
       throw new Error(
@@ -176,7 +181,7 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   console.error(
-    `${LOG_PREFIX} failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`,
+    `${LOG_PREFIX} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
   );
   process.exit(1);
 });

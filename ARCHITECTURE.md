@@ -6,12 +6,12 @@ for the concrete stack.
 
 ## Repo shape
 
-| Layer         | What lives here                                                          |
-| ------------- | -------------------------------------------------------------------------|
-| `apps/`       | Deployable services: hub (API), sidecar (execution host), web (UI)       |
+| Layer         | What lives here                                                         |
+| ------------- | ----------------------------------------------------------------------- |
+| `apps/`       | Deployable services: hub (API), sidecar (execution host), web (UI)      |
 | `packages/`   | Domain packages — all product logic; the only place product rules live  |
-| `workflows/`  | Workflow definition packages, deployed as assets                         |
-| `vendor/intx` | Hand-copied, ledgered `@intx/*` source — see [VENDORED.md](VENDORED.md)  |
+| `workflows/`  | Workflow definition packages, deployed as assets                        |
+| `vendor/intx` | Hand-copied, ledgered `@intx/*` source — see [VENDORED.md](VENDORED.md) |
 
 Apps stay generic: a product rule that lives inside `apps/*` is a defect —
 it belongs in a package. Deployable services compose packages; they do not

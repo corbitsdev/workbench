@@ -463,7 +463,9 @@
   transition: transform 0.15s ease;
 }
 
-.settings-advanced-disclosure[open] > summary .settings-advanced-disclosure-chevron {
+.settings-advanced-disclosure[open]
+  > summary
+  .settings-advanced-disclosure-chevron {
   transform: rotate(90deg);
 }
 

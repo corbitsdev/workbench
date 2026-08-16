@@ -99,9 +99,9 @@ describeIfDb("createDrizzleSidecarPlacementStore", () => {
     try {
       const store = createDrizzleSidecarPlacementStore(db);
 
-      await expect(store.setEnabled("tnt_does_not_exist", true)).rejects.toThrow(
-        /does not exist/,
-      );
+      await expect(
+        store.setEnabled("tnt_does_not_exist", true),
+      ).rejects.toThrow(/does not exist/);
     } finally {
       await close();
     }

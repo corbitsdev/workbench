@@ -45,9 +45,7 @@ describe("runDeepLinkTarget", () => {
 
 describe("workbenchInsightsPath", () => {
   test("builds the /insights/workbench/:tenantId path", () => {
-    expect(workbenchInsightsPath("tnt_42")).toBe(
-      "/insights/workbench/tnt_42",
-    );
+    expect(workbenchInsightsPath("tnt_42")).toBe("/insights/workbench/tnt_42");
   });
 
   test("encodes a tenant id so a slash or space cannot break out of the segment", () => {

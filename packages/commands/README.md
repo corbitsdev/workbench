@@ -25,7 +25,7 @@ against a channel, keeping this package host-agnostic.
 - `src/registry.ts` — `createCommandRegistry`: the `CommandRegistry`,
   `CommandDefinition`, and `CommandPlugin` types.
 - `src/grammar.ts` — `parseSlashCommand`/`parseAtCommand`: `PREFIX + NAME(
-  SPACE ARGS)?` parsing; each command's own handler parses its `args`
+SPACE ARGS)?` parsing; each command's own handler parses its `args`
   string, the grammar never does.
 - `src/dispatch.ts` — `dispatchSlashCommand`/`dispatchAtCommand`/`resolveAtCommand`:
   resolves a parsed invocation against the registry and runs it.

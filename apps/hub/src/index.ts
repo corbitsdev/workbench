@@ -572,7 +572,8 @@ export async function createHub(config: HubConfig) {
   let nextAllocationConnectionRepairAt =
     Date.now() + ALLOCATION_CONNECTION_REPAIR_INTERVAL_MS;
   let sidecarAllocationReconciliationStopped = false;
-  let sidecarAllocationReconciliationTimer: ReturnType<typeof setTimeout> | undefined;
+  let sidecarAllocationReconciliationTimer:
+    ReturnType<typeof setTimeout> | undefined;
   function scheduleAllocationReconciliation(delayMs: number): void {
     if (sidecarAllocationReconciliationStopped) return;
     const timer = setTimeout(() => {

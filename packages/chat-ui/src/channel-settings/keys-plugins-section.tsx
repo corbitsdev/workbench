@@ -24,7 +24,10 @@ import {
   Skeleton,
   toast,
 } from "@corbits/react-ui";
-import { listPluginsForTenant, type ResolvedPlugin } from "@workbench/connections/plugins";
+import {
+  listPluginsForTenant,
+  type ResolvedPlugin,
+} from "@workbench/connections/plugins";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -97,8 +100,8 @@ export function KeysPluginsSection({
     <div className="channel-settings-pane">
       <p className="chat-settings-field-hint">
         A key connected here belongs to this workbench alone. Anything not
-        connected here is the workbench default — connect your own
-        key to override it.
+        connected here is the workbench default — connect your own key to
+        override it.
       </p>
       {rowError !== null ? (
         <p className="chat-dialog-error" role="alert">
@@ -127,7 +130,11 @@ export function KeysPluginsSection({
                   : "Not connected"}
             </Badge>
             {plugin.provenance !== null ? (
-              <Badge tone={plugin.provenance === "this-workbench" ? "success" : "neutral"}>
+              <Badge
+                tone={
+                  plugin.provenance === "this-workbench" ? "success" : "neutral"
+                }
+              >
                 {plugin.provenance === "this-workbench"
                   ? "Set here"
                   : "Workbench default"}
@@ -207,7 +214,9 @@ function ConnectDialog({
           plugin.descriptor.id,
           apiKey,
         ).then(() => {
-          toast(`Connected ${plugin.descriptor.displayName} for this workbench.`);
+          toast(
+            `Connected ${plugin.descriptor.displayName} for this workbench.`,
+          );
           onConnected();
         });
       })
