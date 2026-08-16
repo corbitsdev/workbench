@@ -15,10 +15,12 @@ const TENANT = { id: "tnt_1" };
 function buildApp(opts?: {
   store?: ReturnType<typeof createMemorySidecarPlacementStore>;
   denyWrite?: boolean;
+  hasProvisioner?: boolean;
 }): Hono<TenantEnv> {
   const store = opts?.store ?? createMemorySidecarPlacementStore();
   const routes = createSidecarPlacementRoutes({
     store,
+    hasProvisioner: opts?.hasProvisioner ?? true,
     requireGrant: (_resource, action) => async (c, next) => {
       if (opts?.denyWrite === true && action === "write") {
         return c.json({ error: { code: "forbidden", message: "no" } }, 403);
@@ -40,7 +42,10 @@ test("GET / is disabled by default", async () => {
   const app = buildApp();
   const response = await app.request("/");
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ enabled: false });
+  expect(await response.json()).toEqual({
+    enabled: false,
+    provisionerAvailable: true,
+  });
 });
 
 test("PUT / enables and GET / reflects it", async () => {
@@ -51,10 +56,16 @@ test("PUT / enables and GET / reflects it", async () => {
     body: JSON.stringify({ enabled: true }),
   });
   expect(putResponse.status).toBe(200);
-  expect(await putResponse.json()).toEqual({ enabled: true });
+  expect(await putResponse.json()).toEqual({
+    enabled: true,
+    provisionerAvailable: true,
+  });
 
   const getResponse = await app.request("/");
-  expect(await getResponse.json()).toEqual({ enabled: true });
+  expect(await getResponse.json()).toEqual({
+    enabled: true,
+    provisionerAvailable: true,
+  });
 });
 
 test("PUT / with enabled: false clears it", async () => {
@@ -68,7 +79,52 @@ test("PUT / with enabled: false clears it", async () => {
     body: JSON.stringify({ enabled: false }),
   });
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ enabled: false });
+  expect(await response.json()).toEqual({
+    enabled: false,
+    provisionerAvailable: true,
+  });
+});
+
+test("GET / exposes provisionerAvailable: false when the hub has no provisioner", async () => {
+  const app = buildApp({ hasProvisioner: false });
+  const response = await app.request("/");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    enabled: false,
+    provisionerAvailable: false,
+  });
+});
+
+test("PUT / enabling exclusive placement 409s when the hub has no provisioner", async () => {
+  const store = createMemorySidecarPlacementStore();
+  const app = buildApp({ store, hasProvisioner: false });
+
+  const response = await app.request("/", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enabled: true }),
+  });
+  expect(response.status).toBe(409);
+  const body = (await response.json()) as { error: { code: string } };
+  expect(body.error.code).toBe("no_provisioner_configured");
+  expect(await store.getEnabled(TENANT.id)).toBe(false);
+});
+
+test("PUT / disabling exclusive placement still works with no provisioner", async () => {
+  const store = createMemorySidecarPlacementStore();
+  await store.setEnabled(TENANT.id, true);
+  const app = buildApp({ store, hasProvisioner: false });
+
+  const response = await app.request("/", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enabled: false }),
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({
+    enabled: false,
+    provisionerAvailable: false,
+  });
 });
 
 test("PUT / with a non-boolean enabled 400s", async () => {
@@ -104,6 +160,7 @@ test("GET / is gated by requireGrant", async () => {
     "/",
     createSidecarPlacementRoutes({
       store: createMemorySidecarPlacementStore(),
+      hasProvisioner: true,
       requireGrant: () => async (c) =>
         c.json({ error: { code: "forbidden", message: "no" } }, 403),
     }),

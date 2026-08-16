@@ -50,27 +50,36 @@ export function createDrizzleSidecarPlacementStore(
     },
 
     async setEnabled(tenantId, enabled) {
-      const row = await db.query.tenant.findFirst({
-        where: eq(tenant.id, tenantId),
-        columns: { config: true },
+      return db.transaction(async (tx) => {
+        // Locks the tenant row for the lifetime of this transaction, the
+        // same pattern @corbits/chat's channel-tenancy.ts uses for its
+        // own read-modify-write: a second concurrent setEnabled() for
+        // this tenant blocks here rather than racing this one's read of
+        // `config` and clobbering whichever write lands second.
+        const [row] = await tx
+          .select({ config: tenant.config })
+          .from(tenant)
+          .where(eq(tenant.id, tenantId))
+          .for("update")
+          .limit(1);
+        if (row === undefined) {
+          throw new Error(`setEnabled: tenant ${tenantId} does not exist`);
+        }
+        // The tenant's config carries keys owned by other domains
+        // alongside sidecarPlacement; preserving them requires reading
+        // the whole blob back rather than writing an explicit literal.
+        const nextConfig: TenantConfig = { ...parseConfig(row.config) };
+        if (enabled) {
+          nextConfig.sidecarPlacement = WORKBENCH_OWN_SIDECAR_PLACEMENT;
+        } else {
+          delete nextConfig.sidecarPlacement;
+        }
+        await tx
+          .update(tenant)
+          .set({ config: nextConfig, updatedAt: new Date() })
+          .where(eq(tenant.id, tenantId));
+        return enabled;
       });
-      if (row === undefined) {
-        throw new Error(`setEnabled: tenant ${tenantId} does not exist`);
-      }
-      // The tenant's config carries keys owned by other domains alongside
-      // sidecarPlacement; preserving them requires reading the whole blob
-      // back rather than writing an explicit literal.
-      const nextConfig: TenantConfig = { ...parseConfig(row.config) };
-      if (enabled) {
-        nextConfig.sidecarPlacement = WORKBENCH_OWN_SIDECAR_PLACEMENT;
-      } else {
-        delete nextConfig.sidecarPlacement;
-      }
-      await db
-        .update(tenant)
-        .set({ config: nextConfig, updatedAt: new Date() })
-        .where(eq(tenant.id, tenantId));
-      return enabled;
     },
   };
 }
