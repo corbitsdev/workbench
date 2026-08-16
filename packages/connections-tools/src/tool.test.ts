@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
-import { CONNECTOR_REGISTRY } from "@workbench/connections";
 
 import {
   connectionsTools,
@@ -36,27 +35,40 @@ test("requires the sanctioned workflow-connection env keys", () => {
   ]);
 });
 
+function stubFetch(opts: {
+  connections?: unknown[];
+  mcpServers?: unknown[];
+}): typeof fetch {
+  return (async (input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.endsWith("/mcp-servers")) {
+      return new Response(JSON.stringify({ data: opts.mcpServers ?? [] }));
+    }
+    return new Response(JSON.stringify({ data: opts.connections ?? [] }));
+  }) as unknown as typeof fetch;
+}
+
 test("list_connections summarizes connected and not-connected connectors from the client", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(
-      JSON.stringify({
-        data: [
-          {
-            id: "granola",
-            displayName: "Granola",
-            docsUrl: "https://www.granola.ai",
-            connected: true,
-          },
-          {
-            id: "exa",
-            displayName: "Exa",
-            docsUrl: "https://exa.ai",
-            connected: false,
-          },
-        ],
-      }),
-    )) as unknown as typeof fetch;
+  globalThis.fetch = stubFetch({
+    connections: [
+      {
+        id: "granola",
+        displayName: "Granola",
+        docsUrl: "https://www.granola.ai",
+        connected: true,
+      },
+      {
+        id: "exa",
+        displayName: "Exa",
+        docsUrl: "https://exa.ai",
+        connected: false,
+      },
+    ],
+    mcpServers: [
+      { slug: "notion", name: "Notion", url: "https://mcp.notion.example" },
+    ],
+  });
   try {
     const bundle = connectionsTools(testEnv());
     const result = await bundle.run(
@@ -65,6 +77,7 @@ test("list_connections summarizes connected and not-connected connectors from th
     );
     expect(result.isError).toBeFalsy();
     expect(result.content).toMatch(/Connected: Granola/);
+    expect(result.content).toMatch(/Notion \(MCP server\)/);
     expect(result.content).toMatch(/Not connected: Exa/);
   } finally {
     globalThis.fetch = originalFetch;
@@ -89,16 +102,39 @@ test("list_connections returns an honest error on an unreachable hub, never fabr
   }
 });
 
-test("request_connection rejects an unknown connector, listing the real registry ids — never inventing one", async () => {
-  const bundle = connectionsTools(testEnv());
-  const result = await bundle.run(
-    callFor(REQUEST_CONNECTION_TOOL, { connector: "attio" }),
-    new AbortController().signal,
-  );
-  expect(result.isError).toBe(true);
-  expect(result.content).toMatch(/isn't a connector/);
-  for (const id of Object.keys(CONNECTOR_REGISTRY)) {
-    expect(result.content).toContain(id);
+test("request_connection falls back to the Add MCP server deep link for a name that is neither a fixed connector nor a connected MCP server", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = stubFetch({ mcpServers: [] });
+  try {
+    const bundle = connectionsTools(testEnv());
+    const result = await bundle.run(
+      callFor(REQUEST_CONNECTION_TOOL, { connector: "attio" }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toMatch(/plugins\?connect=mcp/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("request_connection reports an already-connected MCP server rather than re-requesting it", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = stubFetch({
+    mcpServers: [
+      { slug: "notion", name: "Notion", url: "https://mcp.notion.example" },
+    ],
+  });
+  try {
+    const bundle = connectionsTools(testEnv());
+    const result = await bundle.run(
+      callFor(REQUEST_CONNECTION_TOOL, { connector: "notion" }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toMatch(/already connected/);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 

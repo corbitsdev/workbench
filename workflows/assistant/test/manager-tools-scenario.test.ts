@@ -118,6 +118,13 @@ function createFakeHub() {
     }
 
     if (
+      url.pathname === "/api/workflow-connections/mcp-servers" &&
+      method === "GET"
+    ) {
+      return Response.json({ data: [] });
+    }
+
+    if (
       url.pathname === "/api/workflow-agent-directory/definitions" &&
       method === "POST" &&
       body
@@ -244,14 +251,17 @@ async function runScenario(
   expect(String(initialList.content)).toContain("Connected: none.");
 
   // A connector the owner's script names but this workbench doesn't
-  // register yet (see the file header) is honestly rejected — never a
-  // fabricated deep-link for a connector that doesn't exist.
+  // register yet (see the file header) is neither a fixed
+  // `CONNECTOR_REGISTRY` entry nor a connected MCP server, so
+  // `request_connection` (CL-6142) falls back to the generic Add MCP
+  // server deep link rather than fabricating a connector-specific one.
   const unknown = await connectionsBundle.run(
     call("req_attio", REQUEST_CONNECTION_TOOL, { connector: "attio" }),
     new AbortController().signal,
   );
-  expect(unknown.isError).toBe(true);
+  expect(unknown.isError).toBe(false);
   expect(String(unknown.content)).toContain("attio");
+  expect(String(unknown.content)).toContain("plugins?connect=mcp");
 
   // She hands over a connect link for each of the three (real) services.
   const links: string[] = [];
