@@ -5,7 +5,7 @@
 // against a stubbed `/connections/provider-health` response — no mocked
 // context, so a context-tree wiring mistake would fail this the same way
 // it would in the real shell.
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -18,6 +18,13 @@ import { TestQueryProvider } from "./test-query-provider";
 const realFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = realFetch;
+});
+
+// BenchProvider restores its selected tenant from localStorage; a suite that
+// ran earlier in the same process may have persisted a tenant this harness's
+// membership stub doesn't contain, which silently disables the health query.
+beforeEach(() => {
+  window.localStorage.clear();
 });
 
 function json(body: unknown): Response {
@@ -67,11 +74,15 @@ function Harness({ navigate }: { readonly navigate: (to: string) => void }) {
   );
 }
 
-async function flush(times = 3): Promise<void> {
-  for (let i = 0; i < times; i += 1) {
+// React Query notifies through timer-batched callbacks, so microtask-only
+// flushing races it under full-suite load: yield through real macrotasks
+// until the banner (or its absence) settles.
+async function flush(): Promise<void> {
+  for (let i = 0; i < 20; i += 1) {
     await act(async () => {
-      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
+    if (document.querySelector('[role="alert"]') !== null) return;
   }
 }
 
