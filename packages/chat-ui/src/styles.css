@@ -1605,13 +1605,25 @@
   align-items: center;
 }
 
-.chat-member-stack .chat-sender-avatar {
+.chat-member-avatar {
+  display: inline-flex;
   margin-left: -0.35rem;
   border: 1.5px solid var(--background);
 }
 
-.chat-member-stack .chat-sender-avatar:first-child {
+.chat-member-avatar:first-child {
   margin-left: 0;
+}
+
+/* Settings sits apart from the quiet New routine / Insights pair — a hairline
+   divider keeps it reading as the header's one persistent, always-available
+   control rather than a third peer in that group. */
+.chat-channel-settings-slot {
+  display: flex;
+  align-items: center;
+  margin-left: 0.35rem;
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--border);
 }
 
 /* Who's live in this channel right now, beyond the static member stack
