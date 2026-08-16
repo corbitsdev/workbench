@@ -199,7 +199,7 @@ export async function isFullySeeded(
 
   return DEFAULT_WORKFLOWS.every((workflow) => {
     const asset = assets.find((a) => a.name === workflow.assetName);
-    if (!asset) return false;
+    if (asset === undefined) return false;
     return deployments.some(
       (d) =>
         d.definitionAssetId === asset.id && isLiveDeploymentStatus(d.status),
@@ -230,7 +230,7 @@ export async function provisionPersonalTenantIfNeeded(
     // is none of this hook's business. Membership is decided here without
     // depending on a seed credential — recovery of a half-provisioned
     // bench must not hang forever just because no seed model is configured.
-    if (!own) return { kind: "existing-member" };
+    if (own === undefined) return { kind: "existing-member" };
 
     const fullySeeded = await isFullySeeded(
       args.api,
@@ -248,7 +248,7 @@ export async function provisionPersonalTenantIfNeeded(
     // existing-member with `seeded: false`, the typed `bench_unseeded`
     // condition the onboarding UI reads to keep the credential step open
     // rather than declaring setup finished.
-    if (!args.seedModel) {
+    if (args.seedModel === undefined) {
       args.log(
         `personal bench ${own.tenantId} exists but is not fully seeded, and no seed model is configured; returning as existing-member without re-seeding`,
       );
@@ -379,7 +379,7 @@ export async function provisionPersonalTenantIfNeeded(
 
   const after = await fetchPrincipals(args.api, args.cookies);
   const membership = after.find((p) => p.tenantId === tenant.id);
-  if (!membership) {
+  if (membership === undefined) {
     throw new ProvisionError(
       "tenant_created_no_membership",
       `personal bench ${tenant.id} was created but the caller has no principal in it`,

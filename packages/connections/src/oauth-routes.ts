@@ -34,19 +34,10 @@ import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "@intx/hub-api";
 import type { CredentialCipher } from "@intx/types";
+import { cookiesFromHeader } from "@workbench/hub-client";
 import { createConnectStateStore, generatePKCEPair } from "./pkce";
 import type { ConnectorDescriptor } from "./descriptor";
 import { CONNECTOR_REGISTRY } from "./registry";
-
-type Mutable<T> = { -readonly [K in keyof T]: T[K] };
-
-function cookiesFromHeader(header: string | undefined): string[] {
-  if (!header) return [];
-  return header
-    .split(";")
-    .map((pair) => pair.trim())
-    .filter((pair) => pair.length > 0);
-}
 
 /**
  * The two return surfaces this wave's callers actually mount at
@@ -355,11 +346,14 @@ export function createOAuthConnectRoutes(
       c.req.path.replace(/\/start$/, "/callback"),
       deps.hubUrl,
     ).toString();
-    const authorizeUrlArgs: Mutable<
-      Parameters<typeof descriptor.oauth.buildAuthorizeUrl>[0]
-    > = { callbackUrl, state };
-    if (pkce !== undefined) authorizeUrlArgs.codeChallenge = pkce.codeChallenge;
-    if (clientId !== undefined) authorizeUrlArgs.clientId = clientId;
+    const authorizeUrlArgs: Parameters<
+      typeof descriptor.oauth.buildAuthorizeUrl
+    >[0] = {
+      callbackUrl,
+      state,
+      ...(pkce !== undefined ? { codeChallenge: pkce.codeChallenge } : {}),
+      ...(clientId !== undefined ? { clientId } : {}),
+    };
     const authUrl = descriptor.oauth.buildAuthorizeUrl(authorizeUrlArgs);
     return c.redirect(authUrl.toString(), 302);
   });
@@ -474,14 +468,12 @@ export function createOAuthConnectRoutes(
     }
 
     const callbackUrl = new URL(c.req.path, deps.hubUrl).toString();
-    const exchangeArgs: Mutable<
-      Parameters<typeof descriptor.oauth.exchange>[0]
-    > = {
+    const exchangeArgs: Parameters<typeof descriptor.oauth.exchange>[0] = {
       code,
       redirectUri: callbackUrl,
+      ...(descriptor.oauth.usesPKCE ? { codeVerifier } : {}),
+      ...(clientId !== undefined ? { clientId } : {}),
     };
-    if (descriptor.oauth.usesPKCE) exchangeArgs.codeVerifier = codeVerifier;
-    if (clientId !== undefined) exchangeArgs.clientId = clientId;
     const exchanged = await descriptor.oauth.exchange(exchangeArgs);
     if (!exchanged.ok) {
       deps.log(

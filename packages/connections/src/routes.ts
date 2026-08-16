@@ -17,6 +17,7 @@ import { Hono, type Context } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import {
+  cookiesFromHeader,
   createHubAPI,
   ensureCredential,
   ensureProvider,
@@ -46,14 +47,6 @@ const ErrorEnvelope = (code: string, message: string) => ({
 });
 
 const SubmitCredential = type({ apiKey: "string > 0" });
-
-function cookiesFromHeader(header: string | undefined): string[] {
-  if (!header) return [];
-  return header
-    .split(";")
-    .map((pair) => pair.trim())
-    .filter((pair) => pair.length > 0);
-}
 
 export type CreateConnectionRoutesDeps = {
   hubUrl: string;

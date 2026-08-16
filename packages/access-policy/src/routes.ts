@@ -9,7 +9,7 @@
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import type { ApiCall } from "@workbench/hub-client";
+import { cookiesFromHeader, type ApiCall } from "@workbench/hub-client";
 
 import { canCreateTenancy } from "./policy";
 import type { AccessPolicyStore } from "./store";
@@ -23,14 +23,6 @@ const CreateChildTenant = type({
   name: "string > 0",
   slug: "string > 0",
 });
-
-function cookiesFromHeader(header: string | undefined): string[] {
-  if (!header) return [];
-  return header
-    .split(";")
-    .map((pair) => pair.trim())
-    .filter((pair) => pair.length > 0);
-}
 
 export type CreateAccessPolicyRoutesDeps = {
   store: AccessPolicyStore;
