@@ -283,6 +283,11 @@ export function createConnectionRoutes(
             name: descriptor.displayName,
             secret: parsed.apiKey,
             type: "api_key",
+            // `test` above already proved `parsed.apiKey` against
+            // `descriptor.probe`, so a name conflict here (a
+            // regenerated key, or a retry after a bad paste) is safe
+            // to rotate rather than silently keeping the stale secret.
+            verified: true,
           },
           deps.log,
         );

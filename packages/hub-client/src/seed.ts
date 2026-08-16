@@ -854,6 +854,17 @@ export type EnsureCredentialArgs = {
   secret: string;
   type: "api_key" | "oauth_token";
   metadata?: Record<string, unknown>;
+  /**
+   * Set by a caller that already proved `secret` against the provider's
+   * own probe before reaching `ensureCredential` — never inferred here.
+   * Gates whether an `api_key` name conflict rotates the stored secret
+   * (see the 409 branch below); an `oauth_token` conflict decides
+   * rotation from the stored row's `status` instead and ignores this
+   * flag. Left unset by a plain `workbench seed` (the hub-owned key
+   * comes straight from env, never probed), so a routine re-seed with
+   * an unchanged key still just skips.
+   */
+  verified?: boolean;
 };
 
 export async function ensureCredential(
@@ -916,9 +927,28 @@ export async function ensureCredential(
   // already-expired secret, and since the row's `status` is already
   // non-`active`, the expiry sweep would never see it again to re-notify.
   // Scoped to exactly that case: an `active` row (the common idempotent
-  // re-seed, including every `api_key` provider) is left untouched, so a
-  // routine re-seed with an unchanged key never turns into a rotation.
-  if (args.type === "oauth_token" && existing.status !== "active") {
+  // re-seed) is left untouched, so a routine re-seed with an unchanged
+  // token never turns into a rotation.
+  //
+  // An `api_key` credential (OpenRouter, an onboarding-picked provider)
+  // has no such staleness signal — its row stays `active` whether or not
+  // the person reconnecting regenerated the key or is retrying after a
+  // bad paste — so `status` can't gate it the way it gates `oauth_token`.
+  // It rotates on a name conflict only when `args.verified` is set,
+  // which a caller sets only after proving `args.secret` against the
+  // provider's own probe: `testAndPersistCredential`
+  // (`@workbench/onboarding`'s `complete-credential.ts`) calls
+  // `testProviderCredential` first, and `connections`' `POST
+  // /:connectorId/complete` (`routes.ts`) calls `descriptor.probe` first,
+  // so neither ever hands a stale or unverified secret to a rotation. A
+  // plain `workbench seed` never sets `verified` — its key comes straight
+  // from env with no probe of its own — so that idempotent re-seed still
+  // just skips, exactly as before.
+  const shouldRotate =
+    args.type === "oauth_token"
+      ? existing.status !== "active"
+      : args.verified === true;
+  if (shouldRotate) {
     const rotated = await api(
       "PATCH",
       `/api/tenants/${args.tenantId}/credentials/${existing.id}`,
@@ -941,7 +971,7 @@ export async function ensureCredential(
       "credential response",
     );
     log(
-      `rotated credential ${args.name} (reconnect refreshed the stored token)`,
+      `rotated credential ${args.name} (reconnect refreshed the stored secret)`,
     );
     return credential.id;
   }
@@ -1146,6 +1176,15 @@ export type SeedCatalogArgs = {
    * (see `complete-credential.ts`), never interpreted by this function.
    */
   credentialMetadata?: Record<string, unknown>;
+  /**
+   * Passed straight through to `ensureCredential`'s own `verified` — set
+   * only by a caller that already proved `apiKey` against the provider's
+   * own probe before calling `seedCatalog` (onboarding's
+   * `testAndPersistCredential`). A plain `workbench seed` never sets
+   * this, since its key comes straight from env with no probe of its
+   * own.
+   */
+  credentialVerified?: boolean;
 };
 
 /**
@@ -1199,6 +1238,7 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
     name: args.credentialName ?? inferenceCredentialName(seed.provider.name),
     secret: credentialSecret,
     type: args.credentialType ?? ("api_key" as const),
+    verified: args.credentialVerified ?? false,
   };
   const credentialId = await ensureCredential(
     api,
