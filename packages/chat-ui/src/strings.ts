@@ -240,7 +240,34 @@ export const CHAT_STRINGS = {
   channelSettingsAssistantSave: "Save",
   channelSettingsAssistantSaving: "Saving…",
   channelSettingsAssistantCancel: "Cancel",
-  channelSettingsAssistantNoAgents: "No agents to configure in this conversation.",
+  channelSettingsAssistantNoAgents:
+    "No agents to configure in this conversation.",
+  channelSettingsAssistantCapabilitiesTitle: "Capabilities",
+  channelSettingsAssistantCapabilitiesHint:
+    "What this agent can use. Add a tool, skill, or model from what's available in this workbench.",
+  channelSettingsAssistantNoCapabilities: "No tools, skills, or model set yet.",
+  channelSettingsAssistantModelLabel: "Model",
+  channelSettingsAssistantAddCapabilityLabel: "Add a capability",
+  channelSettingsAssistantAddCapabilityKindTool: "Tool",
+  channelSettingsAssistantAddCapabilityKindSkill: "Skill",
+  channelSettingsAssistantAddCapabilityKindModel: "Model",
+  channelSettingsAssistantAddCapabilityButton: "Add",
+  channelSettingsAssistantAddCapabilityAdding: "Adding…",
+  channelSettingsAssistantAddCapabilityError:
+    "Couldn't add that — it may no longer be available.",
+  channelSettingsAssistantCapabilityInventoryError:
+    "Couldn't load what's available to add.",
+  channelSettingsAssistantHistoryTitle: "History",
+  channelSettingsAssistantHistoryHint:
+    "Every change to this agent's instructions and capabilities, oldest actions first.",
+  channelSettingsAssistantHistoryLoadError:
+    "Couldn't load this agent's history",
+  channelSettingsAssistantHistoryEmpty: "No history yet.",
+  channelSettingsAssistantHistoryCurrent: "Current",
+  channelSettingsAssistantHistoryRestore: "Restore",
+  channelSettingsAssistantHistoryRestoring: "Restoring…",
+  channelSettingsAssistantHistoryRestoreError:
+    "Couldn't restore that version — try again.",
   channelSettingsAccessBody:
     "Access follows workbench grants and membership. Manage role and member grants under Workspace → Grants.",
   channelSettingsNotificationsLabel: "Notifications",
