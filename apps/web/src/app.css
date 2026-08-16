@@ -864,10 +864,11 @@ html {
 .shell-sidebar-brand-mark {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  margin: 0.25rem 0 0.1rem;
+  width: 100%;
+  height: 2.25rem;
+  padding: 0 0.75rem;
+  margin: 0.3rem 0 0.1rem;
+  box-sizing: border-box;
 }
 
 .shell-sidebar-brand-mark-icon {
