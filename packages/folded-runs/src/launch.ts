@@ -321,36 +321,35 @@ export async function launchFoldedRun(
     deps.eventCollectors.abandon(params.triggerAddress);
 
     const failedAt = new Date();
-
-    await deps.db
-      .update(agentSession)
-      .set({ status: "ended", endedAt: failedAt, updatedAt: failedAt })
-      .where(eq(agentSession.id, sessionId));
-
     const leaked = err instanceof SessionLaunchError && err.leakedAgent;
 
-    // A leaked deploy left a running child; mark the run failed but
-    // leave it routable (endedAt null) so the leaked child stays
-    // reachable to inspect or clean up. Otherwise roll the run back
-    // entirely.
-    if (leaked) {
-      await deps.db
-        .update(workflowRun)
-        .set({ status: "failed" })
-        .where(eq(workflowRun.id, params.instanceId));
-    } else {
-      await deps.db
-        .delete(workflowRun)
-        .where(eq(workflowRun.id, params.instanceId));
-      await deps.db
-        .delete(foldedRun)
-        .where(eq(foldedRun.id, params.instanceId));
-    }
+    await deps.db.transaction(async (tx) => {
+      await tx
+        .update(agentSession)
+        .set({ status: "ended", endedAt: failedAt, updatedAt: failedAt })
+        .where(eq(agentSession.id, sessionId));
 
-    await deps.db
-      .update(principalTable)
-      .set({ status: "deactivated", updatedAt: failedAt })
-      .where(eq(principalTable.id, instancePrincipalId));
+      // A leaked deploy left a running child; mark the run failed but
+      // leave it routable (endedAt null) so the leaked child stays
+      // reachable to inspect or clean up. Otherwise roll the run back
+      // entirely.
+      if (leaked) {
+        await tx
+          .update(workflowRun)
+          .set({ status: "failed" })
+          .where(eq(workflowRun.id, params.instanceId));
+      } else {
+        await tx
+          .delete(workflowRun)
+          .where(eq(workflowRun.id, params.instanceId));
+        await tx.delete(foldedRun).where(eq(foldedRun.id, params.instanceId));
+      }
+
+      await tx
+        .update(principalTable)
+        .set({ status: "deactivated", updatedAt: failedAt })
+        .where(eq(principalTable.id, instancePrincipalId));
+    });
 
     throw err;
   }

@@ -90,6 +90,18 @@ function createFakeDb() {
         insert(table: unknown) {
           return insertOn(table);
         },
+        update(table: unknown) {
+          return {
+            set(values: unknown) {
+              updated.push({ table, values });
+              return { where: async () => undefined };
+            },
+          };
+        },
+        delete(table: unknown) {
+          deleted.push({ table });
+          return { where: async () => undefined };
+        },
       });
     },
     inserted,
