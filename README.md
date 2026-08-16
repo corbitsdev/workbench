@@ -137,6 +137,9 @@ documented separately in [docs/CHAT.md](docs/CHAT.md).
 Conventions and agent guidance: [AGENTS.md](AGENTS.md). Contributions:
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Docs map: [PRODUCT.md](PRODUCT.md) (what and why), [ARCHITECTURE.md](ARCHITECTURE.md)
+(system structure), [IMPLEMENTATION.md](IMPLEMENTATION.md) (concrete stack).
+
 ### End-to-end smoke tests
 
 `bun run test:e2e` runs `scripts/e2e/*.test.ts`: each file spawns a real hub
