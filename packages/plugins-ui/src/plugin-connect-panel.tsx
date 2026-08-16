@@ -145,8 +145,8 @@ function ConnectedSummary({
       </div>
       {plugin.provenance === "inherited" ? (
         <p className="text-sm text-muted-foreground">
-          Connected by a parent workbench — reconnecting or disconnecting
-          here creates a connection of your own instead of changing theirs.
+          Connected by a parent workbench — reconnecting or disconnecting here
+          creates a connection of your own instead of changing theirs.
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2">
@@ -192,7 +192,10 @@ export function PluginConnectPanel({
           <DialogDescription>
             {plugin === null
               ? ""
-              : pluginOutcome(plugin.descriptor.id, plugin.descriptor.displayName)}
+              : pluginOutcome(
+                  plugin.descriptor.id,
+                  plugin.descriptor.displayName,
+                )}
           </DialogDescription>
         </DialogHeader>
         {plugin === null ? null : (
@@ -227,8 +230,8 @@ export function PluginConnectPanel({
               <div className="flex flex-col gap-2 border-t border-border pt-4">
                 <p className="text-sm font-medium">Inbound webhook</p>
                 <p className="text-sm text-muted-foreground">
-                  Granola posts finished call notes here — set up or manage
-                  the webhook without leaving this panel.
+                  Granola posts finished call notes here — set up or manage the
+                  webhook without leaving this panel.
                 </p>
                 {CONNECTOR_REGISTRY["granola-webhook"] !== undefined ? (
                   <GranolaWebhookCard

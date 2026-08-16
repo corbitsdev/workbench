@@ -572,16 +572,16 @@ export function ConnectorCredentialDialog({
           setSubmitError(result.message);
           return;
         }
-        return completeConnectorCredential(tenantId, descriptor.id, apiKey).then(
-          () => {
-            toast(
-              SETTINGS_STRINGS.connectionsConnectedToast(
-                descriptor.displayName,
-              ),
-            );
-            onConnected();
-          },
-        );
+        return completeConnectorCredential(
+          tenantId,
+          descriptor.id,
+          apiKey,
+        ).then(() => {
+          toast(
+            SETTINGS_STRINGS.connectionsConnectedToast(descriptor.displayName),
+          );
+          onConnected();
+        });
       })
       .catch((cause: unknown) => setSubmitError(errorMessage(cause)))
       .finally(() => setSubmitting(false));

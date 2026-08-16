@@ -207,7 +207,10 @@ describe.skipIf(databaseUrl === undefined)("channel reconnect e2e", () => {
   }
 
   test("channel creation launches the anchor", async () => {
-    const res = await createChannel({ kind: "channel", name: "reconnect-demo" });
+    const res = await createChannel({
+      kind: "channel",
+      name: "reconnect-demo",
+    });
     expectStatus("create channel", res, 201);
     channelId = stringField(res.data, "id", "create channel");
   }, 90_000);

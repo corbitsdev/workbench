@@ -12,14 +12,20 @@ import {
   createDetachedSignatureFromProvider,
   type MessageHeaders,
 } from "@intx/mime";
-import { listAssetsForTenant, type DB } from "@intx/db";
+import {
+  buildCredentialDelivery,
+  listAssetsForTenant,
+  type DB,
+} from "@intx/db";
 import {
   grant as grantTable,
   sidecarAllocation as sidecarAllocationTable,
+  workflowDefinition as workflowDefinitionTable,
   workflowRun as workflowRunTable,
 } from "@intx/db/schema";
 import { base64Encode, hexEncode } from "@intx/types";
 import type { CredentialDelivery } from "@intx/types/sidecar";
+import type { CredentialCipher } from "@intx/types";
 import { generateId } from "@intx/hub-common";
 import { ensureWorkflowDefinitionForAsset } from "./workflow-definition-ensure";
 import { sessionAsset as sessionAssetTable } from "@intx/db/schema";
@@ -42,6 +48,14 @@ import {
   ToolPackageManifest,
   type ToolPackagePin,
 } from "@intx/types/tool-packages";
+import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
+import type {
+  SourceRefPin,
+  WorkflowProjectionDefinition,
+  WorkflowProjectionWithSources,
+} from "@intx/types/sidecar";
+import type { WorkflowDefinitionSource } from "@intx/types/workflow-sources";
+import { computeLiveDefinitionHash } from "@intx/workflow";
 import {
   defineWorkflow,
   type WorkflowDefinition,
@@ -50,6 +64,8 @@ import {
   assertChainHeadIsDefault,
   createWorkflowDeployOrchestrator,
   deriveRunAddress,
+  enumerateInertOnTriggerBodies,
+  pickStepInferenceSource,
   walkCapabilities,
   wrapHarnessAsSingleStepWorkflow,
   type ApprovalSet,
@@ -76,6 +92,7 @@ import type {
 } from "./ws/sidecar-handler";
 import type { Principal, RepoId } from "./repo-store";
 import { restoreWorkflowRunToAllocation } from "./workflow-run-restore";
+import type { InstallAndApproveResult } from "./workflow-probe-gate";
 
 const logger = getLogger(["interchange", "hub", "session-service"]);
 
@@ -420,6 +437,90 @@ function toWireWorkflowDefinition(definition: WorkflowDefinition): {
   };
 }
 
+/** Fields both deploy-frame arms carry onto `sendAgentDeploy`, independent of
+ * whether the definition is live-authored or code-sourced. */
+type DeployFrameCommonArgs = {
+  sidecarRouter: SidecarRouter;
+  sidecarAllocationRouter?: SidecarAllocationRouter;
+  allocationTarget?: AllocatedSidecarTarget;
+  agentAddress: string;
+  config: HarnessConfig;
+  sources: Record<string, InferenceSource[]>;
+};
+
+/**
+ * Live-authored arm: the hub holds the live `WorkflowDefinition` and is the
+ * authority for the deployment's content hash. It projects the definition onto
+ * the wire envelope and recomputes the wire hash the frame carries.
+ */
+export type LiveAuthoredDeployFrameArgs = DeployFrameCommonArgs & {
+  lineage: "live-authored";
+  definition: WorkflowDefinition;
+  /**
+   * Extracted onTrigger section bodies to carry inline so the sidecar
+   * materializes each as its own `assets/workflow/<bodyRef>/workflow.json`
+   * plus a co-located `sources.json`; a body child then resolves both the ref
+   * and its inference sources off disk without a hub round-trip.
+   */
+  referencedDefinitions?: readonly ReferencedBodyDefinition[];
+  credentials?: CredentialDelivery;
+};
+
+/**
+ * Source-ref arm: for a code-sourced (npm) deploy the hub never holds the live
+ * `WorkflowDefinition` -- it lives only in the airlocked child. The gate/freeze
+ * layer already projected the definition to its inert `WorkflowProjectionDefinition`
+ * and hashed THAT; this arm carries both verbatim. The content hash is owned by
+ * the gate, so this arm never recomputes it -- recomputing over the live wire
+ * lineage would diverge from the inert projection the child re-verifies against.
+ */
+export type SourceRefDeployFrameArgs = DeployFrameCommonArgs & {
+  lineage: "source-ref";
+  /**
+   * The inert wire projection the gate froze -- the same closed
+   * `WorkflowProjectionDefinition` a `workflow.probe.result` carries. Placed on
+   * the frame's `definition` field verbatim; it is already that field's type,
+   * so no coercion is needed.
+   */
+  projection: WorkflowProjectionDefinition;
+  /**
+   * The gate-frozen wire hash of `projection` -- stamped onto the frame VERBATIM.
+   * This arm does not recompute it: the freeze layer owns the content hash, and
+   * the child re-verifies its recompute over the inert projection against this
+   * exact value.
+   */
+  approvedWireHash: string;
+  /**
+   * The source-ref pin: where the definition's bytes come from plus the frozen
+   * dependency closure the hub resolved for it. The two co-travel, so they are
+   * one required object on this arm (see `SourceRefPin`) -- the sidecar
+   * re-materializes the exact tree from the pin at apply time.
+   */
+  sourceRef: SourceRefPin;
+  /**
+   * Resolved credential material for the definition's credential bindings,
+   * delivered to the child on the frame (mirrors the live-authored arm). The
+   * hub resolves + decrypts here; the source-ref child decrypts nothing. The
+   * grant that AUTHORIZES a credential's use is minted per-run by run-grant
+   * materialization, not carried on this frame.
+   */
+  credentials?: CredentialDelivery;
+  /**
+   * The projection's inline onTrigger section bodies, each already in inert wire
+   * form with its per-step inference sources pinned and its own wire hash --
+   * built by `deployCodeSourcedWorkflow` from the frozen projection. Carried
+   * verbatim on the SAME `referencedDefinitions` wire field the live-authored
+   * arm uses, so the sidecar stages each body's `sources.json` (and re-verify
+   * hash) with no lineage-specific handling. Absent when the projection has no
+   * inline onTrigger body.
+   */
+  referencedDefinitions?: readonly WorkflowProjectionWithSources[];
+};
+
+export type SendMultiStepDeployFrameArgs =
+  | LiveAuthoredDeployFrameArgs
+  | SourceRefDeployFrameArgs;
+
 /**
  * Wire the workflow-deploy orchestrator's `sendMultiStepDeploy`
  * dependency against `SidecarRouter.sendAgentDeploy`. The router
@@ -429,39 +530,68 @@ function toWireWorkflowDefinition(definition: WorkflowDefinition): {
  * sidecar's `agent.deploy.ack` is threaded back as the
  * `MultiStepDeployResult.publicKey`.
  *
+ * The `lineage` discriminant selects who owns the content hash. On the
+ * `source-ref` arm the gate/freeze layer already hashed the inert projection,
+ * so the frozen hash and the inert projection ride the frame verbatim. On the
+ * `live-authored` arm the hub holds the live definition and recomputes the
+ * wire hash.
+ * The two arms are mutually exclusive at the type level: a source-ref deploy
+ * cannot pass a live definition and cannot omit its frozen hash.
+ *
  * Exported so the co-located caller-site test can assert that the
  * closure constructed in `launchSession` reaches the wire surface via
  * `sendAgentDeploy` with a `workflow` field structurally matching the
  * `AgentDeployFrame.workflow` schema.
  */
-export async function sendMultiStepDeployFrame(args: {
-  sidecarRouter: SidecarRouter;
-  sidecarAllocationRouter?: SidecarAllocationRouter;
-  allocationTarget?: AllocatedSidecarTarget;
-  agentAddress: string;
-  config: HarnessConfig;
-  definition: WorkflowDefinition;
-  sources: Record<string, InferenceSource[]>;
-  /**
-   * Extracted onTrigger section bodies to carry inline so the sidecar
-   * materializes each as its own `assets/workflow/<bodyRef>/workflow.json`
-   * plus a co-located `sources.json`; a body child then resolves both the ref
-   * and its inference sources off disk without a hub round-trip.
-   */
-  referencedDefinitions?: readonly ReferencedBodyDefinition[];
-  credentials?: CredentialDelivery;
-}): Promise<{ publicKey: string }> {
+export async function sendMultiStepDeployFrame(
+  args: SendMultiStepDeployFrameArgs,
+): Promise<{ publicKey: string }> {
+  if (args.lineage === "source-ref") {
+    return args.sidecarRouter.sendAgentDeploy(args.agentAddress, args.config, {
+      // The inert projection and its gate-frozen hash ride the frame verbatim;
+      // neither is re-derived here. `projection` is already the frame's
+      // `definition` type, so it is assigned with no coercion.
+      definition: args.projection,
+      sources: args.sources,
+      approvedWireHash: args.approvedWireHash,
+      sourceRef: args.sourceRef,
+      ...(args.credentials !== undefined
+        ? { credentials: args.credentials }
+        : {}),
+      ...(args.referencedDefinitions !== undefined &&
+      args.referencedDefinitions.length > 0
+        ? { referencedDefinitions: [...args.referencedDefinitions] }
+        : {}),
+    });
+  }
+
   const wireDefinition = toWireWorkflowDefinition(args.definition);
+  // The hub is the authority for the deployment's content hash: recompute the
+  // wire hash here so the frame carries the hub-approved value the sidecar
+  // feeds the child as `DEFINITION_HASH`. The freeze stored exactly this hash,
+  // so recomputing it at the hub reproduces the frozen approval's anchor; the
+  // sidecar never recomputes.
+  const approvedWireHash = await computeWireDefinitionHash(wireDefinition);
   const workflow = {
     definition: wireDefinition,
     sources: args.sources,
+    approvedWireHash,
     ...(args.referencedDefinitions !== undefined &&
     args.referencedDefinitions.length > 0
       ? {
-          referencedDefinitions: args.referencedDefinitions.map((body) => ({
-            definition: toWireWorkflowDefinition(body.definition),
-            sources: body.sources,
-          })),
+          referencedDefinitions: await Promise.all(
+            args.referencedDefinitions.map(async (body) => {
+              const bodyWire = toWireWorkflowDefinition(body.definition);
+              return {
+                definition: bodyWire,
+                sources: body.sources,
+                // Per-body freeze anchor: the hub recomputes each referenced
+                // body's wire hash so a body child re-verifies its recompute
+                // against the hub authority.
+                approvedWireHash: await computeWireDefinitionHash(bodyWire),
+              };
+            }),
+          ),
         }
       : {}),
     ...(args.credentials !== undefined
@@ -484,6 +614,228 @@ export async function sendMultiStepDeployFrame(args: {
     args.config,
     workflow,
   );
+}
+
+/**
+ * Arguments for `deployCodeSourcedWorkflow`. The `approved` bundle is the
+ * `installAndApproveWorkflowDefinition` output verbatim -- the frozen hash,
+ * inert projection, and closure travel together inside it so no caller can pair
+ * a hash with a mismatched projection or closure. The remaining fields are the
+ * operator/asset config the approve step never sees: the per-step inference
+ * `sources`, the deploy `config`, the target `agentAddress`, and the `source`
+ * ref that names where the definition's bytes are published.
+ */
+export type DeployCodeSourcedWorkflowArgs = DeployFrameCommonArgs & {
+  approved: InstallAndApproveResult;
+  source: WorkflowDefinitionSource;
+  /**
+   * The hub DB handle, the definition's OWN tenant, the deployment's anchor run
+   * id, and the mail domain its run address lives under. REQUIRED: this function
+   * writes the deployment's anchor `workflow_run` row, and run-grant
+   * materialization keys off it. `tenantId` is the definition's own tenant
+   * (tenant-owned credential resolution walks up from it); do not pass a
+   * request/config tenant that may differ. `anchorRunId` is caller-supplied: the
+   * deployment mail address is frozen into the approved package bytes at
+   * authoring time, so the run id it derives from is fixed before this runs and
+   * cannot be minted here. `deploymentDomain` pairs with `anchorRunId` to
+   * re-derive the run address and assert it matches `agentAddress`, failing
+   * closed on an incoherent pair.
+   */
+  db: DB["db"];
+  tenantId: string;
+  anchorRunId: string;
+  deploymentDomain: string;
+  /**
+   * Credential cipher, REQUIRED only when the definition carries credential
+   * bindings (resolution fails closed without it); omit for a binding-free
+   * deployment.
+   */
+  credentialCipher?: CredentialCipher;
+};
+
+/**
+ * The single public composition entrypoint for a code-sourced (npm) deploy. It
+ * consumes the approve output and builds the source-ref deploy frame internally,
+ * so the security-load-bearing hand-off -- frozen wire hash, inert projection,
+ * frozen closure -- is assembled in one place from one cohesive object rather
+ * than reassembled by each caller. The frozen approval's hash and projection
+ * ride the frame verbatim: nothing here recomputes the hash or re-resolves the
+ * closure, so the child re-verify over the inert projection matches the gate's
+ * freeze.
+ *
+ * Credential MATERIAL for the definition's tenant-owned bindings is resolved
+ * here (`buildCredentialDelivery`) and delivered to the child on the frame.
+ * Credential GRANT enforcement is a SEPARATE layer: the `credential:{id}` /
+ * `use` grant the runtime gate checks is minted per-run by run-grant
+ * materialization into `runs/<runId>/grants.json`, not carried on this frame --
+ * the deploy-time `config.grants` spawn-time snapshot is suppressed once the
+ * sidecar wires per-run grant pushes, so it is not the enforcement transport.
+ *
+ * A gate outcome that did not approve cannot deploy: an unapproved `approval`
+ * fails closed here rather than shipping an unfrozen definition.
+ */
+export async function deployCodeSourcedWorkflow(
+  args: DeployCodeSourcedWorkflowArgs,
+): Promise<{ publicKey: string }> {
+  const { approval, projection, closure } = args.approved;
+  if (!approval.ok) {
+    throw new Error(
+      `deployCodeSourcedWorkflow: refusing to deploy an unapproved workflow (gate reason: ${approval.reason})`,
+    );
+  }
+
+  // Fail-closed persisted-definition guard. The anchor row this writes carries
+  // an FK to `workflow_definition`, so a phantom `definitionId` would otherwise
+  // reach the INSERT and fail with a raw constraint violation. A mis-wired
+  // caller -- or a test double that skips the approve step's DB writer -- could
+  // pass an approval whose definition was never persisted; verify it exists and
+  // fail with a domain error before deploying, rather than deploying and then
+  // failing the anchor insert into a deployed-but-unanchored state.
+  const persistedDefinition = await args.db.query.workflowDefinition.findFirst({
+    where: eq(workflowDefinitionTable.id, approval.definitionId),
+    columns: { id: true },
+  });
+  if (persistedDefinition === undefined) {
+    throw new Error(
+      `deployCodeSourcedWorkflow: approval.definitionId ${approval.definitionId} does not reference a persisted workflow_definition row`,
+    );
+  }
+
+  // Coherence guard, run BEFORE the deploy frame: the anchor row's id and its
+  // routing address must name the same run. The deployment mail address is
+  // frozen into the approved package bytes at authoring time, so its run id is
+  // fixed before this runs and the caller owns `anchorRunId`. A mismatched
+  // (anchorRunId, agentAddress) pair would let run-grant materialization find
+  // the anchor by `address` while `deriveRunAddress` from `anchorRunId` names a
+  // different run -- a silent grant-identity split. Fail closed here, before the
+  // frame is sent or any row is persisted, rather than deploying an incoherent
+  // pair.
+  const derivedAddress = deriveRunAddress({
+    runId: args.anchorRunId,
+    domain: args.deploymentDomain,
+  });
+  if (derivedAddress !== args.agentAddress) {
+    throw new Error(
+      `deployCodeSourcedWorkflow: anchorRunId ${args.anchorRunId} derives address ${derivedAddress} but agentAddress is ${args.agentAddress}`,
+    );
+  }
+
+  // Resolve the operator-approved credential bindings into delivered material.
+  // Tenant-owned resolution keys off the definition's tenant and walks up the
+  // hierarchy; it does not consult creator/invoker (the only locator today is
+  // `tenant`). A code-sourced deployment has no single authenticated invoker,
+  // so invoker is null; when principal-owned locators arrive, the asset creator
+  // must be resolved and passed here. A resolution failure is fail-closed.
+  const bindings = projection.credentialBindings ?? [];
+  let credentials: CredentialDelivery | undefined;
+  if (bindings.length > 0) {
+    if (args.credentialCipher === undefined) {
+      throw new Error(
+        "deployCodeSourcedWorkflow: definition carries credential bindings but " +
+          "no credentialCipher was supplied; cannot resolve credential material",
+      );
+    }
+    const delivery = await buildCredentialDelivery({
+      db: args.db,
+      tenantId: args.tenantId,
+      bindings,
+      creatorPrincipalId: null,
+      invokerPrincipalId: null,
+      credentialCipher: args.credentialCipher,
+    });
+    if (!delivery.ok) {
+      throw new Error(
+        `deployCodeSourcedWorkflow: credential binding resolution failed: ${delivery.reason.message}`,
+      );
+    }
+    credentials = delivery.delivery;
+  }
+
+  // Pin per-step inference sources for the projection's inline onTrigger bodies.
+  // The live-authored path pins these off the live AgentDefinition; the
+  // source-ref hub holds only the frozen inert projection, so it enumerates the
+  // inline bodies from the wire form and resolves each body step's source
+  // through the SAME resolver + operator-approval gate the live path uses
+  // (`pickStepInferenceSource` against `approval.approvedGrants`). Each body's
+  // wire hash is recomputed from the inert body verbatim, so a body child's
+  // re-verify over the re-evaluated closure clears the same barrier a top-level
+  // re-verify does. The pinned sources ride OUTSIDE the hash (as on the live
+  // path); their trust comes from being resolved here under the approval gate,
+  // which is why the pin stays hub-side and is never caller-supplied.
+  //
+  // These entries reuse the live-authored `referencedDefinitions` wire field, so
+  // the sidecar stages them through its one lineage-agnostic loop with no
+  // source-ref-specific handling. Each entry's `definition` is the approved
+  // inert body def straight from the frozen, hash-covered projection (id set to
+  // the ref). On source-ref the sidecar stages that as a body workflow.json that
+  // is written REDUNDANTLY and NEVER read: the run child resolves bodies
+  // in-memory from the re-verified closure and hard-fails rather than reading a
+  // body workflow.json off disk (see the staging loop in workflow-host-wiring.ts
+  // and the anti-fallback guard in workflow-host run-child.ts). Only the
+  // co-staged sources.json is read on this path. Reuse is chosen over a
+  // dedicated sources-only field so the two lineages share one staging path and
+  // cannot drift; the redundant file is inert and approval-covered, not
+  // authoritative.
+  const referencedDefinitions: WorkflowProjectionWithSources[] =
+    await Promise.all(
+      enumerateInertOnTriggerBodies(projection).map(async (body) => {
+        const sources: Record<string, InferenceSource[]> = {};
+        for (const bodyStepId of body.definition.stepOrder) {
+          sources[bodyStepId] = [
+            pickStepInferenceSource({
+              preferred: body.preferredByStep[bodyStepId] ?? null,
+              stepId: bodyStepId,
+              workflowId: body.ref,
+              config: args.config,
+              operatorApprovals: approval.approvedGrants,
+            }),
+          ];
+        }
+        return {
+          definition: body.definition,
+          sources,
+          approvedWireHash: await computeWireDefinitionHash(body.definition),
+        };
+      }),
+    );
+
+  const result = await sendMultiStepDeployFrame({
+    lineage: "source-ref",
+    sidecarRouter: args.sidecarRouter,
+    agentAddress: args.agentAddress,
+    config: args.config,
+    sources: args.sources,
+    projection,
+    approvedWireHash: approval.approvedWireHash,
+    sourceRef: { source: args.source, closure },
+    ...(credentials !== undefined ? { credentials } : {}),
+    ...(referencedDefinitions.length > 0 ? { referencedDefinitions } : {}),
+  });
+
+  // Write the deployment's anchor `workflow_run` row -- the deployment's
+  // first-class record that owns its routing address and public key, mirroring
+  // the live-authored `deployWorkflowDefinition`. Run-grant materialization keys
+  // off this row (address + live status), so WITHOUT it no per-run grants (tool,
+  // capability, OR credential) ever materialize for a source-ref deployment.
+  // Born "deployed" (live but pre-trigger): the first trigger's materialization
+  // flips it to "running" via `anchorWithPrincipal`'s guarded update, which a
+  // row born "running" would skip. Its `anchorRunId` equals its own id, so the
+  // anchor references itself. The deployer read grant the live-authored path
+  // also seeds is deferred to the production route, which carries the
+  // authenticated deployer principal; this stays a single insert with no grant
+  // row to pair atomically.
+  await args.db.insert(workflowRunTable).values({
+    id: args.anchorRunId,
+    tenantId: args.tenantId,
+    anchorRunId: args.anchorRunId,
+    definitionId: approval.definitionId,
+    address: args.agentAddress,
+    publicKey: result.publicKey,
+    status: "deployed",
+    createdAt: new Date(),
+  });
+
+  return result;
 }
 
 /**
@@ -735,6 +1087,7 @@ export function createSessionService(
       try {
         if (workflowFrame !== undefined) {
           const ack = await sendMultiStepDeployFrame({
+            lineage: "live-authored",
             sidecarRouter,
             ...(sidecarAllocationRouter !== undefined
               ? { sidecarAllocationRouter }
@@ -953,6 +1306,7 @@ export function createSessionService(
 
     const sendMultiStepDeployCallback: SendMultiStepDeployFn = (deployParams) =>
       sendMultiStepDeployFrame({
+        lineage: "live-authored",
         sidecarRouter,
         ...(sidecarAllocationRouter !== undefined
           ? { sidecarAllocationRouter }
@@ -1148,6 +1502,7 @@ export function createSessionService(
       tenantId,
       anchorRunId,
       deploymentDomain,
+      definition,
       definitionAssetId,
       config,
     } = params;
@@ -1158,6 +1513,9 @@ export function createSessionService(
         "deployWorkflowDefinition requires a db handle to record the deployment's anchor run",
       );
     }
+    // The wire-projection hash keys the definition's selector-keyed identity:
+    // one asset backs many definitions, distinguished by this content handle.
+    const wireHash = await computeLiveDefinitionHash(definition);
     const now = new Date();
     await db.transaction(async (tx) => {
       // Project the workflow asset into a first-class definition (create-if-
@@ -1165,10 +1523,10 @@ export function createSessionService(
       // is otherwise born only in the one-time backfill; creating it here makes
       // every deploy yield a definition, so the run's `definitionId` is
       // populated at birth rather than only for the rows the backfill reached.
-      const { definitionId } = await ensureWorkflowDefinitionForAsset(
-        tx,
-        definitionAssetId,
-      );
+      const { definitionId } = await ensureWorkflowDefinitionForAsset(tx, {
+        assetId: definitionAssetId,
+        wireHash,
+      });
 
       // The deployment's anchor run: the one workflow_run that carries the
       // deployment's routing identity, 1:1 with the deployment (id and address

@@ -1091,9 +1091,9 @@ describe("threads — root feed vs reply membership (4a)", () => {
     expect(rootBody.items.map((i) => i.id).sort()).toEqual(
       [askedSent.id, replied.id].sort(),
     );
-    expect(
-      rootBody.items.find((i) => i.id === replied.id)?.parts,
-    ).toEqual([{ kind: "text", text: "hello back" }]);
+    expect(rootBody.items.find((i) => i.id === replied.id)?.parts).toEqual([
+      { kind: "text", text: "hello back" },
+    ]);
   });
 
   test("an unassigned message stays out of a reply thread's own feed", async () => {

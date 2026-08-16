@@ -6,6 +6,27 @@ export type {
 export * from "./state-machine/index";
 export * from "./definition/index";
 export {
+  onTriggerBodyRef,
+  rewriteInlineOnTriggerBodies,
+  type ExtractedOnTriggerBody,
+  type OnTriggerBodyRewrite,
+} from "./ontrigger-bodies";
+export {
+  projectLiveToInert,
+  computeLiveDefinitionHash,
+  type InertAgent,
+  type InertLoop,
+  type InertMap,
+  type InertModelSource,
+  type InertOnTrigger,
+  type InertOnTriggerBody,
+  type InertStep,
+  type InertStepStep,
+  type InertToolDeclaration,
+  type InertToolFactory,
+  type InertWorkflowDefinition,
+} from "./live-inert-projector";
+export {
   runtimeRun,
   RuntimeResumeUnsupportedError,
   createNoopDrainController,

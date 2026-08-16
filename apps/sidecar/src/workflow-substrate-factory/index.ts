@@ -593,6 +593,13 @@ export function createSidecarSubstrateFactory(
       principal,
       deployRef: validated.WORKFLOW_DEFINITION_REF,
       runSuspendableChild: createSidecarSpawnSuspendableChild(childRunDeps),
+      // Hub-approved wire hash per referenced onTrigger body id, carried on
+      // the parent's signed deploy frame and threaded here by the sidecar's
+      // deploy router (`REFERENCED_DEFINITION_HASHES` spawn-time env, parsed
+      // into `env.spawn.referencedDefinitionHashes` by the workflow-host
+      // child bootstrap). Not a sidecar recompute -- the hub is the
+      // authority the body path re-verifies against.
+      referencedDefinitionHashes: env.spawn.referencedDefinitionHashes,
     });
 
     // Per-run scratch reclamation for the cold (multi-step) path. The

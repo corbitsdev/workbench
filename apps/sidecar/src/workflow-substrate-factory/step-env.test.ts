@@ -24,7 +24,9 @@ const tmpDirs: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    tmpDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })),
+    tmpDirs
+      .splice(0)
+      .map((dir) => fs.promises.rm(dir, { recursive: true, force: true })),
   );
 });
 
@@ -77,9 +79,9 @@ test("the built step env carries the deploying definition's own definitionId and
   expect((env as unknown as { definitionId: string }).definitionId).toBe(
     "wfd_capability_owner",
   );
-  expect((env as unknown as { hubCapabilitiesUrl: string }).hubCapabilitiesUrl).toBe(
-    "https://hub.example.com",
-  );
+  expect(
+    (env as unknown as { hubCapabilitiesUrl: string }).hubCapabilitiesUrl,
+  ).toBe("https://hub.example.com");
   // Same hub origin as the sibling artifacts/memory/skills bindings —
   // one origin, one name per tool-bundle surface, never overloaded.
   expect((env as unknown as { hubArtifactsUrl: string }).hubArtifactsUrl).toBe(
@@ -88,7 +90,9 @@ test("the built step env carries the deploying definition's own definitionId and
   expect((env as unknown as { hubMemoryUrl: string }).hubMemoryUrl).toBe(
     "https://hub.example.com",
   );
-  expect((env as unknown as { address: string }).address).toBe("run_1@example.com");
+  expect((env as unknown as { address: string }).address).toBe(
+    "run_1@example.com",
+  );
 });
 
 test("a toolless body-step env still carries definitionId, so the binding is not tool-materialization-gated", async () => {

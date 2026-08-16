@@ -55,8 +55,7 @@ export type ProvisionSpaceChannelDeps = {
   readonly platform: ChannelLauncher;
   readonly store: Pick<ChatStore, "createChannelSettings">;
   readonly channelHostInferencePreferences?:
-    | ((tenantId: string) => Promise<readonly InferencePreference[]>)
-    | undefined;
+    ((tenantId: string) => Promise<readonly InferencePreference[]>) | undefined;
   readonly turnTimeoutMs: number;
 };
 

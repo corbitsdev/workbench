@@ -24,7 +24,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useBench } from "../bench-context";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { createSkill, listSkills, type SkillSummary } from "../skills-api";
-import { CreateSkillDialog, type SkillCreateInput } from "./create-skill-dialog";
+import {
+  CreateSkillDialog,
+  type SkillCreateInput,
+} from "./create-skill-dialog";
 import { PluginSkillDetailPanel } from "./plugin-skill-detail-panel";
 
 type PluginsState =

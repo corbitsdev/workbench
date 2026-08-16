@@ -45,10 +45,7 @@ import {
 } from "./granola-webhook-api";
 import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
-import {
-  CopyableCodeRow,
-  WebhookSecretPanel,
-} from "./webhook-secret-panel";
+import { CopyableCodeRow, WebhookSecretPanel } from "./webhook-secret-panel";
 
 /** The one automatable Granola workflow — see this file's header comment. */
 const GRANOLA_WORKFLOW_ASSET_NAME = "granola-call";

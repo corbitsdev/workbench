@@ -179,7 +179,11 @@ describe("validateAgentDefinitionDraftReplyAgainstInventory", () => {
       ...INVENTORY,
       toolPackages: [
         ...INVENTORY.toolPackages,
-        { name: "@corbits/capability-tools", connectorId: "capability", credentialBinding: null },
+        {
+          name: "@corbits/capability-tools",
+          connectorId: "capability",
+          credentialBinding: null,
+        },
       ],
     };
     const draft = validateAgentDefinitionDraftReplyAgainstInventory(
@@ -194,7 +198,11 @@ describe("validateAgentDefinitionDraftReplyAgainstInventory", () => {
       ...INVENTORY,
       toolPackages: [
         ...INVENTORY.toolPackages,
-        { name: "@corbits/capability-tools", connectorId: "capability", credentialBinding: null },
+        {
+          name: "@corbits/capability-tools",
+          connectorId: "capability",
+          credentialBinding: null,
+        },
       ],
     };
     const draft = validateAgentDefinitionDraftReplyAgainstInventory(

@@ -55,12 +55,12 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
     const el = mount(
       <TestQueryProvider>
         <InsightsRunsHistory
-            runs={[insightsRun({ id: "run_1", status: "deployed" })]}
-            loading={false}
-            nextCursor={null}
-            onOpenRun={(id) => opened.push(id)}
-            onBack={() => undefined}
-          />
+          runs={[insightsRun({ id: "run_1", status: "deployed" })]}
+          loading={false}
+          nextCursor={null}
+          onOpenRun={(id) => opened.push(id)}
+          onBack={() => undefined}
+        />
       </TestQueryProvider>,
     );
 
@@ -80,12 +80,12 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
     const el = mount(
       <TestQueryProvider>
         <InsightsRunsHistory
-            runs={[insightsRun({ id: "run_2", status: "deployed" })]}
-            loading={false}
-            nextCursor={null}
-            onOpenRun={(id) => opened.push(id)}
-            onBack={() => undefined}
-          />
+          runs={[insightsRun({ id: "run_2", status: "deployed" })]}
+          loading={false}
+          nextCursor={null}
+          onOpenRun={(id) => opened.push(id)}
+          onBack={() => undefined}
+        />
       </TestQueryProvider>,
     );
 
@@ -103,12 +103,12 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
     const el = mount(
       <TestQueryProvider>
         <InsightsRunsHistory
-            runs={[insightsRun({ id: "run_3", status: "deployed" })]}
-            loading={false}
-            nextCursor={null}
-            onOpenRun={(id) => opened.push(id)}
-            onBack={() => undefined}
-          />
+          runs={[insightsRun({ id: "run_3", status: "deployed" })]}
+          loading={false}
+          nextCursor={null}
+          onOpenRun={(id) => opened.push(id)}
+          onBack={() => undefined}
+        />
       </TestQueryProvider>,
     );
 
@@ -126,12 +126,12 @@ describe("Insights row activation (hand-rolled onRowActivate helper)", () => {
     const el = mount(
       <TestQueryProvider>
         <InsightsRunsHistory
-            runs={[insightsRun({ id: "run_4", status: "deployed" })]}
-            loading={false}
-            nextCursor={null}
-            onOpenRun={(id) => opened.push(id)}
-            onBack={() => undefined}
-          />
+          runs={[insightsRun({ id: "run_4", status: "deployed" })]}
+          loading={false}
+          nextCursor={null}
+          onOpenRun={(id) => opened.push(id)}
+          onBack={() => undefined}
+        />
       </TestQueryProvider>,
     );
 

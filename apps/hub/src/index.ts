@@ -159,6 +159,7 @@ import {
 } from "@intx/hub-sessions";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
+import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
 import { createNeedsYouRoutes } from "@corbits/approvals";
 import { getArtifact, writeArtifactVersion } from "@corbits/artifacts";
 import {
@@ -1649,10 +1650,11 @@ export async function createHub(config: HubConfig) {
       },
     });
 
-    const { definitionId } = await ensureWorkflowDefinitionForAsset(
-      db,
-      created.id,
-    );
+    const wireHash = await computeWireDefinitionHash(JSON.parse(workflowJson));
+    const { definitionId } = await ensureWorkflowDefinitionForAsset(db, {
+      assetId: created.id,
+      wireHash,
+    });
     return { definitionId };
   }
 

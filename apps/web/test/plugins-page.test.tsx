@@ -57,7 +57,8 @@ function json(body: unknown, status = 200): Response {
 function stubFetch(): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
-    if (path.includes("/api/me/principals")) return Promise.resolve(json(membership));
+    if (path.includes("/api/me/principals"))
+      return Promise.resolve(json(membership));
     if (path.includes("/api/channel-tenancies/kinds"))
       return Promise.resolve(json({ channelTenantIds: [] }));
     if (path.includes("/credentials/resolve/GitHub")) {
@@ -80,7 +81,8 @@ function stubFetch(): void {
         }),
       );
     }
-    if (path.includes("/credentials/resolve/")) return Promise.resolve(json(null, 404));
+    if (path.includes("/credentials/resolve/"))
+      return Promise.resolve(json(null, 404));
     if (path.includes("/api/tenants/tnt_1/skills"))
       return Promise.resolve(
         json({

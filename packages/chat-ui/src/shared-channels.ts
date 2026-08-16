@@ -43,7 +43,9 @@ export function sharedChannelsWith(
     .map((channel) => ({
       id: channel.id,
       title:
-        channel.title.trim().length > 0 ? channel.title : "Untitled conversation",
+        channel.title.trim().length > 0
+          ? channel.title
+          : "Untitled conversation",
       memberCount: channel.participants.length,
     }));
 }

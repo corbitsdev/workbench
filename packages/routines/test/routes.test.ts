@@ -496,12 +496,14 @@ describe("createRoutineRoutes", () => {
   });
 
   describe("deliverySpace", () => {
-    function fakeDeliverySpace(overrides: {
-      readonly channelId?: string;
-      readonly onCreate?: () => void;
-      readonly onCompensate?: () => void;
-      readonly failCompensate?: boolean;
-    } = {}) {
+    function fakeDeliverySpace(
+      overrides: {
+        readonly channelId?: string;
+        readonly onCreate?: () => void;
+        readonly onCompensate?: () => void;
+        readonly failCompensate?: boolean;
+      } = {},
+    ) {
       const channelId = overrides.channelId ?? "ch_new_space";
       let createCalls = 0;
       let compensateCalls = 0;

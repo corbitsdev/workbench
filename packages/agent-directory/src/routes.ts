@@ -28,6 +28,7 @@ import {
   ensureWorkflowDefinitionForAsset,
 } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
+import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
 
 import {
   SkillRegistryError,
@@ -279,10 +280,11 @@ export function createAgentDefinitionRoutes({
       },
     });
 
-    const { definitionId } = await ensureWorkflowDefinitionForAsset(
-      db,
+    const wireHash = await computeWireDefinitionHash(JSON.parse(workflowJson));
+    const { definitionId } = await ensureWorkflowDefinitionForAsset(db, {
       assetId,
-    );
+      wireHash,
+    });
 
     const row = await db.query.workflowDefinition.findFirst({
       where: and(

@@ -67,13 +67,16 @@ function slugify(name: string): string {
 }
 
 function initialsFromName(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0]!.slice(0, 2);
-  return `${words[0]![0]}${words[1]![0]}`;
+  const [first, second] = name.trim().split(/\s+/).filter(Boolean);
+  if (first === undefined) return "?";
+  if (second === undefined) return first.slice(0, 2);
+  return `${first[0]}${second[0]}`;
 }
 
-const AVATAR_TONES: readonly { readonly tone: AvatarTone; readonly label: string }[] = [
+const AVATAR_TONES: readonly {
+  readonly tone: AvatarTone;
+  readonly label: string;
+}[] = [
   { tone: "neutral", label: "Muted" },
   { tone: "agent", label: "Primary" },
   { tone: "agent2", label: "Accent" },
@@ -388,8 +391,8 @@ export function CreateAgentPanel({
         <DialogHeader>
           <DialogTitle>New agent</DialogTitle>
           <DialogDescription>
-            A name is enough to start — Myra drafts the starting
-            instructions, and you teach it the rest in conversation.
+            A name is enough to start — Myra drafts the starting instructions,
+            and you teach it the rest in conversation.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -466,9 +469,7 @@ export function CreateAgentPanel({
           </div>
 
           <div className="create-agent-suggestions">
-            <span className="create-agent-suggestions-label">
-              Suggestions
-            </span>
+            <span className="create-agent-suggestions-label">Suggestions</span>
             <div className="create-agent-suggestions-grid">
               {SUGGESTIONS.map((suggestion) => (
                 <button

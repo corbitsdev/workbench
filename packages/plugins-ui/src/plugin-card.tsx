@@ -3,7 +3,13 @@
 // generic "manage" button that hides what state the connector is
 // actually in.
 
-import { Badge, Button, Card, CardDescription, CardTitle } from "@corbits/react-ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardDescription,
+  CardTitle,
+} from "@corbits/react-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
 import { Plus } from "lucide-react";
 

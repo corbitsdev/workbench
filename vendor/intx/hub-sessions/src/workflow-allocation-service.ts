@@ -19,6 +19,7 @@ import {
 } from "@intx/types";
 import type { HarnessConfig } from "@intx/types/runtime";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
+import { computeLiveDefinitionHash } from "@intx/workflow";
 import {
   hashDefinition,
   type WorkflowDefinition,
@@ -230,10 +231,10 @@ export function createWorkflowAllocationService({
       domain: args.deploymentDomain,
     });
     await db.transaction(async (tx) => {
-      const { definitionId } = await ensureWorkflowDefinitionForAsset(
-        tx,
-        args.definitionAssetId,
-      );
+      const { definitionId } = await ensureWorkflowDefinitionForAsset(tx, {
+        assetId: args.definitionAssetId,
+        wireHash: await computeLiveDefinitionHash(args.definition),
+      });
       await tx.insert(workflowRun).values({
         id: args.anchorRunId,
         tenantId: args.tenantId,

@@ -500,7 +500,8 @@ export function createRoutineRoutes(
       // (deleted) rather than left behind pointing at nothing — the
       // same mint-then-compensate shape `@corbits/chat`'s own
       // `POST /channels` uses for its tenant mint.
-      let provisionedSpace: { channelId: string; compensate: () => Promise<void> } | undefined;
+      let provisionedSpace:
+        { channelId: string; compensate: () => Promise<void> } | undefined;
       if (needsDelivery && deps.deliverySpace !== undefined) {
         provisionedSpace = await deps.deliverySpace.createDeliverySpace({
           tenantId: tenant.id,

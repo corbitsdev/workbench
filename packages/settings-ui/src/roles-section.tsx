@@ -28,7 +28,11 @@ import {
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { PRINCIPAL_KIND_LABEL, PRINCIPAL_KIND_ORDER, principalLabel } from "./identity";
+import {
+  PRINCIPAL_KIND_LABEL,
+  PRINCIPAL_KIND_ORDER,
+  principalLabel,
+} from "./identity";
 import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 import {

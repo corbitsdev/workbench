@@ -50,9 +50,7 @@ export async function apiRequest<T>(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new ErrorCtor(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    throw new ErrorCtor(cause instanceof Error ? cause.message : String(cause));
   }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);
