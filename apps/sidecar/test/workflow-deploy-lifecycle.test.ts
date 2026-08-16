@@ -403,6 +403,77 @@ describe("workflow deployment lifecycle through the deploy router", () => {
     ).toEqual(bodySources);
   });
 
+  test("a deploy frame carrying a referenced body's approvedWireHash threads REFERENCED_DEFINITION_HASHES to the spawned child and persists it for restore", async () => {
+    const { router, spawns, dataDir } = await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("run_lifecycle-hashes@example.com");
+    if (frame.workflow === undefined) throw new Error("unreachable");
+    const bodyDefinition = {
+      id: "wf-lifecycle-hashed-body",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["body-step"],
+      steps: { "body-step": { kind: "step" } },
+    };
+    const bodySources = {
+      "body-step": [
+        {
+          id: "body-step",
+          provider: "anthropic",
+          baseURL: "https://api.anthropic.com",
+          apiKey: "sk-body",
+          model: "claude-3-5",
+        },
+      ],
+    };
+    frame.workflow.referencedDefinitions = [
+      {
+        definition: bodyDefinition,
+        sources: bodySources,
+        approvedWireHash: "sha256-approved-body-hash",
+      },
+    ];
+
+    const deployPromise = router.deploy(frame);
+    const spawn = await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    // The spawned child's env carries the approved hash keyed by the body's
+    // definition id -- what `resolveVerifiedBody` in the workflow-host's
+    // spawn-child adapter re-verifies a body spawn's recompute against.
+    const referencedHashes = JSON.parse(
+      spawn.env.REFERENCED_DEFINITION_HASHES ?? "{}",
+    );
+    expect(referencedHashes).toEqual({
+      [bodyDefinition.id]: "sha256-approved-body-hash",
+    });
+
+    // ...and it survives a restart: the durable deployment record carries
+    // the same map so a boot-time restore rebuilds the identical spawn env
+    // without a hub round-trip.
+    const recordFile = path.join(
+      dataDir,
+      "workflow-runs",
+      deriveDeploymentId(frame.agentAddress),
+      "deployment.json",
+    );
+    const record = JSON.parse(await fs.readFile(recordFile, "utf8"));
+    expect(record.referencedDefinitionHashes).toEqual({
+      [bodyDefinition.id]: "sha256-approved-body-hash",
+    });
+  });
+
+  test("a deploy frame with no referenced bodies threads an empty REFERENCED_DEFINITION_HASHES map", async () => {
+    const { router, spawns } = await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("run_lifecycle-no-bodies@example.com");
+
+    const deployPromise = router.deploy(frame);
+    const spawn = await answerReadyHandshake(spawns, 0);
+    await deployPromise;
+
+    expect(JSON.parse(spawn.env.REFERENCED_DEFINITION_HASHES ?? "")).toEqual(
+      {},
+    );
+  });
+
   test("a workflow frame is accepted: the child spawns, the address goes live, and a durable record lands", async () => {
     const { router, spawns, dataDir } = await makeLifecycleFixture();
     const frame = makeWorkflowFrame("run_lifecycle-accept@example.com");
