@@ -381,9 +381,23 @@ export function fetchChannelBlob(
   ).then((body) => body.contentBase64);
 }
 
+/** A message-send's pre-invite entry — the wire shape of a picked
+ * "Bring in…" candidate's `MentionInviteIntent` (see `mentions.ts`),
+ * mirroring `packages/chat/src/routes.ts`'s `MessageInviteEntry`. */
+export type MessageInviteInput =
+  | { readonly kind: "agent"; readonly definitionId: string }
+  | {
+      readonly kind: "person";
+      readonly principalId: string;
+      readonly name?: string;
+    };
+
 export type SendMessageOptions = {
   readonly threadId?: string;
   readonly inReplyToMessageId?: string;
+  /** Every not-yet-participant a mention in this message names, invited
+   * server-side before the send so the mention fans out normally. */
+  readonly invite?: readonly MessageInviteInput[];
 };
 
 export function sendMessage(
@@ -400,6 +414,9 @@ export function sendMessage(
   if (options?.threadId !== undefined) body["threadId"] = options.threadId;
   if (options?.inReplyToMessageId !== undefined) {
     body["inReplyToMessageId"] = options.inReplyToMessageId;
+  }
+  if (options?.invite !== undefined && options.invite.length > 0) {
+    body["invite"] = options.invite;
   }
   return request(
     `/api/tenants/${tenantId}/chat/channels/${channelId}/messages`,

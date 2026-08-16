@@ -1180,6 +1180,223 @@ describe("messages", () => {
   });
 });
 
+describe("POST /channels/:id/messages — invite pre-step (CL-5879 mention-pulls-in)", () => {
+  test("an agent mention of a non-participant invites the agent, then sends, both persisted", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@echo welcome!" }],
+        invite: [{ kind: "agent", definitionId: "wfd_echo" }],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.launchInviteCalls).toEqual([
+      {
+        tenantId: TENANT.id,
+        creatorPrincipalId: "prn_alice",
+        definitionId: "wfd_echo",
+      },
+    ]);
+
+    const settingsResponse = await app.request(
+      `/channels/${channel.id}/settings`,
+    );
+    const settingsBody = (await settingsResponse.json()) as {
+      participants: { address: string; handle: string }[];
+    };
+    expect(settingsBody.participants).toEqual([
+      { address: "ins_invited1@acme.example", handle: "echo" },
+    ]);
+
+    // The message itself lands on the channel's own timeline...
+    const messagesResponse = await app.request(
+      `/channels/${channel.id}/messages`,
+    );
+    const messagesBody = (await messagesResponse.json()) as {
+      items: { parts: Part[] }[];
+    };
+    expect(
+      messagesBody.items.some((item) =>
+        item.parts.some(
+          (part) => part.kind === "text" && part.text === "@echo welcome!",
+        ),
+      ),
+    ).toBe(true);
+
+    // ...and fans out to the newly-invited agent's own mailbox, since the
+    // mention names its own freshly-assigned handle.
+    expect(
+      platform.sentMail.some(
+        (mail) => mail.channelId === "ins_invited1" && mail.fromChannelId === channel.id,
+      ),
+    ).toBe(true);
+  });
+
+  test("a person mention of a non-participant bench member invites them, then sends", async () => {
+    const deps = buildDeps();
+    (
+      deps.tenancy as ReturnType<typeof createInMemoryChannelTenancyStore>
+    ).registerPrincipal(TENANT.id, {
+      id: "prn_bob",
+      kind: "user",
+      status: "active",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@bob welcome!" }],
+        invite: [{ kind: "person", principalId: "prn_bob", name: "Bob" }],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+
+    const settingsResponse = await app.request(
+      `/channels/${channel.id}/settings`,
+    );
+    const settingsBody = (await settingsResponse.json()) as {
+      participants: { address: string; handle: string }[];
+    };
+    expect(settingsBody.participants).toEqual([
+      { address: "prn_bob", handle: "bob" },
+    ]);
+
+    const messagesResponse = await app.request(
+      `/channels/${channel.id}/messages`,
+    );
+    const messagesBody = (await messagesResponse.json()) as {
+      items: { parts: Part[] }[];
+    };
+    expect(
+      messagesBody.items.some((item) =>
+        item.parts.some(
+          (part) => part.kind === "text" && part.text === "@bob welcome!",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  test("a person invite naming an unknown/inactive principal is a 400, and nothing is sent", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@ghost welcome!" }],
+        invite: [{ kind: "person", principalId: "prn_ghost" }],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.sentMail).toHaveLength(0);
+  });
+
+  test("a denied invite grant returns a plain 403 and sends nothing", async () => {
+    const deps = buildDeps({
+      // Denies exactly the channel-scoped "create" grant the invite
+      // pre-step checks — never the tenant-wide "workflow-run:*" create
+      // grant `POST /channels` itself needs, so channel setup below
+      // still succeeds.
+      requireGrant: (resource, action) => async (c, next) => {
+        if (action === "create" && resource !== "workflow-run:*") {
+          return c.json(
+            { error: { code: "forbidden", message: "no" } },
+            403,
+          );
+        }
+        await next();
+      },
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@echo welcome!" }],
+        invite: [{ kind: "agent", definitionId: "wfd_echo" }],
+      }),
+    });
+
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.message).toBe("You can't add people to this workbench");
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.sentMail).toHaveLength(0);
+    const settingsResponse = await app.request(
+      `/channels/${channel.id}/settings`,
+    );
+    const settingsBody = (await settingsResponse.json()) as {
+      participants: unknown[];
+    };
+    expect(settingsBody.participants).toEqual([]);
+  });
+
+  test("an already-participant person invite entry is a no-op, and the message still sends", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+      participants: ["prn_bob"],
+    });
+
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "@bob still here" }],
+        invite: [{ kind: "person", principalId: "prn_bob", name: "Bob" }],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    const settingsResponse = await app.request(
+      `/channels/${channel.id}/settings`,
+    );
+    const settingsBody = (await settingsResponse.json()) as {
+      participants: { address: string }[];
+    };
+    expect(settingsBody.participants.map((p) => p.address)).toEqual([
+      "prn_bob",
+    ]);
+  });
+});
+
 describe("GET /channels/:id/blobs/:blobId", () => {
   test("returns the platform's blob bytes base64-encoded", async () => {
     const deps = buildDeps({
