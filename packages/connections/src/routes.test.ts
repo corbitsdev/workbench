@@ -308,28 +308,127 @@ describe("POST /:connectorId/complete", () => {
     expect(body.error.code).toBe("connection_setup_failed");
   });
 
-  test("a rejected probe reports the connector needs_attention with the probe's own reason", async () => {
+  test("a rejected probe reports the connector needs_attention with a category, never the probe's own message", async () => {
     const providerHealth = createProviderHealthStore();
     const app = buildApp({ providerHealth });
-    await app.request("/rejecting-connector/complete", {
+    const response = await app.request("/rejecting-connector/complete", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiKey: "bad-key" }),
     });
+    // The probe's own message is still the thing the person who just
+    // typed the key sees in the 422 body...
+    const body = (await response.json()) as { error: { message: string } };
+    expect(body.error.message).toBe("the key was rejected");
+    // ...but the provider-health record never carries it — only a closed
+    // category the shell banner maps to fixed copy (CL-6092).
     const record = providerHealth.get(TENANT.id, "rejecting-connector");
     expect(record?.status).toBe("needs_attention");
-    expect(record?.reason).toBe("the key was rejected");
+    expect(record?.category).toBe("credential_failure");
+    expect(record).not.toHaveProperty("reason");
+    expect(record).not.toHaveProperty("message");
+  });
+
+  // A provider's rejection body is arbitrary prose that can carry a
+  // request URL, an account id, or a key fragment — this proves that text
+  // never reaches the stored record even when the probe's own message is
+  // exactly that shape.
+  test("a rejected probe whose message carries a URL and key fragment never stores that text", async () => {
+    const registry: Readonly<Record<string, ConnectorDescriptor>> = {
+      ...FAKE_REGISTRY,
+      "url-laden-connector": {
+        id: "url-laden-connector",
+        displayName: "URL-laden Connector",
+        authKind: "api-key",
+        credentialPlugin: "http",
+        docsUrl: "https://example.test/docs",
+        feedsTools: [],
+        probe: async () => ({
+          ok: false,
+          message:
+            "https://api.example.test/v1/models?key=sk-live-abc123 rejected the request: invalid x-api-key",
+        }),
+      },
+    };
+    const providerHealth = createProviderHealthStore();
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry,
+      providerHealth,
+    });
+    const app = mountAs(routes);
+    await app.request("/url-laden-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "bad-key" }),
+    });
+    const record = providerHealth.get(TENANT.id, "url-laden-connector");
+    expect(record?.category).toBe("credential_failure");
+    expect(JSON.stringify(record)).not.toContain("sk-live-abc123");
+    expect(JSON.stringify(record)).not.toContain("https://");
   });
 
   test("a passing probe clears any needs_attention record for that connector", async () => {
     const providerHealth = createProviderHealthStore();
-    providerHealth.report(TENANT.id, "accepting-connector", "stale reason");
+    providerHealth.report(TENANT.id, "accepting-connector", "credential_failure");
     const app = buildApp({
       providerHealth,
       ensureProviderFn: async () => "prv_1",
       ensureCredentialFn: async () => "crd_1",
     });
     await app.request("/accepting-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "good-key" }),
+    });
+    expect(providerHealth.get(TENANT.id, "accepting-connector")).toBeUndefined();
+  });
+
+  // CL-6092: a storage failure after a passing probe must never clear a
+  // prior needs-attention record — the credential never actually became
+  // durable, so the record should survive for the next attempt to see.
+  test("a storage failure after a passing probe leaves a prior needs_attention record standing", async () => {
+    const providerHealth = createProviderHealthStore();
+    providerHealth.report(TENANT.id, "accepting-connector", "credential_failure");
+    const app = buildApp({
+      providerHealth,
+      ensureProviderFn: async () => {
+        throw new Error("hub unreachable");
+      },
+    });
+    const response = await app.request("/accepting-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "good-key" }),
+    });
+    expect(response.status).toBe(500);
+    expect(
+      providerHealth.get(TENANT.id, "accepting-connector")?.status,
+    ).toBe("needs_attention");
+  });
+});
+
+describe("POST /:connectorId/credential/test provider health wiring", () => {
+  test("a rejected probe reports the connector needs_attention", async () => {
+    const providerHealth = createProviderHealthStore();
+    const app = buildApp({ providerHealth });
+    await app.request("/rejecting-connector/credential/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "bad-key" }),
+    });
+    const record = providerHealth.get(TENANT.id, "rejecting-connector");
+    expect(record?.status).toBe("needs_attention");
+    expect(record?.category).toBe("credential_failure");
+  });
+
+  test("a passing probe clears any needs_attention record for that connector", async () => {
+    const providerHealth = createProviderHealthStore();
+    providerHealth.report(TENANT.id, "accepting-connector", "credential_failure");
+    const app = buildApp({ providerHealth });
+    await app.request("/accepting-connector/credential/test", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiKey: "good-key" }),
@@ -343,17 +442,17 @@ describe("GET /provider-health", () => {
     const providerHealth = createProviderHealthStore(
       () => new Date("2026-08-15T00:00:00.000Z"),
     );
-    providerHealth.report(TENANT.id, "anthropic", "credential error");
+    providerHealth.report(TENANT.id, "anthropic", "credential_failure");
     const app = buildApp({ providerHealth });
     const response = await app.request("/provider-health");
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      providers: Record<string, { status: string; reason: string; at: string }>;
+      providers: Record<string, { status: string; category: string; at: string }>;
       connectedProviderCount?: number;
     };
     expect(body.providers["anthropic"]).toEqual({
       status: "needs_attention",
-      reason: "credential error",
+      category: "credential_failure",
       at: "2026-08-15T00:00:00.000Z",
     });
   });

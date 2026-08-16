@@ -10,9 +10,19 @@
 // nothing here needs to survive a hub restart. `resolveOne` in
 // `plugins.ts` already derives a coarser `needs_attention` from the
 // credential row's own persisted `status` column; this store adds the
-// finer-grained, human-readable *reason* a runtime inference failure
-// carries, which that column never captures (it only ever moves to
-// `"error"`/`"expired"`, never a why).
+// finer-grained *category* a runtime inference failure carries, which
+// that column never captures (it only ever moves to `"error"`/`"expired"`,
+// never a why).
+//
+// A record carries only a `category` — never a provider's own raw error
+// text. A provider's HTTP error body can carry a request URL, an account
+// id, or a key fragment, and this store's `category` is read straight
+// back out by a browser-facing route (`routes.ts`'s `GET
+// /provider-health`) with no server-side redaction step in between — so
+// the only safe thing to store is a closed enum a render layer maps to
+// fixed, pre-written copy, never prose a provider wrote. See
+// `apps/web/src/shell/provider-health-banner.tsx`'s per-category copy
+// table, the one place a category becomes a sentence.
 //
 // Conservative by construction: `report` is the only way to mark a
 // provider unhealthy, and `clear` (called only after a *passing*
@@ -20,6 +30,8 @@
 // marks a provider healthy from a reply's prose — see
 // `isClassifiedInferenceFailure` below, which gates what the orchestrator
 // is even allowed to report in the first place.
+
+import { type } from "arktype";
 
 /** The two `InferenceError` categories (`@intx/types/runtime`) worth
  * surfacing as "go fix your connection": a bad/revoked key or an
@@ -45,14 +57,18 @@ export function isClassifiedInferenceFailure(
 
 export type ProviderHealthRecord = {
   readonly status: "needs_attention";
-  readonly reason: string;
+  readonly category: ClassifiedInferenceFailureCategory;
   readonly at: string;
 };
 
 export type ProviderHealthStore = {
   /** Marks `provider` unhealthy for `tenantId`, overwriting any prior
-   * record (a newer failure's reason/time always wins). */
-  report(tenantId: string, provider: string, reason: string): void;
+   * record (a newer failure's category/time always wins). */
+  report(
+    tenantId: string,
+    provider: string,
+    category: ClassifiedInferenceFailureCategory,
+  ): void;
   /** Clears a provider's unhealthy record — call only after a passing
    * credential test, never from a reply's prose. A no-op when the
    * provider was not marked unhealthy. */
@@ -80,10 +96,10 @@ export function createProviderHealthStore(
   }
 
   return {
-    report(tenantId, provider, reason) {
+    report(tenantId, provider, category) {
       tenantMap(tenantId).set(provider, {
         status: "needs_attention",
-        reason,
+        category,
         at: now().toISOString(),
       });
     },
@@ -110,7 +126,7 @@ export type ProviderHealthPort = {
   reportInferenceFailure(args: {
     tenantId: string;
     provider: string;
-    reason: string;
+    category: ClassifiedInferenceFailureCategory;
   }): void;
 };
 
@@ -118,8 +134,8 @@ export function createProviderHealthPort(
   store: ProviderHealthStore,
 ): ProviderHealthPort {
   return {
-    reportInferenceFailure({ tenantId, provider, reason }) {
-      store.report(tenantId, provider, reason);
+    reportInferenceFailure({ tenantId, provider, category }) {
+      store.report(tenantId, provider, category);
     },
   };
 }
@@ -133,10 +149,26 @@ export type ProviderHealthSnapshot = {
   readonly connectedProviderCount?: number;
 };
 
+const ProviderHealthRecordSchema = type({
+  status: "'needs_attention'",
+  category: "'credential_failure' | 'quota_exhausted'",
+  at: "string",
+});
+
+const ProviderHealthSnapshotEnvelope = type({
+  providers: "Record<string, unknown>",
+  "connectedProviderCount?": "number",
+});
+
 /** The browser-safe client for `GET /provider-health` (CL-6092) — same
  * shape as `plugins.ts`'s own tenant-scoped fetch, reused by
  * `apps/web`'s shell banner rather than each caller building the path
- * itself. */
+ * itself. Parses the response at this trust boundary (never an `as`
+ * cast): the envelope's own shape first, then each provider's record
+ * against `ProviderHealthRecordSchema` — the same closed `category` enum
+ * `report`/`ProviderHealthPort` write through, so a response that ever
+ * carried a provider's raw prose (or anything else the enum doesn't
+ * name) throws here instead of silently reaching the banner. */
 export async function fetchProviderHealth(
   tenantId: string,
 ): Promise<ProviderHealthSnapshot> {
@@ -147,5 +179,22 @@ export async function fetchProviderHealth(
   if (!response.ok) {
     throw new Error(`Failed to load provider health (${response.status})`);
   }
-  return (await response.json()) as ProviderHealthSnapshot;
+  const json: unknown = await response.json();
+  const envelope = ProviderHealthSnapshotEnvelope(json);
+  if (envelope instanceof type.errors) {
+    throw new Error(`Unexpected provider-health response shape: ${envelope.summary}`);
+  }
+  const providers: Record<string, ProviderHealthRecord> = {};
+  for (const [provider, value] of Object.entries(envelope.providers)) {
+    const record = ProviderHealthRecordSchema(value);
+    if (record instanceof type.errors) {
+      throw new Error(
+        `Unexpected provider-health record shape for ${provider}: ${record.summary}`,
+      );
+    }
+    providers[provider] = record;
+  }
+  return envelope.connectedProviderCount === undefined
+    ? { providers }
+    : { providers, connectedProviderCount: envelope.connectedProviderCount };
 }

@@ -33,12 +33,12 @@ describe("isClassifiedInferenceFailure", () => {
 });
 
 describe("createProviderHealthStore", () => {
-  test("report marks a provider needs_attention with the given reason and time", () => {
+  test("report marks a provider needs_attention with the given category and time", () => {
     const store = createProviderHealthStore(() => new Date("2026-08-15T00:00:00.000Z"));
-    store.report("bench_1", "anthropic", "credential error");
+    store.report("bench_1", "anthropic", "credential_failure");
     expect(store.get("bench_1", "anthropic")).toEqual({
       status: "needs_attention",
-      reason: "credential error",
+      category: "credential_failure",
       at: "2026-08-15T00:00:00.000Z",
     });
   });
@@ -50,7 +50,7 @@ describe("createProviderHealthStore", () => {
 
   test("clear removes the record — only a passing re-test should call it", () => {
     const store = createProviderHealthStore();
-    store.report("bench_1", "anthropic", "credential error");
+    store.report("bench_1", "anthropic", "credential_failure");
     store.clear("bench_1", "anthropic");
     expect(store.get("bench_1", "anthropic")).toBeUndefined();
   });
@@ -62,22 +62,22 @@ describe("createProviderHealthStore", () => {
 
   test("a later report overwrites an earlier one for the same provider", () => {
     const store = createProviderHealthStore(() => new Date("2026-08-15T00:00:00.000Z"));
-    store.report("bench_1", "anthropic", "first reason");
-    store.report("bench_1", "anthropic", "second reason");
-    expect(store.get("bench_1", "anthropic")?.reason).toBe("second reason");
+    store.report("bench_1", "anthropic", "credential_failure");
+    store.report("bench_1", "anthropic", "quota_exhausted");
+    expect(store.get("bench_1", "anthropic")?.category).toBe("quota_exhausted");
   });
 
   test("records are scoped per tenant", () => {
     const store = createProviderHealthStore();
-    store.report("bench_1", "anthropic", "credential error");
+    store.report("bench_1", "anthropic", "credential_failure");
     expect(store.get("bench_2", "anthropic")).toBeUndefined();
   });
 
   test("listForTenant returns every unhealthy provider for that tenant", () => {
     const store = createProviderHealthStore();
-    store.report("bench_1", "anthropic", "credential error");
-    store.report("bench_1", "openai", "quota exhausted");
-    store.report("bench_2", "xai", "credential error");
+    store.report("bench_1", "anthropic", "credential_failure");
+    store.report("bench_1", "openai", "quota_exhausted");
+    store.report("bench_2", "xai", "credential_failure");
     expect(Object.keys(store.listForTenant("bench_1")).sort()).toEqual([
       "anthropic",
       "openai",
@@ -97,7 +97,7 @@ describe("createProviderHealthPort", () => {
     port.reportInferenceFailure({
       tenantId: "bench_1",
       provider: "anthropic",
-      reason: "credential error",
+      category: "credential_failure",
     });
     expect(store.get("bench_1", "anthropic")?.status).toBe("needs_attention");
   });
@@ -113,7 +113,7 @@ describe("fetchProviderHealth", () => {
           providers: {
             anthropic: {
               status: "needs_attention",
-              reason: "credential error",
+              category: "credential_failure",
               at: "2026-08-15T00:00:00.000Z",
             },
           },
@@ -128,12 +128,37 @@ describe("fetchProviderHealth", () => {
       "/api/tenants/bench_1/connections/provider-health",
     );
     expect(snapshot.connectedProviderCount).toBe(1);
-    expect(snapshot.providers["anthropic"]?.reason).toBe("credential error");
+    expect(snapshot.providers["anthropic"]?.category).toBe("credential_failure");
   });
 
   test("throws on a non-ok response", async () => {
     globalThis.fetch = (async () =>
       new Response(null, { status: 500 })) as unknown as typeof fetch;
+    await expect(fetchProviderHealth("bench_1")).rejects.toThrow();
+  });
+
+  // CL-6092: the record's `category` is a closed enum a render layer maps
+  // to fixed, pre-written copy — this is the guarantee that makes it safe
+  // to store at all. A response that ever smuggled a provider's own raw
+  // error prose (which can carry a request URL, an account id, or a key
+  // fragment) into that field must never reach a caller — it must throw
+  // here, at the parse boundary, rather than flow on to the shell banner.
+  test("throws rather than letting a provider's raw error text through as a category", async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          providers: {
+            anthropic: {
+              status: "needs_attention",
+              category:
+                "https://api.anthropic.com/v1/messages?key=sk-ant-abc123 rejected the request: invalid x-api-key",
+              at: "2026-08-15T00:00:00.000Z",
+            },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as unknown as typeof fetch;
+
     await expect(fetchProviderHealth("bench_1")).rejects.toThrow();
   });
 });

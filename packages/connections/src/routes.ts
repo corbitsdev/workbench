@@ -28,6 +28,19 @@ import type { ConnectorDescriptor } from "./descriptor";
 import type { ProviderHealthStore } from "./provider-health";
 import { CONNECTOR_REGISTRY } from "./registry";
 
+// A connect-time credential test's own failure is, by construction, always
+// about the credential a person just pasted — this route's `probe` has no
+// other job — so it always classifies as `credential_failure`, never
+// `quota_exhausted` (nothing here ever runs real inference, so a quota
+// can't even be observed). The probe's own `result.message` (arbitrary
+// provider HTTP-body prose — can carry a request URL or a key fragment)
+// stays in the 422 response body for the person who just typed the key to
+// read; it is never stored in the provider-health record, which a much
+// later `GET /provider-health` poll (the shell banner, possibly a
+// different session) reads back with no redaction step of its own. See
+// `provider-health.ts`'s own header for why.
+const CREDENTIAL_TEST_FAILURE_CATEGORY = "credential_failure" as const;
+
 const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
 });
@@ -71,12 +84,16 @@ export type CreateConnectionRoutesDeps = {
    * reports exactly what the connect flow itself would decide. */
   oauthEnv?: Readonly<Record<string, string | undefined>>;
   /**
-   * The provider-health signal `GET /provider-health` reads and
-   * `/:connectorId/complete` writes to (CL-6092): a failing connect-time
-   * test marks the connector needs-attention with the probe's own
-   * message, a passing one clears it. Absent in tests that don't touch
-   * health (matching every other test-only override's optionality) —
-   * every write is a no-op when this is undefined.
+   * The provider-health signal `GET /provider-health` reads and both
+   * `/:connectorId/credential/test` and `/:connectorId/complete` write to
+   * (CL-6092): a failing connect-time test marks the connector
+   * needs-attention with the closed `credential_failure` category (never
+   * the probe's own message — see this module's own
+   * `CREDENTIAL_TEST_FAILURE_CATEGORY` comment), a passing one clears it.
+   * `/complete` only clears once the credential is durably stored, not on
+   * the test pass alone. Absent in tests that don't touch health
+   * (matching every other test-only override's optionality) — every
+   * write is a no-op when this is undefined.
    */
   providerHealth?: ProviderHealthStore;
   /**
@@ -182,10 +199,20 @@ export function createConnectionRoutes(
         );
       }
 
+      const tenant = c.get("tenant");
       const result = await descriptor.probe(parsed.apiKey);
       if (!result.ok) {
+        deps.providerHealth?.report(
+          tenant.id,
+          descriptor.id,
+          CREDENTIAL_TEST_FAILURE_CATEGORY,
+        );
         return c.json(ErrorEnvelope("invalid_credential", result.message), 422);
       }
+      // A passing test here is a genuine, if lighter-weight, proof the
+      // credential works — the same signal `/complete`'s own passing test
+      // clears on (CL-6092): never a reply's prose, always a real probe.
+      deps.providerHealth?.clear(tenant.id, descriptor.id);
       return c.json({ ok: true }, 200);
     },
   );
@@ -227,12 +254,13 @@ export function createConnectionRoutes(
       const tenant = c.get("tenant");
       const test = await descriptor.probe(parsed.apiKey);
       if (!test.ok) {
-        deps.providerHealth?.report(tenant.id, descriptor.id, test.message);
+        deps.providerHealth?.report(
+          tenant.id,
+          descriptor.id,
+          CREDENTIAL_TEST_FAILURE_CATEGORY,
+        );
         return c.json(ErrorEnvelope("invalid_credential", test.message), 422);
       }
-      // A passing test is the only thing allowed to clear a
-      // needs-attention record (CL-6092) — never a reply's prose.
-      deps.providerHealth?.clear(tenant.id, descriptor.id);
 
       const cookies = cookiesFromHeader(c.req.header("cookie"));
       try {
@@ -258,6 +286,11 @@ export function createConnectionRoutes(
           },
           deps.log,
         );
+        // Only clear once the credential is actually durable — a storage
+        // failure below (the `catch`) must leave a prior needs-attention
+        // record standing rather than clearing it on a test pass whose
+        // save then failed (CL-6092).
+        deps.providerHealth?.clear(tenant.id, descriptor.id);
         return c.json({ credentialId, status: "active" as const }, 200);
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
