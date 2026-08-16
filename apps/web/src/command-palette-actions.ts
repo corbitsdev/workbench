@@ -160,8 +160,8 @@ export type ActionCommand = {
 export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "new-channel",
-    title: "New conversation",
-    subtitle: "Space or chat",
+    title: "New chat",
+    subtitle: "Search or create an agent",
   },
   { id: "new-agent", title: "New agent", subtitle: "Create with v1" },
   {

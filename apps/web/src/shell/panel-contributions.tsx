@@ -621,7 +621,7 @@ export function LiveActivityBand({
       <EmptyState
         icon={<Bell />}
         title="Quiet right now"
-        description="Spaces, chats, and running routines for this workbench will appear here."
+        description="Chats and running routines for this workbench will appear here."
       />
     );
   }
@@ -706,11 +706,11 @@ export function ensurePanelContributions(): void {
     pageBand: (ctx) => {
       return {
         // Header title must stay a string for SidebarPanelHeader (react-ui pin).
-        title: "Spaces",
+        title: "Chats",
         headerActions: [
           {
             id: "new-channel",
-            label: "New conversation",
+            label: "New chat",
             icon: <Plus />,
             onSelect: () => {
               window.dispatchEvent(
@@ -781,7 +781,7 @@ export function ensurePanelContributions(): void {
       actions: [
         {
           id: "library-qa-channels",
-          label: "Spaces",
+          label: "Chats",
           onSelect: () => ctx.onNavigate(channelPath(null)),
         },
         {
