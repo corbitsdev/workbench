@@ -22,6 +22,7 @@ import {
 import {
   addParticipant,
   handleFromName,
+  removeParticipant,
   type ParticipantRecord,
 } from "./participants";
 import {
@@ -46,6 +47,7 @@ import type { ChatStore } from "./store";
 
 const contextLog = getLogger(["chat", "context"]);
 const provisionLog = getLogger(["chat", "provision-space"]);
+const removeLog = getLogger(["chat", "remove-participant"]);
 
 export type ProvisionSpaceChannelDeps = {
   readonly tenancy: Pick<
@@ -360,6 +362,135 @@ export async function joinHumanParticipant(
     handle: input.memberHandle,
     settings: row.settings,
   };
+}
+
+export type RemoveChannelParticipantDeps = {
+  readonly store: Pick<ChatStore, "updateChannelSettings">;
+  readonly platform: Pick<ChannelMail, "sendMail">;
+  readonly publish: (channelId: string, event: ChatChannelEvent) => void;
+  /**
+   * Releases an invited agent's launched instance the way the idle-sleep
+   * lifecycle itself tears one down (`sidecarRouter.sendAgentUndeploy`
+   * in the hub's own wiring — see `apps/hub/src/index.ts`'s
+   * `chatDeps.releaseAgentInstance`) — never re-implemented here, since
+   * undeploy is native platform machinery this package only calls.
+   * Omitted, an agent participant's instance is left running: the
+   * removal still proceeds (the participant record is the source of
+   * truth for who a message fans out to, and a channel with a stale
+   * removed-but-still-deployed instance is far better than one stuck
+   * mid-removal), but that gap is logged at error level so it is never
+   * silent.
+   */
+  readonly releaseAgentInstance?:
+    ((address: string, reason: string) => Promise<void>) | undefined;
+};
+
+export type RemoveChannelParticipantInput = {
+  readonly tenantId: string;
+  readonly principalId: string;
+  readonly channelId: string;
+  readonly existingSettings: Record<string, unknown>;
+  /** The participant being removed — already confirmed by the caller
+   * (`routes.ts`'s DELETE handler) to actually be a member of this
+   * channel. */
+  readonly participant: ParticipantRecord;
+};
+
+export type RemoveChannelParticipantResult = {
+  readonly settings: Record<string, unknown>;
+};
+
+/**
+ * The removal counterpart to `launchAndJoinAgent`/`joinHumanParticipant`:
+ * undoes exactly what either of those created. Drops the participant
+ * record, posts a "left" event onto the channel's own timeline (the
+ * audit-trail mirror of the "joined" event each join path posts), and —
+ * only for an agent participant — releases its launched instance
+ * through `deps.releaseAgentInstance` so an agent removed from a
+ * channel is never left running with nothing routing messages to it.
+ * A human participant has no instance to release (see
+ * `joinHumanParticipant`'s own note: a human reads the channel's own
+ * timeline directly, with no mailbox of its own).
+ */
+export async function removeChannelParticipant(
+  deps: RemoveChannelParticipantDeps,
+  input: RemoveChannelParticipantInput,
+): Promise<RemoveChannelParticipantResult> {
+  const participants = participantsOf(input.existingSettings);
+  const row = await deps.store.updateChannelSettings({
+    tenantId: input.tenantId,
+    channelId: input.channelId,
+    settings: {
+      ...input.existingSettings,
+      "chat/participants": removeParticipant(
+        participants,
+        input.participant.address,
+      ),
+    },
+    updatedBy: input.principalId,
+  });
+
+  const isAgent = isAgentAddress(input.participant.address);
+  const leaveEvent: PartType = isAgent
+    ? {
+        kind: "event",
+        event: "channel.agent-left",
+        data: {
+          address: input.participant.address,
+          removedBy: input.principalId,
+        },
+      }
+    : {
+        kind: "event",
+        event: "channel.member-left",
+        data: {
+          principalId: input.participant.address,
+          removedBy: input.principalId,
+        },
+      };
+  await deps.platform.sendMail({
+    tenantId: input.tenantId,
+    channelId: input.channelId,
+    principalId: input.principalId,
+    content: encodeParts([leaveEvent]),
+  });
+
+  if (isAgent) {
+    if (deps.releaseAgentInstance !== undefined) {
+      try {
+        await deps.releaseAgentInstance(
+          input.participant.address,
+          "participant-removed",
+        );
+      } catch (err) {
+        removeLog.error(
+          "Releasing {address}'s launched instance failed after it was " +
+            "removed from channel {channelId}; the participant record " +
+            "is gone but the instance may still be running and requires " +
+            "manual cleanup",
+          {
+            address: input.participant.address,
+            channelId: input.channelId,
+            err,
+          },
+        );
+      }
+    } else {
+      removeLog.error(
+        "No releaseAgentInstance wired for this deployment; {address} " +
+          "was dropped from channel {channelId}'s participants but its " +
+          "launched instance was never released and may still be running",
+        { address: input.participant.address, channelId: input.channelId },
+      );
+    }
+  }
+
+  deps.publish(input.channelId, {
+    type: "chat.settings",
+    data: { updatedBy: input.principalId, settings: row.settings },
+  });
+
+  return { settings: row.settings };
 }
 
 export type StartWorkflowCommandDeps = {

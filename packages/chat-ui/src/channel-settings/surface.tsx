@@ -70,6 +70,7 @@ export function ChannelSettingsSurface({
   onSaved,
   section = "general",
   onSectionChange,
+  currentUserPrincipalId,
 }: {
   readonly tenantId: string;
   readonly channelId: string;
@@ -77,6 +78,10 @@ export function ChannelSettingsSurface({
   readonly onBack: () => void;
   readonly onInviteParticipant: () => void;
   readonly onSaved?: (settings: ChannelSettings) => void;
+  /** The signed-in viewer's own principal id — threaded down to
+   * `MembersSection` so their own row's Remove button is disabled.
+   * Omitted, no row is treated as "you". */
+  readonly currentUserPrincipalId?: string;
   /** Which section is active — host-controlled the same way `settingsOpen`
    * is on `ChatWorkspace`: `/agents` opens straight to Agents rather than
    * the default General, and a deep link (`/c/:id/settings/:section`)
@@ -299,8 +304,14 @@ export function ChannelSettingsSurface({
 
               {activeSection.id === "members" ? (
                 <MembersSection
+                  tenantId={tenantId}
+                  channelId={channelId}
                   participants={data.participants}
+                  {...(currentUserPrincipalId !== undefined
+                    ? { currentUserPrincipalId }
+                    : {})}
                   onInvite={onInviteParticipant}
+                  onParticipantsChanged={reload}
                 />
               ) : null}
 

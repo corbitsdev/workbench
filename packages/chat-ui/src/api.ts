@@ -170,6 +170,8 @@ const InvitableDefinitionsResponse = type({
 const InvitedAgent = type({ address: "string", definitionId: "string" });
 export type InvitedAgent = typeof InvitedAgent.infer;
 
+const RemovedParticipant = type({ address: "string" });
+
 export class ChatApiError extends Error {
   constructor(
     message: string,
@@ -614,6 +616,24 @@ export function inviteAgent(
     InvitedAgent,
     { method: "POST", body: JSON.stringify({ definitionId }) },
   );
+}
+
+// `DELETE /channels/:id/participants/:address` (see
+// `packages/chat/src/routes.ts`): the removal counterpart to
+// `inviteAgent`/channel creation's own join — drops the participant and,
+// for an invited agent, releases its launched instance server-side. The
+// Members section calls this per row and refetches `getChannelSettings`
+// on success rather than trusting an optimistic local edit.
+export function removeChannelParticipant(
+  tenantId: string,
+  channelId: string,
+  address: string,
+): Promise<void> {
+  return request(
+    `/api/tenants/${tenantId}/chat/channels/${channelId}/participants/${encodeURIComponent(address)}`,
+    RemovedParticipant,
+    { method: "DELETE" },
+  ).then(() => undefined);
 }
 
 // `GET /channels/:id/agents` (see `packages/chat/src/routes.ts`): every

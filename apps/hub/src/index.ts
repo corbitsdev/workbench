@@ -929,6 +929,14 @@ export async function createHub(config: HubConfig) {
         listConnectedProviders(db, tenantId),
       ),
     commands: commandRegistry,
+    // The same native undeploy call the idle-sleep lifecycle uses to
+    // tear an invited agent's instance down (see `chatPlatform`'s own
+    // `lifecycle.undeploy` above) — wired here too so removing an agent
+    // from a channel's participants releases its running instance the
+    // same way, rather than leaving it deployed with nothing routing
+    // messages to it.
+    releaseAgentInstance: (address, reason) =>
+      sidecarRouter.sendAgentUndeploy(address, reason),
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
   // Slack tag ingress (CL-5288 Phase 1): mounted OUTSIDE the tenant

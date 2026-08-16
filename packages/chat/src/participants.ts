@@ -95,3 +95,19 @@ export function addParticipant(
   const handle = dedupeHandle(desiredHandle, taken);
   return [...existing, { address, handle }];
 }
+
+/**
+ * Drops a participant from an existing record list by address — the
+ * inverse of `addParticipant`. Returns the same array reference when
+ * the address names no participant, so a caller can tell "nothing
+ * changed" apart from "removed the last matching entry" by identity.
+ */
+export function removeParticipant(
+  existing: readonly ParticipantRecord[],
+  address: string,
+): ParticipantRecord[] {
+  if (!existing.some((participant) => participant.address === address)) {
+    return existing as ParticipantRecord[];
+  }
+  return existing.filter((participant) => participant.address !== address);
+}
