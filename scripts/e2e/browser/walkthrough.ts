@@ -299,8 +299,23 @@ async function countMatching(page: Page, selector: string): Promise<number> {
  * itself.
  */
 async function createMyraChat(page: Page): Promise<void> {
-  await clickStable(page, 'button[aria-label="New workbench"]');
-  await page.waitForSelector('[role="dialog"]', { timeout: 10_000 });
+  // A click that lands mid-re-render (the sidebar list settling right
+  // after a landing) can dispatch against a node React is replacing and
+  // do nothing — the same recovery a person makes is clicking again, so
+  // retry the click a couple of times before calling it a failure.
+  let dialogOpen = false;
+  for (let attempt = 0; attempt < 3 && !dialogOpen; attempt += 1) {
+    await clickStable(page, 'button[aria-label="New workbench"]');
+    dialogOpen = await page
+      .waitForSelector('[role="dialog"]', { timeout: 4_000 })
+      .then(() => true)
+      .catch(() => false);
+  }
+  if (!dialogOpen) {
+    throw new Error(
+      "the new-workbench picker never opened after 3 clicks on the + button",
+    );
+  }
   await page.waitForSelector(
     '[data-testid="new-chat-agent-combobox"] [role="option"]',
     { timeout: 10_000 },
@@ -685,11 +700,18 @@ async function run(): Promise<void> {
         // rows are just there, no navigation or priming needed. Three Myra
         // rows are expected here: the land-hop's home workbench plus the
         // two template mints above (rows are named by their agent, CL-6089).
+        // The list is a cache invalidated by the create event, so give the
+        // refetch a bounded moment to land before judging.
         await page.waitForSelector(".shell-ch-row-wrap", { timeout: 15_000 });
-        const myraRows = await countMatching(
-          page,
-          '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
-        );
+        let myraRows = 0;
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          myraRows = await countMatching(
+            page,
+            '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
+          );
+          if (myraRows === 3) break;
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        }
         if (myraRows !== 3) {
           return {
             status: "fail",

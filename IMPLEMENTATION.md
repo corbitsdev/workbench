@@ -59,16 +59,16 @@ recorded per-package in each vendored package's own `VENDORED-FROM` file.
 
 ## Commands
 
-| Command                | What it does                                                                                   |
-| ----------------------- | ------------------------------------------------------------------------------------------------ |
-| `bun run dev`           | Validates `.env`, verifies the database, applies pending migrations, builds the web UI if needed, starts the hub and one sidecar |
-| `bun run setup`         | Provisions the bench for the administrator account                                              |
-| `bun run seed`          | Deploys the default workflow set and plants the tenant catalog's model data                     |
-| `bun run reset`         | Drops the platform database schema and clears on-disk asset directories (local `DATABASE_URL` only, unrecoverable) |
-| `bun run check`         | The full gate: `typecheck && lint && test` — must pass before every commit                      |
-| `bun run test`          | Workspace unit/integration tests                                                                |
-| `bun run test:e2e`      | End-to-end smoke tests (`scripts/e2e/*.test.ts`)                                                |
-| `bun run format`        | `prettier --write .`                                                                             |
+| Command            | What it does                                                                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run dev`      | Validates `.env`, verifies the database, applies pending migrations, builds the web UI if needed, starts the hub and one sidecar |
+| `bun run setup`    | Provisions the bench for the administrator account                                                                               |
+| `bun run seed`     | Deploys the default workflow set and plants the tenant catalog's model data                                                      |
+| `bun run reset`    | Drops the platform database schema and clears on-disk asset directories (local `DATABASE_URL` only, unrecoverable)               |
+| `bun run check`    | The full gate: `typecheck && lint && test` — must pass before every commit                                                       |
+| `bun run test`     | Workspace unit/integration tests                                                                                                 |
+| `bun run test:e2e` | End-to-end smoke tests (`scripts/e2e/*.test.ts`)                                                                                 |
+| `bun run format`   | `prettier --write .`                                                                                                             |
 
 `bun run dev` seeds only the administrator account; `setup` and `seed` are
 run separately against the running stack and are safe to re-run.

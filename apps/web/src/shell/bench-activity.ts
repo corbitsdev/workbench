@@ -22,8 +22,13 @@
 // failure onto generic copy; this band shows the real error text instead
 // (the mock's error states are diagnostic, not decorative).
 
-import { useQuery } from "@tanstack/react-query";
-import { listChannels } from "@corbits/chat-ui";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  CHANNELS_MUTATED_EVENT,
+  channelsQueryKeyPrefix,
+  listChannels,
+} from "@corbits/chat-ui";
 import type { Channel } from "@corbits/chat-ui";
 import { listTasks, workingTasks } from "@corbits/tasks-ui";
 import type { WorkingTask } from "@corbits/tasks-ui";
@@ -54,6 +59,23 @@ function errorMessage(cause: unknown): string {
 export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
   const enabled = tenantId !== null;
   const key = tenantId ?? "";
+  const queryClient = useQueryClient();
+
+  // A conversation minted anywhere (picker dialog, agent launch, the
+  // land-hop) announces itself via `CHANNELS_MUTATED_EVENT`; without
+  // this, the sidebar's cached listing only catches up on the next
+  // unrelated refetch and a fresh workbench is invisible until then.
+  useEffect(() => {
+    const onMutated = (event: Event) => {
+      const detail = (event as CustomEvent<{ tenantId?: string }>).detail;
+      if (detail?.tenantId === undefined) return;
+      void queryClient.invalidateQueries({
+        queryKey: channelsQueryKeyPrefix(detail.tenantId),
+      });
+    };
+    window.addEventListener(CHANNELS_MUTATED_EVENT, onMutated);
+    return () => window.removeEventListener(CHANNELS_MUTATED_EVENT, onMutated);
+  }, [queryClient]);
 
   const channelsQuery = useQuery({
     queryKey: tenantKeys.channels(key, "channel"),

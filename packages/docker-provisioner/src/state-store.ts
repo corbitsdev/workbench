@@ -25,9 +25,7 @@ type ObserveEnsureResult =
   | {
       readonly kind: "rejected";
       readonly code:
-        | "stale_generation"
-        | "generation_destroyed"
-        | "request_conflict";
+        "stale_generation" | "generation_destroyed" | "request_conflict";
       readonly message: string;
     };
 

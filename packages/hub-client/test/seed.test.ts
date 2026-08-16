@@ -114,7 +114,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: `ins_dep_1@${TENANT_DOMAIN}`,
             messageId: "<m1@workbench.localhost>",
           },
@@ -194,7 +194,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: `ins_dep_1@${TENANT_DOMAIN}`,
             messageId: "<m1@workbench.localhost>",
           },
@@ -269,7 +269,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_2",
+            runId: "dep_2",
             address: `ins_dep_2@${TENANT_DOMAIN}`,
             messageId: "<m4@workbench.localhost>",
           },
@@ -359,7 +359,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: `ins_dep_1@${TENANT_DOMAIN}`,
             messageId: "<m2@workbench.localhost>",
           },
@@ -465,7 +465,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: `ins_dep_1@${TENANT_DOMAIN}`,
             messageId: "<m3@workbench.localhost>",
           },
@@ -653,7 +653,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_3",
+            runId: "dep_3",
             address: `ins_dep_3@${TENANT_DOMAIN}`,
             messageId: "<m5@workbench.localhost>",
           },
@@ -770,7 +770,7 @@ describe("seedTenant", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_4",
+            runId: "dep_4",
             address: `ins_dep_4@${TENANT_DOMAIN}`,
             messageId: "<m6@workbench.localhost>",
           },

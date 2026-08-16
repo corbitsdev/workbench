@@ -321,6 +321,15 @@ export type CreateChannelInput =
       readonly name?: string;
     };
 
+/** Fired on `window` after every successful `createChannel`, carrying
+ * `{tenantId}` in `detail`. The host shell's sidebar list caches its
+ * channel listings outside this package (see
+ * `apps/web/src/shell/bench-activity.ts`), and creation happens at many
+ * call sites (the picker dialog, agent launch, the land-hop) — one
+ * signal here reaches them all, so a freshly minted workbench appears
+ * in the sidebar without waiting for an unrelated refetch. */
+export const CHANNELS_MUTATED_EVENT = "workbench:chat:channels-mutated";
+
 export function createChannel(
   tenantId: string,
   input: CreateChannelInput,
@@ -328,6 +337,13 @@ export function createChannel(
   return request(`/api/tenants/${tenantId}/chat/channels`, Channel, {
     method: "POST",
     body: JSON.stringify(input),
+  }).then((channel) => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent(CHANNELS_MUTATED_EVENT, { detail: { tenantId } }),
+      );
+    }
+    return channel;
   });
 }
 

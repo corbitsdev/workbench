@@ -533,7 +533,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
       <OnboardingPhase
         phase={state.phase}
         title="Setting up your workbench…"
-        subtitle="Your key checked out — starting your default routines now."
+        subtitle="Your key checked out — getting your workbench ready."
       >
         <div className="onboarding-spinner" aria-hidden="true" />
       </OnboardingPhase>
@@ -609,8 +609,8 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     return (
       <OnboardingPhase
         phase={state.phase}
-        title="Your first routines are running"
-        subtitle="Your key checked out, and every default routine on your workbench has already fired and answered."
+        title="Your workbench is ready"
+        subtitle="Your key checked out and your workbench answered its first live run — everything is confirmed working."
       >
         <ProgressChecklist steps={checklist} label="Default routines" />
         <Button onClick={() => navigate("/")}>Meet Myra</Button>

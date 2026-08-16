@@ -102,9 +102,9 @@ describe("shutdown", () => {
 
     await hub.close();
 
-    expect(
-      clearTimeoutSpy.mock.calls.map((call) => call[0]),
-    ).toContain(reconciliationTimerId);
+    expect(clearTimeoutSpy.mock.calls.map((call) => call[0])).toContain(
+      reconciliationTimerId,
+    );
 
     setTimeoutSpy.mockRestore();
     clearTimeoutSpy.mockRestore();

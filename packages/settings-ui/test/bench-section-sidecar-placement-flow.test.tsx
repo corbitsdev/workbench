@@ -68,7 +68,10 @@ describe("BenchSection sidecar placement flow", () => {
     const putPromise = new Promise<Response>((resolve) => {
       resolvePut = resolve;
     });
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
       const path =
         typeof input === "string" ? input : new URL(String(input)).pathname;
       if (path === "/api/me/principals") return Response.json(membershipsBody);
@@ -84,9 +87,8 @@ describe("BenchSection sidecar placement flow", () => {
 
     const { container, root } = await mount();
     try {
-      const toggle = document.body.querySelector<HTMLButtonElement>(
-        '[role="switch"]',
-      );
+      const toggle =
+        document.body.querySelector<HTMLButtonElement>('[role="switch"]');
       expect(toggle?.getAttribute("aria-checked")).toBe("false");
 
       act(() => toggle?.click());
@@ -114,9 +116,8 @@ describe("BenchSection sidecar placement flow", () => {
 
     const { container, root } = await mount();
     try {
-      const toggle = document.body.querySelector<HTMLButtonElement>(
-        '[role="switch"]',
-      );
+      const toggle =
+        document.body.querySelector<HTMLButtonElement>('[role="switch"]');
       expect(toggle?.getAttribute("aria-checked")).toBe("false");
 
       await act(async () => {

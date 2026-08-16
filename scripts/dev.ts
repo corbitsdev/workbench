@@ -390,9 +390,50 @@ async function seedDevAccount(config: HubConfig): Promise<void> {
   }
 }
 
+// A second stack half-dying against a squatter on the hub port is the
+// worst failure shape this script can produce: the old hub keeps serving
+// stale state, the new sidecar attaches to it, agents fail their
+// challenges, and every symptom points somewhere else. Refuse loudly
+// up front instead.
+async function requireHubPortFree(config: HubConfig): Promise<void> {
+  const base = new URL(config.baseUrl);
+  const port = Number(
+    base.port === "" ? (base.protocol === "https:" ? "443" : "80") : base.port,
+  );
+  const occupied = await new Promise<boolean>((resolvePort) => {
+    const socket = createConnection({
+      host: base.hostname,
+      port,
+      timeout: 1500,
+    });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolvePort(true);
+    });
+    socket.once("error", () => resolvePort(false));
+    socket.once("timeout", () => {
+      socket.destroy();
+      resolvePort(false);
+    });
+  });
+  if (occupied) {
+    fail(
+      [
+        `Something is already listening on port ${port} (from BASE_URL).`,
+        "Most likely another `bun run dev` is still running — starting a",
+        "second stack against it produces broken, confusing behavior, so",
+        "this one is refusing to start. Stop the other stack first:",
+        `  lsof -ti :${port} | xargs kill`,
+        "or change BASE_URL in .env to a free port.",
+      ].join("\n"),
+    );
+  }
+}
+
 requireEnvFile();
 const config = validateConfig();
 requireDatabaseUser(config);
+await requireHubPortFree(config);
 await requireDatabaseReachable(config);
 await requireDatabaseSetUp(config);
 const token = await devSidecarToken(config);

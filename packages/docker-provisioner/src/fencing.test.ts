@@ -168,7 +168,10 @@ describe("fencing edge cases", () => {
 
     const result = await provisioner.ensure(request({ generation: 1 }));
 
-    expect(result).toMatchObject({ kind: "rejected", code: "stale_generation" });
+    expect(result).toMatchObject({
+      kind: "rejected",
+      code: "stale_generation",
+    });
     expect(commands.calls.filter((c) => c[0] === "run")).toHaveLength(0);
   });
 });

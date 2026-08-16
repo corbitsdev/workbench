@@ -30,6 +30,7 @@
     "@corbits/memory-hub": "workspace:*",
     "@corbits/notify": "workspace:*",
     "@corbits/preferences": "workspace:*",
+    "@corbits/config-profiles": "workspace:*",
     "@corbits/presence": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/sidecar-placement": "workspace:*",

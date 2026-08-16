@@ -3,9 +3,15 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createFakeCommandRunner, type FakeCommandRunner } from "./fake-command-runner";
+import {
+  createFakeCommandRunner,
+  type FakeCommandRunner,
+} from "./fake-command-runner";
 import { createDockerSidecarProvisioner } from "./interchange-plugin";
-import { createAllocationStateStore, type AllocationStateStore } from "./state-store";
+import {
+  createAllocationStateStore,
+  type AllocationStateStore,
+} from "./state-store";
 
 const IMAGE = "ghcr.io/corbits/sidecar:latest";
 const TOKEN = "s3cr3t-bootstrap-token";
@@ -117,9 +123,14 @@ describe("ensure", () => {
     });
 
     await provisioner.ensure(baseEnsureRequest({ generation: 3 }));
-    const result = await provisioner.ensure(baseEnsureRequest({ generation: 2 }));
+    const result = await provisioner.ensure(
+      baseEnsureRequest({ generation: 2 }),
+    );
 
-    expect(result).toMatchObject({ kind: "rejected", code: "stale_generation" });
+    expect(result).toMatchObject({
+      kind: "rejected",
+      code: "stale_generation",
+    });
     expect(commands.calls.filter((call) => call[0] === "run")).toHaveLength(1);
   });
 

@@ -60,15 +60,36 @@ export class InferenceSettingsApiError extends Error {
 
 type Validator<T> = (data: unknown) => T | type.errors;
 
+// Every call below takes an optional trailing `fetchImpl`, defaulting to
+// the global `fetch` the browser (`InferenceSection`) already relies on.
+// It exists so a server-side caller — `@corbits/config-profiles`' apply
+// route, composing a profile's writes out of these exact functions — can
+// pass a `fetch` bound to the hub's own base URL and the acting
+// principal's session cookie, the same self-HTTP-call seam
+// `@workbench/access-policy`'s routes use, rather than this module
+// growing a second, duplicated write path for the server-side case.
+// Exported (not `typeof fetch`) so a bound wrapper — which never carries
+// `fetch`'s own static `preconnect` member — satisfies the type too.
+// `string | URL | Request`, not DOM's `RequestInfo | URL` alias, so this
+// type resolves the same whether or not a consuming package's tsconfig
+// carries `"lib": ["DOM"]` — see `@corbits/config-profiles`' own
+// `index.ts` module doc for why a server-only package deliberately never
+// adds that lib.
+export type FetchImpl = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
 async function request<T>(
   path: string,
   schema: Validator<T>,
   verb: string,
   init?: RequestInit,
+  fetchImpl: FetchImpl = fetch,
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetchImpl(path, {
       ...init,
       headers: { "content-type": "application/json", ...init?.headers },
     });
@@ -105,10 +126,11 @@ async function requestVoid(
   path: string,
   verb: string,
   init?: RequestInit,
+  fetchImpl: FetchImpl = fetch,
 ): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetchImpl(path, {
       ...init,
       headers: { "content-type": "application/json", ...init?.headers },
     });
@@ -135,11 +157,14 @@ async function requestVoid(
  * act on at launch. */
 export function getResolvedCatalog(
   tenantId: string,
+  fetchImpl: FetchImpl = fetch,
 ): Promise<readonly ModelInfo[]> {
   return request(
     `/api/tenants/${tenantId}/models`,
     ModelInfo.array(),
     "loading the model catalog",
+    undefined,
+    fetchImpl,
   );
 }
 
@@ -182,11 +207,14 @@ export async function listOwnModelProviders(
  * here" list a caller offers to re-enable. */
 export async function listOwnOfferings(
   tenantId: string,
+  fetchImpl: FetchImpl = fetch,
 ): Promise<readonly (typeof ModelOfferingResponse.infer)[]> {
   const page = await request(
     `/api/tenants/${tenantId}/catalog/offerings`,
     paginatedSchema(ModelOfferingResponse),
     "loading this workbench's own offerings",
+    undefined,
+    fetchImpl,
   );
   return page.data;
 }
@@ -201,12 +229,14 @@ export function updateOwnOffering(
   tenantId: string,
   offeringId: string,
   patch: typeof UpdateModelOffering.infer,
+  fetchImpl: FetchImpl = fetch,
 ): Promise<typeof ModelOfferingResponse.infer> {
   return request(
     `/api/tenants/${tenantId}/catalog/offerings/${offeringId}`,
     ModelOfferingResponse,
     "reordering this workbench's fallback list",
     { method: "PATCH", body: JSON.stringify(patch) },
+    fetchImpl,
   );
 }
 
@@ -251,26 +281,36 @@ export type ShadowOfferingInput = {
 export async function shadowOffering(
   tenantId: string,
   input: ShadowOfferingInput,
+  fetchImpl: FetchImpl = fetch,
 ): Promise<typeof ModelOfferingResponse.infer> {
   const modelId = await ensureModel(
     tenantId,
     input.canonicalName,
     input.modelDisplayName,
+    fetchImpl,
   );
-  const credentialId = await ensureCredential(tenantId, input);
+  const credentialId = await ensureCredential(tenantId, input, fetchImpl);
   const { providerId, minted } = await ensureModelProvider(
     tenantId,
     input,
     credentialId,
+    fetchImpl,
   );
   try {
-    return await ensureOffering(tenantId, modelId, providerId, input.priority);
+    return await ensureOffering(
+      tenantId,
+      modelId,
+      providerId,
+      input.priority,
+      fetchImpl,
+    );
   } catch (cause) {
     if (minted) {
       await requestVoid(
         `/api/tenants/${tenantId}/catalog/providers/${providerId}`,
         "rolling back the just-minted provider",
         { method: "DELETE" },
+        fetchImpl,
       ).catch(() => undefined);
     }
     throw cause;
@@ -281,8 +321,9 @@ async function ensureModel(
   tenantId: string,
   canonicalName: string,
   displayName: string | null,
+  fetchImpl: FetchImpl,
 ): Promise<string> {
-  const created = await fetch(`/api/tenants/${tenantId}/catalog/models`, {
+  const created = await fetchImpl(`/api/tenants/${tenantId}/catalog/models`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(CreateModel.assert({ canonicalName, displayName })),
@@ -301,6 +342,8 @@ async function ensureModel(
     `/api/tenants/${tenantId}/catalog/models`,
     paginatedSchema(ModelResponse),
     "loading this workbench's own models",
+    undefined,
+    fetchImpl,
   );
   const existing = page.data.find((row) => row.canonicalName === canonicalName);
   if (existing === undefined) {
@@ -314,10 +357,15 @@ async function ensureModel(
 async function ensureCredential(
   tenantId: string,
   input: ShadowOfferingInput,
+  fetchImpl: FetchImpl,
 ): Promise<string> {
-  const providerRow = await ensureCredentialProvider(tenantId, input);
+  const providerRow = await ensureCredentialProvider(
+    tenantId,
+    input,
+    fetchImpl,
+  );
   const credentialName = `${input.providerName}-workbench`;
-  const created = await fetch(`/api/tenants/${tenantId}/credentials`, {
+  const created = await fetchImpl(`/api/tenants/${tenantId}/credentials`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(
@@ -348,6 +396,8 @@ async function ensureCredential(
     `/api/tenants/${tenantId}/credentials`,
     paginatedSchema(CredentialResponse),
     "loading this workbench's own credentials",
+    undefined,
+    fetchImpl,
   );
   const existing = page.data.find((row) => row.name === credentialName);
   if (existing === undefined) {
@@ -361,8 +411,9 @@ async function ensureCredential(
 async function ensureCredentialProvider(
   tenantId: string,
   input: ShadowOfferingInput,
+  fetchImpl: FetchImpl,
 ): Promise<string> {
-  const created = await fetch(`/api/tenants/${tenantId}/providers`, {
+  const created = await fetchImpl(`/api/tenants/${tenantId}/providers`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(
@@ -386,6 +437,8 @@ async function ensureCredentialProvider(
     `/api/tenants/${tenantId}/providers`,
     paginatedSchema(ProviderResponse),
     "loading this workbench's own providers",
+    undefined,
+    fetchImpl,
   );
   const existing = page.data.find((row) => row.name === input.providerName);
   if (existing === undefined) {
@@ -409,19 +462,23 @@ async function ensureModelProvider(
   tenantId: string,
   input: ShadowOfferingInput,
   credentialId: string,
+  fetchImpl: FetchImpl,
 ): Promise<EnsureModelProviderResult> {
-  const created = await fetch(`/api/tenants/${tenantId}/catalog/providers`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(
-      CreateModelProvider.assert({
-        name: input.providerName,
-        plugin: input.plugin,
-        baseURL: input.baseURL,
-        credentialId,
-      }),
-    ),
-  });
+  const created = await fetchImpl(
+    `/api/tenants/${tenantId}/catalog/providers`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(
+        CreateModelProvider.assert({
+          name: input.providerName,
+          plugin: input.plugin,
+          baseURL: input.baseURL,
+          credentialId,
+        }),
+      ),
+    },
+  );
   if (created.status === 201) {
     const body: unknown = await created.json();
     return { providerId: ModelProviderResponse.assert(body).id, minted: true };
@@ -436,6 +493,8 @@ async function ensureModelProvider(
     `/api/tenants/${tenantId}/catalog/providers`,
     paginatedSchema(ModelProviderResponse),
     "loading this workbench's own catalog providers",
+    undefined,
+    fetchImpl,
   );
   const existing = page.data.find((row) => row.name === input.providerName);
   if (existing === undefined) {
@@ -451,14 +510,18 @@ async function ensureOffering(
   modelId: string,
   providerId: string,
   priority: number,
+  fetchImpl: FetchImpl,
 ): Promise<typeof ModelOfferingResponse.infer> {
-  const created = await fetch(`/api/tenants/${tenantId}/catalog/offerings`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(
-      CreateModelOffering.assert({ modelId, providerId, priority }),
-    ),
-  });
+  const created = await fetchImpl(
+    `/api/tenants/${tenantId}/catalog/offerings`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(
+        CreateModelOffering.assert({ modelId, providerId, priority }),
+      ),
+    },
+  );
   if (created.status === 201) {
     const body: unknown = await created.json();
     return ModelOfferingResponse.assert(body);
@@ -473,6 +536,8 @@ async function ensureOffering(
     `/api/tenants/${tenantId}/catalog/offerings`,
     paginatedSchema(ModelOfferingResponse),
     "loading this workbench's own offerings",
+    undefined,
+    fetchImpl,
   );
   const existing = page.data.find(
     (row) => row.modelId === modelId && row.providerId === providerId,

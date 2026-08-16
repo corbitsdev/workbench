@@ -97,6 +97,7 @@ export {
   listAllChannels,
   channelsQueryKey,
   channelsQueryKeyPrefix,
+  CHANNELS_MUTATED_EVENT,
   createChannel,
   listMessages,
   sendMessage,

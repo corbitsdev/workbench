@@ -35,8 +35,7 @@ sanctioned agent-deploy path when the plan creates a new agent, and
 - `src/planner-created-naming.ts` — the `myra-task-<slug>-<hex>` handle
   convention and the picker-exclusion predicate for planner-created agents.
 - `src/routes.ts` — `createPlannerRoutes`: `POST /`, personal to the
-  requesting principal, mapping fail-closed planning errors to a plain
-  422.
+  requesting principal, mapping fail-closed planning errors to a plain 422.
 
 ## Running tests
 

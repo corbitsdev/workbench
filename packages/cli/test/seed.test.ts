@@ -172,7 +172,7 @@ describe("runSeed", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: "ins_dep_1@workbench.localhost",
             messageId: `<m${startedRuns.length}@workbench.localhost>`,
           },
@@ -351,7 +351,7 @@ describe("runSeed", () => {
         return {
           status: 202,
           data: {
-            deploymentId: "dep_1",
+            runId: "dep_1",
             address: "ins_dep_1@workbench.localhost",
             messageId: `<m${startedRuns.length}@workbench.localhost>`,
           },

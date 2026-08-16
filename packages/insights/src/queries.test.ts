@@ -145,7 +145,13 @@ describe("summarizeUsage", () => {
       sessionId: "s1",
       turnId: "t1",
       model: "claude-sonnet",
-      tokens: { input: 100, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+      tokens: {
+        input: 100,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
     });
     await store.insertUsage({
       id: "u2",
@@ -153,7 +159,13 @@ describe("summarizeUsage", () => {
       sessionId: "s2",
       turnId: "t2",
       model: "claude-sonnet",
-      tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 200, thinking: 0 },
+      tokens: {
+        input: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 200,
+        thinking: 0,
+      },
     });
     await store.insertUsage({
       id: "u3",
@@ -161,10 +173,19 @@ describe("summarizeUsage", () => {
       sessionId: "s3",
       turnId: "t3",
       model: "claude-sonnet",
-      tokens: { input: 9999, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+      tokens: {
+        input: 9999,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
     });
 
-    const aggregate = await summarizeUsage(store, ["workbench-a", "workbench-b"]);
+    const aggregate = await summarizeUsage(store, [
+      "workbench-a",
+      "workbench-b",
+    ]);
     const a = await summarizeUsage(store, ["workbench-a"]);
     const b = await summarizeUsage(store, ["workbench-b"]);
 
@@ -226,7 +247,13 @@ describe("activityByDay", () => {
       sessionId: "s1",
       turnId: "t1",
       model: "m",
-      tokens: { input: 10, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+      tokens: {
+        input: 10,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
       recordedAt: new Date("2026-08-01T10:00:00Z"),
     });
     await store.insertUsage({
