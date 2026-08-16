@@ -33,10 +33,10 @@ import {
   toast,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import type { Channel, DialogStepperStep } from "@corbits/chat-ui";
+import type { Channel, DialogStepAccordionStep } from "@corbits/chat-ui";
 import {
   createChannel,
-  DialogStepper,
+  DialogStepAccordion,
   listChannels,
   listTenantInvitableDefinitions,
 } from "@corbits/chat-ui";
@@ -1040,14 +1040,16 @@ function CreateRoutineDialog({
     closeDialog();
   };
 
-  const goBack = () => {
+  // Backs the accordion's per-section "Edit" affordance — jumps straight
+  // to a completed step rather than walking back one at a time. Leaving
+  // the Source step behind on the describe path discards its in-progress
+  // draft (the draft was drawn against the source now being changed),
+  // whether that's a direct jump from Confirm or a step-at-a-time return
+  // from Configure.
+  const goToStep = (target: CreateStep) => {
     setError(null);
-    if (step === 3) {
-      setStep(2);
-      return;
-    }
-    if (path === "describe") discardPendingDraft();
-    setStep(1);
+    if (target === 1 && path === "describe") discardPendingDraft();
+    setStep(target);
   };
 
   // A non-empty definitionId that doesn't resolve in `definitions` is a
@@ -1196,31 +1198,6 @@ function CreateRoutineDialog({
       .finally(() => setBusy(false));
   };
 
-  const stepperSteps: readonly DialogStepperStep[] = [
-    {
-      label: "Source",
-      guidance: "Pick a known workflow, or describe what you want automated.",
-    },
-    {
-      label: "Configure",
-      guidance:
-        path === "catalog"
-          ? "Choose when it runs and where results land."
-          : pendingDraft === null
-            ? "Choose where results land — an agent drafts the steps next."
-            : "Review what the agent proposes before creating it.",
-    },
-    {
-      label: "Confirm",
-      guidance:
-        path === "catalog"
-          ? "Give it a name if you like, then create it."
-          : "Check the proposed steps, then approve to create the routine.",
-    },
-  ];
-
-  const showBack = step > 1;
-
   let primaryLabel = "Next";
   let primaryDisabled = busy;
   let primaryOnClick = () => setStep(2);
@@ -1289,123 +1266,134 @@ function CreateRoutineDialog({
       ? "a new workbench named after this routine"
       : (channels.find((c) => c.id === deliveryDestination)?.title ?? null);
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          handleCancel();
-          return;
-        }
-        setOpen(next);
-      }}
-    >
-      <DialogContent side="right">
-        <DialogHeader>
-          <DialogTitle>New routine</DialogTitle>
-          <DialogDescription>
-            A guided setup — from the catalog for something known, or describe
-            it to an agent.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex min-h-0 flex-1 flex-col"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!primaryDisabled) primaryOnClick();
-          }}
-        >
-          <DialogBody className="flex flex-col gap-3">
-            <DialogStepper step={step} steps={stepperSteps} />
+  const runModeLabel: Record<typeof runMode, string> = {
+    once: "Run once now",
+    schedule: "On a schedule",
+    webhook: "On webhook",
+  };
 
-            {step === 1 ? (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <span
-                    id="routine-source-label"
-                    className="text-xs font-medium"
-                  >
-                    Workflow
+  // The one-line recap shown once a step collapses — "your answer so far"
+  // for Source and Configure. Confirm never collapses; it's always last.
+  const sourceSummary =
+    path === "catalog"
+      ? (selectedDefinition?.name ?? "Workflow")
+      : prompt.trim().length > 0
+        ? prompt.trim()
+        : "Describe it to an agent";
+  const configureSummary =
+    path === "catalog"
+      ? `${runModeLabel[runMode]} · ${channelTitle ?? "your Inbox"}`
+      : `${String(draft?.proposedSteps.length ?? 0)} step${draft?.proposedSteps.length === 1 ? "" : "s"} proposed`;
+
+  const stepStatus = (target: CreateStep) =>
+    target < step ? "completed" : target === step ? "current" : "upcoming";
+
+  const accordionSteps: readonly DialogStepAccordionStep[] = [
+    {
+      key: "source",
+      label: "Source",
+      status: stepStatus(1),
+      summary: sourceSummary,
+      ...(step > 1 ? { onEdit: () => goToStep(1) } : {}),
+      content:
+        step === 1 ? (
+          <>
+            <p className="dialog-step-accordion-guidance text-xs text-[var(--ui-fg-muted)]">
+              Pick a known workflow, or describe what you want automated.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <span id="routine-source-label" className="text-xs font-medium">
+                Workflow
+              </span>
+              <div
+                role="group"
+                aria-labelledby="routine-source-label"
+                className="grid grid-cols-2 gap-2"
+              >
+                <WorkflowPickerCards
+                  definitions={definitions}
+                  connections={connections}
+                  selectedId={path === "catalog" ? definitionId : ""}
+                  disabled={busy}
+                  onSelect={(id) => {
+                    setPath("catalog");
+                    setDefinitionId(id);
+                    setTriggerFieldValues({});
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-pressed={path === "describe"}
+                  onClick={() => setPath("describe")}
+                  className={[
+                    "flex flex-col gap-0.5 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
+                    path === "describe"
+                      ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
+                      : "border-[var(--ui-border)]",
+                  ].join(" ")}
+                >
+                  <span className="font-medium text-[var(--ui-fg)]">
+                    Describe it to an agent
                   </span>
-                  <div
-                    role="group"
-                    aria-labelledby="routine-source-label"
-                    className="grid grid-cols-2 gap-2"
-                  >
-                    <WorkflowPickerCards
-                      definitions={definitions}
-                      connections={connections}
-                      selectedId={path === "catalog" ? definitionId : ""}
-                      disabled={busy}
-                      onSelect={(id) => {
-                        setPath("catalog");
-                        setDefinitionId(id);
-                        setTriggerFieldValues({});
-                      }}
-                    />
-                    <button
-                      type="button"
-                      disabled={busy}
-                      aria-pressed={path === "describe"}
-                      onClick={() => setPath("describe")}
-                      className={[
-                        "flex flex-col gap-0.5 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
-                        path === "describe"
-                          ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
-                          : "border-[var(--ui-border)]",
-                      ].join(" ")}
-                    >
-                      <span className="font-medium text-[var(--ui-fg)]">
-                        Describe it to an agent
-                      </span>
-                      <span className="text-[var(--ui-fg-muted)]">
-                        An agent drafts the steps for you to review.
-                      </span>
-                    </button>
-                  </div>
-                  {definitions.length === 0 ? (
-                    <p
-                      className="text-xs text-[var(--ui-fg-muted)]"
-                      role="status"
-                    >
-                      No automatable workflows on this workbench yet — describe
-                      it instead.
-                    </p>
-                  ) : null}
-                  {path === "catalog" &&
-                  definitionId !== "" &&
-                  selectedDefinition === null ? (
-                    <p className="text-xs text-destructive" role="alert">
-                      This workflow isn't in your automatable catalog, so it
-                      can't be scheduled — pick one of the cards above, or
-                      describe it instead.
-                    </p>
-                  ) : null}
-                </div>
+                  <span className="text-[var(--ui-fg-muted)]">
+                    An agent drafts the steps for you to review.
+                  </span>
+                </button>
+              </div>
+              {definitions.length === 0 ? (
+                <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
+                  No automatable workflows on this workbench yet — describe it
+                  instead.
+                </p>
+              ) : null}
+              {path === "catalog" &&
+              definitionId !== "" &&
+              selectedDefinition === null ? (
+                <p className="text-xs text-destructive" role="alert">
+                  This workflow isn't in your automatable catalog, so it can't
+                  be scheduled — pick one of the cards above, or describe it
+                  instead.
+                </p>
+              ) : null}
+            </div>
 
-                {path === "describe" ? (
-                  <div className="flex flex-col gap-1.5">
-                    <label
-                      htmlFor="routine-prompt"
-                      className="text-xs font-medium"
-                    >
-                      Describe the routine
-                    </label>
-                    <textarea
-                      id="routine-prompt"
-                      value={prompt}
-                      disabled={busy}
-                      rows={4}
-                      placeholder="Every weekday at 9am, pull the signups export and post a summary to #ops."
-                      onChange={(event) => setPrompt(event.target.value)}
-                      className="w-full resize-y rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg)] px-2.5 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-ring)]"
-                    />
-                  </div>
-                ) : null}
-              </>
+            {path === "describe" ? (
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="routine-prompt" className="text-xs font-medium">
+                  Describe the routine
+                </label>
+                <textarea
+                  id="routine-prompt"
+                  value={prompt}
+                  disabled={busy}
+                  rows={4}
+                  placeholder="Every weekday at 9am, pull the signups export and post a summary to #ops."
+                  onChange={(event) => setPrompt(event.target.value)}
+                  className="w-full resize-y rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg)] px-2.5 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-ring)]"
+                />
+              </div>
             ) : null}
-
-            {step === 2 && path === "catalog" ? (
+          </>
+        ) : undefined,
+    },
+    {
+      key: "configure",
+      label: "Configure",
+      status: stepStatus(2),
+      summary: configureSummary,
+      ...(step > 2 ? { onEdit: () => goToStep(2) } : {}),
+      content:
+        step === 2 ? (
+          <>
+            <p className="dialog-step-accordion-guidance text-xs text-[var(--ui-fg-muted)]">
+              {path === "catalog"
+                ? "Choose when it runs and where results land."
+                : pendingDraft === null
+                  ? "Choose where results land — an agent drafts the steps next."
+                  : "Review what the agent proposes before creating it."}
+            </p>
+            {path === "catalog" ? (
               <>
                 {selectedDefinition !== null &&
                 selectedDefinition.exampleOutput !== "" ? (
@@ -1532,8 +1520,8 @@ function CreateRoutineDialog({
                       className="text-xs text-[var(--ui-fg-muted)]"
                       role="status"
                     >
-                      Results land in your Inbox — this workflow never posts
-                      to a workbench.
+                      Results land in your Inbox — this workflow never posts to
+                      a workbench.
                     </p>
                   </div>
                 )}
@@ -1545,7 +1533,7 @@ function CreateRoutineDialog({
               </>
             ) : null}
 
-            {step === 2 && path === "describe" && pendingDraft === null ? (
+            {path === "describe" && pendingDraft === null ? (
               <>
                 <div className="flex flex-col gap-1.5">
                   <span
@@ -1569,7 +1557,7 @@ function CreateRoutineDialog({
               </>
             ) : null}
 
-            {step === 2 && path === "describe" && draft !== null ? (
+            {path === "describe" && draft !== null ? (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
@@ -1622,8 +1610,22 @@ function CreateRoutineDialog({
                 ) : null}
               </div>
             ) : null}
-
-            {step === 3 && path === "catalog" ? (
+          </>
+        ) : undefined,
+    },
+    {
+      key: "confirm",
+      label: "Confirm",
+      status: stepStatus(3),
+      content:
+        step === 3 ? (
+          <>
+            <p className="dialog-step-accordion-guidance text-xs text-[var(--ui-fg-muted)]">
+              {path === "catalog"
+                ? "Give it a name if you like, then create it."
+                : "Check the proposed steps, then approve to create the routine."}
+            </p>
+            {path === "catalog" ? (
               webhookRevealed !== null ? (
                 <WebhookSecretPanel
                   url={webhookRevealed.url}
@@ -1654,7 +1656,7 @@ function CreateRoutineDialog({
               )
             ) : null}
 
-            {step === 3 && path === "describe" ? (
+            {path === "describe" ? (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
                   <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
@@ -1695,6 +1697,39 @@ function CreateRoutineDialog({
                 ) : null}
               </div>
             ) : null}
+          </>
+        ) : undefined,
+    },
+  ];
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) {
+          handleCancel();
+          return;
+        }
+        setOpen(next);
+      }}
+    >
+      <DialogContent side="right">
+        <DialogHeader>
+          <DialogTitle>New routine</DialogTitle>
+          <DialogDescription>
+            A guided setup — from the catalog for something known, or describe
+            it to an agent.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!primaryDisabled) primaryOnClick();
+          }}
+        >
+          <DialogBody className="flex flex-col gap-3">
+            <DialogStepAccordion steps={accordionSteps} />
 
             {error !== null ? (
               <p className="text-xs text-[var(--ui-danger)]" role="alert">
@@ -1710,17 +1745,6 @@ function CreateRoutineDialog({
               </Button>
             ) : (
               <>
-                {showBack ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    onClick={goBack}
-                  >
-                    Back
-                  </Button>
-                ) : null}
                 <Button
                   type="button"
                   variant="ghost"
@@ -2307,9 +2331,7 @@ export function RoutineDetailPage({
                   </dd>
                   {data.deliveryChannelId !== null ? (
                     <>
-                      <dt className="text-[var(--ui-fg-muted)]">
-                        Delivers to
-                      </dt>
+                      <dt className="text-[var(--ui-fg-muted)]">Delivers to</dt>
                       <dd>
                         <Button
                           type="button"

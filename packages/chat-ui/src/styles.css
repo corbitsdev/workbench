@@ -2017,3 +2017,124 @@
   font-size: 0.8125rem;
   color: var(--muted-foreground);
 }
+
+/* Vertical guided-dialog stepper: every step listed top to bottom, so the
+   whole journey and every answer given so far stay on screen at once
+   (see `dialog-stepper.tsx`, `DialogStepAccordion`). A completed step
+   collapses to its numbered heading and a one-line recap with an Edit
+   affordance; the current step expands with its full content directly
+   beneath its heading; an upcoming step shows only its dimmed label. */
+.dialog-step-accordion {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.dialog-step-accordion-item {
+  position: relative;
+  padding: 0 0 1rem 2rem;
+}
+
+.dialog-step-accordion-item::before {
+  content: "";
+  position: absolute;
+  top: 1.75rem;
+  bottom: 0;
+  left: 0.6875rem;
+  width: 1px;
+  background: var(--border);
+}
+
+.dialog-step-accordion-item:last-child {
+  padding-bottom: 0;
+}
+
+.dialog-step-accordion-item:last-child::before {
+  display: none;
+}
+
+.dialog-step-accordion-header {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.dialog-step-accordion-index {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  margin-left: -2rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  color: var(--muted-foreground);
+}
+
+.dialog-step-accordion-item[data-status="current"]
+  .dialog-step-accordion-index {
+  border-color: var(--shell-accent, var(--primary));
+  color: var(--shell-accent, var(--primary));
+}
+
+.dialog-step-accordion-item[data-status="completed"]
+  .dialog-step-accordion-index {
+  border-color: var(--shell-accent, var(--primary));
+  background: var(--shell-accent, var(--primary));
+  color: var(--primary-foreground);
+}
+
+.dialog-step-accordion-heading {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.dialog-step-accordion-label {
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.dialog-step-accordion-item[data-status="upcoming"] {
+  opacity: 0.55;
+}
+
+.dialog-step-accordion-summary {
+  overflow: hidden;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dialog-step-accordion-edit {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--shell-accent, var(--primary));
+  cursor: pointer;
+}
+
+.dialog-step-accordion-edit:hover {
+  text-decoration: underline;
+}
+
+.dialog-step-accordion-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  margin-left: -2rem;
+  padding-left: 2rem;
+}
