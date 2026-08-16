@@ -590,27 +590,88 @@ async function run(): Promise<void> {
 
     await step(
       () => page,
-      "04-land-in-shell-bare-root",
+      "04-bare-root-shows-describe-screen",
       async () => {
-        // CL-6081: `/` (bare root, not just `/c`) is Myra's land hop too —
-        // `HomeRoute` ensures her channel and redirects straight into it.
+        // CL-6104: a brand-new account has zero workbenches at this point —
+        // `testAndPersistCredential`/`ensureSeeded` above deployed the
+        // default workflows, but never created a single chat channel.
+        // `/` (bare root) is `HomeRoute`, and with zero workbenches it must
+        // render the guided first-workbench describe screen rather than
+        // auto-creating Myra's channel and stranding the account on a
+        // spinner — see `apps/web/src/pages/describe-first-workbench.tsx`.
         await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
-        await page.waitForFunction(
-          () => window.location.pathname.startsWith("/c/"),
-          {
-            timeout: 15_000,
-          },
-        );
+        await page.waitForSelector("#describe-first-workbench-input", {
+          timeout: 15_000,
+        });
         return {
           status: "pass",
-          detail: `bare root landed in Myra's chat at ${await page.evaluate(() => window.location.pathname)}`,
+          detail: "bare root with zero workbenches shows the describe screen",
+        };
+      },
+    );
+
+    let firstAgentPath = "";
+    await step(
+      () => page,
+      "04a-describe-first-workbench",
+      async () => {
+        // One field, one action: describe the job, and the same drafting
+        // machinery `CreateAgentPanel` uses mints the agent and lands the
+        // account straight in its conversation.
+        await page.type(
+          "#describe-first-workbench-input",
+          "Watch our top three competitors and summarize what changed each week.",
+        );
+        await clickStable(page, 'button[type="submit"]');
+        await page.waitForFunction(
+          () => window.location.pathname.startsWith("/c/"),
+          { timeout: 30_000 },
+        );
+        firstAgentPath = await page.evaluate(() => window.location.pathname);
+        return {
+          status: "pass",
+          detail: `description submitted, landed in the freshly drafted agent's conversation at ${firstAgentPath}`,
         };
       },
     );
 
     await step(
       () => page,
-      "04b-workbench-sidebar",
+      "04b-first-agent-greets",
+      async () => {
+        // The drafted agent's system prompt (CL-6086) instructs it to
+        // greet on the first reply of a brand-new conversation and name
+        // its capabilities. With the stub key, the real dial fails, so the
+        // only honestly assertable thing is that the conversation opens
+        // and an agent message actually arrives — same posture as
+        // 08-send-hi-to-myra below.
+        await page.waitForSelector("textarea.chat-composer-input", {
+          timeout: 20_000,
+        });
+        await page.type("textarea.chat-composer-input", "hi");
+        await clickStable(page, 'button[aria-label="Send"]');
+        await page.waitForSelector('div.chat-bubble-row[data-own="true"]', {
+          timeout: 10_000,
+        });
+        await page.waitForSelector('div.chat-bubble-row[data-own="false"]', {
+          timeout: 45_000,
+        });
+        const replyText = await page.evaluate(() => {
+          const bubble = document.querySelector(
+            'div.chat-bubble-row[data-own="false"] p.chat-bubble-text',
+          );
+          return bubble?.textContent ?? null;
+        });
+        return {
+          status: "pass",
+          detail: `the freshly drafted agent replied: ${JSON.stringify(replyText)}`,
+        };
+      },
+    );
+
+    await step(
+      () => page,
+      "04c-workbench-sidebar",
       async () => {
         await page.goto(`${webBaseUrl}/c`, { waitUntil: "domcontentloaded" });
         await page.waitForSelector('button[aria-label="New workbench"]', {
@@ -697,11 +758,15 @@ async function run(): Promise<void> {
       "07-sidebar-lists-each-minted-workbench",
       async () => {
         // The always-visible sidebar already lists every workbench — the
-        // rows are just there, no navigation or priming needed. Three Myra
-        // rows are expected here: the land-hop's home workbench plus the
-        // two template mints above (rows are named by their agent, CL-6089).
-        // The list is a cache invalidated by the create event, so give the
-        // refetch a bounded moment to land before judging.
+        // rows are just there, no navigation or priming needed. Two Myra
+        // rows are expected here: the two template mints above (rows are
+        // named by their agent, CL-6089). There is no third, home-workbench
+        // Myra row any more (CL-6104): the land hop no longer auto-creates
+        // Myra's channel for a brand-new account — the account's real home
+        // workbench is the freshly drafted agent from the describe screen,
+        // which has its own name, not "Myra". The list is a cache
+        // invalidated by the create event, so give the refetch a bounded
+        // moment to land before judging.
         await page.waitForSelector(".shell-ch-row-wrap", { timeout: 15_000 });
         let myraRows = 0;
         for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -709,19 +774,19 @@ async function run(): Promise<void> {
             page,
             '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
           );
-          if (myraRows === 3) break;
+          if (myraRows === 2) break;
           await new Promise((resolve) => setTimeout(resolve, 800));
         }
-        if (myraRows !== 3) {
+        if (myraRows !== 2) {
           return {
             status: "fail",
-            detail: `expected 3 Myra sidebar rows (home + two template mints), found ${myraRows}`,
+            detail: `expected 2 Myra sidebar rows (the two template mints), found ${myraRows}`,
           };
         }
         return {
           status: "pass",
           detail:
-            "sidebar lists 3 Myra rows — the home workbench and both template mints, one row per conversation",
+            "sidebar lists 2 Myra rows — both template mints, one row per conversation",
         };
       },
     );

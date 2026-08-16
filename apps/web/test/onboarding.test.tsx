@@ -42,6 +42,15 @@ const json = (body: unknown, status = 200) =>
 
 const noop = () => undefined;
 
+/** A `navigate` that records every call — the wizard now hands off to
+ * `/` (`HomeRoute`, CL-6104) instead of rendering a "your workbench is
+ * ready" ending of its own, so proving the hand-off means proving the
+ * navigate call, not scraping ending copy. */
+function trackedNavigate() {
+  const calls: string[] = [];
+  return { navigate: (to: string) => calls.push(to), calls };
+}
+
 const signedIn: SessionState = {
   kind: "signed-in",
   user: { id: "user_1", name: "Ada", email: "ada@example.com" },
@@ -347,13 +356,13 @@ describe("App at the onboarding path", () => {
     expect(markup).not.toContain("shell-bench-dock");
   });
 
-  test("shows the restrained step label and progress rail instead of a stepper", () => {
+  test("starts provisioning immediately under a default name, no naming step", () => {
     const markup = renderOnboarding();
     // No naming step (CL-6089): provisioning starts immediately, under a
     // default name derived from the account, before the credential step.
-    expect(markup).toContain("Step 1 of 3");
+    // Onboarding is down to a single screen at this point (CL-6104) — no
+    // stepper needed for one step.
     expect(markup).toContain("Setting up your workbench");
-    expect(markup).toContain("dialog-stepper-track");
   });
 });
 
@@ -390,12 +399,13 @@ describe("App landing fresh on a hub-seeded workbench", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
     try {
       act(() => {
         root.render(
           <App
             path={ONBOARDING_PATH}
-            navigate={noop}
+            navigate={navigate}
             session={signedIn}
             onSignedIn={noop}
             onSignOut={noop}
@@ -407,9 +417,10 @@ describe("App landing fresh on a hub-seeded workbench", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      expect(container.textContent).toContain("Your workbench is ready");
-      expect(container.textContent).toContain("Meet Myra");
-      expect(container.textContent).not.toContain("Add an inference credential");
+      expect(calls).toEqual(["/"]);
+      expect(container.textContent).not.toContain(
+        "Add an inference credential",
+      );
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -440,12 +451,13 @@ describe("App landing fresh on a hub-seeded workbench", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
     try {
       act(() => {
         root.render(
           <App
             path={ONBOARDING_PATH}
-            navigate={noop}
+            navigate={navigate}
             session={signedIn}
             onSignedIn={noop}
             onSignOut={noop}
@@ -458,7 +470,7 @@ describe("App landing fresh on a hub-seeded workbench", () => {
       });
 
       expect(container.textContent).toContain("Add an inference credential");
-      expect(container.textContent).not.toContain("Your workbench is ready");
+      expect(calls).toEqual([]);
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -488,12 +500,13 @@ describe("App landing fresh on a hub-seeded workbench", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
     try {
       act(() => {
         root.render(
           <App
             path={ONBOARDING_PATH}
-            navigate={noop}
+            navigate={navigate}
             session={signedIn}
             onSignedIn={noop}
             onSignOut={noop}
@@ -506,7 +519,7 @@ describe("App landing fresh on a hub-seeded workbench", () => {
       });
 
       expect(container.textContent).toContain("Add an inference credential");
-      expect(container.textContent).not.toContain("Your workbench is ready");
+      expect(calls).toEqual([]);
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -530,12 +543,13 @@ describe("App landing fresh on a hub-seeded workbench", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
     try {
       act(() => {
         root.render(
           <App
             path={ONBOARDING_PATH}
-            navigate={noop}
+            navigate={navigate}
             session={signedIn}
             onSignedIn={noop}
             onSignOut={noop}
@@ -548,7 +562,7 @@ describe("App landing fresh on a hub-seeded workbench", () => {
       });
 
       expect(container.textContent).toContain("Add an inference credential");
-      expect(container.textContent).not.toContain("Your workbench is ready");
+      expect(calls).toEqual([]);
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -708,7 +722,7 @@ describe("the OpenRouter connect card", () => {
     expect(markup).not.toContain("Your workbench is ready");
   });
 
-  test("a connected return finishes setup and lands on the running-routines ending once completeSetup reports seeded", async () => {
+  test("a connected return finishes setup and hands off to `/` once completeSetup reports seeded", async () => {
     globalThis.fetch = (async (url: string) => {
       if (url === "/api/onboarding/complete-setup") {
         return json({
@@ -728,12 +742,13 @@ describe("the OpenRouter connect card", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
     try {
       act(() => {
         root.render(
           <App
             path={ONBOARDING_PATH}
-            navigate={noop}
+            navigate={navigate}
             session={signedIn}
             onSignedIn={noop}
             onSignOut={noop}
@@ -745,78 +760,7 @@ describe("the OpenRouter connect card", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      expect(container.textContent).toContain(
-        "Your workbench is ready",
-      );
-      expect(container.textContent).toContain("Echo routine");
-      expect(container.textContent).toContain("Myra routine");
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-      window.history.replaceState(null, "", "/");
-    }
-  });
-
-  test("a seeded response carrying a tenant id lands on the optional Connect your tools step first, and Skip for now reaches the routines ending", async () => {
-    globalThis.fetch = (async (url: string) => {
-      if (url === "/api/onboarding/complete-setup") {
-        return json({
-          kind: "seeded",
-          tenantId: "ten_ada",
-          tenantSlug: "ada-user1",
-          workflows: ["echo", "assistant"],
-        });
-      }
-      if (url === "/api/tenants/ten_ada/credentials") {
-        return json({ data: [], nextCursor: null });
-      }
-      if (url === "/api/tenants/ten_ada/providers") {
-        return json({ data: [], nextCursor: null });
-      }
-      throw new Error(`unexpected fetch: ${url}`);
-    }) as unknown as typeof fetch;
-
-    window.history.replaceState(
-      null,
-      "",
-      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
-    );
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    try {
-      act(() => {
-        root.render(
-          <App
-            path={ONBOARDING_PATH}
-            navigate={noop}
-            session={signedIn}
-            onSignedIn={noop}
-            onSignOut={noop}
-            onRetry={noop}
-          />,
-        );
-      });
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-
-      expect(container.textContent).toContain("Connect your tools");
-      expect(container.textContent).not.toContain(
-        "Your workbench is ready",
-      );
-
-      const skipButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Skip for now",
-      );
-      expect(skipButton).toBeDefined();
-      act(() => {
-        skipButton?.click();
-      });
-
-      expect(container.textContent).toContain(
-        "Your workbench is ready",
-      );
+      expect(calls).toEqual(["/"]);
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -920,12 +864,13 @@ describe("the OpenRouter connect card", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
     try {
       act(() => {
         root.render(
           <App
             path={ONBOARDING_PATH}
-            navigate={noop}
+            navigate={navigate}
             session={signedIn}
             onSignedIn={noop}
             onSignOut={noop}
@@ -937,8 +882,7 @@ describe("the OpenRouter connect card", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      expect(container.textContent).toContain("Your workbench is ready");
-      expect(container.textContent).toContain("Meet Myra");
+      expect(calls).toEqual(["/"]);
       expect(container.textContent).not.toContain("took too long");
     } finally {
       act(() => root.unmount());
@@ -1064,7 +1008,7 @@ describe("the Hugging Face connect card", () => {
     expect(markup).not.toContain("Your workbench is ready");
   });
 
-  test("a connected return finishes setup and lands on the running-routines ending once completeSetup reports seeded", async () => {
+  test("a connected return finishes setup and hands off to `/` once completeSetup reports seeded", async () => {
     globalThis.fetch = (async (url: string) => {
       if (url === "/api/onboarding/complete-setup") {
         return json({
@@ -1084,12 +1028,13 @@ describe("the Hugging Face connect card", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
     try {
       act(() => {
         root.render(
           <App
             path={ONBOARDING_PATH}
-            navigate={noop}
+            navigate={navigate}
             session={signedIn}
             onSignedIn={noop}
             onSignOut={noop}
@@ -1101,11 +1046,7 @@ describe("the Hugging Face connect card", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
 
-      expect(container.textContent).toContain(
-        "Your workbench is ready",
-      );
-      expect(container.textContent).toContain("Echo routine");
-      expect(container.textContent).toContain("Myra routine");
+      expect(calls).toEqual(["/"]);
     } finally {
       act(() => root.unmount());
       container.remove();
