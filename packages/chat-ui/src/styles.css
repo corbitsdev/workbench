@@ -456,10 +456,12 @@
   flex-shrink: 0;
   margin-top: 0.1rem;
   border-radius: var(--ui-radius-sm, 0.25rem);
-  background: var(
-    --muted,
-    color-mix(in srgb, var(--foreground) 8%, transparent)
-  );
+  /* --muted sits within ~1.2:1 of --background in dark (near-black on
+     pure black), leaving the avatar chip indistinguishable from the
+     timeline ground. A foreground tint reads at the same visible
+     strength in both themes since the page it mixes against is pure
+     white/black either way. */
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
   color: var(--muted-foreground);
   font-size: 0.6875rem;
   font-weight: 700;
@@ -488,7 +490,7 @@
   border-radius: 999px;
   border: 1.5px solid var(--background);
   background: var(--chat-agent-accent, var(--primary));
-  color: var(--primary-foreground, #fff);
+  color: var(--primary-foreground);
   font-size: 0.5rem;
   font-weight: 700;
   line-height: 1;
