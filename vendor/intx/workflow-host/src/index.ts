@@ -1,4 +1,10 @@
 export {
+  loadWorkflowDefinitionFromClosure,
+  loadWorkflowDirectorRegistryFromClosure,
+  type LoadWorkflowDefinitionFromClosureArgs,
+  type LoadWorkflowDirectorRegistryFromClosureArgs,
+} from "./workflow-definition-loader";
+export {
   createWorkflowRunRepoStore,
   type WorkflowRunRepoStoreOpts,
 } from "./adapters/repo-store";
@@ -14,6 +20,7 @@ export {
 export {
   createWorkflowSpawnChild,
   createWorkflowSpawnSuspendableChild,
+  createInMemorySpawnSuspendableChild,
   type ChildTerminalStatus,
   type RunChildWorkflow,
   type RunSuspendableChild,
@@ -136,6 +143,7 @@ export {
   createSupervisorBackedTransport,
   createWarmAgentCache,
   discoverInFlightRuns,
+  loadVerifiedWorkflowDefinition,
   parseSpawnTimeEnv,
   runWorkflowChild,
   runWorkflowChildFromProcessEnv,
@@ -152,6 +160,7 @@ export {
   type DrainController,
   type GrantEvaluator,
   type LoadParkedApproval,
+  type LoadVerifiedWorkflowDefinitionOpts,
   type RunWorkflowChildBindings,
   type RunWorkflowChildFromProcessEnvOpts,
   type RunWorkflowChildOpts,
