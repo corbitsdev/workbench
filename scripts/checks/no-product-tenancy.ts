@@ -126,6 +126,21 @@ const ALLOWLIST: readonly {
     maxOccurrences: 1,
     tables: ["folded_run"],
   },
+  {
+    // Named model/settings presets a bench shares across workbenches —
+    // product-owned configuration, not tenancy or credentials.
+    relPath: "packages/config-profiles/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["config_profiles.profile"],
+  },
+  {
+    // Skills pinned to a workbench's agent definition (CL-6135): the
+    // workflow-kind asset tree forbids skills.json, so this pin list is
+    // package-owned state beside the native definition row.
+    relPath: "packages/agent-directory/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["agent_directory.definition_skills"],
+  },
 ];
 
 export async function scanFiles(
