@@ -315,9 +315,9 @@ function AgentDetailPanel({
             size="sm"
             disabled={starting || tenantId === ""}
             onClick={() => void handleStartChat()}
-            aria-label="Start chat with this agent"
+            aria-label="Open this agent’s workbench"
           >
-            <MessageSquare /> {starting ? "Starting…" : "Start chat"}
+            <MessageSquare /> {starting ? "Starting…" : "Open workbench"}
           </Button>
           <Button
             type="button"
@@ -325,7 +325,7 @@ function AgentDetailPanel({
             size="sm"
             disabled={tenantId === ""}
             onClick={handleOpenInChannel}
-            aria-label="Open in a chat"
+            aria-label="Open its workbench"
           >
             <Users /> Open in chat
           </Button>
@@ -484,7 +484,7 @@ export function AgentsSettingsSection({
           }
           launchAgentChat(directory.data.tenantId, definition.id, navigate).catch(
             () => {
-              toast("Created the agent, but couldn't open a chat with it.");
+              toast("Created the agent, but couldn't open its workbench.");
               select(definition.id);
             },
           );
@@ -498,7 +498,7 @@ export function AgentsSettingsSection({
         <RichEmptyState
           icon={<Bot />}
           title="No agents yet"
-          description="Create your first agent — a name, a system prompt, and optionally a model — and it appears here, ready to start a chat or invite into one."
+          description="Create your first agent — a name, a system prompt, and optionally a model — and it appears here, ready to talk to from its own workbench."
           actions={[
             {
               label: "New agent",

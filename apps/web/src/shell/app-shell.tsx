@@ -1,15 +1,15 @@
-// The four-column app shell: the global rail, the contextual panel, the
-// main pane a route renders into, and the optional canvas. Every route in
-// `../routes.tsx` mounts inside this same frame — there is no per-route
-// shell variant. Channel conversation lives in the main stage; the canvas
-// is auxiliary (profiles and similar) and opens on use, then closes
-// internally. There is no permanent canvas toggle.
+// The app frame: one sidebar (the workbench list and shared chrome — see
+// `sidebar.tsx`), the main pane a route renders into, and the optional
+// canvas. Every route in `../routes.tsx` mounts inside this same frame —
+// there is no per-route shell variant and no sidebar collapse. The
+// conversation lives in the main stage; the canvas is auxiliary (profiles
+// and similar) and opens on use, then closes internally.
 //
-// Canvas state and col2's collapse/width state are NOT owned here — they
-// have to be visible to the command palette too (a sibling of this
-// component, not a descendant — see `shell-chrome-provider.tsx`), so
-// `ShellChromeProvider` owns them above both and this component only reads
-// them through the same hooks page code already uses.
+// Canvas state is NOT owned here — it has to be visible to the command
+// palette too (a sibling of this component, not a descendant — see
+// `shell-chrome-provider.tsx`), so `ShellChromeProvider` owns it above both
+// and this component only reads it through the same hooks page code
+// already uses.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as Y from "yjs";
@@ -21,17 +21,7 @@ import { usePresenceRoom } from "../presence/use-presence-room";
 import { APP_ROUTES, matchesRoute } from "../routes";
 import type { SessionUser } from "../session";
 import { StageTopBar } from "./stage-top-bar";
-import {
-  COL2_ID,
-  Col2EdgeHandle,
-  contextualPanelIsDrawer,
-  contextualPanelVisible,
-  railShowLabels,
-  useShellFocusRescue,
-  useShellLayoutMode,
-  useScrollReset,
-  useStageChrome,
-} from "@corbits/shell-layout";
+import { useScrollReset } from "@corbits/shell-layout";
 import {
   useCanvasColumnArtifact,
   useCanvasColumnAvailable,
@@ -43,8 +33,7 @@ import {
 } from "./canvas-availability";
 import { CanvasColumn } from "./canvas-column";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
-import { ContextualPanel } from "./contextual-panel";
-import { Rail } from "./rail";
+import { Sidebar } from "./sidebar";
 
 /** True only for the one route that never renders its own `StageTopBar`
  * (see `AppRoute.hasStageTopBar`'s doc) — everything else titles its own
@@ -75,7 +64,6 @@ export function AppShell({
   readonly children: ReactNode;
 }) {
   const navigate = useNavigate();
-  const layoutMode = useShellLayoutMode();
   const canvasAllowed = useCanvasColumnAvailable();
   const canvasOpen = useCanvasColumnOpen();
   const canvasProfile = useCanvasColumnProfile();
@@ -143,32 +131,13 @@ export function AppShell({
       : artifactSaveState;
   const closeCanvas = useCloseCanvas();
   const toggleCanvasFocus = useToggleCanvasFocus();
-  const showContextualColumn = contextualPanelVisible(layoutMode);
-  const contextualAsDrawer = contextualPanelIsDrawer(layoutMode);
-  const { col2Collapsed, col2Width, toggleCol2 } = useStageChrome();
-  const frameRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
-  useShellFocusRescue(layoutMode, frameRef);
   // Route changes must not inherit the previous page's scroll position.
   useScrollReset(mainRef, path);
 
   return (
-    <div
-      className="shell-frame"
-      ref={frameRef}
-      data-layout={layoutMode}
-      data-col2={col2Width}
-    >
-      <Rail
-        path={path}
-        onNavigate={navigate}
-        user={user}
-        showLabels={railShowLabels(layoutMode)}
-      />
-      {showContextualColumn && !col2Collapsed && (
-        <ContextualPanel id={COL2_ID} path={path} onNavigate={navigate} />
-      )}
-      {col2Collapsed && <Col2EdgeHandle />}
+    <div className="shell-frame">
+      <Sidebar path={path} user={user} onNavigate={navigate} />
       <div className="shell-main" ref={mainRef}>
         <div className="shell-main-content">
           {routeHasNoStageTopBar(path) ? (
@@ -200,23 +169,6 @@ export function AppShell({
           artifactSaveState={artifactSaveStateWithEditors}
           onArtifactTyping={artifactPresence.publishTyping}
         />
-      )}
-      {contextualAsDrawer && (
-        <>
-          <div
-            className="shell-drawer-backdrop"
-            data-open={!col2Collapsed}
-            onClick={toggleCol2}
-          />
-          <div
-            id={COL2_ID}
-            className="shell-drawer"
-            data-open={!col2Collapsed}
-            inert={col2Collapsed}
-          >
-            <ContextualPanel path={path} onNavigate={navigate} />
-          </div>
-        </>
       )}
       <ShellContextMenu onSignOut={onSignOut} />
     </div>

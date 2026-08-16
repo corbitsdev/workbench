@@ -1,5 +1,5 @@
 // One row in the Spaces band's "Working" group (see
-// `apps/web/src/shell/panel-contributions.tsx`'s `ChannelsBand`): an
+// `apps/web/src/shell/workbench-list.tsx`'s `WorkbenchList`): an
 // agent's display name, elapsed time, and a live status treatment.
 // Orange is reserved for a genuine needs-you state — react-ui's own
 // `StatusDot`/`Badge` tone comments call the emphasis orange "rare on a

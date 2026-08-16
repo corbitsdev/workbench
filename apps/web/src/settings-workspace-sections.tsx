@@ -3,7 +3,7 @@
 // Personal/Workspace shell and gating, never a specific app's domain
 // sections — so these two are assembled here and spliced in via the
 // package's `insertWorkspaceSections`, the same seam `settings-page.tsx`
-// and `settings-nav-band.tsx` both call so the stage and its section nav
+// and `pages/settings-nav.tsx` both call so the stage and its section nav
 // can never drift on what Workspace contains.
 
 import type { SettingsSection } from "@corbits/settings-ui";

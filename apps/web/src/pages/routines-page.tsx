@@ -479,7 +479,7 @@ function DeliveryDestinationPicker({
   const selected = channels.find((c) => c.id === value);
   const label =
     value === NEW_SPACE_DESTINATION || selected === undefined
-      ? "New chat for this routine"
+      ? "New workbench for this routine"
       : selected.title;
   return (
     <div className="flex flex-col gap-1.5">
@@ -2321,7 +2321,7 @@ export function RoutineDetailPage({
                           }
                         >
                           {channels.find((c) => c.id === data.deliveryChannelId)
-                            ?.title ?? "Open chat"}
+                            ?.title ?? "Open workbench"}
                         </Button>
                       </dd>
                     </>

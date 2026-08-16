@@ -225,12 +225,12 @@ export function ChatPage({
     />
   );
 
-  // The conversation itself carries the open channel's own name inline
-  // (see ChatWorkspace's `chat-channel-header`) — this bar is what survives
-  // when col2 is collapsed and nothing else on the page says "Chats".
+  // The conversation itself carries the open workbench's own name inline
+  // (see ChatWorkspace's `chat-channel-header`) — this bar is the stage's
+  // page identity above it.
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar title="Chats" />
+      <StageTopBar title="Workbenches" />
       {workspace}
     </div>
   );

@@ -1,21 +1,15 @@
-// The rail's bottom docks: the bench switcher and the identity row. Kept as
-// small parts rather than one component so the rail's footer slot can
-// compose them independently of whatever else the shell adds there later.
+// The sidebar footer's switcher dock and the initials helper the account
+// affordance renders from.
 
-import { Button, ThemeToggle } from "@corbits/react-ui";
 import {
   BenchSwitcher,
   filterWorkbenchMemberships,
   listChannelTenantIds,
 } from "@corbits/bench-ui";
 import { useQuery } from "@tanstack/react-query";
-import { LogOut, SlidersHorizontal } from "lucide-react";
 
 import { useBench } from "../bench-context";
-import { handleLinkClick, useNavigate } from "../navigation";
 import { meKeys } from "../query-client";
-import { SETTINGS_PATH, matchesRoute } from "../routes";
-import type { SessionUser } from "../session";
 
 /**
  * Initials for the identity dock's avatar, derived locally — the app is
@@ -73,53 +67,6 @@ export function BenchDock() {
         onSelect={selectTenant}
         onBenchCreated={(bench) => onBenchCreated(bench.id)}
       />
-    </div>
-  );
-}
-
-/** Rail footer: who is signed in (initials avatar, tooltip-only email —
- * never an id) plus theme, settings and sign-out, stacked to fit the narrow
- * rail rather than the wide row the contextual panel used to have room for. */
-export function RailIdentity({
-  path,
-  user,
-  onSignOut,
-}: {
-  readonly path: string;
-  readonly user: SessionUser;
-  readonly onSignOut: () => void;
-}) {
-  const navigate = useNavigate();
-  const settingsActive = matchesRoute(SETTINGS_PATH, path);
-  return (
-    <div className="shell-rail-identity">
-      <ThemeToggle />
-      <a
-        aria-current={settingsActive ? "page" : undefined}
-        href={SETTINGS_PATH}
-        title="Settings"
-        aria-label="Settings"
-        className="shell-rail-identity-settings"
-        onClick={(event) => handleLinkClick(event, SETTINGS_PATH, navigate)}
-      >
-        <SlidersHorizontal size={17} />
-      </a>
-      <span
-        className="shell-rail-identity-avatar"
-        aria-hidden
-        title={user.email}
-      >
-        {initialsOf(user.name, user.email)}
-      </span>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onSignOut}
-        title="Sign out"
-        aria-label="Sign out"
-      >
-        <LogOut />
-      </Button>
     </div>
   );
 }

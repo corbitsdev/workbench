@@ -1,24 +1,26 @@
-// Every user-facing word the chat surface prints, in one place. The package
-// underneath calls everything a "channel" — a `kind` string of "channel" or
-// "chat" — but the app decides what a human reads: "Pinned" for the pinned,
+// Every user-facing word the conversation surface prints, in one place.
+// The package underneath calls everything a "channel" — a `kind` string of
+// "channel" or "chat" — but the app decides what a human reads: a
+// "workbench" is the product word for a conversation with an agent (each
+// one its own tenancy), and "Pinned" survives for the pinned,
 // broadcast-style kind (its own creation step is dead — see
 // `new-channel-dialog.tsx`'s module doc — but the strings still exist for a
-// future caller that reaches it) and "Chats" for everything else. Nothing
-// in the chat/* components inlines its own copy; it imports from here.
+// future caller that reaches it). Nothing in the chat/* components inlines
+// its own copy; it imports from here.
 
 export const CHAT_STRINGS = {
   channelsSectionLabel: "Pinned",
-  chatsSectionLabel: "Chats",
+  chatsSectionLabel: "Workbenches",
   newChannelAction: "New conversation",
   newChannelDialogTitle: "New conversation",
   newChannelDialogDescription:
-    "Give it a name and choose whether it is a pinned, shared conversation or an ordinary chat.",
+    "Give it a name and choose whether it is a pinned, shared conversation or an ordinary workbench.",
   newChannelNameLabel: "Name",
   newChannelNamePlaceholder: "e.g. Launch planning",
   newChannelKindLabel: "Type",
   newChannelKindChannel: "Pinned",
   newChannelKindChannelDesc: "Pinned, for the whole workbench",
-  newChannelKindChat: "Chat",
+  newChannelKindChat: "Workbench",
   newChannelKindChatDesc: "A direct conversation with an agent or teammate",
   newChannelPurposeLabel: "Purpose (optional)",
   newChannelPurposePlaceholder: "What is this for?",
@@ -29,12 +31,12 @@ export const CHAT_STRINGS = {
   newChannelNext: "Next",
   newChannelStepKindLabel: "Kind",
   newChannelStepKindGuidance:
-    "Choose a pinned conversation for the whole workbench, or a direct chat.",
+    "Choose a pinned conversation shared with everyone, or a direct workbench.",
   newChannelStepDetailsLabel: "Details",
   newChannelStepChannelGuidance: "Name it and add an optional purpose.",
   newChannelStepChatGuidance:
-    "Pick who to talk to — the chat's name defaults to theirs.",
-  newChatDialogTitle: "New chat",
+    "Pick who to talk to — the workbench's name defaults to theirs.",
+  newChatDialogTitle: "New workbench",
   newChatDialogDescription: "Pick who you want to talk to.",
   newChatNameLabel: "Name (optional)",
   newChatNamePlaceholder: "Defaults to the agent's name",
@@ -43,33 +45,31 @@ export const CHAT_STRINGS = {
   newChatAgentLabel: "Agent",
   newChatAgentComboboxPlaceholder: "Search or create agents",
   newChatAgentComboboxEmpty: "No agents match.",
-  newChatAgentLoadError: "Couldn't load agents to chat with",
+  newChatAgentLoadError: "Couldn't load agents",
   newChatAgentEmptyTitle: "No agents available",
   newChatAgentEmptyDescription:
-    "Add an agent to this workbench before starting a chat with it.",
+    "Add an agent here before opening a workbench with it.",
   newChatPersonLabel: "Person",
-  newChatPersonLoadError: "Couldn't load teammates to chat with",
+  newChatPersonLoadError: "Couldn't load teammates",
   newChatPersonEmptyTitle: "No teammates available",
   newChatPersonEmptyDescription:
-    "Invite teammates to this workbench before starting a direct chat.",
+    "Invite teammates here before opening a direct workbench with one.",
   newChatCreateAgentAffordance: "Create new agent",
-  newChannelMissingAgentError:
-    "Choose an agent or teammate to start this chat.",
-  newChannelSelfDmError: "You can't start a direct chat with yourself.",
-  noChannelsTitle: "No chats yet",
-  noChannelsDescription:
-    "Start a chat your agents and teammates can see.",
+  newChannelMissingAgentError: "Choose an agent or teammate to get started.",
+  newChannelSelfDmError: "You can't open a workbench with yourself.",
+  noChannelsTitle: "No workbenches yet",
+  noChannelsDescription: "Create one to get started.",
   noChatSelectedTitle: "Select a conversation",
   noChatSelectedDescription:
-    "Choose a chat from the sidebar, or start a new one.",
-  couldNotLoadChannels: "chats",
+    "Choose a workbench from the sidebar, or create a new one.",
+  couldNotLoadChannels: "workbenches",
   couldNotLoadMessages: "messages",
-  channelNotFoundTitle: "This chat isn't here anymore",
+  channelNotFoundTitle: "This workbench isn't here anymore",
   channelNotFoundDescription:
     "It may have been deleted, or the link is out of date.",
-  channelNotFoundAction: "Back to Chats",
+  channelNotFoundAction: "Back to workbenches",
   composerPlaceholder:
-    "Message this chat… use @ to mention an agent, / for commands",
+    "Send a message… use @ to mention an agent, / for commands",
   composerPlaceholderChat: (name: string) => `Message ${name}… / for commands`,
   composerSend: "Send",
   composerSending: "Sending…",
@@ -119,7 +119,7 @@ export const CHAT_STRINGS = {
   inviteAgentLoadError: "Couldn't load invitable agents",
   inviteAgentInviting: "Inviting…",
   inviteAgentInviteError: "Couldn't invite that agent — try again.",
-  inviteAgentConflictError: "This chat already has its agent.",
+  inviteAgentConflictError: "This workbench already has its agent.",
   newChannelCreateError: "Couldn't create that — try again.",
   forkThreadAction: "Fork",
   forkThreadError: "Couldn't fork that message into a thread — try again.",
@@ -229,7 +229,7 @@ export const CHAT_STRINGS = {
   channelSettingsParticipantsLabel: "Participants",
   channelSettingsPeopleLabel: "People",
   channelSettingsAgentsLabel: "Agents",
-  channelSettingsNoPeople: "No people in this chat yet.",
+  channelSettingsNoPeople: "No people here yet.",
   channelSettingsNoAgents: "No agents invited yet.",
   channelSettingsAutonomyTitle: "Autonomy",
   channelSettingsAutonomyBody:
@@ -280,9 +280,9 @@ export const CHAT_STRINGS = {
   channelSettingsNotifyMute: "Mute",
   channelSettingsNotificationsHint:
     "Preference is local draft UI until per-conversation notification storage ships.",
-  channelSettingsArchiveTitle: "Archive chat",
+  channelSettingsArchiveTitle: "Archive workbench",
   channelSettingsArchiveBody:
-    "Archiving is not available yet. Closing this chat would hide it from the sidebar without deleting history once the action lands.",
+    "Archiving is not available yet. Closing this workbench would hide it from the sidebar without deleting history once the action lands.",
   channelSettingsLoadError: "Couldn't load this conversation's settings",
   channelSettingsSaveError:
     "Couldn't save this conversation's settings — try again.",
@@ -293,7 +293,7 @@ export const CHAT_STRINGS = {
   profileOpenAction: "Open profile",
   profileMessageAction: "Message",
   profileViewSettingsAction: "View settings",
-  profileSharedChannels: "Shared chats",
+  profileSharedChannels: "Shared workbenches",
   profilePinnedSkills: "Pinned skills",
   profileAgentStatus: "Agent",
   profileMemberStatus: "Member",
