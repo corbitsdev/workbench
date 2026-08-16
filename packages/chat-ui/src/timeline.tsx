@@ -17,7 +17,7 @@ import {
   useContextMenuState,
 } from "@corbits/context-menu";
 import type { ContextMenu, ContextMenuEntry } from "@corbits/context-menu";
-import { EmptyState, toast } from "@corbits/react-ui";
+import { Button, EmptyState, toast } from "@corbits/react-ui";
 import {
   Clock,
   Copy,
@@ -277,6 +277,7 @@ function TextBubble({
   currentUser,
   onOpenProfile,
   onFixConnection,
+  showHeader = true,
 }: {
   text: string;
   createdAt: string;
@@ -285,6 +286,12 @@ function TextBubble({
   currentUser: CurrentUser | undefined;
   onOpenProfile?: (subject: ProfileSubject) => void;
   onFixConnection?: () => void;
+  /** `false` when this bubble continues an unbroken run of messages from
+   * the same author (see `isGroupedWithPrevious`) — the avatar and
+   * name/timestamp header collapse to a hover-revealed timestamp in the
+   * avatar gutter instead, matching the compact grouped-message pattern
+   * modern chat UIs use rather than repeating the header on every line. */
+  showHeader?: boolean;
 }) {
   const display = senderDisplay(sender, participants, currentUser);
   const isOwn =
@@ -307,8 +314,12 @@ function TextBubble({
   }
 
   return (
-    <div className="chat-bubble-row" data-own={isOwn}>
-      {display !== undefined && (
+    <div
+      className="chat-bubble-row"
+      data-own={isOwn}
+      data-grouped={!showHeader}
+    >
+      {showHeader && display !== undefined && (
         <button
           type="button"
           className="chat-sender-avatar-button"
@@ -328,22 +339,32 @@ function TextBubble({
         </button>
       )}
       <div className="chat-bubble" data-own={isOwn}>
-        <div className="chat-bubble-head">
-          {display !== undefined && (
-            <button
-              type="button"
-              className="chat-bubble-sender-button"
-              disabled={profileSubject === null || onOpenProfile === undefined}
-              onClick={handleOpenProfile}
-            >
-              <span className="chat-bubble-sender">
-                {display.label}
-                {display.isAgent && <AgentBadge />}
-              </span>
-            </button>
-          )}
-          <span className="chat-bubble-time">{formatTimestamp(createdAt)}</span>
-        </div>
+        {showHeader ? (
+          <div className="chat-bubble-head">
+            {display !== undefined && (
+              <button
+                type="button"
+                className="chat-bubble-sender-button"
+                disabled={
+                  profileSubject === null || onOpenProfile === undefined
+                }
+                onClick={handleOpenProfile}
+              >
+                <span className="chat-bubble-sender">
+                  {display.label}
+                  {display.isAgent && <AgentBadge />}
+                </span>
+              </button>
+            )}
+            <span className="chat-bubble-time">
+              {formatTimestamp(createdAt)}
+            </span>
+          </div>
+        ) : (
+          <span className="chat-bubble-time-grouped">
+            {formatTimestamp(createdAt)}
+          </span>
+        )}
         <p className="chat-bubble-text">{text}</p>
         {onFixConnection !== undefined &&
           isClassifiedInferenceFailureText(text) && (
@@ -584,20 +605,24 @@ function PendingMessageGroup({
               <span className="chat-pending-failed-label">
                 {CHAT_STRINGS.pendingSendFailedLabel}
               </span>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 className="chat-pending-retry"
                 onClick={() => pendingActions.onRetry(nonce)}
               >
                 {CHAT_STRINGS.pendingSendRetryAction}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 className="chat-pending-discard"
                 onClick={() => pendingActions.onDiscard(nonce)}
               >
                 {CHAT_STRINGS.pendingSendDiscardAction}
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>
@@ -824,6 +849,7 @@ function MessageParts({
   participants,
   currentUser,
   showDayDivider,
+  showHeader,
   threadMeta,
   threadAffordanceMode = "reply",
   onOpenThread,
@@ -840,6 +866,9 @@ function MessageParts({
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
   readonly showDayDivider: boolean;
+  /** `false` when this message continues an unbroken run from the same
+   * author as the item directly above it — see `isGroupedWithPrevious`. */
+  readonly showHeader: boolean;
   readonly threadMeta?: ThreadAffordanceMeta | undefined;
   readonly threadAffordanceMode?: ThreadAffordanceMode;
   readonly onOpenThread?: (messageId: string) => void;
@@ -876,6 +905,7 @@ function MessageParts({
     <div
       className="chat-message-group"
       id={messageDomId(item.id)}
+      data-grouped={!showHeader}
       onContextMenu={handleContextMenu}
     >
       {showDayDivider && <DayDivider createdAt={item.createdAt} />}
@@ -890,6 +920,7 @@ function MessageParts({
               sender={item.sender}
               participants={participants}
               currentUser={currentUser}
+              showHeader={showHeader}
               {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
               {...(onFixConnection !== undefined ? { onFixConnection } : {})}
             />
@@ -979,6 +1010,35 @@ function MessageParts({
       />
     </div>
   );
+}
+
+/**
+ * Whether `item`'s header (avatar + name + timestamp) collapses because it
+ * continues an unbroken run of text messages from the same author as
+ * `previous` — the compact grouped-message pattern modern chat UIs use so a
+ * quick back-to-back exchange doesn't repeat the same name and avatar on
+ * every line. Never groups across a day divider, a pending (optimistic)
+ * item, or a message that isn't itself a plain text bubble (an event line
+ * or a fallback block always gets its own header on the next real bubble).
+ */
+function isGroupedWithPrevious(
+  item: TimelineMessageItem,
+  previous: TimelineMessageItem | undefined,
+  showDayDivider: boolean,
+): boolean {
+  if (showDayDivider || previous === undefined) return false;
+  if (
+    item.pendingStatus !== undefined ||
+    previous.pendingStatus !== undefined
+  ) {
+    return false;
+  }
+  const isTextOnly = (target: TimelineMessageItem) =>
+    target.parts.every((part) => part.kind === "text") &&
+    target.parts.some((part) => part.kind === "text");
+  if (!isTextOnly(item) || !isTextOnly(previous)) return false;
+  const address = item.sender?.address;
+  return address !== undefined && address === previous.sender?.address;
 }
 
 export type ThreadAffordanceMeta = {
@@ -1179,6 +1239,11 @@ export function ChannelTimeline({
             />
           );
         }
+        const showHeader = !isGroupedWithPrevious(
+          item,
+          previous,
+          showDayDivider,
+        );
         return (
           <MessageParts
             key={item.id}
@@ -1186,6 +1251,7 @@ export function ChannelTimeline({
             participants={participants}
             currentUser={currentUser}
             showDayDivider={showDayDivider}
+            showHeader={showHeader}
             threadMeta={threadMetaByMessageId?.get(item.id)}
             threadAffordanceMode={threadAffordanceMode}
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
