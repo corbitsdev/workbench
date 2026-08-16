@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { ConnectorDescriptor } from "./descriptor";
+import { createProviderHealthStore } from "./provider-health";
 import { createConnectionRoutes } from "./routes";
 
 const TENANT = {
@@ -123,6 +124,10 @@ function buildApp(
       typeof createConnectionRoutes
     >[0]["ensureCredentialFn"];
     oauthEnv?: Readonly<Record<string, string | undefined>>;
+    providerHealth?: Parameters<typeof createConnectionRoutes>[0]["providerHealth"];
+    listConnectedProviders?: Parameters<
+      typeof createConnectionRoutes
+    >[0]["listConnectedProviders"];
   } = {},
 ) {
   const routeArgs: Parameters<typeof createConnectionRoutes>[0] = {
@@ -136,6 +141,10 @@ function buildApp(
   if (overrides.ensureCredentialFn !== undefined)
     routeArgs.ensureCredentialFn = overrides.ensureCredentialFn;
   if (overrides.oauthEnv !== undefined) routeArgs.oauthEnv = overrides.oauthEnv;
+  if (overrides.providerHealth !== undefined)
+    routeArgs.providerHealth = overrides.providerHealth;
+  if (overrides.listConnectedProviders !== undefined)
+    routeArgs.listConnectedProviders = overrides.listConnectedProviders;
   const routes = createConnectionRoutes(routeArgs);
   return mountAs(routes);
 }
@@ -297,5 +306,86 @@ describe("POST /:connectorId/complete", () => {
     expect(response.status).toBe(500);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe("connection_setup_failed");
+  });
+
+  test("a rejected probe reports the connector needs_attention with the probe's own reason", async () => {
+    const providerHealth = createProviderHealthStore();
+    const app = buildApp({ providerHealth });
+    await app.request("/rejecting-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "bad-key" }),
+    });
+    const record = providerHealth.get(TENANT.id, "rejecting-connector");
+    expect(record?.status).toBe("needs_attention");
+    expect(record?.reason).toBe("the key was rejected");
+  });
+
+  test("a passing probe clears any needs_attention record for that connector", async () => {
+    const providerHealth = createProviderHealthStore();
+    providerHealth.report(TENANT.id, "accepting-connector", "stale reason");
+    const app = buildApp({
+      providerHealth,
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+    });
+    await app.request("/accepting-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "good-key" }),
+    });
+    expect(providerHealth.get(TENANT.id, "accepting-connector")).toBeUndefined();
+  });
+});
+
+describe("GET /provider-health", () => {
+  test("reports every provider this tenant has marked needs_attention", async () => {
+    const providerHealth = createProviderHealthStore(
+      () => new Date("2026-08-15T00:00:00.000Z"),
+    );
+    providerHealth.report(TENANT.id, "anthropic", "credential error");
+    const app = buildApp({ providerHealth });
+    const response = await app.request("/provider-health");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      providers: Record<string, { status: string; reason: string; at: string }>;
+      connectedProviderCount?: number;
+    };
+    expect(body.providers["anthropic"]).toEqual({
+      status: "needs_attention",
+      reason: "credential error",
+      at: "2026-08-15T00:00:00.000Z",
+    });
+  });
+
+  test("reports an empty providers object when nothing is unhealthy", async () => {
+    const app = buildApp({ providerHealth: createProviderHealthStore() });
+    const response = await app.request("/provider-health");
+    const body = (await response.json()) as { providers: unknown };
+    expect(body.providers).toEqual({});
+  });
+
+  test("reports an empty providers object when no store is configured", async () => {
+    const app = buildApp();
+    const response = await app.request("/provider-health");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { providers: unknown };
+    expect(body.providers).toEqual({});
+  });
+
+  test("reports connectedProviderCount when the lister is configured", async () => {
+    const app = buildApp({
+      listConnectedProviders: async () => ["anthropic", "openai"],
+    });
+    const response = await app.request("/provider-health");
+    const body = (await response.json()) as { connectedProviderCount: number };
+    expect(body.connectedProviderCount).toBe(2);
+  });
+
+  test("omits connectedProviderCount when no lister is configured", async () => {
+    const app = buildApp();
+    const response = await app.request("/provider-health");
+    const body = (await response.json()) as Record<string, unknown>;
+    expect("connectedProviderCount" in body).toBe(false);
   });
 });
