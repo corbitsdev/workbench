@@ -2,7 +2,7 @@
 // (request parsing, grant checks, response envelopes, and the
 // routine<->run correlation write), not anything `arktype`, `hono`, or
 // Interchange already tests on its own.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 
@@ -11,6 +11,7 @@ import {
   createRoutineRoutes,
   fireScheduledRoutine,
   type CreateRoutineRoutesDeps,
+  type DeliveryThreadPort,
   type RoutineLauncher,
 } from "../src/routes";
 import { createInMemoryRoutineStore } from "../src/store";
@@ -642,6 +643,53 @@ describe("createRoutineRoutes", () => {
       });
       expect(response.status).toBe(201);
       expect(seenInput).toEqual({ agent: "wfd_agent", prompt: "Do it" });
+    });
+  });
+
+  describe("runRef bucketing", () => {
+    function fakeDeliveryThreads(): DeliveryThreadPort & {
+      runRefs: string[];
+    } {
+      const runRefs: string[] = [];
+      return {
+        runRefs,
+        async createDeliveryThread(input) {
+          runRefs.push(input.runRef);
+          return { id: `thread_${String(runRefs.length)}` };
+        },
+      };
+    }
+
+    test("retrying the same fire within the same minute reuses runRef", async () => {
+      const deliveryThreads = fakeDeliveryThreads();
+      const deps = buildDeps({ launcher: fakeLauncher(), deliveryThreads });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { body: created } = await createRoutine(app, VALID_BODY);
+
+      setSystemTime(new Date("2026-01-01T00:00:10.000Z"));
+      await app.request(`/routines/${created["id"]}/run`, { method: "POST" });
+      setSystemTime(new Date("2026-01-01T00:00:50.000Z"));
+      await app.request(`/routines/${created["id"]}/run`, { method: "POST" });
+      setSystemTime();
+
+      expect(deliveryThreads.runRefs).toHaveLength(2);
+      expect(deliveryThreads.runRefs[0]).toBe(deliveryThreads.runRefs[1]);
+    });
+
+    test("retrying in a different minute mints a different runRef", async () => {
+      const deliveryThreads = fakeDeliveryThreads();
+      const deps = buildDeps({ launcher: fakeLauncher(), deliveryThreads });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { body: created } = await createRoutine(app, VALID_BODY);
+
+      setSystemTime(new Date("2026-01-01T00:00:10.000Z"));
+      await app.request(`/routines/${created["id"]}/run`, { method: "POST" });
+      setSystemTime(new Date("2026-01-01T00:01:10.000Z"));
+      await app.request(`/routines/${created["id"]}/run`, { method: "POST" });
+      setSystemTime();
+
+      expect(deliveryThreads.runRefs).toHaveLength(2);
+      expect(deliveryThreads.runRefs[0]).not.toBe(deliveryThreads.runRefs[1]);
     });
   });
 });
