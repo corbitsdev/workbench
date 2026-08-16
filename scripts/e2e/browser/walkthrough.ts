@@ -514,6 +514,25 @@ async function run(): Promise<void> {
       if (connected.kind !== "connected") {
         throw new Error(`expected the key-path connect to succeed, got: ${JSON.stringify(connected)}`);
       }
+      // col2 (the contextual panel carrying every "New chat" button this
+      // walkthrough clicks) opens per-navigation but also hydrates once
+      // from the tenant's own persisted `shell.col2Collapsed` preference
+      // shortly after mount (see apps/web/src/shell/shell-chrome-provider.tsx
+      // and col2-preference.ts) — a brand-new tenant has no stored value,
+      // which reads as collapsed, and that one-time hydration can resolve
+      // after a page has already rendered col2 open, collapsing it back out
+      // from under whatever this script is mid-click on. Setting the real
+      // preference now, the same way a returning user who already opened
+      // col2 once would have it stored, makes every later page load and
+      // reload hydrate straight to open — deterministic, not a workaround
+      // around the UI, just priming the same persisted state a human would
+      // have left behind.
+      await hubApi(
+        "PATCH",
+        `/api/tenants/${connected.tenantId}/preferences`,
+        { "shell.col2Collapsed": false },
+        cookies,
+      );
       const deadline = Date.now() + 60_000;
       for (;;) {
         if (sidecar.exited()) {
@@ -627,7 +646,7 @@ async function run(): Promise<void> {
     // --- Step 3: send "hi" in the Myra chat, expect *some* reply bubble
     await step(() => page, "08-send-hi-to-myra", async () => {
       const rowSelector = '.shell-ch-row-wrap[data-ctx-channel-title="Myra"] button.shell-ch-row';
-      await page.click(rowSelector);
+      await clickStable(page, rowSelector);
       // A freshly created channel launches its anchor instance on first
       // open (the same real hop chat.test.ts retries against a
       // transient 500 for up to 60s) before the composer can render —
@@ -660,11 +679,11 @@ async function run(): Promise<void> {
         await page.waitForSelector('.shell-ch-row-wrap[data-ctx-channel-title="Myra"]', {
           timeout: 15_000,
         });
-        await page.click(rowSelector);
+        await clickStable(page, rowSelector);
         await page.waitForSelector("textarea.chat-composer-input", { timeout: 30_000 });
       }
       await page.type("textarea.chat-composer-input", "hi");
-      await page.click('button[aria-label="Send"]');
+      await clickStable(page, 'button[aria-label="Send"]');
       await page.waitForSelector('div.chat-bubble-row[data-own="true"]', {
         timeout: 10_000,
       });
@@ -759,7 +778,10 @@ async function run(): Promise<void> {
             "(stuck disconnected) — CL-6067 reproduced",
         };
       }
-      await page.click('.shell-ch-row-wrap[data-ctx-channel-title="Myra"] button.shell-ch-row');
+      await clickStable(
+        page,
+        '.shell-ch-row-wrap[data-ctx-channel-title="Myra"] button.shell-ch-row',
+      );
       const couldNotLoad = await page
         .waitForFunction(() => document.body.textContent?.includes("Couldn't load"), {
           timeout: 10_000,
