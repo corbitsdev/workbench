@@ -631,8 +631,9 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 2: CL-6070 — create with Myra, then a second create that
-    // must resolve to the SAME workbench (find-or-create dedup, CL-6087).
+    // --- Step 2: CL-6089 — agents in the picker are templates: every
+    // create mints a fresh workbench. The second create must land
+    // somewhere NEW; only the initial land-hop ever reopens.
     let firstWorkbenchPath = "";
     await step(
       () => page,
@@ -655,58 +656,50 @@ async function run(): Promise<void> {
 
     await step(
       () => page,
-      "06-second-create-reopens-same-workbench",
+      "06-second-create-mints-new-workbench",
       async () => {
         // The sidebar (and its "+ New workbench" affordance) is always
         // present — no navigation needed before opening the picker again.
         await createMyraChat(page);
         await page.waitForFunction(
-          () => window.location.pathname.startsWith("/c/"),
+          (previous: string) => {
+            const current = window.location.pathname;
+            return current.startsWith("/c/") && current !== previous;
+          },
           { timeout: 15_000 },
+          firstWorkbenchPath,
         );
         const secondPath = await page.evaluate(() => window.location.pathname);
-        if (secondPath !== firstWorkbenchPath) {
-          return {
-            status: "fail",
-            detail:
-              `expected the second create to reopen ${firstWorkbenchPath} ` +
-              `(find-or-create dedup), landed at ${secondPath}`,
-          };
-        }
         return {
           status: "pass",
-          detail: `second create reopened the same workbench (${secondPath}) — no duplicate created`,
+          detail: `second create minted a fresh workbench (${secondPath}), distinct from ${firstWorkbenchPath}`,
         };
       },
     );
 
     await step(
       () => page,
-      "07-sidebar-myra-duplicates-CL-6070",
+      "07-sidebar-lists-each-minted-workbench",
       async () => {
         // The always-visible sidebar already lists every workbench — the
-        // rows are just there, no navigation or priming needed.
+        // rows are just there, no navigation or priming needed. Three Myra
+        // rows are expected here: the land-hop's home workbench plus the
+        // two template mints above (rows are named by their agent, CL-6089).
         await page.waitForSelector(".shell-ch-row-wrap", { timeout: 15_000 });
         const myraRows = await countMatching(
           page,
           '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
         );
-        if (myraRows === 1) {
+        if (myraRows !== 3) {
           return {
-            status: "pass",
-            detail:
-              "sidebar shows exactly 1 Myra row — dedup working, CL-6070 not reproduced",
-          };
-        }
-        if (myraRows >= 2) {
-          return {
-            status: "repro-confirmed",
-            detail: `sidebar shows ${myraRows} rows titled "Myra" — CL-6070 duplicate-row bug reproduced`,
+            status: "fail",
+            detail: `expected 3 Myra sidebar rows (home + two template mints), found ${myraRows}`,
           };
         }
         return {
-          status: "fail",
-          detail: `expected at least 1 Myra sidebar row, found ${myraRows}`,
+          status: "pass",
+          detail:
+            "sidebar lists 3 Myra rows — the home workbench and both template mints, one row per conversation",
         };
       },
     );
