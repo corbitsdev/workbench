@@ -24,6 +24,9 @@ type AgentFixture = {
   readonly definitionId: string;
   name: string;
   systemPrompt: string;
+  toolPackagePins: { name: string; version: string }[];
+  skills: string[];
+  model?: string;
 };
 
 const MYRA: AgentFixture = {
@@ -32,22 +35,51 @@ const MYRA: AgentFixture = {
   definitionId: "wfd_myra",
   name: "Myra",
   systemPrompt: "Be a helpful assistant.",
+  toolPackagePins: [],
+  skills: [],
+};
+
+type VersionFixture = {
+  readonly commitSha: string;
+  readonly message: string;
+  readonly author: string;
+  readonly committedAtIso: string;
+  readonly current: boolean;
 };
 
 function stubFetch(options: {
   readonly agents?: readonly AgentFixture[];
   readonly saveFails?: boolean;
+  readonly versions?: readonly VersionFixture[];
+  readonly capabilityInventory?: {
+    readonly toolPackages: readonly { name: string }[];
+    readonly skills: readonly { name: string }[];
+    readonly models: readonly { canonicalName: string }[];
+  };
+  readonly addCapabilityFails?: boolean;
+  readonly restoreFails?: boolean;
   readonly onSave?: (
     definitionId: string,
     body: { name: string; systemPrompt: string },
   ) => void;
   readonly onRefresh?: (address: string) => void;
+  readonly onAddCapability?: (definitionId: string, body: unknown) => void;
+  readonly onRestore?: (definitionId: string, commitSha: string) => void;
 }) {
   // Cloned so a save in one test can never mutate a fixture another
   // test (or another `stubFetch` call in the same test) still reads —
   // `agents`/`MYRA` are shared object literals, not fresh per call.
-  const agents = (options.agents ?? [MYRA]).map((agent) => ({ ...agent }));
+  const agents = (options.agents ?? [MYRA]).map((agent) => ({
+    ...agent,
+    toolPackagePins: [...agent.toolPackagePins],
+    skills: [...agent.skills],
+  }));
   const refreshCalls: string[] = [];
+  const capabilityInventory = options.capabilityInventory ?? {
+    toolPackages: [],
+    skills: [],
+    models: [],
+  };
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
@@ -89,6 +121,71 @@ function stubFetch(options: {
         })),
       });
     }
+    if (/\/agent-definitions\/capabilities\/inventory$/.test(path)) {
+      return json(capabilityInventory);
+    }
+    const versionsMatch = /\/agent-definitions\/([^/]+)\/versions$/.exec(path);
+    if (versionsMatch !== null) {
+      return json({ versions: options.versions ?? [] });
+    }
+    const restoreMatch = /\/agent-definitions\/([^/]+)\/restore$/.exec(path);
+    if (restoreMatch !== null) {
+      const definitionId = restoreMatch[1] as string;
+      const agent = agents.find((a) => a.definitionId === definitionId);
+      if (agent === undefined) {
+        return json(
+          { error: { code: "not_found", message: "no such agent" } },
+          404,
+        );
+      }
+      if (options.restoreFails === true) {
+        return json({ error: { code: "internal", message: "boom" } }, 500);
+      }
+      const body = JSON.parse(String(init?.body)) as { commitSha: string };
+      options.onRestore?.(definitionId, body.commitSha);
+      return json({
+        name: agent.name,
+        systemPrompt: agent.systemPrompt,
+        toolPackagePins: agent.toolPackagePins,
+        skills: agent.skills,
+        model: agent.model,
+      });
+    }
+    const capabilitiesMatch =
+      /\/agent-definitions\/([^/]+)\/capabilities$/.exec(path);
+    if (capabilitiesMatch !== null) {
+      const definitionId = capabilitiesMatch[1] as string;
+      const agent = agents.find((a) => a.definitionId === definitionId);
+      if (agent === undefined) {
+        return json(
+          { error: { code: "not_found", message: "no such agent" } },
+          404,
+        );
+      }
+      if (options.addCapabilityFails === true) {
+        return json({ error: { code: "bad_request", message: "boom" } }, 400);
+      }
+      const body = JSON.parse(String(init?.body)) as
+        | { kind: "toolPackage"; name: string }
+        | { kind: "skill"; name: string }
+        | { kind: "model"; canonicalName: string };
+      options.onAddCapability?.(definitionId, body);
+      if (body.kind === "toolPackage") {
+        agent.toolPackagePins = [
+          ...agent.toolPackagePins,
+          { name: body.name, version: "*" },
+        ];
+      } else if (body.kind === "skill") {
+        agent.skills = [...agent.skills, body.name];
+      } else {
+        agent.model = body.canonicalName;
+      }
+      return json({
+        toolPackagePins: agent.toolPackagePins,
+        skills: agent.skills,
+        model: agent.model,
+      });
+    }
     const definitionMatch = /\/agent-definitions\/([^/]+)$/.exec(path);
     if (definitionMatch !== null) {
       const definitionId = definitionMatch[1];
@@ -112,7 +209,13 @@ function stubFetch(options: {
         options.onSave?.(definitionId as string, body);
         return json({ name: agent.name, systemPrompt: agent.systemPrompt });
       }
-      return json({ name: agent.name, systemPrompt: agent.systemPrompt });
+      return json({
+        name: agent.name,
+        systemPrompt: agent.systemPrompt,
+        toolPackagePins: agent.toolPackagePins,
+        skills: agent.skills,
+        model: agent.model,
+      });
     }
     throw new Error(`unstubbed fetch: ${path}`);
   }) as typeof fetch;
@@ -258,6 +361,8 @@ describe("Assistant settings section", () => {
       definitionId: "wfd_researcher",
       name: "Researcher",
       systemPrompt: "Dig up sources.",
+      toolPackagePins: [],
+      skills: [],
     };
     const saves: {
       definitionId: string;
@@ -324,5 +429,239 @@ describe("Assistant settings section", () => {
       "textarea",
     ) as HTMLTextAreaElement | null;
     expect(myraTextarea?.value).toBe("Be a helpful assistant.");
+  });
+});
+
+describe("Assistant settings section — Capabilities", () => {
+  test("lists current tools/skills/model and offers only what's not already attached", async () => {
+    const withCapabilities: AgentFixture = {
+      ...MYRA,
+      toolPackagePins: [{ name: "@corbits/github-tools", version: "*" }],
+      skills: ["research"],
+    };
+    stubFetch({
+      agents: [withCapabilities],
+      capabilityInventory: {
+        toolPackages: [
+          { name: "@corbits/github-tools" },
+          { name: "@corbits/granola-tools" },
+        ],
+        skills: [{ name: "research" }, { name: "writing" }],
+        models: [{ canonicalName: "anthropic/claude-sonnet" }],
+      },
+    });
+    const el = mount(baseProps());
+    await settle();
+
+    const listText = el.querySelector(
+      ".chat-settings-capability-list",
+    )?.textContent;
+    expect(listText).toContain("@corbits/github-tools");
+    expect(listText).toContain("research");
+
+    const choiceSelect = el.querySelectorAll(
+      ".chat-settings-capability-add select",
+    )[1] as HTMLSelectElement | null;
+    const toolOptions = Array.from(choiceSelect?.options ?? []).map(
+      (option) => option.value,
+    );
+    // The already-pinned tool package is not offered again; the
+    // not-yet-pinned one is.
+    expect(toolOptions).not.toContain("@corbits/github-tools");
+    expect(toolOptions).toContain("@corbits/granola-tools");
+  });
+
+  test("adding a capability calls the capabilities route, refreshes the running instance, and reflects the addition", async () => {
+    let addedBody: unknown;
+    const { refreshCalls } = stubFetch({
+      capabilityInventory: {
+        toolPackages: [{ name: "@corbits/github-tools" }],
+        skills: [],
+        models: [],
+      },
+      onAddCapability: (_definitionId, body) => {
+        addedBody = body;
+      },
+    });
+    const el = mount(baseProps());
+    await settle();
+
+    const kindSelect = el.querySelectorAll(
+      ".chat-settings-capability-add select",
+    )[0] as HTMLSelectElement | null;
+    expect(kindSelect?.value).toBe("toolPackage");
+
+    const choiceSelect = el.querySelectorAll(
+      ".chat-settings-capability-add select",
+    )[1] as HTMLSelectElement | null;
+    act(() => {
+      if (choiceSelect !== null) {
+        choiceSelect.value = "@corbits/github-tools";
+        choiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await settle();
+
+    const addButton = findButton(el, "Add");
+    expect(addButton?.disabled).toBe(false);
+    act(() => {
+      addButton?.click();
+    });
+    await settle();
+
+    expect(addedBody).toEqual({
+      kind: "toolPackage",
+      name: "@corbits/github-tools",
+    });
+    expect(refreshCalls).toEqual(["myra@acme.example"]);
+    const badges = Array.from(
+      el.querySelectorAll(".chat-settings-capability-list"),
+    )[0]?.textContent;
+    expect(badges).toContain("@corbits/github-tools");
+  });
+
+  test("a rejected capability add shows an inline error and never claims success", async () => {
+    stubFetch({
+      addCapabilityFails: true,
+      capabilityInventory: {
+        toolPackages: [{ name: "@corbits/github-tools" }],
+        skills: [],
+        models: [],
+      },
+    });
+    const el = mount(baseProps());
+    await settle();
+
+    const choiceSelect = el.querySelectorAll(
+      ".chat-settings-capability-add select",
+    )[1] as HTMLSelectElement | null;
+    act(() => {
+      if (choiceSelect !== null) {
+        choiceSelect.value = "@corbits/github-tools";
+        choiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await settle();
+    act(() => {
+      findButton(el, "Add")?.click();
+    });
+    await settle();
+
+    expect(el.querySelector(".chat-dialog-error")?.textContent).toBe(
+      "Couldn't add that — it may no longer be available.",
+    );
+  });
+});
+
+describe("Assistant settings section — History", () => {
+  test("lists version history newest first, with the current version's restore disabled", async () => {
+    stubFetch({
+      versions: [
+        {
+          commitSha: "sha2",
+          message: "Update agent instructions for myra",
+          author: "Ada",
+          committedAtIso: new Date().toISOString(),
+          current: true,
+        },
+        {
+          commitSha: "sha1",
+          message: "Define agent Myra",
+          author: "Ada",
+          committedAtIso: new Date().toISOString(),
+          current: false,
+        },
+      ],
+    });
+    const el = mount(baseProps());
+    await settle();
+
+    const rows = el.querySelectorAll("table tbody tr");
+    expect(rows.length).toBe(2);
+    const restoreButtons = Array.from(
+      el.querySelectorAll("table tbody tr button"),
+    ) as HTMLButtonElement[];
+    expect(restoreButtons[0]?.disabled).toBe(true);
+    expect(restoreButtons[1]?.disabled).toBe(false);
+  });
+
+  test("restoring a version calls restore, refreshes the running instance, and updates the editor", async () => {
+    let restoredSha: string | undefined;
+    const withCapabilities: AgentFixture = {
+      ...MYRA,
+      name: "Myra",
+      systemPrompt: "You are now polite.",
+    };
+    const { refreshCalls } = stubFetch({
+      agents: [withCapabilities],
+      versions: [
+        {
+          commitSha: "sha2",
+          message: "Update agent instructions for myra",
+          author: "Ada",
+          committedAtIso: new Date().toISOString(),
+          current: true,
+        },
+        {
+          commitSha: "sha1",
+          message: "Define agent Myra",
+          author: "Ada",
+          committedAtIso: new Date().toISOString(),
+          current: false,
+        },
+      ],
+      onRestore: (_definitionId, commitSha) => {
+        restoredSha = commitSha;
+      },
+    });
+    const el = mount(baseProps());
+    await settle();
+
+    const restoreButtons = Array.from(
+      el.querySelectorAll("table tbody tr button"),
+    ) as HTMLButtonElement[];
+    act(() => {
+      restoreButtons[1]?.click();
+    });
+    await settle();
+
+    expect(restoredSha).toBe("sha1");
+    expect(refreshCalls).toEqual(["myra@acme.example"]);
+  });
+
+  test("a failed restore shows an inline error", async () => {
+    stubFetch({
+      restoreFails: true,
+      versions: [
+        {
+          commitSha: "sha2",
+          message: "Update agent instructions for myra",
+          author: "Ada",
+          committedAtIso: new Date().toISOString(),
+          current: true,
+        },
+        {
+          commitSha: "sha1",
+          message: "Define agent Myra",
+          author: "Ada",
+          committedAtIso: new Date().toISOString(),
+          current: false,
+        },
+      ],
+    });
+    const el = mount(baseProps());
+    await settle();
+
+    const restoreButtons = Array.from(
+      el.querySelectorAll("table tbody tr button"),
+    ) as HTMLButtonElement[];
+    act(() => {
+      restoreButtons[1]?.click();
+    });
+    await settle();
+
+    expect(el.querySelector(".chat-dialog-error")?.textContent).toBe(
+      "Couldn't restore that version — try again.",
+    );
   });
 });
