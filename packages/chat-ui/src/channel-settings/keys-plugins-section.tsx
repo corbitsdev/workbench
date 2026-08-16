@@ -19,29 +19,27 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  EmptyState,
   Input,
-  Skeleton,
   toast,
 } from "@corbits/react-ui";
 import {
   listPluginsForTenant,
   type ResolvedPlugin,
 } from "@workbench/connections/plugins";
-import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import {
   completeConnectorCredential,
   KeysPluginsApiError,
   removeWorkbenchCredential,
   testConnectorCredential,
 } from "./keys-plugins-api";
-
-type LoadState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly message: string }
-  | { readonly kind: "ready"; readonly plugins: readonly ResolvedPlugin[] };
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof KeysPluginsApiError ? cause.message : fallback;
@@ -52,36 +50,32 @@ export function KeysPluginsSection({
 }: {
   readonly tenantId: string;
 }) {
-  const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [query, setQuery] = useState<APIQuery<readonly ResolvedPlugin[]>>({
+    kind: "loading",
+  });
   const [rowError, setRowError] = useState<string | null>(null);
   const [connectTarget, setConnectTarget] = useState<ResolvedPlugin | null>(
     null,
   );
 
   function load() {
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     listPluginsForTenant(tenantId)
-      .then((plugins) => setState({ kind: "ready", plugins }))
-      .catch((cause: unknown) =>
-        setState({
+      .then((plugins) => setQuery({ kind: "ready", data: plugins }))
+      .catch((cause: unknown) => {
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
+        }
+        setQuery({
           kind: "error",
-          message: errorMessage(cause, "Couldn't load Keys & plugins."),
-        }),
-      );
+          message: describeQueryError(cause),
+          retry: load,
+        });
+      });
   }
 
   useEffect(load, [tenantId]);
-
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title="Couldn't load Keys & plugins"
-        description={state.message}
-      />
-    );
-  }
 
   function handleRemove(plugin: ResolvedPlugin) {
     if (plugin.credentialId === null) return;
@@ -97,84 +91,95 @@ export function KeysPluginsSection({
   }
 
   return (
-    <div className="channel-settings-pane">
-      <p className="chat-settings-field-hint">
-        A key connected here belongs to this workbench alone. Anything not
-        connected here is the workbench default — connect your own key to
-        override it.
-      </p>
-      {rowError !== null ? (
-        <p className="chat-dialog-error" role="alert">
-          {rowError}
-        </p>
-      ) : null}
-      <div className="settings-connections-grid">
-        {state.plugins.map((plugin) => (
-          <div key={plugin.descriptor.id} className="settings-connection-card">
-            <span className="settings-connection-card-title">
-              {plugin.descriptor.displayName}
-            </span>
-            <Badge
-              tone={
-                plugin.status === "connected"
-                  ? "success"
-                  : plugin.status === "needs_attention"
-                    ? "danger"
-                    : "neutral"
-              }
-            >
-              {plugin.status === "connected"
-                ? "Connected"
-                : plugin.status === "needs_attention"
-                  ? "Needs attention"
-                  : "Not connected"}
-            </Badge>
-            {plugin.provenance !== null ? (
-              <Badge
-                tone={
-                  plugin.provenance === "this-workbench" ? "success" : "neutral"
-                }
+    <QueryView query={query} label="Keys & plugins">
+      {(plugins) => (
+        <div className="channel-settings-pane">
+          <p className="chat-settings-field-hint">
+            A key connected here belongs to this workbench alone. Anything not
+            connected here is the workbench default — connect your own key to
+            override it.
+          </p>
+          {rowError !== null ? (
+            <p className="chat-dialog-error" role="alert">
+              {rowError}
+            </p>
+          ) : null}
+          <div className="settings-connections-grid">
+            {plugins.map((plugin) => (
+              <div
+                key={plugin.descriptor.id}
+                className="settings-connection-card"
               >
-                {plugin.provenance === "this-workbench"
-                  ? "Set here"
-                  : "Workbench default"}
-              </Badge>
-            ) : null}
-            <div className="settings-connection-card-actions">
-              {plugin.status !== "not_connected" &&
-              plugin.provenance === "this-workbench" ? (
-                <ConfirmButton
-                  variant="destructive"
-                  size="sm"
-                  confirmLabel="Remove"
-                  onConfirm={() => handleRemove(plugin)}
+                <span className="settings-connection-card-title">
+                  {plugin.descriptor.displayName}
+                </span>
+                <Badge
+                  tone={
+                    plugin.status === "connected"
+                      ? "success"
+                      : plugin.status === "needs_attention"
+                        ? "danger"
+                        : "neutral"
+                  }
                 >
-                  Remove
-                </ConfirmButton>
-              ) : (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => setConnectTarget(plugin)}
-                >
-                  {plugin.provenance === "inherited" ? "Override" : "Connect"}
-                </Button>
-              )}
-            </div>
+                  {plugin.status === "connected"
+                    ? "Connected"
+                    : plugin.status === "needs_attention"
+                      ? "Needs attention"
+                      : "Not connected"}
+                </Badge>
+                {plugin.provenance !== null ? (
+                  <Badge
+                    tone={
+                      plugin.provenance === "this-workbench"
+                        ? "success"
+                        : "neutral"
+                    }
+                  >
+                    {plugin.provenance === "this-workbench"
+                      ? "Set here"
+                      : "Workbench default"}
+                  </Badge>
+                ) : null}
+                <div className="settings-connection-card-actions">
+                  {plugin.status !== "not_connected" &&
+                  plugin.provenance === "this-workbench" ? (
+                    <ConfirmButton
+                      variant="destructive"
+                      size="sm"
+                      confirmLabel="Remove"
+                      onConfirm={() => handleRemove(plugin)}
+                    >
+                      Remove
+                    </ConfirmButton>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setConnectTarget(plugin)}
+                    >
+                      {plugin.provenance === "inherited"
+                        ? "Override"
+                        : "Connect"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      <ConnectDialog
-        tenantId={tenantId}
-        plugin={connectTarget}
-        onClose={() => setConnectTarget(null)}
-        onConnected={() => {
-          setConnectTarget(null);
-          load();
-        }}
-      />
-    </div>
+          <ConnectDialog
+            tenantId={tenantId}
+            plugin={connectTarget}
+            onClose={() => setConnectTarget(null)}
+            onConnected={() => {
+              setConnectTarget(null);
+              load();
+            }}
+          />
+        </div>
+      )}
+    </QueryView>
   );
 }
 

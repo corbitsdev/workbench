@@ -16,7 +16,6 @@ import {
   EmptyState,
   Input,
   SettingsPanel,
-  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -27,9 +26,15 @@ import {
 } from "@corbits/react-ui";
 import { credentialTypes } from "@intx/types";
 import type { CredentialType } from "@intx/types";
-import { CircleAlert, KeyRound } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import {
   createCredential,
   deleteCredential,
@@ -38,7 +43,6 @@ import {
   type Credential,
   type Provider,
 } from "./credentials-api";
-import { errorMessage, type LoadState } from "./load-state";
 import { KindCards } from "./kind-cards";
 import { SETTINGS_STRINGS } from "./strings";
 
@@ -69,7 +73,7 @@ export function CredentialsSection({
 }: {
   readonly tenantId: string | null;
 }) {
-  const [state, setState] = useState<LoadState<CredentialsData>>({
+  const [query, setQuery] = useState<APIQuery<CredentialsData>>({
     kind: "loading",
   });
   const [reloadKey, setReloadKey] = useState(0);
@@ -78,22 +82,35 @@ export function CredentialsSection({
   const [createError, setCreateError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
+  function reload() {
+    setReloadKey((value) => value + 1);
+  }
+
   useEffect(() => {
     if (tenantId === null) return;
     let cancelled = false;
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     Promise.all([listCredentials(tenantId), listProviders(tenantId)])
       .then(([credentials, providers]) => {
         if (!cancelled)
-          setState({ kind: "ready", data: { credentials, providers } });
+          setQuery({ kind: "ready", data: { credentials, providers } });
       })
       .catch((cause: unknown) => {
-        if (!cancelled)
-          setState({ kind: "error", message: errorMessage(cause) });
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
+        }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: reload,
+        });
       });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
   if (tenantId === null) {
@@ -103,20 +120,6 @@ export function CredentialsSection({
         description={SETTINGS_STRINGS.benchNoneSelectedDescription}
       />
     );
-  }
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title={`Couldn't load ${SETTINGS_STRINGS.credentialsLoadError}`}
-        description={state.message}
-      />
-    );
-  }
-
-  function reload() {
-    setReloadKey((value) => value + 1);
   }
 
   function handleCreate(input: {
@@ -161,39 +164,44 @@ export function CredentialsSection({
       .catch(() => setRowError(SETTINGS_STRINGS.credentialsDeleteError));
   }
 
-  const providerNameById = new Map(
-    state.data.providers.map((provider) => [provider.id, provider.name]),
-  );
-
   return (
-    <SettingsPanel
-      title={SETTINGS_STRINGS.credentialsSectionTitle}
-      description={SETTINGS_STRINGS.credentialsSectionDescription}
-    >
-      <div className="settings-section-toolbar">
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
-          {SETTINGS_STRINGS.credentialsCreateAction}
-        </Button>
-      </div>
-      {rowError !== null && (
-        <p className="settings-inline-error" role="alert">
-          {rowError}
-        </p>
-      )}
-      <CredentialsTable
-        credentials={state.data.credentials}
-        providerNameById={providerNameById}
-        onDelete={handleDelete}
-      />
-      <CreateCredentialDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        providers={state.data.providers}
-        onCreate={handleCreate}
-        submitting={creating}
-        error={createError}
-      />
-    </SettingsPanel>
+    <QueryView query={query} label={SETTINGS_STRINGS.credentialsLoadError}>
+      {({ credentials, providers }) => {
+        const providerNameById = new Map(
+          providers.map((provider) => [provider.id, provider.name]),
+        );
+        return (
+          <SettingsPanel
+            title={SETTINGS_STRINGS.credentialsSectionTitle}
+            description={SETTINGS_STRINGS.credentialsSectionDescription}
+          >
+            <div className="settings-section-toolbar">
+              <Button variant="primary" onClick={() => setCreateOpen(true)}>
+                {SETTINGS_STRINGS.credentialsCreateAction}
+              </Button>
+            </div>
+            {rowError !== null && (
+              <p className="settings-inline-error" role="alert">
+                {rowError}
+              </p>
+            )}
+            <CredentialsTable
+              credentials={credentials}
+              providerNameById={providerNameById}
+              onDelete={handleDelete}
+            />
+            <CreateCredentialDialog
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              providers={providers}
+              onCreate={handleCreate}
+              submitting={creating}
+              error={createError}
+            />
+          </SettingsPanel>
+        );
+      }}
+    </QueryView>
   );
 }
 

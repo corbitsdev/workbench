@@ -5,6 +5,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { UnauthenticatedError } from "@corbits/api-query";
 import {
   BenchApiError,
   createBench,
@@ -68,9 +69,11 @@ describe("listMyMemberships", () => {
     await expect(listMyMemberships()).rejects.toBeInstanceOf(BenchApiError);
   });
 
-  test("throws a BenchApiError on 401", async () => {
+  test("throws an UnauthenticatedError on 401", async () => {
     stubFetch(() => json(null, 401));
-    await expect(listMyMemberships()).rejects.toThrow(/Not signed in/);
+    await expect(listMyMemberships()).rejects.toBeInstanceOf(
+      UnauthenticatedError,
+    );
   });
 });
 

@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { ApiQueryError } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
 import {
   createWebhookTrigger,
   deleteWebhookTrigger,
@@ -149,16 +149,11 @@ describe("error handling", () => {
     );
   });
 
-  test("a 401 reports not signed in", async () => {
+  test("a 401 throws an UnauthenticatedError", async () => {
     stubFetch(() => new Response(null, { status: 401 }));
-    let caught: unknown;
-    try {
-      await listWebhookTriggers("tnt_1");
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(ApiQueryError);
-    expect((caught as ApiQueryError).status).toBe(401);
+    await expect(listWebhookTriggers("tnt_1")).rejects.toBeInstanceOf(
+      UnauthenticatedError,
+    );
   });
 });
 

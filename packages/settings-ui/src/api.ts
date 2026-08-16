@@ -9,6 +9,7 @@
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 import { TenantResponse, UserProfile } from "@intx/types";
+import { UnauthenticatedError } from "@corbits/api-query";
 
 export type Bench = typeof TenantResponse.infer;
 export type Account = typeof UserProfile.infer;
@@ -48,7 +49,7 @@ async function request<T>(
     );
   }
   if (response.status === 401) {
-    throw new SettingsApiError(`Not signed in for ${path}.`, 401);
+    throw new UnauthenticatedError();
   }
   if (!response.ok) {
     throw new SettingsApiError(

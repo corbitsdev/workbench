@@ -4,6 +4,7 @@
 // `packages/bench-ui` or `packages/settings-ui`.
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
+import { UnauthenticatedError } from "@corbits/api-query/envelope";
 
 const BenchSettingsResponse = type({
   purpose: "string | null",
@@ -39,7 +40,7 @@ async function request<T>(
     );
   }
   if (response.status === 401) {
-    throw new BenchSettingsApiError(`Not signed in for ${path}.`, 401);
+    throw new UnauthenticatedError();
   }
   if (!response.ok) {
     throw new BenchSettingsApiError(

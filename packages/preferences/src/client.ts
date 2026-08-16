@@ -4,6 +4,7 @@
 // apps/web.
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
+import { UnauthenticatedError } from "@corbits/api-query/envelope";
 
 const PreferencesResponse = type({
   preferences: "Record<string, unknown>",
@@ -37,7 +38,7 @@ async function request<T>(
     );
   }
   if (response.status === 401) {
-    throw new PreferencesApiError(`Not signed in for ${path}.`, 401);
+    throw new UnauthenticatedError();
   }
   if (!response.ok) {
     throw new PreferencesApiError(

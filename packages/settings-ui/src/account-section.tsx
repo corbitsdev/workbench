@@ -3,18 +3,17 @@
 // `vendor/intx/hub-api/src/routes` — only tenants and principals carry a
 // PATCH); this section renders whatever `GET /api/me` returns and says so.
 
-import {
-  Badge,
-  Button,
-  EmptyState,
-  SettingsPanel,
-  Skeleton,
-} from "@corbits/react-ui";
-import { CircleAlert, LogOut } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Badge, Button, SettingsPanel } from "@corbits/react-ui";
+import { LogOut } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import { getAccount, type Account } from "./api";
-import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 
 export function AccountSection({
@@ -22,42 +21,45 @@ export function AccountSection({
 }: {
   readonly onSignOut?: () => void;
 }) {
-  const [state, setState] = useState<LoadState<Account>>({ kind: "loading" });
+  const [query, setQuery] = useState<APIQuery<Account>>({ kind: "loading" });
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setQuery({ kind: "loading" });
     let cancelled = false;
     getAccount()
       .then((account) => {
-        if (!cancelled) setState({ kind: "ready", data: account });
+        if (!cancelled) setQuery({ kind: "ready", data: account });
       })
       .catch((cause: unknown) => {
-        if (!cancelled) {
-          setState({ kind: "error", message: errorMessage(cause) });
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
         }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: load,
+        });
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title={`Couldn't load ${SETTINGS_STRINGS.accountLoadError}`}
-        description={state.message}
-      />
-    );
-  }
+  useEffect(() => load(), [load]);
 
   return (
-    <AccountSectionView
-      name={state.data.name}
-      email={state.data.email}
-      emailVerified={state.data.emailVerified}
-      {...(onSignOut !== undefined ? { onSignOut } : {})}
-    />
+    <QueryView query={query} label={SETTINGS_STRINGS.accountLoadError}>
+      {(account) => (
+        <AccountSectionView
+          name={account.name}
+          email={account.email}
+          emailVerified={account.emailVerified}
+          {...(onSignOut !== undefined ? { onSignOut } : {})}
+        />
+      )}
+    </QueryView>
   );
 }
 

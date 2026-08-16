@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { UnauthenticatedError } from "@corbits/api-query";
 import {
   SettingsApiError,
   getAccount,
@@ -53,9 +54,9 @@ describe("getAccount", () => {
     expect(account.name).toBe("Ada Lovelace");
   });
 
-  test("throws a SettingsApiError on 401", async () => {
+  test("throws an UnauthenticatedError on 401", async () => {
     stubFetch(() => json(null, 401));
-    await expect(getAccount()).rejects.toBeInstanceOf(SettingsApiError);
+    await expect(getAccount()).rejects.toBeInstanceOf(UnauthenticatedError);
   });
 });
 

@@ -12,6 +12,7 @@ import {
   TenantResponse,
   paginatedSchema,
 } from "@intx/types";
+import { UnauthenticatedError } from "@corbits/api-query";
 import { getBenchSettings, patchBenchSettings } from "@corbits/bench/client";
 import type {
   BenchSettingsPatch,
@@ -60,7 +61,7 @@ async function request<T>(
     );
   }
   if (response.status === 401) {
-    throw new BenchApiError(`Not signed in for ${path}.`, 401);
+    throw new UnauthenticatedError();
   }
   if (!response.ok) {
     throw new BenchApiError(

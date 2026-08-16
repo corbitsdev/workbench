@@ -23,14 +23,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  EmptyState,
   formatRelativeTime,
-  Skeleton,
 } from "@corbits/react-ui";
 import type { ConnectorDescriptor } from "@workbench/connections/registry";
-import { CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import {
   bindRoutineWebhookTrigger,
   createGranolaWebhookTrigger,
@@ -43,7 +46,6 @@ import {
   type GranolaRoutine,
   type GranolaWebhookTrigger,
 } from "./granola-webhook-api";
-import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 import { CopyableCodeRow, WebhookSecretPanel } from "./webhook-secret-panel";
 
@@ -113,7 +115,7 @@ export function GranolaWebhookCard({
   readonly tenantId: string;
   readonly descriptor: ConnectorDescriptor;
 }) {
-  const [state, setState] = useState<LoadState<GranolaWebhookData>>({
+  const [query, setQuery] = useState<APIQuery<GranolaWebhookData>>({
     kind: "loading",
   });
   const [reloadKey, setReloadKey] = useState(0);
@@ -128,94 +130,96 @@ export function GranolaWebhookCard({
     loadedOnceRef.current = false;
   }, [tenantId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!loadedOnceRef.current) setState({ kind: "loading" });
-    loadGranolaWebhookData(tenantId)
-      .then((data) => {
-        if (cancelled) return;
-        loadedOnceRef.current = true;
-        setState({ kind: "ready", data });
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled)
-          setState({ kind: "error", message: errorMessage(cause) });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, reloadKey]);
-
   function reload() {
     setReloadKey((value) => value + 1);
   }
 
-  if (state.kind === "loading") {
-    return <Skeleton className="settings-connection-card" />;
-  }
-  if (state.kind === "error") {
-    return (
-      <div className="settings-connection-card">
-        <span className="settings-connection-card-title">
-          {descriptor.displayName}
-        </span>
-        <EmptyState
-          icon={<CircleAlert />}
-          title={SETTINGS_STRINGS.connectionsWebhookLoadError}
-          description={state.message}
-        />
-      </div>
-    );
-  }
-
-  const triggers = boundTriggers(state.data.bindings);
-  const connected = triggers.length > 0;
-  const lastFiredAt = mostRecentFiredAt(triggers);
+  useEffect(() => {
+    let cancelled = false;
+    if (!loadedOnceRef.current) setQuery({ kind: "loading" });
+    loadGranolaWebhookData(tenantId)
+      .then((data) => {
+        if (cancelled) return;
+        loadedOnceRef.current = true;
+        setQuery({ kind: "ready", data });
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
+        }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: reload,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, reloadKey]);
 
   return (
-    <>
-      <div className="settings-connection-card">
-        <span className="settings-connection-card-title">
-          {descriptor.displayName}
-        </span>
-        <Badge tone={connected ? "success" : "neutral"}>
-          {connected
-            ? SETTINGS_STRINGS.connectionsStatusConnected
-            : SETTINGS_STRINGS.connectionsWebhookNotSetUp}
-        </Badge>
-        {connected && (
-          <span className="settings-connection-card-name">
-            {SETTINGS_STRINGS.connectionsWebhookTriggerCount(triggers.length)} ·{" "}
-            {lastFiredAt !== null
-              ? SETTINGS_STRINGS.connectionsWebhookLastDelivery(
-                  formatRelativeTime(lastFiredAt),
-                )
-              : SETTINGS_STRINGS.connectionsWebhookNoDeliveries}
-          </span>
-        )}
-        <span className="settings-connection-card-pinned">
-          {SETTINGS_STRINGS.connectionsWebhookDirectionNote}
-        </span>
-        <div className="settings-connection-card-actions">
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setDialogOpen(true)}
-          >
-            {connected
-              ? SETTINGS_STRINGS.connectionsWebhookManageAction
-              : SETTINGS_STRINGS.connectionsWebhookSetUpAction}
-          </Button>
-        </div>
-      </div>
-      <GranolaWebhookDialog
-        open={dialogOpen}
-        tenantId={tenantId}
-        bindings={state.data.bindings}
-        onClose={() => setDialogOpen(false)}
-        onChanged={reload}
-      />
-    </>
+    <QueryView
+      query={query}
+      label={SETTINGS_STRINGS.connectionsWebhookLoadError}
+    >
+      {({ bindings }) => {
+        const triggers = boundTriggers(bindings);
+        const connected = triggers.length > 0;
+        const lastFiredAt = mostRecentFiredAt(triggers);
+        return (
+          <>
+            <div className="settings-connection-card">
+              <span className="settings-connection-card-title">
+                {descriptor.displayName}
+              </span>
+              <Badge tone={connected ? "success" : "neutral"}>
+                {connected
+                  ? SETTINGS_STRINGS.connectionsStatusConnected
+                  : SETTINGS_STRINGS.connectionsWebhookNotSetUp}
+              </Badge>
+              {connected && (
+                <span className="settings-connection-card-name">
+                  {SETTINGS_STRINGS.connectionsWebhookTriggerCount(
+                    triggers.length,
+                  )}{" "}
+                  ·{" "}
+                  {lastFiredAt !== null
+                    ? SETTINGS_STRINGS.connectionsWebhookLastDelivery(
+                        formatRelativeTime(lastFiredAt),
+                      )
+                    : SETTINGS_STRINGS.connectionsWebhookNoDeliveries}
+                </span>
+              )}
+              <span className="settings-connection-card-pinned">
+                {SETTINGS_STRINGS.connectionsWebhookDirectionNote}
+              </span>
+              <div className="settings-connection-card-actions">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setDialogOpen(true)}
+                >
+                  {connected
+                    ? SETTINGS_STRINGS.connectionsWebhookManageAction
+                    : SETTINGS_STRINGS.connectionsWebhookSetUpAction}
+                </Button>
+              </div>
+            </div>
+            <GranolaWebhookDialog
+              open={dialogOpen}
+              tenantId={tenantId}
+              bindings={bindings}
+              onClose={() => setDialogOpen(false)}
+              onChanged={reload}
+            />
+          </>
+        );
+      }}
+    </QueryView>
   );
 }
 
@@ -267,7 +271,7 @@ function GranolaWebhookDialog({
         });
         onChanged();
       })
-      .catch((cause: unknown) => setError(errorMessage(cause)))
+      .catch((cause: unknown) => setError(describeQueryError(cause)))
       .finally(() => setBusyRoutineId(null));
   }
 
@@ -285,7 +289,7 @@ function GranolaWebhookDialog({
         });
         onChanged();
       })
-      .catch((cause: unknown) => setError(errorMessage(cause)))
+      .catch((cause: unknown) => setError(describeQueryError(cause)))
       .finally(() => setBusyRoutineId(null));
   }
 

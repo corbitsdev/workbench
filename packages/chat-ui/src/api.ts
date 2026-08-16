@@ -13,6 +13,7 @@ import type { ArkErrors } from "arktype";
 import { Part } from "@corbits/chat/parts";
 import { parseParticipants } from "@corbits/chat/participants";
 import type { ParticipantRecord } from "@corbits/chat/participants";
+import { UnauthenticatedError } from "@corbits/api-query";
 import { CHAT_STRINGS } from "./strings";
 
 export {
@@ -222,7 +223,7 @@ async function request<T>(
     );
   }
   if (response.status === 401) {
-    throw new ChatApiError(`Not signed in for ${path}.`, 401);
+    throw new UnauthenticatedError();
   }
   if (!response.ok) {
     throw new ChatApiError(
@@ -455,6 +456,9 @@ export async function unpinMessage(
   const response = await fetch(pinPath(tenantId, channelId, messageId), {
     method: "DELETE",
   });
+  if (response.status === 401) {
+    throw new UnauthenticatedError();
+  }
   if (!response.ok) {
     throw new ChatApiError(
       `The server answered ${response.status} for ${pinPath(tenantId, channelId, messageId)}.`,

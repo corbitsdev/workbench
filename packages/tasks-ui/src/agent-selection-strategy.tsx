@@ -7,9 +7,16 @@
 // already did before this seam existed. The seam is deliberately
 // invisible to today's user — there is no "let the agent choose for
 // me" affordance anywhere in this package yet.
-import { EmptyState, Skeleton } from "@corbits/react-ui";
-import { CircleAlert, Users } from "lucide-react";
+import { EmptyState } from "@corbits/react-ui";
+import { Users } from "lucide-react";
 import { useEffect, useState, type ComponentType } from "react";
+
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 
 /**
  * One offerable agent, structurally — the same `{id, name,
@@ -48,11 +55,6 @@ export type AgentSelectionStrategyProps = {
  */
 export type AgentSelectionStrategy = ComponentType<AgentSelectionStrategyProps>;
 
-type ListState<T> =
-  | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly message: string }
-  | { readonly kind: "ready"; readonly items: readonly T[] };
-
 /** The default, and today's only, strategy: fetch the workbench's
  * offerable agents and let the person click one. */
 export function createManualAgentSelectionStrategy(
@@ -64,84 +66,85 @@ export function createManualAgentSelectionStrategy(
     onSelect,
     onOptionsResolved,
   }) {
-    const [state, setState] = useState<ListState<TaskAgentOption>>({
+    const [query, setQuery] = useState<APIQuery<readonly TaskAgentOption[]>>({
       kind: "loading",
     });
 
     useEffect(() => {
       let cancelled = false;
-      setState({ kind: "loading" });
-      listAgents(tenantId)
-        .then((items) => {
-          if (cancelled) return;
-          setState({ kind: "ready", items });
-          onOptionsResolved(items.map((item) => item.id));
-        })
-        .catch((cause: unknown) => {
-          if (!cancelled) {
-            setState({
+      setQuery({ kind: "loading" });
+      const load = () => {
+        listAgents(tenantId)
+          .then((items) => {
+            if (cancelled) return;
+            setQuery({ kind: "ready", data: items });
+            onOptionsResolved(items.map((item) => item.id));
+          })
+          .catch((cause: unknown) => {
+            if (cancelled) return;
+            if (cause instanceof UnauthenticatedError) {
+              setQuery({ kind: "unauthenticated" });
+              return;
+            }
+            setQuery({
               kind: "error",
-              message: cause instanceof Error ? cause.message : String(cause),
+              message: describeQueryError(cause),
+              retry: load,
             });
-          }
-        });
+          });
+      };
+      load();
       return () => {
         cancelled = true;
       };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tenantId, onOptionsResolved]);
 
-    if (state.kind === "loading") {
-      return <Skeleton className="query-skeleton" />;
-    }
-    if (state.kind === "error") {
-      return (
-        <EmptyState
-          icon={<CircleAlert />}
-          title="Couldn't load agents"
-          description={state.message}
-        />
-      );
-    }
-    if (state.items.length === 0) {
-      return (
-        <EmptyState
-          icon={<Users />}
-          title="No agents yet"
-          description="Create an agent before giving it a task."
-        />
-      );
-    }
-    // No role="radiogroup" here — the fieldset/legend "Agent" that hosts
-    // this strategy in task-composer-dialog.tsx already provides the
-    // group semantics; a second ARIA group nested inside it would be
-    // redundant. Mirrors new-channel-dialog.tsx's AgentPicker, which
-    // wraps nothing at all — this div exists only for the visual gap
-    // between stacked options.
     return (
-      <div className="tasks-radio-group">
-        {state.items.map((agent) => (
-          <label
-            key={agent.id}
-            className="tasks-radio-option"
-            data-testid="new-task-agent-option"
-          >
-            <input
-              type="radio"
-              name="task-agent"
-              checked={selectedId === agent.id}
-              onChange={() => onSelect(agent.id)}
+      <QueryView query={query} label="agents">
+        {(items) =>
+          items.length === 0 ? (
+            <EmptyState
+              icon={<Users />}
+              title="No agents yet"
+              description="Create an agent before giving it a task."
             />
-            <span className="tasks-radio-option-text">
-              <span className="tasks-radio-option-title">{agent.name}</span>
-              {agent.description !== undefined ? (
-                <span className="tasks-radio-option-desc">
-                  {agent.description}
-                </span>
-              ) : null}
-            </span>
-          </label>
-        ))}
-      </div>
+          ) : (
+            // No role="radiogroup" here — the fieldset/legend "Agent" that
+            // hosts this strategy in task-composer-dialog.tsx already
+            // provides the group semantics; a second ARIA group nested
+            // inside it would be redundant. Mirrors new-channel-dialog.tsx's
+            // AgentPicker, which wraps nothing at all — this div exists
+            // only for the visual gap between stacked options.
+            <div className="tasks-radio-group">
+              {items.map((agent) => (
+                <label
+                  key={agent.id}
+                  className="tasks-radio-option"
+                  data-testid="new-task-agent-option"
+                >
+                  <input
+                    type="radio"
+                    name="task-agent"
+                    checked={selectedId === agent.id}
+                    onChange={() => onSelect(agent.id)}
+                  />
+                  <span className="tasks-radio-option-text">
+                    <span className="tasks-radio-option-title">
+                      {agent.name}
+                    </span>
+                    {agent.description !== undefined ? (
+                      <span className="tasks-radio-option-desc">
+                        {agent.description}
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )
+        }
+      </QueryView>
     );
   };
 }

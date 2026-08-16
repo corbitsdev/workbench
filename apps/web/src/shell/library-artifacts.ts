@@ -8,7 +8,7 @@
 // the shape contract has its own tests. The old asset-shim path is gone.
 
 import type { ArtifactSummary } from "@corbits/artifact-ui";
-import { ApiQueryError } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
 
 /** List row from the hub artifacts surface (content omitted). */
 export type ArtifactListRow = {
@@ -75,6 +75,9 @@ export async function uploadArtifactFiles(
     throw new ApiQueryError(
       cause instanceof Error ? cause.message : String(cause),
     );
+  }
+  if (response.status === 401) {
+    throw new UnauthenticatedError();
   }
   if (!response.ok) {
     throw new ApiQueryError(

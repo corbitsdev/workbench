@@ -23,7 +23,6 @@ import {
   DialogTitle,
   EmptyState,
   Input,
-  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -34,6 +33,12 @@ import {
 } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import {
   captureProfile,
   ConfigProfilesApiError,
@@ -46,11 +51,6 @@ import {
 } from "./api";
 import { CONFIG_PROFILES_STRINGS } from "./strings";
 
-type LoadState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly message: string }
-  | { readonly kind: "ready"; readonly profiles: readonly ConfigProfile[] };
-
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof ConfigProfilesApiError ? cause.message : fallback;
 }
@@ -60,23 +60,35 @@ export function ProfilesSettingsSection({
 }: {
   readonly tenantId: string | null;
 }) {
-  const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [query, setQuery] = useState<APIQuery<readonly ConfigProfile[]>>({
+    kind: "loading",
+  });
   const [reloadKey, setReloadKey] = useState(0);
   const [editing, setEditing] = useState<ConfigProfile | "new" | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
 
+  function reload() {
+    setReloadKey((value) => value + 1);
+  }
+
   useEffect(() => {
     if (tenantId === null) return;
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     listProfiles(tenantId)
-      .then((profiles) => setState({ kind: "ready", profiles }))
-      .catch((cause: unknown) =>
-        setState({
+      .then((profiles) => setQuery({ kind: "ready", data: profiles }))
+      .catch((cause: unknown) => {
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
+        }
+        setQuery({
           kind: "error",
-          message: errorMessage(cause, CONFIG_PROFILES_STRINGS.loadError),
-        }),
-      );
+          message: describeQueryError(cause),
+          retry: reload,
+        });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
   if (tenantId === null) {
@@ -86,19 +98,6 @@ export function ProfilesSettingsSection({
         description={CONFIG_PROFILES_STRINGS.benchNoneSelectedDescription}
       />
     );
-  }
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        title={CONFIG_PROFILES_STRINGS.loadError}
-        description={state.message}
-      />
-    );
-  }
-
-  function reload() {
-    setReloadKey((value) => value + 1);
   }
 
   function handleDelete(profile: ConfigProfile) {
@@ -115,90 +114,96 @@ export function ProfilesSettingsSection({
   }
 
   return (
-    <div className="config-profiles-pane">
-      <div className="config-profiles-toolbar">
-        <Button variant="primary" onClick={() => setEditing("new")}>
-          {CONFIG_PROFILES_STRINGS.createButton}
-        </Button>
-        <Button variant="outline" onClick={() => setCaptureOpen(true)}>
-          {CONFIG_PROFILES_STRINGS.captureButton}
-        </Button>
-      </div>
-      {rowError !== null ? (
-        <p className="config-profiles-error" role="alert">
-          {rowError}
-        </p>
-      ) : null}
-      {state.profiles.length === 0 ? (
-        <EmptyState
-          title={CONFIG_PROFILES_STRINGS.emptyTitle}
-          description={CONFIG_PROFILES_STRINGS.emptyDescription}
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{CONFIG_PROFILES_STRINGS.columnName}</TableHead>
-              <TableHead>{CONFIG_PROFILES_STRINGS.columnProviders}</TableHead>
-              <TableHead>{CONFIG_PROFILES_STRINGS.columnActions}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {state.profiles.map((profile) => (
-              <TableRow key={profile.id}>
-                <TableCell>
-                  <strong>{profile.name}</strong>
-                  {profile.description !== null ? (
-                    <p className="config-profiles-field-hint">
-                      {profile.description}
-                    </p>
-                  ) : null}
-                </TableCell>
-                <TableCell>{profile.entries.length}</TableCell>
-                <TableCell>
-                  <div className="config-profiles-row-actions">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setEditing(profile)}
-                    >
-                      {CONFIG_PROFILES_STRINGS.editButton}
-                    </Button>
-                    <ConfirmButton
-                      variant="destructive"
-                      size="sm"
-                      confirmLabel={CONFIG_PROFILES_STRINGS.deleteConfirm}
-                      onConfirm={() => handleDelete(profile)}
-                    >
-                      {CONFIG_PROFILES_STRINGS.deleteButton}
-                    </ConfirmButton>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+    <QueryView query={query} label={CONFIG_PROFILES_STRINGS.loadError}>
+      {(profiles) => (
+        <div className="config-profiles-pane">
+          <div className="config-profiles-toolbar">
+            <Button variant="primary" onClick={() => setEditing("new")}>
+              {CONFIG_PROFILES_STRINGS.createButton}
+            </Button>
+            <Button variant="outline" onClick={() => setCaptureOpen(true)}>
+              {CONFIG_PROFILES_STRINGS.captureButton}
+            </Button>
+          </div>
+          {rowError !== null ? (
+            <p className="config-profiles-error" role="alert">
+              {rowError}
+            </p>
+          ) : null}
+          {profiles.length === 0 ? (
+            <EmptyState
+              title={CONFIG_PROFILES_STRINGS.emptyTitle}
+              description={CONFIG_PROFILES_STRINGS.emptyDescription}
+            />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{CONFIG_PROFILES_STRINGS.columnName}</TableHead>
+                  <TableHead>
+                    {CONFIG_PROFILES_STRINGS.columnProviders}
+                  </TableHead>
+                  <TableHead>{CONFIG_PROFILES_STRINGS.columnActions}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {profiles.map((profile) => (
+                  <TableRow key={profile.id}>
+                    <TableCell>
+                      <strong>{profile.name}</strong>
+                      {profile.description !== null ? (
+                        <p className="config-profiles-field-hint">
+                          {profile.description}
+                        </p>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>{profile.entries.length}</TableCell>
+                    <TableCell>
+                      <div className="config-profiles-row-actions">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEditing(profile)}
+                        >
+                          {CONFIG_PROFILES_STRINGS.editButton}
+                        </Button>
+                        <ConfirmButton
+                          variant="destructive"
+                          size="sm"
+                          confirmLabel={CONFIG_PROFILES_STRINGS.deleteConfirm}
+                          onConfirm={() => handleDelete(profile)}
+                        >
+                          {CONFIG_PROFILES_STRINGS.deleteButton}
+                        </ConfirmButton>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
 
-      <EditProfileDialog
-        profile={editing}
-        tenantId={tenantId}
-        onClose={() => setEditing(null)}
-        onSaved={() => {
-          setEditing(null);
-          reload();
-        }}
-      />
-      <CaptureProfileDialog
-        open={captureOpen}
-        tenantId={tenantId}
-        onClose={() => setCaptureOpen(false)}
-        onSaved={() => {
-          setCaptureOpen(false);
-          reload();
-        }}
-      />
-    </div>
+          <EditProfileDialog
+            profile={editing}
+            tenantId={tenantId}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              reload();
+            }}
+          />
+          <CaptureProfileDialog
+            open={captureOpen}
+            tenantId={tenantId}
+            onClose={() => setCaptureOpen(false)}
+            onSaved={() => {
+              setCaptureOpen(false);
+              reload();
+            }}
+          />
+        </div>
+      )}
+    </QueryView>
   );
 }
 
