@@ -9,11 +9,13 @@
 // `sources` (each step's ordered inference-source failover chain, threaded to
 // the child via the spawn env and durable nowhere else), `sessionId`
 // (inference-event
-// correlation), and `hubPublicKey` (the head's deploy-pack / inbound
-// verification key, recorded only in memory today). The definition itself
-// lives in `assets/workflow/<definitionId>/workflow.json`, referenced by
-// `definitionId`, and each step's grants live in its agent-state repo, so
-// neither is duplicated here.
+// correlation), `hubPublicKey` (the head's deploy-pack / inbound
+// verification key, recorded only in memory today), and
+// `referencedDefinitionHashes` (the hub-approved wire hash per referenced
+// onTrigger body id, threaded to the child via the spawn env). The
+// definition itself lives in `assets/workflow/<definitionId>/workflow.json`,
+// referenced by `definitionId`, and each step's grants live in its
+// agent-state repo, so neither is duplicated here.
 
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join as pathJoin } from "node:path";
@@ -44,6 +46,15 @@ export const WorkflowDeploymentRecord = type({
   },
   "sessionId?": "string > 0",
   "hubPublicKey?": "string > 0",
+  // Hub-approved wire hash per referenced onTrigger body id, carried on the
+  // deploy frame's `referencedDefinitions[*].approvedWireHash`. Durable here
+  // (not re-derivable from the materialized body `workflow.json` alone --
+  // that file has no hash field) so a boot-time restore can rebuild the
+  // spawned child's `REFERENCED_DEFINITION_HASHES` env without a hub
+  // round-trip. Absent for a deployment with no referenced bodies.
+  "referencedDefinitionHashes?": {
+    "[string]": "string > 0",
+  },
 });
 export type WorkflowDeploymentRecord = typeof WorkflowDeploymentRecord.infer;
 
