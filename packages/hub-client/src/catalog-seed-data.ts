@@ -54,7 +54,10 @@ export const CATALOG_SEEDS: Readonly<
       plugin: "openai",
       baseURL: "https://api.openai.com/v1",
     },
-    models: [{ canonicalName: "gpt-4o-mini", displayName: "GPT-4o mini" }],
+    models: [
+      { canonicalName: "gpt-5.6-terra", displayName: "GPT-5.6 Terra" },
+      { canonicalName: "gpt-4o-mini", displayName: "GPT-4o mini" },
+    ],
   },
   "google-genai": {
     provider: {
@@ -63,6 +66,7 @@ export const CATALOG_SEEDS: Readonly<
       baseURL: "https://generativelanguage.googleapis.com",
     },
     models: [
+      { canonicalName: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash" },
       { canonicalName: "gemini-2.5-flash", displayName: "Gemini 2.5 Flash" },
     ],
   },
@@ -85,6 +89,10 @@ export const CATALOG_SEEDS: Readonly<
       baseURL: "https://openrouter.ai/api/v1",
     },
     models: [
+      {
+        canonicalName: "qwen/qwen3.8-27b",
+        displayName: "Qwen 3.8 27B (OpenRouter)",
+      },
       {
         canonicalName: "anthropic/claude-sonnet-5",
         displayName: "Claude Sonnet 5 (OpenRouter)",
@@ -110,6 +118,7 @@ export const CATALOG_SEEDS: Readonly<
       baseURL: "https://opencode.ai/zen/v1",
     },
     models: [
+      { canonicalName: "qwen3.7-plus", displayName: "Qwen 3.7 Plus (Zen)" },
       {
         canonicalName: "claude-sonnet-5",
         displayName: "Claude Sonnet 5 (Zen)",

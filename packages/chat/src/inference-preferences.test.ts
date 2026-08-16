@@ -22,7 +22,7 @@ describe("createChannelHostInferencePreferencesResolver", () => {
       "openrouter",
     ]);
     expect(await resolve("tnt_bench")).toEqual([
-      { provider: "openrouter", model: "anthropic/claude-sonnet-5" },
+      { provider: "openrouter", model: "qwen/qwen3.8-27b" },
     ]);
   });
 
@@ -35,7 +35,7 @@ describe("createChannelHostInferencePreferencesResolver", () => {
     expect(await resolve("tnt_bench")).toEqual([
       { provider: "anthropic", model: "claude-sonnet-5" },
       { provider: "xai", model: "grok-4.6" },
-      { provider: "openrouter", model: "anthropic/claude-sonnet-5" },
+      { provider: "openrouter", model: "qwen/qwen3.8-27b" },
     ]);
   });
 

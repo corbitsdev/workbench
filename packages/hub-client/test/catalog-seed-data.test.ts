@@ -32,7 +32,7 @@ describe("CATALOG_SEEDS", () => {
       if (provider === "anthropic" || provider === "openai") continue;
       if (provider === "google-genai") continue;
       expect(seed.models.length).toBeGreaterThanOrEqual(2);
-      expect(seed.models.length).toBeLessThanOrEqual(4);
+      expect(seed.models.length).toBeLessThanOrEqual(5);
     }
   });
 
@@ -70,7 +70,7 @@ describe("deriveChannelHostInferencePreferences", () => {
 
   test("openrouter-only bench gets an openrouter preference, not anthropic", () => {
     expect(deriveChannelHostInferencePreferences(["openrouter"])).toEqual([
-      { provider: "openrouter", model: "anthropic/claude-sonnet-5" },
+      { provider: "openrouter", model: "qwen/qwen3.8-27b" },
     ]);
   });
 
@@ -83,7 +83,7 @@ describe("deriveChannelHostInferencePreferences", () => {
       ]),
     ).toEqual([
       { provider: "anthropic", model: "claude-sonnet-5" },
-      { provider: "openrouter", model: "anthropic/claude-sonnet-5" },
+      { provider: "openrouter", model: "qwen/qwen3.8-27b" },
       { provider: "groq", model: "llama-3.3-70b-versatile" },
     ]);
   });
