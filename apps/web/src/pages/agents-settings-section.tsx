@@ -482,12 +482,14 @@ export function AgentsSettingsSection({
             select(definition.id);
             return;
           }
-          launchAgentChat(directory.data.tenantId, definition.id, navigate).catch(
-            () => {
-              toast("Created the agent, but couldn't open a chat with it.");
-              select(definition.id);
-            },
-          );
+          launchAgentChat(
+            directory.data.tenantId,
+            definition.id,
+            navigate,
+          ).catch(() => {
+            toast("Created the agent, but couldn't open a chat with it.");
+            select(definition.id);
+          });
         }}
       />
     ) : null;

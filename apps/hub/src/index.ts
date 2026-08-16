@@ -1650,9 +1650,7 @@ export async function createHub(config: HubConfig) {
       },
     });
 
-    const wireHash = await computeWireDefinitionHash(
-      JSON.parse(workflowJson),
-    );
+    const wireHash = await computeWireDefinitionHash(JSON.parse(workflowJson));
     const { definitionId } = await ensureWorkflowDefinitionForAsset(db, {
       assetId: created.id,
       wireHash,

@@ -2307,9 +2307,7 @@ export function RoutineDetailPage({
                   </dd>
                   {data.deliveryChannelId !== null ? (
                     <>
-                      <dt className="text-[var(--ui-fg-muted)]">
-                        Delivers to
-                      </dt>
+                      <dt className="text-[var(--ui-fg-muted)]">Delivers to</dt>
                       <dd>
                         <Button
                           type="button"

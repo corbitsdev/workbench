@@ -220,7 +220,10 @@ describe("CreateAgentPanel happy path", () => {
     stubFetch({
       draft: (body) => {
         captured.draftBody = body;
-        return json({ draft: { systemPrompt: "You help with research." } }, 201);
+        return json(
+          { draft: { systemPrompt: "You help with research." } },
+          201,
+        );
       },
     });
 
@@ -260,8 +263,8 @@ describe("CreateAgentPanel Suggestions", () => {
       created = definition;
     });
 
-    const card = [...document.body.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Morning Brief"),
+    const card = [...document.body.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Morning Brief"),
     );
     expect(card).toBeDefined();
     await act(async () => {

@@ -30,7 +30,8 @@ export function createChatBlockResponseActions(
       if (cause instanceof ChatApiError && cause.status === 403) {
         return {
           kind: "forbidden",
-          message: "You do not have permission to respond in this conversation.",
+          message:
+            "You do not have permission to respond in this conversation.",
         };
       }
       return {

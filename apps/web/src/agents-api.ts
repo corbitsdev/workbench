@@ -174,7 +174,8 @@ const AgentDefinitionDraftResponse = type({
     "skills?": "string[]",
   },
 });
-export type AgentDefinitionDraft = typeof AgentDefinitionDraftResponse.infer.draft;
+export type AgentDefinitionDraft =
+  typeof AgentDefinitionDraftResponse.infer.draft;
 
 /**
  * Asks Myra to draft a starting system prompt (and optionally a

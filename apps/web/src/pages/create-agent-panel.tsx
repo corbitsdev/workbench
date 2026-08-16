@@ -73,7 +73,10 @@ function initialsFromName(name: string): string {
   return `${words[0]![0]}${words[1]![0]}`;
 }
 
-const AVATAR_TONES: readonly { readonly tone: AvatarTone; readonly label: string }[] = [
+const AVATAR_TONES: readonly {
+  readonly tone: AvatarTone;
+  readonly label: string;
+}[] = [
   { tone: "neutral", label: "Muted" },
   { tone: "agent", label: "Primary" },
   { tone: "agent2", label: "Accent" },
@@ -388,8 +391,8 @@ export function CreateAgentPanel({
         <DialogHeader>
           <DialogTitle>New agent</DialogTitle>
           <DialogDescription>
-            A name is enough to start — Myra drafts the starting
-            instructions, and you teach it the rest in chat.
+            A name is enough to start — Myra drafts the starting instructions,
+            and you teach it the rest in chat.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -466,9 +469,7 @@ export function CreateAgentPanel({
           </div>
 
           <div className="create-agent-suggestions">
-            <span className="create-agent-suggestions-label">
-              Suggestions
-            </span>
+            <span className="create-agent-suggestions-label">Suggestions</span>
             <div className="create-agent-suggestions-grid">
               {SUGGESTIONS.map((suggestion) => (
                 <button
