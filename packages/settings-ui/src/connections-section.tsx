@@ -28,7 +28,7 @@ import {
   type ConnectorDescriptor,
 } from "@workbench/connections/registry";
 import { workflowDisplayName } from "@corbits/workflow-catalog";
-import { CircleAlert } from "lucide-react";
+import { ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
@@ -340,9 +340,16 @@ export function ConnectionsSection({
           );
         })()}
       </div>
-      <details className="settings-connections-advanced">
-        <summary>{SETTINGS_STRINGS.connectionsAdvancedSummary}</summary>
-        <div className="settings-connections-advanced-body">
+      <details className="settings-advanced-disclosure">
+        <summary>
+          <ChevronRight
+            size={14}
+            aria-hidden
+            className="settings-advanced-disclosure-chevron"
+          />
+          {SETTINGS_STRINGS.connectionsAdvancedSummary}
+        </summary>
+        <div className="settings-advanced-disclosure-body">
           <div className="settings-section-toolbar">
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               {SETTINGS_STRINGS.credentialsCreateAction}

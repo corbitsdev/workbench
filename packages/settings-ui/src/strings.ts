@@ -45,7 +45,7 @@ export const SETTINGS_STRINGS = {
   notificationsSaveHonesty:
     "Draft only — per-user notification prefs are not stored on the hub yet.",
 
-  benchSectionTitle: "This bench",
+  benchSectionTitle: "This workbench",
   benchSectionDescription:
     "Landing, chrome, and defaults for the selected workbench.",
   benchNameLabel: "Name",
@@ -55,16 +55,18 @@ export const SETTINGS_STRINGS = {
   benchIconLabel: "Workbench icon",
   benchIconHint:
     "Shown on the workbench switcher. Color is a local preview — tenant branding storage is not mounted yet.",
-  benchLoadError: "this bench",
-  benchNoneSelectedTitle: "No bench selected",
-  benchNoneSelectedDescription: "Choose a bench from the switcher first.",
+  benchLoadError: "this workbench",
+  benchNoneSelectedTitle: "No workbench selected",
+  benchNoneSelectedDescription: "Choose a workbench from the switcher first.",
 
   sidecarPlacementAdvancedSummary: "Advanced",
-  sidecarPlacementLabel: "Run this workbench on its own sidecar",
+  sidecarPlacementLabel: "Keep this workbench's agents on dedicated capacity",
   sidecarPlacementHint:
-    "Gives this workbench dedicated infrastructure instead of sharing one with other workbenches. An operator must configure a provisioner for this to take effect.",
+    "Agents in this workbench won't share compute with other workbenches.",
+  sidecarPlacementUnavailableHint:
+    "Not available on this server yet — ask your operator to enable isolated capacity.",
   sidecarPlacementSaveError: "Couldn't save this setting. Try again.",
-  benchSaveError: "Couldn't rename this bench — try again.",
+  benchSaveError: "Couldn't rename this workbench — try again.",
   settingsSavedToast: "Settings saved",
 
   chatSectionTitle: "Conversation defaults",

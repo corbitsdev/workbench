@@ -1,4 +1,4 @@
-// The "This bench" settings section: name, purpose, slug, workbench icon
+// The "This workbench" settings section: name, purpose, slug, workbench icon
 // preview, and the member list (member management itself is
 // `@corbits/bench-ui`'s to own — this section mounts its `MembersPanel`,
 // never re-implements it). Renaming goes through the native `PATCH
@@ -24,7 +24,7 @@ import {
   Switch,
   toast,
 } from "@corbits/react-ui";
-import { CircleAlert } from "lucide-react";
+import { ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { renameBench } from "./api";
@@ -63,6 +63,8 @@ export function BenchSection({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [sidecarPlacementEnabled, setSidecarPlacementEnabled] = useState(false);
+  const [sidecarPlacementAvailable, setSidecarPlacementAvailable] =
+    useState(false);
   const [sidecarPlacementSaving, setSidecarPlacementSaving] = useState(false);
   const [sidecarPlacementError, setSidecarPlacementError] = useState<
     string | null
@@ -83,7 +85,7 @@ export function BenchSection({
         if (current === undefined) {
           setState({
             kind: "error",
-            message: "This bench is no longer one you belong to.",
+            message: "This workbench is no longer one you belong to.",
           });
           return;
         }
@@ -91,6 +93,7 @@ export function BenchSection({
         setPurpose(settings.purpose ?? "");
         setSavedPurpose(settings.purpose ?? "");
         setSidecarPlacementEnabled(sidecarPlacement.enabled);
+        setSidecarPlacementAvailable(sidecarPlacement.provisionerAvailable);
         setState({ kind: "ready", data: current });
       })
       .catch((cause: unknown) => {
@@ -105,11 +108,24 @@ export function BenchSection({
 
   function handleSidecarPlacementChange(enabled: boolean) {
     if (tenantId === null) return;
+    const previousEnabled = sidecarPlacementEnabled;
+    // Flips immediately so the switch never feels laggy, then reverts if
+    // the save fails — the same optimistic-then-reconcile shape as any
+    // other instant-apply control, never a form field waiting on Save.
+    setSidecarPlacementEnabled(enabled);
     setSidecarPlacementSaving(true);
     setSidecarPlacementError(null);
     setSidecarPlacement(tenantId, enabled)
-      .then((result) => setSidecarPlacementEnabled(result.enabled))
-      .catch(() => setSidecarPlacementError(SETTINGS_STRINGS.sidecarPlacementSaveError))
+      .then((result) => {
+        setSidecarPlacementEnabled(result.enabled);
+        setSidecarPlacementAvailable(result.provisionerAvailable);
+        setSavedAt(new Date().toLocaleTimeString());
+        toast(SETTINGS_STRINGS.settingsSavedToast);
+      })
+      .catch(() => {
+        setSidecarPlacementEnabled(previousEnabled);
+        setSidecarPlacementError(SETTINGS_STRINGS.sidecarPlacementSaveError);
+      })
       .finally(() => setSidecarPlacementSaving(false));
   }
 
@@ -196,6 +212,7 @@ export function BenchSection({
           setPurpose(savedPurpose);
         }}
         sidecarPlacementEnabled={sidecarPlacementEnabled}
+        sidecarPlacementAvailable={sidecarPlacementAvailable}
         sidecarPlacementSaving={sidecarPlacementSaving}
         sidecarPlacementError={sidecarPlacementError}
         onSidecarPlacementChange={handleSidecarPlacementChange}
@@ -226,6 +243,7 @@ export function BenchSectionView({
   onSave,
   onReset,
   sidecarPlacementEnabled = false,
+  sidecarPlacementAvailable = false,
   sidecarPlacementSaving = false,
   sidecarPlacementError = null,
   onSidecarPlacementChange,
@@ -247,6 +265,10 @@ export function BenchSectionView({
    * @corbits/react-ui's Switch doc comment). Defaults reflect an
    * un-loaded/off state; the caller supplies real values once fetched. */
   readonly sidecarPlacementEnabled?: boolean;
+  /** Whether the hub has a sidecar provisioner registered. False disables
+   * the switch and swaps the hint to say so — the operator, not the
+   * workbench owner, controls whether this can ever take effect. */
+  readonly sidecarPlacementAvailable?: boolean;
   readonly sidecarPlacementSaving?: boolean;
   readonly sidecarPlacementError?: string | null;
   readonly onSidecarPlacementChange?: (enabled: boolean) => void;
@@ -307,9 +329,16 @@ export function BenchSectionView({
         <span>{SETTINGS_STRINGS.benchAddressLabel}</span>
         <Input value={slug} disabled readOnly />
       </label>
-      <details className="settings-bench-advanced">
-        <summary>{SETTINGS_STRINGS.sidecarPlacementAdvancedSummary}</summary>
-        <div className="settings-bench-advanced-body">
+      <details className="settings-advanced-disclosure">
+        <summary>
+          <ChevronRight
+            size={14}
+            aria-hidden
+            className="settings-advanced-disclosure-chevron"
+          />
+          {SETTINGS_STRINGS.sidecarPlacementAdvancedSummary}
+        </summary>
+        <div className="settings-advanced-disclosure-body">
           <div className="settings-form-field settings-form-field-row">
             <Switch
               id="sidecar-placement-switch"
@@ -317,7 +346,7 @@ export function BenchSectionView({
               onCheckedChange={(checked) =>
                 onSidecarPlacementChange?.(checked)
               }
-              disabled={sidecarPlacementSaving}
+              disabled={sidecarPlacementSaving || !sidecarPlacementAvailable}
               describedBy="sidecar-placement-hint"
             />
             <label htmlFor="sidecar-placement-switch">
@@ -325,10 +354,14 @@ export function BenchSectionView({
             </label>
           </div>
           <p id="sidecar-placement-hint" className="settings-field-hint">
-            {SETTINGS_STRINGS.sidecarPlacementHint}
+            {sidecarPlacementAvailable
+              ? SETTINGS_STRINGS.sidecarPlacementHint
+              : SETTINGS_STRINGS.sidecarPlacementUnavailableHint}
           </p>
           {sidecarPlacementError !== null ? (
-            <p className="settings-inline-error">{sidecarPlacementError}</p>
+            <p className="settings-inline-error" role="alert">
+              {sidecarPlacementError}
+            </p>
           ) : null}
         </div>
       </details>

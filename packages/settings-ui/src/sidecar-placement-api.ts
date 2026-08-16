@@ -5,7 +5,12 @@
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
-const SidecarPlacementResponse = type({ enabled: "boolean" });
+const SidecarPlacementResponse = type({
+  enabled: "boolean",
+  provisionerAvailable: "boolean",
+});
+
+export type SidecarPlacementResult = typeof SidecarPlacementResponse.infer;
 
 export class SidecarPlacementApiError extends Error {
   constructor(
@@ -19,7 +24,7 @@ export class SidecarPlacementApiError extends Error {
 async function request(
   path: string,
   init?: RequestInit,
-): Promise<{ readonly enabled: boolean }> {
+): Promise<SidecarPlacementResult> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -50,14 +55,14 @@ async function request(
 
 export function getSidecarPlacement(
   tenantId: string,
-): Promise<{ readonly enabled: boolean }> {
+): Promise<SidecarPlacementResult> {
   return request(`/api/tenants/${tenantId}/sidecar-placement`);
 }
 
 export function setSidecarPlacement(
   tenantId: string,
   enabled: boolean,
-): Promise<{ readonly enabled: boolean }> {
+): Promise<SidecarPlacementResult> {
   return request(`/api/tenants/${tenantId}/sidecar-placement`, {
     method: "PUT",
     body: JSON.stringify({ enabled }),
