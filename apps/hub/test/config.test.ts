@@ -34,6 +34,7 @@ describe("readHubConfig", () => {
       signupRateLimit: { windowSeconds: 60, max: 5 },
       allowPlaintextSecrets: false,
       allowUnverifiedEmails: false,
+      sidecarProvisioner: { kind: "none" },
     });
   });
 
@@ -227,6 +228,67 @@ describe("readHubConfig", () => {
     });
     expect(config.databaseUrl).toStartWith("postgresql://");
     expect(config.baseUrl).toStartWith("https://");
+  });
+
+  describe("sidecarProvisioner", () => {
+    test("defaults to none, matching the current static-sidecar behavior", () => {
+      expect(readHubConfig(validEnv).sidecarProvisioner).toEqual({
+        kind: "none",
+      });
+    });
+
+    test("SIDECAR_PROVISIONER=docker with an image is wired", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        SIDECAR_PROVISIONER: "docker",
+        DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
+      });
+      expect(config.sidecarProvisioner).toEqual({
+        kind: "docker",
+        image: "ghcr.io/corbits/sidecar:latest",
+      });
+    });
+
+    test("SIDECAR_PROVISIONER=docker without DOCKER_PROVISIONER_IMAGE fails loudly at boot", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_PROVISIONER: "docker",
+      });
+      expect(message).toContain("DOCKER_PROVISIONER_IMAGE");
+      expect(message).toContain("SIDECAR_PROVISIONER=docker");
+    });
+
+    test("rejects a provisioner value other than 'docker'", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_PROVISIONER: "e2b",
+      });
+      expect(message).toContain("SIDECAR_PROVISIONER");
+    });
+  });
+
+  describe("sidecarWebSocketUrl", () => {
+    test("is undefined when HUB_SIDECAR_WEBSOCKET_URL is unset", () => {
+      expect(readHubConfig(validEnv).sidecarWebSocketUrl).toBeUndefined();
+    });
+
+    test("is read from HUB_SIDECAR_WEBSOCKET_URL when set", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        HUB_SIDECAR_WEBSOCKET_URL: "ws://sidecar-host.internal:3000/api/sidecars/ws",
+      });
+      expect(config.sidecarWebSocketUrl).toBe(
+        "ws://sidecar-host.internal:3000/api/sidecars/ws",
+      );
+    });
+
+    test("rejects a value that is not a ws(s):// URL", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        HUB_SIDECAR_WEBSOCKET_URL: "http://not-a-websocket-url",
+      });
+      expect(message).toContain("HUB_SIDECAR_WEBSOCKET_URL");
+    });
   });
 
   test("an empty environment reports every variable in one error", () => {

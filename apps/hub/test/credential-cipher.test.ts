@@ -23,6 +23,7 @@ const baseConfig: HubConfig = {
   allowedEmailDomains: [],
   allowPlaintextSecrets: false,
   allowUnverifiedEmails: false,
+  sidecarProvisioner: { kind: "none" },
 };
 
 describe("credentialCipherFrom", () => {

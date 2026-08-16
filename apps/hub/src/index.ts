@@ -7,7 +7,13 @@
 
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { createApprovalStore, createDB, createGrantStore } from "@intx/db";
+import {
+  createApprovalStore,
+  createDB,
+  createGrantStore,
+  createSidecarAllocationStore,
+  createWorkflowRunDispatchStore,
+} from "@intx/db";
 import {
   model,
   tenant as tenantTable,
@@ -90,6 +96,10 @@ import {
   createBenchRoutes,
   createPostgresBenchSettingsStore,
 } from "@corbits/bench";
+import {
+  createDrizzleSidecarPlacementStore,
+  createSidecarPlacementRoutes,
+} from "@corbits/sidecar-placement";
 import { generateId } from "@intx/hub-common";
 import {
   createInMemoryMailboxEventBus,
@@ -151,8 +161,12 @@ import {
   createHubSessionLookups,
   createHubSessionOrchestrator,
   createSessionService,
+  createSidecarAllocationReconciler,
+  createSidecarPluginRegistry,
   createSidecarRouter,
   createSidecarTokenAuthenticator,
+  createWorkflowAllocationService,
+  createWorkflowDispatchService,
   DEFAULT_ASSET_REF,
   ensureWorkflowDefinitionForAsset,
   type WsHandle,
@@ -161,6 +175,7 @@ import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
 import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
 import { createNeedsYouRoutes } from "@corbits/approvals";
+import { createDockerSidecarProvisioner } from "@corbits/docker-provisioner";
 import { getArtifact, writeArtifactVersion } from "@corbits/artifacts";
 import {
   createArtifactDbStore,
@@ -468,7 +483,118 @@ export async function createHub(config: HubConfig) {
       scopeRouting: [{ scope: "@corbits", registry: CORBITS_TOOLS_REGISTRY }],
     },
   });
+  // Provisioner plugins are injected at the application composition
+  // boundary, mirroring @intx/hub-sessions's own reference wiring: the
+  // registry always exists, but ships with no provisioners (and no
+  // default) until SIDECAR_PROVISIONER names a build. A workbench's
+  // "run this workbench on its own sidecar" setting can then always
+  // write a tenant's exclusive `sidecarPlacement`; without a configured
+  // provisioner that placement simply fails closed at deployment time
+  // rather than silently falling back to the shared sidecar.
+  const sidecarPlugins = createSidecarPluginRegistry({
+    provisioners:
+      config.sidecarProvisioner.kind === "docker"
+        ? [
+            createDockerSidecarProvisioner({
+              config: {
+                image: config.sidecarProvisioner.image,
+                stateFilePath: path.resolve(
+                  config.hubDataDir,
+                  "docker-provisioner",
+                  "state.json",
+                ),
+              },
+            }),
+          ]
+        : [],
+    ...(config.sidecarProvisioner.kind === "docker"
+      ? { defaultProvisionerId: "docker" }
+      : {}),
+  });
+  const workflowAllocationService = createWorkflowAllocationService({
+    db,
+    plugins: sidecarPlugins,
+    preparedDeployer: sessionService,
+    credentialCipher,
+    allocationRouter: sidecarRouter,
+  });
+  const sidecarAllocationStore = createSidecarAllocationStore(db);
+  const workflowDispatchService = createWorkflowDispatchService({
+    dispatchStore: createWorkflowRunDispatchStore(db),
+    allocationStore: sidecarAllocationStore,
+    router: sidecarRouter,
+    resolveAnchorAddress: async (anchorRunId) => {
+      const row = await db.query.workflowRun.findFirst({
+        where: (run, { eq: equals }) => equals(run.id, anchorRunId),
+        columns: { address: true },
+      });
+      return row?.address ?? null;
+    },
+  });
+  const hubWebSocketUrl =
+    config.sidecarWebSocketUrl ??
+    `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
+  const sidecarAllocationReconciler = createSidecarAllocationReconciler({
+    allocationStore: sidecarAllocationStore,
+    plugins: sidecarPlugins,
+    router: sidecarRouter,
+    hubWebSocketUrl,
+    onReady: async (allocation) => {
+      await workflowAllocationService.deployReadyAllocation(allocation);
+      await workflowDispatchService.requeueForReadyAllocation(
+        allocation.anchorRunId,
+      );
+    },
+  });
+  await sidecarAllocationReconciler.initialize();
+  sidecarRouter.events.on("sidecar.disconnect", ({ allocated }) => {
+    if (allocated === undefined) return;
+    return sidecarAllocationReconciler.handleDisconnect(allocated);
+  });
+  sidecarRouter.events.on("sidecar.allocated.connected", (allocated) =>
+    sidecarAllocationReconciler.handleConnected(allocated),
+  );
+  sidecarRouter.events.on(
+    "mail.inbound.acknowledged",
+    ({ messageId, allocated }) => {
+      if (allocated === undefined) return;
+      return workflowDispatchService.acknowledge({ ...allocated, messageId });
+    },
+  );
+  const sidecarAllocationLog = getLogger(["hub", "sidecar-allocation"]);
+  const ALLOCATION_RECONCILIATION_INTERVAL_MS = 1_000;
+  const ALLOCATION_CONNECTION_REPAIR_INTERVAL_MS = 30_000;
+  let nextAllocationConnectionRepairAt =
+    Date.now() + ALLOCATION_CONNECTION_REPAIR_INTERVAL_MS;
+  let sidecarAllocationReconciliationStopped = false;
+  let sidecarAllocationReconciliationTimer: ReturnType<typeof setTimeout> | undefined;
+  function scheduleAllocationReconciliation(delayMs: number): void {
+    if (sidecarAllocationReconciliationStopped) return;
+    const timer = setTimeout(() => {
+      void reconcileSidecarAllocations();
+    }, delayMs);
+    timer.unref?.();
+    sidecarAllocationReconciliationTimer = timer;
+  }
+  async function reconcileSidecarAllocations(): Promise<void> {
+    try {
+      await sidecarAllocationReconciler.reconcileUntilIdle();
+      await workflowDispatchService.reconcileUntilIdle();
+      if (Date.now() >= nextAllocationConnectionRepairAt) {
+        nextAllocationConnectionRepairAt =
+          Date.now() + ALLOCATION_CONNECTION_REPAIR_INTERVAL_MS;
+        await sidecarAllocationReconciler.repairUnscheduledConnections();
+      }
+    } catch (error) {
+      sidecarAllocationLog.error`Sidecar allocation reconciliation failed: ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      scheduleAllocationReconciliation(ALLOCATION_RECONCILIATION_INTERVAL_MS);
+    }
+  }
+  scheduleAllocationReconciliation(ALLOCATION_RECONCILIATION_INTERVAL_MS);
   const app = createApp({
+    workflowAllocationService,
+    workflowDispatchService,
     getSession: async (headers) => {
       const result = await auth.api.getSession({ headers });
       return result ? { user: result.user, session: result.session } : null;
@@ -877,6 +1003,17 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/bench-settings`,
     createBenchRoutes({
       store: benchSettings.store,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
+  app.route(
+    `${TENANT_PREFIX}/sidecar-placement`,
+    createSidecarPlacementRoutes({
+      store: createDrizzleSidecarPlacementStore(db),
+      hasProvisioner: config.sidecarProvisioner.kind !== "none",
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
@@ -2043,6 +2180,10 @@ export async function createHub(config: HubConfig) {
     app: guardedApp,
     db,
     close: async () => {
+      sidecarAllocationReconciliationStopped = true;
+      if (sidecarAllocationReconciliationTimer !== undefined) {
+        clearTimeout(sidecarAllocationReconciliationTimer);
+      }
       chatOrchestrator.dispose();
       taskOrchestrator.dispose();
       taskLifecycle.stop();
