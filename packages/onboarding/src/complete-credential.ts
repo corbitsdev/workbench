@@ -248,6 +248,10 @@ export async function testAndPersistCredential(
       args.credentialMetadata !== undefined
         ? ("oauth_token" as const)
         : ("api_key" as const),
+    // `test` above already proved `args.apiKey` against the provider's
+    // own probe, so a name conflict on an api_key credential (a
+    // regenerated key, or a retry after a bad paste) is safe to rotate.
+    credentialVerified: true,
   };
   await runSeedCatalog(
     args.credentialMetadata !== undefined
