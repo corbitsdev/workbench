@@ -37,7 +37,7 @@ import { NAV_ROUTES } from "./routes";
 import { isNewTaskShortcutEvent } from "./task-shortcut";
 import { ArtifactListPageSchema, RunsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
-import { useCloseCanvas } from "./shell/canvas-availability";
+import { useCloseCanvas, useOpenRoutineInCanvas } from "./shell/canvas-availability";
 import { listRoutines, runRoutineNow, useTenantQuery } from "./routines-api";
 import { listSkills } from "./skills-api";
 import { meKeys, tenantKeys } from "./query-client";
@@ -79,6 +79,7 @@ export function CommandPaletteProvider({
   const runsQuery = useAPIQuery("/api/me/workflows/runs", RunsSchema);
   const { cycleMode } = useTheme();
   const closeCanvas = useCloseCanvas();
+  const openRoutine = useOpenRoutineInCanvas();
 
   const recentsStore = useMemo(
     () =>
@@ -311,11 +312,12 @@ export function CommandPaletteProvider({
         tenantId: selectedTenantId,
         cycleTheme: cycleMode,
         closeCanvas,
+        openRoutine,
       });
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [path, navigate, selectedTenantId, cycleMode, closeCanvas]);
+  }, [path, navigate, selectedTenantId, cycleMode, closeCanvas, openRoutine]);
 
   useEffect(() => {
     function onOpenRequest() {
@@ -515,6 +517,7 @@ export function CommandPaletteProvider({
           tenantId: selectedTenantId,
           cycleTheme: cycleMode,
           closeCanvas,
+          openRoutine,
         });
       } else if (id.startsWith("route:")) {
         const routePath = id.slice("route:".length);
@@ -569,6 +572,7 @@ export function CommandPaletteProvider({
       selectedTenantId,
       cycleMode,
       closeCanvas,
+      openRoutine,
       pushRecent,
       channelItems,
       runItems,

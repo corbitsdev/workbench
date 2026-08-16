@@ -28,6 +28,7 @@ import {
   useCanvasColumnFocus,
   useCanvasColumnOpen,
   useCanvasColumnProfile,
+  useCanvasColumnRoutine,
   useCloseCanvas,
   useToggleCanvasFocus,
 } from "./canvas-availability";
@@ -69,6 +70,7 @@ export function AppShell({
   const canvasOpen = useCanvasColumnOpen();
   const canvasProfile = useCanvasColumnProfile();
   const canvasArtifact = useCanvasColumnArtifact();
+  const canvasRoutine = useCanvasColumnRoutine();
   const canvasFocus = useCanvasColumnFocus();
   const { selectedTenantId: tenantId, selectedPrincipalId: viewerPrincipalId } =
     useBench();
@@ -158,6 +160,7 @@ export function AppShell({
           open={canvasOpen}
           profile={canvasProfile}
           artifact={canvasArtifact}
+          routine={canvasRoutine}
           focus={canvasFocus}
           onClose={closeCanvas}
           onToggleFocus={toggleCanvasFocus}

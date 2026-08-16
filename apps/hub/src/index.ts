@@ -946,7 +946,7 @@ export async function createHub(config: HubConfig) {
   // `@corbits/slack-tag`'s signature-verification-gated dispatch). A
   // missing SLACK_BOT_TOKEN/SLACK_SIGNING_SECRET pair is a valid
   // configuration — the mount is silently skipped.
-  await mountWorkbenchSlackTag({
+  const slackTagMount = await mountWorkbenchSlackTag({
     app,
     db,
     databaseUrl: config.databaseUrl,
@@ -957,6 +957,14 @@ export async function createHub(config: HubConfig) {
     channelHostInferencePreferences: chatDeps.channelHostInferencePreferences,
     turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
   });
+  // Tells the routine trigger popover whether a Slack-bound webhook
+  // trigger is honestly offerable in this deployment — no session or
+  // tenant required to ask, the same reasoning as `/api/auth-config`
+  // above. Only a boolean crosses this route, never the credential pair
+  // itself.
+  app.get("/api/deployment-capabilities", (c) =>
+    c.json({ slackConfigured: slackTagMount.mounted }),
+  );
   // Product inbox over `@corbits/mailbox` — three groups, mark-all-read
   // (mentions + deliveries only), clear-done. The raw package surface
   // (including SSE events) mounts under `/mailbox` for hosts and tools

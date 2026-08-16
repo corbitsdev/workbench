@@ -30,12 +30,31 @@ export type CanvasArtifactContent = {
   readonly canEdit?: boolean;
 };
 
+/** The canvas's routine pane subject: which routine to show, or `null` to
+ * start a brand-new one. Distinct from `CanvasArtifactContent` — the panel
+ * fetches and owns its own routine data (name, instruction, trigger, run
+ * history) from `routineId`, the same way `ProfileCanvasPane` fetches
+ * shared channels from a `ProfileSubject`'s address rather than being
+ * handed pre-resolved content. */
+export type RoutinePanelSubject = {
+  readonly routineId: string | null;
+  /** Seeds the Name/Instruction fields the instant a brand-new panel opens
+   * (`routineId: null` only) — "Make this a routine" (a completed task
+   * result) and similar callers with something worth pre-filling. The
+   * panel still autosaves on the person's own edits; this only seeds the
+   * initial draft. */
+  readonly initialName?: string;
+  readonly initialInstruction?: string;
+};
+
 /** Workbench's concrete instantiation of `@corbits/shell-layout`'s generic
  * canvas state — a `ProfileSubject` for the profile pane, this app's own
- * `CanvasArtifactContent` for the artifact pane. */
+ * `CanvasArtifactContent` for the artifact pane, `RoutinePanelSubject` for
+ * the routine pane. */
 export type AppCanvasColumnState = CanvasColumnState<
   ProfileSubject,
-  CanvasArtifactContent
+  CanvasArtifactContent,
+  RoutinePanelSubject
 >;
 
 export type CanvasHost = {
@@ -43,12 +62,15 @@ export type CanvasHost = {
   readonly open: boolean;
   readonly profile: ProfileSubject | null;
   readonly artifact: CanvasArtifactContent | null;
+  readonly routine: RoutinePanelSubject | null;
   readonly focus: boolean;
   readonly openProfile: (subject: ProfileSubject) => void;
   readonly openArtifact: (artifact: CanvasArtifactContent) => void;
+  readonly openRoutine: (subject: RoutinePanelSubject) => void;
   readonly toggleFocus: () => void;
-  /** Closes whichever content the canvas currently shows (profile or
-   * artifact) and drops focus — one seam regardless of what's open. */
+  /** Closes whichever content the canvas currently shows (profile,
+   * artifact, or routine) and drops focus — one seam regardless of what's
+   * open. */
   readonly close: () => void;
 };
 
@@ -57,9 +79,11 @@ const CanvasHostContext = createContext<CanvasHost>({
   open: false,
   profile: null,
   artifact: null,
+  routine: null,
   focus: false,
   openProfile: () => undefined,
   openArtifact: () => undefined,
+  openRoutine: () => undefined,
   toggleFocus: () => undefined,
   close: () => undefined,
 });
@@ -69,9 +93,11 @@ export function CanvasAvailabilityProvider({
   open,
   profile,
   artifact,
+  routine,
   focus,
   openProfile,
   openArtifact,
+  openRoutine,
   toggleFocus,
   close,
   children,
@@ -80,9 +106,11 @@ export function CanvasAvailabilityProvider({
   readonly open: boolean;
   readonly profile: ProfileSubject | null;
   readonly artifact: CanvasArtifactContent | null;
+  readonly routine: RoutinePanelSubject | null;
   readonly focus: boolean;
   readonly openProfile: (subject: ProfileSubject) => void;
   readonly openArtifact: (artifact: CanvasArtifactContent) => void;
+  readonly openRoutine: (subject: RoutinePanelSubject) => void;
   readonly toggleFocus: () => void;
   readonly close: () => void;
   readonly children: ReactNode;
@@ -94,9 +122,11 @@ export function CanvasAvailabilityProvider({
         open,
         profile,
         artifact,
+        routine,
         focus,
         openProfile,
         openArtifact,
+        openRoutine,
         toggleFocus,
         close,
       }}
@@ -128,6 +158,12 @@ export function useCanvasColumnArtifact(): CanvasArtifactContent | null {
   return useContext(CanvasHostContext).artifact;
 }
 
+/** The routine pane subject the canvas column is showing, if any —
+ * AppShell's own read for the `CanvasColumn`'s `routine` prop. */
+export function useCanvasColumnRoutine(): RoutinePanelSubject | null {
+  return useContext(CanvasHostContext).routine;
+}
+
 /** Whether the canvas is in its dominant focus mode right now. */
 export function useCanvasColumnFocus(): boolean {
   return useContext(CanvasHostContext).focus;
@@ -143,6 +179,16 @@ export function useOpenArtifactInCanvas(): (
   artifact: CanvasArtifactContent,
 ) => void {
   return useContext(CanvasHostContext).openArtifact;
+}
+
+/** Opens (or replaces) the canvas's routine pane — the workbench header's
+ * "New routine" action, the `/routines` page's own create button, and an
+ * existing routine's own "Edit" hop all call this. `routineId: null` starts
+ * a brand-new routine; a real id opens that routine for editing. */
+export function useOpenRoutineInCanvas(): (
+  subject: RoutinePanelSubject,
+) => void {
+  return useContext(CanvasHostContext).openRoutine;
 }
 
 /** Toggles canvas-dominant focus — the mock's `data-action="canvas-focus"`
