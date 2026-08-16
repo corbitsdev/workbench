@@ -268,6 +268,32 @@ async function clickByText(
   }
 }
 
+/**
+ * Clicks `selector` by resolving and clicking it in one browser-side turn,
+ * with a few short retries — `page.click()` resolves the element handle
+ * and dispatches the click as two separate round trips, so a page still
+ * settling after a navigation (a band re-render swapping the node) can
+ * detach the resolved handle in between, surfacing as "Node is detached
+ * from document." Doing both in a single `page.evaluate` call closes that
+ * window; the retry loop covers the element not existing yet.
+ */
+async function clickStable(page: Page, selector: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const clicked = await page.evaluate((sel: string) => {
+      const el = document.querySelector(sel);
+      if (el === null) return false;
+      (el as HTMLElement).click();
+      return true;
+    }, selector);
+    if (clicked) return;
+    if (Date.now() > deadline) {
+      throw new Error(`no element matching ${selector} to click`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
 async function countMatching(page: Page, selector: string): Promise<number> {
   return page.evaluate((sel: string) => document.querySelectorAll(sel).length, selector);
 }
@@ -285,7 +311,7 @@ async function countMatching(page: Page, selector: string): Promise<number> {
  * itself.
  */
 async function createMyraChat(page: Page): Promise<void> {
-  await page.click('button[aria-label="New chat"]');
+  await clickStable(page, 'button[aria-label="New chat"]');
   await page.waitForSelector('[role="dialog"]', { timeout: 10_000 });
   await page.waitForSelector(
     '[data-testid="new-chat-agent-combobox"] [role="option"]',
