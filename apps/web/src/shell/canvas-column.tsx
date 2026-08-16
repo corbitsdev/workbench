@@ -267,18 +267,15 @@ function profileActions(
   // pause endpoint exists anywhere in the hub) — omitted rather than left
   // as a no-op that pretends to do something.
   if (profile.kind === "agent") {
+    // No "Edit agent" hop here: `ProfileSubject` (chat-ui's
+    // `profile-subject.ts`) carries only address/handle/displayName, never
+    // a channel id, so this card has no way to resolve the agent's own
+    // workbench settings. The global `/settings/agents` tab this used to
+    // target is gone — rather than hop to a dead route, the action is
+    // dropped until a subject carries enough context to land somewhere real.
     return [
       message,
       mention,
-      {
-        id: "edit-agent",
-        label: "Edit agent",
-        tone: "outline",
-        onClick: () => {
-          onClose();
-          onNavigate("/settings/agents");
-        },
-      },
       {
         id: "view-runs",
         label: "View runs",

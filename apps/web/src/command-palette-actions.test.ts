@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   ACTION_COMMANDS,
-  consumePendingNewAgent,
   consumePendingNewChannel,
   consumePendingNewRoutine,
   consumePendingNewSkill,
@@ -94,17 +93,17 @@ describe("runActionCommand", () => {
     expect(consumePendingNewChannel()).toBe(true);
   });
 
-  test("new-agent dispatches on-route, records a pending flag and navigates off-route", async () => {
-    const onAgents = context({ path: "/settings/agents" });
-    await runActionCommand("new-agent", onAgents.ctx);
-    expect(onAgents.navigated).toEqual([]);
-    expect(onAgents.dispatched).toContain("workbench:agents:create");
+  test("new-agent retargets to the new-workbench flow — the global agents settings tab is gone, and 'Create new agent' mints a fresh workbench", async () => {
+    const onChannel = context({ path: "/c/abc" });
+    await runActionCommand("new-agent", onChannel.ctx);
+    expect(onChannel.navigated).toEqual([]);
+    expect(onChannel.dispatched).toContain("workbench:chat:new-channel");
 
     const elsewhere = context({ path: "/library" });
     await runActionCommand("new-agent", elsewhere.ctx);
-    expect(elsewhere.navigated).toEqual(["/settings/agents"]);
+    expect(elsewhere.navigated).toEqual(["/c"]);
     expect(elsewhere.dispatched).toEqual([]);
-    expect(consumePendingNewAgent()).toBe(true);
+    expect(consumePendingNewChannel()).toBe(true);
   });
 
   test("new-routine off-route navigates and records a pending flag instead of dispatching", async () => {

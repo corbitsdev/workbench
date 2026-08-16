@@ -5,12 +5,12 @@
 // from any page, before the target page (and its window-event listener) has
 // mounted, so a same-tick `dispatchEvent` would be a race the listener
 // always loses. `pending-dialog-request.ts` generalizes that pattern; the
-// target pages/sections (agents-settings-section.tsx, routines-page.tsx,
-// skills-settings-section.tsx, chat-page.tsx) consume the pending flag on
-// mount. Agents and Skills moved from their own routes into Settings
-// sections (CL-5990) — "New agent"/"New skill" now land on
-// `/settings/agents` / `/settings/skills`. "New thread" is out of scope
-// (killed by owner decision).
+// target pages/sections (routines-page.tsx, skills-settings-section.tsx,
+// chat-page.tsx) consume the pending flag on mount. Skills moved from its
+// own route into a Settings section (CL-5990) — "New skill" lands on
+// `/settings/skills`. The global agents settings tab was later removed
+// (CL-6121); "New agent" now mints a fresh workbench, same as "New
+// workbench". "New thread" is out of scope (killed by owner decision).
 
 import { createPendingDialogRequest } from "@corbits/shell-layout";
 import {
@@ -27,13 +27,11 @@ import {
 import type { RoutinePrefill } from "./routine-prefill";
 
 export const NEW_CHANNEL_EVENT = "workbench:chat:new-channel";
-export const NEW_AGENT_EVENT = "workbench:agents:create";
 export const NEW_ROUTINE_EVENT = "workbench:routines:create";
 export const NEW_SKILL_EVENT = "workbench:skills:create";
 export const NEW_TASK_EVENT = "workbench:tasks:create";
 
 const newChannelRequest = createPendingDialogRequest();
-const newAgentRequest = createPendingDialogRequest();
 const newRoutineRequest = createPendingDialogRequest();
 const newSkillRequest = createPendingDialogRequest();
 const newTaskRequest = createPendingDialogRequest();
@@ -43,9 +41,12 @@ export const consumePendingNewChannel = newChannelRequest.consumePending;
 
 /**
  * Requests the new-workbench picker — the same off-route-safe hop
- * `runActionCommand("new-channel", …)` uses, pulled out so the sidebar's
- * own "+ New workbench" control (rendered on every route) can request it
- * too.
+ * `runActionCommand("new-channel", …)` uses, pulled out so every other
+ * caller with no command-palette context (the sidebar's own "+ New
+ * workbench" control, the "New agent" command, the routines page's "no
+ * taskable agents" empty state) can request it too. Agent creation has no
+ * route of its own — per the product model, "create an agent" mints a
+ * fresh workbench.
  */
 export function requestNewWorkbench(args: {
   readonly alreadyOnConversation: boolean;
@@ -57,8 +58,6 @@ export function requestNewWorkbench(args: {
     dispatch: () => window.dispatchEvent(new CustomEvent(NEW_CHANNEL_EVENT)),
   });
 }
-/** Consumed by agents-settings-section.tsx on mount. */
-export const consumePendingNewAgent = newAgentRequest.consumePending;
 /** Consumed by routines-page.tsx on mount. */
 export const consumePendingNewRoutine = newRoutineRequest.consumePending;
 /** Consumed by skills-settings-section.tsx on mount. */
@@ -103,23 +102,6 @@ export function requestMakeRoutine(args: {
 }
 
 /**
- * Requests the agent create affordance — the same off-route-safe hop
- * `runActionCommand("new-agent", …)` uses, pulled out so a caller with no
- * command-palette context (the recurring-task trigger field's "no
- * taskable agents yet" dead end) can request it too.
- */
-export function requestNewAgent(args: {
-  readonly alreadyOnAgentsSettings: boolean;
-  readonly navigateToAgentsSettings: () => void;
-}): void {
-  newAgentRequest.request({
-    alreadyOnTargetRoute: args.alreadyOnAgentsSettings,
-    navigateToTargetRoute: args.navigateToAgentsSettings,
-    dispatch: () => window.dispatchEvent(new CustomEvent(NEW_AGENT_EVENT)),
-  });
-}
-
-/**
  * Requests the routine create flow with this space pre-bound as the
  * destination ("New routine in this space" — a channel header action or
  * the composer's `/routine` command). The same off-route-safe hop
@@ -142,7 +124,6 @@ export function requestNewRoutineInSpace(args: {
 /** Test helper — drop leftover pending state between cases. */
 export function resetPendingDialogRequests(): void {
   newChannelRequest.resetPending();
-  newAgentRequest.resetPending();
   newRoutineRequest.resetPending();
   newSkillRequest.resetPending();
   newTaskRequest.resetPending();
@@ -245,12 +226,12 @@ export async function runActionCommand(
       return;
     }
     case "new-agent": {
-      newAgentRequest.request({
-        alreadyOnTargetRoute:
-          ctx.path === "/settings/agents" ||
-          ctx.path.startsWith("/settings/agents/"),
-        navigateToTargetRoute: () => ctx.navigate("/settings/agents"),
-        dispatch: () => window.dispatchEvent(new CustomEvent(NEW_AGENT_EVENT)),
+      // The global agents settings tab is gone — per the product model,
+      // "Create new agent" mints a fresh workbench (same hop as
+      // "New workbench"/the sidebar's own control).
+      requestNewWorkbench({
+        alreadyOnConversation: isChannelPath(ctx.path),
+        navigateToConversations: () => ctx.navigate(channelPath(null)),
       });
       return;
     }

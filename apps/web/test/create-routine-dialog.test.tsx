@@ -1265,7 +1265,7 @@ describe("recurring-task agent picker empty state (review addendum)", () => {
     expect(document.body.textContent).toContain(
       "No taskable agents on this workbench yet.",
     );
-    const createButton = buttonWithText("Create an agent");
+    const createButton = buttonWithText("Create an agent to run this");
     expect(createButton).not.toBeUndefined();
     act(() => {
       createButton?.click();
@@ -1285,7 +1285,7 @@ describe("recurring-task agent picker empty state (review addendum)", () => {
     expect(document.body.textContent).toContain(
       "No taskable agents on this workbench yet.",
     );
-    expect(buttonWithText("Create an agent")).toBeUndefined();
+    expect(buttonWithText("Create an agent to run this")).toBeUndefined();
   });
 });
 
