@@ -1,7 +1,11 @@
 // Launches a folded interactive run — the same shape and the same
 // address family `POST /workflows/runs` produces (see
-// `vendor/intx/hub-api/src/routes/instances.ts`, this module's
-// reference implementation) — rather than the native
+// `vendor/intx/hub-api/src/routes/runs.ts`, this module's reference
+// implementation — the folded-agent-instance launch route this used to
+// cite, `routes/instances.ts`, was retired upstream by `b5c1525b`; the
+// run-first `/workflows/runs` surface it converged onto is the same
+// self-anchored-run model this module already imitates) — rather than
+// the native
 // `sessionService.deployWorkflowDefinition` path. A workflow-deploy
 // anchor is a *deployment* run (`workflow_run.deploymentId` set, no
 // `principalId`), a different address family than a folded run

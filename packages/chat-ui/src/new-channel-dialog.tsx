@@ -358,10 +358,7 @@ export function NewChannelDialog({
   ];
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent side="right">
         <DialogHeader>
           <DialogTitle>

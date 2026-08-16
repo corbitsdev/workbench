@@ -31,9 +31,7 @@ describe("GRANT_RESOURCE_LABEL", () => {
   });
 
   test("reads naturally in the preview sentence's 'on {label}' slot", () => {
-    expect(GRANT_RESOURCE_LABEL["workflow-definition"]).toBe(
-      "agent workflows",
-    );
+    expect(GRANT_RESOURCE_LABEL["workflow-definition"]).toBe("agent workflows");
     expect(GRANT_RESOURCE_LABEL["model-provider"]).toBe("model providers");
     expect(GRANT_RESOURCE_LABEL["git-token"]).toBe("repository access");
     expect(GRANT_RESOURCE_LABEL.oauth_client).toBe("app connections");

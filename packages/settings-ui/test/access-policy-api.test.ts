@@ -41,7 +41,10 @@ describe("getAccessPolicy", () => {
 
   test("prefers the server's envelope message on a non-2xx", async () => {
     globalThis.fetch = (async () =>
-      json({ error: { message: "Not on this bench." } }, 403)) as unknown as typeof fetch;
+      json(
+        { error: { message: "Not on this bench." } },
+        403,
+      )) as unknown as typeof fetch;
 
     await expect(getAccessPolicy("tnt_1")).rejects.toMatchObject({
       message: "Not on this bench.",
@@ -49,7 +52,8 @@ describe("getAccessPolicy", () => {
   });
 
   test("falls back to a path-free message when there is no envelope", async () => {
-    globalThis.fetch = (async () => json(undefined, 401)) as unknown as typeof fetch;
+    globalThis.fetch = (async () =>
+      json(undefined, 401)) as unknown as typeof fetch;
 
     try {
       await getAccessPolicy("tnt_1");

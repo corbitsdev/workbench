@@ -27,19 +27,15 @@ describe("readErrorEnvelope", () => {
   });
 
   test("falls back to a path-free sentence naming the status and the verb", () => {
-    const message = readErrorEnvelope(
-      401,
-      undefined,
-      "loading credentials",
-    );
+    const message = readErrorEnvelope(401, undefined, "loading credentials");
     expect(message).toBe("The server answered 401 while loading credentials.");
     expect(message).not.toContain("/api/");
   });
 
   test("falls back when the body has no usable envelope shape", () => {
-    expect(readErrorEnvelope(500, { error: "boom" }, "saving that connection")).toBe(
-      "The server answered 500 while saving that connection.",
-    );
+    expect(
+      readErrorEnvelope(500, { error: "boom" }, "saving that connection"),
+    ).toBe("The server answered 500 while saving that connection.");
   });
 });
 

@@ -1532,8 +1532,8 @@ function CreateRoutineDialog({
                       className="text-xs text-[var(--ui-fg-muted)]"
                       role="status"
                     >
-                      Results land in your Inbox — this workflow never posts
-                      to a workbench.
+                      Results land in your Inbox — this workflow never posts to
+                      a workbench.
                     </p>
                   </div>
                 )}

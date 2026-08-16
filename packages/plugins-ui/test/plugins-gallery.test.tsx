@@ -66,7 +66,11 @@ const NOT_CONNECTED: ResolvedPlugin = {
   credentialName: null,
 };
 
-const PLUGINS: readonly ResolvedPlugin[] = [CONNECTED, INHERITED, NOT_CONNECTED];
+const PLUGINS: readonly ResolvedPlugin[] = [
+  CONNECTED,
+  INHERITED,
+  NOT_CONNECTED,
+];
 
 const SKILLS: readonly SkillCardData[] = [
   {
@@ -155,7 +159,9 @@ describe("PluginsGallery", () => {
     });
 
     expect(container.textContent).toContain("Weekly digest");
-    expect(container.textContent).toContain("Summarizes the week's channel activity.");
+    expect(container.textContent).toContain(
+      "Summarizes the week's channel activity.",
+    );
     expect(container.textContent).toContain("Shared with everyone");
     expect(container.textContent).toContain("Just you");
   });

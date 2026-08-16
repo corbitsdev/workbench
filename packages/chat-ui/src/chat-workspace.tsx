@@ -268,7 +268,10 @@ function useChannelLists(tenantId: string) {
     if (channels.isError) {
       return {
         kind: "error",
-        message: describeChatError(channels.error, "Couldn't load workbenches."),
+        message: describeChatError(
+          channels.error,
+          "Couldn't load workbenches.",
+        ),
       };
     }
     if (chats.isError) {

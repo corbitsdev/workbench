@@ -36,7 +36,11 @@ import {
 
 type DetailState =
   | { readonly status: "loading" }
-  | { readonly status: "ready"; readonly skill: SkillDetail; readonly versions: readonly SkillVersion[] }
+  | {
+      readonly status: "ready";
+      readonly skill: SkillDetail;
+      readonly versions: readonly SkillVersion[];
+    }
   | { readonly status: "error"; readonly message: string };
 
 function messageOf(cause: unknown): string {
@@ -62,12 +66,17 @@ export function PluginSkillDetailPanel({
     if (skillName === null) return;
     let cancelled = false;
     setState({ status: "loading" });
-    Promise.all([loadSkill(tenantId, skillName), listSkillVersions(tenantId, skillName)])
+    Promise.all([
+      loadSkill(tenantId, skillName),
+      listSkillVersions(tenantId, skillName),
+    ])
       .then(([detail, versions]) => {
-        if (!cancelled) setState({ status: "ready", skill: detail.skill, versions });
+        if (!cancelled)
+          setState({ status: "ready", skill: detail.skill, versions });
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setState({ status: "error", message: messageOf(cause) });
+        if (!cancelled)
+          setState({ status: "error", message: messageOf(cause) });
       });
     return () => {
       cancelled = true;
@@ -94,10 +103,17 @@ export function PluginSkillDetailPanel({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
       <DialogContent side="right" key={skillName ?? "none"}>
         <DialogHeader>
-          <DialogTitle>{state.status === "ready" ? state.skill.name : (skillName ?? "")}</DialogTitle>
+          <DialogTitle>
+            {state.status === "ready" ? state.skill.name : (skillName ?? "")}
+          </DialogTitle>
           <DialogDescription>
             {state.status === "ready" ? state.skill.description : ""}
           </DialogDescription>
@@ -116,7 +132,9 @@ export function PluginSkillDetailPanel({
           <DialogBody className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <Badge tone={state.skill.scope === "tenant" ? "info" : "neutral"}>
-                {state.skill.scope === "tenant" ? "Shared with everyone" : "Just you"}
+                {state.skill.scope === "tenant"
+                  ? "Shared with everyone"
+                  : "Just you"}
               </Badge>
               <Button
                 type="button"
@@ -133,7 +151,9 @@ export function PluginSkillDetailPanel({
                   )
                 }
               >
-                {state.skill.scope === "tenant" ? "Make private" : "Share with everyone"}
+                {state.skill.scope === "tenant"
+                  ? "Make private"
+                  : "Share with everyone"}
               </Button>
             </div>
             <pre className="whitespace-pre-wrap break-words border border-border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
@@ -153,7 +173,11 @@ export function PluginSkillDetailPanel({
                   <TableRow key={version.commitSha}>
                     <TableCell className="font-mono text-xs">
                       {version.commitSha.slice(0, 8)}
-                      {version.current ? <Badge tone="success" className="ml-2">current</Badge> : null}
+                      {version.current ? (
+                        <Badge tone="success" className="ml-2">
+                          current
+                        </Badge>
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-sm">{version.message}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -167,7 +191,11 @@ export function PluginSkillDetailPanel({
                         disabled={version.current || busy}
                         onClick={() =>
                           void run(() =>
-                            restoreSkillVersion(tenantId, state.skill.name, version.commitSha),
+                            restoreSkillVersion(
+                              tenantId,
+                              state.skill.name,
+                              version.commitSha,
+                            ),
                           )
                         }
                       >

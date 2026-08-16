@@ -70,9 +70,7 @@ const EFFECT_TONE: Record<GrantEffect, "success" | "danger" | "info"> = {
 };
 
 function resourceLabel(resource: string): string {
-  return (
-    GRANT_RESOURCE_LABEL[resource as GrantResource] ?? resource
-  );
+  return GRANT_RESOURCE_LABEL[resource as GrantResource] ?? resource;
 }
 
 /** "Alice Anderson — person": a picker that can't group by kind (a native
@@ -329,7 +327,9 @@ export function GrantsTable({
               {grant.roleName ?? grant.principalName ?? "—"}
             </TableCell>
             <TableCell>
-              <span title={grant.resource}>{resourceLabel(grant.resource)}</span>
+              <span title={grant.resource}>
+                {resourceLabel(grant.resource)}
+              </span>
             </TableCell>
             <TableCell>{grant.action}</TableCell>
             <TableCell>

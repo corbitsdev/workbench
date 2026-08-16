@@ -343,10 +343,10 @@ export function createHubChatPlatform(
         throw new Error("channel definition is not valid JSON", { cause });
       }
       const wireHash = await computeWireDefinitionHash(definitionJSON);
-      const { definitionId } = await ensureWorkflowDefinitionForAsset(
-        deps.db,
-        { assetId: asset.id, wireHash },
-      );
+      const { definitionId } = await ensureWorkflowDefinitionForAsset(deps.db, {
+        assetId: asset.id,
+        wireHash,
+      });
 
       const foldedBody = readFoldedBody(definitionJSON);
 

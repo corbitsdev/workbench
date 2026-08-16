@@ -328,7 +328,7 @@ function buildAgentDefinitionDraftPrompt(
     '  {"systemPrompt": "<the instructions this agent should follow on every turn>", "description": "<optional one-line refined description>", "modelPreference": "<optional model canonicalName from the inventory above, verbatim>", "toolPackagePins": ["<optional tool package name from the inventory above, verbatim>", ...], "skills": ["<optional skill name from the inventory above, verbatim>", ...]}',
     "",
     "systemPrompt is REQUIRED and should speak directly to the agent",
-    "(\"You are...\"), grounded in what the person described. It must also",
+    '("You are..."), grounded in what the person described. It must also',
     "instruct the agent that its very first reply in a brand-new",
     "conversation should: greet the person by name, introduce itself by",
     "its own name, note in a plain, short tone that this is a fresh start",

@@ -148,6 +148,8 @@ describe("the other two entries land on the same `/` hop", () => {
       new URL("../src/pages/onboarding-page.tsx", import.meta.url),
       "utf8",
     );
-    expect(source).toContain('<Button onClick={() => navigate("/")}>Meet Myra</Button>');
+    expect(source).toContain(
+      '<Button onClick={() => navigate("/")}>Meet Myra</Button>',
+    );
   });
 });

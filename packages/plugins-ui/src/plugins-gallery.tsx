@@ -160,7 +160,11 @@ function SkillsTabPanel({
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
       {filtered.map((skill) => (
-        <SkillCard key={skill.assetId} skill={skill} onOpen={() => onOpen(skill)} />
+        <SkillCard
+          key={skill.assetId}
+          skill={skill}
+          onOpen={() => onOpen(skill)}
+        />
       ))}
     </div>
   );
@@ -200,7 +204,9 @@ export function PluginsGallery({
           <div className="flex flex-col gap-4 pt-3">
             <div className="flex flex-wrap items-center gap-3">
               <LibrarySearchInput
-                label={active === "plugins" ? "Search plugins" : "Search skills"}
+                label={
+                  active === "plugins" ? "Search plugins" : "Search skills"
+                }
                 value={query}
                 onChange={setQuery}
               />
@@ -215,7 +221,11 @@ export function PluginsGallery({
                 />
               </>
             ) : (
-              <SkillsTabPanel skills={skills} query={query} onOpen={onOpenSkill} />
+              <SkillsTabPanel
+                skills={skills}
+                query={query}
+                onOpen={onOpenSkill}
+              />
             )}
           </div>
         )}

@@ -280,9 +280,7 @@ export function createAgentDefinitionRoutes({
       },
     });
 
-    const wireHash = await computeWireDefinitionHash(
-      JSON.parse(workflowJson),
-    );
+    const wireHash = await computeWireDefinitionHash(JSON.parse(workflowJson));
     const { definitionId } = await ensureWorkflowDefinitionForAsset(db, {
       assetId,
       wireHash,

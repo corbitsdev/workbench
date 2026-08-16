@@ -1068,9 +1068,7 @@ describe("routine destination (CL-6073)", () => {
     });
     await settle();
 
-    expect(document.body.textContent).not.toContain(
-      "create a channel first",
-    );
+    expect(document.body.textContent).not.toContain("create a channel first");
     expect(document.body.textContent).toContain(
       "New workbench for this routine",
     );

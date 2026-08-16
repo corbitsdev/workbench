@@ -55,13 +55,13 @@ pattern).
 
 ## Modules
 
-| Module                      | Owns                                                          |
-| --------------------------- | ------------------------------------------------------------- |
-| `breakpoints.ts`            | Pixel-width → `ShellLayoutMode` and the canvas's mode rule    |
-| `use-shell-layout.ts`       | The `matchMedia`-driven hook reading those breakpoints        |
-| `canvas-column-state.ts`    | The canvas's open/profile/artifact/focus state machine        |
-| `use-scroll-reset.ts`       | Per-route scroll reset                                        |
-| `pending-dialog-request.ts` | The cross-route "open this dialog" pattern                    |
+| Module                      | Owns                                                       |
+| --------------------------- | ---------------------------------------------------------- |
+| `breakpoints.ts`            | Pixel-width → `ShellLayoutMode` and the canvas's mode rule |
+| `use-shell-layout.ts`       | The `matchMedia`-driven hook reading those breakpoints     |
+| `canvas-column-state.ts`    | The canvas's open/profile/artifact/focus state machine     |
+| `use-scroll-reset.ts`       | Per-route scroll reset                                     |
+| `pending-dialog-request.ts` | The cross-route "open this dialog" pattern                 |
 
 ## Where the workbench build's concrete types live
 

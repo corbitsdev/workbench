@@ -643,9 +643,9 @@ describe("composer slash commands — each wired command's real action", () => {
     });
     await harness.settle();
 
-    const button = [
-      ...harness.container.querySelectorAll("button"),
-    ].find((element) => element.textContent?.trim() === "New routine");
+    const button = [...harness.container.querySelectorAll("button")].find(
+      (element) => element.textContent?.trim() === "New routine",
+    );
     expect(button).not.toBeUndefined();
     act(() => {
       button?.click();
@@ -664,9 +664,9 @@ describe("composer slash commands — each wired command's real action", () => {
     });
     await harness.settle();
 
-    const button = [
-      ...harness.container.querySelectorAll("button"),
-    ].find((element) => element.textContent?.trim() === "New routine");
+    const button = [...harness.container.querySelectorAll("button")].find(
+      (element) => element.textContent?.trim() === "New routine",
+    );
     expect(button).toBeUndefined();
     harness.unmount();
   });

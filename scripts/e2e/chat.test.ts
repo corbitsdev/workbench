@@ -764,9 +764,9 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       definitionId: await echoDefinitionId(),
     });
     expectStatus("re-create existing agent chat", reopened, 200);
-    expect(stringField(reopened.data, "id", "re-create existing agent chat")).toBe(
-      chatId,
-    );
+    expect(
+      stringField(reopened.data, "id", "re-create existing agent chat"),
+    ).toBe(chatId);
 
     const channelKindListed = await api(
       "GET",

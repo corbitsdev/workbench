@@ -44,10 +44,7 @@ import { Hono } from "hono";
 
 import type { DB } from "@intx/db";
 import { workflowDefinition, workflowRun } from "@intx/db/schema";
-import {
-  AssetServiceError,
-  DEFAULT_ASSET_REF,
-} from "@intx/hub-sessions";
+import { AssetServiceError, DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
 import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";

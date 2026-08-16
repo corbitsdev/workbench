@@ -130,7 +130,9 @@ async function screenshot(getPage: GetPage, name: string): Promise<string> {
       setTimeout(() => reject(new Error("screenshot timed out")), 8_000),
     ),
   ]).catch((error) => {
-    console.error(`  (screenshot failed: ${error instanceof Error ? error.message : error})`);
+    console.error(
+      `  (screenshot failed: ${error instanceof Error ? error.message : error})`,
+    );
   });
   return file;
 }
@@ -151,7 +153,12 @@ async function step(
     };
   }
   const shot = await screenshot(getPage, name.replace(/[^a-z0-9]+/gi, "-"));
-  results.push({ step: name, status: outcome.status, detail: outcome.detail, screenshot: shot });
+  results.push({
+    step: name,
+    status: outcome.status,
+    detail: outcome.detail,
+    screenshot: shot,
+  });
   console.log(`  ${outcome.status.toUpperCase()}: ${outcome.detail}`);
   console.log(`  screenshot: ${shot}`);
 }
@@ -195,7 +202,8 @@ async function startWebDevServer(options: {
   let done = false;
   const capture = async (stream: ReadableStream<Uint8Array>) => {
     const decoder = new TextDecoder();
-    for await (const chunk of stream) captured += decoder.decode(chunk, { stream: true });
+    for await (const chunk of stream)
+      captured += decoder.decode(chunk, { stream: true });
   };
   void capture(proc.stdout);
   void capture(proc.stderr);
@@ -221,7 +229,9 @@ async function startWebDevServer(options: {
   const deadline = Date.now() + 20_000;
   for (;;) {
     if (app.exited()) {
-      throw new Error(`web dev server exited during boot; output:\n${app.output()}`);
+      throw new Error(
+        `web dev server exited during boot; output:\n${app.output()}`,
+      );
     }
     try {
       const res = await fetch(baseUrl);
@@ -295,7 +305,10 @@ async function clickStable(page: Page, selector: string): Promise<void> {
 }
 
 async function countMatching(page: Page, selector: string): Promise<number> {
-  return page.evaluate((sel: string) => document.querySelectorAll(sel).length, selector);
+  return page.evaluate(
+    (sel: string) => document.querySelectorAll(sel).length,
+    selector,
+  );
 }
 
 // --- the walkthrough -----------------------------------------------------
@@ -319,7 +332,8 @@ async function createMyraChat(page: Page): Promise<void> {
     { timeout: 10_000 },
   );
   const hasCreateRow = await page.evaluate(
-    () => document.querySelector('[data-testid="new-chat-create-agent"]') !== null,
+    () =>
+      document.querySelector('[data-testid="new-chat-create-agent"]') !== null,
   );
   if (!hasCreateRow) {
     throw new Error(
@@ -346,7 +360,10 @@ async function createMyraChat(page: Page): Promise<void> {
   // Picking an agent resolves the workbench immediately (no separate
   // submit click) — wait for the dialog to actually go away rather than
   // assuming.
-  await page.waitForSelector('[role="dialog"]', { hidden: true, timeout: 15_000 });
+  await page.waitForSelector('[role="dialog"]', {
+    hidden: true,
+    timeout: 15_000,
+  });
 }
 
 async function run(): Promise<void> {
@@ -416,8 +433,13 @@ async function run(): Promise<void> {
     });
     cleanups.push(() => sidecar.stop());
 
-    console.log("Starting apps/web dev server (proxying /api to the real hub)...");
-    const web = await startWebDevServer({ hubBaseUrl: hub.baseUrl, port: webPort });
+    console.log(
+      "Starting apps/web dev server (proxying /api to the real hub)...",
+    );
+    const web = await startWebDevServer({
+      hubBaseUrl: hub.baseUrl,
+      port: webPort,
+    });
     cleanups.push(() => web.stop());
 
     browser = await puppeteer.launch({
@@ -429,9 +451,12 @@ async function run(): Promise<void> {
     cleanups.push(() => closeBrowser.close());
 
     function wireDiagnostics(target: Page): void {
-      target.on("pageerror", (error) => console.error(`  [page error] ${error.message}`));
+      target.on("pageerror", (error) =>
+        console.error(`  [page error] ${error.message}`),
+      );
       target.on("console", (msg) => {
-        if (msg.type() === "error") console.error(`  [console.error] ${msg.text()}`);
+        if (msg.type() === "error")
+          console.error(`  [console.error] ${msg.text()}`);
       });
     }
 
@@ -446,387 +471,483 @@ async function run(): Promise<void> {
     const stubApiKey = "sk-e2e-stub-not-real";
 
     // --- Step 1: signup -> onboarding -> connect provider (stub key) -> shell
-    await step(() => page, "01-signup", async () => {
-      await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
-      await page.waitForSelector(".auth-switch", { timeout: 10_000 });
-      await page.click(".auth-switch"); // "Create an account" -> sign-up mode
-      await page.waitForSelector('input[name="email"]');
-      await page.type('input[name="email"]', email);
-      await page.type('input[name="password"]', password);
-      await page.click('button[type="submit"]');
-      await page.waitForFunction(
-        () => window.location.pathname === "/onboarding",
-        { timeout: 15_000 },
-      );
-      return { status: "pass", detail: `signed up as ${email}, reached onboarding` };
-    });
+    await step(
+      () => page,
+      "01-signup",
+      async () => {
+        await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
+        await page.waitForSelector(".auth-switch", { timeout: 10_000 });
+        await page.click(".auth-switch"); // "Create an account" -> sign-up mode
+        await page.waitForSelector('input[name="email"]');
+        await page.type('input[name="email"]', email);
+        await page.type('input[name="password"]', password);
+        await page.click('button[type="submit"]');
+        await page.waitForFunction(
+          () => window.location.pathname === "/onboarding",
+          { timeout: 15_000 },
+        );
+        return {
+          status: "pass",
+          detail: `signed up as ${email}, reached onboarding`,
+        };
+      },
+    );
 
-    await step(() => page, "02-onboarding-naming", async () => {
-      await page.waitForSelector("#onboarding-workbench-name", { timeout: 10_000 });
-      await page.type("#onboarding-workbench-name", workbenchName);
-      await clickByText(page, "button[type=submit]", "Continue");
-      // Credential step renders next: an inference-provider radiogroup.
-      await page.waitForSelector('[aria-label="Inference provider"]', {
-        timeout: 15_000,
-      });
-      return { status: "pass", detail: "workbench provisioned, reached credential step" };
-    });
+    await step(
+      () => page,
+      "02-onboarding-naming",
+      async () => {
+        await page.waitForSelector("#onboarding-workbench-name", {
+          timeout: 10_000,
+        });
+        await page.type("#onboarding-workbench-name", workbenchName);
+        await clickByText(page, "button[type=submit]", "Continue");
+        // Credential step renders next: an inference-provider radiogroup.
+        await page.waitForSelector('[aria-label="Inference provider"]', {
+          timeout: 15_000,
+        });
+        return {
+          status: "pass",
+          detail: "workbench provisioned, reached credential step",
+        };
+      },
+    );
 
-    await step(() => page, "03-connect-provider-stub-key", async () => {
-      // Every UI path that accepts a pasted key — onboarding's credential
-      // step, and Settings > Connections' connector cards — performs a
-      // real, synchronous network probe of the key before storing it (see
-      // packages/onboarding/src/complete-credential.ts and
-      // packages/connections/src/routes.ts): a stub key is rejected right
-      // there, by design. `local-rip.test.ts` (CL-6055) already
-      // establishes the honest way to drive a stub key past exactly that
-      // gate: call the same two halves the onboarding route itself calls
-      // (`testAndPersistCredential` / `ensureSeeded`, from
-      // `@workbench/onboarding`) directly, stubbing only the one
-      // `testCredential` network boundary those functions expose
-      // precisely so this is possible — everything else (persisting the
-      // credential, publishing the tool registry, pushing and deploying
-      // every default workflow including "assistant"/Myra) runs for
-      // real, against the real spawned hub, using the real session
-      // cookie this browser just signed in with. The stub key itself is
-      // never sent anywhere here — it is stored as an unproven model
-      // source, exactly as onboarding's own key path would store it, so
-      // the later chat message is the first time it is ever dialed for
-      // real.
-      const cookies = (await page.cookies()).map((c) => `${c.name}=${c.value}`);
-      const hubApi = createHubAPI(hub.baseUrl);
-      const session = await hubApi("GET", "/api/auth/get-session", undefined, cookies);
-      const userId = (session.data as { user?: { id?: string } } | null)?.user?.id;
-      if (userId === undefined || userId === "") {
-        throw new Error(`no authenticated session found: ${JSON.stringify(session.data)}`);
-      }
-      const pushWorkflow = createGitWorkflowPusher();
-      const connected = await testAndPersistCredential({
-        api: hubApi,
-        cookies,
-        hubUrl: hub.baseUrl,
-        userId,
-        userEmail: email,
-        provider: "anthropic",
-        apiKey: stubApiKey,
-        pushWorkflow,
-        log: () => undefined,
-        testCredential: async () => ({ ok: true }),
-      });
-      if (connected.kind !== "connected") {
-        throw new Error(`expected the key-path connect to succeed, got: ${JSON.stringify(connected)}`);
-      }
-      const deadline = Date.now() + 60_000;
-      for (;;) {
-        if (sidecar.exited()) {
-          throw new Error(`sidecar exited before seeding could complete; output:\n${sidecar.output()}`);
+    await step(
+      () => page,
+      "03-connect-provider-stub-key",
+      async () => {
+        // Every UI path that accepts a pasted key — onboarding's credential
+        // step, and Settings > Connections' connector cards — performs a
+        // real, synchronous network probe of the key before storing it (see
+        // packages/onboarding/src/complete-credential.ts and
+        // packages/connections/src/routes.ts): a stub key is rejected right
+        // there, by design. `local-rip.test.ts` (CL-6055) already
+        // establishes the honest way to drive a stub key past exactly that
+        // gate: call the same two halves the onboarding route itself calls
+        // (`testAndPersistCredential` / `ensureSeeded`, from
+        // `@workbench/onboarding`) directly, stubbing only the one
+        // `testCredential` network boundary those functions expose
+        // precisely so this is possible — everything else (persisting the
+        // credential, publishing the tool registry, pushing and deploying
+        // every default workflow including "assistant"/Myra) runs for
+        // real, against the real spawned hub, using the real session
+        // cookie this browser just signed in with. The stub key itself is
+        // never sent anywhere here — it is stored as an unproven model
+        // source, exactly as onboarding's own key path would store it, so
+        // the later chat message is the first time it is ever dialed for
+        // real.
+        const cookies = (await page.cookies()).map(
+          (c) => `${c.name}=${c.value}`,
+        );
+        const hubApi = createHubAPI(hub.baseUrl);
+        const session = await hubApi(
+          "GET",
+          "/api/auth/get-session",
+          undefined,
+          cookies,
+        );
+        const userId = (session.data as { user?: { id?: string } } | null)?.user
+          ?.id;
+        if (userId === undefined || userId === "") {
+          throw new Error(
+            `no authenticated session found: ${JSON.stringify(session.data)}`,
+          );
         }
-        try {
-          const seeded = await ensureSeeded({
-            api: hubApi,
-            cookies,
-            hubUrl: hub.baseUrl,
-            pushWorkflow,
-            log: () => undefined,
-            tenant: connected,
-            provider: "anthropic",
-            apiKey: stubApiKey,
-          });
+        const pushWorkflow = createGitWorkflowPusher();
+        const connected = await testAndPersistCredential({
+          api: hubApi,
+          cookies,
+          hubUrl: hub.baseUrl,
+          userId,
+          userEmail: email,
+          provider: "anthropic",
+          apiKey: stubApiKey,
+          pushWorkflow,
+          log: () => undefined,
+          testCredential: async () => ({ ok: true }),
+        });
+        if (connected.kind !== "connected") {
+          throw new Error(
+            `expected the key-path connect to succeed, got: ${JSON.stringify(connected)}`,
+          );
+        }
+        const deadline = Date.now() + 60_000;
+        for (;;) {
+          if (sidecar.exited()) {
+            throw new Error(
+              `sidecar exited before seeding could complete; output:\n${sidecar.output()}`,
+            );
+          }
+          try {
+            const seeded = await ensureSeeded({
+              api: hubApi,
+              cookies,
+              hubUrl: hub.baseUrl,
+              pushWorkflow,
+              log: () => undefined,
+              tenant: connected,
+              provider: "anthropic",
+              apiKey: stubApiKey,
+            });
+            return {
+              status: "pass",
+              detail: `stub credential stored and every default workflow deployed: ${seeded.workflows.join(", ")}`,
+            };
+          } catch (cause) {
+            if (Date.now() > deadline) throw cause;
+            await Bun.sleep(1000);
+          }
+        }
+      },
+    );
+
+    await step(
+      () => page,
+      "04-land-in-shell-bare-root",
+      async () => {
+        // CL-6081: `/` (bare root, not just `/c`) is Myra's land hop too —
+        // `HomeRoute` ensures her channel and redirects straight into it.
+        await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
+        await page.waitForFunction(
+          () => window.location.pathname.startsWith("/c/"),
+          {
+            timeout: 15_000,
+          },
+        );
+        return {
+          status: "pass",
+          detail: `bare root landed in Myra's chat at ${await page.evaluate(() => window.location.pathname)}`,
+        };
+      },
+    );
+
+    await step(
+      () => page,
+      "04b-workbench-sidebar",
+      async () => {
+        await page.goto(`${webBaseUrl}/c`, { waitUntil: "domcontentloaded" });
+        await page.waitForSelector('button[aria-label="New workbench"]', {
+          timeout: 15_000,
+        });
+        const sidebarTitle = await page.evaluate(
+          () =>
+            document
+              .querySelector('[data-slot="sidebar-panel-header"] h2')
+              ?.textContent?.trim() ?? null,
+        );
+        if (sidebarTitle !== "Workbenches") {
           return {
-            status: "pass",
-            detail: `stub credential stored and every default workflow deployed: ${seeded.workflows.join(", ")}`,
+            status: "fail",
+            detail: `expected the sidebar title "Workbenches", got ${JSON.stringify(sidebarTitle)}`,
           };
-        } catch (cause) {
-          if (Date.now() > deadline) throw cause;
-          await Bun.sleep(1000);
         }
-      }
-    });
-
-    await step(() => page, "04-land-in-shell-bare-root", async () => {
-      // CL-6081: `/` (bare root, not just `/c`) is Myra's land hop too —
-      // `HomeRoute` ensures her channel and redirects straight into it.
-      await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
-      await page.waitForFunction(() => window.location.pathname.startsWith("/c/"), {
-        timeout: 15_000,
-      });
-      return {
-        status: "pass",
-        detail: `bare root landed in Myra's chat at ${await page.evaluate(() => window.location.pathname)}`,
-      };
-    });
-
-    await step(() => page, "04b-workbench-sidebar", async () => {
-      await page.goto(`${webBaseUrl}/c`, { waitUntil: "domcontentloaded" });
-      await page.waitForSelector('button[aria-label="New workbench"]', {
-        timeout: 15_000,
-      });
-      const sidebarTitle = await page.evaluate(
-        () =>
-          document
-            .querySelector('[data-slot="sidebar-panel-header"] h2')
-            ?.textContent?.trim() ?? null,
-      );
-      if (sidebarTitle !== "Workbenches") {
+        const createButtons = await countMatching(
+          page,
+          'button[aria-label="New workbench"]',
+        );
+        if (createButtons !== 1) {
+          return {
+            status: "fail",
+            detail: `expected exactly one "New workbench" affordance, found ${createButtons}`,
+          };
+        }
         return {
-          status: "fail",
-          detail: `expected the sidebar title "Workbenches", got ${JSON.stringify(sidebarTitle)}`,
+          status: "pass",
+          detail:
+            'single always-visible sidebar: titled "Workbenches", one "+ New workbench" affordance',
         };
-      }
-      const createButtons = await countMatching(
-        page,
-        'button[aria-label="New workbench"]',
-      );
-      if (createButtons !== 1) {
-        return {
-          status: "fail",
-          detail: `expected exactly one "New workbench" affordance, found ${createButtons}`,
-        };
-      }
-      return {
-        status: "pass",
-        detail:
-          'single always-visible sidebar: titled "Workbenches", one "+ New workbench" affordance',
-      };
-    });
+      },
+    );
 
     // --- Step 2: CL-6070 — create with Myra, then a second create that
     // must resolve to the SAME workbench (find-or-create dedup, CL-6087).
     let firstWorkbenchPath = "";
-    await step(() => page, "05-create-first-myra-workbench", async () => {
-      await createMyraChat(page);
-      await page.waitForFunction(
-        () => window.location.pathname.startsWith("/c/"),
-        { timeout: 15_000 },
-      );
-      firstWorkbenchPath = await page.evaluate(() => window.location.pathname);
-      return {
-        status: "pass",
-        detail: `created Myra's workbench via the picker, landed at ${firstWorkbenchPath}`,
-      };
-    });
-
-    await step(() => page, "06-second-create-reopens-same-workbench", async () => {
-      // The sidebar (and its "+ New workbench" affordance) is always
-      // present — no navigation needed before opening the picker again.
-      await createMyraChat(page);
-      await page.waitForFunction(
-        () => window.location.pathname.startsWith("/c/"),
-        { timeout: 15_000 },
-      );
-      const secondPath = await page.evaluate(() => window.location.pathname);
-      if (secondPath !== firstWorkbenchPath) {
-        return {
-          status: "fail",
-          detail:
-            `expected the second create to reopen ${firstWorkbenchPath} ` +
-            `(find-or-create dedup), landed at ${secondPath}`,
-        };
-      }
-      return {
-        status: "pass",
-        detail: `second create reopened the same workbench (${secondPath}) — no duplicate created`,
-      };
-    });
-
-    await step(() => page, "07-sidebar-myra-duplicates-CL-6070", async () => {
-      // The always-visible sidebar already lists every workbench — the
-      // rows are just there, no navigation or priming needed.
-      await page.waitForSelector(".shell-ch-row-wrap", { timeout: 15_000 });
-      const myraRows = await countMatching(
-        page,
-        '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
-      );
-      if (myraRows === 1) {
+    await step(
+      () => page,
+      "05-create-first-myra-workbench",
+      async () => {
+        await createMyraChat(page);
+        await page.waitForFunction(
+          () => window.location.pathname.startsWith("/c/"),
+          { timeout: 15_000 },
+        );
+        firstWorkbenchPath = await page.evaluate(
+          () => window.location.pathname,
+        );
         return {
           status: "pass",
-          detail: "sidebar shows exactly 1 Myra row — dedup working, CL-6070 not reproduced",
+          detail: `created Myra's workbench via the picker, landed at ${firstWorkbenchPath}`,
         };
-      }
-      if (myraRows >= 2) {
+      },
+    );
+
+    await step(
+      () => page,
+      "06-second-create-reopens-same-workbench",
+      async () => {
+        // The sidebar (and its "+ New workbench" affordance) is always
+        // present — no navigation needed before opening the picker again.
+        await createMyraChat(page);
+        await page.waitForFunction(
+          () => window.location.pathname.startsWith("/c/"),
+          { timeout: 15_000 },
+        );
+        const secondPath = await page.evaluate(() => window.location.pathname);
+        if (secondPath !== firstWorkbenchPath) {
+          return {
+            status: "fail",
+            detail:
+              `expected the second create to reopen ${firstWorkbenchPath} ` +
+              `(find-or-create dedup), landed at ${secondPath}`,
+          };
+        }
         return {
-          status: "repro-confirmed",
-          detail: `sidebar shows ${myraRows} rows titled "Myra" — CL-6070 duplicate-row bug reproduced`,
+          status: "pass",
+          detail: `second create reopened the same workbench (${secondPath}) — no duplicate created`,
         };
-      }
-      return {
-        status: "fail",
-        detail: `expected at least 1 Myra sidebar row, found ${myraRows}`,
-      };
-    });
+      },
+    );
+
+    await step(
+      () => page,
+      "07-sidebar-myra-duplicates-CL-6070",
+      async () => {
+        // The always-visible sidebar already lists every workbench — the
+        // rows are just there, no navigation or priming needed.
+        await page.waitForSelector(".shell-ch-row-wrap", { timeout: 15_000 });
+        const myraRows = await countMatching(
+          page,
+          '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
+        );
+        if (myraRows === 1) {
+          return {
+            status: "pass",
+            detail:
+              "sidebar shows exactly 1 Myra row — dedup working, CL-6070 not reproduced",
+          };
+        }
+        if (myraRows >= 2) {
+          return {
+            status: "repro-confirmed",
+            detail: `sidebar shows ${myraRows} rows titled "Myra" — CL-6070 duplicate-row bug reproduced`,
+          };
+        }
+        return {
+          status: "fail",
+          detail: `expected at least 1 Myra sidebar row, found ${myraRows}`,
+        };
+      },
+    );
 
     // --- Step 3: send "hi" in the Myra chat, expect *some* reply bubble
-    await step(() => page, "08-send-hi-to-myra", async () => {
-      const rowSelector = '.shell-ch-row-wrap[data-ctx-channel-title="Myra"] button.shell-ch-row';
-      await clickStable(page, rowSelector);
-      // A freshly created channel launches its anchor instance on first
-      // open (the same real hop chat.test.ts retries against a
-      // transient 500 for up to 60s) before the composer can render —
-      // bounded, not instant. A client-side click straight out of the
-      // just-closed new-chat dialog occasionally lands the stage on a
-      // blank, contentless render (no composer, no loading state, no
-      // error) rather than a slow-but-eventual one; a single full
-      // reload of the same route recovers it every time this harness
-      // has hit it, so that is the one retry this step allows itself.
-      const composerAppeared = await page
-        .waitForSelector("textarea.chat-composer-input", { timeout: 20_000 })
-        .then(() => true)
-        .catch(() => false);
-      if (!composerAppeared) {
-        // A same-tab reload has, in practice, itself hung here — the
-        // blank render this recovers from can peg the tab badly enough
-        // that even `Page.navigate` never lands. A brand-new tab sidesteps
-        // whatever state the wedged one is in, rather than betting the
-        // rest of the run on unwedging it.
-        const stalePage = page;
-        page = await closeBrowser.newPage();
-        await page.setViewport({ width: 1440, height: 900 });
-        page.setDefaultTimeout(15_000);
-        wireDiagnostics(page);
-        await stalePage.close().catch(() => undefined);
+    await step(
+      () => page,
+      "08-send-hi-to-myra",
+      async () => {
+        const rowSelector =
+          '.shell-ch-row-wrap[data-ctx-channel-title="Myra"] button.shell-ch-row';
+        await clickStable(page, rowSelector);
+        // A freshly created channel launches its anchor instance on first
+        // open (the same real hop chat.test.ts retries against a
+        // transient 500 for up to 60s) before the composer can render —
+        // bounded, not instant. A client-side click straight out of the
+        // just-closed new-chat dialog occasionally lands the stage on a
+        // blank, contentless render (no composer, no loading state, no
+        // error) rather than a slow-but-eventual one; a single full
+        // reload of the same route recovers it every time this harness
+        // has hit it, so that is the one retry this step allows itself.
+        const composerAppeared = await page
+          .waitForSelector("textarea.chat-composer-input", { timeout: 20_000 })
+          .then(() => true)
+          .catch(() => false);
+        if (!composerAppeared) {
+          // A same-tab reload has, in practice, itself hung here — the
+          // blank render this recovers from can peg the tab badly enough
+          // that even `Page.navigate` never lands. A brand-new tab sidesteps
+          // whatever state the wedged one is in, rather than betting the
+          // rest of the run on unwedging it.
+          const stalePage = page;
+          page = await closeBrowser.newPage();
+          await page.setViewport({ width: 1440, height: 900 });
+          page.setDefaultTimeout(15_000);
+          wireDiagnostics(page);
+          await stalePage.close().catch(() => undefined);
+          await page.goto(`${webBaseUrl}/c`, {
+            waitUntil: "domcontentloaded",
+            timeout: 20_000,
+          });
+          await page.waitForSelector(
+            '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
+            {
+              timeout: 15_000,
+            },
+          );
+          await clickStable(page, rowSelector);
+          await page.waitForSelector("textarea.chat-composer-input", {
+            timeout: 30_000,
+          });
+        }
+        await page.type("textarea.chat-composer-input", "hi");
+        await clickStable(page, 'button[aria-label="Send"]');
+        await page.waitForSelector('div.chat-bubble-row[data-own="true"]', {
+          timeout: 10_000,
+        });
+        try {
+          await page.waitForSelector('div.chat-bubble-row[data-own="false"]', {
+            timeout: 45_000,
+          });
+        } catch {
+          const hubTail = hub.output().slice(-1500);
+          const sidecarTail = sidecar.output().slice(-1500);
+          console.error(`  --- hub output (tail) ---\n${hubTail}`);
+          console.error(`  --- sidecar output (tail) ---\n${sidecarTail}`);
+          return {
+            status: "fail",
+            detail:
+              'sent "hi" but no reply bubble (own=false) appeared within 45s — ' +
+              "auto-response wiring did not fire at all (see hub/sidecar output above)",
+          };
+        }
+        const replyText = await page.evaluate(() => {
+          const bubble = document.querySelector(
+            'div.chat-bubble-row[data-own="false"] p.chat-bubble-text',
+          );
+          return bubble?.textContent ?? null;
+        });
+        return {
+          status: "pass",
+          detail:
+            `a reply bubble appeared (auto-response wiring confirmed); with the stub key ` +
+            `its content is the expected honest credential-error report: ${JSON.stringify(replyText)}`,
+        };
+      },
+    );
+
+    // --- Step 4: CL-6066 — New task dialog styling
+    await step(
+      () => page,
+      "09-new-task-dialog-CL-6066",
+      async () => {
+        await page.click("body");
+        await page.keyboard.down("Control");
+        await page.keyboard.press("t");
+        await page.keyboard.up("Control");
+        await page.waitForSelector('[role="dialog"]', { timeout: 10_000 });
+        const found = await page.evaluate(
+          () => document.body.textContent?.includes("New task") ?? false,
+        );
+        await page.keyboard.press("Escape");
+        if (!found) {
+          return {
+            status: "fail",
+            detail:
+              "Cmd/Ctrl+T opened a dialog, but it is not the New task dialog",
+          };
+        }
+        return {
+          status: "repro-confirmed",
+          detail:
+            "New task dialog opened via Ctrl+T — captured for visual review against " +
+            "CL-6066 (unstyled dialog); see screenshot",
+        };
+      },
+    );
+
+    // --- Step 5: CL-6067 / CL-6069 — hub restart, stale-thread reconnect
+    await step(
+      () => page,
+      "10-restart-hub-same-db",
+      async () => {
+        await hub.stop();
+        // Same port as the first boot — the already-running web dev
+        // server's `/api` proxy target was fixed at its own startup, so
+        // reusing the port is what lets it survive this restart unchanged.
+        hub = await startHub({
+          databaseUrl,
+          port: hubPort,
+          sessionSecret,
+          dataDir: hubDataDir,
+          extraEnv: { BASE_URL: webBaseUrl },
+        });
+        cleanups.push(() => hub.stop());
+        return {
+          status: "pass",
+          detail: `hub restarted on the same database at ${hub.baseUrl}`,
+        };
+      },
+    );
+
+    await step(
+      () => page,
+      "11-reload-open-existing-chat-CL-6067-6069",
+      async () => {
         await page.goto(`${webBaseUrl}/c`, {
           waitUntil: "domcontentloaded",
           timeout: 20_000,
         });
-        await page.waitForSelector('.shell-ch-row-wrap[data-ctx-channel-title="Myra"]', {
-          timeout: 15_000,
-        });
-        await clickStable(page, rowSelector);
-        await page.waitForSelector("textarea.chat-composer-input", { timeout: 30_000 });
-      }
-      await page.type("textarea.chat-composer-input", "hi");
-      await clickStable(page, 'button[aria-label="Send"]');
-      await page.waitForSelector('div.chat-bubble-row[data-own="true"]', {
-        timeout: 10_000,
-      });
-      try {
-        await page.waitForSelector('div.chat-bubble-row[data-own="false"]', {
-          timeout: 45_000,
-        });
-      } catch {
-        const hubTail = hub.output().slice(-1500);
-        const sidecarTail = sidecar.output().slice(-1500);
-        console.error(`  --- hub output (tail) ---\n${hubTail}`);
-        console.error(`  --- sidecar output (tail) ---\n${sidecarTail}`);
-        return {
-          status: "fail",
-          detail:
-            'sent "hi" but no reply bubble (own=false) appeared within 45s — ' +
-            "auto-response wiring did not fire at all (see hub/sidecar output above)",
-        };
-      }
-      const replyText = await page.evaluate(() => {
-        const bubble = document.querySelector(
-          'div.chat-bubble-row[data-own="false"] p.chat-bubble-text',
+        const rowAppeared = await page
+          .waitForSelector(
+            '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
+            {
+              timeout: 15_000,
+            },
+          )
+          .then(() => true)
+          .catch(() => false);
+        if (!rowAppeared) {
+          return {
+            status: "repro-confirmed",
+            detail:
+              "after restart, the reloaded shell never regained a Myra sidebar row within 15s " +
+              "(stuck disconnected) — CL-6067 reproduced",
+          };
+        }
+        await clickStable(
+          page,
+          '.shell-ch-row-wrap[data-ctx-channel-title="Myra"] button.shell-ch-row',
         );
-        return bubble?.textContent ?? null;
-      });
-      return {
-        status: "pass",
-        detail:
-          `a reply bubble appeared (auto-response wiring confirmed); with the stub key ` +
-          `its content is the expected honest credential-error report: ${JSON.stringify(replyText)}`,
-      };
-    });
-
-    // --- Step 4: CL-6066 — New task dialog styling
-    await step(() => page, "09-new-task-dialog-CL-6066", async () => {
-      await page.click("body");
-      await page.keyboard.down("Control");
-      await page.keyboard.press("t");
-      await page.keyboard.up("Control");
-      await page.waitForSelector('[role="dialog"]', { timeout: 10_000 });
-      const found = await page.evaluate(() =>
-        document.body.textContent?.includes("New task") ?? false,
-      );
-      await page.keyboard.press("Escape");
-      if (!found) {
+        const couldNotLoad = await page
+          .waitForFunction(
+            () => document.body.textContent?.includes("Couldn't load"),
+            {
+              timeout: 10_000,
+            },
+          )
+          .then(() => true)
+          .catch(() => false);
+        if (couldNotLoad) {
+          return {
+            status: "repro-confirmed",
+            detail:
+              'opening the existing chat after restart shows "Couldn\'t load" — CL-6069 ' +
+              "stale-thread failure reproduced",
+          };
+        }
+        const composerReady = await page
+          .waitForSelector("textarea.chat-composer-input", { timeout: 10_000 })
+          .then(() => true)
+          .catch(() => false);
+        if (composerReady) {
+          return {
+            status: "pass",
+            detail:
+              "existing chat reopened cleanly after a same-DB hub restart",
+          };
+        }
         return {
           status: "fail",
-          detail: "Cmd/Ctrl+T opened a dialog, but it is not the New task dialog",
-        };
-      }
-      return {
-        status: "repro-confirmed",
-        detail:
-          "New task dialog opened via Ctrl+T — captured for visual review against " +
-          "CL-6066 (unstyled dialog); see screenshot",
-      };
-    });
-
-    // --- Step 5: CL-6067 / CL-6069 — hub restart, stale-thread reconnect
-    await step(() => page, "10-restart-hub-same-db", async () => {
-      await hub.stop();
-      // Same port as the first boot — the already-running web dev
-      // server's `/api` proxy target was fixed at its own startup, so
-      // reusing the port is what lets it survive this restart unchanged.
-      hub = await startHub({
-        databaseUrl,
-        port: hubPort,
-        sessionSecret,
-        dataDir: hubDataDir,
-        extraEnv: { BASE_URL: webBaseUrl },
-      });
-      cleanups.push(() => hub.stop());
-      return { status: "pass", detail: `hub restarted on the same database at ${hub.baseUrl}` };
-    });
-
-    await step(() => page, "11-reload-open-existing-chat-CL-6067-6069", async () => {
-      await page.goto(`${webBaseUrl}/c`, {
-        waitUntil: "domcontentloaded",
-        timeout: 20_000,
-      });
-      const rowAppeared = await page
-        .waitForSelector('.shell-ch-row-wrap[data-ctx-channel-title="Myra"]', {
-          timeout: 15_000,
-        })
-        .then(() => true)
-        .catch(() => false);
-      if (!rowAppeared) {
-        return {
-          status: "repro-confirmed",
           detail:
-            "after restart, the reloaded shell never regained a Myra sidebar row within 15s " +
-            "(stuck disconnected) — CL-6067 reproduced",
+            "chat neither loaded normally nor showed the documented error state",
         };
-      }
-      await clickStable(
-        page,
-        '.shell-ch-row-wrap[data-ctx-channel-title="Myra"] button.shell-ch-row',
-      );
-      const couldNotLoad = await page
-        .waitForFunction(() => document.body.textContent?.includes("Couldn't load"), {
-          timeout: 10_000,
-        })
-        .then(() => true)
-        .catch(() => false);
-      if (couldNotLoad) {
-        return {
-          status: "repro-confirmed",
-          detail:
-            'opening the existing chat after restart shows "Couldn\'t load" — CL-6069 ' +
-            "stale-thread failure reproduced",
-        };
-      }
-      const composerReady = await page
-        .waitForSelector("textarea.chat-composer-input", { timeout: 10_000 })
-        .then(() => true)
-        .catch(() => false);
-      if (composerReady) {
-        return {
-          status: "pass",
-          detail: "existing chat reopened cleanly after a same-DB hub restart",
-        };
-      }
-      return {
-        status: "fail",
-        detail: "chat neither loaded normally nor showed the documented error state",
-      };
-    });
+      },
+    );
   } finally {
     for (const cleanup of cleanups.splice(0).reverse()) {
       await cleanup().catch((error) => {
-        console.error(`cleanup failed: ${error instanceof Error ? error.message : error}`);
+        console.error(
+          `cleanup failed: ${error instanceof Error ? error.message : error}`,
+        );
       });
     }
     await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
@@ -858,7 +979,9 @@ async function main(): Promise<void> {
   }
   const failed = results.filter((r) => r.status === "fail");
   if (failed.length > 0) {
-    console.error(`\n${failed.length} step(s) failed outright (not just repro-confirmed).`);
+    console.error(
+      `\n${failed.length} step(s) failed outright (not just repro-confirmed).`,
+    );
     process.exit(1);
   }
 }

@@ -11,12 +11,7 @@
 // in the popover promises a real action.
 
 export type SlashCommandId =
-  | "invite"
-  | "summarize"
-  | "run"
-  | "routine"
-  | "agents"
-  | "help";
+  "invite" | "summarize" | "run" | "routine" | "agents" | "help";
 
 export type SlashCommandSpec = {
   readonly id: SlashCommandId;

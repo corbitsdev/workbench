@@ -740,9 +740,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           body.definitionId,
         );
         if (existing !== undefined) {
-          const link = await deps.tenancy.getChannelTenancy(
-            existing.channelId,
-          );
+          const link = await deps.tenancy.getChannelTenancy(existing.channelId);
           return c.json(
             link !== undefined
               ? withTenancy(channelView(existing), link)
