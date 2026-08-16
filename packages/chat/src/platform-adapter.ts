@@ -73,6 +73,17 @@ export type CreateHubChatPlatformDeps = {
   assetService: AssetService;
   sidecarRouter: SidecarRouter;
   /**
+   * Decrypts credential secrets when an invited agent's launch resolves
+   * inference sources against the tenant catalog — see
+   * `@corbits/folded-runs`' `FoldedRunsDeps.credentialCipher`. A channel
+   * host never needs it (its launch is pinned to `noopInferenceBaseUrl`,
+   * never the catalog), but every invited-agent launch and wake does.
+   * Omitted, `resolveDefinitionSources` falls back to a noop cipher and
+   * hands the raw stored secret to the provider unchanged — correct only
+   * when the credential was itself written unencrypted.
+   */
+  credentialCipher?: FoldedRunsDeps["credentialCipher"];
+  /**
    * The hub's own noop-inference endpoint (see `./noop-inference.ts`),
    * reachable over HTTP from the sidecar — never the catalog. Every
    * channel-HOST launch and wake pins its `InferenceSource` here
@@ -173,6 +184,9 @@ export function createHubChatPlatform(
     assetService: deps.assetService,
     sidecarRouter: deps.sidecarRouter,
     eventCollectors: deps.eventCollectors,
+    ...(deps.credentialCipher !== undefined
+      ? { credentialCipher: deps.credentialCipher }
+      : {}),
   };
 
   const cryptoProviders = createCryptoProviderCache();

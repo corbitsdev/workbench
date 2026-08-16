@@ -601,6 +601,7 @@ export async function createHub(config: HubConfig) {
   const app = createApp({
     workflowAllocationService,
     workflowDispatchService,
+    credentialCipher,
     getSession: async (headers) => {
       const result = await auth.api.getSession({ headers });
       return result ? { user: result.user, session: result.session } : null;
@@ -788,6 +789,7 @@ export async function createHub(config: HubConfig) {
     assetService,
     sidecarRouter,
     eventCollectors,
+    credentialCipher,
     noopInferenceBaseUrl: `${config.baseUrl}/api/chat/noop-inference`,
     lifecycle: { idleSleepMs: CHAT_IDLE_SLEEP_MS },
   });
@@ -1330,6 +1332,7 @@ export async function createHub(config: HubConfig) {
       assetService,
       sidecarRouter,
       eventCollectors,
+      credentialCipher,
     },
     cryptoProviders: createCryptoProviderCache(),
     notify: taskNotifyDeps,
@@ -1526,6 +1529,7 @@ export async function createHub(config: HubConfig) {
     assetService,
     sidecarRouter,
     eventCollectors,
+    credentialCipher,
     cryptoProviderCache: foldedRunCryptoProviders,
     dispatchTask: (input) => launchTask(taskLauncherDeps, input),
   });

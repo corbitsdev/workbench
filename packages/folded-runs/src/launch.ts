@@ -91,7 +91,10 @@ export function parseSourcesOverride(
  * those rows — this function only throws.
  */
 export async function deployAtHead(
-  deps: Pick<FoldedRunsDeps, "db" | "sessionService" | "eventCollectors">,
+  deps: Pick<
+    FoldedRunsDeps,
+    "db" | "sessionService" | "eventCollectors" | "credentialCipher"
+  >,
   params: {
     tenantId: string;
     instanceId: string;
@@ -121,6 +124,9 @@ export async function deployAtHead(
           modelRequirements: null,
           fallbackModel: params.foldedBody.model,
           invokerPreferences: {},
+          ...(deps.credentialCipher !== undefined
+            ? { credentialCipher: deps.credentialCipher }
+            : {}),
         });
   if (!resolution.ok) {
     throw new InferenceResolutionError(params.launchLabel, resolution.message);
