@@ -440,20 +440,50 @@
   gap: 0.25rem;
 }
 
-.settings-connections-advanced {
+.settings-advanced-disclosure {
   border-top: 1px solid var(--border);
   padding-top: 0.75rem;
 }
 
-.settings-connections-advanced > summary {
+.settings-advanced-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 600;
+  list-style: none;
 }
 
-.settings-connections-advanced-body {
+.settings-advanced-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-advanced-disclosure-chevron {
+  transition: transform 0.15s ease;
+}
+
+.settings-advanced-disclosure[open] > summary .settings-advanced-disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+.settings-advanced-disclosure-body {
   margin-top: 0.75rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+/* Square, not pill-shaped — consistent with this app's other react-ui
+   primitive overrides (e.g. .settings-webhook-field-box above), applied
+   here so every Switch in settings-ui gets it, not just this one. */
+[role="switch"],
+[role="switch"] > span {
+  border-radius: 0;
+}
+
+.settings-form-field-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
 }
