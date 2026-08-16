@@ -121,6 +121,7 @@ describe("createDefaultAgentChannel", () => {
       kind: "chat",
       definitionId: "def-assistant",
       name: "Myra",
+      reuseExisting: true,
     });
     expect(agent.isCachedChannelId("chat-1")).toBe(true);
   });
