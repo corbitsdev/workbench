@@ -6,10 +6,13 @@
 // numbers (leaf, no descendants) and a workspace's cross-workbench
 // aggregate (parent, its child workbenches). `/scope` is the read-only
 // counterpart a caller uses to discover that shape: its own name, its
-// parent (if any), and the sibling workbenches to switch between.
+// parent (if any), and the sibling workbenches to switch between —
+// filtered to tenants the caller holds an active principal in (see
+// callerTenantIds), never a sibling or parent name the caller has no
+// membership in.
 import { Hono } from "hono";
 import { type } from "arktype";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 import { getDescendantTenants, schema, type DB } from "@intx/db";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
@@ -81,6 +84,29 @@ async function resolveScope(
 ): Promise<readonly string[]> {
   if (db === undefined) return [tenantId];
   return getDescendantTenants(db, tenantId);
+}
+
+/**
+ * The set of tenant ids the calling user holds an active principal in —
+ * the same `principal.kind === "user" && principal.refId === user.id`
+ * lookup `/api/me/principals` (vendor's `routes/me.ts`) uses to derive a
+ * user's cross-tenant memberships. `/scope` intersects this against a
+ * tenant's siblings/parent so it can never name a tenant the caller has
+ * no membership in, regardless of which tenant they asked about.
+ */
+async function callerTenantIds(
+  db: DB["db"],
+  userId: string,
+): Promise<ReadonlySet<string>> {
+  const rows = await db.query.principal.findMany({
+    where: and(
+      eq(schema.principal.kind, "user"),
+      eq(schema.principal.refId, userId),
+      eq(schema.principal.status, "active"),
+    ),
+    columns: { tenantId: true },
+  });
+  return new Set(rows.map((r) => r.tenantId));
 }
 
 export function createInsightsRoutes(
@@ -155,12 +181,32 @@ export function createInsightsRoutes(
   app.get("/scope", deps.requireGrant("insights:*", "read"), async (c) => {
     const tenant = c.get("tenant");
     const self = { tenantId: tenant.id, name: tenant.name };
-    if (deps.db === undefined || tenant.parentId === null) {
-      return c.json({
+    const selfOnly = () =>
+      c.json({
         tenantId: tenant.id,
         name: tenant.name,
         parent: null,
         workbenches: [self],
+      });
+    const user = c.get("user");
+    if (deps.db === undefined || tenant.parentId === null || user === null) {
+      return selfOnly();
+    }
+    const memberTenantIds = await callerTenantIds(deps.db, user.id);
+    const siblings = await deps.db.query.tenant.findMany({
+      where: eq(schema.tenant.parentId, tenant.parentId),
+      columns: { id: true, name: true },
+    });
+    // Only siblings (and self) the caller actually holds a principal in —
+    // never a name or tenantId belonging to a tenant they aren't a member
+    // of, no matter what the requested tenant's own membership allows.
+    const workbenches = siblings.filter((s) => memberTenantIds.has(s.id));
+    if (!memberTenantIds.has(tenant.parentId)) {
+      return c.json({
+        tenantId: tenant.id,
+        name: tenant.name,
+        parent: null,
+        workbenches: workbenches.map((s) => ({ tenantId: s.id, name: s.name })),
       });
     }
     const parentRow = await deps.db.query.tenant.findFirst({
@@ -172,18 +218,14 @@ export function createInsightsRoutes(
         tenantId: tenant.id,
         name: tenant.name,
         parent: null,
-        workbenches: [self],
+        workbenches: workbenches.map((s) => ({ tenantId: s.id, name: s.name })),
       });
     }
-    const siblings = await deps.db.query.tenant.findMany({
-      where: eq(schema.tenant.parentId, tenant.parentId),
-      columns: { id: true, name: true },
-    });
     return c.json({
       tenantId: tenant.id,
       name: tenant.name,
       parent: { tenantId: parentRow.id, name: parentRow.name },
-      workbenches: siblings.map((s) => ({ tenantId: s.id, name: s.name })),
+      workbenches: workbenches.map((s) => ({ tenantId: s.id, name: s.name })),
     });
   });
 

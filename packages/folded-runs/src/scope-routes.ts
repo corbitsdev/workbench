@@ -16,11 +16,11 @@
 // addition vendor cannot express: a `NOT EXISTS` against `folded_run`,
 // dropping every self-anchored run this package's own `launchFoldedRun`
 // ever minted.
-import { and, desc, eq, isNotNull, notExists } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import type { DB } from "@intx/db";
+import { getDescendantTenants, type DB } from "@intx/db";
 import { workflowDefinition, workflowRun } from "@intx/db/schema";
 import type { WorkflowRunStatus } from "@intx/types";
 
@@ -71,17 +71,26 @@ function toTimestamp(date: Date): string {
 }
 
 /**
- * The tenant's genuine top-level deployment runs, most recent first,
- * with every folded run excluded — the query `createTopLevelRunRoutes`
- * serves. Exported separately from the route so a non-HTTP caller (a
- * future scoped listing elsewhere in the hub) can reuse the same
- * predicate without going through Hono.
+ * The tenant's (or tenant subtree's) genuine top-level deployment runs,
+ * most recent first, with every folded run excluded — the query
+ * `createTopLevelRunRoutes` serves. Exported separately from the route
+ * so a non-HTTP caller (a future scoped listing elsewhere in the hub)
+ * can reuse the same predicate without going through Hono.
+ *
+ * `tenantId` also accepts an array — the same shape
+ * `@corbits/insights`' `resolveScope` (packages/insights/src/routes.ts)
+ * passes to `summarizeUsage`/`activityByDay`, so a workspace parent's
+ * runs feed rolls up its child workbenches' runs the same way its
+ * usage/activity numbers already do. A lone string keeps every existing
+ * single-tenant caller unchanged.
  */
 export async function listTopLevelRuns(
   db: DB["db"],
-  tenantId: string,
+  tenantId: string | readonly string[],
   limit = 100,
 ) {
+  const scope = typeof tenantId === "string" ? [tenantId] : tenantId;
+  if (scope.length === 0) return [];
   const rows = await db
     .select({
       id: workflowRun.id,
@@ -103,7 +112,7 @@ export async function listTopLevelRuns(
     )
     .where(
       and(
-        eq(workflowRun.tenantId, tenantId),
+        inArray(workflowRun.tenantId, scope),
         isNotNull(workflowRun.address),
         eq(workflowRun.anchorRunId, workflowRun.id),
         notExists(
@@ -136,7 +145,12 @@ export async function listTopLevelRuns(
  * root, beside every other package-owned tenant route. `GET /` is the
  * one route: a paginated-shaped (but not yet cursor-paginated — see
  * the "known limit" note on every caller of this route) list of the
- * tenant's genuine top-level runs.
+ * tenant's genuine top-level runs — rolled up over the requested
+ * tenant's whole descendant subtree the same way
+ * `@corbits/insights`' `/usage`, `/activity`, and `/tools` already do
+ * (see `resolveScope` in packages/insights/src/routes.ts), so a
+ * workspace parent's runs feed is never mismatched against its own
+ * usage aggregate.
  */
 export function createTopLevelRunRoutes(
   deps: CreateTopLevelRunRoutesDeps,
@@ -153,7 +167,8 @@ export function createTopLevelRunRoutes(
         400,
       );
     }
-    const data = await listTopLevelRuns(deps.db, tenant.id, query.limit);
+    const scope = await getDescendantTenants(deps.db, tenant.id);
+    const data = await listTopLevelRuns(deps.db, scope, query.limit);
     return c.json({ data, nextCursor: null });
   });
 

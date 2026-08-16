@@ -861,9 +861,67 @@ function parseInsightsPath(path: string): {
   }
   const match = /^\/insights\/runs\/([^/]+)\/?$/.exec(path);
   if (match !== null && match[1] !== undefined) {
-    return { mode: "run", runId: decodeURIComponent(match[1]), workbenchId: null };
+    return {
+      mode: "run",
+      runId: decodeURIComponent(match[1]),
+      workbenchId: null,
+    };
   }
   return { mode: "landing", runId: null, workbenchId: null };
+}
+
+/**
+ * The landing view's default scope, and every non-landing mode's scope,
+ * as one pure decision so it can be unit-tested without mounting the
+ * route. `/scope` (packages/insights/src/routes.ts) only ever reports a
+ * `parent` when the caller holds an active principal in it — a present
+ * parent means "caller is a workspace member" and the default becomes
+ * the cross-workbench aggregate ("All workbenches"); otherwise the
+ * default is the caller's own current workbench, labeled with its name.
+ * Either way the result is always a tenant `/scope` itself vouches the
+ * caller can see — there is no default that can 403.
+ *
+ * An explicit `/insights/workbench/:id` deep link overrides the default
+ * outright (and every non-landing mode stays tied to the current
+ * workbench, unaffected by scope).
+ */
+export function resolveInsightsScope({
+  mode,
+  workbenchId,
+  selectedTenantId,
+  scopeData,
+}: {
+  readonly mode: "landing" | "runs" | "run";
+  readonly workbenchId: string | null;
+  readonly selectedTenantId: string | null;
+  readonly scopeData: InsightsScope | null;
+}): { effectiveTenantId: string | null; scopeLabel: string } {
+  if (mode !== "landing") {
+    return {
+      effectiveTenantId: selectedTenantId,
+      scopeLabel: selectedTenantId ?? "",
+    };
+  }
+  if (workbenchId !== null) {
+    const label =
+      scopeData?.workbenches.find((w) => w.tenantId === workbenchId)?.name ??
+      (scopeData?.tenantId === workbenchId ? scopeData.name : workbenchId);
+    return { effectiveTenantId: workbenchId, scopeLabel: label };
+  }
+  if (scopeData?.parent) {
+    return {
+      effectiveTenantId: scopeData.parent.tenantId,
+      scopeLabel: "All workbenches",
+    };
+  }
+  // Not a workspace member (or `/scope` hasn't resolved yet): default to
+  // the caller's own current workbench, never an aggregate they cannot
+  // see. Before `/scope` resolves this falls back to the raw tenant id
+  // so the dashboard never blocks on it.
+  return {
+    effectiveTenantId: scopeData?.tenantId ?? selectedTenantId,
+    scopeLabel: scopeData?.name ?? selectedTenantId ?? "",
+  };
 }
 
 /**
@@ -1154,29 +1212,17 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
   );
   const scopeData = scope.kind === "ready" ? scope.data : null;
 
-  // The landing view's default scope is the cross-workbench aggregate:
-  // the current workbench's parent, when it has one. usage/activity/tools
-  // roll up every child workbench under that parent server-side (see
-  // resolveScope in @corbits/insights' routes.ts) — never fetched here
-  // per sibling. A root workbench with no parent aggregates to just
-  // itself, which is the same single-tenant view either way. Before
-  // `/scope` resolves, fall back to the current workbench's own id so
-  // the dashboard never blocks on it. An explicit `/insights/workbench/:id`
-  // deep link (and every non-landing mode, which stays tied to the
-  // current workbench) overrides the aggregate outright.
-  const aggregateTenantId = scopeData?.parent?.tenantId ?? selectedTenantId;
-  const effectiveTenantId =
-    mode === "landing" ? (workbenchId ?? aggregateTenantId) : selectedTenantId;
-
-  const scopeLabel =
-    workbenchId === null
-      ? "All workbenches"
-      : (scopeData?.workbenches.find((w) => w.tenantId === workbenchId)
-          ?.name ??
-        (scopeData?.tenantId === workbenchId ? scopeData.name : workbenchId));
+  const { effectiveTenantId, scopeLabel } = resolveInsightsScope({
+    mode,
+    workbenchId,
+    selectedTenantId,
+    scopeData,
+  });
 
   const summary = useAPIQuery(
-    effectiveTenantId === null ? "" : insightsUsagePath(effectiveTenantId, range),
+    effectiveTenantId === null
+      ? ""
+      : insightsUsagePath(effectiveTenantId, range),
     OverallUsageSchema,
   );
   const activityRaw = useAPIQuery(
