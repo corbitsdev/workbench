@@ -35,6 +35,7 @@ import {
   Settings,
   SlidersHorizontal,
 } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
 import { useAPIQuery } from "../api";
@@ -58,7 +59,7 @@ function FooterIconButton({
   readonly label: string;
   readonly active?: boolean;
   readonly onClick: () => void;
-  readonly children: React.ReactNode;
+  readonly children: ReactNode;
 }) {
   return (
     <Button
