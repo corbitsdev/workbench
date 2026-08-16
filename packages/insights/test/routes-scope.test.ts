@@ -3,10 +3,15 @@
 // /tools, and /scope routes carry when `deps.db` is wired the same way
 // apps/hub/src/index.ts wires it: a parent tenant's usage/activity
 // aggregate equals the sum of its child workbenches' own numbers, and a
-// child workbench's own route still returns just its own numbers (a
-// leaf has no descendants to roll up). /scope proves the read-only
+// child workbench's own route still returns just its own numbers in this
+// fixture, where childA/childB have no children of their own — not a
+// general "workbenches are leaves" claim: a workbench that has minted a
+// channel child tenancy has descendants too, and its /usage rolls those
+// up the same way (see the recursion coverage in
+// insights-scope-verification.test.ts). /scope proves the read-only
 // counterpart a switcher reads: parent identity, own identity, and the
-// sibling workbench list.
+// sibling workbench list — filtered to tenants the caller actually holds
+// a principal in, never a sibling the caller has no membership in.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
@@ -57,6 +62,8 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
   const childAId = generateId("tenant");
   const childBId = generateId("tenant");
   const unrelatedId = generateId("tenant");
+  const memberOfAUserId = `usr_${childAId}`;
+  const memberOfParentUserId = `usr_${parentId}`;
 
   beforeAll(async () => {
     const maintenanceUrl = new URL(scratchUrl);
@@ -104,6 +111,40 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
         slug: `insights-scope-unrelated-${unrelatedId}`,
         domain: `insights-scope-unrelated-${unrelatedId}.localhost`,
       });
+      // memberOfAUserId is a member of childA only — never granted a
+      // principal in childB, the parent, or the unrelated tenant.
+      await db.insert(schema.principal).values({
+        id: generateId("principal"),
+        tenantId: childAId,
+        kind: "user",
+        refId: memberOfAUserId,
+        status: "active",
+      });
+      // memberOfParentUserId is a member of the parent workspace and both
+      // its child workbenches — the "workspace member" shape.
+      await db.insert(schema.principal).values([
+        {
+          id: generateId("principal"),
+          tenantId: parentId,
+          kind: "user",
+          refId: memberOfParentUserId,
+          status: "active",
+        },
+        {
+          id: generateId("principal"),
+          tenantId: childAId,
+          kind: "user",
+          refId: memberOfParentUserId,
+          status: "active",
+        },
+        {
+          id: generateId("principal"),
+          tenantId: childBId,
+          kind: "user",
+          refId: memberOfParentUserId,
+          status: "active",
+        },
+      ]);
     } finally {
       await close();
     }
@@ -123,7 +164,11 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
     }
   });
 
-  function appFor(tenantId: string, db: ReturnType<typeof createDB>["db"]) {
+  function appFor(
+    tenantId: string,
+    db: ReturnType<typeof createDB>["db"],
+    callerUserId: string | null = null,
+  ) {
     const routes = createInsightsRoutes({
       store,
       requireGrant: allowAll,
@@ -140,6 +185,19 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       } as never);
+      c.set(
+        "user",
+        callerUserId === null
+          ? null
+          : ({
+              id: callerUserId,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              email: `${callerUserId}@example.test`,
+              emailVerified: true,
+              name: callerUserId,
+            } as never),
+      );
       await next();
     };
     const app = new Hono<TenantEnv>();
@@ -164,7 +222,13 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
       sessionId: "s1",
       turnId: "t1",
       model: "m",
-      tokens: { input: 100, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+      tokens: {
+        input: 100,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
     });
     await store.insertUsage({
       id: "u2",
@@ -172,7 +236,13 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
       sessionId: "s2",
       turnId: "t2",
       model: "m",
-      tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 250, thinking: 0 },
+      tokens: {
+        input: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 250,
+        thinking: 0,
+      },
     });
     await store.insertUsage({
       id: "u3",
@@ -180,14 +250,21 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
       sessionId: "s3",
       turnId: "t3",
       model: "m",
-      tokens: { input: 9999, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+      tokens: {
+        input: 9999,
+        cacheRead: 0,
+        cacheWrite: 0,
+        output: 0,
+        thinking: 0,
+      },
     });
 
     const { db, close } = createDB(dbConfigFromUrl(scratchUrl));
     try {
       const parentResponse = await appFor(parentId, db).request("/usage");
       expect(parentResponse.status).toBe(200);
-      const parentSummary = (await parentResponse.json()) as OverallUsageSummary;
+      const parentSummary =
+        (await parentResponse.json()) as OverallUsageSummary;
 
       const aResponse = await appFor(childAId, db).request("/usage");
       const aSummary = (await aResponse.json()) as OverallUsageSummary;
@@ -214,10 +291,14 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
     }
   });
 
-  test("/scope reports parent identity and sibling workbenches for a child, and no parent for the workspace itself", async () => {
+  test("/scope reports parent identity and every sibling workbench for a workspace member, and no parent for the workspace itself", async () => {
     const { db, close } = createDB(dbConfigFromUrl(scratchUrl));
     try {
-      const childScopeResponse = await appFor(childAId, db).request("/scope");
+      const childScopeResponse = await appFor(
+        childAId,
+        db,
+        memberOfParentUserId,
+      ).request("/scope");
       expect(childScopeResponse.status).toBe(200);
       const childScope = (await childScopeResponse.json()) as {
         tenantId: string;
@@ -226,12 +307,19 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
         workbenches: { tenantId: string; name: string }[];
       };
       expect(childScope.tenantId).toBe(childAId);
-      expect(childScope.parent).toEqual({ tenantId: parentId, name: "Acme workspace" });
+      expect(childScope.parent).toEqual({
+        tenantId: parentId,
+        name: "Acme workspace",
+      });
       expect(childScope.workbenches.map((w) => w.tenantId).sort()).toEqual(
         [childAId, childBId].sort(),
       );
 
-      const parentScopeResponse = await appFor(parentId, db).request("/scope");
+      const parentScopeResponse = await appFor(
+        parentId,
+        db,
+        memberOfParentUserId,
+      ).request("/scope");
       const parentScope = (await parentScopeResponse.json()) as {
         parent: unknown;
         workbenches: { tenantId: string; name: string }[];
@@ -239,6 +327,53 @@ describeIfDb("createInsightsRoutes workspace rollup (deps.db wired)", () => {
       expect(parentScope.parent).toBeNull();
       expect(parentScope.workbenches).toEqual([
         { tenantId: parentId, name: "Acme workspace" },
+      ]);
+    } finally {
+      await close();
+    }
+  });
+
+  test("/scope never discloses a sibling or parent the caller has no principal in", async () => {
+    const { db, close } = createDB(dbConfigFromUrl(scratchUrl));
+    try {
+      // memberOfAUserId belongs to childA only, not to childB or the
+      // parent — even though the request targets childA (a tenant the
+      // caller IS a member of), the response must carry no trace of
+      // childB or the parent.
+      const response = await appFor(childAId, db, memberOfAUserId).request(
+        "/scope",
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        parent: { tenantId: string; name: string } | null;
+        workbenches: { tenantId: string; name: string }[];
+      };
+      expect(body.parent).toBeNull();
+      expect(body.workbenches).toEqual([
+        { tenantId: childAId, name: "Acme — Support" },
+      ]);
+      const raw = JSON.stringify(body);
+      expect(raw).not.toContain(childBId);
+      expect(raw).not.toContain("Acme — Sales");
+      expect(raw).not.toContain(parentId);
+      expect(raw).not.toContain("Acme workspace");
+    } finally {
+      await close();
+    }
+  });
+
+  test("/scope with no authenticated caller falls back to self only, discloses nothing else", async () => {
+    const { db, close } = createDB(dbConfigFromUrl(scratchUrl));
+    try {
+      const response = await appFor(childAId, db, null).request("/scope");
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        parent: unknown;
+        workbenches: { tenantId: string; name: string }[];
+      };
+      expect(body.parent).toBeNull();
+      expect(body.workbenches).toEqual([
+        { tenantId: childAId, name: "Acme — Support" },
       ]);
     } finally {
       await close();

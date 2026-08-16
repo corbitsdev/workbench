@@ -144,4 +144,56 @@ describeIfDb("listTopLevelRuns", () => {
       await close();
     }
   });
+
+  test("an array of tenant ids rolls up runs across every tenant in it, still excluding folded runs and other tenants", async () => {
+    const OTHER_TENANT = "tnt_scope_routes_other";
+    const UNRELATED_TENANT = "tnt_scope_routes_unrelated";
+    const { db, close } = createDB({ ...target, schema: SCHEMA });
+    try {
+      await db.insert(schema.tenant).values([
+        {
+          id: OTHER_TENANT,
+          name: "Other Tenant",
+          slug: "scope-routes-other-tenant",
+          domain: "scope-routes-other.workbench.test",
+        },
+        {
+          id: UNRELATED_TENANT,
+          name: "Unrelated Tenant",
+          slug: "scope-routes-unrelated-tenant",
+          domain: "scope-routes-unrelated.workbench.test",
+        },
+      ]);
+      await db.insert(schema.workflowRun).values([
+        {
+          id: "run_other_deployment1",
+          definitionId: "wfd_researcher",
+          anchorRunId: "run_other_deployment1",
+          tenantId: OTHER_TENANT,
+          address: "run_other_deployment1@scope-routes.workbench.test",
+          status: "running",
+          createdAt: new Date("2026-01-04T00:00:00.000Z"),
+        },
+        {
+          id: "run_unrelated_deployment1",
+          definitionId: "wfd_researcher",
+          anchorRunId: "run_unrelated_deployment1",
+          tenantId: UNRELATED_TENANT,
+          address: "run_unrelated_deployment1@scope-routes.workbench.test",
+          status: "running",
+          createdAt: new Date("2026-01-04T00:00:00.000Z"),
+        },
+      ]);
+
+      const rows = await listTopLevelRuns(db, [TENANT, OTHER_TENANT]);
+      const ids = rows.map((row) => row.id).sort();
+      expect(ids).toContain("run_deployment1");
+      expect(ids).toContain("run_other_deployment1");
+      expect(ids).not.toContain("run_unrelated_deployment1");
+
+      expect(await listTopLevelRuns(db, [])).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
 });
