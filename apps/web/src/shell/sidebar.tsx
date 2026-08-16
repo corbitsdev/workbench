@@ -1,8 +1,16 @@
-// The one sidebar. Header: create + search. Body: the workbench list —
-// nothing page-scoped ever renders here. Footer: the needs-you activity
-// band, the switcher, and the utility row (insights, inbox bell with its
-// unread count, settings, account). Always present; there is no collapse
-// affordance and no second nav column.
+// The one sidebar. Header: the brand mark, then create + search. Body: the
+// workbench list — nothing page-scoped ever renders here. Footer: the
+// needs-you activity band and the utility row (insights, inbox bell with
+// its unread count, settings, account). Always present; there is no
+// collapse affordance and no second nav column.
+//
+// No bench switcher (CL-6089): a workbench IS an agent conversation now,
+// one per account, so there is nothing to switch between in the common
+// case. A multi-bench install still resolves and routes correctly (see
+// `bench-context.tsx`) — it just has no dedicated chrome slot. The one
+// escape hatch is the command palette's hidden "Switch workbench" action
+// (`command-palette-actions.ts`), which only appears once memberships
+// resolve to more than one workbench.
 
 import {
   Avatar,
@@ -24,7 +32,8 @@ import { requestOpenCommandPalette } from "../command-palette-events";
 import { matchesRoute, SETTINGS_PATH } from "../routes";
 import type { SessionUser } from "../session";
 import { ActivityBand } from "./activity-band";
-import { BenchDock, initialsOf } from "./docks";
+import { SidebarBrandMark } from "./brand-mark";
+import { initialsOf } from "./docks";
 import { WorkbenchList } from "./workbench-list";
 
 function FooterIconButton({
@@ -135,6 +144,7 @@ export function Sidebar({
       data-testid="shell-sidebar"
       aria-label="Workbenches"
     >
+      <SidebarBrandMark />
       <SidebarPanelHeader title="Workbenches" action={headerAction} />
 
       <SidebarPanelBody>
@@ -146,7 +156,6 @@ export function Sidebar({
       </div>
 
       <SidebarPanelFooter>
-        <BenchDock />
         <div className="shell-sidebar-utils">
           <FooterIconButton
             label="Plugins"

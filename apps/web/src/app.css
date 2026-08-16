@@ -779,11 +779,20 @@ html {
    `prefers-reduced-motion` in its theme.css), and these transitions inherit
    that like any other. */
 
-/* Sidebar footer: switcher dock above the utility row (insights, inbox
-   bell, settings, account). */
-.shell-bench-dock {
+/* Sidebar header: the brand mark, small and quiet — the mark is the brand
+   moment now (CL-6089 dropped the orange-rail era), not the switcher this
+   dock replaced. */
+.shell-sidebar-brand-mark {
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: 0.25rem 0 0.1rem;
+  border-radius: var(--ui-radius-sm, 0.25rem);
+  overflow: hidden;
+}
+
+.shell-sidebar-brand-mark canvas {
   width: 100%;
-  padding: 0;
+  height: 100%;
 }
 
 .shell-sidebar-utils {

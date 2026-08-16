@@ -3,7 +3,11 @@
 // assert: each route mounts, names itself in its stage's own `StageTopBar`,
 // and renders beside the one always-present sidebar. The one route with no
 // stage bar of its own (`/`, see `AppRoute.hasStageTopBar`) gets one from
-// `AppShell` itself, so every route ends up titled the same way.
+// `AppShell` itself, so every route ends up titled the same way — except
+// the conversation route (`/c`), whose own conversation header IS its page
+// identity (CL-6089): it renders no generic `StageTopBar` at all, static
+// or otherwise, since a channel is never resolved in this unauthenticated
+// static render.
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { describe, expect, test } from "bun:test";
@@ -126,6 +130,15 @@ describe("routes render", () => {
       // Myra land (`/`) titles its stage Myra.
       if (route.path === "/") {
         expect(stagePageTitle(markup)).toBe("Myra");
+        return;
+      }
+      // The conversation route titles itself via its own conversation
+      // header, not a generic `StageTopBar` — asserting no stage bar
+      // renders here is the regression guard for the double-header bug
+      // CL-6089 fixed (a "Workbenches" bar over the channel's own header).
+      if (route.path === "/c") {
+        expect(stagePageTitle(markup)).toBeUndefined();
+        expect(markup).toContain('data-testid="shell-sidebar"');
         return;
       }
       // Bare /settings' own redirect-to-first-section effect never runs in
