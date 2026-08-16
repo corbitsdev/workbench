@@ -1,73 +1,35 @@
-// Instant agent creation — the "+ New chat" picker's "Create new agent" row
-// skips `create-agent-panel.tsx`'s form entirely: draft a starting system
-// prompt for a default name, create the definition, then land in its chat
-// the same way picking an existing agent does (`launchAgentChat`).
-// `CreateAgentPanel`'s own form stays the path for Settings → Agents and
-// anyone who wants to steer name/purpose/model/skills up front.
-
-import { ApiQueryError } from "@corbits/api-query";
+// "+ New Workbench" picker's "Create new agent…" row (CL-6089): mints a
+// fresh workbench titled "New Workbench" against the account's default
+// setup template — the same seeded `assistant` definition backing the
+// home Myra workbench, which already opens with the setup greeting
+// ("what do you want me around for?"). The conversation itself is what
+// specializes the agent into whatever the person wants; the drafting
+// and capability machinery already listens for that in-chat, so no
+// definition is drafted or created up front here. Explicitly defining
+// a brand-new agent template, with its own name/purpose/model/skills
+// chosen up front, stays `CreateAgentPanel`'s job (Settings → Agents),
+// unchanged.
 
 import { launchAgentChat } from "./agent-chat-launch";
-import { createAgentDefinition, draftAgentDefinition } from "./agents-api";
-import type { AgentDefinition } from "./agents-api";
+import { listAgentDefinitions } from "./agents-api";
+import { findMyraDefinition } from "./myra-channel";
 
-export const DEFAULT_AGENT_NAME = "New agent";
-const MAX_HANDLE_ATTEMPTS = 20;
-
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function isHandleConflict(cause: unknown): boolean {
-  return cause instanceof ApiQueryError && cause.status === 409;
-}
+export const NEW_WORKBENCH_TITLE = "New Workbench";
 
 /**
- * Numbers the handle on a repeat ("new-agent", then "new-agent-2",
- * "new-agent-3", …) — the server has no dedup of its own for a duplicate
- * handle (`packages/agent-directory`'s uniqueness check 409s on a repeat),
- * and every "Create new agent" click reuses the same default name.
- */
-export function handleAttempt(baseHandle: string, attempt: number): string {
-  return attempt === 0 ? baseHandle : `${baseHandle}-${attempt + 1}`;
-}
-
-/**
- * Drafts and creates an agent with `name` (defaulting to "New agent"), then
- * navigates into its chat — the exact create-and-launch path
- * `CreateAgentPanel.onCreated` also drives, minus the form in front of it.
+ * Finds the account's default setup template (the seeded `assistant`
+ * definition) and launches a brand-new "New Workbench" chat against it.
+ * Throws if the tenant has no deployed setup template — a bench without
+ * one predates seeding and needs an operator, not a client-side retry.
  */
 export async function createAgentAndLaunch(
   tenantId: string,
   navigate: (to: string) => void,
-  name: string = DEFAULT_AGENT_NAME,
-): Promise<AgentDefinition> {
-  const draft = await draftAgentDefinition(tenantId, { name });
-  const baseHandle = slugify(name);
-  for (let attempt = 0; attempt < MAX_HANDLE_ATTEMPTS; attempt += 1) {
-    try {
-      const created = await createAgentDefinition(tenantId, {
-        name,
-        handle: handleAttempt(baseHandle, attempt),
-        systemPrompt: draft.systemPrompt,
-        ...(draft.description !== undefined
-          ? { description: draft.description }
-          : {}),
-        ...(draft.modelPreference !== undefined
-          ? { model: draft.modelPreference }
-          : {}),
-        ...(draft.skills !== undefined && draft.skills.length > 0
-          ? { skills: draft.skills }
-          : {}),
-      });
-      await launchAgentChat(tenantId, created.id, navigate);
-      return created;
-    } catch (cause) {
-      if (!isHandleConflict(cause)) throw cause;
-    }
+): Promise<void> {
+  const definitions = await listAgentDefinitions(tenantId);
+  const template = findMyraDefinition(definitions);
+  if (template === undefined) {
+    throw new Error("No default setup agent found for this workbench.");
   }
-  throw new Error(`Could not find a free handle for "${name}".`);
+  await launchAgentChat(tenantId, template.id, navigate, NEW_WORKBENCH_TITLE);
 }
