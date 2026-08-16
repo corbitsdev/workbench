@@ -71,15 +71,16 @@ export const SETTINGS_STRINGS = {
 
   chatSectionTitle: "Conversation defaults",
   chatSectionDescription:
-    "Bench-wide defaults every chat and space inherits, unless it sets its own override in its own settings.",
-  chatLoadError: "this bench's chat defaults",
+    "Workbench-wide defaults every conversation inherits, unless it sets its own override in its own settings.",
+  chatLoadError: "this workbench's conversation defaults",
   chatContextWindowLabel: "Default conversation memory",
   chatContextWindowDescription:
     "How much recent conversation a mentioned agent sees, for any space that hasn't set its own override.",
   chatContextWindowDisabled: "Disabled — mentioned agents see no history",
   chatContextWindowCustom: (count: number) => `Last ${count} messages`,
   chatContextWindowPlaceholder: "20",
-  chatSaveError: "Couldn't save this bench's chat defaults — try again.",
+  chatSaveError:
+    "Couldn't save this workbench's conversation defaults — try again.",
   chatContextWindowInvalid: "Conversation memory must be a whole number.",
   chatContextWindowInvalidLabel: "Not a valid number of messages.",
 

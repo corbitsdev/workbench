@@ -44,7 +44,7 @@ describe("raw-id sweep", () => {
     expect(UUID_PATTERN.test(visibleText(markup))).toBe(false);
   });
 
-  test("ChatSectionView (bench-wide chat defaults) never renders a channel id, since it holds none", () => {
+  test("ChatSectionView (workbench-wide conversation defaults) never renders a channel id, since it holds none", () => {
     const markup = renderToStaticMarkup(
       <ChatSectionView
         contextWindowInput="20"
