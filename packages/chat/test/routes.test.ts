@@ -154,7 +154,7 @@ describe("POST /channels", () => {
         definitionId: "wfd_echo",
       },
     ]);
-    expect(platform.sentMail).toHaveLength(1);
+    expect(platform.sentMail).toHaveLength(2);
     const decoded = JSON.parse(
       Buffer.from(
         (platform.sentMail[0]?.content.attachments?.[0]?.data ?? "") as string,
@@ -163,6 +163,15 @@ describe("POST /channels", () => {
     ) as { kind: string; event: string };
     expect(decoded.kind).toBe("event");
     expect(decoded.event).toBe("channel.agent-joined");
+
+    // CL-6126: the agent speaks first on every mint — a kickoff mail
+    // goes straight to the agent's own mailbox (never the chat's own
+    // channel id), so it never renders as a human bubble on the
+    // chat's timeline, with no user message anywhere in this flow.
+    const kickoff = platform.sentMail[1];
+    expect(kickoff?.channelId).toBe("ins_invited1");
+    expect(kickoff?.fromChannelId).toBe(body.id);
+    expect(kickoff?.content).toEqual({ content: "Continue." });
   });
 
   test("creating a chat with an explicit name keeps that name as the title", async () => {

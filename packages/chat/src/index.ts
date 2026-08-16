@@ -146,6 +146,7 @@ export type { PinRow, PinStore, PinDb, PinMessageInput } from "./pins";
 export { createNoopInferenceRoutes } from "./noop-inference";
 export {
   launchAndJoinAgent,
+  dispatchGreetingKickoff,
   sendChannelMessage,
   startWorkflowCommand,
   provisionSpaceChannel,
@@ -154,6 +155,8 @@ export type {
   LaunchAndJoinAgentDeps,
   LaunchAndJoinAgentInput,
   LaunchAndJoinAgentResult,
+  DispatchGreetingKickoffDeps,
+  DispatchGreetingKickoffInput,
   SendChannelMessageDeps,
   SendChannelMessageInput,
   SendChannelMessageResult,
