@@ -215,12 +215,17 @@ describe("Sidebar", () => {
   // CL-6105: the footer avatar used to be a plain link straight to
   // settings — there was no way to sign out short of the hidden
   // right-click context menu. It is now a real menu (react-ui's `Menu`
-  // primitives) offering both "Settings" and "Sign out".
+  // primitives).
+  //
+  // CL-6132: grown to the reference shape — the whole account row (avatar
+  // + name) is the trigger, and the menu itself carries a weekly usage
+  // line, Settings, a feedback link out to the repo's GitHub issues, a
+  // divider, and a danger-styled "Log out".
   describe("the account menu", () => {
-    test("opens on click and offers Settings and Sign out", async () => {
-      stubFetch();
-      const container = document.createElement("div");
-      document.body.appendChild(container);
+    async function openAccountMenu(
+      container: HTMLDivElement,
+      onSignOut: () => void = noop,
+    ): Promise<ReturnType<typeof createRoot>> {
       const root = createRoot(container);
       await act(async () => {
         root.render(
@@ -230,7 +235,7 @@ describe("Sidebar", () => {
                 path="/c"
                 user={user}
                 onNavigate={noop}
-                onSignOut={noop}
+                onSignOut={onSignOut}
               />
             </BenchProvider>
           </TestQueryProvider>,
@@ -238,9 +243,10 @@ describe("Sidebar", () => {
       });
 
       const trigger = container.querySelector<HTMLButtonElement>(
-        ".shell-sidebar-avatar-btn",
+        ".shell-sidebar-account-btn",
       );
       expect(trigger).not.toBeNull();
+      expect(trigger?.textContent).toContain(user.name);
       await act(async () => {
         // Radix's dropdown-menu trigger opens on `pointerdown`, not
         // `click` — mirroring how a real mouse interaction reaches it.
@@ -253,63 +259,65 @@ describe("Sidebar", () => {
           await new Promise((resolve) => setTimeout(resolve, 0));
         });
       }
+      return root;
+    }
+
+    test("the whole avatar + name row opens the menu, popping upward", async () => {
+      stubFetch();
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = await openAccountMenu(container);
 
       // Radix portals menu content onto `document.body`, outside this
       // test's own `container`.
       const menu = document.querySelector('[role="menu"]');
       expect(menu).not.toBeNull();
-      expect(menu?.textContent).toContain("Settings");
-      expect(menu?.textContent).toContain("Sign out");
+      expect(menu?.getAttribute("data-side")).toBe("top");
 
       act(() => root.unmount());
       container.remove();
     });
 
-    test("Sign out calls onSignOut", async () => {
+    test("offers a Weekly usage line, Settings, a feedback link, and Log out", async () => {
       stubFetch();
       const container = document.createElement("div");
       document.body.appendChild(container);
-      const root = createRoot(container);
-      let signedOut = false;
-      await act(async () => {
-        root.render(
-          <TestQueryProvider>
-            <BenchProvider>
-              <Sidebar
-                path="/c"
-                user={user}
-                onNavigate={noop}
-                onSignOut={() => {
-                  signedOut = true;
-                }}
-              />
-            </BenchProvider>
-          </TestQueryProvider>,
-        );
-      });
+      const root = await openAccountMenu(container);
 
-      const trigger = container.querySelector<HTMLButtonElement>(
-        ".shell-sidebar-avatar-btn",
+      const menu = document.querySelector('[role="menu"]');
+      expect(menu?.textContent).toContain("Weekly usage");
+      expect(menu?.textContent).toContain("Settings");
+      expect(menu?.textContent).toContain("Send Feedback");
+      expect(menu?.textContent).toContain("Log out");
+
+      const feedbackLink = menu?.querySelector<HTMLAnchorElement>(
+        'a[href*="github.com/corbitsdev/workbench"]',
       );
-      await act(async () => {
-        // Radix's dropdown-menu trigger opens on `pointerdown`, not
-        // `click` — mirroring how a real mouse interaction reaches it.
-        trigger?.dispatchEvent(
-          new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
-        );
-      });
-      for (let i = 0; i < 5; i++) {
-        await act(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 0));
-        });
-      }
+      expect(feedbackLink).not.toBeUndefined();
+      expect(feedbackLink?.getAttribute("href")).toContain("/issues");
+      expect(feedbackLink?.getAttribute("target")).toBe("_blank");
 
-      const signOutItem = [
+      act(() => root.unmount());
+      container.remove();
+    });
+
+    test("Log out is danger-styled and calls onSignOut", async () => {
+      stubFetch();
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      let signedOut = false;
+      const root = await openAccountMenu(container, () => {
+        signedOut = true;
+      });
+
+      const logOutItem = [
         ...document.querySelectorAll('[role="menuitem"]'),
-      ].find((item) => item.textContent?.includes("Sign out") === true);
-      expect(signOutItem).not.toBeUndefined();
+      ].find((item) => item.textContent?.includes("Log out") === true);
+      expect(logOutItem).not.toBeUndefined();
+      expect(logOutItem?.className).toContain("text-destructive");
+
       await act(async () => {
-        signOutItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        logOutItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
 
       expect(signedOut).toBe(true);
