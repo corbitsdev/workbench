@@ -91,6 +91,7 @@ export const SETTINGS_STRINGS = {
   accountLoadError: "your account",
   accountReadOnlyNote:
     "Managed through the authentication API; editing from this screen has not been built yet.",
+  accountSignOutAction: "Sign out",
 
   peopleSectionTitle: "People",
   peopleSectionDescription: "Everyone with a seat on this workbench.",

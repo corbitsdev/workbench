@@ -57,7 +57,13 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         id: "account",
         title: SETTINGS_STRINGS.accountSectionTitle,
         icon: User,
-        render: () => <AccountSection />,
+        render: (ctx) => (
+          <AccountSection
+            {...(ctx.onSignOut !== undefined
+              ? { onSignOut: ctx.onSignOut }
+              : {})}
+          />
+        ),
       },
       {
         // Plugins (`/plugins`) is the canonical surface for discovering

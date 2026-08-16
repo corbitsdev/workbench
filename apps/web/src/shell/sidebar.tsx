@@ -15,13 +15,26 @@
 import {
   Avatar,
   Button,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuSeparator,
+  MenuTrigger,
   NotificationsBell,
   SidebarPanel,
   SidebarPanelBody,
   SidebarPanelFooter,
   SidebarPanelHeader,
 } from "@corbits/react-ui";
-import { ChartColumn, Plug, Plus, Search, Settings } from "lucide-react";
+import {
+  ChartColumn,
+  LogOut,
+  Plug,
+  Plus,
+  Search,
+  Settings,
+  SlidersHorizontal,
+} from "lucide-react";
 
 import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
 import { useAPIQuery } from "../api";
@@ -105,10 +118,12 @@ export function Sidebar({
   path,
   user,
   onNavigate,
+  onSignOut,
 }: {
   readonly path: string;
   readonly user: SessionUser;
   readonly onNavigate: (to: string) => void;
+  readonly onSignOut: () => void;
 }) {
   const headerAction = (
     <div className="panel-page-tools">
@@ -182,21 +197,33 @@ export function Sidebar({
           >
             <Settings />
           </FooterIconButton>
-          <button
-            type="button"
-            className="shell-sidebar-avatar-btn"
-            aria-label={`${user.name} · Settings`}
-            title={`${user.name} · Settings`}
-            data-ctx-account=""
-            onClick={() => onNavigate(SETTINGS_PATH)}
-          >
-            <Avatar
-              initials={initialsOf(user.name)}
-              label={user.name}
-              size="sm"
-              tone="neutral"
-            />
-          </button>
+          <Menu>
+            <MenuTrigger asChild>
+              <button
+                type="button"
+                className="shell-sidebar-avatar-btn"
+                aria-label={`${user.name} · Account menu`}
+                title={user.name}
+                data-ctx-account=""
+              >
+                <Avatar
+                  initials={initialsOf(user.name)}
+                  label={user.name}
+                  size="sm"
+                  tone="neutral"
+                />
+              </button>
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => onNavigate(SETTINGS_PATH)}>
+                <SlidersHorizontal /> Settings
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem onSelect={onSignOut}>
+                <LogOut /> Sign out
+              </MenuItem>
+            </MenuContent>
+          </Menu>
         </div>
       </SidebarPanelFooter>
     </SidebarPanel>

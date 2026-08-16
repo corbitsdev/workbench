@@ -3,15 +3,25 @@
 // `vendor/intx/hub-api/src/routes` — only tenants and principals carry a
 // PATCH); this section renders whatever `GET /api/me` returns and says so.
 
-import { Badge, EmptyState, SettingsPanel, Skeleton } from "@corbits/react-ui";
-import { CircleAlert } from "lucide-react";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  SettingsPanel,
+  Skeleton,
+} from "@corbits/react-ui";
+import { CircleAlert, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { getAccount, type Account } from "./api";
 import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 
-export function AccountSection() {
+export function AccountSection({
+  onSignOut,
+}: {
+  readonly onSignOut?: () => void;
+}) {
   const [state, setState] = useState<LoadState<Account>>({ kind: "loading" });
 
   useEffect(() => {
@@ -46,6 +56,7 @@ export function AccountSection() {
       name={state.data.name}
       email={state.data.email}
       emailVerified={state.data.emailVerified}
+      {...(onSignOut !== undefined ? { onSignOut } : {})}
     />
   );
 }
@@ -59,10 +70,12 @@ export function AccountSectionView({
   name,
   email,
   emailVerified,
+  onSignOut,
 }: {
   readonly name: string;
   readonly email: string;
   readonly emailVerified: boolean;
+  readonly onSignOut?: () => void;
 }) {
   return (
     <SettingsPanel
@@ -80,6 +93,11 @@ export function AccountSectionView({
           </Badge>
         </dd>
       </dl>
+      {onSignOut !== undefined ? (
+        <Button variant="outline" onClick={onSignOut}>
+          <LogOut /> {SETTINGS_STRINGS.accountSignOutAction}
+        </Button>
+      ) : null}
     </SettingsPanel>
   );
 }

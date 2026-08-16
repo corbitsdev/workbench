@@ -138,7 +138,12 @@ export function AppShell({
 
   return (
     <div className="shell-frame">
-      <Sidebar path={path} user={user} onNavigate={navigate} />
+      <Sidebar
+        path={path}
+        user={user}
+        onNavigate={navigate}
+        onSignOut={onSignOut}
+      />
       <div className="shell-main" ref={mainRef}>
         <div className="shell-main-content">
           <ProviderHealthBanner />

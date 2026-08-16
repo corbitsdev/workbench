@@ -25,6 +25,11 @@ export type SettingsContext = {
    * `/settings/agents/:definitionId`), so a section with its own
    * master-detail can restore the right selection on a deep link. */
   readonly entityId?: string | null;
+  /** Ends the signed-in session — the same callback the shell's account
+   * menu calls. Absent where the host has no sign-out concept of its own
+   * (a package test rendering a section standalone); a section that
+   * offers a Sign out action simply hides it when this is undefined. */
+  readonly onSignOut?: () => void;
 };
 
 export type SettingsSection = {

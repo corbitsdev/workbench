@@ -24,7 +24,7 @@ function renderSidebar(path: string): string {
   return renderToStaticMarkup(
     <TestQueryProvider>
       <BenchProvider>
-        <Sidebar path={path} user={user} onNavigate={noop} />
+        <Sidebar path={path} user={user} onNavigate={noop} onSignOut={noop} />
       </BenchProvider>
     </TestQueryProvider>,
   );
@@ -121,7 +121,7 @@ describe("Sidebar", () => {
       root.render(
         <TestQueryProvider>
           <BenchProvider>
-            <Sidebar path="/c" user={user} onNavigate={noop} />
+            <Sidebar path="/c" user={user} onNavigate={noop} onSignOut={noop} />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -164,7 +164,7 @@ describe("Sidebar", () => {
       root.render(
         <TestQueryProvider>
           <BenchProvider>
-            <Sidebar path="/c" user={user} onNavigate={noop} />
+            <Sidebar path="/c" user={user} onNavigate={noop} onSignOut={noop} />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -178,5 +178,112 @@ describe("Sidebar", () => {
     expect(container.innerHTML).toContain("Nothing selected");
     act(() => root.unmount());
     container.remove();
+  });
+
+  // CL-6105: the footer avatar used to be a plain link straight to
+  // settings — there was no way to sign out short of the hidden
+  // right-click context menu. It is now a real menu (react-ui's `Menu`
+  // primitives) offering both "Settings" and "Sign out".
+  describe("the account menu", () => {
+    test("opens on click and offers Settings and Sign out", async () => {
+      stubFetch();
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(
+          <TestQueryProvider>
+            <BenchProvider>
+              <Sidebar
+                path="/c"
+                user={user}
+                onNavigate={noop}
+                onSignOut={noop}
+              />
+            </BenchProvider>
+          </TestQueryProvider>,
+        );
+      });
+
+      const trigger = container.querySelector<HTMLButtonElement>(
+        ".shell-sidebar-avatar-btn",
+      );
+      expect(trigger).not.toBeNull();
+      await act(async () => {
+        // Radix's dropdown-menu trigger opens on `pointerdown`, not
+        // `click` — mirroring how a real mouse interaction reaches it.
+        trigger?.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+        );
+      });
+      for (let i = 0; i < 5; i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+      }
+
+      // Radix portals menu content onto `document.body`, outside this
+      // test's own `container`.
+      const menu = document.querySelector('[role="menu"]');
+      expect(menu).not.toBeNull();
+      expect(menu?.textContent).toContain("Settings");
+      expect(menu?.textContent).toContain("Sign out");
+
+      act(() => root.unmount());
+      container.remove();
+    });
+
+    test("Sign out calls onSignOut", async () => {
+      stubFetch();
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      let signedOut = false;
+      await act(async () => {
+        root.render(
+          <TestQueryProvider>
+            <BenchProvider>
+              <Sidebar
+                path="/c"
+                user={user}
+                onNavigate={noop}
+                onSignOut={() => {
+                  signedOut = true;
+                }}
+              />
+            </BenchProvider>
+          </TestQueryProvider>,
+        );
+      });
+
+      const trigger = container.querySelector<HTMLButtonElement>(
+        ".shell-sidebar-avatar-btn",
+      );
+      await act(async () => {
+        // Radix's dropdown-menu trigger opens on `pointerdown`, not
+        // `click` — mirroring how a real mouse interaction reaches it.
+        trigger?.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+        );
+      });
+      for (let i = 0; i < 5; i++) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+      }
+
+      const signOutItem = [
+        ...document.querySelectorAll('[role="menuitem"]'),
+      ].find((item) => item.textContent?.includes("Sign out") === true);
+      expect(signOutItem).not.toBeUndefined();
+      await act(async () => {
+        signOutItem?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+
+      expect(signedOut).toBe(true);
+
+      act(() => root.unmount());
+      container.remove();
+    });
   });
 });

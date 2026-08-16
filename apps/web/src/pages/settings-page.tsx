@@ -16,6 +16,7 @@ import { PageShell } from "@corbits/react-ui";
 import { useEffect } from "react";
 
 import { useBench } from "../bench-context";
+import { useSignOut } from "../navigation";
 import {
   SETTINGS_PATH_PREFIX,
   settingsEntityIdFromPath,
@@ -34,6 +35,7 @@ export function SettingsRoute({
   readonly navigate: (to: string) => void;
 }) {
   const { selectedTenantId, selectedPrincipalId } = useBench();
+  const onSignOut = useSignOut();
   const access = useSettingsAccess(selectedTenantId, selectedPrincipalId);
   const groups = resolveAppSettingsSectionGroups(access);
   const sections = flattenSettingsSections(groups);
@@ -100,6 +102,7 @@ export function SettingsRoute({
                 principalId: selectedPrincipalId,
                 navigate,
                 entityId,
+                ...(onSignOut !== undefined ? { onSignOut } : {}),
               }}
             />
           </PageShell>

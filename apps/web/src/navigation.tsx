@@ -13,22 +13,39 @@ const NavigateContext = createContext<Navigate>(() => {
   throw new Error("navigation used outside NavigationProvider");
 });
 
+/** Absent outside a signed-in shell (the onboarding wizard has no account
+ * menu, no settings surface) — `undefined` rather than a throwing default,
+ * so a reader like `AccountSection` (mounted in package tests with no
+ * provider at all) can simply omit the Sign out action instead of
+ * crashing. */
+const SignOutContext = createContext<(() => void) | undefined>(undefined);
+
 export function NavigationProvider({
   navigate,
+  onSignOut,
   children,
 }: {
   readonly navigate: Navigate;
+  readonly onSignOut?: () => void;
   readonly children: ReactNode;
 }) {
   return (
     <NavigateContext.Provider value={navigate}>
-      {children}
+      <SignOutContext.Provider value={onSignOut}>
+        {children}
+      </SignOutContext.Provider>
     </NavigateContext.Provider>
   );
 }
 
 export function useNavigate(): Navigate {
   return useContext(NavigateContext);
+}
+
+/** The same sign-out the account menu's "Sign out" item calls — `undefined`
+ * where no `onSignOut` was given to `NavigationProvider` (onboarding). */
+export function useSignOut(): (() => void) | undefined {
+  return useContext(SignOutContext);
 }
 
 /**
