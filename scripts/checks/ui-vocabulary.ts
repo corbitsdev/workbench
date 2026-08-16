@@ -61,6 +61,12 @@ const BANNED_TERMS: readonly { name: string; pattern: RegExp }[] = [
   { name: "channel", pattern: /\bchannels?\b/i },
   { name: "space", pattern: /\bspaces?\b/i },
   { name: "chat", pattern: /\bchats?\b/i },
+  // CL-6089: "workspace" is a synonym the teardown deliberately keeps out
+  // of copy — "workbench" is the one product noun. The word-boundary
+  // regex does not match "workbench" (no "space" substring in it), so
+  // this cannot false-positive on the legal word the same way "bench"
+  // above does not match inside "workbench".
+  { name: "workspace", pattern: /\bworkspaces?\b/i },
 ];
 
 /**
