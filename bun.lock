@@ -504,11 +504,14 @@
       "name": "@workbench/connections",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/mcp-tools": "workspace:*",
         "@intx/crypto": "workspace:*",
+        "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/types": "workspace:*",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
       },
       "devDependencies": {

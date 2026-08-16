@@ -11,6 +11,7 @@ import { PackageSearch, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { InstalledStrip } from "./installed-strip";
+import { McpServersSection } from "./mcp-servers-section";
 import {
   FEATURED_CONNECTOR_IDS,
   PLUGIN_CATEGORY_ORDER,
@@ -171,15 +172,19 @@ function SkillsTabPanel({
 }
 
 export function PluginsGallery({
+  tenantId,
   plugins,
   skills,
   onOpenPlugin,
   onOpenSkill,
+  autoOpenMcpAdd = false,
 }: {
+  readonly tenantId: string;
   readonly plugins: readonly ResolvedPlugin[];
   readonly skills: readonly SkillCardData[];
   readonly onOpenPlugin: (plugin: ResolvedPlugin) => void;
   readonly onOpenSkill: (skill: SkillCardData) => void;
+  readonly autoOpenMcpAdd?: boolean;
 }) {
   const [tab, setTab] = useState<PluginsGalleryTab>("plugins");
   const [query, setQuery] = useState("");
@@ -214,6 +219,10 @@ export function PluginsGallery({
             {active === "plugins" ? (
               <>
                 <InstalledStrip plugins={plugins} onOpen={onOpenPlugin} />
+                <McpServersSection
+                  tenantId={tenantId}
+                  autoOpenAdd={autoOpenMcpAdd}
+                />
                 <PluginsTabPanel
                   plugins={plugins}
                   query={query}

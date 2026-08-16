@@ -32,6 +32,17 @@ export {
   type CreateConnectionRoutesDeps,
 } from "./routes";
 export {
+  createMcpServerRoutes,
+  type CreateMcpServerRoutesDeps,
+  type McpServerConnected,
+  type McpServerSummary,
+} from "./mcp-server-routes";
+export { probeMcpServer, type McpProbeResult } from "./mcp-probe";
+export {
+  listMcpServerConnections,
+  type McpServerConnection,
+} from "./mcp-server-store";
+export {
   createWorkflowConnectionRoutes,
   type ConnectionSummary,
   type CreateWorkflowConnectionRoutesDeps,

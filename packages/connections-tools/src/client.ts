@@ -71,3 +71,46 @@ export async function listConnections(
   }
   return parsed.data;
 }
+
+export type McpServerConnectionStatus = {
+  readonly slug: string;
+  readonly name: string;
+  readonly url: string;
+};
+
+const McpServersResponse = type({
+  data: type({
+    slug: "string",
+    name: "string",
+    url: "string",
+  }).array(),
+});
+
+/** Fetches every MCP server this tenant has connected through Plugins —
+ * the same `/api/workflow-connections/mcp-servers` route
+ * `@corbits/mcp-tools`' `mcp_list_servers` reads, reused here rather
+ * than a second listing mechanism, so `list_connections` reports the
+ * same connected set an agent would see calling `mcp_list_servers`
+ * directly. Throws on any transport, HTTP, or shape failure. */
+export async function listMcpServerConnections(
+  config: ConnectionsToolClientConfig,
+): Promise<readonly McpServerConnectionStatus[]> {
+  const doFetch = config.fetchImpl ?? fetch;
+  const response = await doFetch(
+    `${config.hubConnectionsUrl}/api/workflow-connections/mcp-servers`,
+    { headers: authHeaders(config) },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Fetching MCP servers failed: ${response.status} ${response.statusText}`,
+    );
+  }
+  const body: unknown = await response.json();
+  const parsed = McpServersResponse(body);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `MCP servers response did not match the expected shape: ${parsed.summary}`,
+    );
+  }
+  return parsed.data;
+}
