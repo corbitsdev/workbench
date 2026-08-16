@@ -1016,9 +1016,18 @@ function ChatWorkspaceInner({
           tenantId={tenantId}
           submitting={creating}
           error={createChannelError}
+          initialKind="chat"
           {...(listMembers !== undefined ? { listMembers } : {})}
           {...(currentUser !== undefined
             ? { currentUserPrincipalId: currentUser.principalId }
+            : {})}
+          {...(onRequestNewAgent !== undefined
+            ? {
+                onRequestNewAgent: () => {
+                  setDialogOpen(false);
+                  onRequestNewAgent();
+                },
+              }
             : {})}
         />
         <InviteAgentDialog
@@ -1351,6 +1360,7 @@ function ChatWorkspaceInner({
         tenantId={tenantId}
         submitting={creating}
         error={createChannelError}
+        initialKind="chat"
         {...(listMembers !== undefined ? { listMembers } : {})}
         {...(currentUser !== undefined
           ? { currentUserPrincipalId: currentUser.principalId }

@@ -39,6 +39,8 @@ export const CHAT_STRINGS = {
   newChatCounterpartTabAgent: "Agents",
   newChatCounterpartTabPerson: "People",
   newChatAgentLabel: "Agent",
+  newChatAgentComboboxPlaceholder: "Search or create agents",
+  newChatAgentComboboxEmpty: "No agents match.",
   newChatAgentLoadError: "Couldn't load agents to chat with",
   newChatAgentEmptyTitle: "No agents available",
   newChatAgentEmptyDescription:
@@ -48,7 +50,7 @@ export const CHAT_STRINGS = {
   newChatPersonEmptyTitle: "No teammates available",
   newChatPersonEmptyDescription:
     "Invite teammates to this workbench before starting a direct chat.",
-  newChatCreateAgentAffordance: "New agent…",
+  newChatCreateAgentAffordance: "Create new agent",
   newChannelMissingAgentError:
     "Choose an agent or teammate to start this chat.",
   newChannelSelfDmError: "You can't start a direct chat with yourself.",

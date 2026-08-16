@@ -1,16 +1,23 @@
-// The "new channel"/"new chat" affordance, behind a small centered dialog
-// triggered from the sidebar, walked as a two-step guided flow: pick a kind,
-// then fill in that kind's (few) details. A channel is name-only; a chat
-// additionally requires picking exactly one counterpart — an agent (a radio
-// list of the tenant's invitable definitions, by name only — the definition
-// id stays internal) or a bench member (a radio list of the bench's people,
-// sourced the same way Settings → People is) — since a chat's counterpart is
-// fixed at creation and can never be invited into afterward. A caller that
-// already knows the kind (`initialKind`) skips the kind step entirely and
-// opens straight on details.
+// The "new chat" affordance, behind a small centered dialog triggered from
+// the sidebar. A chat requires picking exactly one counterpart — an agent
+// (a search-or-create combobox over the tenant's invitable definitions, by
+// name only — the definition id stays internal; see `AgentCombobox`) or a
+// bench member (a radio list of the bench's people, sourced the same way
+// Settings → People is) — since a chat's counterpart is fixed at creation
+// and can never be invited into afterward. Picking an agent creates the
+// chat immediately; picking a person still confirms via the Submit button
+// below (see `handleSelectAgent`'s doc comment).
+//
+// A channel (a pinned, name-only kind, no counterpart) is still a first
+// class citizen of the wire protocol and this component's own `kind` state
+// — existing group channels still list in the band — but every current
+// caller passes `initialKind="chat"`, so the kind-picking step below (step
+// 1) and the channel-only fields in step 2 are only reachable by a future
+// caller that omits `initialKind`. None does today.
 
 import {
   Button,
+  Command,
   Dialog,
   DialogBody,
   DialogContent,
@@ -23,6 +30,7 @@ import {
   Skeleton,
   Tabs,
 } from "@corbits/react-ui";
+import type { CommandAction } from "@corbits/react-ui";
 import { CircleAlert, Plus, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -305,6 +313,22 @@ export function NewChannelDialog({
     );
   }
 
+  /**
+   * Picking an agent in the combobox creates the chat immediately, no
+   * separate submit step — "Enter/click opens" (see the module doc). The
+   * optional name field only ever matters for the rarer channel/person
+   * paths, which still go through the Submit button.
+   */
+  function handleSelectAgent(agentDefinitionId: string) {
+    setDefinitionId(agentDefinitionId);
+    const payload = newChannelPayload(kind, name, {
+      kind: "agent",
+      definitionId: agentDefinitionId,
+    });
+    if (payload === null) return;
+    onCreate(payload);
+  }
+
   const stepperSteps: readonly DialogStepperStep[] = [
     {
       label: CHAT_STRINGS.newChannelStepKindLabel,
@@ -418,10 +442,9 @@ export function NewChannelDialog({
                       >
                         {(active) =>
                           active === "agent" ? (
-                            <AgentPickerSection
+                            <AgentCombobox
                               state={agentState}
-                              selectedId={definitionId}
-                              onSelect={setDefinitionId}
+                              onSelect={handleSelectAgent}
                               {...(onRequestNewAgent !== undefined
                                 ? { onRequestNewAgent }
                                 : {})}
@@ -440,10 +463,9 @@ export function NewChannelDialog({
                         <legend className="chat-field-label">
                           {CHAT_STRINGS.newChatAgentLabel}
                         </legend>
-                        <AgentPickerSection
+                        <AgentCombobox
                           state={agentState}
-                          selectedId={definitionId}
-                          onSelect={setDefinitionId}
+                          onSelect={handleSelectAgent}
                           {...(onRequestNewAgent !== undefined
                             ? { onRequestNewAgent }
                             : {})}
@@ -533,48 +555,26 @@ export function NewChannelDialog({
 }
 
 /**
- * The agent list plus the "New agent…" affordance beneath it —
- * `onRequestNewAgent` absent hides the row entirely (same contract as
- * `NewChannelDialog`'s own `onRequestNewAgent` prop), so a host with
- * nothing to wire never renders a row that goes nowhere.
+ * The "To:"-style agent picker (CL-6081): a single search-or-create
+ * combobox rather than a radio list. "Create new agent" is a pinned row
+ * above the combobox — outside `Command`'s own filtering, so it never
+ * disappears as the person types — and the agent list beneath it narrows
+ * by typeahead, reusing `@corbits/react-ui`'s `Command` primitive for the
+ * filtering and keyboard navigation rather than re-implementing either.
+ * `onRequestNewAgent` absent hides the create row entirely (same contract
+ * as `NewChannelDialog`'s own prop of that name), so a host with nothing
+ * to wire never renders a row that goes nowhere. Picking an existing agent
+ * calls `onSelect` immediately — see `handleSelectAgent`'s doc comment for
+ * why there is no separate confirm step.
  */
-function AgentPickerSection({
+function AgentCombobox({
   state,
-  selectedId,
   onSelect,
   onRequestNewAgent,
 }: {
   readonly state: AgentListState;
-  readonly selectedId: string | null;
   readonly onSelect: (id: string) => void;
   readonly onRequestNewAgent?: () => void;
-}) {
-  return (
-    <div className="chat-agent-picker-section">
-      <AgentPicker state={state} selectedId={selectedId} onSelect={onSelect} />
-      {onRequestNewAgent !== undefined ? (
-        <button
-          type="button"
-          className="chat-new-agent-row"
-          data-testid="new-chat-create-agent"
-          onClick={onRequestNewAgent}
-        >
-          <Plus aria-hidden size={14} />
-          {CHAT_STRINGS.newChatCreateAgentAffordance}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function AgentPicker({
-  state,
-  selectedId,
-  onSelect,
-}: {
-  readonly state: AgentListState;
-  readonly selectedId: string | null;
-  readonly onSelect: (id: string) => void;
 }) {
   if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
   if (state.kind === "error") {
@@ -586,33 +586,35 @@ function AgentPicker({
       />
     );
   }
-  if (state.items.length === 0) {
-    return (
-      <EmptyState
-        icon={<Users />}
-        title={CHAT_STRINGS.newChatAgentEmptyTitle}
-        description={CHAT_STRINGS.newChatAgentEmptyDescription}
-      />
-    );
-  }
+  const actions: readonly CommandAction[] = state.items.map((definition) => ({
+    id: definition.id,
+    label: definition.description ?? definition.name,
+    run: () => onSelect(definition.id),
+  }));
   return (
-    <>
-      {state.items.map((definition) => (
-        <label
-          key={definition.id}
-          className="chat-radio-option"
-          data-testid="new-chat-agent-option"
+    <div className="chat-agent-combobox" data-testid="new-chat-agent-combobox">
+      {onRequestNewAgent !== undefined ? (
+        <button
+          type="button"
+          className="chat-new-agent-row"
+          data-testid="new-chat-create-agent"
+          onClick={onRequestNewAgent}
         >
-          <input
-            type="radio"
-            name="counterpart-agent"
-            checked={selectedId === definition.id}
-            onChange={() => onSelect(definition.id)}
-          />
-          {definition.description ?? definition.name}
-        </label>
-      ))}
-    </>
+          <Plus aria-hidden size={14} />
+          {CHAT_STRINGS.newChatCreateAgentAffordance}
+        </button>
+      ) : null}
+      <Command
+        actions={actions}
+        label={CHAT_STRINGS.newChatAgentLabel}
+        placeholder={CHAT_STRINGS.newChatAgentComboboxPlaceholder}
+        empty={
+          state.items.length === 0
+            ? CHAT_STRINGS.newChatAgentEmptyDescription
+            : CHAT_STRINGS.newChatAgentComboboxEmpty
+        }
+      />
+    </div>
   );
 }
 
