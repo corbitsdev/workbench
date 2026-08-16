@@ -425,7 +425,13 @@ async function run(): Promise<void> {
 
     const email = `browser-e2e-${crypto.randomUUID()}@example.invalid`;
     const password = `pw-${crypto.randomUUID()}`;
-    const stubApiKey = "sk-e2e-stub-not-real";
+    // A real provider key (E2E_PROVIDER_API_KEY, Anthropic) turns the run
+    // into the live acceptance gate: Myra must greet unprompted and answer
+    // "hi" with real prose, never a credential-error report. Absent, the
+    // stub key proves the wiring only.
+    const liveApiKey = process.env["E2E_PROVIDER_API_KEY"];
+    const stubApiKey = liveApiKey ?? "sk-e2e-stub-not-real";
+    const live = liveApiKey !== undefined;
 
     // --- Step 1: signup -> onboarding -> connect provider (stub key) -> shell
     await step(
@@ -754,6 +760,26 @@ async function run(): Promise<void> {
             timeout: 30_000,
           });
         }
+        if (live) {
+          // Myra hosts every workbench and speaks first: her greeting must
+          // land without the person typing anything (CL-6126/CL-6137).
+          const greeted = await page
+            .waitForSelector('div.chat-bubble-row[data-own="false"]', {
+              timeout: 60_000,
+            })
+            .then(() => true)
+            .catch(() => false);
+          if (!greeted) {
+            console.error(
+              `  --- hub output (tail) ---\n${hub.output().slice(-1500)}`,
+            );
+            return {
+              status: "fail",
+              detail:
+                "live key: no unprompted greeting from Myra within 60s of opening the workbench",
+            };
+          }
+        }
         await page.type("textarea.chat-composer-input", "hi");
         await clickStable(page, 'button[aria-label="Send"]');
         await page.waitForSelector('div.chat-bubble-row[data-own="true"]', {
@@ -781,6 +807,28 @@ async function run(): Promise<void> {
           );
           return bubble?.textContent ?? null;
         });
+        if (live) {
+          const bubbles = await page.evaluate(() =>
+            Array.from(
+              document.querySelectorAll(
+                'div.chat-bubble-row[data-own="false"] p.chat-bubble-text',
+              ),
+            ).map((el) => el.textContent ?? ""),
+          );
+          const broken = bubbles.filter((text) =>
+            /credential error|could not complete your request/i.test(text),
+          );
+          if (bubbles.length < 2 || broken.length > 0) {
+            return {
+              status: "fail",
+              detail: `live key: expected greeting + real answer, got ${JSON.stringify(bubbles)}`,
+            };
+          }
+          return {
+            status: "pass",
+            detail: `live key: Myra greeted and answered: ${JSON.stringify(bubbles)}`,
+          };
+        }
         return {
           status: "pass",
           detail:
