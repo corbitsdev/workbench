@@ -672,6 +672,175 @@ describe("POST /channels/:id/invite", () => {
   });
 });
 
+describe("DELETE /channels/:id/participants/:address", () => {
+  test("removes a human participant and releases nothing (no instance to release)", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+      participants: ["prn_bob"],
+    });
+
+    const response = await app.request(
+      `/channels/${channel.id}/participants/prn_bob`,
+      { method: "DELETE" },
+    );
+
+    expect(response.status).toBe(200);
+    const settingsResponse = await app.request(
+      `/channels/${channel.id}/settings`,
+    );
+    const settingsBody = (await settingsResponse.json()) as {
+      participants: { address: string }[];
+    };
+    expect(settingsBody.participants).toEqual([]);
+  });
+
+  test("removes an invited agent and releases its launched instance", async () => {
+    const released: { address: string; reason: string }[] = [];
+    const deps = buildDeps({
+      releaseAgentInstance: async (address, reason) => {
+        released.push({ address, reason });
+      },
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    const response = await app.request(
+      `/channels/${channel.id}/participants/${encodeURIComponent(
+        "ins_invited1@acme.example",
+      )}`,
+      { method: "DELETE" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(released).toEqual([
+      { address: "ins_invited1@acme.example", reason: "participant-removed" },
+    ]);
+    const settingsResponse = await app.request(
+      `/channels/${channel.id}/settings`,
+    );
+    const settingsBody = (await settingsResponse.json()) as {
+      participants: { address: string }[];
+    };
+    expect(settingsBody.participants).toEqual([]);
+  });
+
+  test("still removes the participant when no releaseAgentInstance is wired", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    const response = await app.request(
+      `/channels/${channel.id}/participants/${encodeURIComponent(
+        "ins_invited1@acme.example",
+      )}`,
+      { method: "DELETE" },
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  test("404s for an unknown channel", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+    const response = await app.request(
+      "/channels/ins_missing/participants/prn_bob",
+      { method: "DELETE" },
+    );
+    expect(response.status).toBe(404);
+  });
+
+  test("404s for a participant that isn't in the channel", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+    const { body: channel } = await createChannel(app, {
+      kind: "channel",
+      name: "Test Channel",
+    });
+
+    const response = await app.request(
+      `/channels/${channel.id}/participants/prn_ghost`,
+      { method: "DELETE" },
+    );
+    expect(response.status).toBe(404);
+  });
+
+  test("refuses to remove a chat's fixed agent (409)", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: chat } = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    const response = await app.request(
+      `/channels/${chat.id}/participants/${encodeURIComponent(
+        "ins_invited1@acme.example",
+      )}`,
+      { method: "DELETE" },
+    );
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("conflict");
+  });
+
+  test("refuses to remove a chat's person counterpart (409)", async () => {
+    const deps = buildDeps();
+    (
+      deps.tenancy as ReturnType<typeof createInMemoryChannelTenancyStore>
+    ).registerPrincipal(TENANT.id, {
+      id: "prn_bob",
+      kind: "user",
+      status: "active",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: chat } = await createChannel(app, {
+      kind: "chat",
+      principalId: "prn_bob",
+    });
+
+    const response = await app.request(
+      `/channels/${chat.id}/participants/prn_bob`,
+      { method: "DELETE" },
+    );
+
+    expect(response.status).toBe(409);
+  });
+
+  test("a denied grant is rejected before any participant is removed", async () => {
+    const deps = buildDeps({
+      requireGrant: () => async (c) =>
+        c.json({ error: { code: "forbidden", message: "no" } }, 403),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const response = await app.request(
+      "/channels/ins_whatever/participants/prn_bob",
+      { method: "DELETE" },
+    );
+    expect(response.status).toBe(403);
+  });
+});
+
 describe("GET /channels/:id/agents", () => {
   test("resolves the channel's agent participant back to its definition id", async () => {
     const deps = buildDeps({
