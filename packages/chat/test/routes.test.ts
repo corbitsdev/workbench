@@ -245,8 +245,8 @@ describe("POST /channels", () => {
   });
 });
 
-describe("POST /channels — agent chat is find-or-create, not create (CL-6070)", () => {
-  test("creating a chat with the same agent twice reuses the first chat instead of forking a duplicate", async () => {
+describe("POST /channels — reuseExisting: true reopens the land-hop's chat, not create (CL-6089)", () => {
+  test("creating a chat with the same agent twice, reuseExisting: true both times, reuses the first chat instead of forking a duplicate", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -255,12 +255,14 @@ describe("POST /channels — agent chat is find-or-create, not create (CL-6070)"
     const first = await createChannel(app, {
       kind: "chat",
       definitionId: "wfd_echo",
+      reuseExisting: true,
     });
     expect(first.response.status).toBe(201);
 
     const second = await createChannel(app, {
       kind: "chat",
       definitionId: "wfd_echo",
+      reuseExisting: true,
     });
 
     expect(second.response.status).toBe(200);
@@ -320,6 +322,7 @@ describe("POST /channels — agent chat is find-or-create, not create (CL-6070)"
     const { response, body } = await createChannel(app, {
       kind: "chat",
       definitionId: "wfd_echo",
+      reuseExisting: true,
     });
 
     expect(response.status).toBe(200);
@@ -383,6 +386,7 @@ describe("POST /channels — agent chat is find-or-create, not create (CL-6070)"
     const { response, body } = await createChannel(app, {
       kind: "chat",
       definitionId: "wfd_echo",
+      reuseExisting: true,
     });
 
     expect(response.status).toBe(200);
@@ -398,10 +402,12 @@ describe("POST /channels — agent chat is find-or-create, not create (CL-6070)"
     const first = await createChannel(app, {
       kind: "chat",
       definitionId: "wfd_echo",
+      reuseExisting: true,
     });
     const second = await createChannel(app, {
       kind: "chat",
       definitionId: "wfd_echo",
+      reuseExisting: true,
     });
     expect(second.response.status).toBe(200);
 
@@ -413,6 +419,81 @@ describe("POST /channels — agent chat is find-or-create, not create (CL-6070)"
     const fanOut = platform.sentMail[platform.sentMail.length - 1];
     expect(fanOut?.channelId).toBe("ins_invited1");
     expect(fanOut?.fromChannelId).toBe(first.body.id);
+  });
+});
+
+describe("POST /channels — agent chat always creates by default (CL-6089)", () => {
+  test("creating a chat with the same agent twice, reuseExisting omitted both times, mints two independent workbenches", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const first = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    expect(first.response.status).toBe(201);
+
+    const second = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    expect(second.response.status).toBe(201);
+    expect(second.body.id).not.toBe(first.body.id);
+    expect(second.body.kind).toBe("chat");
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.launchInviteCalls).toHaveLength(2);
+    const chats = await deps.store.listChannelSettings(TENANT.id, "chat");
+    expect(chats).toHaveLength(2);
+  });
+
+  test("creating a chat with the same agent twice, reuseExisting: false explicitly, still mints two workbenches", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const first = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+      reuseExisting: false,
+    });
+    const second = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+      reuseExisting: false,
+    });
+
+    expect(first.response.status).toBe(201);
+    expect(second.response.status).toBe(201);
+    expect(second.body.id).not.toBe(first.body.id);
+  });
+
+  test("a pre-existing chat for the same agent (from an earlier find-or-create call) doesn't stop a later always-create call from minting its own", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+
+    const landHop = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+      reuseExisting: true,
+    });
+    expect(landHop.response.status).toBe(201);
+
+    const picked = await createChannel(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    expect(picked.response.status).toBe(201);
+    expect(picked.body.id).not.toBe(landHop.body.id);
+    const chats = await deps.store.listChannelSettings(TENANT.id, "chat");
+    expect(chats).toHaveLength(2);
   });
 });
 
@@ -1091,9 +1172,9 @@ describe("threads — root feed vs reply membership (4a)", () => {
     expect(rootBody.items.map((i) => i.id).sort()).toEqual(
       [askedSent.id, replied.id].sort(),
     );
-    expect(
-      rootBody.items.find((i) => i.id === replied.id)?.parts,
-    ).toEqual([{ kind: "text", text: "hello back" }]);
+    expect(rootBody.items.find((i) => i.id === replied.id)?.parts).toEqual([
+      { kind: "text", text: "hello back" },
+    ]);
   });
 
   test("an unassigned message stays out of a reply thread's own feed", async () => {
