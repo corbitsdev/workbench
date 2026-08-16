@@ -35,9 +35,10 @@ export const CHAT_STRINGS = {
   newChannelStepDetailsLabel: "Details",
   newChannelStepChannelGuidance: "Name it and add an optional purpose.",
   newChannelStepChatGuidance:
-    "Pick who to talk to — the workbench's name defaults to theirs.",
+    "Pick an agent to start a workbench with, or a teammate to talk to directly — the workbench's name defaults to theirs, and you can always rename it.",
   newChatDialogTitle: "New workbench",
-  newChatDialogDescription: "Pick who you want to talk to.",
+  newChatDialogDescription:
+    "Every pick starts a new workbench — an agent is a starting point, not a conversation you're reopening.",
   newChatNameLabel: "Name (optional)",
   newChatNamePlaceholder: "Defaults to the agent's name",
   newChatCounterpartTabAgent: "Agents",
