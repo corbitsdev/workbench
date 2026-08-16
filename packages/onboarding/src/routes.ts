@@ -665,12 +665,19 @@ export function createOnboardingRoutes(
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       deps.log(`credential setup failed for user ${user.id}: ${message}`);
+      // ProvisionError messages are written to be shown (they name the
+      // actual step that failed); anything else stays behind the generic
+      // sentence rather than leaking an internal error shape at a user.
+      const shown =
+        cause instanceof ProvisionError
+          ? `The key checked out, but setting up your workbench failed: ${cause.message}.`
+          : "The key checked out, but setting up your workbench failed. " +
+            "The hub log has the underlying error.";
       return c.json(
         {
           error: {
             code: "credential_setup_failed",
-            message:
-              "The key checked out, but setting up your bench failed. Try again in a moment.",
+            message: shown,
           },
         },
         500,
