@@ -6,9 +6,15 @@
 // After Apply, the same per-entry rendering shows what actually happened
 // (including a partial failure's successes, failure, and anything never
 // attempted), never a bare aggregate count.
-import { Button, EmptyState, Skeleton, toast } from "@corbits/react-ui";
+import { Button, EmptyState, toast } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import {
   applyProfile,
   ConfigProfilesApiError,
@@ -18,11 +24,6 @@ import {
   type ConfigProfile,
 } from "./api";
 import { CONFIG_PROFILES_STRINGS } from "./strings";
-
-type LoadState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly message: string }
-  | { readonly kind: "ready"; readonly profiles: readonly ConfigProfile[] };
 
 type PlanState =
   | { readonly kind: "idle" }
@@ -62,7 +63,9 @@ export function ApplyProfilePanel({
    * is applied to are always the same one). */
   readonly tenantId: string;
 }) {
-  const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [query, setQuery] = useState<APIQuery<readonly ConfigProfile[]>>({
+    kind: "loading",
+  });
   const [selectedId, setSelectedId] = useState<string>("");
   const [plan, setPlan] = useState<PlanState>({ kind: "idle" });
   const [applying, setApplying] = useState(false);
@@ -71,16 +74,26 @@ export function ApplyProfilePanel({
     null,
   );
 
-  useEffect(() => {
-    setState({ kind: "loading" });
+  const loadProfiles = () => {
+    setQuery({ kind: "loading" });
     listProfiles(tenantId)
-      .then((profiles) => setState({ kind: "ready", profiles }))
-      .catch((cause: unknown) =>
-        setState({
+      .then((profiles) => setQuery({ kind: "ready", data: profiles }))
+      .catch((cause: unknown) => {
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
+        }
+        setQuery({
           kind: "error",
-          message: errorMessage(cause, CONFIG_PROFILES_STRINGS.loadError),
-        }),
-      );
+          message: describeQueryError(cause),
+          retry: loadProfiles,
+        });
+      });
+  };
+
+  useEffect(() => {
+    loadProfiles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
   useEffect(() => {
@@ -107,28 +120,7 @@ export function ApplyProfilePanel({
     };
   }, [tenantId, selectedId]);
 
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        title={CONFIG_PROFILES_STRINGS.loadError}
-        description={state.message}
-      />
-    );
-  }
-  if (state.profiles.length === 0) {
-    return (
-      <EmptyState
-        title={CONFIG_PROFILES_STRINGS.emptyApplyTitle}
-        description={CONFIG_PROFILES_STRINGS.emptyApplyDescription}
-      />
-    );
-  }
-
-  const selected = state.profiles.find((profile) => profile.id === selectedId);
-
-  function handleApply() {
-    if (selected === undefined) return;
+  function handleApply(selected: ConfigProfile) {
     setApplying(true);
     setError(null);
     setResults(null);
@@ -151,61 +143,78 @@ export function ApplyProfilePanel({
   }
 
   return (
-    <div className="config-profiles-callout">
-      <strong>{CONFIG_PROFILES_STRINGS.applyPanelTitle}</strong>
-      <p>{CONFIG_PROFILES_STRINGS.applyPanelDescription}</p>
-      <div className="config-profiles-field">
-        <select
-          className="config-profiles-select"
-          value={selectedId}
-          onChange={(event) => {
-            setSelectedId(event.target.value);
-            setResults(null);
-            setError(null);
-          }}
-        >
-          <option value="">
-            {CONFIG_PROFILES_STRINGS.chooseProfilePlaceholder}
-          </option>
-          {state.profiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {profile.name}
-            </option>
-          ))}
-        </select>
-        {selected !== undefined && plan.kind === "loading" ? (
-          <p className="config-profiles-field-hint">
-            {CONFIG_PROFILES_STRINGS.planLoadingLabel}
-          </p>
-        ) : null}
-        {selected !== undefined && plan.kind === "error" ? (
-          <p className="config-profiles-error" role="alert">
-            {plan.message}
-          </p>
-        ) : null}
-        {selected !== undefined && plan.kind === "ready" && results === null ? (
-          <EntryList results={plan.results} tense="future" />
-        ) : null}
-      </div>
-      {error !== null ? (
-        <p className="config-profiles-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {results !== null ? (
-        <div role="status">
-          <EntryList results={results} tense="past" />
-        </div>
-      ) : null}
-      <Button
-        variant="primary"
-        disabled={selected === undefined || applying}
-        onClick={handleApply}
-      >
-        {applying
-          ? CONFIG_PROFILES_STRINGS.applyingButton
-          : CONFIG_PROFILES_STRINGS.applyButton}
-      </Button>
-    </div>
+    <QueryView query={query} label={CONFIG_PROFILES_STRINGS.loadError}>
+      {(profiles) => {
+        if (profiles.length === 0) {
+          return (
+            <EmptyState
+              title={CONFIG_PROFILES_STRINGS.emptyApplyTitle}
+              description={CONFIG_PROFILES_STRINGS.emptyApplyDescription}
+            />
+          );
+        }
+        const selected = profiles.find((profile) => profile.id === selectedId);
+        return (
+          <div className="config-profiles-callout">
+            <strong>{CONFIG_PROFILES_STRINGS.applyPanelTitle}</strong>
+            <p>{CONFIG_PROFILES_STRINGS.applyPanelDescription}</p>
+            <div className="config-profiles-field">
+              <select
+                className="config-profiles-select"
+                value={selectedId}
+                onChange={(event) => {
+                  setSelectedId(event.target.value);
+                  setResults(null);
+                  setError(null);
+                }}
+              >
+                <option value="">
+                  {CONFIG_PROFILES_STRINGS.chooseProfilePlaceholder}
+                </option>
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+              {selected !== undefined && plan.kind === "loading" ? (
+                <p className="config-profiles-field-hint">
+                  {CONFIG_PROFILES_STRINGS.planLoadingLabel}
+                </p>
+              ) : null}
+              {selected !== undefined && plan.kind === "error" ? (
+                <p className="config-profiles-error" role="alert">
+                  {plan.message}
+                </p>
+              ) : null}
+              {selected !== undefined &&
+              plan.kind === "ready" &&
+              results === null ? (
+                <EntryList results={plan.results} tense="future" />
+              ) : null}
+            </div>
+            {error !== null ? (
+              <p className="config-profiles-error" role="alert">
+                {error}
+              </p>
+            ) : null}
+            {results !== null ? (
+              <div role="status">
+                <EntryList results={results} tense="past" />
+              </div>
+            ) : null}
+            <Button
+              variant="primary"
+              disabled={selected === undefined || applying}
+              onClick={() => selected !== undefined && handleApply(selected)}
+            >
+              {applying
+                ? CONFIG_PROFILES_STRINGS.applyingButton
+                : CONFIG_PROFILES_STRINGS.applyButton}
+            </Button>
+          </div>
+        );
+      }}
+    </QueryView>
   );
 }

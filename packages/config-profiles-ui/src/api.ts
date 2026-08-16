@@ -3,6 +3,7 @@
 // per-section `*-api.ts` files use: a thin `fetch` + arktype-parse
 // wrapper, one typed error class, and one function per route.
 import { type } from "arktype";
+import { UnauthenticatedError } from "@corbits/api-query";
 
 export class ConfigProfilesApiError extends Error {
   constructor(
@@ -76,6 +77,9 @@ async function request<T>(
     throw new ConfigProfilesApiError(
       cause instanceof Error ? cause.message : String(cause),
     );
+  }
+  if (response.status === 401) {
+    throw new UnauthenticatedError();
   }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);

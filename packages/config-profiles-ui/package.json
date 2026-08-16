@@ -14,6 +14,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/api-query": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#e93005c3a64416cb5dfa8342007c7fe3b52b84fe",
     "arktype": "catalog:",
     "react": "^19.2.0",
