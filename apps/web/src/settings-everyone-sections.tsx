@@ -7,13 +7,15 @@
 // can never drift on what Everyone contains.
 
 import type { SettingsSection } from "@corbits/settings-ui";
-import { Bot, Sparkles } from "lucide-react";
+import { ProfilesSettingsSection } from "@corbits/config-profiles-ui";
+import { Bot, SlidersHorizontal, Sparkles } from "lucide-react";
 
 import { AgentsSettingsSection } from "./pages/agents-settings-section";
 import { SkillsSettingsSection } from "./pages/skills-settings-section";
 
 export const AGENTS_SECTION_ID = "agents";
 export const SKILLS_SECTION_ID = "skills";
+export const CONFIG_PROFILES_SECTION_ID = "config-profiles";
 
 export function everyoneExtraSections(): readonly SettingsSection[] {
   return [
@@ -40,6 +42,12 @@ export function everyoneExtraSections(): readonly SettingsSection[] {
           entityId={ctx.entityId ?? null}
         />
       ),
+    },
+    {
+      id: CONFIG_PROFILES_SECTION_ID,
+      title: "Profiles",
+      icon: SlidersHorizontal,
+      render: (ctx) => <ProfilesSettingsSection tenantId={ctx.tenantId} />,
     },
   ];
 }

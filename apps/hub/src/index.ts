@@ -92,6 +92,11 @@ import {
   createPreferencesRoutes,
 } from "@corbits/preferences";
 import {
+  applyConfigProfilesMigrations,
+  createConfigProfileRoutes,
+  createDrizzleConfigProfileStore,
+} from "@corbits/config-profiles";
+import {
   applyBenchMigrations,
   createBenchRoutes,
   createPostgresBenchSettingsStore,
@@ -997,6 +1002,24 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+    }),
+  );
+  // Config profiles: named, workspace-level pre-built inference
+  // configurations a workbench can attach in one action. Package-owned
+  // table, migrated at hub start like insights and preferences.
+  // `/apply` and `/capture` self-call this same hub's native catalog
+  // routes (see `@corbits/config-profiles`' `routes.ts`), so they need
+  // this hub's own externally-reachable base URL.
+  await applyConfigProfilesMigrations(config.databaseUrl);
+  app.route(
+    `${TENANT_PREFIX}/config-profiles`,
+    createConfigProfileRoutes({
+      store: createDrizzleConfigProfileStore(db),
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      hubBaseUrl: config.baseUrl,
     }),
   );
   // Bench purpose/type: benches are Interchange tenants, so this is a

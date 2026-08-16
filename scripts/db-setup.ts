@@ -42,6 +42,7 @@ import { applyRoutineMigrations } from "../packages/routines/src/migrations";
 import { applyMailboxMigrations } from "../packages/inbox/src/migrations";
 import { applyInsightsMigrations } from "../packages/insights/src/migrations";
 import { applyPreferencesMigrations } from "../packages/preferences/src/migrations";
+import { applyConfigProfilesMigrations } from "../packages/config-profiles/src/migrations";
 import { applyBenchMigrations } from "../packages/bench/src/migrations";
 import { applySkillsMigrations } from "../packages/skills/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
@@ -78,6 +79,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
   { name: "@corbits/insights", apply: applyInsightsMigrations },
   { name: "@corbits/preferences", apply: applyPreferencesMigrations },
+  { name: "@corbits/config-profiles", apply: applyConfigProfilesMigrations },
   { name: "@corbits/bench", apply: applyBenchMigrations },
   { name: "@corbits/skills", apply: applySkillsMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },

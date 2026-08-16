@@ -292,6 +292,55 @@ describe("shadowOffering mint chain", () => {
     });
   });
 
+  test("threads an explicit fetchImpl through every call, including the rollback DELETE, never touching the global fetch", async () => {
+    globalThis.fetch = (() => {
+      throw new Error("global fetch must not be called when fetchImpl is passed");
+    }) as unknown as typeof fetch;
+
+    const calls: Call[] = [];
+    const fakeFetch: typeof fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const path = pathOf(input);
+      const method = init?.method ?? "GET";
+      calls.push({ method, path });
+
+      if (path === `/api/tenants/${TENANT_ID}/catalog/models`) {
+        return Response.json(modelResponse(), { status: 201 });
+      }
+      if (path === `/api/tenants/${TENANT_ID}/providers`) {
+        return Response.json(credentialProviderResponse(), { status: 201 });
+      }
+      if (path === `/api/tenants/${TENANT_ID}/credentials`) {
+        return Response.json(credentialResponse(), { status: 201 });
+      }
+      if (path === `/api/tenants/${TENANT_ID}/catalog/providers`) {
+        return Response.json(modelProviderResponse(), { status: 201 });
+      }
+      if (path === `/api/tenants/${TENANT_ID}/catalog/providers/mp_1`) {
+        if (method === "DELETE") return new Response(null, { status: 204 });
+      }
+      if (path === `/api/tenants/${TENANT_ID}/catalog/offerings`) {
+        return new Response(
+          JSON.stringify({ error: { message: "server exploded" } }),
+          { status: 500 },
+        );
+      }
+      throw new Error(`unexpected fetch: ${method} ${path}`);
+    }) as typeof fetch;
+
+    await expect(
+      shadowOffering(TENANT_ID, INPUT, fakeFetch),
+    ).rejects.toThrow();
+
+    const deleteCall = calls.find((c) => c.method === "DELETE");
+    expect(deleteCall).toEqual({
+      method: "DELETE",
+      path: `/api/tenants/${TENANT_ID}/catalog/providers/mp_1`,
+    });
+  });
+
   test("does not roll back an already-existing model-provider (resolved via 409) when the offering step fails", async () => {
     const calls: Call[] = [];
     globalThis.fetch = (async (
