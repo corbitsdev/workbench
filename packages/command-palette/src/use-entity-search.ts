@@ -119,12 +119,14 @@ export function useEntitySearch({
   const loading = pending || fetching;
 
   if (fetched === null || debouncedQuery.trim().length === 0) {
+    // Nothing is fetched yet, so there is no next page to load — a no-op
+    // rather than a call that pretends otherwise.
     return {
       results: [],
       loading,
       error,
       hasMore: false,
-      loadMore: () => setOffset(0),
+      loadMore: () => {},
     };
   }
 
