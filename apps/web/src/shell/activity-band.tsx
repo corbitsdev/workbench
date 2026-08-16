@@ -28,7 +28,6 @@ import {
   DialogTitle,
 } from "@corbits/react-ui";
 import type { ApprovalRequest } from "@corbits/react-ui";
-import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { APIQuery } from "@corbits/api-query";
@@ -218,8 +217,3 @@ function RejectDialog({
     </Dialog>
   );
 }
-
-// `ShieldCheck` is kept available for future non-empty activity sources
-// (approvals already render through `ApprovalCard`); re-exported so the icon
-// import is not flagged unused while the only source is approvals.
-void ShieldCheck;
