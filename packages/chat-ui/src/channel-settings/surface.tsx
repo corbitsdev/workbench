@@ -8,13 +8,17 @@
 // retention, role selects, per-channel grants) are separate tickets — this
 // only re-houses what the panel already rendered.
 
-import { EmptyState, Skeleton, toast } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui";
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
 import {
-  describeChatError,
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
+import {
   getBenchChatSettings,
   getChannelSettings,
   patchChannelSettings,
@@ -40,14 +44,10 @@ import type { ChannelSettingsSection, ChannelSettingsSectionId } from "./model";
 import { NotificationsSection } from "./notifications-section";
 import type { NotificationPreference } from "./notifications-section";
 
-type LoadState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "error"; readonly message: string }
-  | {
-      readonly kind: "ready";
-      readonly data: ChannelSettings;
-      readonly benchDefault: number;
-    };
+type ChannelSettingsData = {
+  readonly data: ChannelSettings;
+  readonly benchDefault: number;
+};
 
 const SECTION_GROUP_ORDER = ["shared", "personal", "danger"] as const;
 
@@ -88,7 +88,9 @@ export function ChannelSettingsSurface({
    * `onSettingsOpenChange` being omitted on `ChatWorkspace`. */
   readonly onSectionChange?: (section: ChannelSettingsSectionId) => void;
 }) {
-  const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [query, setQuery] = useState<APIQuery<ChannelSettingsData>>({
+    kind: "loading",
+  });
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [pinned, setPinned] = useState(false);
@@ -99,9 +101,12 @@ export function ChannelSettingsSurface({
     useState<NotificationPreference>("all");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = () => setReloadKey((value) => value + 1);
 
   useEffect(() => {
     let cancelled = false;
+    setQuery({ kind: "loading" });
     Promise.all([
       getChannelSettings(tenantId, channelId),
       getBenchChatSettings(tenantId),
@@ -115,23 +120,30 @@ export function ChannelSettingsSurface({
         setPinned(settings.pinned);
         setContextWindowMode(control.mode);
         setContextWindowInput(String(control.displayValue));
-        setState({
+        setQuery({
           kind: "ready",
-          data: settings,
-          benchDefault: bench.contextWindow,
+          data: { data: settings, benchDefault: bench.contextWindow },
         });
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setState({
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
+        }
+        setQuery({
           kind: "error",
-          message: describeChatError(cause, "Couldn't load settings."),
+          message: describeQueryError(cause),
+          retry: reload,
         });
       });
     return () => {
       cancelled = true;
     };
-  }, [tenantId, channelId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, channelId, reloadKey]);
+
+  const ready = query.kind === "ready" ? query.data : undefined;
 
   // A DM (owner decision: "a DM = a two-member channel tenancy with a
   // trimmed settings surface") is a chat carrying no agent-shaped
@@ -139,13 +151,13 @@ export function ChannelSettingsSurface({
   // uses to bucket it (`assignChannelBucket`), so this trims Agents
   // without a second signal to keep in sync.
   const hasAgent =
-    state.kind === "ready" &&
-    state.data.participants.some((participant) =>
+    ready !== undefined &&
+    ready.data.participants.some((participant) =>
       isAgentAddress(participant.address),
     );
-  const isDm = state.kind === "ready" && !hasAgent;
+  const isDm = ready !== undefined && !hasAgent;
   const sections = channelSettingsSections(
-    state.kind === "ready" ? state.data.kind : "channel",
+    ready !== undefined ? ready.data.kind : "channel",
     isDm,
     hasAgent,
   );
@@ -160,14 +172,14 @@ export function ChannelSettingsSurface({
   const overrideValid =
     contextWindowMode === "inherit" ||
     (Number.isFinite(overrideValue) && overrideValue >= 0);
-  const saveDisabled = state.kind !== "ready" || !overrideValid || saving;
+  const saveDisabled = ready === undefined || !overrideValid || saving;
 
   function handleSave() {
-    if (saveDisabled || state.kind !== "ready") return;
+    if (saveDisabled || ready === undefined) return;
     setSaving(true);
     setSaveError(null);
     patchChannelSettings(tenantId, channelId, {
-      "chat/name": name.trim().length > 0 ? name.trim() : state.data.title,
+      "chat/name": name.trim().length > 0 ? name.trim() : ready.data.title,
       "chat/purpose": purpose,
       "chat/pinned": pinned,
       "chat/contextWindow": contextWindowPatchValue(
@@ -221,122 +233,116 @@ export function ChannelSettingsSurface({
         </button>
       </div>
 
-      {state.kind === "loading" ? (
-        <Skeleton className="query-skeleton" />
-      ) : state.kind === "error" ? (
-        <EmptyState
-          icon={<CircleAlert />}
-          title={CHAT_STRINGS.channelSettingsLoadError}
-          description={state.message}
-        />
-      ) : (
-        <div className="channel-settings-shell">
-          <nav
-            className="channel-settings-nav"
-            aria-label={CHAT_STRINGS.channelSettingsNavLabel}
-          >
-            {SECTION_GROUP_ORDER.map((group) => {
-              const groupSections = sections.filter((s) => s.group === group);
-              if (groupSections.length === 0) return null;
-              const label = groupLabel(group);
-              return (
-                <div
-                  key={group}
-                  className={
-                    group === "danger"
-                      ? "channel-settings-nav-group channel-settings-nav-group-danger"
-                      : "channel-settings-nav-group"
-                  }
-                >
-                  {label !== "" ? (
-                    <div className="channel-settings-nav-group-label">
-                      {label}
-                    </div>
-                  ) : null}
-                  {groupSections.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      className="channel-settings-nav-item"
-                      aria-current={
-                        s.id === activeSection.id ? "page" : undefined
-                      }
-                      onClick={() => onSectionChange?.(s.id)}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              );
-            })}
-          </nav>
+      <QueryView query={query} label={CHAT_STRINGS.channelSettingsLoadError}>
+        {({ data, benchDefault }) => (
+          <div className="channel-settings-shell">
+            <nav
+              className="channel-settings-nav"
+              aria-label={CHAT_STRINGS.channelSettingsNavLabel}
+            >
+              {SECTION_GROUP_ORDER.map((group) => {
+                const groupSections = sections.filter((s) => s.group === group);
+                if (groupSections.length === 0) return null;
+                const label = groupLabel(group);
+                return (
+                  <div
+                    key={group}
+                    className={
+                      group === "danger"
+                        ? "channel-settings-nav-group channel-settings-nav-group-danger"
+                        : "channel-settings-nav-group"
+                    }
+                  >
+                    {label !== "" ? (
+                      <div className="channel-settings-nav-group-label">
+                        {label}
+                      </div>
+                    ) : null}
+                    {groupSections.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className="channel-settings-nav-item"
+                        aria-current={
+                          s.id === activeSection.id ? "page" : undefined
+                        }
+                        onClick={() => onSectionChange?.(s.id)}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+            </nav>
 
-          <div className="channel-settings-panel-area">
-            {saveError !== null ? (
-              <p className="chat-dialog-error" role="alert">
-                {saveError}
-              </p>
-            ) : null}
+            <div className="channel-settings-panel-area">
+              {saveError !== null ? (
+                <p className="chat-dialog-error" role="alert">
+                  {saveError}
+                </p>
+              ) : null}
 
-            {activeSection.id === "general" ? (
-              <GeneralSection
-                channelId={channelId}
-                name={name}
-                onNameChange={setName}
-                purpose={purpose}
-                onPurposeChange={setPurpose}
-                pinned={pinned}
-                onPinnedChange={setPinned}
-                contextWindowMode={contextWindowMode}
-                onContextWindowModeChange={setContextWindowMode}
-                contextWindowInput={contextWindowInput}
-                onContextWindowInputChange={setContextWindowInput}
-                benchDefault={state.benchDefault}
-              />
-            ) : null}
+              {activeSection.id === "general" ? (
+                <GeneralSection
+                  channelId={channelId}
+                  name={name}
+                  onNameChange={setName}
+                  purpose={purpose}
+                  onPurposeChange={setPurpose}
+                  pinned={pinned}
+                  onPinnedChange={setPinned}
+                  contextWindowMode={contextWindowMode}
+                  onContextWindowModeChange={setContextWindowMode}
+                  contextWindowInput={contextWindowInput}
+                  onContextWindowInputChange={setContextWindowInput}
+                  benchDefault={benchDefault}
+                />
+              ) : null}
 
-            {activeSection.id === "members" ? (
-              <MembersSection
-                participants={state.data.participants}
-                onInvite={onInviteParticipant}
-              />
-            ) : null}
+              {activeSection.id === "members" ? (
+                <MembersSection
+                  participants={data.participants}
+                  onInvite={onInviteParticipant}
+                />
+              ) : null}
 
-            {activeSection.id === "agents" ? (
-              <AgentsSection
-                participants={state.data.participants}
-                onInvite={onInviteParticipant}
-              />
-            ) : null}
+              {activeSection.id === "agents" ? (
+                <AgentsSection
+                  participants={data.participants}
+                  onInvite={onInviteParticipant}
+                />
+              ) : null}
 
-            {activeSection.id === "assistant" ? (
-              <AssistantSection tenantId={tenantId} channelId={channelId} />
-            ) : null}
+              {activeSection.id === "assistant" ? (
+                <AssistantSection tenantId={tenantId} channelId={channelId} />
+              ) : null}
 
-            {activeSection.id === "keys-plugins" ? (
-              <KeysPluginsSection tenantId={tenantId} />
-            ) : null}
+              {activeSection.id === "keys-plugins" ? (
+                <KeysPluginsSection tenantId={tenantId} />
+              ) : null}
 
-            {activeSection.id === "inference" ? (
-              <>
-                <InferenceSection tenantId={tenantId} />
-                <ApplyProfilePanel tenantId={tenantId} />
-              </>
-            ) : null}
+              {activeSection.id === "inference" ? (
+                <>
+                  <InferenceSection tenantId={tenantId} />
+                  <ApplyProfilePanel tenantId={tenantId} />
+                </>
+              ) : null}
 
-            {activeSection.id === "access" ? <AccessSection /> : null}
+              {activeSection.id === "access" ? <AccessSection /> : null}
 
-            {activeSection.id === "notifications" ? (
-              <NotificationsSection
-                value={notificationPref}
-                onChange={setNotificationPref}
-              />
-            ) : null}
+              {activeSection.id === "notifications" ? (
+                <NotificationsSection
+                  value={notificationPref}
+                  onChange={setNotificationPref}
+                />
+              ) : null}
 
-            {activeSection.id === "danger" ? <DangerSection /> : null}
+              {activeSection.id === "danger" ? <DangerSection /> : null}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </QueryView>
     </div>
   );
 }

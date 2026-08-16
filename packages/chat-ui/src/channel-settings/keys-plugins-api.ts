@@ -7,6 +7,7 @@
 // small client against the same routes rather than a shared one.
 
 import { type } from "arktype";
+import { UnauthenticatedError } from "@corbits/api-query";
 
 export class KeysPluginsApiError extends Error {
   constructor(
@@ -36,6 +37,9 @@ async function request<T>(
     throw new KeysPluginsApiError(
       cause instanceof Error ? cause.message : String(cause),
     );
+  }
+  if (response.status === 401) {
+    throw new UnauthenticatedError();
   }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);

@@ -294,7 +294,7 @@ export const CHAT_STRINGS = {
   channelSettingsArchiveTitle: "Archive workbench",
   channelSettingsArchiveBody:
     "Archiving is not available yet. Closing this workbench would hide it from the sidebar without deleting history once the action lands.",
-  channelSettingsLoadError: "Couldn't load this conversation's settings",
+  channelSettingsLoadError: "this conversation's settings",
   channelSettingsSaveError:
     "Couldn't save this conversation's settings — try again.",
   channelSettingsSavedToast: "Settings saved",
