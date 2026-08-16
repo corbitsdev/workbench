@@ -10,6 +10,7 @@ import {
   canInviteAgent,
   composerPlaceholderFor,
   mergePendingSends,
+  mergeStreamingReply,
   nextMessagesState,
   resolveMessageFeedTarget,
 } from "../src/chat-workspace";
@@ -542,5 +543,38 @@ describe("mergePendingSends (CL-6103: optimistic sends fold into the timeline)",
     const merged = mergePendingSends([], pending, "prn_alice");
     expect(merged[0]?.sender.address.split("@")[0]).toBe("prn_alice");
     expect(merged[0]?.pendingStatus).toBe("failed");
+  });
+});
+
+describe("mergeStreamingReply (CL-6115: the in-progress agent reply folds into the timeline)", () => {
+  const agent = { address: "myra@ins_abc123", handle: "myra" };
+  const serverItems = [
+    {
+      id: "m1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      parts: [{ kind: "text" as const, text: "hello" }],
+      sender: { name: null, address: "prn_alice@acme.example" },
+    },
+  ];
+
+  test("no in-progress reply leaves the timeline untouched", () => {
+    expect(mergeStreamingReply(serverItems, null, [agent])).toBe(serverItems);
+  });
+
+  test("a growing reply appends a streaming item attributed to the channel's agent", () => {
+    const merged = mergeStreamingReply(serverItems, { text: "Working on it" }, [
+      agent,
+    ]);
+    expect(merged).toHaveLength(2);
+    expect(merged[1]).toMatchObject({
+      streaming: true,
+      sender: { address: "myra@ins_abc123" },
+    });
+    expect(merged[1]?.parts).toEqual([{ kind: "text", text: "Working on it" }]);
+  });
+
+  test("no agent participant to attribute the reply to means no synthetic item", () => {
+    const merged = mergeStreamingReply(serverItems, { text: "hi" }, []);
+    expect(merged).toBe(serverItems);
   });
 });

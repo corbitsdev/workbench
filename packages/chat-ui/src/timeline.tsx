@@ -108,6 +108,16 @@ export type PendingMessageStatus = "sending" | "failed";
 export type TimelineMessageItem = MessageItem & {
   readonly pendingStatus?: PendingMessageStatus;
   readonly pendingNonce?: string;
+  /** Set on the one synthetic item `mergeStreamingReply`
+   * (`chat-workspace.tsx`) folds onto the end of the timeline while an
+   * agent turn is mid-flight — its text grows as `inference.text.delta`
+   * events arrive and the item disappears the moment the turn ends, see
+   * `useStreamingReply` (`streaming-reply.ts`). Distinct from
+   * `pendingStatus`, which is this reader's own optimistic send: a
+   * streaming item is the *other* side's in-progress reply, rendered
+   * without a hover toolbar, reactions, or pin toggle — none of which make
+   * sense against a message with no server-issued id yet. */
+  readonly streaming?: boolean;
 };
 
 /** The retry/discard round-trip a failed pending bubble's inline actions
@@ -681,6 +691,60 @@ function PendingMessageGroup({
               </Button>
             </div>
           ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The in-progress agent reply's bubble: same header (avatar, name, agent
+ * badge) a finished agent message would show — `item.sender` is the agent
+ * participant `mergeStreamingReply` resolved it against, exactly as
+ * `senderDisplay` matches any other message's sender — but no hover
+ * toolbar, reactions, pin toggle, or thread affordance, since none of
+ * those round-trips make sense against a message the server hasn't
+ * persisted (or issued an id for) yet. The blinking `chat-block-cursor`
+ * after the text is the one visible cue this bubble is still growing.
+ */
+function StreamingMessageGroup({
+  item,
+  participants,
+  currentUser,
+  showDayDivider,
+}: {
+  readonly item: TimelineMessageItem;
+  readonly participants: readonly ParticipantRecord[];
+  readonly currentUser: CurrentUser | undefined;
+  readonly showDayDivider: boolean;
+}) {
+  const text = messageText(item);
+  const display = senderDisplay(item.sender, participants, currentUser);
+
+  return (
+    <div className="chat-message-group" id={messageDomId(item.id)}>
+      {showDayDivider && <DayDivider createdAt={item.createdAt} />}
+      <div className="chat-bubble-row" data-own="false">
+        {display !== undefined && (
+          <SenderAvatar
+            initials={display.initials}
+            label={display.label}
+            isAgent={display.isAgent}
+          />
+        )}
+        <div className="chat-bubble" data-own="false">
+          {display !== undefined && (
+            <div className="chat-bubble-head">
+              <span className="chat-bubble-sender">
+                {display.label}
+                {display.isAgent && <AgentBadge />}
+              </span>
+            </div>
+          )}
+          <p className="chat-bubble-text">
+            {text}
+            <span className="chat-block-cursor" aria-hidden="true" />
+          </p>
         </div>
       </div>
     </div>
@@ -1283,6 +1347,17 @@ export function ChannelTimeline({
             new Date(previous.createdAt),
             new Date(item.createdAt),
           );
+        if (item.streaming === true) {
+          return (
+            <StreamingMessageGroup
+              key={item.id}
+              item={item}
+              participants={participants}
+              currentUser={currentUser}
+              showDayDivider={showDayDivider}
+            />
+          );
+        }
         if (item.pendingStatus !== undefined) {
           return (
             <PendingMessageGroup
