@@ -79,3 +79,11 @@ export const UpdateAgentInstructionsInput = type({
 });
 export type UpdateAgentInstructionsInput =
   typeof UpdateAgentInstructionsInput.infer;
+
+/** The body of a request that restores a definition to an earlier
+ * commit on its own asset history — the same `commitSha` shape
+ * `@corbits/skills`' restore route takes, kept plain-text ("history",
+ * never "commit SHA") everywhere a person reads it; the sha only
+ * appears in a tooltip. */
+export const RestoreDefinitionInput = type({ commitSha: "string > 0" });
+export type RestoreDefinitionInput = typeof RestoreDefinitionInput.infer;

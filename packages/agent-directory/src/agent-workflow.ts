@@ -68,6 +68,14 @@ const DefinitionWithAgentSteps = type({
         })
           .onUndeclaredKey("ignore")
           .array(),
+        "inference?": type({
+          sources: type({
+            provider: "string",
+            "model?": "string",
+          })
+            .onUndeclaredKey("ignore")
+            .array(),
+        }).onUndeclaredKey("ignore"),
       }).onUndeclaredKey("ignore"),
     }).onUndeclaredKey("ignore"),
   },
@@ -159,6 +167,82 @@ export function withAgentSystemPrompt(
     throw new Error("workflow.json has no steps");
   }
   step.agent.systemPrompt = systemPrompt;
+  return JSON.stringify(definition);
+}
+
+/** A definition's guided-capability-add surface: the tool packages it
+ * pins directly (beyond whatever `reindexPinnedSkills` pins for
+ * skills — see `SKILLS_TOOL_PACKAGE_PIN`) and the model it resolves
+ * against, read back out of its serialized `workflow.json`. */
+export type AgentDefinitionCapabilities = {
+  readonly toolPackagePins: readonly ToolPackagePin[];
+  readonly model?: string;
+};
+
+/** Reads a definition's current guided-capability state out of its
+ * serialized `workflow.json` — the same fields `withAgentToolPackagePin`/
+ * `withAgentModel` write, read back for the settings surface's
+ * "Capabilities" list and for merging an additive pin. */
+export function readAgentCapabilities(
+  workflowJson: string,
+): AgentDefinitionCapabilities {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry a step agent to read capabilities from: ${definition.summary}`,
+    );
+  }
+  const [step] = Object.values(definition.steps);
+  if (step === undefined) {
+    throw new Error("workflow.json has no steps");
+  }
+  const model = step.agent.inference?.sources[0]?.model;
+  return model !== undefined
+    ? { toolPackagePins: step.agent.toolPackagePins ?? [], model }
+    : { toolPackagePins: step.agent.toolPackagePins ?? [] };
+}
+
+/** Adds or replaces one tool-package pin by name, leaving every other
+ * pin — including the skills bundle `reindexPinnedSkills` manages —
+ * untouched. Mirrors `withSkillsToolPin`'s replace-by-name shape,
+ * generalized to a caller-supplied pin rather than the fixed skills
+ * bundle. */
+export function withAgentToolPackagePin(
+  workflowJson: string,
+  pin: ToolPackagePin,
+): string {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry a step agent to pin a tool package into: ${definition.summary}`,
+    );
+  }
+  for (const step of Object.values(definition.steps)) {
+    const others = (step.agent.toolPackagePins ?? []).filter(
+      (existing) => existing.name !== pin.name,
+    );
+    step.agent.toolPackagePins = [...others, { ...pin }];
+  }
+  return JSON.stringify(definition);
+}
+
+/** Sets a definition's model preference, leaving every other inference
+ * field (and every other step field) untouched. Mirrors the placeholder
+ * `buildAgentDefinitionWorkflow` sets at create time (`provider:
+ * "catalog"` — resolved fresh at launch, never baked in). */
+export function withAgentModel(workflowJson: string, model: string): string {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry a step agent to set a model on: ${definition.summary}`,
+    );
+  }
+  for (const step of Object.values(definition.steps)) {
+    step.agent.inference = { sources: [{ provider: "catalog", model }] };
+  }
   return JSON.stringify(definition);
 }
 

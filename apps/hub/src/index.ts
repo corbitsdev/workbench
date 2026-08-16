@@ -33,9 +33,11 @@ import {
   AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
   createAgentDefinitionRoutes,
+  createDefinitionAssetHistory,
   reindexPinnedSkills,
   serializeAgentDefinitionWorkflow,
   serializeAgentSkills,
+  type CapabilityInventoryProvider,
 } from "@corbits/agent-directory";
 
 import {
@@ -917,12 +919,42 @@ export async function createHub(config: HubConfig) {
       registry: skills.registry,
     }),
   );
+  // The guided-capability-add fail-closed check reuses the exact same
+  // listers `plannerInventorySources` (below) wires — `@corbits/agent-directory`
+  // cannot import `@corbits/task-planner`'s `InventorySources`/`PlannerInventory`
+  // types directly (task-planner already depends on agent-directory, so that
+  // edge would cycle), but the tenant's live inventory of usable tool
+  // packages, skills, and models is never assembled twice: both this
+  // provider and the planner's own inventory read through the same
+  // `listMyraUsableToolPackages`/`listMyraModels`/`skills.registry.list`
+  // functions (declared further down this file, hoisted).
+  const capabilityInventory: CapabilityInventoryProvider = {
+    async resolve({ tenantId, principalId }) {
+      const [toolPackages, tenantSkills, models] = await Promise.all([
+        listMyraUsableToolPackages(tenantId),
+        skills.registry.list({ tenantId, principalId }),
+        listMyraModels(tenantId),
+      ]);
+      return {
+        toolPackages: toolPackages.map((entry) => ({ name: entry.name })),
+        skills: tenantSkills.map((entry) => ({ name: entry.name })),
+        models: models.map((entry) => ({
+          canonicalName: entry.canonicalName,
+        })),
+      };
+    },
+  };
+
   app.route(
     `${TENANT_PREFIX}/agent-definitions`,
     createAgentDefinitionRoutes({
       db,
       assetService,
       skillIndex: skills.skillIndex,
+      history: createDefinitionAssetHistory({
+        repoStore: agentRepoStore.repoStore,
+      }),
+      capabilityInventory,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,

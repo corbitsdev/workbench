@@ -39,17 +39,28 @@ import {
   AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
   parseAgentSkills,
+  readAgentCapabilities,
   readAgentSystemPrompt,
   reindexPinnedSkills,
   serializeAgentDefinitionWorkflow,
   serializeAgentSkills,
+  withAgentModel,
   withAgentSystemPrompt,
+  withAgentToolPackagePin,
 } from "./agent-workflow";
 import {
   CreateAgentDefinitionInput,
+  RestoreDefinitionInput,
   UpdateAgentInstructionsInput,
   UpdateAgentSkillsInput,
 } from "./validation";
+import {
+  AddCapabilityInput,
+  assertCapabilityInInventory,
+  CapabilityOutOfInventoryError,
+  type CapabilityInventoryProvider,
+} from "./capability-inventory";
+import type { DefinitionAssetHistory } from "./definition-history";
 
 /** Reads a definition's attached skills back from its asset tree.
  * A definition created before this feature existed (or one that has
@@ -93,6 +104,8 @@ export type CreateAgentDefinitionRoutesDeps = {
   db: DB["db"];
   assetService: AssetService;
   skillIndex: PinnedSkillIndexResolver;
+  history: DefinitionAssetHistory;
+  capabilityInventory: CapabilityInventoryProvider;
   requireGrant: RequireGrant;
 };
 
@@ -136,15 +149,21 @@ export function createAgentDefinitionRoutes({
   db,
   assetService,
   skillIndex,
+  history,
+  capabilityInventory,
   requireGrant,
 }: CreateAgentDefinitionRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
 
-  // Pinning a name the registry cannot resolve is a bad request from the
-  // person editing the agent, not a server fault — surface it as one
-  // rather than letting it read as a 500.
+  // Pinning a name the registry cannot resolve, or requesting a
+  // capability out of the tenant's live inventory, is a bad request from
+  // the person editing the agent, not a server fault — surface either as
+  // one rather than letting it read as a 500.
   app.onError((err, c) => {
     if (err instanceof SkillRegistryError) {
+      return c.json(errorEnvelope("bad_request", err.message), 400);
+    }
+    if (err instanceof CapabilityOutOfInventoryError) {
       return c.json(errorEnvelope("bad_request", err.message), 400);
     }
     throw err;
@@ -330,6 +349,24 @@ export function createAgentDefinitionRoutes({
     },
   );
 
+  // Feeds the settings surface's guided capability-add picker with only
+  // what this tenant actually has — the same source `POST
+  // /:definitionId/capabilities` re-checks fail-closed on the add itself,
+  // so a name this call doesn't list can never be added either.
+  app.get(
+    "/capabilities/inventory",
+    requireGrant("workflow-definition:*", "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const inventory = await capabilityInventory.resolve({
+        tenantId: tenant.id,
+        principalId: principal.id,
+      });
+      return c.json(inventory);
+    },
+  );
+
   app.get(
     "/:definitionId",
     requireGrant(idResource("workflow-definition", "definitionId"), "read"),
@@ -352,11 +389,225 @@ export function createAgentDefinitionRoutes({
           path: AGENT_DEFINITION_ASSET_PATH,
         }),
       );
+      const capabilities = readAgentCapabilities(workflowJson);
+      const skills = await readDefinitionSkills(assetService, row.assetId);
 
       return c.json({
         id: row.id,
         name: row.description ?? row.name,
         systemPrompt: readAgentSystemPrompt(workflowJson),
+        toolPackagePins: capabilities.toolPackagePins,
+        skills,
+        model: capabilities.model,
+      });
+    },
+  );
+
+  app.get(
+    "/:definitionId/versions",
+    requireGrant(idResource("workflow-definition", "definitionId"), "read"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const definitionId = c.req.param("definitionId");
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, definitionId),
+          eq(workflowDefinition.tenantId, tenant.id),
+        ),
+      });
+      if (!hostGuardedRow(row)) {
+        return c.json(definitionNotFound(definitionId), 404);
+      }
+
+      const commits = await history.history(row.assetId);
+      const versions = commits.map((commit, index) => ({
+        ...commit,
+        current: index === 0,
+      }));
+      return c.json({ versions });
+    },
+  );
+
+  app.post(
+    "/:definitionId/restore",
+    requireGrant(idResource("workflow-definition", "definitionId"), "update"),
+    async (c) => {
+      const body = RestoreDefinitionInput(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
+          errorEnvelope("bad_request", `invalid restore: ${body.summary}`),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const definitionId = c.req.param("definitionId");
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, definitionId),
+          eq(workflowDefinition.tenantId, tenant.id),
+        ),
+      });
+      if (!hostGuardedRow(row)) {
+        return c.json(definitionNotFound(definitionId), 404);
+      }
+
+      const workflowBytes = await history.readBlobAtCommit({
+        assetId: row.assetId,
+        path: AGENT_DEFINITION_ASSET_PATH,
+        commitSha: body.commitSha,
+      });
+      if (workflowBytes === null) {
+        return c.json(
+          errorEnvelope(
+            "not_found",
+            `agent "${row.name}" has no instructions at that point in its history`,
+          ),
+          404,
+        );
+      }
+      const skillsBytes = await history.readBlobAtCommit({
+        assetId: row.assetId,
+        path: AGENT_SKILLS_ASSET_PATH,
+        commitSha: body.commitSha,
+      });
+
+      const decoder = new TextDecoder();
+      const files: Record<string, string> = {
+        [AGENT_DEFINITION_ASSET_PATH]: decoder.decode(workflowBytes),
+      };
+      // A commit from before this definition ever attached skills has no
+      // `skills.json` at all — leave the current sidecar untouched rather
+      // than writing an empty one over it, mirroring how `readDefinitionSkills`
+      // treats "no file" as "no skills" rather than an error.
+      if (skillsBytes !== null) {
+        files[AGENT_SKILLS_ASSET_PATH] = decoder.decode(skillsBytes);
+      }
+
+      await assetService.populateAsset({
+        assetId: row.assetId,
+        ref: DEFAULT_ASSET_REF,
+        principal: { kind: "hub" },
+        tree: {
+          files,
+          message: `Restore agent ${row.name} to ${body.commitSha.slice(0, 8)}`,
+        },
+      });
+
+      const restoredWorkflowJson = new TextDecoder().decode(
+        await assetService.readAssetBlob({
+          assetId: row.assetId,
+          path: AGENT_DEFINITION_ASSET_PATH,
+        }),
+      );
+      const capabilities = readAgentCapabilities(restoredWorkflowJson);
+      const skills = await readDefinitionSkills(assetService, row.assetId);
+
+      return c.json({
+        id: row.id,
+        name: row.description ?? row.name,
+        systemPrompt: readAgentSystemPrompt(restoredWorkflowJson),
+        toolPackagePins: capabilities.toolPackagePins,
+        skills,
+        model: capabilities.model,
+      });
+    },
+  );
+
+  app.post(
+    "/:definitionId/capabilities",
+    requireGrant(idResource("workflow-definition", "definitionId"), "update"),
+    async (c) => {
+      const body = AddCapabilityInput(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
+          errorEnvelope("bad_request", `invalid capability: ${body.summary}`),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const definitionId = c.req.param("definitionId");
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, definitionId),
+          eq(workflowDefinition.tenantId, tenant.id),
+        ),
+      });
+      if (!hostGuardedRow(row)) {
+        return c.json(definitionNotFound(definitionId), 404);
+      }
+
+      const inventory = await capabilityInventory.resolve({
+        tenantId: tenant.id,
+        principalId: principal.id,
+      });
+      // Throws `CapabilityOutOfInventoryError`, caught by `app.onError`
+      // above — fail closed against exactly the inventory this call just
+      // fetched, never a stale or wider one.
+      assertCapabilityInInventory(body, inventory);
+
+      const workflowJson = new TextDecoder().decode(
+        await assetService.readAssetBlob({
+          assetId: row.assetId,
+          path: AGENT_DEFINITION_ASSET_PATH,
+        }),
+      );
+
+      let nextWorkflowJson: string;
+      let message: string;
+      let skills = await readDefinitionSkills(assetService, row.assetId);
+      const files: Record<string, string> = {};
+
+      switch (body.kind) {
+        case "toolPackage": {
+          nextWorkflowJson = withAgentToolPackagePin(workflowJson, {
+            name: body.name,
+            version: "*",
+          });
+          message = `Add ${body.name} to ${row.name}`;
+          break;
+        }
+        case "skill": {
+          const nextSkills = skills.includes(body.name)
+            ? skills
+            : [...skills, body.name];
+          nextWorkflowJson = reindexPinnedSkills(
+            workflowJson,
+            await skillIndex.resolve(tenant.id, principal.id, nextSkills),
+          );
+          files[AGENT_SKILLS_ASSET_PATH] = serializeAgentSkills(nextSkills);
+          skills = nextSkills;
+          message = `Add ${body.name} skill to ${row.name}`;
+          break;
+        }
+        case "model": {
+          nextWorkflowJson = withAgentModel(workflowJson, body.canonicalName);
+          message = `Set ${row.name}'s model to ${body.canonicalName}`;
+          break;
+        }
+      }
+
+      await assetService.populateAsset({
+        assetId: row.assetId,
+        ref: DEFAULT_ASSET_REF,
+        principal: { kind: "hub" },
+        tree: {
+          files: { [AGENT_DEFINITION_ASSET_PATH]: nextWorkflowJson, ...files },
+          message,
+        },
+      });
+
+      const capabilities = readAgentCapabilities(nextWorkflowJson);
+      return c.json({
+        toolPackagePins: capabilities.toolPackagePins,
+        skills,
+        model: capabilities.model,
       });
     },
   );
