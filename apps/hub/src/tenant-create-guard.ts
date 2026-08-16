@@ -137,7 +137,13 @@ export async function decideTenantCreate(
         status: 403,
         code: "signup_not_allowed",
         message:
-          "This workbench isn't open for self-serve sign-up right now. Ask an owner for an invite.",
+          gate.reason === "email_unverified"
+            ? "This account's email address isn't verified, and this hub " +
+              "requires verified emails before provisioning. For local " +
+              "development set ALLOW_UNVERIFIED_EMAILS=1 in .env and " +
+              "restart."
+            : "This workbench isn't open for self-serve sign-up right now. " +
+              "Ask an owner for an invite.",
       };
     }
     return { allowed: true };

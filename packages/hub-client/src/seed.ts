@@ -111,8 +111,10 @@ const WorkflowDeploymentResponse = type({
   createdAt: "string",
 });
 const WorkflowRunListResponse = type({ runIds: "string[]" });
+// Post-deployment-dissolution wire shape: the trigger answers with the
+// (self-anchored) run id, not a deployment id.
 const WorkflowRunTriggerResponse = type({
-  deploymentId: "string",
+  runId: "string",
   address: "string",
   messageId: "string",
 });
