@@ -489,7 +489,9 @@ function ChatWorkspaceInner({
   /** Workspace members the mention popover's "Bring in…" group can
    * offer — the same reduced listing the shell already fetches for its
    * People views. Absent, the group only offers invitable agents. */
-  readonly listMembers?: (tenantId: string) => Promise<readonly BringInMember[]>;
+  readonly listMembers?: (
+    tenantId: string,
+  ) => Promise<readonly BringInMember[]>;
 
   /**
    * "New routine in this space" — the header button and the composer's
@@ -1671,7 +1673,9 @@ export function ChatWorkspace({
   /** The composer's `/run` command — see `ChatWorkspaceInner`'s prop note. */
   readonly onOpenRoutines?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
-  readonly listMembers?: (tenantId: string) => Promise<readonly BringInMember[]>;
+  readonly listMembers?: (
+    tenantId: string,
+  ) => Promise<readonly BringInMember[]>;
   /** "New routine in this space" — see `ChatWorkspaceInner`'s prop note. */
   readonly onCreateRoutineInSpace?: (channelId: string) => void;
   /**
