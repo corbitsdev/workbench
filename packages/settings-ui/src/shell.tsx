@@ -101,18 +101,9 @@ export function SettingsShell({
 
   return (
     <div className="settings-shell">
+      {/* No repeated "Settings · Section" heading here — the host's stage
+          top bar already carries it, and every section card names itself. */}
       <div className="settings-stage" key={activeSection.id}>
-        <header className="settings-stage-header">
-          <h1 className="settings-stage-title">
-            {SETTINGS_STRINGS.pageTitle}
-            <span className="settings-stage-title-sep" aria-hidden="true">
-              ·
-            </span>
-            <span className="settings-stage-section">
-              {activeSection.title}
-            </span>
-          </h1>
-        </header>
         <div className="settings-stage-body">
           {activeSection.render(context)}
         </div>

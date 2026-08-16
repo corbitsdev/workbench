@@ -49,13 +49,9 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
     label: SETTINGS_STRINGS.groupAccountLabel,
     // No "Your agent" section here: it has no preference store to back it —
     // see agent-section.tsx's header comment for the re-add condition.
+    // Account (General) leads — it is the reference's landing section
+    // (account card, theme, timezone); notifications follow.
     sections: [
-      {
-        id: "chat",
-        title: SETTINGS_STRINGS.notificationsSectionTitle,
-        icon: Bell,
-        render: () => <NotificationsSection />,
-      },
       {
         id: "account",
         title: SETTINGS_STRINGS.accountSectionTitle,
@@ -67,6 +63,12 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
               : {})}
           />
         ),
+      },
+      {
+        id: "chat",
+        title: SETTINGS_STRINGS.notificationsSectionTitle,
+        icon: Bell,
+        render: () => <NotificationsSection />,
       },
     ],
   },

@@ -81,6 +81,6 @@ describe("settings top bar", () => {
       </TestQueryProvider>,
     );
     expect(markup).toContain('data-testid="stage-top-bar"');
-    expect(markup).toContain("Settings · Account");
+    expect(markup).toContain("Settings · General");
   });
 });

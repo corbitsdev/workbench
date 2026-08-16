@@ -73,32 +73,42 @@ describe("Sidebar", () => {
   test("header offers create + search; there is no collapse affordance", () => {
     const markup = renderSidebar("/c");
     expect(markup).toContain('aria-label="New workbench"');
-    expect(markup).toContain('aria-label="Search"');
+    // Search is the box inside the list (below the brand row), never a
+    // header icon — the box itself is covered by the workbench-list tests.
+    expect(markup).not.toContain('aria-label="Search"');
     expect(markup).not.toContain('aria-label="Collapse sidebar"');
     expect(markup).not.toContain('aria-label="Expand sidebar"');
   });
 
   test("titles itself Workbenches and never renders a page-nav list", () => {
     const markup = renderSidebar("/settings/agents");
-    expect(markup).toContain(">Workbenches</h2>");
+    // The visible "Workbenches" label lives inside the list (below its
+    // search box); the panel keeps the accessible name.
+    expect(markup).toContain('aria-label="Workbenches"');
     expect(markup).not.toContain(">Pages<");
     expect(markup).not.toContain("shell-rail-item");
   });
 
-  test("footer carries insights, the inbox bell, settings, and the account affordance", () => {
+  test("footer is a Plugins row plus the account row; the inbox bell lives in the header", () => {
     const markup = renderSidebar("/c");
-    expect(markup).toContain('aria-label="Insights"');
+    expect(markup).toContain("shell-sidebar-footer-row");
+    expect(markup).toContain(">Plugins<");
     expect(markup).toContain('aria-label="Notifications"');
-    expect(markup).toContain('aria-label="Settings"');
     expect(markup).toContain("data-ctx-account");
+    // Insights and Settings moved into the account menu — no standalone
+    // footer icons remain (a second stacked footer band was the bug).
+    expect(markup).not.toContain('aria-label="Insights"');
+    expect(markup).not.toContain('aria-label="Settings"');
   });
 
-  test("marks the footer destination current for its own route only", () => {
-    const onInsights = renderSidebar("/insights/runs");
-    expect(onInsights).toMatch(/aria-label="Insights"[^>]*aria-current="page"/);
+  test("marks the Plugins row current for its own route only", () => {
+    const onPlugins = renderSidebar("/plugins");
+    expect(onPlugins).toMatch(
+      /shell-sidebar-footer-row"[^>]*aria-current="page"/,
+    );
     const elsewhere = renderSidebar("/c");
     expect(elsewhere).not.toMatch(
-      /aria-label="Insights"[^>]*aria-current="page"/,
+      /shell-sidebar-footer-row"[^>]*aria-current="page"/,
     );
   });
 

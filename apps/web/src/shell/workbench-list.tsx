@@ -363,6 +363,7 @@ export function WorkbenchList({
     return (
       <div className="panel-stack" aria-label="Workbenches">
         {workingGroup}
+        <h2 className="shell-panel-list-label">Workbenches</h2>
         <div className="panel-stack-group">
           {/* CL-6124: the first-run screen (`/`) IS the "create a
               workbench" surface now — a chat, not a dialog — so this row
@@ -415,6 +416,7 @@ export function WorkbenchList({
           aria-label="Search workbenches"
         />
       </label>
+      <h2 className="shell-panel-list-label">Workbenches</h2>
       {filtered.length === 0 ? (
         <EmptyState
           icon={<MessageSquare />}

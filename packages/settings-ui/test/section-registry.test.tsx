@@ -42,14 +42,14 @@ function ids(groups: ReturnType<typeof resolveSettingsSectionGroups>) {
 describe("resolveSettingsSectionGroups", () => {
   test("Account's Notifications and Account sections are always full; gated Everyone sections are absent, not disabled", () => {
     expect(ids(resolveSettingsSectionGroups(denied))).toEqual([
-      { id: "account", sections: ["chat", "account"] },
+      { id: "account", sections: ["account", "chat"] },
       { id: "everyone", sections: ["audit"] },
     ]);
   });
 
   test("an allowed gate adds its section in registry order", () => {
     expect(ids(resolveSettingsSectionGroups(allowed))).toEqual([
-      { id: "account", sections: ["chat", "account"] },
+      { id: "account", sections: ["account", "chat"] },
       {
         id: "everyone",
         sections: ["connections", "people", "roles", "grants", "audit"],
@@ -65,7 +65,7 @@ describe("resolveSettingsSectionGroups", () => {
       credentials: "denied",
     };
     expect(ids(resolveSettingsSectionGroups(loading))).toEqual([
-      { id: "account", sections: ["chat", "account"] },
+      { id: "account", sections: ["account", "chat"] },
       { id: "everyone", sections: ["grants", "audit"] },
     ]);
   });
@@ -114,7 +114,7 @@ describe("insertEveryoneSections", () => {
       extra,
     );
     expect(ids(groups)).toEqual([
-      { id: "account", sections: ["chat", "account"] },
+      { id: "account", sections: ["account", "chat"] },
       { id: "everyone", sections: ["agents", "skills", "audit"] },
     ]);
   });
@@ -126,8 +126,8 @@ describe("insertEveryoneSections", () => {
     );
     const account = groups.find((group) => group.id === "account");
     expect(account?.sections.map((section) => section.id)).toEqual([
-      "chat",
       "account",
+      "chat",
     ]);
   });
 

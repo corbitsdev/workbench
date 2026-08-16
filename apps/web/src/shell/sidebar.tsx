@@ -22,24 +22,19 @@ import {
   MenuItem,
   MenuSeparator,
   MenuTrigger,
-  NotificationsBell,
   SidebarPanel,
   SidebarPanelBody,
   SidebarPanelFooter,
-  SidebarPanelHeader,
 } from "@corbits/react-ui";
 import {
-  ChartColumn,
+  Bell,
   ChevronRight,
   LogOut,
   MessageSquarePlus,
   Plug,
   Plus,
-  Search,
-  Settings,
   SlidersHorizontal,
 } from "lucide-react";
-import type { ReactNode } from "react";
 import { useMemo } from "react";
 
 import {
@@ -54,7 +49,6 @@ import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { isChannelPath } from "../channel-path";
 import { requestNewWorkbench } from "../command-palette-actions";
-import { requestOpenCommandPalette } from "../command-palette-events";
 import { OverallUsageSchema, insightsUsagePath } from "../insights-api";
 import { matchesRoute, SETTINGS_PATH } from "../routes";
 import type { SessionUser } from "../session";
@@ -66,31 +60,6 @@ import { WorkbenchList } from "./workbench-list";
 /** The repo's own issue tracker — read off this package's manifest (set
  * from `git remote`) rather than a hardcoded org/repo guess. */
 const FEEDBACK_URL = `${webPackage.repository.url}/issues`;
-
-function FooterIconButton({
-  label,
-  active,
-  onClick,
-  children,
-}: {
-  readonly label: string;
-  readonly active?: boolean;
-  readonly onClick: () => void;
-  readonly children: ReactNode;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      aria-label={label}
-      title={label}
-      aria-current={active === true ? "page" : undefined}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
-  );
-}
 
 function InboxBell({
   active,
@@ -105,30 +74,24 @@ function InboxBell({
     InboxCountsSchema,
   );
   const counts = countsQuery.kind === "ready" ? countsQuery.data : null;
+  const open = counts?.open ?? 0;
+  // A footer row like Plugins: bell, "Inbox", and the open count when there
+  // is one — the row IS the affordance, no popover in between.
   return (
-    <div
-      className="shell-sidebar-bell"
+    <button
+      type="button"
+      className="shell-sidebar-footer-row shell-sidebar-bell"
       data-active={active ? "true" : undefined}
+      aria-current={active ? "page" : undefined}
+      aria-label="Notifications"
+      onClick={() => onNavigate("/inbox")}
     >
-      <NotificationsBell count={counts?.open ?? 0}>
-        <div className="shell-sidebar-bell-panel">
-          <p className="panel-muted">
-            {counts === null
-              ? "Inbox"
-              : counts.open === 0
-                ? "Nothing needs you right now."
-                : `${counts.open} open · ${counts.action} need action`}
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onNavigate("/inbox")}
-          >
-            Open inbox
-          </Button>
-        </div>
-      </NotificationsBell>
-    </div>
+      <Bell />
+      <span>Inbox</span>
+      {open > 0 ? (
+        <span className="shell-sidebar-footer-count">{open}</span>
+      ) : null}
+    </button>
   );
 }
 
@@ -180,33 +143,11 @@ export function Sidebar({
   readonly onNavigate: (to: string) => void;
   readonly onSignOut: () => void;
 }) {
-  const headerAction = (
-    <div className="panel-page-tools">
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label="New workbench"
-        title="New workbench"
-        onClick={() =>
-          requestNewWorkbench({
-            alreadyOnConversation: isChannelPath(path),
-            navigateToConversations: () => onNavigate("/c"),
-          })
-        }
-      >
-        <Plus />
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label="Search"
-        title="Search"
-        onClick={() => requestOpenCommandPalette()}
-      >
-        <Search />
-      </Button>
-    </div>
-  );
+  const newWorkbench = () =>
+    requestNewWorkbench({
+      alreadyOnConversation: isChannelPath(path),
+      navigateToConversations: () => onNavigate("/c"),
+    });
 
   return (
     <SidebarPanel
@@ -214,8 +155,24 @@ export function Sidebar({
       data-testid="shell-sidebar"
       aria-label="Workbenches"
     >
-      <SidebarBrandMark />
-      <SidebarPanelHeader title="Workbenches" action={headerAction} />
+      {/* Owner's shape: logo with "+" on the first row, the search box
+          (inside the list) below, then the plain "Workbenches" label. No
+          header icon cluster — search is the box, notifications live in
+          the footer. */}
+      <div className="shell-sidebar-brand-row">
+        <SidebarBrandMark />
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="New workbench"
+          title="New workbench"
+          onClick={newWorkbench}
+        >
+          <Plus />
+        </Button>
+      </div>
+      {/* The "Workbenches" label renders inside the list, below its search
+          box (owner's order: logo · search · Workbenches · rows). */}
 
       <SidebarPanelBody>
         <WorkbenchList path={path} onNavigate={onNavigate} />
@@ -226,33 +183,24 @@ export function Sidebar({
       </div>
 
       <SidebarPanelFooter>
-        <div className="shell-sidebar-utils">
-          <FooterIconButton
-            label="Plugins"
-            active={matchesRoute("/plugins", path)}
-            onClick={() => onNavigate("/plugins")}
-          >
-            <Plug />
-          </FooterIconButton>
-          <FooterIconButton
-            label="Insights"
-            active={matchesRoute("/insights", path)}
-            onClick={() => onNavigate("/insights")}
-          >
-            <ChartColumn />
-          </FooterIconButton>
-          <InboxBell
-            active={matchesRoute("/inbox", path)}
-            onNavigate={onNavigate}
-          />
-          <FooterIconButton
-            label="Settings"
-            active={matchesRoute(SETTINGS_PATH, path)}
-            onClick={() => onNavigate(SETTINGS_PATH)}
-          >
-            <Settings />
-          </FooterIconButton>
-        </div>
+        {/* Reference shape: one Plugins row, then the account row anchors
+            everything else (Insights as usage, Settings, Log out) in its
+            pop-up menu — a single footer, never two stacked rows. Inbox
+            lives in the header beside search. */}
+        <button
+          type="button"
+          className="shell-sidebar-footer-row"
+          data-active={matchesRoute("/plugins", path) ? "true" : undefined}
+          aria-current={matchesRoute("/plugins", path) ? "page" : undefined}
+          onClick={() => onNavigate("/plugins")}
+        >
+          <Plug />
+          <span>Plugins</span>
+        </button>
+        <InboxBell
+          active={matchesRoute("/inbox", path)}
+          onNavigate={onNavigate}
+        />
 
         <Menu>
           <MenuTrigger asChild>

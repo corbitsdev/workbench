@@ -920,64 +920,69 @@ select:disabled,
   color: var(--primary);
 }
 
-.shell-sidebar-utils {
+/* Footer (reference shape): a Plugins row, then the account row that
+   anchors the pop-up menu. Both are full-width quiet rows; the account
+   row has no top margin of its own so the two never read as separate
+   stacked bands. */
+.shell-sidebar-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.45rem 0.4rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.shell-sidebar-footer-row svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--muted-foreground);
+}
+.shell-sidebar-footer-row:hover,
+.shell-sidebar-footer-row[data-active="true"] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+.shell-sidebar-footer-row[data-active="true"] {
+  box-shadow: inset 2px 0 0 0 var(--shell-accent);
+}
+.shell-sidebar-footer-row:focus-visible {
+  outline: 1px solid var(--foreground);
+  outline-offset: -1px;
+}
+.shell-sidebar-footer-count {
+  margin-left: auto;
+  min-width: 1.35rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--shell-accent);
+  color: var(--shell-accent);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+/* Brand row: the mark left, "+ New workbench" right — the sidebar's first
+   line, above the search box and the Workbenches label. */
+.shell-sidebar-brand-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.2rem;
-  width: 100%;
-  padding-top: 0.45rem;
+  padding-right: 0.35rem;
+}
+.shell-sidebar-brand-row .shell-sidebar-brand-mark {
+  width: auto;
 }
 
-.shell-sidebar-utils [data-slot="button"] {
-  width: 2.1rem;
-  height: 2.1rem;
-  min-height: 0;
-  padding: 0;
-  color: var(--muted-foreground);
-}
-
-.shell-sidebar-utils [data-slot="button"][aria-current="page"] {
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
-}
-
-.shell-sidebar-utils [data-slot="button"] svg {
-  width: 1.05rem;
-  height: 1.05rem;
-}
-
-/* The inbox bell (react-ui NotificationsBell) anchors its panel below the
-   trigger by default; in a footer it must open upward instead. */
-.shell-sidebar-bell [role="dialog"] {
-  top: auto;
-  bottom: 100%;
-  margin-bottom: 0.25rem;
-}
-
-.shell-sidebar-bell[data-active="true"] > div > button {
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
-}
-
-.shell-sidebar-bell-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.25rem;
-}
-
-/* The account row: avatar + name, the whole row is the menu trigger — the
-   account affordance and context-menu anchor. Its menu (react-ui `Menu`)
-   pops upward on its own via `side="top"`; no positioning override needed
-   here the way the bell above needed one. */
 .shell-sidebar-account-btn {
   display: flex;
   align-items: center;
   gap: 0.55rem;
   width: 100%;
-  padding: 0.35rem 0.4rem;
-  margin-top: 0.35rem;
+  padding: 0.45rem 0.4rem;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2579,4 +2584,17 @@ tr.insights-row-clickable:hover {
   padding: 4rem 2rem;
   overflow-y: auto;
   height: 100%;
+}
+
+/* The list's own section label, below the search box (owner's order:
+   logo · search · Workbenches · rows). Quiet, matching the panel-band
+   subheading rhythm. */
+.shell-panel-list-label {
+  margin: 0.55rem 0 0.2rem;
+  padding: 0 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }

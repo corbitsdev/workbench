@@ -52,7 +52,7 @@ export const SETTINGS_STRINGS = {
   benchNoneSelectedTitle: "No workbench selected",
   benchNoneSelectedDescription: "Choose a workbench from the switcher first.",
 
-  accountSectionTitle: "Account",
+  accountSectionTitle: "General",
   accountSectionDescription: "How the hub identifies you.",
   accountNameLabel: "Name",
   accountEmailLabel: "Email",

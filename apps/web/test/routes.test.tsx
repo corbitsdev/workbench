@@ -56,9 +56,16 @@ function stagePageTitle(markup: string): string | undefined {
  * with `data-active` instead. Returns the active destination's label so
  * tests confirm the *right* footer affordance lights, and nothing else
  * does. */
+// The sidebar's active-destination signals: the header bell for Inbox,
+// the Plugins footer row, and the account menu (Insights/Settings live
+// inside it, so their routes light nothing in the chrome — the stage
+// title carries them).
 function activeFooterLabel(markup: string): string | undefined {
-  if (/class="shell-sidebar-bell"[^>]*data-active="true"/.test(markup)) {
+  if (/shell-sidebar-bell"[^>]*data-active="true"/.test(markup)) {
     return "Inbox";
+  }
+  if (/shell-sidebar-footer-row"[^>]*aria-current="page"/.test(markup)) {
+    return "Plugins";
   }
   const match =
     /aria-label="([^"]+)"[^>]*aria-current="page"/.exec(markup) ??
@@ -68,9 +75,7 @@ function activeFooterLabel(markup: string): string | undefined {
 
 const FOOTER_LABELS: Record<string, string> = {
   "/inbox": "Inbox",
-  "/insights": "Insights",
   "/plugins": "Plugins",
-  "/settings": "Settings",
 };
 
 describe("route table", () => {
@@ -148,7 +153,7 @@ describe("routes render", () => {
       // it's actually resolved to (the first allowed one) rather than the
       // bare "Settings" the post-redirect URL would carry.
       if (route.path === "/settings") {
-        expect(stagePageTitle(markup)).toBe("Settings · Notifications");
+        expect(stagePageTitle(markup)).toBe("Settings · General");
       } else {
         expect(stagePageTitle(markup)).toBe(route.label);
       }
