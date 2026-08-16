@@ -59,7 +59,11 @@ import type {
 import { ChannelSettingsSurface } from "./channel-settings";
 import type { ChannelSettingsSectionId } from "./channel-settings";
 import { Composer, partsForSend } from "./composer";
-import type { ComposerHandle, ComposerSendPayload } from "./composer";
+import type {
+  ComposerAttachment,
+  ComposerHandle,
+  ComposerSendPayload,
+} from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
@@ -69,9 +73,11 @@ import { CHAT_STRINGS } from "./strings";
 import { AgentBadge, ChannelTimeline, messageDomId } from "./timeline";
 import type {
   CurrentUser,
+  PendingMessageStatus,
   PinActions,
   ReactionActions,
   ThreadAffordanceMeta,
+  TimelineMessageItem,
 } from "./timeline";
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
@@ -237,6 +243,63 @@ function sortMessagesOldestFirst(items: readonly MessageItem[]): MessageItem[] {
       ? a.id.localeCompare(b.id)
       : a.createdAt.localeCompare(b.createdAt),
   );
+}
+
+/**
+ * A composer submit this workspace has optimistically added to the
+ * timeline before the server confirms it — see `TimelineMessageItem`'s
+ * `pendingStatus`. `nonce` is this workspace's own client-side key,
+ * independent of any server-issued message id (which does not exist yet
+ * while `status` is `"sending"`, and never will if it ends up discarded).
+ */
+export type PendingSend = {
+  readonly nonce: string;
+  readonly text: string;
+  readonly attachments: readonly ComposerAttachment[];
+  readonly createdAt: string;
+  readonly status: PendingMessageStatus;
+};
+
+let pendingSendSeq = 0;
+
+/** A fresh client-side nonce for one composer submit — exported so tests
+ * can reset the counter between cases without reaching into module
+ * internals. */
+export function resetPendingSendNonceForTests(): void {
+  pendingSendSeq = 0;
+}
+
+function nextPendingSendNonce(): string {
+  pendingSendSeq += 1;
+  return `pending_${pendingSendSeq}`;
+}
+
+/**
+ * Folds this workspace's own optimistic sends onto the end of the
+ * server's message list, oldest-first like the rest of the timeline — a
+ * pending send is definitionally newer than anything the server has
+ * confirmed for this composer submit. Rendered as `TimelineMessageItem`s
+ * carrying no `reactions`/`pinned` (a pending entry has neither yet) and
+ * a sender built from the signed-in principal, the same address shape
+ * `senderDisplay` already matches against `currentUser.principalId` to
+ * render "You".
+ */
+export function mergePendingSends(
+  items: readonly MessageItem[],
+  pendingSends: readonly PendingSend[],
+  currentUserPrincipalId: string | undefined,
+): readonly TimelineMessageItem[] {
+  if (pendingSends.length === 0) return items;
+  const senderAddress = `${currentUserPrincipalId ?? "you"}@pending.local`;
+  const pendingItems: TimelineMessageItem[] = pendingSends.map((pending) => ({
+    id: pending.nonce,
+    createdAt: pending.createdAt,
+    parts: partsForSend(pending.text, pending.attachments),
+    sender: { name: null, address: senderAddress },
+    pendingStatus: pending.status,
+    pendingNonce: pending.nonce,
+  }));
+  return [...items, ...pendingItems];
 }
 
 /**
@@ -463,6 +526,11 @@ function ChatWorkspaceInner({
   const [pinnedMessages, setPinnedMessages] = useState<
     readonly PinnedMessage[]
   >([]);
+  // This composer's own optimistic sends — see `mergePendingSends`. A
+  // channel switch drops whatever was pending in the previous channel:
+  // its composer submit targeted that channel, not wherever the reader
+  // navigated to next.
+  const [pendingSends, setPendingSends] = useState<readonly PendingSend[]>([]);
 
   const unauthorizedRef = useRef(false);
   const composerRef = useRef<ComposerHandle>(null);
@@ -703,6 +771,7 @@ function ChatWorkspaceInner({
     setOpenThreadId(null);
     setPendingParentMessageId(null);
     setRootThreadId(null);
+    setPendingSends([]);
     if (activeChannelId !== null) {
       void loadThreads(activeChannelId);
       void loadMessages(activeChannelId);
@@ -871,10 +940,23 @@ function ChatWorkspaceInner({
     await loadMessages(activeChannelId);
   }
 
-  async function handleSend(payload: ComposerSendPayload): Promise<boolean> {
-    if (activeChannelId === null) return false;
-    const parts = partsForSend(payload.text, payload.attachments);
-    if (parts.length === 0) return false;
+  /**
+   * The optimistic core both a fresh composer submit and a bubble's own
+   * Retry button drive: adds (or resets) a pending entry before the
+   * request goes out, so the sender sees their message land in the
+   * timeline immediately rather than waiting on the round-trip, then
+   * either drops the pending entry (the next `loadMessages` folds in the
+   * server's real one) or flips it to `"failed"` in place — never a
+   * status line disconnected from the message it describes.
+   */
+  async function sendPending(
+    nonce: string,
+    text: string,
+    attachments: readonly ComposerAttachment[],
+  ): Promise<void> {
+    if (activeChannelId === null) return;
+    const parts = partsForSend(text, attachments);
+    if (parts.length === 0) return;
     try {
       if (openThreadId !== null) {
         await sendMessage(tenantId, activeChannelId, parts, {
@@ -891,11 +973,55 @@ function ChatWorkspaceInner({
       } else {
         await sendMessage(tenantId, activeChannelId, parts);
       }
+      setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
       await loadThreads(activeChannelId);
       await loadMessages(activeChannelId, { background: true });
-      return true;
     } catch {
-      return false;
+      setPendingSends((current) =>
+        current.map((p) =>
+          p.nonce === nonce ? { ...p, status: "failed" } : p,
+        ),
+      );
+    }
+  }
+
+  async function handleSend(payload: ComposerSendPayload): Promise<boolean> {
+    if (activeChannelId === null) return false;
+    const parts = partsForSend(payload.text, payload.attachments);
+    if (parts.length === 0) return false;
+    const nonce = nextPendingSendNonce();
+    setPendingSends((current) => [
+      ...current,
+      {
+        nonce,
+        text: payload.text,
+        attachments: payload.attachments,
+        createdAt: new Date().toISOString(),
+        status: "sending",
+      },
+    ]);
+    await sendPending(nonce, payload.text, payload.attachments);
+    return true;
+  }
+
+  function retryPendingSend(nonce: string) {
+    const pending = pendingSends.find((p) => p.nonce === nonce);
+    if (pending === undefined) return;
+    setPendingSends((current) =>
+      current.map((p) => (p.nonce === nonce ? { ...p, status: "sending" } : p)),
+    );
+    void sendPending(nonce, pending.text, pending.attachments);
+  }
+
+  /** Drops the failed pending bubble and hands its text back to the
+   * composer's draft — the only door recovered text comes back through,
+   * since a submit always clears the box on the way out. */
+  function discardPendingSend(nonce: string) {
+    const pending = pendingSends.find((p) => p.nonce === nonce);
+    if (pending === undefined) return;
+    setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
+    if (pending.text.length > 0) {
+      composerRef.current?.insertText(pending.text);
     }
   }
 
@@ -1340,7 +1466,11 @@ function ChatWorkspaceInner({
                     </div>
                   ) : null}
                   <ChannelTimeline
-                    items={messagesState.items}
+                    items={mergePendingSends(
+                      messagesState.items,
+                      pendingSends,
+                      currentUser?.principalId,
+                    )}
                     participants={activeChannel?.participants ?? []}
                     {...(currentUser !== undefined ? { currentUser } : {})}
                     threadMetaByMessageId={threadMetaByMessageId}
@@ -1366,6 +1496,10 @@ function ChatWorkspaceInner({
                       : {})}
                     reactionActions={reactionActions}
                     pinActions={pinActions}
+                    pendingActions={{
+                      onRetry: retryPendingSend,
+                      onDiscard: discardPendingSend,
+                    }}
                   />
                   {typingState !== null ? (
                     <TypingIndicator

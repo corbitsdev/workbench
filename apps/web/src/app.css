@@ -862,16 +862,18 @@ html {
    moment now (CL-6089 dropped the orange-rail era), not the switcher this
    dock replaced. */
 .shell-sidebar-brand-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 1.75rem;
   height: 1.75rem;
   margin: 0.25rem 0 0.1rem;
-  border-radius: var(--ui-radius-sm, 0.25rem);
-  overflow: hidden;
 }
 
-.shell-sidebar-brand-mark canvas {
-  width: 100%;
-  height: 100%;
+.shell-sidebar-brand-mark-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--primary, #e98428);
 }
 
 .shell-sidebar-utils {

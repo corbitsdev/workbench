@@ -7,7 +7,7 @@
 // does not compose with an inline mention popover.
 
 import { Button } from "@corbits/react-ui";
-import { Paperclip, Send, X } from "lucide-react";
+import { Loader2, Paperclip, Send, X } from "lucide-react";
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 
@@ -238,6 +238,25 @@ export function canAttachComposer(state: {
   return !state.sending && !state.preparing;
 }
 
+/**
+ * The send button's three visual states: `"empty"` (nothing to send —
+ * muted and disabled), `"ready"` (content waiting — primary-orange and
+ * enabled), `"sending"` (a send is in flight — primary but disabled, with
+ * a spinner in place of the send glyph). Kept as a pure function of the
+ * same inputs `canSendComposerAction` already reasons over, so the two
+ * never drift on what counts as "there's something to send".
+ */
+export type ComposerSendVisualState = "empty" | "ready" | "sending";
+
+export function composerSendVisualState(
+  text: string,
+  attachments: readonly ComposerAttachment[],
+  state: { readonly sending: boolean },
+): ComposerSendVisualState {
+  if (state.sending) return "sending";
+  return canSendComposer(text, attachments) ? "ready" : "empty";
+}
+
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -332,6 +351,9 @@ export const Composer = forwardRef<
   const busy = { sending, preparing };
   const canSend = canSendComposerAction(value, attachments, busy);
   const canAttach = canAttachComposer(busy);
+  const sendVisualState = composerSendVisualState(value, attachments, {
+    sending,
+  });
 
   function syncComposerSuggestState(text: string, caret: number) {
     setHelpOpen(false);
@@ -348,12 +370,19 @@ export const Composer = forwardRef<
     setHighlight(0);
   }
 
-  async function performSend(payload: ComposerSendPayload): Promise<boolean> {
+  /**
+   * Fires the send and tracks its flight for the button's spinner —
+   * nothing here decides what the timeline shows on success or failure.
+   * The host owns that: it adds an optimistic pending bubble the instant
+   * the payload leaves the composer, then resolves or fails it in place,
+   * so a failed send never comes back here to repopulate the draft —
+   * recovering the text is the pending bubble's own Discard action.
+   */
+  async function performSend(payload: ComposerSendPayload): Promise<void> {
     setSending(true);
     setErrorMessage(null);
-    const succeeded = await onSend(payload);
+    await onSend(payload);
     setSending(false);
-    return succeeded;
   }
 
   function runSlashCommand(command: SlashCommandSpec) {
@@ -396,11 +425,10 @@ export const Composer = forwardRef<
       return;
     }
     if (sending || preparing) return;
-    const succeeded = await performSend({
+    await performSend({
       text: `@${target.handle} summarize this thread`,
       attachments: [],
     });
-    if (!succeeded) setErrorMessage(CHAT_STRINGS.sendFailedMessage);
   }
 
   function pickMention(candidate: MentionCandidate) {
@@ -466,18 +494,23 @@ export const Composer = forwardRef<
     setAttachments((previous) => previous.filter((file) => file.id !== id));
   }
 
+  /**
+   * The draft leaves the box the instant it's handed off, win or lose —
+   * the host's optimistic pending bubble is now the one place that text
+   * lives until the send actually resolves. A failure never repopulates
+   * this box; the bubble's Discard action is the only way text comes
+   * back here (see `ComposerHandle.insertText`, the same seam the
+   * profile card's Mention action uses).
+   */
   async function send() {
     if (!canSendComposerAction(value, attachments, { sending, preparing })) {
       return;
     }
-    const succeeded = await performSend({ text: value, attachments });
-    setValue((previous) => draftAfterSend(previous, succeeded));
-    setAttachments((previous) => attachmentsAfterSend(previous, succeeded));
-    if (succeeded) {
-      setMention(null);
-    } else {
-      setErrorMessage(CHAT_STRINGS.sendFailedMessage);
-    }
+    const payload: ComposerSendPayload = { text: value, attachments };
+    setValue("");
+    setAttachments([]);
+    setMention(null);
+    await performSend(payload);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -690,9 +723,10 @@ export const Composer = forwardRef<
         />
         <Button
           type="button"
-          variant="primary"
+          variant={sendVisualState === "empty" ? "ghost" : "primary"}
           size="icon"
           disabled={!canSend}
+          data-send-state={sendVisualState}
           onClick={() => void send()}
           aria-label={
             sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
@@ -701,7 +735,14 @@ export const Composer = forwardRef<
             sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
           }
         >
-          <Send />
+          {sendVisualState === "sending" ? (
+            <Loader2
+              className="chat-composer-send-spinner"
+              aria-hidden="true"
+            />
+          ) : (
+            <Send aria-hidden="true" />
+          )}
         </Button>
       </div>
       <div

@@ -386,6 +386,32 @@ describe("POST /channels/:id/invite", () => {
     ]);
   });
 
+  test("derives the mention handle from the invited definition's display name (description) over its asset name", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [
+          { id: "wfd_assistant", name: "assistant", description: "Myra" },
+        ],
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    await app.request(`/channels/${channel.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_assistant" }),
+    });
+
+    const settingsRow = await deps.store.getChannelSettings(
+      TENANT.id,
+      channel.id,
+    );
+    expect(settingsRow?.settings["chat/participants"]).toEqual([
+      { address: "ins_invited1@acme.example", handle: "myra" },
+    ]);
+  });
+
   test("a malformed body is rejected with the structured error envelope", async () => {
     const deps = buildDeps();
     const app = mountAs(createChatRoutes(deps), "prn_alice");

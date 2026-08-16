@@ -19,6 +19,7 @@ import {
 import type { ContextMenu, ContextMenuEntry } from "@corbits/context-menu";
 import { EmptyState, toast } from "@corbits/react-ui";
 import {
+  Clock,
   Copy,
   MessageSquare,
   MoreHorizontal,
@@ -87,6 +88,35 @@ export type PinActions = {
 export function messageDomId(messageId: string): string {
   return `chat-message-${messageId}`;
 }
+
+/**
+ * `"sending"` while the host's real request is in flight, `"failed"` once
+ * it has rejected. There is no `"sent"` state here — a successful send
+ * simply stops being a pending item once the host's next message load
+ * folds the real, server-issued message into `items` in its place.
+ */
+export type PendingMessageStatus = "sending" | "failed";
+
+/**
+ * A message this host has optimistically added to the timeline before
+ * (or instead of, on failure) the server confirms it — see
+ * `ChannelTimeline`'s `items` doc. `nonce` is the host's own client-side
+ * key, round-tripped back through `PendingActions` so a retry/discard
+ * always targets the exact pending entry the reader acted on, never a
+ * position in an array that may have reflowed underneath it.
+ */
+export type TimelineMessageItem = MessageItem & {
+  readonly pendingStatus?: PendingMessageStatus;
+  readonly pendingNonce?: string;
+};
+
+/** The retry/discard round-trip a failed pending bubble's inline actions
+ * offer — the host owns both: retry re-sends the same content, discard
+ * drops the pending entry and hands its text back to the composer. */
+export type PendingActions = {
+  readonly onRetry: (nonce: string) => void;
+  readonly onDiscard: (nonce: string) => void;
+};
 
 export type CurrentUser = {
   /**
@@ -494,6 +524,86 @@ function messageText(item: MessageItem): string {
     .filter((part): part is Part & { kind: "text" } => part.kind === "text")
     .map((part) => part.text)
     .join("\n");
+}
+
+/**
+ * An optimistic message's own bubble: no hover toolbar, no context menu,
+ * no reactions or pin toggle — none of those round-trips make sense
+ * against a message the server hasn't issued an id for yet. `"sending"`
+ * renders quietly (reduced opacity, a small clock glyph in place of the
+ * timestamp); `"failed"` renders its own inline error state — a red
+ * accent on the bubble and "Not sent" with Retry/Discard right there —
+ * rather than a status line elsewhere on the page disconnected from the
+ * message it describes.
+ */
+function PendingMessageGroup({
+  item,
+  pendingStatus,
+  pendingActions,
+  currentUser,
+  showDayDivider,
+}: {
+  readonly item: TimelineMessageItem;
+  readonly pendingStatus: PendingMessageStatus;
+  readonly pendingActions: PendingActions | undefined;
+  readonly currentUser: CurrentUser | undefined;
+  readonly showDayDivider: boolean;
+}) {
+  const text = messageText(item);
+  const label = currentUser?.name ?? CHAT_STRINGS.senderYou;
+  const nonce = item.pendingNonce ?? item.id;
+
+  return (
+    <div
+      className="chat-message-group"
+      id={messageDomId(item.id)}
+      data-pending={pendingStatus}
+    >
+      {showDayDivider && <DayDivider createdAt={item.createdAt} />}
+      <div className="chat-bubble-row" data-own="true">
+        <div
+          className="chat-bubble"
+          data-own="true"
+          data-pending={pendingStatus}
+        >
+          <div className="chat-bubble-head">
+            <span className="chat-bubble-sender">{label}</span>
+            {pendingStatus === "sending" ? (
+              <span
+                className="chat-pending-glyph"
+                aria-label={CHAT_STRINGS.pendingSendLabel}
+                title={CHAT_STRINGS.pendingSendLabel}
+              >
+                <Clock aria-hidden="true" />
+              </span>
+            ) : null}
+          </div>
+          <p className="chat-bubble-text">{text}</p>
+          {pendingStatus === "failed" && pendingActions !== undefined ? (
+            <div className="chat-pending-failed-row" role="alert">
+              <span className="chat-pending-failed-label">
+                {CHAT_STRINGS.pendingSendFailedLabel}
+              </span>
+              <button
+                type="button"
+                className="chat-pending-retry"
+                onClick={() => pendingActions.onRetry(nonce)}
+              >
+                {CHAT_STRINGS.pendingSendRetryAction}
+              </button>
+              <button
+                type="button"
+                className="chat-pending-discard"
+                onClick={() => pendingActions.onDiscard(nonce)}
+              >
+                {CHAT_STRINGS.pendingSendDiscardAction}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -965,8 +1075,12 @@ export function ChannelTimeline({
   blockResponses,
   reactionActions,
   pinActions,
+  pendingActions,
 }: {
-  readonly items: readonly MessageItem[];
+  /** Server-issued messages, oldest→newest, plus any optimistic entries
+   * the host is still resolving — see `TimelineMessageItem`'s
+   * `pendingStatus`. An ordinary item simply omits it. */
+  readonly items: readonly TimelineMessageItem[];
   readonly participants?: readonly ParticipantRecord[];
   readonly currentUser?: CurrentUser;
   /** Reply-thread summary keyed by parent message id. */
@@ -1002,6 +1116,10 @@ export function ChannelTimeline({
   /** The hover pin/unpin toggle — see `PinActions`. Undefined renders
    * no pin affordance on any message. */
   readonly pinActions?: PinActions;
+  /** The failed pending bubble's inline Retry/Discard — see
+   * `PendingActions`. Undefined renders a failed pending item with no
+   * recovery affordance at all (still shown as failed). */
+  readonly pendingActions?: PendingActions;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Starts true so a channel's first render always lands pinned to the
@@ -1049,6 +1167,18 @@ export function ChannelTimeline({
             new Date(previous.createdAt),
             new Date(item.createdAt),
           );
+        if (item.pendingStatus !== undefined) {
+          return (
+            <PendingMessageGroup
+              key={item.id}
+              item={item}
+              pendingStatus={item.pendingStatus}
+              pendingActions={pendingActions}
+              currentUser={currentUser}
+              showDayDivider={showDayDivider}
+            />
+          );
+        }
         return (
           <MessageParts
             key={item.id}

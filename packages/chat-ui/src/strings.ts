@@ -147,7 +147,10 @@ export const CHAT_STRINGS = {
   pinnedStripLabel: "Pinned messages",
   pinnedStripEmptyPreview: "Pinned message",
   pinnedStripJumpAction: (preview: string) => `Jump to: ${preview}`,
-  sendFailedMessage: "Couldn't send — retry",
+  pendingSendLabel: "Sending…",
+  pendingSendFailedLabel: "Not sent",
+  pendingSendRetryAction: "Retry",
+  pendingSendDiscardAction: "Discard",
   fallbackPartUnsupported: "Unsupported content",
   blockUnsupportedTitle: "Unsupported block",
   blockUnsupportedBody: (type: string) =>
