@@ -225,6 +225,7 @@ export const CHAT_STRINGS = {
   channelSettingsSectionAssistant: "Assistant",
   channelSettingsSectionKeysPlugins: "Keys & plugins",
   channelSettingsSectionInference: "Inference",
+  channelSettingsSectionCapacity: "Capacity",
   channelSettingsSectionAccess: "Access",
   channelSettingsSectionNotifications: "Notifications",
   channelSettingsSectionDanger: "Danger zone",
@@ -301,6 +302,15 @@ export const CHAT_STRINGS = {
   channelSettingsNotifyMute: "Mute",
   channelSettingsNotificationsHint:
     "Preference is local draft UI until per-conversation notification storage ships.",
+  channelSettingsCapacityDescription:
+    "This workbench's agents run on their own dedicated capacity.",
+  channelSettingsCapacityLabel:
+    "Keep this workbench's agents on dedicated capacity",
+  channelSettingsCapacityHint:
+    "Agents in this workbench won't share compute with other workbenches.",
+  channelSettingsCapacityUnavailableHint:
+    "Not available on this server yet — ask your operator to enable isolated capacity.",
+  channelSettingsCapacitySaveError: "Couldn't save this setting. Try again.",
   channelSettingsArchiveTitle: "Archive workbench",
   channelSettingsArchiveBody:
     "Archiving is not available yet. Closing this workbench would hide it from the sidebar without deleting history once the action lands.",

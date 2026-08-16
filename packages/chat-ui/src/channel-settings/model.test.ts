@@ -10,6 +10,7 @@ describe("channelSettingsSections", () => {
       "agents",
       "keys-plugins",
       "inference",
+      "capacity",
       "access",
       "notifications",
       "danger",
@@ -22,6 +23,7 @@ describe("channelSettingsSections", () => {
       "agents",
       "keys-plugins",
       "inference",
+      "capacity",
       "access",
       "notifications",
     ]);
@@ -32,6 +34,7 @@ describe("channelSettingsSections", () => {
       "general",
       "keys-plugins",
       "inference",
+      "capacity",
       "access",
       "notifications",
     ]);
@@ -43,6 +46,7 @@ describe("channelSettingsSections", () => {
       "agents",
       "keys-plugins",
       "inference",
+      "capacity",
       "access",
       "notifications",
     ]);
@@ -55,6 +59,7 @@ describe("channelSettingsSections", () => {
       "agents",
       "keys-plugins",
       "inference",
+      "capacity",
       "access",
       "notifications",
       "danger",
@@ -80,6 +85,7 @@ describe("channelSettingsSections", () => {
       "assistant",
       "keys-plugins",
       "inference",
+      "capacity",
       "access",
       "notifications",
       "danger",
@@ -95,6 +101,7 @@ describe("channelSettingsSections", () => {
       "assistant",
       "keys-plugins",
       "inference",
+      "capacity",
       "access",
       "notifications",
     ]);
@@ -118,6 +125,7 @@ describe("channelSettingsSections", () => {
   test("groups sections Shared / Personal / Danger for the nav", () => {
     const groups = channelSettingsSections("channel").map((s) => s.group);
     expect(groups).toEqual([
+      "shared",
       "shared",
       "shared",
       "shared",

@@ -14,8 +14,6 @@ export {
   insertEveryoneSections,
 } from "./section-registry";
 
-export { BenchSection, BenchSectionView } from "./bench-section";
-export { ChatSection, ChatSectionView } from "./chat-section";
 export { AccountSection, AccountSectionView } from "./account-section";
 export { NotificationsSection } from "./notifications-section";
 export { AuditSection } from "./audit-section";
@@ -125,13 +123,6 @@ export type {
 } from "./connections-status";
 
 export { CONNECTOR_PINNED_WORKFLOWS } from "./connections-pinned-by";
-
-export {
-  contextWindowLabel,
-  parseContextWindowInput,
-  CONTEXT_WINDOW_MIN,
-  CONTEXT_WINDOW_MAX,
-} from "./context-window";
 
 export { SETTINGS_STRINGS } from "./strings";
 
