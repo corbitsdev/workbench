@@ -122,14 +122,17 @@ function ConnectedSummary({
   readonly onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function handleDisconnect() {
     setBusy(true);
+    setError(null);
     deleteCredential(tenantId, plugin.credentialId)
       .then(() => {
         toast(`${plugin.descriptor.displayName} disconnected.`);
         onChanged();
       })
+      .catch(() => setError("Couldn't disconnect — try again."))
       .finally(() => setBusy(false));
   }
 
@@ -158,10 +161,15 @@ function ConnectedSummary({
             disabled={busy}
             onConfirm={handleDisconnect}
           >
-            Disconnect
+            {busy ? "Disconnecting…" : "Disconnect"}
           </ConfirmButton>
         ) : null}
       </div>
+      {error !== null ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
