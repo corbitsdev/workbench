@@ -2,7 +2,14 @@ export { ChatWorkspace } from "./chat-workspace";
 export type { TenantResolution, PresenceMember } from "./chat-workspace";
 
 export { ChannelTimeline, messageDomId } from "./timeline";
-export type { CurrentUser, ReactionActions, PinActions } from "./timeline";
+export type {
+  CurrentUser,
+  ReactionActions,
+  PinActions,
+  PendingActions,
+  PendingMessageStatus,
+  TimelineMessageItem,
+} from "./timeline";
 
 export { PinnedStrip } from "./pinned-strip";
 export {
@@ -19,6 +26,7 @@ export {
   attachmentBytesOnComposer,
   base64DecodedByteLength,
   insertTextAtCaret,
+  composerSendVisualState,
 } from "./composer";
 export type {
   ComposerAttachment,
@@ -27,6 +35,7 @@ export type {
   AttachmentPickCandidate,
   AttachmentValidationError,
   ComposerHandle,
+  ComposerSendVisualState,
 } from "./composer";
 export { renamePayload, rowMenuLabels } from "./sidebar";
 

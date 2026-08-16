@@ -119,7 +119,7 @@ describe("POST /channels", () => {
     expect(response.status).toBe(201);
     expect(body.title).toBe("Myra");
     expect(body.participants).toEqual([
-      { address: "ins_invited1@acme.example", handle: "assistant" },
+      { address: "ins_invited1@acme.example", handle: "myra" },
     ]);
     const tenancy = deps.tenancy as ReturnType<
       typeof createInMemoryChannelTenancyStore

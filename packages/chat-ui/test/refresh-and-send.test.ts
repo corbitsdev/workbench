@@ -9,10 +9,11 @@ import { describe, expect, test } from "bun:test";
 import {
   canInviteAgent,
   composerPlaceholderFor,
+  mergePendingSends,
   nextMessagesState,
   resolveMessageFeedTarget,
 } from "../src/chat-workspace";
-import type { MessagesState } from "../src/chat-workspace";
+import type { MessagesState, PendingSend } from "../src/chat-workspace";
 import {
   attachmentsAfterSend,
   attachmentBytesOnComposer,
@@ -22,6 +23,7 @@ import {
   canSendComposer,
   canSendComposerAction,
   COMPOSER_ATTACHMENT_LIMITS,
+  composerSendVisualState,
   draftAfterSend,
   partsForSend,
   validateAttachmentPick,
@@ -446,5 +448,77 @@ describe("shouldConnect (S3: an empty channel url opens no connection)", () => {
     expect(shouldConnect("/api/tenants/tnt_1/chat/channels/c1/stream")).toBe(
       true,
     );
+  });
+});
+
+describe("composerSendVisualState (CL-6103: the send button reflects state)", () => {
+  test("empty draft, idle: muted/disabled", () => {
+    expect(composerSendVisualState("", [], { sending: false })).toBe("empty");
+  });
+
+  test("draft present, idle: ready for the primary-orange treatment", () => {
+    expect(composerSendVisualState("hi", [], { sending: false })).toBe("ready");
+  });
+
+  test("a send in flight always wins, even over an emptied draft", () => {
+    expect(composerSendVisualState("", [], { sending: true })).toBe("sending");
+    expect(composerSendVisualState("hi", [], { sending: true })).toBe(
+      "sending",
+    );
+  });
+
+  test("an attachment with no text still counts as something to send", () => {
+    expect(
+      composerSendVisualState("", [sampleAttachment], { sending: false }),
+    ).toBe("ready");
+  });
+});
+
+describe("mergePendingSends (CL-6103: optimistic sends fold into the timeline)", () => {
+  const serverItems = [
+    {
+      id: "m1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      parts: [{ kind: "text" as const, text: "hello" }],
+      sender: { name: null, address: "prn_alice@acme.example" },
+    },
+  ];
+
+  test("no pending sends leaves the server list untouched", () => {
+    expect(mergePendingSends(serverItems, [], "prn_alice")).toBe(serverItems);
+  });
+
+  test("a pending send appends after the server's own messages, marked sending", () => {
+    const pending: PendingSend[] = [
+      {
+        nonce: "pending_1",
+        text: "hi",
+        attachments: [],
+        createdAt: "2026-01-01T00:01:00.000Z",
+        status: "sending",
+      },
+    ];
+    const merged = mergePendingSends(serverItems, pending, "prn_alice");
+    expect(merged).toHaveLength(2);
+    expect(merged[1]).toMatchObject({
+      pendingStatus: "sending",
+      pendingNonce: "pending_1",
+    });
+    expect(merged[1]?.parts).toEqual([{ kind: "text", text: "hi" }]);
+  });
+
+  test('a pending send\'s sender local part matches the signed-in principal, so it renders as "You"', () => {
+    const pending: PendingSend[] = [
+      {
+        nonce: "pending_1",
+        text: "hi",
+        attachments: [],
+        createdAt: "2026-01-01T00:01:00.000Z",
+        status: "failed",
+      },
+    ];
+    const merged = mergePendingSends([], pending, "prn_alice");
+    expect(merged[0]?.sender.address.split("@")[0]).toBe("prn_alice");
+    expect(merged[0]?.pendingStatus).toBe("failed");
   });
 });

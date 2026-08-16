@@ -206,18 +206,24 @@ export async function launchAndJoinAgent(
     definitionId: input.definitionId,
   });
 
-  // The invited definition's name becomes the friendly mention handle
-  // (e.g. "echo" for a definition named "Echo"), rather than the
-  // invited run's own unusable instance-id local part; a definition
-  // the listing no longer carries falls back to that local part.
-  // Either way it is de-duplicated against every handle already in
-  // the channel ("echo", "echo-2", ...).
+  // The invited definition's human display name (`description`, e.g.
+  // "Myra" for the `assistant` asset) becomes the friendly mention
+  // handle, falling back to the asset name itself when the deploy
+  // carried no display name, and to the invited run's own unusable
+  // instance-id local part when the listing no longer carries the
+  // definition at all. The asset name (`.name`) is a wire identifier,
+  // never UI copy — it must never surface as a mention handle. Either
+  // way it is de-duplicated against every handle already in the
+  // channel ("echo", "echo-2", ...).
   const invitedDefinition = input.invitable.find(
     (definition) => definition.id === input.definitionId,
   );
   const desiredHandle =
     invitedDefinition !== undefined
-      ? handleFromName(invitedDefinition.name, launched.address)
+      ? handleFromName(
+          invitedDefinition.description ?? invitedDefinition.name,
+          launched.address,
+        )
       : localPartOf(launched.address);
 
   // The record is updated before the join event is posted, matching

@@ -1089,3 +1089,197 @@ describe("the auto-select-first-channel fallback never races an open New Channel
     harness.unmount();
   });
 });
+
+// CL-6103: the composer used to give no feedback that a send had even
+// started, and a failed send surfaced as a tiny red line pinned to the
+// composer's own corner — nowhere near the message it was about. These
+// tests drive a real submit through `ChatWorkspace` and check the DOM
+// states a reader actually sees: the pending bubble appears before the
+// network call resolves, a success clears it, a failure shows its own
+// inline Retry/Discard, and Discard hands the text back to the composer.
+describe("optimistic send (CL-6103)", () => {
+  function stubFetchWithSendOutcome(shouldFail: () => boolean) {
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown, status = 200) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/channels\?kind=channel$/.test(path)) {
+        return json({ items: [CHANNEL_WIRE] });
+      }
+      if (/\/chat\/channels\?kind=chat$/.test(path)) return json({ items: [] });
+      if (/\/chat\/channels\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/messages/.test(path)) {
+        if (init?.method === "POST") {
+          if (shouldFail()) {
+            return json({ error: { code: "bad_request" } }, 500);
+          }
+          return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
+        }
+        return json({ items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/channels\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/channels\/[^/]+\/settings$/.test(path)) {
+        return json({
+          ...CHANNEL_WIRE,
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
+  }
+
+  function clickSend(container: HTMLElement) {
+    const button = container.querySelector<HTMLButtonElement>(
+      '[aria-label^="Send"]',
+    );
+    if (button === null) throw new Error("send button not found");
+    act(() => button.click());
+  }
+
+  test("the send button is muted while empty and turns primary once there's a draft", async () => {
+    stubFetchWithSendOutcome(() => false);
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      currentUser: { principalId: "prn_alice" },
+    });
+    await harness.settle();
+
+    const sendButton = () =>
+      harness.container.querySelector<HTMLButtonElement>(
+        '[aria-label^="Send"]',
+      );
+    expect(sendButton()?.getAttribute("data-send-state")).toBe("empty");
+    expect(sendButton()?.hasAttribute("disabled")).toBe(true);
+
+    typeInComposer(harness.container, "hi");
+    await harness.settle();
+
+    expect(sendButton()?.getAttribute("data-send-state")).toBe("ready");
+    expect(sendButton()?.hasAttribute("disabled")).toBe(false);
+    harness.unmount();
+  });
+
+  test("submitting shows a pending bubble synchronously, clears the composer, and drops it on success", async () => {
+    stubFetchWithSendOutcome(() => false);
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      currentUser: { principalId: "prn_alice" },
+    });
+    await harness.settle();
+
+    const textarea = typeInComposer(harness.container, "hi");
+
+    // The pending bubble and the composer's own clear both happen inside
+    // this one `act`, before the POST's promise has any chance to settle
+    // — proving they're synchronous with the submit, not a side effect of
+    // the network round-trip landing.
+    act(() => {
+      clickSend(harness.container);
+    });
+
+    expect(textarea.value).toBe("");
+    const pendingBubble = harness.container.querySelector(
+      '.chat-bubble[data-pending="sending"]',
+    );
+    expect(pendingBubble).not.toBeNull();
+    expect(pendingBubble?.textContent).toContain("hi");
+
+    await harness.settle();
+
+    expect(
+      harness.container.querySelector(".chat-bubble[data-pending]"),
+    ).toBeNull();
+    harness.unmount();
+  });
+
+  test("a failed send shows the error inline on the bubble itself, with working Retry and Discard", async () => {
+    let fail = true;
+    stubFetchWithSendOutcome(() => fail);
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      currentUser: { principalId: "prn_alice" },
+    });
+    await harness.settle();
+
+    const textarea = typeInComposer(harness.container, "hi");
+    act(() => {
+      clickSend(harness.container);
+    });
+    await harness.settle();
+
+    // Never a detached corner line — the failure lives on the bubble.
+    expect(harness.container.textContent).not.toContain("Couldn't send");
+    const failedBubble = harness.container.querySelector(
+      '.chat-bubble[data-pending="failed"]',
+    );
+    expect(failedBubble).not.toBeNull();
+    expect(failedBubble?.textContent).toContain("Not sent");
+
+    const retryButton = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Retry",
+    );
+    expect(retryButton).not.toBeUndefined();
+
+    fail = false;
+    act(() => retryButton?.click());
+    await harness.settle();
+
+    expect(
+      harness.container.querySelector(".chat-bubble[data-pending]"),
+    ).toBeNull();
+    expect(textarea.value).toBe("");
+    harness.unmount();
+  });
+
+  test("Discard removes the failed pending bubble and returns its text to the composer", async () => {
+    stubFetchWithSendOutcome(() => true);
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      currentUser: { principalId: "prn_alice" },
+    });
+    await harness.settle();
+
+    const textarea = typeInComposer(harness.container, "hi there");
+    act(() => {
+      clickSend(harness.container);
+    });
+    await harness.settle();
+
+    expect(
+      harness.container.querySelector('.chat-bubble[data-pending="failed"]'),
+    ).not.toBeNull();
+
+    const discardButton = [
+      ...harness.container.querySelectorAll("button"),
+    ].find((button) => button.textContent === "Discard");
+    expect(discardButton).not.toBeUndefined();
+    act(() => discardButton?.click());
+    await harness.settle();
+
+    expect(
+      harness.container.querySelector(".chat-bubble[data-pending]"),
+    ).toBeNull();
+    expect(textarea.value).toBe("hi there");
+    harness.unmount();
+  });
+});

@@ -569,6 +569,60 @@
   color: var(--foreground);
 }
 
+/* Optimistic sends (CL-6103): a message the reader just sent renders
+   immediately, quieted while it's still in flight and flagged inline —
+   never a status line elsewhere on the page — once it fails. */
+.chat-bubble[data-pending="sending"] {
+  opacity: 0.6;
+}
+
+.chat-bubble[data-pending="failed"] {
+  border-left: 2px solid var(--destructive);
+  padding-left: 0.6rem;
+}
+
+.chat-pending-glyph {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  color: var(--muted-foreground);
+}
+
+.chat-pending-glyph svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.chat-pending-failed-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+}
+
+.chat-pending-failed-label {
+  color: var(--destructive);
+  font-weight: 600;
+}
+
+.chat-pending-retry,
+.chat-pending-discard {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.chat-pending-discard {
+  color: var(--muted-foreground);
+}
+
 .chat-day-divider {
   display: flex;
   align-items: center;
@@ -1301,6 +1355,16 @@
   padding: 0.3rem 0.15rem 0;
   font-size: 0.75rem;
   color: var(--destructive);
+}
+
+.chat-composer-send-spinner {
+  animation: chat-composer-spin 0.8s linear infinite;
+}
+
+@keyframes chat-composer-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .chat-mention-popover {
