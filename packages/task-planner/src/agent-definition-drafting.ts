@@ -25,12 +25,28 @@ import { type } from "arktype";
 import type { OneShotReply } from "@corbits/folded-runs";
 
 import { BoundedDedupedToolPackageNameArray } from "./create-bounds";
-import { assembleInventory, type InventorySources, type PlannerInventory } from "./inventory";
+import {
+  assembleInventory,
+  type InventorySources,
+  type PlannerInventory,
+} from "./inventory";
 
 const DEFAULT_DRAFTING_TIMEOUT_MS = 60_000;
 const MAX_REPLY_EXCERPT = 400;
 const MAX_SYSTEM_PROMPT_LENGTH = 8000;
 const MAX_DESCRIPTION_LENGTH = 500;
+
+/** `@corbits/capability-tools`' package name (CL-6084) — the
+ * `request_capability` bundle a drafted agent can pin like any other
+ * tool package. Guidance telling the drafted agent it can ask for a
+ * capability only belongs in its systemPrompt when this package is
+ * actually among `toolPackagePins`; a definition that never pinned it
+ * has no such tool to call, so mentioning it unconditionally would be
+ * a false promise. Kept a literal here (rather than importing
+ * `@corbits/capability-tools`) the same way this module already treats
+ * every inventory entry as a bare name string, never a package
+ * dependency. */
+const CAPABILITY_REQUEST_TOOL_PACKAGE = "@corbits/capability-tools";
 
 // --- reply contract ---
 
@@ -249,12 +265,29 @@ function buildAgentDefinitionDraftPrompt(
           "before anything is deployed.",
         ]
       : [
-          "A person is creating a new agent named " + JSON.stringify(name) + ".",
+          "A person is creating a new agent named " +
+            JSON.stringify(name) +
+            ".",
           "They described what it should do like this, for you to turn into a",
           "starting system prompt for review before anything is deployed:",
           "",
           JSON.stringify(purpose),
         ];
+  const capabilityRequestGuidance = inventory.toolPackages.some(
+    (entry) => entry.name === CAPABILITY_REQUEST_TOOL_PACKAGE,
+  )
+    ? [
+        "",
+        `If you include "${CAPABILITY_REQUEST_TOOL_PACKAGE}" in`,
+        "toolPackagePins, also tell the agent in its systemPrompt that it",
+        "can ask for a capability (a tool package, skill, or model) it",
+        "doesn't have yet by calling request_capability — only when a",
+        "genuine, specific need comes up in conversation, never",
+        "speculatively — and that a human has to approve the request",
+        "before anything is added.",
+      ]
+    : [];
+
   return [
     ...brief,
     "",
@@ -282,6 +315,7 @@ function buildAgentDefinitionDraftPrompt(
     "MUST come from the inventory above, verbatim. Never invent one — if",
     "nothing in the inventory fits, omit that field entirely rather than",
     "guessing.",
+    ...capabilityRequestGuidance,
   ].join("\n");
 }
 

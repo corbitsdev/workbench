@@ -1434,6 +1434,20 @@ export async function createHub(config: HubConfig) {
   // per-tenant connected-provider derivation) — this package owns the
   // inventory's shape, never the listing logic.
   const memoryToolPackageName = "@corbits/memory-tools";
+  // `@corbits/capability-tools` (CL-6084)'s `request_capability` tool is
+  // deliberately NOT listed in `listMyraUsableToolPackages` below yet,
+  // even though it (like memory-tools) needs no per-tenant credential.
+  // Pinning it to a drafted agent today would ship a tool that always
+  // fails when called: its execution needs the calling agent's own
+  // `definitionId` in env, which nothing threads into a workflow step's
+  // tool env yet (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`
+  // only threads memory-tools' three keys today), and even with that,
+  // the capabilities route it calls
+  // (`@corbits/agent-directory`'s `POST /:definitionId/capabilities`)
+  // only authenticates a human browser session — no workflow-run-token
+  // path exists for it the way `/api/workflow-skills` and
+  // `/api/workflow-memory` have one. List it here once both gaps close;
+  // see `@corbits/capability-tools`'s README for the full detail.
 
   async function listMyraConversationalAgents(
     tenantId: string,

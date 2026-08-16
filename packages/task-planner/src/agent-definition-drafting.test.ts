@@ -260,7 +260,11 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).not.toContain("undefined");
   });
 
+<<<<<<< HEAD
   test("the drafting brief instructs the drafted agent to greet, introduce itself, and ask what it's for on its first reply", async () => {
+=======
+  test("the prompt says nothing about request_capability when @corbits/capability-tools isn't in the inventory", async () => {
+>>>>>>> origin/cl-6084-request-capability
     let sentPrompt = "";
     const drafting = createMyraAgentDefinitionDrafting(
       buildDeps({
@@ -276,6 +280,7 @@ describe("createMyraAgentDefinitionDrafting", () => {
       }),
     );
     await drafting.propose(INPUT);
+<<<<<<< HEAD
 
     expect(sentPrompt).toContain("first reply");
     expect(sentPrompt).toContain("greet the person by name");
@@ -283,6 +288,43 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).toContain("fresh start");
     expect(sentPrompt).toContain("standing job");
     expect(sentPrompt).toContain("one-off task");
+=======
+    expect(sentPrompt).not.toContain("request_capability");
+  });
+
+  test("the prompt tells the model to mention request_capability only when @corbits/capability-tools is offered", async () => {
+    let sentPrompt = "";
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        inventorySources: {
+          ...INVENTORY_SOURCES,
+          async listUsableToolPackages(tenantId: string) {
+            return [
+              ...(await INVENTORY_SOURCES.listUsableToolPackages(tenantId)),
+              {
+                name: "@corbits/capability-tools",
+                connectorId: "capability-tools",
+                credentialBinding: null,
+              },
+            ];
+          },
+        },
+        runner: {
+          run: async ({ prompt }) => {
+            sentPrompt = prompt;
+            return {
+              content: JSON.stringify({ systemPrompt: "You help." }),
+              runId: "wfr_draft_4",
+            };
+          },
+        },
+      }),
+    );
+    await drafting.propose(INPUT);
+    expect(sentPrompt).toContain("@corbits/capability-tools");
+    expect(sentPrompt).toContain("request_capability");
+    expect(sentPrompt).toContain("a human has to approve");
+>>>>>>> origin/cl-6084-request-capability
   });
 
   test("an unresolvable Myra definition surfaces as MyraAgentDefinitionDraftingUnavailableError", async () => {
