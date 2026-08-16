@@ -62,6 +62,15 @@ test("the agent carries the assistant prompt, the preferences, and inlines no to
   expect(agent.toolFactories).toEqual([]);
 });
 
+test("the prompt instructs Myra to greet, introduce herself, and ask what she's for on a bench's first-ever conversation", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("first message");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("greet the sender by name");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("introduce");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("Myra");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("standing job");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("one-off task");
+});
+
 test("the agent pins @corbits/memory-tools (CL-5852) — a real package name, resolved at deploy time", () => {
   const agent = assistantStep(buildAssistantWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual(ASSISTANT_TOOL_PACKAGE_PINS);
