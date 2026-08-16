@@ -1452,15 +1452,15 @@ function ChatWorkspaceInner({
                       {CHAT_STRINGS.inviteAgentAction}
                     </Button>
                   ) : null}
-                  {onCreateRoutineInSpace !== undefined &&
-                  activeChannelId !== null ? (
+                  {onOpenRoutines !== undefined ? (
                     <Button
                       variant="ghost"
-                      size="sm"
-                      onClick={() => onCreateRoutineInSpace(activeChannelId)}
+                      size="icon"
+                      aria-label={CHAT_STRINGS.routinesAction}
+                      title={CHAT_STRINGS.routinesAction}
+                      onClick={() => onOpenRoutines()}
                     >
                       <Repeat />
-                      {CHAT_STRINGS.newRoutineAction}
                     </Button>
                   ) : null}
                   {onOpenInsights !== undefined ? (

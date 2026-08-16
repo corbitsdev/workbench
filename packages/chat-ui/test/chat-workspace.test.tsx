@@ -95,6 +95,7 @@ function stubFetch(
 }
 
 const { ChatWorkspace } = await import("../src/chat-workspace");
+const { CHAT_STRINGS } = await import("../src/strings");
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -634,28 +635,46 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
-  test("'New routine' header button calls the host's hop with the active channel", async () => {
+  test("the header's Routines button calls onOpenRoutines, not the per-space create hop", async () => {
     stubFetch();
-    const opened: string[] = [];
+    let opened = 0;
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
-      onCreateRoutineInSpace: (channelId: string) => {
-        opened.push(channelId);
+      onOpenRoutines: () => {
+        opened += 1;
+      },
+      onCreateRoutineInSpace: () => {
+        throw new Error("the header button must not call this hop");
       },
     });
     await harness.settle();
 
-    const button = [...harness.container.querySelectorAll("button")].find(
-      (element) => element.textContent?.trim() === "New routine",
+    const button = harness.container.querySelector(
+      `[aria-label="${CHAT_STRINGS.routinesAction}"]`,
     );
-    expect(button).not.toBeUndefined();
+    expect(button).not.toBeNull();
     act(() => {
-      button?.click();
+      (button as HTMLButtonElement).click();
     });
     await harness.settle();
 
-    expect(opened).toEqual(["ch_1"]);
+    expect(opened).toBe(1);
+    harness.unmount();
+  });
+
+  test("the header's Routines button is hidden when onOpenRoutines is not wired", async () => {
+    stubFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    const button = harness.container.querySelector(
+      `[aria-label="${CHAT_STRINGS.routinesAction}"]`,
+    );
+    expect(button).toBeNull();
     harness.unmount();
   });
 
@@ -1401,24 +1420,23 @@ describe("Channel header polish (CL-6106)", () => {
     harness.unmount();
   });
 
-  test("'New routine' and 'Insights' render as quiet ghost buttons, not outlined controls", async () => {
+  test("the Routines and Insights header buttons render as quiet ghost buttons, not outlined controls", async () => {
     stubFetch();
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       channelId: "ch_1",
-      onCreateRoutineInSpace: () => {},
+      onOpenRoutines: () => {},
       onOpenInsights: () => {},
     });
     await harness.settle();
 
-    const buttons = [...harness.container.querySelectorAll("button")];
-    const newRoutine = buttons.find(
-      (element) => element.textContent?.trim() === "New routine",
+    const routines = harness.container.querySelector(
+      `[aria-label="${CHAT_STRINGS.routinesAction}"]`,
     );
-    const insights = buttons.find(
+    const insights = [...harness.container.querySelectorAll("button")].find(
       (element) => element.textContent?.trim() === "Insights",
     );
-    expect(newRoutine?.className).not.toContain("border-input");
+    expect(routines?.className).not.toContain("border-input");
     expect(insights?.className).not.toContain("border-input");
     harness.unmount();
   });

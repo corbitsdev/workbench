@@ -133,6 +133,7 @@ export {
   pinMessage,
   unpinMessage,
   listPinnedMessages,
+  listChannelAgents,
 } from "./api";
 export type {
   Channel,
@@ -156,6 +157,7 @@ export type {
   ReactionSummary,
   Pinned,
   PinnedMessage,
+  ChannelAgent,
 } from "./api";
 export { ChannelSettingsSurface } from "./channel-settings";
 export {
