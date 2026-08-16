@@ -654,7 +654,6 @@ export function InboxPage({
                 // task's prompt seeds the instruction field directly; the
                 // person can still edit it before the routine is saved.
                 requestNewRoutine({
-                  navigateToRoutines: () => navigate("/routines"),
                   openRoutine,
                   initialName: suggestRoutineNameFromPrompt(task.prompt),
                   initialInstruction: task.prompt,

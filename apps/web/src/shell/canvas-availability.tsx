@@ -37,7 +37,15 @@ export type CanvasArtifactContent = {
  * shared channels from a `ProfileSubject`'s address rather than being
  * handed pre-resolved content. */
 export type RoutinePanelSubject = {
-  readonly routineId: string | null;
+  /** Opens straight to the panel's default list view — the workbench's
+   * active routines, with a "New routine" row at the top — instead of a
+   * specific routine's editor. The header's Routines affordance and the
+   * `/run` composer command both open this; `routineId` is ignored when
+   * present. Omitted (or a `routineId` given instead) opens the editor
+   * directly, the same way every pre-existing caller (routines-page's own
+   * "New routine"/"Edit" actions, "Make this a routine") already does. */
+  readonly view?: "list";
+  readonly routineId?: string | null;
   /** Seeds the Name/Instruction fields the instant a brand-new panel opens
    * (`routineId: null` only) — "Make this a routine" (a completed task
    * result) and similar callers with something worth pre-filling. The
@@ -45,6 +53,15 @@ export type RoutinePanelSubject = {
    * initial draft. */
   readonly initialName?: string;
   readonly initialInstruction?: string;
+  /** The conversation this routine belongs to — its own agent (the
+   * channel's host participant; every workbench's host is Myra) backs the
+   * routine, and its own id is where the routine delivers. Carried through
+   * list mode too, so "New routine" picked from the list still binds to
+   * the channel the panel was opened beside. Omitted only when there is no
+   * open conversation to bind to (e.g. a deliberate `/routines` visit),
+   * in which case the panel falls back to this workbench's own default
+   * (Myra) channel — never mints a new one. */
+  readonly channelId?: string;
 };
 
 /** Workbench's concrete instantiation of `@corbits/shell-layout`'s generic

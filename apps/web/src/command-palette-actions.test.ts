@@ -45,8 +45,8 @@ function context(overrides: {
     closeCanvas: () => {
       canvasClosed = true;
     },
-    openRoutine: (subject: { readonly routineId: string | null }) => {
-      openedRoutines.push(subject.routineId);
+    openRoutine: (subject: { readonly routineId?: string | null }) => {
+      openedRoutines.push(subject.routineId ?? null);
     },
   };
   return {
@@ -109,10 +109,10 @@ describe("runActionCommand", () => {
     expect(consumePendingNewChannel()).toBe(true);
   });
 
-  test("new-routine navigates to /routines and opens the routine panel synchronously — no pending flag", async () => {
+  test("new-routine opens the routine panel synchronously, beside whatever page is showing — no navigation, no pending flag", async () => {
     const { ctx, navigated, openedRoutines } = context({ path: "/library" });
     await runActionCommand("new-routine", ctx);
-    expect(navigated).toEqual(["/routines"]);
+    expect(navigated).toEqual([]);
     expect(openedRoutines).toEqual([null]);
   });
 
@@ -183,22 +183,20 @@ describe("runActionCommand", () => {
   });
 });
 
-// Backs the chat composer's `/run` and the chat header's "Routines" action
-// — a caller with no command-palette `ActionCommandContext` (see
-// chat-page.tsx). Canvas state lives above every route, so this always
-// navigates and opens the panel synchronously — no pending flag, no
-// window event, no mount race to guard against.
+// Backs the `>` command palette's "New routine" and "Make this a routine"
+// (chat-page.tsx, inbox-page.tsx) — a caller with no command-palette
+// `ActionCommandContext`. Canvas state lives above every route, so this
+// opens the panel synchronously, beside whatever page is already showing
+// — no navigation, no pending flag, no window event, no mount race to
+// guard against.
 describe("requestNewRoutine", () => {
-  test("navigates to Routines and opens a fresh routine panel", () => {
-    const navigated: string[] = [];
+  test("opens a fresh routine panel with no navigation", () => {
     const openedRoutines: (string | null)[] = [];
 
     requestNewRoutine({
-      navigateToRoutines: () => navigated.push("/routines"),
-      openRoutine: (subject) => openedRoutines.push(subject.routineId),
+      openRoutine: (subject) => openedRoutines.push(subject.routineId ?? null),
     });
 
-    expect(navigated).toEqual(["/routines"]);
     expect(openedRoutines).toEqual([null]);
   });
 
@@ -210,8 +208,11 @@ describe("requestNewRoutine", () => {
     }[] = [];
 
     requestNewRoutine({
-      navigateToRoutines: () => undefined,
-      openRoutine: (subject) => openedSubjects.push(subject),
+      openRoutine: (subject) =>
+        openedSubjects.push({
+          ...subject,
+          routineId: subject.routineId ?? null,
+        }),
       initialName: "Weekly digest",
       initialInstruction: "Summarize last week's calls",
     });

@@ -432,9 +432,9 @@ describe("inbox top bar", () => {
       button.click();
     });
 
-    // Never auto-creates — clicking only navigates to Routines and opens
-    // the panel, pre-filled and awaiting the person's own save.
-    expect(navigated).toEqual(["/routines"]);
+    // Never auto-creates, never navigates away — opens the panel in
+    // place, pre-filled and awaiting the person's own save.
+    expect(navigated).toEqual([]);
     expect(opened).toEqual([
       {
         routineId: null,

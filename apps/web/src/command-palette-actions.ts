@@ -12,11 +12,14 @@
 // fresh workbench, same as "New workbench". "New thread" is out of scope
 // (killed by owner decision).
 //
-// "New routine" (CL-6125) needs none of that: it opens the canvas column's
-// routine pane, and canvas state lives in `ShellChromeProvider` above every
-// route, not inside a page that has to mount first — so `requestNewRoutine`
-// just calls the caller's own `openRoutine` (from `useOpenRoutineInCanvas`)
-// synchronously, no pending flag, no window event.
+// "New routine" (CL-6125, reworked CL-6139) needs none of that: it opens
+// the canvas column's routine pane, and canvas state lives in
+// `ShellChromeProvider` above every route, not inside a page that has to
+// mount first — so `requestNewRoutine` just calls the caller's own
+// `openRoutine` (from `useOpenRoutineInCanvas`) synchronously, no pending
+// flag, no window event, and — per the CL-6139 owner note — no navigation
+// either: the panel opens beside whatever page is already showing, it
+// never hops to `/routines` first the way this used to.
 
 import { createPendingDialogRequest } from "@corbits/shell-layout";
 import {
@@ -66,22 +69,23 @@ export const consumePendingNewSkill = newSkillRequest.consumePending;
 export const consumePendingNewTask = newTaskRequest.consumePending;
 
 /**
- * Opens the routine panel, navigating to `/routines` first so the list is
- * visible behind the canvas — the same landing spot the old dialog's
- * "New routine" always opened onto. Every "start a routine" affordance in
- * the app (the command palette, the chat header, "Make this a routine")
- * funnels through this one function.
+ * Opens the routine panel's editor view directly on a brand-new routine,
+ * beside whatever page is already showing — never a `/routines` hop. Every
+ * "start a routine" affordance with something to prefill (the `>` command
+ * palette, "Make this a routine") funnels through this one function; the
+ * chat header and `/run` open the panel's list view instead (see
+ * `chat-page.tsx`), since they have nothing to prefill.
  */
 export function requestNewRoutine(args: {
-  readonly navigateToRoutines: () => void;
   readonly openRoutine: (subject: RoutinePanelSubject) => void;
   readonly initialName?: string;
   readonly initialInstruction?: string;
 }): void {
-  args.navigateToRoutines();
   args.openRoutine({
     routineId: null,
-    ...(args.initialName !== undefined ? { initialName: args.initialName } : {}),
+    ...(args.initialName !== undefined
+      ? { initialName: args.initialName }
+      : {}),
     ...(args.initialInstruction !== undefined
       ? { initialInstruction: args.initialInstruction }
       : {}),
@@ -202,10 +206,7 @@ export async function runActionCommand(
       return;
     }
     case "new-routine": {
-      requestNewRoutine({
-        navigateToRoutines: () => ctx.navigate("/routines"),
-        openRoutine: ctx.openRoutine,
-      });
+      requestNewRoutine({ openRoutine: ctx.openRoutine });
       return;
     }
     case "new-skill": {
