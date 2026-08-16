@@ -16,8 +16,8 @@ export function createBunCommandRunner(): CommandRunner {
         stderr: "pipe",
       });
       const [stdout, stderr, exitCode] = await Promise.all([
-        child.stdout.text(),
-        child.stderr.text(),
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
         child.exited,
       ]);
       return { stdout, stderr, exitCode };
