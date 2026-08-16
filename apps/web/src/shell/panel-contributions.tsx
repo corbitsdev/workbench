@@ -403,7 +403,7 @@ export function ChannelsBand({
       <EmptyState
         icon={<Hash />}
         title="No workbench selected"
-        description="Choose a workbench from the switcher to see its spaces and chats."
+        description="Choose a workbench from the switcher to see its chats."
       />
     );
   }
@@ -411,7 +411,7 @@ export function ChannelsBand({
     return (
       <EmptyState
         icon={<Hash />}
-        title="Couldn't load spaces and chats"
+        title="Couldn't load chats"
         description={activity.message}
       />
     );
@@ -434,12 +434,12 @@ export function ChannelsBand({
 
   if (all.length === 0) {
     return (
-      <div className="panel-stack" aria-label="Spaces">
+      <div className="panel-stack" aria-label="Chats">
         {workingGroup}
         <EmptyState
           icon={<MessageSquare />}
-          title="No spaces or chats yet"
-          description="Create a space or start a chat to get going."
+          title="No chats yet"
+          description="Start a chat to get going."
         />
       </div>
     );
@@ -470,7 +470,7 @@ export function ChannelsBand({
   const hasVisibleRows = filtered.length > 0;
 
   return (
-    <div className="panel-stack" aria-label="Spaces">
+    <div className="panel-stack" aria-label="Chats">
       {workingGroup}
       <label className="shell-panel-search">
         <Search aria-hidden="true" />
@@ -478,13 +478,13 @@ export function ChannelsBand({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search…"
-          aria-label="Search spaces and chats"
+          aria-label="Search chats"
         />
       </label>
       {!hasVisibleRows ? (
         <EmptyState
           icon={<MessageSquare />}
-          title="No matching spaces or chats"
+          title="No matching chats"
           description={`Nothing matches “${query.trim()}”.`}
         />
       ) : (

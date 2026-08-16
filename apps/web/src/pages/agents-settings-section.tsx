@@ -325,9 +325,9 @@ function AgentDetailPanel({
             size="sm"
             disabled={tenantId === ""}
             onClick={handleOpenInChannel}
-            aria-label="Open in a space"
+            aria-label="Open in a chat"
           >
-            <Users /> Open in space
+            <Users /> Open in chat
           </Button>
         </div>
         {error !== null && (
@@ -498,7 +498,7 @@ export function AgentsSettingsSection({
         <RichEmptyState
           icon={<Bot />}
           title="No agents yet"
-          description="Create your first agent — a name, a system prompt, and optionally a model — and it appears here, ready to start a chat or invite into a space."
+          description="Create your first agent — a name, a system prompt, and optionally a model — and it appears here, ready to start a chat or invite into one."
           actions={[
             {
               label: "New agent",

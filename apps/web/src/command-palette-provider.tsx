@@ -549,7 +549,7 @@ export function CommandPaletteProvider({
       error={error ? "Search failed. Try again." : undefined}
       hasMore={hasMore}
       onLoadMore={loadMore}
-      placeholder="Search or jump to… (# spaces · @ people · > actions · / pages)"
+      placeholder="Search or jump to… (# chats · @ people · > actions · / pages)"
     />
   );
 }

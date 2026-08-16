@@ -204,7 +204,7 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "go-insights",
     title: "Go to insights",
-    subtitle: "Off the rail · still routable",
+    subtitle: "Not in the nav · still routable",
   },
 ];
 

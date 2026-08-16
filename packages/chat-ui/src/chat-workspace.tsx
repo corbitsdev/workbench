@@ -262,7 +262,7 @@ function useChannelLists(tenantId: string) {
   if (channels.isError) {
     state = {
       kind: "error",
-      message: describeChatError(channels.error, "Couldn't load spaces."),
+      message: describeChatError(channels.error, "Couldn't load chats."),
     };
   } else if (chats.isError) {
     state = {

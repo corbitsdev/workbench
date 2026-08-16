@@ -86,7 +86,7 @@ export function validationIssues(values: FormValues): readonly string[] {
     issues.push("Name is required.");
   } else if (!SKILL_NAME_PATTERN.test(name)) {
     issues.push(
-      "Name must be lowercase letters, digits, and hyphens — no spaces or capitals.",
+      "Name must be lowercase letters, digits, and hyphens — no whitespace or capitals.",
     );
   } else if (name.length > 64) {
     issues.push("Name must be at most 64 characters.");

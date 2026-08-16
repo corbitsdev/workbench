@@ -479,7 +479,7 @@ function DeliveryDestinationPicker({
   const selected = channels.find((c) => c.id === value);
   const label =
     value === NEW_SPACE_DESTINATION || selected === undefined
-      ? "New space for this routine"
+      ? "New chat for this routine"
       : selected.title;
   return (
     <div className="flex flex-col gap-1.5">
@@ -497,7 +497,7 @@ function DeliveryDestinationPicker({
         </MenuTrigger>
         <MenuContent>
           <MenuItem onSelect={() => onChange(NEW_SPACE_DESTINATION)}>
-            New space for this routine
+            New chat for this routine
           </MenuItem>
           {channels.map((channel) => (
             <MenuItem key={channel.id} onSelect={() => onChange(channel.id)}>
@@ -508,7 +508,7 @@ function DeliveryDestinationPicker({
       </Menu>
       {value === NEW_SPACE_DESTINATION ? (
         <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-          Reports land in a new space named after this routine.
+          Reports land in a new chat named after this routine.
         </p>
       ) : null}
     </div>
@@ -2321,7 +2321,7 @@ export function RoutineDetailPage({
                           }
                         >
                           {channels.find((c) => c.id === data.deliveryChannelId)
-                            ?.title ?? "Open space"}
+                            ?.title ?? "Open chat"}
                         </Button>
                       </dd>
                     </>
