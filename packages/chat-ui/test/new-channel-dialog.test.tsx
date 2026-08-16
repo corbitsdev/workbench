@@ -582,3 +582,77 @@ describe("NewChannelDialog Create new agent affordance", () => {
     ).not.toBeNull();
   });
 });
+
+// CL-6087: a host closing this dialog itself (e.g. `ChatWorkspace` setting
+// its own `dialogOpen` to `false` once a create succeeds) only ever
+// flipped the `open` prop — it never runs through this component's own
+// `onOpenChange` wrapper, which is where the picked agent, typed name, and
+// active tab used to get reset. A field left over from a prior session
+// (most visibly the picked agent, since picking one submits immediately —
+// see `handleSelectAgent`'s doc comment) silently carried into the next
+// one that reused the same dialog instance.
+describe("session state resets on any close, not just a self-driven one (CL-6087)", () => {
+  test("a typed name does not survive a host-driven close (open flips to false with no onOpenChange call)", async () => {
+    stubInvitableDefinitions([]);
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "channel",
+    });
+    await settle();
+
+    const nameInput = document.body.querySelector(
+      "input",
+    ) as HTMLInputElement | null;
+    const nameSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      nameSetter?.call(nameInput, "Launch planning");
+      nameInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+    expect(
+      (document.body.querySelector("input") as HTMLInputElement).value,
+    ).toBe("Launch planning");
+
+    // The host drives `open` to `false` directly — never through this
+    // component's own `onOpenChange` prop, exactly the shape
+    // `ChatWorkspaceInner.handleCreateChannel` closes the dialog with.
+    act(() => {
+      root?.render(
+        createElement(NewChannelDialog, {
+          open: false,
+          onOpenChange: () => undefined,
+          onCreate: () => undefined,
+          tenantId: "tnt_1",
+          submitting: false,
+          initialKind: "channel",
+        }),
+      );
+    });
+    await settle();
+
+    act(() => {
+      root?.render(
+        createElement(NewChannelDialog, {
+          open: true,
+          onOpenChange: () => undefined,
+          onCreate: () => undefined,
+          tenantId: "tnt_1",
+          submitting: false,
+          initialKind: "channel",
+        }),
+      );
+    });
+    await settle();
+
+    expect(
+      (document.body.querySelector("input") as HTMLInputElement).value,
+    ).toBe("");
+  });
+});
