@@ -101,7 +101,7 @@ describe("capture + apply round-trip", () => {
       { store },
       {
         tenantId: "tnt_workspace",
-        workbenchTenantId: "wbn_1",
+        targetTenantId: "wbn_1",
         name: "Current setup",
         createdBy: "prn_1",
         fetchImpl: capture.fetchImpl,
@@ -115,7 +115,7 @@ describe("capture + apply round-trip", () => {
       {
         tenantId: "tnt_workspace",
         profileId: profile.id,
-        workbenchTenantId: "wbn_1",
+        targetTenantId: "wbn_1",
         fetchImpl: apply.fetchImpl,
       },
     );
@@ -138,7 +138,7 @@ describe("capture + apply round-trip", () => {
       { store },
       {
         tenantId: "tnt_workspace",
-        workbenchTenantId: "wbn_1",
+        targetTenantId: "wbn_1",
         name: "Current setup",
         description: "captured for a test",
         createdBy: "prn_1",

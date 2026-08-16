@@ -141,7 +141,7 @@ describe("applyProfile", () => {
       {
         tenantId: "tnt_workspace",
         profileId: profile.id,
-        workbenchTenantId: "wbn_1",
+        targetTenantId: "wbn_1",
         fetchImpl,
       },
     );
@@ -154,6 +154,7 @@ describe("applyProfile", () => {
     ]);
     expect(calls[2]?.body).toEqual({ priority: 0, disabled: false });
     expect(calls[3]?.body).toEqual({ priority: 1, disabled: false });
+    expect(result.ok).toBe(true);
     expect(result.results).toEqual([
       {
         provider: "Azure",
@@ -189,13 +190,152 @@ describe("applyProfile", () => {
       {
         tenantId: "tnt_workspace",
         profileId: profile.id,
-        workbenchTenantId: "wbn_1",
+        targetTenantId: "wbn_1",
         fetchImpl,
       },
     );
     expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+    expect(result.ok).toBe(true);
     expect(result.results).toEqual([
       { provider: "Azure", model: "gpt-5", action: "skipped-inherited" },
+    ]);
+  });
+
+  test("a PATCH failing mid-sequence stops further writes and reports success/failure/not-attempted per entry", async () => {
+    const threeModels = [
+      {
+        id: "mdl_1",
+        canonicalName: "gpt-5",
+        offerings: [
+          ...(models[0]?.offerings ?? []),
+          {
+            offeringId: "ofr_google",
+            providerId: "prv_google",
+            providerName: "Google",
+            plugin: "openai-compatible",
+            priority: 2,
+            deploymentTags: [],
+            capabilities: [],
+            pricing: [],
+          },
+        ],
+      },
+    ];
+    const threeOwnOfferings = [
+      ...ownOfferings,
+      {
+        id: "ofr_google",
+        tenantId: "wbn_1",
+        modelId: "mdl_1",
+        providerId: "prv_google",
+        priority: 2,
+        deploymentTags: [],
+        capabilities: [],
+        quirks: null,
+        disabled: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+
+    const store = createInMemoryConfigProfileStore();
+    const profile = await store.createProfile({
+      tenantId: "tnt_workspace",
+      name: "Three deep",
+      entries: [
+        { provider: "Azure", model: "gpt-5" },
+        { provider: "OpenAI", model: "gpt-5" },
+        { provider: "Google", model: "gpt-5" },
+      ],
+      createdBy: "prn_1",
+    });
+
+    const calls: Call[] = [];
+    const fetchImpl = (async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      const body =
+        init?.body !== undefined ? JSON.parse(init.body as string) : undefined;
+      calls.push({ method, url, body });
+      if (method === "GET" && url.endsWith("/models")) {
+        return new Response(JSON.stringify(threeModels), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (method === "GET" && url.endsWith("/catalog/offerings")) {
+        return new Response(
+          JSON.stringify({ data: threeOwnOfferings, nextCursor: null }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (method === "PATCH" && url.endsWith("/ofr_azure")) {
+        return new Response(
+          JSON.stringify({
+            id: "ofr_azure",
+            tenantId: "wbn_1",
+            modelId: "mdl_1",
+            providerId: "prv_azure",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: [],
+            quirks: null,
+            disabled: false,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ error: { code: "boom", message: "db down" } }),
+        { status: 500, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    const result = await applyProfile(
+      { store },
+      {
+        tenantId: "tnt_workspace",
+        profileId: profile.id,
+        targetTenantId: "wbn_1",
+        fetchImpl,
+      },
+    );
+
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      "GET /api/tenants/wbn_1/models",
+      "GET /api/tenants/wbn_1/catalog/offerings",
+      "PATCH /api/tenants/wbn_1/catalog/offerings/ofr_azure",
+      "PATCH /api/tenants/wbn_1/catalog/offerings/ofr_openai",
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.results).toEqual([
+      {
+        provider: "Azure",
+        model: "gpt-5",
+        action: "reordered",
+        offeringId: "ofr_azure",
+        priority: 0,
+        disabled: false,
+      },
+      {
+        provider: "OpenAI",
+        model: "gpt-5",
+        action: "failed",
+        offeringId: "ofr_openai",
+        message: "db down",
+        status: 500,
+      },
+      {
+        provider: "Google",
+        model: "gpt-5",
+        action: "not-attempted",
+        offeringId: "ofr_google",
+      },
     ]);
   });
 
@@ -208,7 +348,7 @@ describe("applyProfile", () => {
         {
           tenantId: "tnt_workspace",
           profileId: "does_not_exist",
-          workbenchTenantId: "wbn_1",
+          targetTenantId: "wbn_1",
           fetchImpl,
         },
       ),

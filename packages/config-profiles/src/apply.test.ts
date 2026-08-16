@@ -62,7 +62,8 @@ describe("planApply", () => {
       }),
     ];
     // Profile lists Anthropic first even though it currently resolves
-    // second — the profile's order wins.
+    // second — the profile's order wins. Different models, so each gets
+    // its own priority-0 slot.
     const plan = planApply(
       [
         { provider: "Anthropic", model: "claude" },
@@ -72,10 +73,73 @@ describe("planApply", () => {
     );
     expect(
       plan.map((step) => (step.action === "reordered" ? step.priority : -1)),
-    ).toEqual([0, 1]);
+    ).toEqual([0, 0]);
     expect(
       plan.map((step) => (step.action === "reordered" ? step.offeringId : "")),
     ).toEqual(["ofr_2", "ofr_1"]);
+  });
+
+  test("priorities are assigned per model, sequentially within each model's own entries", () => {
+    const rows = [
+      row({
+        offeringId: "ofr_gpt_openai",
+        canonicalName: "gpt-5",
+        providerName: "OpenAI",
+      }),
+      row({
+        offeringId: "ofr_gpt_azure",
+        canonicalName: "gpt-5",
+        providerName: "Azure",
+      }),
+      row({
+        offeringId: "ofr_claude_anthropic",
+        canonicalName: "claude",
+        providerName: "Anthropic",
+      }),
+      // An offering this workbench already has set-here on gpt-5's model
+      // that the profile never mentions at all — it must never absorb a
+      // priority slot the profile's own gpt-5 entries are counting on.
+      row({
+        offeringId: "ofr_gpt_untouched",
+        canonicalName: "gpt-5",
+        providerName: "Cohere",
+        priority: 99,
+      }),
+    ];
+    const plan = planApply(
+      [
+        { provider: "Azure", model: "gpt-5" },
+        { provider: "Anthropic", model: "claude" },
+        { provider: "OpenAI", model: "gpt-5" },
+      ],
+      rows,
+    );
+    expect(plan).toEqual([
+      {
+        provider: "Azure",
+        model: "gpt-5",
+        action: "reordered",
+        offeringId: "ofr_gpt_azure",
+        priority: 0,
+        disabled: false,
+      },
+      {
+        provider: "Anthropic",
+        model: "claude",
+        action: "reordered",
+        offeringId: "ofr_claude_anthropic",
+        priority: 0,
+        disabled: false,
+      },
+      {
+        provider: "OpenAI",
+        model: "gpt-5",
+        action: "reordered",
+        offeringId: "ofr_gpt_openai",
+        priority: 1,
+        disabled: false,
+      },
+    ]);
   });
 
   test("an entry's own disabled flag carries into the plan; omitted defaults to false", () => {

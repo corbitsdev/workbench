@@ -35,7 +35,7 @@ function mount(): { container: HTMLDivElement; root: Root } {
 }
 
 describe("ApplyProfilePanel", () => {
-  test("lists profiles, shows a preview for the selection, and applies on click", async () => {
+  test("lists profiles, shows a per-entry preview for the selection, and applies on click", async () => {
     const calls: { method: string; url: string }[] = [];
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       calls.push({ method: init?.method ?? "GET", url });
@@ -55,10 +55,31 @@ describe("ApplyProfilePanel", () => {
           ],
         });
       }
+      if (url === "/api/tenants/tnt_1/config-profiles/cfp_1/plan") {
+        return json(200, {
+          profileId: "cfp_1",
+          profileName: "Fast & cheap",
+          results: [
+            {
+              provider: "OpenAI",
+              model: "gpt-5",
+              action: "reordered",
+              offeringId: "ofr_1",
+              priority: 0,
+            },
+            {
+              provider: "Anthropic",
+              model: "claude",
+              action: "skipped-inherited",
+            },
+          ],
+        });
+      }
       if (url === "/api/tenants/tnt_1/config-profiles/apply") {
         return json(200, {
           profileId: "cfp_1",
           profileName: "Fast & cheap",
+          ok: true,
           results: [
             {
               provider: "OpenAI",
@@ -91,7 +112,13 @@ describe("ApplyProfilePanel", () => {
         select?.dispatchEvent(new Event("change", { bubbles: true }));
       });
       await settle();
-      expect(container.textContent).toContain("2 providers");
+      expect(calls.some((c) => c.url.endsWith("/cfp_1/plan"))).toBe(true);
+      expect(container.textContent).toContain(
+        "gpt-5 via OpenAI — will be first",
+      );
+      expect(container.textContent).toContain(
+        "claude via Anthropic — needs a key here first",
+      );
 
       const applyButton = [...container.querySelectorAll("button")].find(
         (b) => b.textContent === "Apply",
@@ -103,7 +130,12 @@ describe("ApplyProfilePanel", () => {
       await settle();
 
       expect(calls.some((c) => c.url.endsWith("/apply"))).toBe(true);
-      expect(container.textContent).toContain("1 set");
+      expect(container.textContent).toContain(
+        "gpt-5 via OpenAI — is now first",
+      );
+      expect(container.textContent).toContain(
+        "claude via Anthropic — skipped, needs a key here first",
+      );
     } finally {
       act(() => root.unmount());
       container.remove();
