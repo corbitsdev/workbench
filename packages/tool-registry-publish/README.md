@@ -57,3 +57,12 @@ for how a pin resolves through it).
   package's.
 - Any workflow definition or `DEFAULT_WORKFLOWS` — this package knows
   which tool packages to publish, never which workflows pin them.
+
+## Running tests
+
+```sh
+cd packages/tool-registry-publish && bun test
+```
+
+Tests exercise `packToolPackageTarball` against real package directories
+under `packages/*-tools`; no `DATABASE_URL` is required.

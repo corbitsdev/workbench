@@ -25,3 +25,12 @@ a `ToolResult` with `isError: true` naming the failure. None of the three
 tools degrades to an empty list or an invented body. An agent told "no
 skills" behaves very differently from one told "the registry is
 unreachable," and only the second is honest.
+
+## Running tests
+
+```sh
+cd packages/tools-skills && bun test
+```
+
+Tests run against a mocked `FetchLike`; no `DATABASE_URL` or live hub is
+required.

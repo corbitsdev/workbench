@@ -69,3 +69,12 @@ const agent = defineAgent({
   tools: [capabilityTools],
 });
 ```
+
+## Running tests
+
+```sh
+cd packages/capability-tools && bun test
+```
+
+Tests run against a mocked fetch/`WorkflowCapabilityEnv`; no `DATABASE_URL`
+or live hub is required.

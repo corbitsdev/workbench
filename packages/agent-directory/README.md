@@ -51,3 +51,12 @@ rather than something a host injects.
 
 **Never imports:** no `apps/web`-specific state, no UI framework — this
 subpath is plain TypeScript, safe in any browser bundle or server context.
+
+## Running tests
+
+```sh
+cd packages/agent-directory && bun test
+```
+
+Tests run against fake definition/instance rows; no `DATABASE_URL` is
+required.

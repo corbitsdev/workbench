@@ -84,3 +84,12 @@ reason) => Promise<void>` (the host's own termination primitive — e.g.
 - Nothing host-specific: no `@corbits/chat`, no `@corbits/tasks`, no
   `apps/*`. Every side effect that touches a real host arrives as an
   injected port.
+
+## Running tests
+
+```sh
+cd packages/folded-runs && bun test
+```
+
+Tests run against injected fakes for `FoldedRunsDeps`; no `DATABASE_URL`
+is required.
