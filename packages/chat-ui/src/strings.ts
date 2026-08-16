@@ -74,6 +74,7 @@ export const CHAT_STRINGS = {
   composerPlaceholderChat: (name: string) => `Message ${name}… / for commands`,
   composerSend: "Send",
   composerSending: "Sending…",
+  composerKeyboardHint: "Enter to send",
   composerAttach: "Attach files",
   composerAttachmentsLabel: "Selected attachments",
   composerRemoveAttachment: (name: string) => `Remove ${name}`,
