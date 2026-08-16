@@ -1,11 +1,9 @@
-// DOM coverage for the guided first-workbench describe screen (CL-6104,
-// step three of onboarding's four): a brand-new bench with zero
-// workbenches lands here (see `home-page.test.tsx` for the routing side
-// of that), describes what it wants in one field, and submitting drives
-// the same drafting machinery `CreateAgentPanel` uses
-// (`draftAgentDefinition` → `createAgentDefinition` → `launchAgentChat`).
-// A failure at any step in that chain shows the real reason inline with
-// a retry, never a dead spinner.
+// DOM coverage for the guided first-workbench screen (CL-6104, step three
+// of onboarding's four; CL-6124 replaced its custom form with a chat: one
+// prompt box, sending drives the same drafting machinery `CreateAgentPanel`
+// uses (`draftAgentDefinition` → `createAgentDefinition` → `launchAgentChat`).
+// A failure at any step in that chain shows the real reason inline with the
+// message preserved for a straight retry, never a dead spinner.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -104,6 +102,12 @@ async function mount(navigate: (to: string) => void = () => {}) {
   return container;
 }
 
+function composerInput(c: HTMLDivElement): HTMLTextAreaElement {
+  const el = c.querySelector(".first-run-composer-input");
+  expect(el).not.toBeNull();
+  return el as HTMLTextAreaElement;
+}
+
 function nativeValueSetter(): (
   this: HTMLTextAreaElement,
   value: string,
@@ -118,25 +122,21 @@ function nativeValueSetter(): (
   return setter;
 }
 
-function fillDescription(value: string) {
-  const el = document.getElementById(
-    "describe-first-workbench-input",
-  ) as HTMLTextAreaElement | null;
-  expect(el).not.toBeNull();
-  if (el === null) return;
+function typeMessage(c: HTMLDivElement, value: string) {
+  const el = composerInput(c);
   act(() => {
     nativeValueSetter().call(el, value);
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
 
-function submitForm() {
-  const form = document.querySelector("form");
-  expect(form).not.toBeNull();
+function clickSend(c: HTMLDivElement) {
+  const button = [...c.querySelectorAll("button")].find(
+    (candidate) => candidate.getAttribute("aria-label") === "Send",
+  );
+  expect(button).not.toBeUndefined();
   act(() => {
-    form?.dispatchEvent(
-      new Event("submit", { bubbles: true, cancelable: true }),
-    );
+    button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 }
 
@@ -147,17 +147,29 @@ async function settle() {
 }
 
 describe("DescribeFirstWorkbench", () => {
-  test("renders one field and one primary action, nothing else", async () => {
+  test("renders one prompt box — no heading, no label, no separate form", async () => {
     const c = await mount();
-    expect(c.querySelector("#describe-first-workbench-input")).not.toBeNull();
-    const submit = [...c.querySelectorAll("button")].find(
-      (button) => button.textContent === "Create my workbench",
+    expect(c.querySelector(".first-run-composer-input")).not.toBeNull();
+    expect(c.querySelector("form")).toBeNull();
+    expect(c.querySelector("h1")).toBeNull();
+    expect(c.querySelector("label")).toBeNull();
+    const input = composerInput(c);
+    expect(input.hasAttribute("required")).toBe(false);
+    const send = [...c.querySelectorAll("button")].find(
+      (button) => button.getAttribute("aria-label") === "Send",
     );
-    expect(submit).not.toBeUndefined();
-    expect(submit?.disabled).toBe(true);
+    expect(send?.disabled).toBe(true);
   });
 
-  test("submitting a description drafts, deploys, and navigates into the fresh conversation", async () => {
+  test("an empty send is a no-op — nothing fires, nothing changes", async () => {
+    const c = await mount();
+    clickSend(c);
+    await settle();
+    expect(c.textContent).not.toContain("Creating your workbench");
+    expect(c.querySelector(".chat-composer-error")).toBeNull();
+  });
+
+  test("sending a message drafts, deploys, and navigates into the fresh conversation", async () => {
     let draftBody: Record<string, unknown> | undefined;
     let createBody: Record<string, unknown> | undefined;
     stubFetch({
@@ -180,8 +192,8 @@ describe("DescribeFirstWorkbench", () => {
 
     const navigated: string[] = [];
     const c = await mount((to) => navigated.push(to));
-    fillDescription("A weekly digest of competitor moves");
-    submitForm();
+    typeMessage(c, "A weekly digest of competitor moves");
+    clickSend(c);
     await settle();
     await settle();
 
@@ -190,10 +202,9 @@ describe("DescribeFirstWorkbench", () => {
       "You track competitor moves and report back.",
     );
     expect(navigated).toEqual(["/c/chan_new"]);
-    void c;
   });
 
-  test("a drafting failure shows the real reason inline, with the field still usable to retry", async () => {
+  test("a drafting failure shows the real reason inline, message preserved for retry", async () => {
     stubFetch({
       draft: () =>
         json(
@@ -208,18 +219,18 @@ describe("DescribeFirstWorkbench", () => {
     });
 
     const c = await mount();
-    fillDescription("A weekly digest of competitor moves");
-    submitForm();
+    typeMessage(c, "A weekly digest of competitor moves");
+    clickSend(c);
     await settle();
     await settle();
 
-    expect(c.textContent).toContain("Couldn't create your workbench");
     expect(c.textContent).toContain("Myra is unavailable right now.");
-    // Never a dead end — the field and action are both still there.
-    const submit = [...c.querySelectorAll("button")].find(
-      (button) => button.textContent === "Create my workbench",
+    // Never a dead end — the message survives for a straight retry.
+    expect(composerInput(c).value).toBe("A weekly digest of competitor moves");
+    const send = [...c.querySelectorAll("button")].find(
+      (button) => button.getAttribute("aria-label") === "Send",
     );
-    expect(submit?.disabled).toBe(false);
+    expect(send?.disabled).toBe(false);
   });
 
   test("a mint failure after a successful draft also shows inline, never a dead spinner", async () => {
@@ -232,11 +243,12 @@ describe("DescribeFirstWorkbench", () => {
     });
 
     const c = await mount();
-    fillDescription("A weekly digest of competitor moves");
-    submitForm();
+    typeMessage(c, "A weekly digest of competitor moves");
+    clickSend(c);
     await settle();
     await settle();
 
     expect(c.textContent).toContain("That handle is taken.");
+    expect(composerInput(c).value).toBe("A weekly digest of competitor moves");
   });
 });

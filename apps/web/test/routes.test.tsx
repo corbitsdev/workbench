@@ -127,9 +127,11 @@ describe("routes render", () => {
       const markup = renderApp(route.path);
       // The one sidebar mounts on every route.
       expect(markup).toContain('data-testid="shell-sidebar"');
-      // Myra land (`/`) titles its stage Myra.
+      // Myra land (`/`) titles its stage honestly for the screen it
+      // actually shows first — the first-run prompt, not Myra herself
+      // (CL-6124).
       if (route.path === "/") {
-        expect(stagePageTitle(markup)).toBe("Myra");
+        expect(stagePageTitle(markup)).toBe("New Workbench");
         return;
       }
       // The conversation route titles itself via its own conversation

@@ -180,6 +180,38 @@ describe("Sidebar", () => {
     container.remove();
   });
 
+  // CL-6124: a bench with zero workbenches lands on the first-run chat
+  // (`/`), and the sidebar names it as a single active row — never the
+  // icon "No workbenches yet" empty state, since the create-a-workbench
+  // surface IS this screen now.
+  test("zero workbenches: a single New Workbench row, styled active, not an icon empty state", async () => {
+    stubFetch();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <BenchProvider>
+            <Sidebar path="/" user={user} onNavigate={noop} onSignOut={noop} />
+          </BenchProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 40; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (container.innerHTML.includes("shell-ch-row")) break;
+    }
+    const row = container.querySelector('.shell-ch-row[data-active="true"]');
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain("New Workbench");
+    expect(container.innerHTML).not.toContain("No workbenches yet");
+    act(() => root.unmount());
+    container.remove();
+  });
+
   // CL-6105: the footer avatar used to be a plain link straight to
   // settings — there was no way to sign out short of the hidden
   // right-click context menu. It is now a real menu (react-ui's `Menu`
