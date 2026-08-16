@@ -13,7 +13,7 @@ import {
   SidebarPanelFooter,
   SidebarPanelHeader,
 } from "@corbits/react-ui";
-import { ChartColumn, Plus, Search, Settings } from "lucide-react";
+import { ChartColumn, Plug, Plus, Search, Settings } from "lucide-react";
 
 import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
 import { useAPIQuery } from "../api";
@@ -148,6 +148,13 @@ export function Sidebar({
       <SidebarPanelFooter>
         <BenchDock />
         <div className="shell-sidebar-utils">
+          <FooterIconButton
+            label="Plugins"
+            active={matchesRoute("/plugins", path)}
+            onClick={() => onNavigate("/plugins")}
+          >
+            <Plug />
+          </FooterIconButton>
           <FooterIconButton
             label="Insights"
             active={matchesRoute("/insights", path)}
