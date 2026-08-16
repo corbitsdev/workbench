@@ -10,6 +10,7 @@
 @import "@corbits/bench-ui/styles.css";
 @import "@corbits/settings-ui/styles.css";
 @import "@corbits/tasks-ui/styles.css";
+@import "@corbits/plugins-ui/styles.css";
 
 /* Mock chrome: 15px root so rem-based density matches the interactive mock. */
 html {
