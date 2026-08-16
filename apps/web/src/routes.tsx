@@ -9,6 +9,7 @@
 // so old links and bookmarks still land somewhere real.
 
 import {
+  Blocks,
   ChartColumn,
   Inbox,
   Library,
@@ -30,6 +31,7 @@ import {
   LegacyAgentsRedirect,
   LegacySkillsRedirect,
 } from "./pages/legacy-settings-redirects";
+import { PluginsRoute } from "./pages/plugins-page";
 import { RoutinesRoute } from "./pages/routines-page";
 import { SettingsRoute } from "./pages/settings-page";
 
@@ -159,6 +161,18 @@ export const APP_ROUTES: readonly AppRoute[] = [
     label: "Insights",
     icon: <ChartColumn />,
     render: (path: string) => <InsightsRoute path={path} />,
+  },
+  {
+    // Route entry only — CL-6090 builds the page; the footer link into it
+    // is CL-6088's (the single-column shell rework), so this is
+    // deliberately absent from RAIL_PRIMARY_PATHS / RAIL_UTILITY_PATHS /
+    // NAV_ROUTES below.
+    path: "/plugins",
+    label: "Plugins",
+    icon: <Blocks />,
+    render: (path: string, navigate: (to: string) => void) => (
+      <PluginsRoute path={path} navigate={navigate} />
+    ),
   },
   {
     path: SETTINGS_PATH,
