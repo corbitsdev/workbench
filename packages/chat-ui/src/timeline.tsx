@@ -10,9 +10,25 @@
 // "Member" label with an initials avatar — never the address.
 
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { EmptyState } from "@corbits/react-ui";
-import { MessageSquare, Pin, PinOff, SmilePlus } from "lucide-react";
+import {
+  ContextMenuView,
+  contextMenuItem,
+  isContextMenuEmpty,
+  useContextMenuState,
+} from "@corbits/context-menu";
+import type { ContextMenu, ContextMenuEntry } from "@corbits/context-menu";
+import { EmptyState, toast } from "@corbits/react-ui";
+import {
+  Copy,
+  MessageSquare,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  Reply,
+  SmilePlus,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 
 import type {
   MessageItem,
@@ -412,14 +428,13 @@ function DayDivider({ createdAt }: { createdAt: string }) {
 }
 
 /**
- * The reaction chip row: every emoji with at least one reactor renders
- * as a chip (count + reacted-state), plus a trailing "add reaction"
- * trigger that reveals the curated emoji picker. Renders nothing at
- * all when `reactionActions` is undefined — no chips, no trigger — so
- * a host that never wires reactions sees this timeline exactly as it
- * looked before the feature existed.
+ * The reaction chip row: every emoji with at least one reactor renders as a
+ * chip (count + reacted-state). Renders nothing when there are no reactions
+ * — the "add a reaction" affordance itself lives in `MessageHoverToolbar`
+ * now, not here, so a message with zero reactions shows no chip row at all
+ * until hovered.
  */
-function ReactionChipsRow({
+function ReactionChips({
   messageId,
   reactions,
   reactionActions,
@@ -428,13 +443,7 @@ function ReactionChipsRow({
   readonly reactions: readonly ReactionSummary[];
   readonly reactionActions: ReactionActions;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  function toggle(emoji: string) {
-    reactionActions.onToggle(messageId, emoji);
-    setPickerOpen(false);
-  }
-
+  if (reactions.length === 0) return null;
   return (
     <div className="chat-reaction-row">
       {reactions.map((reaction) => (
@@ -448,46 +457,212 @@ function ReactionChipsRow({
             reaction.emoji,
             reaction.count,
           )}
-          onClick={() => toggle(reaction.emoji)}
+          onClick={() => reactionActions.onToggle(messageId, reaction.emoji)}
         >
           <span aria-hidden="true">{reaction.emoji}</span>
           <span className="chat-reaction-chip-count">{reaction.count}</span>
         </button>
       ))}
-      <span className="chat-reaction-picker-anchor">
+    </div>
+  );
+}
+
+async function copyMessageText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(CHAT_STRINGS.copyTextCopiedToast);
+  } catch {
+    toast(CHAT_STRINGS.copyTextError);
+  }
+}
+
+function messageText(item: MessageItem): string {
+  return item.parts
+    .filter((part): part is Part & { kind: "text" } => part.kind === "text")
+    .map((part) => part.text)
+    .join("\n");
+}
+
+/**
+ * The ellipsis/right-click menu for a message: everything that used to be
+ * a persistent inline affordance (reply-in-thread) plus copy and pin, all
+ * in one place so the two triggers (the hover toolbar's ellipsis button and
+ * a right-click anywhere on the message) always offer the same actions.
+ */
+function buildMessageMenu({
+  item,
+  threadAffordanceMode,
+  onOpenThread,
+  pinActions,
+}: {
+  readonly item: MessageItem;
+  readonly threadAffordanceMode: ThreadAffordanceMode;
+  readonly onOpenThread: ((messageId: string) => void) | undefined;
+  readonly pinActions: PinActions | undefined;
+}): ContextMenu {
+  const entries: ContextMenuEntry[] = [];
+
+  if (onOpenThread !== undefined) {
+    entries.push(
+      contextMenuItem({
+        id: "reply-in-thread",
+        label:
+          threadAffordanceMode === "fork"
+            ? CHAT_STRINGS.forkThreadAction
+            : CHAT_STRINGS.replyInThreadAction,
+        icon: <Reply aria-hidden="true" />,
+        onSelect: () => onOpenThread(item.id),
+      }),
+    );
+  }
+
+  const text = messageText(item);
+  if (text.length > 0) {
+    entries.push(
+      contextMenuItem({
+        id: "copy-text",
+        label: CHAT_STRINGS.copyTextAction,
+        icon: <Copy aria-hidden="true" />,
+        onSelect: () => {
+          void copyMessageText(text);
+        },
+      }),
+    );
+  }
+
+  if (pinActions !== undefined) {
+    const pinned = item.pinned ?? false;
+    entries.push(
+      contextMenuItem({
+        id: "toggle-pin",
+        label: pinned
+          ? CHAT_STRINGS.unpinMessageAction
+          : CHAT_STRINGS.pinMessageAction,
+        icon: pinned ? (
+          <PinOff aria-hidden="true" />
+        ) : (
+          <Pin aria-hidden="true" />
+        ),
+        onSelect: () =>
+          pinned ? pinActions.onUnpin(item.id) : pinActions.onPin(item.id),
+      }),
+    );
+  }
+
+  return { entries };
+}
+
+/**
+ * The compact trailing-edge action cluster a message reveals on hover or
+ * keyboard focus-within — add-reaction, reply-in-thread, and the ellipsis
+ * menu (see `buildMessageMenu`). Nothing here renders permanently; a quiet
+ * conversation shows plain text until a reader hovers a line, matching the
+ * reference pattern this replaces (a persistent inline "Reply in thread"
+ * link under every message).
+ */
+function MessageHoverToolbar({
+  messageId,
+  menu,
+  menuOpen,
+  onOpenMenu,
+  threadAffordanceMode,
+  onOpenThread,
+  reactionActions,
+}: {
+  readonly messageId: string;
+  readonly menu: ContextMenu;
+  readonly menuOpen: boolean;
+  readonly onOpenMenu: (x: number, y: number, origin: Element) => void;
+  readonly threadAffordanceMode: ThreadAffordanceMode;
+  readonly onOpenThread?: (messageId: string) => void;
+  readonly reactionActions?: ReactionActions;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  function toggleReaction(emoji: string) {
+    reactionActions?.onToggle(messageId, emoji);
+    setPickerOpen(false);
+  }
+
+  const menuHasEntries = !isContextMenuEmpty(menu);
+  if (
+    reactionActions === undefined &&
+    onOpenThread === undefined &&
+    !menuHasEntries
+  ) {
+    return null;
+  }
+
+  return (
+    <div
+      className="chat-hover-toolbar"
+      data-thread-affordance-mode={threadAffordanceMode}
+      data-open={pickerOpen || menuOpen}
+    >
+      {reactionActions !== undefined ? (
+        <span className="chat-reaction-picker-anchor">
+          <button
+            type="button"
+            className="chat-reaction-add"
+            aria-label={CHAT_STRINGS.reactionAddAction}
+            aria-expanded={pickerOpen}
+            onClick={() => setPickerOpen((open) => !open)}
+          >
+            <SmilePlus aria-hidden="true" />
+          </button>
+          {pickerOpen ? (
+            <span
+              className="chat-reaction-picker"
+              role="menu"
+              aria-label={CHAT_STRINGS.reactionPickerLabel}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setPickerOpen(false);
+              }}
+            >
+              {REACTION_EMOJI.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  role="menuitem"
+                  className="chat-reaction-picker-option"
+                  aria-label={CHAT_STRINGS.reactionPickerOptionLabel(emoji)}
+                  onClick={() => toggleReaction(emoji)}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+      {onOpenThread !== undefined ? (
         <button
           type="button"
-          className="chat-reaction-add"
-          aria-label={CHAT_STRINGS.reactionAddAction}
-          aria-expanded={pickerOpen}
-          onClick={() => setPickerOpen((open) => !open)}
+          className="chat-hover-reply"
+          aria-label={
+            threadAffordanceMode === "fork"
+              ? CHAT_STRINGS.forkThreadAction
+              : CHAT_STRINGS.replyInThreadAction
+          }
+          onClick={() => onOpenThread(messageId)}
         >
-          <SmilePlus aria-hidden="true" />
+          <Reply aria-hidden="true" />
         </button>
-        {pickerOpen ? (
-          <span
-            className="chat-reaction-picker"
-            role="menu"
-            aria-label={CHAT_STRINGS.reactionPickerLabel}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setPickerOpen(false);
-            }}
-          >
-            {REACTION_EMOJI.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                role="menuitem"
-                className="chat-reaction-picker-option"
-                aria-label={CHAT_STRINGS.reactionPickerOptionLabel(emoji)}
-                onClick={() => toggle(emoji)}
-              >
-                {emoji}
-              </button>
-            ))}
-          </span>
-        ) : null}
-      </span>
+      ) : null}
+      {menuHasEntries ? (
+        <button
+          type="button"
+          className="chat-hover-ellipsis"
+          aria-label={CHAT_STRINGS.messageActionsMenuLabel}
+          aria-expanded={menuOpen}
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            onOpenMenu(rect.left, rect.bottom, event.currentTarget);
+          }}
+        >
+          <MoreHorizontal aria-hidden="true" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -552,8 +727,27 @@ function MessageParts({
   readonly reactionActions?: ReactionActions;
   readonly pinActions?: PinActions;
 }) {
+  const contextMenu = useContextMenuState();
+  const menu = buildMessageMenu({
+    item,
+    threadAffordanceMode,
+    onOpenThread,
+    pinActions,
+  });
+  const replyCount = threadMeta?.replyCount ?? 0;
+
+  function handleContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
+    if (isContextMenuEmpty(menu)) return;
+    event.preventDefault();
+    contextMenu.show(event.clientX, event.clientY, menu, event.currentTarget);
+  }
+
   return (
-    <div className="chat-message-group" id={messageDomId(item.id)}>
+    <div
+      className="chat-message-group"
+      id={messageDomId(item.id)}
+      onContextMenu={handleContextMenu}
+    >
       {showDayDivider && <DayDivider createdAt={item.createdAt} />}
       {item.parts.map((part, index) => {
         const key = `${item.id}-${index}`;
@@ -605,10 +799,11 @@ function MessageParts({
         }
         return <FallbackPart key={key} part={part} />;
       })}
-      {reactionActions !== undefined || pinActions !== undefined ? (
+      {(reactionActions !== undefined && (item.reactions?.length ?? 0) > 0) ||
+      pinActions !== undefined ? (
         <div className="chat-message-actions">
           {reactionActions !== undefined ? (
-            <ReactionChipsRow
+            <ReactionChips
               messageId={item.id}
               reactions={item.reactions ?? []}
               reactionActions={reactionActions}
@@ -623,7 +818,7 @@ function MessageParts({
           ) : null}
         </div>
       ) : null}
-      {onOpenThread !== undefined ? (
+      {onOpenThread !== undefined && replyCount > 0 ? (
         <ThreadAffordance
           messageId={item.id}
           meta={threadMeta}
@@ -632,6 +827,25 @@ function MessageParts({
           onOpen={() => onOpenThread(item.id)}
         />
       ) : null}
+      <MessageHoverToolbar
+        messageId={item.id}
+        menu={menu}
+        menuOpen={contextMenu.open}
+        onOpenMenu={(x, y, origin) => contextMenu.show(x, y, menu, origin)}
+        threadAffordanceMode={threadAffordanceMode}
+        {...(onOpenThread !== undefined ? { onOpenThread } : {})}
+        {...(reactionActions !== undefined ? { reactionActions } : {})}
+      />
+      <ContextMenuView
+        x={contextMenu.x}
+        y={contextMenu.y}
+        menu={contextMenu.menu}
+        open={contextMenu.open}
+        restoreFocusTo={contextMenu.triggerElement}
+        onOpenChange={(next) => {
+          if (!next) contextMenu.hide();
+        }}
+      />
     </div>
   );
 }
