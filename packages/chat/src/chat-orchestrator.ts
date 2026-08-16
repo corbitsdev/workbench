@@ -535,9 +535,7 @@ async function postProviderHealthSignal(
  * event-collector registry's once-per-turn finalize callback) and the
  * host wires them separately.
  */
-export function createArtifactDeliveryHandler(
-  deps: ChatOrchestratorDeps,
-): (
+export function createArtifactDeliveryHandler(deps: ChatOrchestratorDeps): (
   agentAddress: string,
   turn: {
     turnId: string;

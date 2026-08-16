@@ -1091,7 +1091,8 @@ export async function createHub(config: HubConfig) {
       // reports exactly what a Connect click would decide.
       oauthEnv: { huggingfaceClientId: config.huggingfaceOAuthClientId },
       providerHealth: providerHealthStore,
-      listConnectedProviders: (tenantId) => listConnectedProviders(db, tenantId),
+      listConnectedProviders: (tenantId) =>
+        listConnectedProviders(db, tenantId),
     }),
   );
   // Notify-to-reconnect for an OAuth-connected credential whose token

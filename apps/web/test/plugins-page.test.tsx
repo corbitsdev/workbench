@@ -212,8 +212,9 @@ describe("PluginsRoute", () => {
     // in this app queries `document`, not the render root, once open.
     expect(document.querySelector('[role="dialog"]')).toBeNull();
 
-    const probeButton =
-      el.querySelector<HTMLButtonElement>('[data-testid="probe-request-connect"]');
+    const probeButton = el.querySelector<HTMLButtonElement>(
+      '[data-testid="probe-request-connect"]',
+    );
     await act(async () => {
       probeButton?.click();
     });
@@ -237,8 +238,9 @@ describe("PluginsRoute", () => {
 
     expect(document.querySelector('[role="dialog"]')).toBeNull();
 
-    const probeButton =
-      el.querySelector<HTMLButtonElement>('[data-testid="probe-request-connect"]');
+    const probeButton = el.querySelector<HTMLButtonElement>(
+      '[data-testid="probe-request-connect"]',
+    );
     await act(async () => {
       probeButton?.click();
     });

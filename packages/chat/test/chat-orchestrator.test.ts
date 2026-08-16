@@ -920,9 +920,7 @@ describe("createArtifactDeliveryHandler", () => {
 describe("createArtifactDeliveryHandler provider health signal (CL-6092)", () => {
   function baseDeps(overrides?: {
     providerHealth?: { reportInferenceFailure: (args: unknown) => void };
-    listConnectedProviders?: (
-      tenantId: string,
-    ) => Promise<readonly string[]>;
+    listConnectedProviders?: (tenantId: string) => Promise<readonly string[]>;
   }) {
     return {
       approvals: { findByCorrelationId: async () => null },

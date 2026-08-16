@@ -124,7 +124,9 @@ function buildApp(
       typeof createConnectionRoutes
     >[0]["ensureCredentialFn"];
     oauthEnv?: Readonly<Record<string, string | undefined>>;
-    providerHealth?: Parameters<typeof createConnectionRoutes>[0]["providerHealth"];
+    providerHealth?: Parameters<
+      typeof createConnectionRoutes
+    >[0]["providerHealth"];
     listConnectedProviders?: Parameters<
       typeof createConnectionRoutes
     >[0]["listConnectedProviders"];
@@ -372,7 +374,11 @@ describe("POST /:connectorId/complete", () => {
 
   test("a passing probe clears any needs_attention record for that connector", async () => {
     const providerHealth = createProviderHealthStore();
-    providerHealth.report(TENANT.id, "accepting-connector", "credential_failure");
+    providerHealth.report(
+      TENANT.id,
+      "accepting-connector",
+      "credential_failure",
+    );
     const app = buildApp({
       providerHealth,
       ensureProviderFn: async () => "prv_1",
@@ -383,7 +389,9 @@ describe("POST /:connectorId/complete", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiKey: "good-key" }),
     });
-    expect(providerHealth.get(TENANT.id, "accepting-connector")).toBeUndefined();
+    expect(
+      providerHealth.get(TENANT.id, "accepting-connector"),
+    ).toBeUndefined();
   });
 
   // CL-6092: a storage failure after a passing probe must never clear a
@@ -391,7 +399,11 @@ describe("POST /:connectorId/complete", () => {
   // durable, so the record should survive for the next attempt to see.
   test("a storage failure after a passing probe leaves a prior needs_attention record standing", async () => {
     const providerHealth = createProviderHealthStore();
-    providerHealth.report(TENANT.id, "accepting-connector", "credential_failure");
+    providerHealth.report(
+      TENANT.id,
+      "accepting-connector",
+      "credential_failure",
+    );
     const app = buildApp({
       providerHealth,
       ensureProviderFn: async () => {
@@ -404,9 +416,9 @@ describe("POST /:connectorId/complete", () => {
       body: JSON.stringify({ apiKey: "good-key" }),
     });
     expect(response.status).toBe(500);
-    expect(
-      providerHealth.get(TENANT.id, "accepting-connector")?.status,
-    ).toBe("needs_attention");
+    expect(providerHealth.get(TENANT.id, "accepting-connector")?.status).toBe(
+      "needs_attention",
+    );
   });
 });
 
@@ -426,14 +438,20 @@ describe("POST /:connectorId/credential/test provider health wiring", () => {
 
   test("a passing probe clears any needs_attention record for that connector", async () => {
     const providerHealth = createProviderHealthStore();
-    providerHealth.report(TENANT.id, "accepting-connector", "credential_failure");
+    providerHealth.report(
+      TENANT.id,
+      "accepting-connector",
+      "credential_failure",
+    );
     const app = buildApp({ providerHealth });
     await app.request("/accepting-connector/credential/test", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ apiKey: "good-key" }),
     });
-    expect(providerHealth.get(TENANT.id, "accepting-connector")).toBeUndefined();
+    expect(
+      providerHealth.get(TENANT.id, "accepting-connector"),
+    ).toBeUndefined();
   });
 });
 
@@ -447,7 +465,10 @@ describe("GET /provider-health", () => {
     const response = await app.request("/provider-health");
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      providers: Record<string, { status: string; category: string; at: string }>;
+      providers: Record<
+        string,
+        { status: string; category: string; at: string }
+      >;
       connectedProviderCount?: number;
     };
     expect(body.providers["anthropic"]).toEqual({

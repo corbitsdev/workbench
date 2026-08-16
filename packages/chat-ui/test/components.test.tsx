@@ -390,7 +390,10 @@ describe("ChannelTimeline", () => {
 
   test("offers Fix this connection on a classified failure reply when a handler is wired", () => {
     const markup = renderToStaticMarkup(
-      <ChannelTimeline items={classifiedFailureItems} onFixConnection={() => {}} />,
+      <ChannelTimeline
+        items={classifiedFailureItems}
+        onFixConnection={() => {}}
+      />,
     );
     expect(markup).toContain("Fix this connection");
   });

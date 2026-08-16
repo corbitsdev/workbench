@@ -86,7 +86,10 @@ async function flush(): Promise<void> {
   }
 }
 
-function findByText(container: HTMLElement, text: string): HTMLElement | undefined {
+function findByText(
+  container: HTMLElement,
+  text: string,
+): HTMLElement | undefined {
   return Array.from(container.querySelectorAll("button")).find(
     (button) => button.textContent === text,
   );
@@ -154,7 +157,9 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     await flush();
 
     expect(container.textContent).toContain("OpenAI");
-    expect(container.textContent).toContain("reports this key's quota is used up.");
+    expect(container.textContent).toContain(
+      "reports this key's quota is used up.",
+    );
   });
 
   // CL-6092: the record only ever carries a closed category, so there is

@@ -34,7 +34,9 @@ describe("isClassifiedInferenceFailure", () => {
 
 describe("createProviderHealthStore", () => {
   test("report marks a provider needs_attention with the given category and time", () => {
-    const store = createProviderHealthStore(() => new Date("2026-08-15T00:00:00.000Z"));
+    const store = createProviderHealthStore(
+      () => new Date("2026-08-15T00:00:00.000Z"),
+    );
     store.report("bench_1", "anthropic", "credential_failure");
     expect(store.get("bench_1", "anthropic")).toEqual({
       status: "needs_attention",
@@ -61,7 +63,9 @@ describe("createProviderHealthStore", () => {
   });
 
   test("a later report overwrites an earlier one for the same provider", () => {
-    const store = createProviderHealthStore(() => new Date("2026-08-15T00:00:00.000Z"));
+    const store = createProviderHealthStore(
+      () => new Date("2026-08-15T00:00:00.000Z"),
+    );
     store.report("bench_1", "anthropic", "credential_failure");
     store.report("bench_1", "anthropic", "quota_exhausted");
     expect(store.get("bench_1", "anthropic")?.category).toBe("quota_exhausted");
@@ -128,7 +132,9 @@ describe("fetchProviderHealth", () => {
       "/api/tenants/bench_1/connections/provider-health",
     );
     expect(snapshot.connectedProviderCount).toBe(1);
-    expect(snapshot.providers["anthropic"]?.category).toBe("credential_failure");
+    expect(snapshot.providers["anthropic"]?.category).toBe(
+      "credential_failure",
+    );
   });
 
   test("throws on a non-ok response", async () => {

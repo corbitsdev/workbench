@@ -108,9 +108,9 @@ export function ProviderHealthProvider({
   // Keyed by provider, remembers the `at` of the incident a person last
   // dismissed — so a later `at` for the same provider is a NEW incident,
   // not a re-show of one already acknowledged.
-  const [dismissedAt, setDismissedAt] = useState<Readonly<Record<string, string>>>(
-    {},
-  );
+  const [dismissedAt, setDismissedAt] = useState<
+    Readonly<Record<string, string>>
+  >({});
   const [pendingConnectProvider, setPendingConnectProvider] = useState<
     string | null
   >(null);

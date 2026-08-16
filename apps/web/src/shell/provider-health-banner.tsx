@@ -46,7 +46,9 @@ function providerDisplayName(provider: string): string {
 // place a `ProviderHealthRecord.category` becomes a sentence. Never a
 // provider's own error text: see `provider-health.ts`'s module header for
 // why only a closed enum ever reaches this far.
-const CATEGORY_COPY: Readonly<Record<ClassifiedInferenceFailureCategory, string>> = {
+const CATEGORY_COPY: Readonly<
+  Record<ClassifiedInferenceFailureCategory, string>
+> = {
   credential_failure: "rejected this key. Reconnect it in Plugins.",
   quota_exhausted: "reports this key's quota is used up.",
 };
@@ -74,7 +76,10 @@ export function ProviderHealthBanner() {
       setCachedBanner(banner);
       return;
     }
-    const timeout = setTimeout(() => setCachedBanner(null), COLLAPSE_TRANSITION_MS);
+    const timeout = setTimeout(
+      () => setCachedBanner(null),
+      COLLAPSE_TRANSITION_MS,
+    );
     return () => clearTimeout(timeout);
   }, [banner]);
 
@@ -100,7 +105,10 @@ export function ProviderHealthBanner() {
             className="provider-health-banner"
             role={isOpen ? "alert" : undefined}
           >
-            <TriangleAlert className="provider-health-banner-icon" aria-hidden />
+            <TriangleAlert
+              className="provider-health-banner-icon"
+              aria-hidden
+            />
             <p className="provider-health-banner-text">
               Your {bannerMessage(cachedBanner)}
             </p>

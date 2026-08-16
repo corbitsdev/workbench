@@ -48,8 +48,8 @@ describe("isClassifiedInferenceFailureText", () => {
         "I'd due to a credential error need your API key to continue.",
       ),
     ).toBe(false);
-    expect(isClassifiedInferenceFailureText("Here are the results you asked for.")).toBe(
-      false,
-    );
+    expect(
+      isClassifiedInferenceFailureText("Here are the results you asked for."),
+    ).toBe(false);
   });
 });

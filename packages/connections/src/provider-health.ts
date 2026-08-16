@@ -41,8 +41,7 @@ import { type } from "arktype";
  * over — those turns already show their own error bubble in chat and
  * need no health signal. */
 export type ClassifiedInferenceFailureCategory =
-  | "credential_failure"
-  | "quota_exhausted";
+  "credential_failure" | "quota_exhausted";
 
 const CLASSIFIED_CATEGORIES: ReadonlySet<string> = new Set([
   "credential_failure",
@@ -182,7 +181,9 @@ export async function fetchProviderHealth(
   const json: unknown = await response.json();
   const envelope = ProviderHealthSnapshotEnvelope(json);
   if (envelope instanceof type.errors) {
-    throw new Error(`Unexpected provider-health response shape: ${envelope.summary}`);
+    throw new Error(
+      `Unexpected provider-health response shape: ${envelope.summary}`,
+    );
   }
   const providers: Record<string, ProviderHealthRecord> = {};
   for (const [provider, value] of Object.entries(envelope.providers)) {

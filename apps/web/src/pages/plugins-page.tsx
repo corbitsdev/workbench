@@ -204,7 +204,10 @@ export function PluginsRoute({
       <PageShell width="full" className="page-fill">
         {connectDeepLinkNotFound ? (
           <div className="plugins-connect-notice" role="status">
-            <TriangleAlert className="plugins-connect-notice-icon" aria-hidden />
+            <TriangleAlert
+              className="plugins-connect-notice-icon"
+              aria-hidden
+            />
             <p className="plugins-connect-notice-text">
               Couldn't find that connection — pick it below.
             </p>
