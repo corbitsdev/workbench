@@ -23,29 +23,41 @@ next reply."); an out-of-inventory request comes back naming what's
 actually available, never a fabricated success. Any other transport or
 HTTP failure comes back as an honest `isError: true` result.
 
-## Two open gaps (CL-6084)
+## Activated end-to-end (CL-6086)
 
-This package is written against the shape both gaps below imply, so
-wiring it up is a drop-in once they close — neither is fixed by this
-package, and both are outside its file set:
+Both gaps this package was originally written against are now closed:
 
-1. **No definition-id context.** A tool execution has no sanctioned way
-   to learn its own agent definition id (`ToolCall`, `BaseEnv`, and the
-   workflow runtime's per-step invoke request all lack one). It needs to
-   be threaded into `env.definitionId` the same way
-   `apps/sidecar/src/workflow-substrate-factory/step-env.ts` threads
-   `@corbits/memory-tools`' `hubMemoryUrl`/`sidecarToken`/`address` in
-   today — `apps/sidecar` is not in this change's file set.
-2. **No workflow-run-authenticated capabilities route.**
-   `@corbits/agent-directory`'s `POST /:definitionId/capabilities` and
-   `GET /capabilities/inventory` are mounted only under the tenant-
-   session-authenticated prefix. Reaching them from a workflow-process
-   child needs a `createWorkflowCapabilityRoutes` factory (mirroring
-   `packages/skills/src/workflow-routes.ts`), mounted in `apps/hub`
-   beside `/api/workflow-skills` — plus a run's own `kind: "workflow"`
-   principal actually being granted `update` on its own definition
-   somewhere in Interchange's grant materialization, which doesn't
-   happen today either. Neither is in this change's file set.
+1. **Definition-id context.** `env.definitionId` is threaded from
+   `apps/sidecar/src/workflow-substrate-factory/step-env.ts`, following
+   exactly the binding pattern `@corbits/memory-tools`' `hubMemoryUrl`/
+   `sidecarToken`/`address` use — the run's own definition id, resolved
+   at the substrate factory from `WORKFLOW_DEFINITION_REPO_ID`.
+2. **Workflow-run-authenticated capabilities route.**
+   `@corbits/agent-directory`'s `createWorkflowCapabilityRoutes`
+   (`packages/agent-directory/src/workflow-capability-routes.ts`) mounts
+   at `/api/workflow-capabilities` in `apps/hub`, beside
+   `/api/workflow-skills`. It authenticates via the same
+   `createWorkflowRunAuthenticator` (sidecar bearer token + run
+   address), and constrains a call to the caller's OWN definitionId
+   (403 on any other target).
+
+   That route deliberately does NOT gate on a grant-store check for the
+   own-definition case — Interchange's grant materialization still
+   never seeds a `kind: "workflow"` run's principal an `update` grant on
+   its own definition ([Intx gap], tracked durably by CL-6085). Instead
+   the route relies on the approval that already happened: this
+   bundle's `request_capability` tool is declared `approval: "ask"`, so
+   the reactor suspends every call as a pending approval and renders it
+   in-chat BEFORE this bundle's `run` — and therefore before the route
+   is ever called — executes. The human who approved the card is the
+   authorizer; the route's own unconditional checks (own-definition-only,
+   fail-closed inventory) are what it enforces beyond that. See the
+   route's own file-level comment for the full reasoning.
+
+`@corbits/capability-tools` is pinned into every drafted agent's default
+tool-package set whenever the tenant's inventory offers it
+(`packages/task-planner/src/agent-definition-drafting.ts`), and listed in
+`apps/hub`'s `listMyraUsableToolPackages`.
 
 ## Usage
 
