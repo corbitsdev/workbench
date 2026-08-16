@@ -18,6 +18,7 @@ export {
   RoutineTriggerWire,
   computeNextFireAt,
   cronExpressionForTrigger,
+  cronTriggerForWeekdays,
   isValidCronExpression,
   isValidTimeZone,
   routineCadenceLabel,

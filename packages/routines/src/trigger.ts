@@ -35,7 +35,7 @@ const TimezoneField = type("string").narrow((value, ctx) => {
 
 const IntervalTrigger = type({
   kind: "'interval'",
-  unit: "'minutes' | 'hours'",
+  unit: "'minutes' | 'hours' | 'days'",
   every: "number.integer > 0",
 });
 
@@ -185,9 +185,9 @@ export function cronExpressionForTrigger(
 ): string {
   switch (trigger.kind) {
     case "interval":
-      return trigger.unit === "minutes"
-        ? `*/${trigger.every} * * * *`
-        : `0 */${trigger.every} * * *`;
+      if (trigger.unit === "minutes") return `*/${trigger.every} * * * *`;
+      if (trigger.unit === "hours") return `0 */${trigger.every} * * *`;
+      return `0 0 */${trigger.every} * *`;
     case "daily":
       return `${trigger.minute} ${trigger.hour} * * *`;
     case "weekly":
@@ -195,6 +195,33 @@ export function cronExpressionForTrigger(
     case "cron":
       return trigger.expression;
   }
+}
+
+/**
+ * Renders an "at HH:MM on one or more weekdays" custom schedule to a raw
+ * cron trigger — the multi-day generalization `weekly`'s single
+ * `dayOfWeek` can't express (a routine has exactly one trigger, so
+ * "Mon/Wed/Fri at 9" has to be one cron day-of-week list, not three
+ * separate weekly triggers). `days` must be non-empty 0–6 values (0 =
+ * Sunday, matching `ROUTINE_WEEKDAY_NAMES`); duplicates and order don't
+ * matter, the field is sorted and de-duped before joining. A single day
+ * still renders as cron here, not as a `weekly` trigger — callers that
+ * want the `weekly` shape for a single day build it directly.
+ */
+export function cronTriggerForWeekdays(
+  days: readonly number[],
+  hour: number,
+  minute: number,
+  timezone?: string,
+): Extract<RoutineTriggerT, { kind: "cron" }> {
+  const uniqueDays = [...new Set(days)].sort((a, b) => a - b);
+  if (uniqueDays.length === 0) {
+    throw new Error("cronTriggerForWeekdays requires at least one day");
+  }
+  const expression = `${minute} ${hour} * * ${uniqueDays.join(",")}`;
+  return timezone === undefined
+    ? { kind: "cron", expression }
+    : { kind: "cron", expression, timezone };
 }
 
 /** Timezone the trigger's wall-clock fields are interpreted in. Only
@@ -288,10 +315,14 @@ export function routineCadenceLabel(trigger: RoutineTriggerT): string {
   switch (trigger.kind) {
     case "webhook":
       return "On webhook";
-    case "interval":
+    case "interval": {
+      const singular = { minutes: "minute", hours: "hour", days: "day" }[
+        trigger.unit
+      ];
       return trigger.every === 1
-        ? `Every ${trigger.unit === "minutes" ? "minute" : "hour"}`
+        ? `Every ${singular}`
         : `Every ${String(trigger.every)} ${trigger.unit}`;
+    }
     case "daily":
       return `Daily at ${zeroPadClock(trigger.hour, trigger.minute)} ${zoneSuffix(trigger.timezone)}`;
     case "weekly":
