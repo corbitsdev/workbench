@@ -79,9 +79,10 @@ const KNOWN_PROVIDER_NAMES = Object.keys(CATALOG_SEEDS);
 
 export function InferenceSection({ tenantId }: { readonly tenantId: string }) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
-  // Busy state is scoped to the one offering a write is in flight for, so
-  // an action on one model's row never dims another model's controls.
-  const [busyOfferingId, setBusyOfferingId] = useState<string | null>(null);
+  // Busy state is scoped to the one model group a write is in flight for
+  // (a reorder can touch two rows in that same group), so an action on
+  // one model's fallback list never dims another model's controls.
+  const [busyModelId, setBusyModelId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [shadowTarget, setShadowTarget] =
     useState<EffectiveInferenceRow | null>(null);
@@ -170,7 +171,8 @@ export function InferenceSection({ tenantId }: { readonly tenantId: string }) {
     const originalByOfferingId = new Map(
       model.map((row) => [row.offeringId, row.priority]),
     );
-    setBusyOfferingId(first.offeringId);
+    const modelId = model[0]?.modelId ?? null;
+    setBusyModelId(modelId);
     setRowError(null);
     // Sequential, not Promise.all: on the second write's failure the first
     // is rolled back to its original priority, so a partial reorder never
@@ -194,29 +196,29 @@ export function InferenceSection({ tenantId }: { readonly tenantId: string }) {
       .catch((cause: unknown) =>
         setRowError(errorMessage(cause, INFERENCE_STRINGS.reorderError)),
       )
-      .finally(() => setBusyOfferingId(null));
+      .finally(() => setBusyModelId(null));
   }
 
   function handleRestrict(row: EffectiveInferenceRow) {
-    setBusyOfferingId(row.offeringId);
+    setBusyModelId(row.modelId);
     setRowError(null);
     updateOwnOffering(tenantId, row.offeringId, { disabled: true })
       .then(() => load())
       .catch((cause: unknown) =>
         setRowError(errorMessage(cause, INFERENCE_STRINGS.restrictError)),
       )
-      .finally(() => setBusyOfferingId(null));
+      .finally(() => setBusyModelId(null));
   }
 
-  function handleUnrestrict(offeringId: string) {
-    setBusyOfferingId(offeringId);
+  function handleUnrestrict(offering: typeof ModelOfferingResponse.infer) {
+    setBusyModelId(offering.modelId);
     setRowError(null);
-    updateOwnOffering(tenantId, offeringId, { disabled: false })
+    updateOwnOffering(tenantId, offering.id, { disabled: false })
       .then(() => load())
       .catch((cause: unknown) =>
         setRowError(errorMessage(cause, INFERENCE_STRINGS.restoreError)),
       )
-      .finally(() => setBusyOfferingId(null));
+      .finally(() => setBusyModelId(null));
   }
 
   return (
@@ -248,7 +250,7 @@ export function InferenceSection({ tenantId }: { readonly tenantId: string }) {
               </TableHeader>
               <TableBody>
                 {modelRows.map((row, index) => {
-                  const rowBusy = busyOfferingId !== null;
+                  const rowBusy = busyModelId === modelId;
                   const upNeighbor = modelRows[index - 1];
                   const downNeighbor = modelRows[index + 1];
                   const upDisabled =
@@ -360,8 +362,8 @@ export function InferenceSection({ tenantId }: { readonly tenantId: string }) {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={busyOfferingId !== null}
-                onClick={() => handleUnrestrict(offering.id)}
+                disabled={busyModelId === offering.modelId}
+                onClick={() => handleUnrestrict(offering)}
               >
                 {INFERENCE_STRINGS.restoreAction}
               </Button>

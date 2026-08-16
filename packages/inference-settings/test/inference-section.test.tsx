@@ -296,4 +296,182 @@ describe("InferenceSection", () => {
       container.remove();
     }
   });
+
+  test("busy state stays scoped to the model group being written, not the whole section", async () => {
+    let resolveFirstPatch: (() => void) | undefined;
+    const firstPatchGate = new Promise<void>((resolve) => {
+      resolveFirstPatch = resolve;
+    });
+    const secondModel = {
+      id: "model_2",
+      canonicalName: "gpt-4o-mini",
+      displayName: "GPT-4o mini",
+      offerings: [
+        {
+          offeringId: "offering_c",
+          providerId: "mp_c",
+          providerName: "Third key",
+          plugin: "openai",
+          priority: 0,
+          deploymentTags: [],
+          capabilities: [],
+          pricing: [],
+        },
+        {
+          offeringId: "offering_d",
+          providerId: "mp_d",
+          providerName: "Fourth key",
+          plugin: "openai",
+          priority: 1,
+          deploymentTags: [],
+          capabilities: [],
+          pricing: [],
+        },
+      ],
+    };
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const path = pathOf(input);
+      const method = init?.method ?? "GET";
+      if (
+        method === "PATCH" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings/offering_a`
+      ) {
+        await firstPatchGate;
+        return Response.json({
+          id: "offering_a",
+          tenantId: TENANT_ID,
+          modelId: "model_1",
+          providerId: "mp_a",
+          priority: 5,
+          deploymentTags: [],
+          capabilities: [],
+          quirks: null,
+          disabled: false,
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+      }
+      if (path === `/api/tenants/${TENANT_ID}/models`) {
+        return Response.json([modelInfo, secondModel]);
+      }
+      if (path === `/api/tenants/${TENANT_ID}/catalog/offerings`) {
+        return Response.json(
+          paginated([
+            {
+              id: "offering_a",
+              tenantId: TENANT_ID,
+              modelId: "model_1",
+              providerId: "mp_a",
+              priority: 0,
+              deploymentTags: [],
+              capabilities: [],
+              quirks: null,
+              disabled: false,
+              createdAt: NOW,
+              updatedAt: NOW,
+            },
+            {
+              id: "offering_b",
+              tenantId: TENANT_ID,
+              modelId: "model_1",
+              providerId: "mp_b",
+              priority: 0,
+              deploymentTags: [],
+              capabilities: [],
+              quirks: null,
+              disabled: false,
+              createdAt: NOW,
+              updatedAt: NOW,
+            },
+            {
+              id: "offering_c",
+              tenantId: TENANT_ID,
+              modelId: "model_2",
+              providerId: "mp_c",
+              priority: 0,
+              deploymentTags: [],
+              capabilities: [],
+              quirks: null,
+              disabled: false,
+              createdAt: NOW,
+              updatedAt: NOW,
+            },
+            {
+              id: "offering_d",
+              tenantId: TENANT_ID,
+              modelId: "model_2",
+              providerId: "mp_d",
+              priority: 1,
+              deploymentTags: [],
+              capabilities: [],
+              quirks: null,
+              disabled: false,
+              createdAt: NOW,
+              updatedAt: NOW,
+            },
+          ]),
+        );
+      }
+      if (path === `/api/tenants/${TENANT_ID}/catalog/models`) {
+        return Response.json(paginated([]));
+      }
+      if (path === `/api/tenants/${TENANT_ID}/catalog/providers`) {
+        return Response.json(paginated([]));
+      }
+      throw new Error(`unexpected fetch: ${method} ${path}`);
+    }) as typeof fetch;
+
+    const { container, root } = await mount();
+    try {
+      const panels = () =>
+        Array.from(container.querySelectorAll(".chat-settings-callout"));
+      const firstPanel = panels().find((p) =>
+        p.textContent?.includes("Claude Sonnet 5"),
+      );
+      const secondPanel = panels().find((p) =>
+        p.textContent?.includes("GPT-4o mini"),
+      );
+      if (firstPanel === undefined || secondPanel === undefined) {
+        throw new Error("expected both model panels to render");
+      }
+
+      const firstModelMoveDown = Array.from(
+        firstPanel.querySelectorAll("button"),
+      ).find((b) => b.textContent === "Move down" && !b.disabled);
+      expect(firstModelMoveDown).toBeDefined();
+
+      await act(async () => {
+        firstModelMoveDown?.dispatchEvent(
+          new Event("click", { bubbles: true, cancelable: true }),
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // While the first model's reorder write is still in flight (gated on
+      // `firstPatchGate`), the second model's own move button must stay
+      // enabled — busy state scoped to one model group never dims another.
+      const firstModelMoveUpNowBusy = Array.from(
+        firstPanel.querySelectorAll("button"),
+      ).find((b) => b.textContent === "Move up");
+      const secondModelMoveDown = Array.from(
+        secondPanel.querySelectorAll("button"),
+      ).find((b) => b.textContent === "Move down");
+      expect(firstModelMoveUpNowBusy?.disabled).toBe(true);
+      expect(secondModelMoveDown?.disabled).toBe(false);
+
+      await act(async () => {
+        resolveFirstPatch?.();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
 });
