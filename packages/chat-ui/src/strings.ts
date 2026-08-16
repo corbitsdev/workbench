@@ -296,6 +296,7 @@ export const CHAT_STRINGS = {
   channelSettingsSaving: "Saving…",
   channelSettingsNoParticipants: "No participants yet.",
   profileOpenAction: "Open profile",
+  fixConnectionAction: "Fix this connection",
   profileMessageAction: "Message",
   profileViewSettingsAction: "View settings",
   profileSharedChannels: "Shared workbenches",
