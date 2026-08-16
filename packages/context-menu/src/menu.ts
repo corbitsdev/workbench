@@ -9,6 +9,9 @@ export type ContextMenuItem = {
   readonly icon?: ReactNode;
   readonly shortcut?: string;
   readonly onSelect: () => void;
+  /** Marks a destructive action (e.g. "Sign out", "Delete") so the view can
+   * render it in the theme's destructive color instead of the default. */
+  readonly danger?: boolean;
 };
 
 export type ContextMenuSeparator = {

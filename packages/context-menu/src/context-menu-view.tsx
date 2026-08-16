@@ -67,7 +67,15 @@ export function ContextMenuView({
           entry.kind === "separator" ? (
             <MenuSeparator key={`separator-${index}`} />
           ) : (
-            <MenuItem key={entry.id} onSelect={entry.onSelect}>
+            <MenuItem
+              key={entry.id}
+              onSelect={entry.onSelect}
+              className={
+                entry.danger === true
+                  ? "text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
+                  : undefined
+              }
+            >
               {entry.icon}
               <span>{entry.label}</span>
               {entry.shortcut !== undefined ? (
