@@ -14,11 +14,12 @@ conversation is also its own tenant, so its membership and grants are its
 own. There is no separate "project" or "space" object sitting above the
 conversation; the conversation is the unit of work.
 
-This is why the sidebar is one flat list, not sections split by kind: every
-workbench a person has, agent conversation or group conversation alike,
-shows up the same way. See [docs/GLOSSARY.md](docs/GLOSSARY.md) for the
-full term mapping and [docs/CHAT.md](docs/CHAT.md) for how a conversation
-is built underneath.
+This is why the sidebar is one list of workbenches, not sections split by
+kind — every workbench a person has, agent conversation or group
+conversation alike, shows up the same way — plus an in-progress
+**Working** strip when the signed-in user has tasks still running. See
+[docs/GLOSSARY.md](docs/GLOSSARY.md) for the full term mapping and
+[docs/CHAT.md](docs/CHAT.md) for how a conversation is built underneath.
 
 ## Who it's for
 
@@ -48,6 +49,31 @@ column at a time:
   it carries account-wide surfaces (approvals, recent activity) that stay
   visible regardless of which workbench is open.
 
+## First run (CL-6104)
+
+A brand-new account is walked through four steps, ending in a live
+conversation rather than an empty shell:
+
+1. **Login.**
+2. **Credential** — connect a model provider (one-click OAuth for
+   supported providers, or a pasted API key); see `packages/onboarding`.
+3. **Describe** — a single free-text field asking what the first agent
+   should do. No name field, no template picker: a name and a handle are
+   derived from the description, and submitting drafts an agent
+   definition the same way `CreateAgentPanel` does
+   (`draftAgentDefinition` → `createAgentDefinition`, CL-6074/CL-6086).
+   See `apps/web/src/pages/describe-first-workbench.tsx`.
+4. **Greeting** — the drafted agent is deployed and opened into a fresh
+   conversation, and its first reply introduces itself and names what it
+   can do. There is no separate screen for this step: the drafted system
+   prompt itself carries the instruction (see
+   `packages/task-planner/src/agent-definition-drafting.ts`), so the
+   greeting arrives as an ordinary streamed reply in the new workbench.
+
+A bench that already has one or more workbenches skips straight past step
+3 and 4 and lands in its existing conversation instead (see
+`apps/web/src/pages/home-page.tsx`).
+
 ## Plugins and Skills
 
 A **Skill** is a named, reusable capability — instructions an agent can
@@ -58,6 +84,20 @@ implicitly. Plugins extend what a workbench can do the same way Skills
 extend what an agent knows — both are installable, both are scoped to the
 bench or workbench that installs them, and neither requires touching
 platform internals.
+
+## Workbench settings
+
+Each workbench has its own full-stage settings surface, not a dialog —
+reached from the workbench itself, never a separate console. It covers
+what is specific to that one conversation: name, purpose, and pinned
+state; its agent and human participants; per-agent name, instructions,
+and capabilities; dedicated vs. shared inference capacity (CL-6117);
+per-workbench connector and plugin overrides against the account default
+(CL-6099); inference model/provider fallback order; applying a saved
+config profile; per-person notification preferences for that workbench;
+and archiving. See ARCHITECTURE.md's "Conversation as a folded workflow
+run" for how a workbench's settings relate to its underlying run, and
+`packages/chat-ui`'s `channel-settings` for the implementation.
 
 ## Routines, through conversation
 

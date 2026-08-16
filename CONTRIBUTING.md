@@ -2,6 +2,11 @@
 
 Thanks for your interest in Corbits Workbench.
 
+> **`vendor/intx` is read-only vendored code.** Never open a PR that
+> changes anything under `vendor/intx` — it is hand-copied, ledgered
+> `@intx/*` source, not code this repo owns. See [VENDORED.md](VENDORED.md)
+> for the ledger and how to propose a change upstream instead.
+
 ## Before you start
 
 - Contributions are accepted under the terms of the

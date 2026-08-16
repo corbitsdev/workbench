@@ -307,4 +307,6 @@ needs a weaker role, that is an Interchange conversation first.
 - `@workbench/onboarding` — personal bench provision under operator parent
 - `@workbench/access-policy` — closed-by-default signup/sub-workbench-
   creation policy, pending invites (CL-5886)
-- `apps/hub` — `WORKBENCH_SIGNUP`, invite routes, icon routes
+- `apps/hub` — `WORKBENCH_SIGNUP`, invite routes, icon routes; one of the
+  explicitly-listed apps/hub mounts pending extraction into a package (see
+  [ARCHITECTURE.md](../ARCHITECTURE.md), CL-6127)

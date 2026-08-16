@@ -13,8 +13,9 @@ every external side effect behind human approval.
 
 ## Install
 
-Workbench will install and run with a single command. That command does not
-exist yet — until it does, work from a source checkout as described below.
+Run Workbench from a source checkout: clone the repo and follow the
+Quickstart and Running locally sections below. A single-command Homebrew
+install is tracked separately and is not part of this path.
 
 ## Quickstart
 
