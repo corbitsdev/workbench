@@ -11,6 +11,13 @@
 // same variable the hub reads); it otherwise runs a throwaway public
 // image that never connects to a hub — this proof only exercises the
 // provisioner's container lifecycle, not a real sidecar boot.
+//
+// Set DOCKER_SIDECAR_IMAGE to opt into real-image mode: the smoke test
+// runs that image instead of the throwaway alpine default, and adds a
+// liveness assertion — the container must still be running after
+// DOCKER_SIDECAR_SMOKE_STAY_UP_SECONDS (default 5) — to catch a real
+// sidecar image that boots and then immediately crash-loops. Default
+// alpine lifecycle mode is unchanged: no liveness wait is added there.
 
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -38,6 +45,7 @@ async function dockerAvailable(): Promise<boolean> {
 async function containerLabeled(
   allocationId: string,
   sidecarId: string,
+  extraFilters: readonly string[] = [],
 ): Promise<boolean> {
   const proc = Bun.spawn(
     [
@@ -48,12 +56,23 @@ async function containerLabeled(
       `label=corbits.allocationId=${allocationId}`,
       "--filter",
       `label=corbits.sidecarId=${sidecarId}`,
+      ...extraFilters,
     ],
     { stdout: "pipe", stderr: "pipe" },
   );
   const stdout = await new Response(proc.stdout).text();
   await proc.exited;
   return stdout.trim().length > 0;
+}
+
+async function containerRunning(
+  allocationId: string,
+  sidecarId: string,
+): Promise<boolean> {
+  return containerLabeled(allocationId, sidecarId, [
+    "--filter",
+    "status=running",
+  ]);
 }
 
 async function main(): Promise<void> {
@@ -65,7 +84,9 @@ async function main(): Promise<void> {
     return;
   }
 
+  const realImage = process.env["DOCKER_SIDECAR_IMAGE"];
   const image =
+    realImage ??
     process.env["DOCKER_SIDECAR_SMOKE_IMAGE"] ??
     process.env["DOCKER_PROVISIONER_IMAGE"] ??
     DEFAULT_IMAGE;
@@ -106,6 +127,24 @@ async function main(): Promise<void> {
       );
     }
     console.log(`${LOG_PREFIX} container-appears: confirmed via docker ps -a`);
+
+    if (realImage !== undefined) {
+      const stayUpSeconds = Number(
+        process.env["DOCKER_SIDECAR_SMOKE_STAY_UP_SECONDS"] ?? "5",
+      );
+      console.log(
+        `${LOG_PREFIX} real-image mode: asserting the container stays up for ${String(stayUpSeconds)}s`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, stayUpSeconds * 1000));
+      if (!(await containerRunning(allocationId, sidecarId))) {
+        throw new Error(
+          `real-image liveness check failed: container exited before ${String(stayUpSeconds)}s elapsed`,
+        );
+      }
+      console.log(
+        `${LOG_PREFIX} real-image: container still running after ${String(stayUpSeconds)}s`,
+      );
+    }
 
     const destroyResult = await provisioner.destroy({
       allocationId,

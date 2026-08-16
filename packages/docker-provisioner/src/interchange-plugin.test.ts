@@ -68,6 +68,10 @@ describe("ensure", () => {
       "HUB_WS_URL=wss://hub.example.com/ws",
       "-e",
       `SIDECAR_TOKEN=${TOKEN}`,
+      "-e",
+      "SIDECAR_ID=sidecar-1",
+      "-e",
+      "SIDECAR_DATA_DIR=/home/sidecar/interchange-sidecar-data",
       IMAGE,
     ]);
   });
