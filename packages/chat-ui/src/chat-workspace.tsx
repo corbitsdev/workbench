@@ -308,6 +308,7 @@ function ChatWorkspaceInner({
   onSettingsSectionChange,
   onOpenArtifact,
   onOpenArtifactInLibrary,
+  onFixConnection,
   approvalActions,
   blockResponses,
   headerLeading,
@@ -350,6 +351,8 @@ function ChatWorkspaceInner({
   ) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
+  /** See `ChannelTimeline`'s `onFixConnection` (CL-6092). */
+  readonly onFixConnection?: () => void;
   readonly approvalActions?: ApprovalActions;
   readonly blockResponses?: BlockResponseActions;
   readonly headerLeading?: ReactNode;
@@ -1331,6 +1334,9 @@ function ChatWorkspaceInner({
                     {...(onOpenArtifactInLibrary !== undefined
                       ? { onOpenArtifactInLibrary }
                       : {})}
+                    {...(onFixConnection !== undefined
+                      ? { onFixConnection }
+                      : {})}
                     {...(approvalActions !== undefined
                       ? { approvalActions }
                       : {})}
@@ -1431,6 +1437,7 @@ export function ChatWorkspace({
   onSettingsSectionChange,
   onOpenArtifact,
   onOpenArtifactInLibrary,
+  onFixConnection,
   approvalActions,
   blockResponses,
   headerLeading,
@@ -1480,6 +1487,9 @@ export function ChatWorkspace({
   /** The chip's "Open in Library" affordance — see `ChannelTimeline`'s
    * `onOpenArtifactInLibrary`. */
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
+  /** The classified-inference-failure text bubble's "Fix this connection"
+   * action — see `ChannelTimeline`'s `onFixConnection` (CL-6092). */
+  readonly onFixConnection?: () => void;
   /** The approve block's live round-trip — see `ChannelTimeline`'s
    * `approvalActions`. */
   readonly approvalActions?: ApprovalActions;
@@ -1544,6 +1554,7 @@ export function ChatWorkspace({
           {...(onOpenArtifactInLibrary !== undefined
             ? { onOpenArtifactInLibrary }
             : {})}
+          {...(onFixConnection !== undefined ? { onFixConnection } : {})}
           {...(headerLeading !== undefined ? { headerLeading } : {})}
           {...(listMembers !== undefined ? { listMembers } : {})}
           {...(registerComposerInsert !== undefined

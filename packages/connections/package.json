@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./registry": "./src/registry.ts",
-    "./plugins": "./src/plugins.ts"
+    "./plugins": "./src/plugins.ts",
+    "./provider-health": "./src/provider-health.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

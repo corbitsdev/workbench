@@ -371,6 +371,43 @@ describe("ChannelTimeline", () => {
     const markup = renderToStaticMarkup(<ChannelTimeline items={[]} />);
     expect(markup).toContain("No messages yet");
   });
+
+  // CL-6092: the quiet "Fix this connection" affordance on a classified
+  // inference-failure reply.
+  const classifiedFailureItems: MessageItem[] = [
+    {
+      id: "m_fail",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      parts: [
+        {
+          kind: "text",
+          text: "This agent could not complete your request due to a credential error [HTTP 401]: invalid api key",
+        },
+      ],
+      sender: { name: null, address: "prn_fixture1@agents.example" },
+    },
+  ];
+
+  test("offers Fix this connection on a classified failure reply when a handler is wired", () => {
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline items={classifiedFailureItems} onFixConnection={() => {}} />,
+    );
+    expect(markup).toContain("Fix this connection");
+  });
+
+  test("offers nothing when no onFixConnection handler is wired, even on a classified reply", () => {
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline items={classifiedFailureItems} />,
+    );
+    expect(markup).not.toContain("Fix this connection");
+  });
+
+  test("offers nothing on an ordinary reply, even with a handler wired", () => {
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline items={items} onFixConnection={() => {}} />,
+    );
+    expect(markup).not.toContain("Fix this connection");
+  });
 });
 
 describe("Composer", () => {

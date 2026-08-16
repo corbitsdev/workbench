@@ -186,6 +186,10 @@ import {
 import { createConnectionRoutes } from "@workbench/connections";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import {
+  createProviderHealthPort,
+  createProviderHealthStore,
+} from "@workbench/connections/provider-health";
+import {
   applyAccessPolicyMigrations,
   createAccessPolicyRoutes,
   createDrizzleAccessPolicyStore,
@@ -424,10 +428,21 @@ export async function createHub(config: HubConfig) {
   // `createEventCollectorRegistry` construction time, before those
   // deps exist, so this indirection ref is set once they do and every
   // call before that point is a harmless no-op.
+  // Process-lifetime provider-health signal (CL-6092): the one store
+  // both the chat orchestrator's classified-failure port and
+  // `GET .../connections/provider-health` read/write, so a runtime
+  // failure a turn just reported is visible to the shell banner on its
+  // very next poll. In-memory by design — see `provider-health.ts`'s own
+  // header for why this never needs to survive a restart.
+  const providerHealthStore = createProviderHealthStore();
   const artifactDeliveryHandlerRef: {
     current?: (
       agentAddress: string,
-      turn: { turnId: string; toolCalls: FinalizedTurnToolCall[] },
+      turn: {
+        turnId: string;
+        toolCalls: FinalizedTurnToolCall[];
+        errors: readonly { category: string; message: string }[];
+      },
     ) => void;
   } = {};
   const eventCollectors = createEventCollectorRegistry({
@@ -682,6 +697,8 @@ export async function createHub(config: HubConfig) {
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
     claims: writeClaims,
+    providerHealth: createProviderHealthPort(providerHealthStore),
+    listConnectedProviders: (tenantId) => listConnectedProviders(db, tenantId),
   };
   if (memoryHandle !== undefined) {
     artifactDeliveryHandlerDeps.memory = memoryHandle.memory;
@@ -1073,6 +1090,8 @@ export async function createHub(config: HubConfig) {
       // the OAuth connect flow itself, so `GET .../oauth-configured`
       // reports exactly what a Connect click would decide.
       oauthEnv: { huggingfaceClientId: config.huggingfaceOAuthClientId },
+      providerHealth: providerHealthStore,
+      listConnectedProviders: (tenantId) => listConnectedProviders(db, tenantId),
     }),
   );
   // Notify-to-reconnect for an OAuth-connected credential whose token
@@ -1850,6 +1869,11 @@ export async function createHub(config: HubConfig) {
       envAllowedDomains: config.allowedEmailDomains,
       allowUnverifiedEmails: config.allowUnverifiedEmails,
     },
+    // Same provider-health store `@workbench/connections`' own routes
+    // report to and clear (CL-6092) — a successful `/complete` here must
+    // clear the same record the shell banner's zero-provider "Fix it"
+    // routed someone to onboarding to fix.
+    providerHealth: providerHealthStore,
   };
   if (config.operatorTenantId !== undefined)
     onboardingDeps.operatorTenantId = config.operatorTenantId;

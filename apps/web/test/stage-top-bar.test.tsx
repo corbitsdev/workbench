@@ -10,6 +10,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { AppShell } from "../src/shell/app-shell";
+import { ProviderHealthProvider } from "../src/shell/provider-health-context";
 import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
 import { StageCrumbs, StageTopBar } from "../src/shell/stage-top-bar";
 import { BenchProvider } from "../src/bench-context";
@@ -99,11 +100,13 @@ function ShellHarness({ path = "/inbox" }: { readonly path?: string }) {
     <TestQueryProvider>
       <NavigationProvider navigate={noop}>
         <BenchProvider>
-          <ShellChromeProvider path={path} navigate={noop}>
-            <AppShell path={path} user={user} onSignOut={noop}>
-              <StageTopBar title="Inbox" />
-            </AppShell>
-          </ShellChromeProvider>
+          <ProviderHealthProvider>
+            <ShellChromeProvider path={path} navigate={noop}>
+              <AppShell path={path} user={user} onSignOut={noop}>
+                <StageTopBar title="Inbox" />
+              </AppShell>
+            </ShellChromeProvider>
+          </ProviderHealthProvider>
         </BenchProvider>
       </NavigationProvider>
     </TestQueryProvider>

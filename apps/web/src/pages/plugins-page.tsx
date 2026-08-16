@@ -18,10 +18,14 @@ import { Button, PageShell, RichEmptyState } from "@corbits/react-ui";
 import { PluginsGallery, PluginConnectPanel } from "@corbits/plugins-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
 import { listPluginsForTenant } from "@workbench/connections/plugins";
-import { Blocks, Plus } from "lucide-react";
+import { Blocks, Plus, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useBench } from "../bench-context";
+import {
+  useClearPendingConnectProvider,
+  usePendingConnectProvider,
+} from "../shell/provider-health-context";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { createSkill, listSkills, type SkillSummary } from "../skills-api";
 import {
@@ -60,6 +64,18 @@ export function PluginsRoute({
   const [openPlugin, setOpenPlugin] = useState<ResolvedPlugin | null>(null);
   const [openSkillName, setOpenSkillName] = useState<string | null>(null);
   const [createSkillOpen, setCreateSkillOpen] = useState(false);
+  // Set when the shell banner's "Fix it" deep link named a provider this
+  // gallery has no matching card for (CL-6092) — rather than the deep
+  // link silently no-oping, this renders a notice pointing back at the
+  // gallery itself.
+  const [connectDeepLinkNotFound, setConnectDeepLinkNotFound] = useState(false);
+  const pendingConnectProvider = usePendingConnectProvider();
+  const clearPendingConnectProvider = useClearPendingConnectProvider();
+
+  const openPluginPanel = useCallback((plugin: ResolvedPlugin) => {
+    setOpenPlugin(plugin);
+    setConnectDeepLinkNotFound(false);
+  }, []);
 
   const reloadPlugins = useCallback(() => {
     if (selectedTenantId === null) return;
@@ -88,6 +104,29 @@ export function PluginsRoute({
     setSkillsState({ status: "loading" });
     reloadSkills();
   }, [reloadSkills]);
+
+  // The shell banner's "Fix it" deep link (CL-6092): once the gallery has
+  // loaded, pick up any pending provider id and open its connect panel —
+  // the same panel a gallery card click opens, so a person lands exactly
+  // where they would have clicked themselves.
+  useEffect(() => {
+    if (pluginsState.status !== "ready") return;
+    if (pendingConnectProvider === null) return;
+    const match = pluginsState.plugins.find(
+      (plugin) => plugin.descriptor.id === pendingConnectProvider,
+    );
+    if (match !== undefined) {
+      openPluginPanel(match);
+    } else {
+      setConnectDeepLinkNotFound(true);
+    }
+    clearPendingConnectProvider();
+  }, [
+    pluginsState,
+    pendingConnectProvider,
+    clearPendingConnectProvider,
+    openPluginPanel,
+  ]);
 
   async function handleCreateSkill(input: SkillCreateInput) {
     if (selectedTenantId === null) return;
@@ -163,10 +202,18 @@ export function PluginsRoute({
         }
       />
       <PageShell width="full" className="page-fill">
+        {connectDeepLinkNotFound ? (
+          <div className="plugins-connect-notice" role="status">
+            <TriangleAlert className="plugins-connect-notice-icon" aria-hidden />
+            <p className="plugins-connect-notice-text">
+              Couldn't find that connection — pick it below.
+            </p>
+          </div>
+        ) : null}
         <PluginsGallery
           plugins={pluginsState.plugins}
           skills={skillCards}
-          onOpenPlugin={setOpenPlugin}
+          onOpenPlugin={openPluginPanel}
           onOpenSkill={(skill) => setOpenSkillName(skill.name)}
         />
       </PageShell>

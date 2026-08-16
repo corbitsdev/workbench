@@ -13,6 +13,10 @@ import type { Root } from "react-dom/client";
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { PluginsRoute } from "../src/pages/plugins-page";
+import {
+  ProviderHealthProvider,
+  useRequestPluginsConnect,
+} from "../src/shell/provider-health-context";
 import { TestQueryProvider } from "./test-query-provider";
 
 const realFetch = globalThis.fetch;
@@ -81,6 +85,10 @@ function stubFetch(): void {
         }),
       );
     }
+    if (path.includes("/connections/provider-health"))
+      return Promise.resolve(
+        json({ providers: {}, connectedProviderCount: 1 }),
+      );
     if (path.includes("/credentials/resolve/"))
       return Promise.resolve(json(null, 404));
     if (path.includes("/api/tenants/tnt_1/skills"))
@@ -111,7 +119,52 @@ async function mount() {
       <TestQueryProvider>
         <NavigationProvider navigate={() => undefined}>
           <BenchProvider>
-            <PluginsRoute path="/plugins" />
+            <ProviderHealthProvider>
+              <PluginsRoute path="/plugins" />
+            </ProviderHealthProvider>
+          </BenchProvider>
+        </NavigationProvider>
+      </TestQueryProvider>,
+    );
+  });
+  for (let i = 0; i < 20; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+  return container;
+}
+
+/** Stands in for `ProviderHealthBanner`'s position as a sibling of the
+ * routed page under `ProviderHealthProvider` (CL-6092) — fires the same
+ * `requestPluginsConnect` the banner's "Fix it" click does, without
+ * pulling in the banner widget itself. */
+function DeepLinkProbe({ provider }: { readonly provider: string }) {
+  const requestPluginsConnect = useRequestPluginsConnect();
+  return (
+    <button
+      type="button"
+      data-testid="probe-request-connect"
+      onClick={() => requestPluginsConnect(provider)}
+    >
+      Request connect
+    </button>
+  );
+}
+
+async function mountWithDeepLink(provider: string) {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(
+      <TestQueryProvider>
+        <NavigationProvider navigate={() => undefined}>
+          <BenchProvider>
+            <ProviderHealthProvider>
+              <DeepLinkProbe provider={provider} />
+              <PluginsRoute path="/plugins" />
+            </ProviderHealthProvider>
           </BenchProvider>
         </NavigationProvider>
       </TestQueryProvider>,
@@ -148,5 +201,56 @@ describe("PluginsRoute", () => {
 
     expect(el.textContent).toContain("weekly-digest");
     expect(el.textContent).toContain("Shared with everyone");
+  });
+
+  test("a pending connect deep link (CL-6092) opens that provider's connect panel once the gallery loads", async () => {
+    stubFetch();
+    const el = await mountWithDeepLink("github");
+
+    // Radix's Dialog portals its content onto `document.body`, outside
+    // this test's own `container` — the same reason every other dialog
+    // in this app queries `document`, not the render root, once open.
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    const probeButton =
+      el.querySelector<HTMLButtonElement>('[data-testid="probe-request-connect"]');
+    await act(async () => {
+      probeButton?.click();
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain("GitHub");
+  });
+
+  // CL-6092: a deep link naming a provider with no matching gallery card
+  // (a stale or misconfigured provider id) used to silently no-op — the
+  // gallery should say something instead of nothing.
+  test("a pending connect deep link with no matching gallery card renders a visible notice", async () => {
+    stubFetch();
+    const el = await mountWithDeepLink("not-a-real-connector");
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    const probeButton =
+      el.querySelector<HTMLButtonElement>('[data-testid="probe-request-connect"]');
+    await act(async () => {
+      probeButton?.click();
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(el.textContent).toContain(
+      "Couldn't find that connection — pick it below.",
+    );
   });
 });

@@ -33,6 +33,7 @@ import {
 } from "./canvas-availability";
 import { CanvasColumn } from "./canvas-column";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
+import { ProviderHealthBanner } from "./provider-health-banner";
 import { Sidebar } from "./sidebar";
 
 /** True only for the one route that never renders its own `StageTopBar`
@@ -140,6 +141,7 @@ export function AppShell({
       <Sidebar path={path} user={user} onNavigate={navigate} />
       <div className="shell-main" ref={mainRef}>
         <div className="shell-main-content">
+          <ProviderHealthBanner />
           {routeHasNoStageTopBar(path) ? (
             <StageTopBar title={routeLabel(path)} />
           ) : null}

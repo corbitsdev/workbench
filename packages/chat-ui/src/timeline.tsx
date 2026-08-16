@@ -42,6 +42,7 @@ import { ArtifactChip } from "./artifact-chip";
 import type { ApprovalActions } from "./blocks/approval-actions";
 import type { BlockResponseActions } from "./blocks/block-responses";
 import { BlockPartView } from "./blocks/registry";
+import { isClassifiedInferenceFailureText } from "./inference-failure";
 import type { ProfileSubject } from "./profile-subject";
 import { profileSubjectFromParticipant } from "./profile-subject";
 import { CHAT_STRINGS } from "./strings";
@@ -245,6 +246,7 @@ function TextBubble({
   participants,
   currentUser,
   onOpenProfile,
+  onFixConnection,
 }: {
   text: string;
   createdAt: string;
@@ -252,6 +254,7 @@ function TextBubble({
   participants: readonly ParticipantRecord[];
   currentUser: CurrentUser | undefined;
   onOpenProfile?: (subject: ProfileSubject) => void;
+  onFixConnection?: () => void;
 }) {
   const display = senderDisplay(sender, participants, currentUser);
   const isOwn =
@@ -312,6 +315,16 @@ function TextBubble({
           <span className="chat-bubble-time">{formatTimestamp(createdAt)}</span>
         </div>
         <p className="chat-bubble-text">{text}</p>
+        {onFixConnection !== undefined &&
+          isClassifiedInferenceFailureText(text) && (
+            <button
+              type="button"
+              className="chat-bubble-fix-connection"
+              onClick={onFixConnection}
+            >
+              {CHAT_STRINGS.fixConnectionAction}
+            </button>
+          )}
       </div>
     </div>
   );
@@ -707,6 +720,7 @@ function MessageParts({
   onOpenProfile,
   onOpenArtifact,
   onOpenArtifactInLibrary,
+  onFixConnection,
   approvalActions,
   blockResponses,
   reactionActions,
@@ -722,6 +736,12 @@ function MessageParts({
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
+  /** The classified-inference-failure text bubble's quiet "Fix this
+   * connection" action (CL-6092) — undefined renders no affordance at
+   * all, the same "no port, no feature" contract every other optional
+   * action here follows. No chat-ui component owns routing: the host
+   * decides where "fix" goes (Plugins' connect panel today). */
+  readonly onFixConnection?: () => void;
   readonly approvalActions?: ApprovalActions;
   readonly blockResponses?: BlockResponseActions;
   readonly reactionActions?: ReactionActions;
@@ -761,6 +781,7 @@ function MessageParts({
               participants={participants}
               currentUser={currentUser}
               {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
+              {...(onFixConnection !== undefined ? { onFixConnection } : {})}
             />
           );
         }
@@ -939,6 +960,7 @@ export function ChannelTimeline({
   onOpenProfile,
   onOpenArtifact,
   onOpenArtifactInLibrary,
+  onFixConnection,
   approvalActions,
   blockResponses,
   reactionActions,
@@ -962,6 +984,9 @@ export function ChannelTimeline({
    * alongside `onOpenArtifact`, only ever offered when the part carries an
    * `artifactId` (see `ArtifactChip`). */
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
+  /** The classified-inference-failure text bubble's quiet "Fix this
+   * connection" action (CL-6092) — see `MessageParts`' own doc. */
+  readonly onFixConnection?: () => void;
   /** The approve block's live round-trip — the host's read/approve/reject
    * on the platform approval a card references. Undefined renders every
    * approve card in its pre-round-trip fixed-disabled framing. */
@@ -1036,6 +1061,7 @@ export function ChannelTimeline({
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
             {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
             {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+            {...(onFixConnection !== undefined ? { onFixConnection } : {})}
             {...(onOpenArtifactInLibrary !== undefined
               ? { onOpenArtifactInLibrary }
               : {})}

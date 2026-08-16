@@ -553,6 +553,22 @@
   align-self: baseline;
 }
 
+/* CL-6092: quiet, text-only — a classified inference failure's reply
+   already says what went wrong; this is a low-key next step, not a
+   second alert. */
+.chat-bubble-fix-connection {
+  margin-top: 0.375rem;
+  align-self: flex-start;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-bubble-fix-connection:hover {
+  color: var(--foreground);
+}
+
 .chat-day-divider {
   display: flex;
   align-items: center;

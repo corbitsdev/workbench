@@ -36,6 +36,11 @@ import {
 } from "../command-palette-actions";
 import { reportChannelNotFound } from "../channel-not-found-event";
 import { createAgentAndLaunch } from "../instant-agent-create";
+import { ONBOARDING_PATH } from "../routes";
+import {
+  useProviderHealthBanner,
+  useRequestPluginsConnect,
+} from "../shell/provider-health-context";
 import {
   useOpenArtifactInCanvas,
   useOpenProfileInCanvas,
@@ -97,6 +102,30 @@ export function ChatPage({
       .filter((p) => p.kind === "user" && p.status === "active")
       .map((p) => ({ id: p.id, displayName: p.displayName }));
   }, []);
+
+  // The in-chat "Fix this connection" affordance's deep link (CL-6092) —
+  // the exact same hop the shell banner's own "Fix it" takes, reusing
+  // `providerHealthBanner`'s current provider (chat-ui only sees a
+  // classified reply's prose, never which provider it named — see
+  // `inference-failure.ts`'s own header) rather than inventing a second
+  // routing decision. Falls back to a bare Plugins visit if the banner's
+  // provider isn't currently known (an edge case: the health poll hasn't
+  // landed yet, or the incident already cleared between the reply and
+  // the click).
+  const providerHealthBanner = useProviderHealthBanner();
+  const requestPluginsConnect = useRequestPluginsConnect();
+  const handleFixConnection = useCallback(() => {
+    if (providerHealthBanner === null) {
+      navigate("/plugins");
+      return;
+    }
+    if (providerHealthBanner.zeroWorkingProviders) {
+      navigate(ONBOARDING_PATH);
+      return;
+    }
+    requestPluginsConnect(providerHealthBanner.provider);
+    navigate("/plugins");
+  }, [providerHealthBanner, requestPluginsConnect, navigate]);
 
   // A file part with an `artifactId` links back to a real Library row
   // (CL-6000) — this always resolves through the Library artifacts read
@@ -193,6 +222,7 @@ export function ChatPage({
       }}
       onOpenArtifact={openArtifact}
       onOpenArtifactInLibrary={openArtifactInLibrary}
+      onFixConnection={handleFixConnection}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       {...(blockResponses !== undefined ? { blockResponses } : {})}
       listMembers={listMembers}

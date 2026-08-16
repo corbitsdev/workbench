@@ -33,9 +33,15 @@ import {
 import type { ApprovalStore, DB } from "@intx/db";
 import type { SidecarEventEmitter } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
+import {
+  isClassifiedInferenceFailure,
+  type ClassifiedInferenceFailureCategory,
+  type ProviderHealthPort,
+} from "@workbench/connections/provider-health";
 import { artifactPartsForFinalizedTurn } from "./artifact-delivery";
 import type { ApproveBlockData } from "./blocks";
 import { encodeParts } from "./codec";
+import type { ConnectedProviderLister } from "./inference-preferences";
 import { parseParticipants } from "./participants";
 import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
@@ -85,6 +91,27 @@ export type ChatOrchestratorDeps = {
    * dependency at all.
    */
   claims: WriteClaimStore;
+  /**
+   * Reports a classified runtime inference failure (CL-6092) — a
+   * credential or quota error, never any other `InferenceError` category
+   * — so `apps/hub` can surface it as a provider-health "needs attention"
+   * signal. Absent when no health store is mounted, matching `memory`'s
+   * own optional shape; every call site below is a no-op when this is
+   * undefined. This orchestrator never marks a provider healthy — only a
+   * passing credential re-test does that, and that write happens in
+   * `@workbench/connections`'s own routes, not here.
+   */
+  providerHealth?: ProviderHealthPort;
+  /**
+   * The same `ConnectedProviderLister` `./inference-preferences.ts`'s
+   * `createChannelHostInferencePreferencesResolver` takes — reused here
+   * (rather than reaching for `deps.db` directly) so a test can inject a
+   * plain in-memory list and so this file never grows its own
+   * `@intx/db`-querying logic. Required alongside `providerHealth`: a
+   * health port with no way to resolve which provider a turn used could
+   * never conservatively attribute a failure to one.
+   */
+  listConnectedProviders?: ConnectedProviderLister;
 };
 
 export type ChatOrchestrator = {
@@ -424,6 +451,81 @@ async function postDailyTranscriptDigest(
 }
 
 /**
+ * Picks the first classified (`credential_failure`/`quota_exhausted`)
+ * error out of a turn's `errors`, narrowed to `ClassifiedInferenceFailureCategory`
+ * — a plain `Array.prototype.find` call can't narrow a field nested inside
+ * the element it tests, so this loop does the narrowing `isClassifiedInferenceFailure`
+ * already proves, once, in one place.
+ */
+function firstClassifiedError(
+  errors: readonly { category: string; message: string }[],
+): { category: ClassifiedInferenceFailureCategory } | undefined {
+  for (const error of errors) {
+    if (isClassifiedInferenceFailure(error.category)) {
+      return { category: error.category };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Reports a finalized turn's classified inference failure — if it has
+ * one — to `deps.providerHealth` (CL-6092). Fires on the *first*
+ * `credential_failure`/`quota_exhausted` error a turn accumulated (see
+ * `isClassifiedInferenceFailure`); every other category (`retryable`,
+ * `context_overflow`, `fatal`, `aborted`, `timeout`,
+ * `protocol_mismatch`) is an ordinary error this never reports on — a
+ * turn with, say, only a `retryable` error is indistinguishable from one
+ * with none at all here. Reports the error's `category` alone, never its
+ * `message` — a provider's own error prose is never durable-stored, only
+ * read back to a browser-facing route later (see `provider-health.ts`'s
+ * own header for why).
+ *
+ * A turn's `errors` carry a category and message, never which provider
+ * served the turn (`vendor/intx/hub-sessions/src/event-collector.ts`'s
+ * `TurnFinalized` has no provider field). This resolves the provider the
+ * same way a channel host's own inference preferences are derived
+ * (`deps.listConnectedProviders`) and only reports when the tenant has
+ * exactly one connected provider — with more than one connected, this
+ * never guesses which one the turn actually used, matching the
+ * "conservative classification" rule: silence, not a wrong attribution.
+ *
+ * That "exactly one connected provider" read happens here, at finalize
+ * time — not at the moment the turn actually ran. A tenant that
+ * disconnects a second provider between the turn running and this read
+ * (or connects a new one) can, in that narrow window, have this attribute
+ * the failure to a provider that never served the turn. Accepted as the
+ * cheapest correct-enough behavior for a UI nudge, not an audit trail;
+ * `postProviderHealthSignal` still never guesses across more than one
+ * *currently* connected provider, which is the property that actually
+ * matters here.
+ */
+async function postProviderHealthSignal(
+  deps: ChatOrchestratorDeps,
+  agentAddress: string,
+  errors: readonly { category: string; message: string }[],
+): Promise<void> {
+  if (deps.providerHealth === undefined) return;
+  if (deps.listConnectedProviders === undefined) return;
+  const classified = firstClassifiedError(errors);
+  if (classified === undefined) return;
+
+  const resolved = await resolveMemberChannels(deps, agentAddress);
+  if (resolved === undefined) return;
+
+  const connected = await deps.listConnectedProviders(resolved.tenantId);
+  if (connected.length !== 1) return;
+  const [provider] = connected;
+  if (provider === undefined) return;
+
+  deps.providerHealth.reportInferenceFailure({
+    tenantId: resolved.tenantId,
+    provider,
+    category: classified.category,
+  });
+}
+
+/**
  * Builds the `onTurnFinalized` callback `createEventCollectorRegistry`
  * accepts (`(agentAddress, turn) => void`, see
  * `vendor/intx/hub-sessions/src/event-collector-registry.ts`). Kept as a
@@ -437,7 +539,16 @@ export function createArtifactDeliveryHandler(
   deps: ChatOrchestratorDeps,
 ): (
   agentAddress: string,
-  turn: { turnId: string; toolCalls: FinalizedTurnToolCall[] },
+  turn: {
+    turnId: string;
+    toolCalls: FinalizedTurnToolCall[];
+    // Non-optional: `TurnFinalized.errors` upstream
+    // (`vendor/intx/hub-sessions/src/event-collector.ts`) is always an
+    // array, even when empty — never absent — so this type stays
+    // non-optional too rather than widening it into a shape the real
+    // caller never produces.
+    errors: readonly { category: string; message: string }[];
+  },
 ) => void {
   return (agentAddress, turn) => {
     void postFinalizedTurnArtifacts(
@@ -460,6 +571,13 @@ export function createArtifactDeliveryHandler(
         cause instanceof Error ? cause.message : String(cause)
       }`;
     });
+    void postProviderHealthSignal(deps, agentAddress, turn.errors).catch(
+      (cause: unknown) => {
+        log.error`chat orchestrator: failed to report ${agentAddress}'s provider health signal: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`;
+      },
+    );
   };
 }
 

@@ -357,6 +357,7 @@
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
+        "@workbench/connections": "workspace:*",
         "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
