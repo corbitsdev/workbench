@@ -28,6 +28,7 @@ import { CHAT_STRINGS } from "../strings";
 import { AccessSection } from "./access-section";
 import { AgentsSection } from "./agents-section";
 import { AssistantSection } from "./assistant-section";
+import { CapacitySection } from "./capacity-section";
 import {
   contextWindowControlState,
   contextWindowPatchValue,
@@ -327,6 +328,10 @@ export function ChannelSettingsSurface({
                   <InferenceSection tenantId={tenantId} />
                   <ApplyProfilePanel tenantId={tenantId} />
                 </>
+              ) : null}
+
+              {activeSection.id === "capacity" ? (
+                <CapacitySection tenantId={tenantId} />
               ) : null}
 
               {activeSection.id === "access" ? <AccessSection /> : null}

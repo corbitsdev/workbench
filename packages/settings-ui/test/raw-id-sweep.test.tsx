@@ -10,14 +10,10 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { AccountSectionView } from "../src/account-section";
-import { BenchSectionView } from "../src/bench-section";
-import { ChatSectionView } from "../src/chat-section";
-import { contextWindowLabel } from "../src/context-window";
 import { GrantsTable } from "../src/grants-section";
 import { PeopleTable } from "../src/people-section";
 import { RolesTable } from "../src/roles-section";
 
-const CHANNEL_ID = "3c1b1a2e-8b4f-4c8d-9a3e-9c2f1e6a7b1d";
 const AGENT_REF_ID = "agt_8f14e45fceea167a5a36dedd4bea2543";
 const UUID_PATTERN =
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -27,41 +23,6 @@ function visibleText(markup: string): string {
 }
 
 describe("raw-id sweep", () => {
-  test("BenchSectionView renders only the bench's name and slug, never a uuid", () => {
-    const markup = renderToStaticMarkup(
-      <BenchSectionView
-        name="Launch team"
-        slug="launch-team"
-        dirty={false}
-        saving={false}
-        error={null}
-        savedAt={null}
-        onNameChange={() => undefined}
-        onSave={() => undefined}
-        onReset={() => undefined}
-      />,
-    );
-    expect(UUID_PATTERN.test(visibleText(markup))).toBe(false);
-  });
-
-  test("ChatSectionView (workbench-wide conversation defaults) never renders a channel id, since it holds none", () => {
-    const markup = renderToStaticMarkup(
-      <ChatSectionView
-        contextWindowInput="20"
-        contextWindowLabel={contextWindowLabel(20)}
-        dirty={false}
-        saving={false}
-        error={null}
-        savedAt={null}
-        onContextWindowChange={() => undefined}
-        onSave={() => undefined}
-        onReset={() => undefined}
-      />,
-    );
-    expect(visibleText(markup)).not.toContain(CHANNEL_ID);
-    expect(UUID_PATTERN.test(visibleText(markup))).toBe(false);
-  });
-
   test("PeopleTable never renders a raw principal id or agent refId", () => {
     const markup = renderToStaticMarkup(
       <PeopleTable

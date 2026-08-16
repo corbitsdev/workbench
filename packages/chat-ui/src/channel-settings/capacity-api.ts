@@ -1,18 +1,20 @@
-// The "run this workbench on its own sidecar" toggle's one seam to
-// @corbits/sidecar-placement's tenant-scoped route. Same request/parse
-// convention as tenancy-api.ts: every response is arktype-validated at
-// the boundary.
+// Capacity section seam onto @corbits/sidecar-placement's tenant-scoped
+// route. Same shape as @corbits/settings-ui's old sidecar-placement-api.ts
+// (CL-6096) — chat-ui cannot import that package (settings-ui depends on
+// chat-ui, not the other way around), so this is its own small client
+// against the same route rather than a shared one.
+
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
-const SidecarPlacementResponse = type({
+const CapacityResponse = type({
   enabled: "boolean",
   provisionerAvailable: "boolean",
 });
 
-export type SidecarPlacementResult = typeof SidecarPlacementResponse.infer;
+export type CapacityResult = typeof CapacityResponse.infer;
 
-export class SidecarPlacementApiError extends Error {
+export class CapacityApiError extends Error {
   constructor(
     message: string,
     readonly status?: number,
@@ -24,7 +26,7 @@ export class SidecarPlacementApiError extends Error {
 async function request(
   path: string,
   init?: RequestInit,
-): Promise<SidecarPlacementResult> {
+): Promise<CapacityResult> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -32,37 +34,38 @@ async function request(
       headers: { "content-type": "application/json", ...init?.headers },
     });
   } catch (cause) {
-    throw new SidecarPlacementApiError(
+    throw new CapacityApiError(
       cause instanceof Error ? cause.message : String(cause),
     );
   }
   if (!response.ok) {
-    throw new SidecarPlacementApiError(
-      `The hub answered ${response.status} for ${path}.`,
+    throw new CapacityApiError(
+      `The server answered ${response.status} for ${path}.`,
       response.status,
     );
   }
   const body: unknown = await response.json().catch(() => undefined);
-  const parsed: typeof SidecarPlacementResponse.infer | ArkErrors =
-    SidecarPlacementResponse(body);
+  const parsed: typeof CapacityResponse.infer | ArkErrors = CapacityResponse(
+    body,
+  );
   if (parsed instanceof type.errors) {
-    throw new SidecarPlacementApiError(
+    throw new CapacityApiError(
       `Unexpected response shape from ${path}: ${parsed.summary}`,
     );
   }
   return parsed;
 }
 
-export function getSidecarPlacement(
+export function getCapacityPlacement(
   tenantId: string,
-): Promise<SidecarPlacementResult> {
+): Promise<CapacityResult> {
   return request(`/api/tenants/${tenantId}/sidecar-placement`);
 }
 
-export function setSidecarPlacement(
+export function setCapacityPlacement(
   tenantId: string,
   enabled: boolean,
-): Promise<SidecarPlacementResult> {
+): Promise<CapacityResult> {
   return request(`/api/tenants/${tenantId}/sidecar-placement`, {
     method: "PUT",
     body: JSON.stringify({ enabled }),

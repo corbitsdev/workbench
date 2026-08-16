@@ -31,16 +31,6 @@ alongside these.
   principals/roles/grants HTTP client
 - `access-policy.tsx` — the grant preview/editor shared by roles and grants
 
-## Open questions
-
-- `bench-section.tsx` and `chat-section.tsx` are still exported from
-  `index.ts` but are not wired into `SETTINGS_SECTION_GROUPS` — bench
-  identity settings moved out per CL-6089 (conversation-scoped settings now
-  live on `@corbits/chat-ui`'s `ChannelSettingsSurface`; bench naming/purpose
-  has no remaining settings-page home). Whether these two modules should be
-  removed or are still consumed directly by a host wasn't confirmed in this
-  pass.
-
 ## Running tests
 
 ```

@@ -84,12 +84,6 @@
   margin: 0;
 }
 
-.settings-chat-section {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
 .settings-channel-picker {
   height: 2.25rem;
   border-radius: var(--radius, 0.375rem);
@@ -215,38 +209,6 @@
   border-radius: 0.25rem;
   font-size: 0.75rem;
   line-height: 1;
-}
-
-.settings-wb-icon-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.settings-wb-icon-preview {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.4rem;
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.settings-wb-swatch {
-  width: 1.35rem;
-  height: 1.35rem;
-  border: 2px solid transparent;
-  border-radius: 999px;
-  padding: 0;
-  cursor: pointer;
-}
-
-.settings-wb-swatch[aria-pressed="true"] {
-  border-color: var(--foreground);
 }
 
 .settings-access-policy {
