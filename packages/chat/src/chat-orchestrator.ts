@@ -24,6 +24,7 @@ import { headlineFor } from "@corbits/approvals";
 import {
   connectorReplyContent,
   findFoldedRunByAddress,
+  messageRunEnded,
 } from "@corbits/folded-runs";
 import type { Memory } from "@corbits/memory";
 import {
@@ -586,6 +587,15 @@ export function createChatOrchestrator(
   // doc comment for what this does and doesn't cover.
   const postedApprovalIds = new Set<string>();
 
+  // Every address with a `connector.reply` pending delivery for its
+  // current turn — added the moment reply content is seen, cleared the
+  // moment that turn's own `message.run.ended` bracket closes (see
+  // below). Mirrors `@corbits/tasks`' `orchestrator.ts` `lastReplyByAddress`
+  // bookkeeping, keyed the same way (per address, not per message —
+  // this stream carries no messageId to correlate on more precisely),
+  // but chat only needs a presence bit, never the reply text itself.
+  const repliedAddresses = new Set<string>();
+
   const unsubscribe = deps.events.on(
     "agent.event",
     ({ agentAddress, event }) => {
@@ -597,6 +607,7 @@ export function createChatOrchestrator(
 
       const content = connectorReplyContent(event);
       if (content !== undefined) {
+        repliedAddresses.add(agentAddress);
         void postReply(deps, agentAddress, content).catch((cause: unknown) => {
           log.error`chat orchestrator: failed to post ${agentAddress}'s reply: ${
             cause instanceof Error ? cause.message : String(cause)
@@ -609,6 +620,29 @@ export function createChatOrchestrator(
             }`;
           },
         );
+        return;
+      }
+
+      // A turn that ends with no `connector.reply` this process ever
+      // saw is otherwise invisible: nothing posts to any channel and
+      // nothing logs, so an agent that silently produced zero visible
+      // text (a first-turn tool call with no accompanying text, an
+      // inference failure `default-director` doesn't fold into a
+      // reportable reply) reads to a human as "the room stayed empty"
+      // with no trace anywhere. This is exactly the shape CL-6126's
+      // kickoff-triggered greeting can fail in on a real, working
+      // credential (CL-6137) — the kickoff's own `sendMail` already
+      // logs loudly when *dispatch* itself fails
+      // (`dispatchGreetingKickoff` in `channel-service.ts`), but had no
+      // counterpart for "dispatched fine, the turn ran, nothing ever
+      // came back out."
+      const ended = messageRunEnded(event);
+      if (ended !== undefined) {
+        const hadReply = repliedAddresses.delete(agentAddress);
+        if (!hadReply) {
+          const errorMessage = ended.errorMessage ?? "no error reported";
+          log.error`chat orchestrator: agent ${agentAddress}'s turn ended (${ended.status}) with no reply ever posted to any channel: ${errorMessage}`;
+        }
         return;
       }
 
