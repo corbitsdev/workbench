@@ -7,6 +7,7 @@ import { createChatRoutes } from "../src/routes";
 import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
+import { AgentUnreachableError } from "../src/platform-port";
 import {
   buildDeps,
   createChannel,
@@ -278,6 +279,39 @@ describe("message fan-out", () => {
     expect(platform.sentMail.some((m) => m.channelId === channel.id)).toBe(
       true,
     );
+  });
+
+  // CL-6120: a post-restart send that exhausts the adapter's own
+  // reclaim-settle-then-redeploy budget must not surface as an
+  // unhandled 500 with a raw "agent is unreachable" stack trace — the
+  // route's job is to translate that into a clean, retriable response.
+  test("a send that never becomes routable answers 503 with a plain-language message, not an unhandled 500", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        sendMail() {
+          throw new AgentUnreachableError("ins_channel1@acme.example");
+        },
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: channel } = await createChannel(app, { kind: "channel" });
+
+    const parts: Part[] = [{ kind: "text", text: "hello?" }];
+    const response = await app.request(`/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts }),
+    });
+
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      error: {
+        code: "agent_unreachable",
+        message:
+          "The agent is reconnecting after a restart — try again in a moment.",
+      },
+    });
   });
 });
 

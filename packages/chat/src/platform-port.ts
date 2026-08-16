@@ -128,6 +128,22 @@ export interface ChannelLauncher {
   ): Promise<void>;
 }
 
+/**
+ * Thrown by `ChannelMail.sendMail` when the target agent's address
+ * never became routable — the sidecar-side agent is (or remains)
+ * unreachable even after the adapter's own reclaim-settle retries and
+ * redeploy fallback. Callers distinguish this from every other
+ * `sendMail` failure (bad input, definition errors, …) to answer with
+ * a clean, retriable "come back in a moment" response instead of an
+ * unhandled 500.
+ */
+export class AgentUnreachableError extends Error {
+  constructor(address: string, options?: { cause?: unknown }) {
+    super(`Agent at "${address}" is unreachable`, options);
+    this.name = "AgentUnreachableError";
+  }
+}
+
 /** Sending and reading a channel's mail, and fetching its attachment
  * blobs. */
 export interface ChannelMail {
