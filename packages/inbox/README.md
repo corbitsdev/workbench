@@ -42,3 +42,13 @@ concept layered on top of `InboxGroup` (e.g. an `"all"` tab).
 `@corbits/mailbox`'s runtime (migration/mount) surface — only its
 type-only `MailboxMessage` / `MailboxMessageDetail` / `MailboxVocabulary`
 shapes, erased at build time.
+
+## Tests
+
+```
+cd packages/inbox && bun test
+```
+
+`test/delivery.test.ts` needs a reachable Postgres via
+`DATABASE_URL=postgres://localhost:5432/workbench_e2e` (parsed the same
+way `apps/hub/src/index.ts` does); the rest are pure unit tests.

@@ -36,3 +36,12 @@ forwarded to the plane.
 
 `createUnavailableWorkflowMemoryRoutes` answers `503` on every route
 when the memory plane isn't mounted (no `EMBED_BASE_URL`).
+
+## Tests
+
+```
+cd packages/memory-hub && bun test
+```
+
+No DATABASE_URL needed — the authenticator and memory plane are injected
+fakes in tests.

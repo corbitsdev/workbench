@@ -45,3 +45,12 @@ const agent = defineAgent({
 The bundle's env requirements (`hubArtifactsUrl`, `sidecarToken`,
 `address`) are populated automatically for every workflow step — see
 `apps/sidecar/src/workflow-substrate-factory/step-env.ts`.
+
+## Tests
+
+```
+cd packages/artifact-tools && bun test
+```
+
+No DATABASE_URL needed — the HTTP client and tool tests run against
+injected fakes/mocked fetch.
