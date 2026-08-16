@@ -218,10 +218,17 @@ export async function signInSocial(
   }
 }
 
-export async function signOut(): Promise<void> {
-  await fetch("/api/auth/sign-out", {
+/** Fires the server-side sign-out. The UI signs out optimistically
+ * regardless of this call's outcome (see `main.tsx`'s `handleSignOut`) —
+ * returns whether the server actually cleared the session, so the caller
+ * can surface a failure rather than silently leaving a live session
+ * behind on the server. */
+export async function signOut(): Promise<boolean> {
+  return fetch("/api/auth/sign-out", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: "{}",
-  }).catch(() => undefined);
+  })
+    .then((response) => response.ok)
+    .catch(() => false);
 }

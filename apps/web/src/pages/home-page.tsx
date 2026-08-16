@@ -6,7 +6,7 @@
 // either the describe screen or `/c/:channelId`. Deep links to other
 // pages are unchanged.
 
-import { BootScreen, EmptyState, PageShell } from "@corbits/react-ui";
+import { BootScreen, Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -27,6 +27,7 @@ export function HomeRoute() {
   const navigate = useNavigate();
   const { selectedTenantId, memberships } = useBench();
   const [state, setState] = useState<LandState>({ kind: "checking" });
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     if (selectedTenantId === null) return;
@@ -59,10 +60,27 @@ export function HomeRoute() {
     return () => {
       cancelled = true;
     };
-  }, [selectedTenantId, navigate]);
+  }, [selectedTenantId, navigate, retryCount]);
 
   if (memberships.kind === "loading") {
     return <BootScreen message="Opening Myra" />;
+  }
+
+  if (memberships.kind === "error") {
+    return (
+      <PageShell width="full" className="page-fill">
+        <EmptyState
+          icon={<CircleAlert />}
+          title="Couldn't load your workbenches"
+          description={memberships.message}
+          action={
+            <Button variant="outline" onClick={memberships.retry}>
+              Retry
+            </Button>
+          }
+        />
+      </PageShell>
+    );
   }
 
   if (selectedTenantId === null) {
@@ -90,6 +108,14 @@ export function HomeRoute() {
           icon={<CircleAlert />}
           title="Couldn't open Myra"
           description={state.message}
+          action={
+            <Button
+              variant="outline"
+              onClick={() => setRetryCount((count) => count + 1)}
+            >
+              Retry
+            </Button>
+          }
         />
       </PageShell>
     );

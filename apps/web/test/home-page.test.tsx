@@ -194,6 +194,55 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
   });
 });
 
+describe('a failed memberships fetch never reads as "pick from the switcher"', () => {
+  test("shows an error state with Retry, not the empty-selection copy", async () => {
+    let principalsCalls = 0;
+    stubFetch((path) => {
+      if (path === "/api/me/principals") {
+        principalsCalls += 1;
+        return json({ error: "boom" }, 500);
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={() => undefined}>
+            <BenchProvider>
+              <HomeRoute />
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    await settle();
+    await settle();
+
+    expect(container.textContent).not.toContain("No workbench selected");
+    expect(container.textContent).not.toContain(
+      "Pick a workbench from the switcher",
+    );
+    expect(container.textContent).toContain("Couldn't load your workbenches");
+
+    const retryButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Retry",
+    );
+    expect(retryButton).not.toBeUndefined();
+
+    const callsBeforeRetry = principalsCalls;
+    await act(async () => {
+      retryButton?.click();
+    });
+    await settle();
+
+    expect(principalsCalls).toBeGreaterThan(callsBeforeRetry);
+  });
+});
+
 describe("the other two entries land on the same `/` hop", () => {
   test("signing in navigates to `/`, not a dashboard of its own", () => {
     const source = readFileSync(

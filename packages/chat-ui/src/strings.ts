@@ -140,6 +140,10 @@ export const CHAT_STRINGS = {
   channelRenamedToast: (title: string) => `Renamed to ${title}`,
   channelPinnedToast: (pinned: boolean, title: string) =>
     pinned ? `Pinned ${title}` : `Unpinned ${title}`,
+  channelPinToggleError: (pinned: boolean) =>
+    pinned
+      ? "Couldn't pin that workbench — try again."
+      : "Couldn't unpin that workbench — try again.",
   reactionChipLabel: (emoji: string, count: number) =>
     `React with ${emoji} (${count})`,
   reactionAddAction: "Add reaction",

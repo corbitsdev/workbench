@@ -1,5 +1,6 @@
 import {
   CommandPalette,
+  artifactKindLabel,
   useCommandShortcut,
   useTheme,
 } from "@corbits/react-ui";
@@ -427,7 +428,7 @@ export function CommandPaletteProvider({
         ? artifactsQuery.data.data.map((artifact) => ({
             id: `entity:library:${artifact.id}`,
             title: artifact.title,
-            subtitle: artifact.kind,
+            subtitle: artifactKindLabel(artifact.kind),
           }))
         : [],
     [artifactsQuery],
@@ -527,7 +528,7 @@ export function CommandPaletteProvider({
         const title =
           channelItems.find((item) => item.id === id)?.title ?? channelId;
         navigate(`/c/${channelId}`);
-        pushRecent({ kind: "channels", id, title, subtitle: "Channel" });
+        pushRecent({ kind: "channels", id, title, subtitle: "Workbench" });
       } else if (id.startsWith("entity:runs:")) {
         // Routines page owns the /routines prefix (including detail segments).
         const runId = id.slice("entity:runs:".length);

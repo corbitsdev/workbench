@@ -57,26 +57,38 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
   test("a foreground load's failure replaces the view with an error state", () => {
     const next = nextMessagesState(
       ready,
-      { kind: "error", message: "boom", channelNotFound: false },
+      {
+        kind: "error",
+        message: "boom",
+        channelNotFound: false,
+        isUnauthorized: false,
+      },
       false,
     );
     expect(next).toEqual({
       kind: "error",
       message: "boom",
       channelNotFound: false,
+      isUnauthorized: false,
     });
   });
 
   test("a channel-not-found failure carries that flag through to the rendered state", () => {
     const next = nextMessagesState(
       ready,
-      { kind: "error", message: "not found", channelNotFound: true },
+      {
+        kind: "error",
+        message: "not found",
+        channelNotFound: true,
+        isUnauthorized: false,
+      },
       false,
     );
     expect(next).toEqual({
       kind: "error",
       message: "not found",
       channelNotFound: true,
+      isUnauthorized: false,
     });
   });
 
@@ -88,7 +100,12 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
   test("a background refresh's failure leaves the previous ready items on screen", () => {
     const next = nextMessagesState(
       ready,
-      { kind: "error", message: "boom", channelNotFound: false },
+      {
+        kind: "error",
+        message: "boom",
+        channelNotFound: false,
+        isUnauthorized: false,
+      },
       true,
     );
     expect(next).toBe(ready);
@@ -99,7 +116,12 @@ describe("nextMessagesState (B1: background refresh keeps the composer mounted)"
     const loading: MessagesState = { kind: "loading" };
     const next = nextMessagesState(
       loading,
-      { kind: "error", message: "boom", channelNotFound: false },
+      {
+        kind: "error",
+        message: "boom",
+        channelNotFound: false,
+        isUnauthorized: false,
+      },
       true,
     );
     expect(next).toBe(loading);
