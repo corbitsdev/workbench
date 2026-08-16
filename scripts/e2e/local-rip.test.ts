@@ -22,26 +22,20 @@
 // `packages/hub-client/src/seed.ts`) ahead of deploying any workflow,
 // so this suite asserts a full seed rather than a documented skip.
 //
-// Stubbing note: proving a pasted key means an outbound call to the
-// provider's own auth layer (`testProviderCredential`, hit through
-// `apps/hub`'s `POST /api/onboarding/complete` route with no override
-// seam). This suite never reaches that route — it drives the same
-// two halves the route itself calls
-// (`testAndPersistCredential`/`ensureSeeded`, both from
-// `@workbench/onboarding`'s `complete-credential.ts`) directly, the
-// same way `chat.test.ts` drives `seedCatalog` directly rather than
-// going through an HTTP surface that has no test seam. Every other
-// call these two halves make is real HTTP against the spawned hub;
-// only `testAndPersistCredential`'s own `testCredential` argument —
-// the seam that module's header comment documents existing precisely
-// so an OAuth callback route can run only the fast half — is stubbed,
-// to a fixed `{ ok: true }`, so this suite never dials a real
-// provider during phase A. The stubbed key itself is never sent
-// anywhere in phase A: the resulting deployments carry it as a
-// stored, never-triggered source (`confirmDeployments: false`,
-// matching onboarding's own connect flow — see `ensureSeeded`'s doc
-// comment), so a made-up key is exactly as good as a real one for
-// proving that leg.
+// Stubbing note: onboarding's own `POST /api/onboarding/complete` route
+// (`testAndPersistCredential`, from `@workbench/onboarding`'s
+// `complete-credential.ts`) stores a pasted key immediately, with no
+// live probe of the provider gating it (CL-6123) — so there is nothing
+// left to stub there. This suite still drives the same two halves the
+// route itself calls (`testAndPersistCredential`/`ensureSeeded`)
+// directly rather than through HTTP, the same way `chat.test.ts` drives
+// `seedCatalog` directly rather than going through an HTTP surface that
+// has no test seam. Every call these two halves make is real HTTP
+// against the spawned hub, and no provider is ever dialed during phase
+// A: the resulting deployments carry the stub key as a stored,
+// never-triggered source (`confirmDeployments: false`, matching
+// onboarding's own connect flow — see `ensureSeeded`'s doc comment), so
+// a made-up key is exactly as good as a real one for proving that leg.
 //
 // The deployed sources' `baseURL` is the real Anthropic host
 // (`CATALOG_SEEDS`), which is the honest key-path behavior — phase A
@@ -155,8 +149,8 @@ if (databaseUrl === undefined) {
   );
 }
 
-// A key that is never sent anywhere: the probe that would normally
-// prove it is stubbed below, and the deployments it seeds are never
+// A key that is never sent anywhere: onboarding never probes it (see
+// the stubbing note above), and the deployments it seeds are never
 // triggered. Named so it can never be mistaken for a real secret if it
 // leaks into a log line or a bug report.
 const STUB_API_KEY = "e2e-local-rip-stub-key-not-real";
@@ -363,7 +357,7 @@ describe.skipIf(databaseUrl === undefined)(
       const pushWorkflow = createGitWorkflowPusher();
 
       const connected = await hop(
-        "connecting a real inference credential via the key path (provider probe stubbed)",
+        "connecting a real inference credential via the key path (no provider probe — CL-6123)",
         async () => {
           const result = await testAndPersistCredential({
             api: hubApi,
@@ -375,9 +369,6 @@ describe.skipIf(databaseUrl === undefined)(
             apiKey: STUB_API_KEY,
             pushWorkflow,
             log: () => undefined,
-            // The one stubbed HTTP boundary in this scenario — see the
-            // module header comment for why.
-            testCredential: async () => ({ ok: true }),
           });
           if (result.kind !== "connected") {
             throw new Error(

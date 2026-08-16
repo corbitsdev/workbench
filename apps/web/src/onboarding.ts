@@ -178,11 +178,11 @@ const OPENROUTER_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
   exchange_failed:
     "OpenRouter did not hand back a key for that connection. Try connecting again.",
   key_rejected:
-    "OpenRouter minted a key, but its test call failed. Try connecting again.",
+    "OpenRouter minted a key, but connecting it failed. Try connecting again.",
   no_bench:
     "No personal workbench was found for this account yet. Reload and try again.",
   setup_failed:
-    "Your OpenRouter key checked out, but setting up your workbench failed. Try again in a moment.",
+    "Your OpenRouter key was added, but setting up your workbench failed. Try again in a moment.",
   signed_out:
     "Your session ended during the OpenRouter connection. Sign in and try again.",
   rate_limited:
@@ -195,11 +195,11 @@ const HUGGINGFACE_CONNECT_ERROR_COPY: Readonly<Record<string, string>> = {
   exchange_failed:
     "Hugging Face did not hand back a token for that connection. Try connecting again.",
   key_rejected:
-    "Hugging Face minted a token, but its test call failed. Try connecting again.",
+    "Hugging Face minted a token, but connecting it failed. Try connecting again.",
   no_bench:
     "No personal workbench was found for this account yet. Reload and try again.",
   setup_failed:
-    "Your Hugging Face token checked out, but setting up your workbench failed. Try again in a moment.",
+    "Your Hugging Face token was added, but setting up your workbench failed. Try again in a moment.",
   signed_out:
     "Your session ended during the Hugging Face connection. Sign in and try again.",
   rate_limited:
@@ -413,47 +413,15 @@ function readErrorEnvelope(
 }
 
 /**
- * Proves a user's own key with a real call through the hub, without
- * storing anything. Lets the wizard report success or a specific
- * rejection before committing to seeding the bench.
- */
-export async function testCredential(
-  provider: CredentialProvider,
-  apiKey: string,
-): Promise<
-  { readonly ok: true } | { readonly ok: false; readonly message: string }
-> {
-  try {
-    const { response, body } = await postOnboarding(
-      "credential/test",
-      provider,
-      apiKey,
-    );
-    if (!response.ok) {
-      return {
-        ok: false,
-        message: readErrorEnvelope(response.status, body, "checking your key"),
-      };
-    }
-    return { ok: true };
-  } catch (cause) {
-    return {
-      ok: false,
-      message: cause instanceof Error ? cause.message : String(cause),
-    };
-  }
-}
-
-/**
- * Hands a user's own key to the hub, which proves it with a real call
- * before doing anything else with it, then seeds the caller's personal
- * bench and confirms every default routine answers. The credential
- * itself is stored through the hub's native `POST
+ * Hands a user's own key to the hub, which stores it immediately — no
+ * live call to the provider gates this (CL-6123) — then seeds the
+ * caller's personal bench and deploys every default routine against it.
+ * The credential itself is stored through the hub's native `POST
  * /api/tenants/:id/credentials` route — this call only tells the hub
- * which provider and key to use, and reports the outcome. A rejected
- * key is reported by name (`"rejected"`) rather than folded into the
- * same `"error"` bucket a broken hub call gets — the retry story is
- * different for each.
+ * which provider and key to use, and reports the outcome. A wrong key
+ * is caught later, the first time it's actually dialed, and surfaces
+ * in-chat through the credential-error + "Fix this connection" flow
+ * (CL-6092) — not here.
  */
 export async function submitCredential(
   provider: CredentialProvider,
@@ -522,9 +490,9 @@ export type CompleteSetupOutcome =
 
 /**
  * The follow-up call the wizard makes once it lands back from a
- * one-click connect: the OAuth callback itself only proved and stored
- * the key (fast, so the browser is never left waiting on a redirect),
- * and this is what actually deploys the default routines against it.
+ * one-click connect: the OAuth callback itself only stored the key
+ * (fast, so the browser is never left waiting on a redirect), and this
+ * is what actually deploys the default routines against it.
  * `"unseeded"` is not a failure — it means the workbench genuinely has
  * nothing to finish setting up with yet, and the wizard falls back to
  * the ordinary credential step rather than treating it as broken.

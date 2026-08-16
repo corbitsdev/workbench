@@ -503,26 +503,25 @@ async function run(): Promise<void> {
       () => page,
       "03-connect-provider-stub-key",
       async () => {
-        // Every UI path that accepts a pasted key — onboarding's credential
-        // step, and Settings > Connections' connector cards — performs a
-        // real, synchronous network probe of the key before storing it (see
-        // packages/onboarding/src/complete-credential.ts and
-        // packages/connections/src/routes.ts): a stub key is rejected right
-        // there, by design. `local-rip.test.ts` (CL-6055) already
-        // establishes the honest way to drive a stub key past exactly that
-        // gate: call the same two halves the onboarding route itself calls
+        // Onboarding's own credential step (CL-6123) stores a pasted key
+        // immediately, with no live probe of the provider gating it —
+        // unlike Settings > Connections' connector cards
+        // (packages/connections/src/routes.ts), which still probe a
+        // pasted key for real before storing it. This step drives the
+        // same two halves the onboarding route itself calls
         // (`testAndPersistCredential` / `ensureSeeded`, from
-        // `@workbench/onboarding`) directly, stubbing only the one
-        // `testCredential` network boundary those functions expose
-        // precisely so this is possible — everything else (persisting the
-        // credential, publishing the tool registry, pushing and deploying
-        // every default workflow including "assistant"/Myra) runs for
-        // real, against the real spawned hub, using the real session
-        // cookie this browser just signed in with. The stub key itself is
-        // never sent anywhere here — it is stored as an unproven model
-        // source, exactly as onboarding's own key path would store it, so
-        // the later chat message is the first time it is ever dialed for
-        // real.
+        // `@workbench/onboarding`) directly rather than through HTTP —
+        // matching `local-rip.test.ts` (CL-6055)'s pattern of calling a
+        // package's own functions rather than round-tripping through a
+        // browser for a step already covered elsewhere — so everything
+        // (persisting the credential, publishing the tool registry,
+        // pushing and deploying every default workflow including
+        // "assistant"/Myra) runs for real, against the real spawned hub,
+        // using the real session cookie this browser just signed in
+        // with. The stub key itself is never sent anywhere here — it is
+        // stored as an unproven model source, exactly as onboarding's
+        // own key path would store it, so the later chat message is the
+        // first time it is ever dialed for real.
         const cookies = (await page.cookies()).map(
           (c) => `${c.name}=${c.value}`,
         );
@@ -551,7 +550,6 @@ async function run(): Promise<void> {
           apiKey: stubApiKey,
           pushWorkflow,
           log: () => undefined,
-          testCredential: async () => ({ ok: true }),
         });
         if (connected.kind !== "connected") {
           throw new Error(

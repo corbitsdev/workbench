@@ -159,18 +159,14 @@ function mockHub() {
   return hub;
 }
 
-/** The fast half, run for real, with only the credential test itself
- * stubbed out — there is no real Hugging Face account to probe in a
- * test. */
+/** The fast half, run for real — CL-6123 dropped the probe that used to
+ * need stubbing out here, so this now just forwards to the real
+ * `testAndPersistCredential` unchanged. */
 const connectCredentialAgainstMockHub: NonNullable<
   NonNullable<
     CreateOnboardingRoutesDeps["huggingfaceConnect"]
   >["connectCredential"]
-> = (args) =>
-  testAndPersistCredential({
-    ...args,
-    testCredential: async () => ({ ok: true }),
-  });
+> = (args) => testAndPersistCredential(args);
 
 function asUser(session: { userId: string }): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
