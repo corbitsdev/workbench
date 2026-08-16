@@ -92,6 +92,7 @@ import type { ChannelShareStore } from "./channel-share";
 import { monogramFromName } from "./channel-share";
 import type { FederationTrustStore } from "./federation-trust";
 import type { InvitableDefinition as InvitableDefinitionRecord } from "./platform-port";
+import { AgentUnreachableError } from "./platform-port";
 import { isAgentAddress } from "./mentions";
 
 export type {
@@ -1569,15 +1570,29 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json({ command: commandResult }, 201);
       }
 
-      const sent = await sendChannelMessage(
-        { store: deps.store, platform: deps.platform },
-        {
-          tenantId: ownerTenantId,
-          principalId: principal.id,
-          channelId,
-          messageParts,
-        },
-      );
+      let sent;
+      try {
+        sent = await sendChannelMessage(
+          { store: deps.store, platform: deps.platform },
+          {
+            tenantId: ownerTenantId,
+            principalId: principal.id,
+            channelId,
+            messageParts,
+          },
+        );
+      } catch (err) {
+        if (err instanceof AgentUnreachableError) {
+          return c.json(
+            ErrorEnvelope(
+              "agent_unreachable",
+              "The agent is reconnecting after a restart — try again in a moment.",
+            ),
+            503,
+          );
+        }
+        throw err;
+      }
 
       if (deps.threads !== undefined) {
         const root = await deps.threads.ensureRootThread(
