@@ -1,4 +1,4 @@
-// The Spaces band's "Working" group (`ChannelsBand` in
+// The Chats band's "Working" group (`ChannelsBand` in
 // `../src/shell/panel-contributions.tsx`): a quiet list of the signed-in
 // user's running tasks, hidden entirely when there's nothing running,
 // dropping a task on the band's next refresh once it completes, and

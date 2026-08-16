@@ -38,7 +38,7 @@ describe("brand rail", () => {
     // switcher text that would reintroduce tenant identity on col1.
     expect(markup).not.toContain("tnt_1");
     expect(markup).not.toContain("Growth Team Bench");
-    expect(markup).toContain(">Spaces</span>");
+    expect(markup).toContain(">Chats</span>");
   });
 
   test("lists the trimmed product nav, not Chat or Approvals", () => {
