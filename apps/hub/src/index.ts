@@ -34,6 +34,7 @@ import {
   buildAgentDefinitionWorkflow,
   createAgentDefinitionRoutes,
   createDefinitionAssetHistory,
+  createWorkflowCapabilityRoutes,
   reindexPinnedSkills,
   serializeAgentDefinitionWorkflow,
   serializeAgentSkills,
@@ -961,6 +962,24 @@ export async function createHub(config: HubConfig) {
       }),
     }),
   );
+  // The workflow-run-authenticated variant of the capabilities route
+  // just above (CL-6086): a workflow child has no browser session, only
+  // its sidecar bearer token and its own run address, so it reaches
+  // `POST /:definitionId/capabilities` through this surface instead,
+  // mirroring `/api/workflow-skills`/`/api/workflow-memory`. See
+  // `@corbits/agent-directory`'s `workflow-capability-routes.ts` for the
+  // deliberate, documented authorization decision this route enforces
+  // in place of a `requireGrant` check (CL-6085 tracks the durable fix).
+  app.route(
+    "/api/workflow-capabilities",
+    createWorkflowCapabilityRoutes({
+      db,
+      assetService,
+      skillIndex: skills.skillIndex,
+      capabilityInventory,
+      authenticator: createWorkflowRunAuthenticator({ db }),
+    }),
+  );
   app.route(
     `${TENANT_PREFIX}/chat`,
     createCommandRoutes({
@@ -1434,20 +1453,15 @@ export async function createHub(config: HubConfig) {
   // per-tenant connected-provider derivation) — this package owns the
   // inventory's shape, never the listing logic.
   const memoryToolPackageName = "@corbits/memory-tools";
-  // `@corbits/capability-tools` (CL-6084)'s `request_capability` tool is
-  // deliberately NOT listed in `listMyraUsableToolPackages` below yet,
-  // even though it (like memory-tools) needs no per-tenant credential.
-  // Pinning it to a drafted agent today would ship a tool that always
-  // fails when called: its execution needs the calling agent's own
-  // `definitionId` in env, which nothing threads into a workflow step's
-  // tool env yet (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`
-  // only threads memory-tools' three keys today), and even with that,
-  // the capabilities route it calls
-  // (`@corbits/agent-directory`'s `POST /:definitionId/capabilities`)
-  // only authenticates a human browser session — no workflow-run-token
-  // path exists for it the way `/api/workflow-skills` and
-  // `/api/workflow-memory` have one. List it here once both gaps close;
-  // see `@corbits/capability-tools`'s README for the full detail.
+  // `@corbits/capability-tools` (CL-6084/CL-6086)'s `request_capability`
+  // tool needs no per-tenant credential either, like memory-tools: the
+  // sidecar now threads its own `definitionId` into a step's tool env
+  // (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`), and
+  // `/api/workflow-capabilities` (mounted below) gives it a
+  // workflow-run-authenticated path to the capabilities route the same
+  // way `/api/workflow-skills` and `/api/workflow-memory` do. Both gaps
+  // that used to keep it out of this lister are closed.
+  const capabilityToolPackageName = "@corbits/capability-tools";
 
   async function listMyraConversationalAgents(
     tenantId: string,
@@ -1507,6 +1521,11 @@ export async function createHub(config: HubConfig) {
         credentialBinding: null,
       });
     }
+    entries.push({
+      name: capabilityToolPackageName,
+      connectorId: "capability",
+      credentialBinding: null,
+    });
     return entries;
   }
 

@@ -4,32 +4,23 @@
 // shipped `POST /:definitionId/capabilities` (fail-closed, versioned,
 // refresh-on-success) and `GET /capabilities/inventory`.
 //
-// [Intx gap, CL-6084]: as of this package, those two routes are mounted
-// only under the tenant-session-authenticated `TENANT_PREFIX` (see
-// `apps/hub/src/index.ts`'s `${TENANT_PREFIX}/agent-definitions` mount),
-// authenticated via `createResolveTenant`, which requires a human
-// browser session (`vendor/intx/hub-api/src/middleware/tenant.ts`). A
-// workflow-process child never holds that session — only its sidecar
-// bearer token and its own run address, the same credential
-// `@corbits/memory-tools`, `@corbits/skills`' workflow routes, and
-// `@corbits/artifacts-hub`'s workflow routes already authenticate with
-// via `createWorkflowRunAuthenticator`. Reaching the capabilities route
-// with that credential needs a `createWorkflowCapabilityRoutes` factory
-// in `@corbits/agent-directory` (mirroring `packages/skills/src/workflow-routes.ts`),
-// mounted in `apps/hub` beside `/api/workflow-skills` — neither of which
-// is in this package's file set. This client is written against that
-// surface's expected shape (mirroring the tenant-session route's own
-// request/response contract) so wiring it up is a one-line config change
-// once the route exists; until then, every call here fails honestly with
-// a network/HTTP error, never a fabricated success.
+// This surface is `@corbits/agent-directory`'s `createWorkflowCapabilityRoutes`
+// (`packages/agent-directory/src/workflow-capability-routes.ts`, CL-6086),
+// mounted in `apps/hub` at `/api/workflow-capabilities` beside
+// `/api/workflow-skills` — authenticated the same way, via
+// `createWorkflowRunAuthenticator` (sidecar bearer token + run address),
+// never a human browser session.
 //
-// [Intx gap, CL-6084]: even with that route mounted, a run's own
-// `kind: "workflow"` principal is never seeded a `workflow-definition:
-// <its own id>/update` grant anywhere in `vendor/intx/hub-api`'s grant
-// materialization — so `requireGrant` would still 403 a call the run
-// makes for its own definition until that provisioning exists. Neither
-// gap is closed here; both are load-bearing for approval and
-// grant-checking to happen for real, not just for this client's shape.
+// [Intx gap, tracked durably by CL-6085]: a run's own `kind: "workflow"`
+// principal is still never seeded a `workflow-definition: <its own id>/
+// update` grant anywhere in `vendor/intx/hub-api`'s grant materialization.
+// The workflow-capability route does not block on this: it skips a
+// grant-store check for the narrow own-definition case, relying instead
+// on `request_capability`'s `approval: "ask"` gate already having put a
+// human in front of the call before this client is ever invoked — see
+// the route's own file-level comment for the full authorization
+// reasoning. `requireGrant` will replace that interim rule once CL-6085
+// closes.
 import { type } from "arktype";
 
 export interface CapabilityToolClientConfig {

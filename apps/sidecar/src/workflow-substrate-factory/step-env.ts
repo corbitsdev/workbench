@@ -99,6 +99,22 @@ export interface SidecarStepBuildEnvDeps {
   hubArtifactsUrl: string;
   sidecarToken: string;
   /**
+   * The deploying `WorkflowDefinition`'s own id, threaded from the
+   * substrate factory's `WORKFLOW_DEFINITION_REPO_ID` substrate-config
+   * entry (`spec.definition.id` at deploy time, see
+   * `apps/sidecar/src/workflow-host-wiring/index.ts`'s
+   * `buildDeploymentRecord`). Carried on the step env beyond `BaseEnv`
+   * exactly like `hubArtifactsUrl`/`sidecarToken`/`address` above so
+   * `@corbits/capability-tools` (`requires: ["hubCapabilitiesUrl",
+   * "sidecarToken", "address", "definitionId"]`) can name its OWN
+   * definition when calling the workflow-run-authenticated capabilities
+   * route — the run's definitionId has no other sanctioned way to reach
+   * a tool execution (see the [Intx gap] note in
+   * `@corbits/capability-tools`'s `tool.ts`, now closed on the workbench
+   * side by this field).
+   */
+  definitionId: string;
+  /**
    * Adapter registry the step agent resolves inference adapters through.
    * The child builds this eagerly at boot from the validated
    * `SIDECAR_ADAPTER_MANIFEST` (built-ins merged with operator custom
@@ -295,7 +311,9 @@ export function createSidecarStepBuildEnv(
       hubArtifactsUrl: string;
       hubMemoryUrl: string;
       hubSkillsUrl: string;
+      hubCapabilitiesUrl: string;
       sidecarToken: string;
+      definitionId: string;
     } = {
       // Feed the reactor the step's full ordered failover chain and pin
       // its initial source to element 0. The reactor resolves the initial
@@ -327,7 +345,14 @@ export function createSidecarStepBuildEnv(
       // (`requires: ["hubSkillsUrl", "sidecarToken", "address"]`) for the
       // skill registry's own run-authenticated surface.
       hubSkillsUrl: deps.hubArtifactsUrl,
+      // Same hub HTTP origin again, under the key
+      // `@corbits/capability-tools` declares (`requires:
+      // ["hubCapabilitiesUrl", "sidecarToken", "address",
+      // "definitionId"]`) for its workflow-run-authenticated capabilities
+      // surface.
+      hubCapabilitiesUrl: deps.hubArtifactsUrl,
       sidecarToken: deps.sidecarToken,
+      definitionId: deps.definitionId,
     };
     // Carry the materialized tool runtime to the tool-bearing
     // `agentFactory` via the env's symbol-keyed slot. The step-invoker

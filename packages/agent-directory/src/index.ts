@@ -42,3 +42,9 @@ export {
   type CapabilitySkillEntry,
   type CapabilityToolPackageEntry,
 } from "./capability-inventory";
+export {
+  createWorkflowCapabilityRoutes,
+  type CreateWorkflowCapabilityRoutesDeps,
+  type WorkflowCapabilityRunScope,
+  type WorkflowRunAuthenticator as WorkflowCapabilityRunAuthenticator,
+} from "./workflow-capability-routes";

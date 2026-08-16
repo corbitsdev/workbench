@@ -36,17 +36,39 @@ const MAX_REPLY_EXCERPT = 400;
 const MAX_SYSTEM_PROMPT_LENGTH = 8000;
 const MAX_DESCRIPTION_LENGTH = 500;
 
-/** `@corbits/capability-tools`' package name (CL-6084) — the
- * `request_capability` bundle a drafted agent can pin like any other
- * tool package. Guidance telling the drafted agent it can ask for a
- * capability only belongs in its systemPrompt when this package is
- * actually among `toolPackagePins`; a definition that never pinned it
- * has no such tool to call, so mentioning it unconditionally would be
- * a false promise. Kept a literal here (rather than importing
+/** `@corbits/capability-tools`' package name (CL-6084/CL-6086) — the
+ * `request_capability` bundle every drafted agent gets pinned by
+ * default (see `validateAgentDefinitionDraftReplyAgainstInventory`'s
+ * default-pin step below), the same way a definition that pins skills
+ * always gets `@corbits/tools-skills` alongside them
+ * (`@corbits/agent-directory`'s `reindexPinnedSkills`) — self-service
+ * capability requests are a baseline capability every drafted agent
+ * should carry, not something Myra has to remember to choose. Only
+ * added when the tenant's own inventory actually offers it (a tenant
+ * whose hub build has it un-pinnable, or which never seeded it, gets
+ * no dangling pin). Kept a literal here (rather than importing
  * `@corbits/capability-tools`) the same way this module already treats
  * every inventory entry as a bare name string, never a package
  * dependency. */
 const CAPABILITY_REQUEST_TOOL_PACKAGE = "@corbits/capability-tools";
+
+/** Adds `CAPABILITY_REQUEST_TOOL_PACKAGE` to a draft's resolved
+ * `toolPackagePins` whenever the tenant's inventory offers it and it
+ * isn't already there. Applied to every draft unconditionally — Myra's
+ * own `toolPackagePins` choice never has to include it for the drafted
+ * agent to carry it. */
+function withDefaultCapabilityRequestPin(
+  toolPackagePins: readonly string[],
+  inventory: PlannerInventory,
+): readonly string[] {
+  const offered = inventory.toolPackages.some(
+    (entry) => entry.name === CAPABILITY_REQUEST_TOOL_PACKAGE,
+  );
+  if (!offered || toolPackagePins.includes(CAPABILITY_REQUEST_TOOL_PACKAGE)) {
+    return toolPackagePins;
+  }
+  return [...toolPackagePins, CAPABILITY_REQUEST_TOOL_PACKAGE];
+}
 
 // --- reply contract ---
 
@@ -199,7 +221,10 @@ export function validateAgentDefinitionDraftReplyAgainstInventory(
 
   const base: AgentDefinitionDraft = {
     systemPrompt: reply.systemPrompt,
-    toolPackagePins: reply.toolPackagePins ?? [],
+    toolPackagePins: withDefaultCapabilityRequestPin(
+      reply.toolPackagePins ?? [],
+      inventory,
+    ),
     skills: reply.skills ?? [],
   };
   const withDescription =
@@ -278,12 +303,12 @@ function buildAgentDefinitionDraftPrompt(
   )
     ? [
         "",
-        `If you include "${CAPABILITY_REQUEST_TOOL_PACKAGE}" in`,
-        "toolPackagePins, also tell the agent in its systemPrompt that it",
-        "can ask for a capability (a tool package, skill, or model) it",
-        "doesn't have yet by calling request_capability — only when a",
-        "genuine, specific need comes up in conversation, never",
-        "speculatively — and that a human has to approve the request",
+        `This agent will automatically be pinned "${CAPABILITY_REQUEST_TOOL_PACKAGE}"`,
+        "regardless of what you put in toolPackagePins, so its",
+        "systemPrompt must tell it that it can ask for a capability (a",
+        "tool package, skill, or model) it doesn't have yet by calling",
+        "request_capability — only when a genuine, specific need comes",
+        "up in conversation, never speculatively — and that a human has to approve the request",
         "before anything is added.",
       ]
     : [];

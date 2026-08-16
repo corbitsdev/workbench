@@ -356,6 +356,7 @@ export function createSidecarSubstrateFactory(
       toolless: false,
       hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
+      definitionId: workflowDefinitionRepoId.id,
     };
     const buildStepEnv = createSidecarStepBuildEnv(
       durableConversation !== undefined
@@ -447,6 +448,7 @@ export function createSidecarSubstrateFactory(
       toolless: true,
       hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
       sidecarToken: validated.SIDECAR_TOKEN,
+      definitionId: workflowDefinitionRepoId.id,
     });
     const bodyInvokeStep: SidecarBodyStepInvoker = (
       req,

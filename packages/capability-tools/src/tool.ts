@@ -8,23 +8,18 @@
 // or controls that gate; it only has to make the resulting card and
 // result message read honestly.
 //
-// [Intx gap, CL-6084]: a tool execution has no sanctioned way to learn
-// its own agent definition id. `ToolCall` (`vendor/intx/types/src/runtime.ts`)
-// carries only `{id, name, arguments}`; `BaseEnv` and the workflow
-// runtime's per-step invoke request carry no `definitionId` field either.
-// `definitionId` IS already known one layer up, at deploy time (see
-// `apps/sidecar/src/workflow-host-wiring/index.ts`), but the sidecar's
-// per-step env builder (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`)
-// — which is where `@corbits/memory-tools`' `hubMemoryUrl`/`sidecarToken`/
-// `address` are threaded in today — doesn't thread it through, and
-// `apps/sidecar` is outside this change's file set. `WorkflowCapabilityEnv`
-// below declares `definitionId` as a required env key exactly the way
-// `WorkflowMemoryEnv` declares its three; once the sidecar threads it,
-// wiring is a drop-in. Until then, `env.definitionId` is never populated
-// for a real run and this tool can't be pinned to a live agent.
+// `definitionId` is threaded onto `env` by the sidecar's per-step env
+// builder (`apps/sidecar/src/workflow-substrate-factory/step-env.ts`,
+// CL-6086), the same ground `@corbits/memory-tools`' `hubMemoryUrl`/
+// `sidecarToken`/`address` are threaded from — resolved at the
+// substrate factory from the deploying definition's own id
+// (`WORKFLOW_DEFINITION_REPO_ID`). `WorkflowCapabilityEnv` below
+// declares `definitionId` as a required env key exactly the way
+// `WorkflowMemoryEnv` declares its three.
 //
-// See `./client.ts` for the second, independent gap blocking the actual
-// HTTP call: the capabilities route only authenticates a human session.
+// See `./client.ts` for the workflow-run-authenticated capabilities
+// route (`@corbits/agent-directory`'s `createWorkflowCapabilityRoutes`,
+// also CL-6086) this bundle's execution calls.
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
