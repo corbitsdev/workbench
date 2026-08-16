@@ -43,6 +43,14 @@ the reverse.
 - `pricing.ts` — model rate lookups; a missing rate stays an explicit
   absence, never a fabricated zero.
 - `routes.ts` — the tenant-scoped Hono routes wrapping the above.
+  `/usage`, `/activity`, and `/tools` roll up the requested tenant's whole
+  descendant subtree when a `db` handle is wired (see `resolveScope`) — a
+  workbench tenant with no children stays a single-tenant view, and its
+  workspace parent aggregates every child workbench, at this query layer
+  rather than one browser fetch per workbench. `/scope` is the read-only
+  counterpart: a tenant's own identity, its parent (if any), and the
+  sibling workbenches to switch between — what a caller reads to build a
+  workbench/aggregate switcher.
 - `schema.ts` / `migrations.ts` — the usage-sink tables, siloed in their
   own Postgres schema with a package-owned migration ledger.
 
