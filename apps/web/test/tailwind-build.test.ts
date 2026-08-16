@@ -28,18 +28,12 @@ describe("Tailwind production CSS", () => {
     expect(css).toContain("sm\\:px-7");
   });
 
-  test("emits artifact kind palette classes", () => {
+  // The kind-color palette classes died with artifact-ui's unused
+  // `artifactKindColor` export (fleet cleanup) — kind is conveyed by
+  // `artifactKindLabel` text, so only the still-used neutral survives.
+  test("emits the artifact card's neutral background", () => {
     const css = builtCss();
-    for (const color of [
-      "bg-\\[var\\(--chart-1\\)\\]",
-      "bg-\\[var\\(--chart-2\\)\\]",
-      "bg-\\[var\\(--chart-3\\)\\]",
-      "bg-\\[var\\(--chart-4\\)\\]",
-      "bg-\\[var\\(--chart-5\\)\\]",
-      "bg-muted",
-    ]) {
-      expect(css).toContain(color);
-    }
+    expect(css).toContain("bg-muted");
   });
 
   test("emits sizing utilities used on agent cards", () => {
