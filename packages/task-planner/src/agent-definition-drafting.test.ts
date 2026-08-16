@@ -260,6 +260,59 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).not.toContain("undefined");
   });
 
+  test("the prompt says nothing about request_capability when @corbits/capability-tools isn't in the inventory", async () => {
+    let sentPrompt = "";
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        runner: {
+          run: async ({ prompt }) => {
+            sentPrompt = prompt;
+            return {
+              content: JSON.stringify({ systemPrompt: "You help." }),
+              runId: "wfr_draft_3",
+            };
+          },
+        },
+      }),
+    );
+    await drafting.propose(INPUT);
+    expect(sentPrompt).not.toContain("request_capability");
+  });
+
+  test("the prompt tells the model to mention request_capability only when @corbits/capability-tools is offered", async () => {
+    let sentPrompt = "";
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        inventorySources: {
+          ...INVENTORY_SOURCES,
+          async listUsableToolPackages(tenantId: string) {
+            return [
+              ...(await INVENTORY_SOURCES.listUsableToolPackages(tenantId)),
+              {
+                name: "@corbits/capability-tools",
+                connectorId: "capability-tools",
+                credentialBinding: null,
+              },
+            ];
+          },
+        },
+        runner: {
+          run: async ({ prompt }) => {
+            sentPrompt = prompt;
+            return {
+              content: JSON.stringify({ systemPrompt: "You help." }),
+              runId: "wfr_draft_4",
+            };
+          },
+        },
+      }),
+    );
+    await drafting.propose(INPUT);
+    expect(sentPrompt).toContain("@corbits/capability-tools");
+    expect(sentPrompt).toContain("request_capability");
+    expect(sentPrompt).toContain("a human has to approve");
+  });
+
   test("an unresolvable Myra definition surfaces as MyraAgentDefinitionDraftingUnavailableError", async () => {
     const drafting = createMyraAgentDefinitionDrafting(
       buildDeps({
