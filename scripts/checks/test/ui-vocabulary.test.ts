@@ -210,11 +210,32 @@ test("prose mentioning Channels is now a plain banned-term violation, not just a
   expect(report.violations[0]).toContain("channel");
 });
 
-test("the current 'Chats and running routines' copy is clean", () => {
+test("a reintroduced 'chat' in user-facing prose is a violation (workbench is the noun)", () => {
   const report = auditUiVocabulary([
     {
-      relPath: "apps/web/src/shell/panel-contributions.tsx",
+      relPath: "apps/web/src/shell/workbench-list.tsx",
       contents: `description="Chats and running routines for this workbench will appear here."`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("chat");
+});
+
+test("a reintroduced 'Chats' surface label is a violation even as a bare word", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/sidebar.tsx",
+      contents: `<SidebarPanelHeader title="Chats" />`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+});
+
+test("the current 'Workbenches and running routines' copy is clean", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/workbench-list.tsx",
+      contents: `description="Workbenches and running routines will appear here."`,
     },
   ]);
   expect(report.violations).toEqual([]);
@@ -224,7 +245,7 @@ test("a reintroduced 'space' in user-facing prose is a violation (CL-6081: the s
   const report = auditUiVocabulary([
     {
       relPath: "apps/web/src/shell/panel-contributions.tsx",
-      contents: `description="Spaces, chats, and running routines for this workbench will appear here."`,
+      contents: `description="Spaces and running routines for this workbench will appear here."`,
     },
   ]);
   expect(report.violations).toHaveLength(1);

@@ -158,7 +158,7 @@ describe("NewChannelDialog guided stepper", () => {
     await settle();
 
     const chatCard = [...document.body.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Chat"),
+      (button) => button.textContent?.includes("Workbench"),
     );
     act(() => {
       chatCard?.click();
@@ -183,7 +183,7 @@ describe("NewChannelDialog guided stepper", () => {
     expect(document.body.textContent).toContain("Step 1 of 2");
     const chatCardAfterBack = [
       ...document.body.querySelectorAll("button"),
-    ].find((button) => button.textContent?.includes("Chat"));
+    ].find((button) => button.textContent?.includes("Workbench"));
     expect(chatCardAfterBack?.getAttribute("aria-pressed")).toBe("true");
   });
 

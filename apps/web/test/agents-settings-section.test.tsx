@@ -119,7 +119,7 @@ describe("AgentsSettingsSection", () => {
     expect(el.textContent).toContain("Researcher");
     expect(el.textContent).toContain("Answers research questions");
     expect(el.textContent).toContain("Active agents (1)");
-    expect(el.textContent).toContain("Start chat");
+    expect(el.textContent).toContain("Open workbench");
     expect(el.textContent).toContain("Open in chat");
     expect(el.innerHTML).not.toContain("ins_1@acme.localhost");
   });
@@ -139,7 +139,7 @@ describe("AgentsSettingsSection", () => {
     expect(navigated).toContain("/settings/agents/wfd_1");
   });
 
-  test("clicking Start chat twice reopens the same channel instead of minting a second one", async () => {
+  test("clicking Open workbench twice reopens the same conversation instead of minting a second one", async () => {
     // `POST /channels` with a `definitionId` is find-or-create server-side
     // (CL-6070): the same agent picked twice reopens its existing chat.
     // This locks in that the client's blind POST-and-navigate still lands
@@ -171,7 +171,7 @@ describe("AgentsSettingsSection", () => {
       });
       const startChat = Array.from(el.querySelectorAll("button")).find(
         (button) =>
-          button.getAttribute("aria-label") === "Start chat with this agent",
+          button.getAttribute("aria-label") === "Open this agent’s workbench",
       );
       expect(startChat).toBeDefined();
 
