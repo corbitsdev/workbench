@@ -1,17 +1,25 @@
 export {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
-  parseAgentSkills,
   readAgentCapabilities,
   reindexPinnedSkills,
-  serializeAgentSkills,
   withAgentModel,
   withAgentToolPackagePin,
   AGENT_DEFINITION_STEP_ID,
-  AGENT_SKILLS_ASSET_PATH,
   type AgentDefinitionCapabilities,
   type AgentDefinitionWorkflowInput,
 } from "./agent-workflow";
+export {
+  createDrizzleDefinitionSkillsStore,
+  createInMemoryDefinitionSkillsStore,
+  type DefinitionSkillsStore,
+} from "./skills-store";
+export {
+  agentDirectoryMigrations,
+  applyAgentDirectoryMigrations,
+  type AgentDirectoryMigration,
+  type ApplyAgentDirectoryMigrationsReport,
+} from "./migrations";
 export {
   CreateAgentDefinitionInput,
   RestoreDefinitionInput,

@@ -18,33 +18,25 @@ import type { DB } from "@intx/db";
 import { SkillRegistryError } from "@corbits/skills";
 
 import {
-  AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
 } from "../src/agent-workflow";
 import { createAgentDefinitionRoutes } from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
+import {
+  createInMemoryDefinitionSkillsStore,
+  type DefinitionSkillsStore,
+} from "../src/skills-store";
 import type { DefinitionAssetHistory } from "../src/definition-history";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
 
-/** A `readAssetBlob` that answers `workflow.json` with `workflowBytes` and
- * `skills.json` with `skillsBytes` when given, or a `not_found`
- * `AssetServiceError` otherwise — the shape `readDefinitionSkills`
- * (this package's own "no skills.json reads as no skills" convention)
- * expects for a definition that has never attached any skills. */
-function readAssetBlobFor(
-  workflowBytes: Uint8Array,
-  skillsBytes?: Uint8Array,
-): AssetService["readAssetBlob"] {
-  return ({ path }) => {
-    if (path === AGENT_SKILLS_ASSET_PATH) {
-      if (skillsBytes !== undefined) return Promise.resolve(skillsBytes);
-      return Promise.reject(
-        new AssetServiceError("not_found", "no skills.json"),
-      );
-    }
-    return Promise.resolve(workflowBytes);
-  };
+/** A `readAssetBlob` that always answers `workflow.json` with
+ * `workflowBytes` — pinned skills no longer live in the asset tree (see
+ * `../src/skills-store.ts`), so a test that needs a definition's skills
+ * seeds a `DefinitionSkillsStore` directly instead of stubbing a second
+ * path here. */
+function readAssetBlobFor(workflowBytes: Uint8Array): AssetService["readAssetBlob"] {
+  return () => Promise.resolve(workflowBytes);
 }
 
 const fakeCapabilityInventory: CapabilityInventoryProvider = {
@@ -236,11 +228,13 @@ function buildApp(
   requireGrant: RequireGrant = allowAllRequireGrant,
   history: DefinitionAssetHistory = fakeHistory(),
   capabilityInventory: CapabilityInventoryProvider = fakeCapabilityInventory,
+  skillsStore: DefinitionSkillsStore = createInMemoryDefinitionSkillsStore(),
 ): Hono<TenantEnv> {
   const routes = createAgentDefinitionRoutes({
     db,
     assetService,
     skillIndex: fakeSkillIndex,
+    skillsStore,
     history,
     capabilityInventory,
     requireGrant,
@@ -409,8 +403,9 @@ function fakeCreateDb(): DB["db"] {
   } as unknown as DB["db"];
 }
 
-test("a create request with skills writes skills.json alongside workflow.json in one commit", async () => {
+test("a create request with skills writes only workflow.json to the asset tree and records skills in the skills store", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp(
     fakeAssetService({
       createAsset: () =>
@@ -430,6 +425,10 @@ test("a create request with skills writes skills.json alongside workflow.json in
       },
     }),
     fakeCreateDb(),
+    allowAllRequireGrant,
+    fakeHistory(),
+    fakeCapabilityInventory,
+    skillsStore,
   );
   const response = await post(app, {
     name: "Research Buddy",
@@ -439,16 +438,18 @@ test("a create request with skills writes skills.json alongside workflow.json in
   });
   expect(response.status).toBe(201);
   expect(writtenFiles).toBeDefined();
-  expect(writtenFiles?.["workflow.json"]).toBeDefined();
-  expect(JSON.parse(writtenFiles?.["skills.json"] as string)).toEqual({
-    skills: ["web-research", "long-form-write"],
-  });
+  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(await skillsStore.getSkills("ast_1")).toEqual([
+    "web-research",
+    "long-form-write",
+  ]);
   const body = (await response.json()) as { skills: readonly string[] };
   expect(body.skills).toEqual(["web-research", "long-form-write"]);
 });
 
-test("a create request without skills writes an empty skills.json", async () => {
+test("a create request without skills records an empty skills list", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp(
     fakeAssetService({
       createAsset: () =>
@@ -468,6 +469,10 @@ test("a create request without skills writes an empty skills.json", async () => 
       },
     }),
     fakeCreateDb(),
+    allowAllRequireGrant,
+    fakeHistory(),
+    fakeCapabilityInventory,
+    skillsStore,
   );
   const response = await post(app, {
     name: "Research Buddy",
@@ -475,9 +480,8 @@ test("a create request without skills writes an empty skills.json", async () => 
     systemPrompt: "You are a careful research assistant.",
   });
   expect(response.status).toBe(201);
-  expect(JSON.parse(writtenFiles?.["skills.json"] as string)).toEqual({
-    skills: [],
-  });
+  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(await skillsStore.getSkills("ast_1")).toEqual([]);
 });
 
 function fakeSkillsDb(
@@ -500,12 +504,9 @@ function fakeSkillsDb(
   } as unknown as DB["db"];
 }
 
-test("GET /skills returns an empty list for a definition with no skills.json", async () => {
+test("GET /skills returns an empty list for a definition with no skills store row", async () => {
   const app = buildApp(
-    fakeAssetService({
-      readAssetBlob: () =>
-        Promise.reject(new AssetServiceError("not_found", "no skills.json")),
-    }),
+    fakeAssetService(),
     fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
   );
   const response = await app.request("/skills?ids=def_1");
@@ -516,17 +517,16 @@ test("GET /skills returns an empty list for a definition with no skills.json", a
   expect(body.skills).toEqual({ def_1: [] });
 });
 
-test("GET /skills returns the parsed skill list when skills.json exists", async () => {
+test("GET /skills returns the stored skill list", async () => {
+  const skillsStore = createInMemoryDefinitionSkillsStore();
+  await skillsStore.setSkills("ast_1", ["web-research"]);
   const app = buildApp(
-    fakeAssetService({
-      readAssetBlob: () =>
-        Promise.resolve(
-          new TextEncoder().encode(
-            JSON.stringify({ skills: ["web-research"] }),
-          ),
-        ),
-    }),
+    fakeAssetService(),
     fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
+    allowAllRequireGrant,
+    fakeHistory(),
+    fakeCapabilityInventory,
+    skillsStore,
   );
   const response = await app.request("/skills?ids=def_1");
   const body = (await response.json()) as {
@@ -544,8 +544,9 @@ test("GET /skills omits unknown definition ids from the map rather than erroring
   expect(body.skills).toEqual({});
 });
 
-test("PUT /:definitionId/skills replaces the skill set with a single skills.json commit", async () => {
+test("PUT /:definitionId/skills replaces the skill set, writing only workflow.json to the asset tree", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp(
     fakeAssetService({
       readAssetBlob: () => Promise.resolve(storedDefinitionBytes()),
@@ -555,18 +556,17 @@ test("PUT /:definitionId/skills replaces the skill set with a single skills.json
       },
     }),
     fakeSkillsDb({ id: "def_1", assetId: "ast_1" }),
+    allowAllRequireGrant,
+    fakeHistory(),
+    fakeCapabilityInventory,
+    skillsStore,
   );
   const response = await put(app, "/def_1/skills", {
     skills: ["long-form-write"],
   });
   expect(response.status).toBe(200);
-  expect(Object.keys(writtenFiles ?? {}).sort()).toEqual([
-    "skills.json",
-    "workflow.json",
-  ]);
-  expect(JSON.parse(writtenFiles?.["skills.json"] as string)).toEqual({
-    skills: ["long-form-write"],
-  });
+  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(await skillsStore.getSkills("ast_1")).toEqual(["long-form-write"]);
   const body = (await response.json()) as { skills: readonly string[] };
   expect(body.skills).toEqual(["long-form-write"]);
 });
@@ -992,6 +992,7 @@ test("pinning a skill the registry cannot resolve is a 400, not a 500", async ()
           new SkillRegistryError("not_found", 'cannot pin skill "ghost"'),
         ),
     },
+    skillsStore: createInMemoryDefinitionSkillsStore(),
     history: fakeHistory(),
     capabilityInventory: fakeCapabilityInventory,
     requireGrant: () => async (_c, next) => {
@@ -1137,10 +1138,7 @@ test("restore writes the old commit's blobs as a new, human-named commit — nev
     }),
     allowAllRequireGrant,
     fakeHistory({
-      readBlobAtCommit: ({ path }) =>
-        path === AGENT_SKILLS_ASSET_PATH
-          ? Promise.resolve(null)
-          : Promise.resolve(oldWorkflow),
+      readBlobAtCommit: () => Promise.resolve(oldWorkflow),
     }),
   );
   const response = await postTo(app, "/def_1/restore", {
@@ -1294,8 +1292,9 @@ test("adding a skill the inventory doesn't offer is a 400, never written", async
   expect(populateCalled).toBe(false);
 });
 
-test("adding a skill merges it additively into skills.json and re-indexes the prompt", async () => {
+test("adding a skill merges it additively into the skills store and re-indexes the prompt", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp(
     fakeAssetService({
       readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
@@ -1309,15 +1308,18 @@ test("adding a skill merges it additively into skills.json and re-indexes the pr
       assetId: "ast_1",
       name: "research-buddy",
     }),
+    allowAllRequireGrant,
+    fakeHistory(),
+    fakeCapabilityInventory,
+    skillsStore,
   );
   const response = await postTo(app, "/def_1/capabilities", {
     kind: "skill",
     name: "research",
   });
   expect(response.status).toBe(200);
-  expect(writtenFiles?.["skills.json"]).toBe(
-    JSON.stringify({ skills: ["research"] }),
-  );
+  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
   expect((writtenFiles?.["workflow.json"] as string).includes("research")).toBe(
     true,
   );

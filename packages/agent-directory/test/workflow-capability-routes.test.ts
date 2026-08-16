@@ -7,12 +7,10 @@
 import { expect, test } from "bun:test";
 import { Hono } from "hono";
 
-import { AssetServiceError } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 
 import {
-  AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
 } from "../src/agent-workflow";
@@ -22,6 +20,10 @@ import {
   type WorkflowRunAuthenticator,
 } from "../src/workflow-capability-routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
+import {
+  createInMemoryDefinitionSkillsStore,
+  type DefinitionSkillsStore,
+} from "../src/skills-store";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
 
 const TENANT_ID = "tnt_1";
@@ -60,21 +62,11 @@ function storedDefinitionBytes(): Uint8Array {
   );
 }
 
-/** A `readAssetBlob` that answers `workflow.json` and 404s `skills.json`
- * unless given explicit bytes — mirrors `routes.test.ts`'s helper. */
-function readAssetBlobFor(
-  workflowBytes: Uint8Array,
-  skillsBytes?: Uint8Array,
-): AssetService["readAssetBlob"] {
-  return ({ path }) => {
-    if (path === AGENT_SKILLS_ASSET_PATH) {
-      if (skillsBytes !== undefined) return Promise.resolve(skillsBytes);
-      return Promise.reject(
-        new AssetServiceError("not_found", "no skills.json"),
-      );
-    }
-    return Promise.resolve(workflowBytes);
-  };
+/** A `readAssetBlob` that always answers `workflow.json` — pinned skills
+ * no longer live in the asset tree, so a test that needs a definition's
+ * skills seeds a `DefinitionSkillsStore` directly instead. */
+function readAssetBlobFor(workflowBytes: Uint8Array): AssetService["readAssetBlob"] {
+  return () => Promise.resolve(workflowBytes);
 }
 
 function fakeAssetService(overrides: Partial<AssetService> = {}): AssetService {
@@ -132,11 +124,13 @@ function buildApp(opts: {
   db?: DB["db"];
   authenticator?: WorkflowRunAuthenticator;
   capabilityInventory?: CapabilityInventoryProvider;
+  skillsStore?: DefinitionSkillsStore;
 }): Hono {
   return createWorkflowCapabilityRoutes({
     db: opts.db ?? fakeDb(),
     assetService: opts.assetService ?? fakeAssetService(),
     skillIndex: fakeSkillIndex,
+    skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     capabilityInventory: opts.capabilityInventory ?? fakeCapabilityInventory,
     authenticator: opts.authenticator ?? authenticateAsOwnRun,
   }) as unknown as Hono;
@@ -227,8 +221,9 @@ test("adding a capability the tenant's inventory doesn't offer is a 400, never w
   expect(populateCalled).toBe(false);
 });
 
-test("adding a skill merges it additively and re-indexes the prompt", async () => {
+test("adding a skill merges it additively into the skills store and re-indexes the prompt", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const skillsStore = createInMemoryDefinitionSkillsStore();
   const app = buildApp({
     assetService: fakeAssetService({
       readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
@@ -237,15 +232,15 @@ test("adding a skill merges it additively and re-indexes the prompt", async () =
         return Promise.resolve({ commitSha: "deadbeef" });
       },
     }),
+    skillsStore,
   });
   const response = await postCapability(app, OWN_DEFINITION_ID, {
     kind: "skill",
     name: "research",
   });
   expect(response.status).toBe(200);
-  expect(writtenFiles?.["skills.json"]).toBe(
-    JSON.stringify({ skills: ["research"] }),
-  );
+  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
 });

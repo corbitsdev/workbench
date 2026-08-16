@@ -25,21 +25,6 @@ import { type } from "arktype";
 export const AGENT_DEFINITION_STEP_ID = "agent";
 
 /**
- * Where a hand-authored agent's attached skills live inside its
- * `workflow`-kind asset — a sibling of `workflow.json`, written in the
- * same commit, rather than a field on `WorkflowDefinition` itself.
- *
- * `AgentDefinition`'s own `skills`-shaped field and its launch-time
- * consumption belong to `@intx/agent`/`@intx/hub-sessions` (see
- * `toolPackagePins`'s precedent there); until that lands, this asset-tree
- * sidecar is the durable, round-trippable record of what a definition
- * carries, kept alongside the definition body it describes.
- */
-export const AGENT_SKILLS_ASSET_PATH = "skills.json";
-
-const SkillsFile = type({ skills: "string[]" });
-
-/**
  * The tool package that turns a name in the `<available_skills>` index
  * into an actual skill body at run time. A definition that pins skills
  * must pin this too, or its prompt would tell the model to call a
@@ -244,30 +229,6 @@ export function withAgentModel(workflowJson: string, model: string): string {
     step.agent.inference = { sources: [{ provider: "catalog", model }] };
   }
   return JSON.stringify(definition);
-}
-
-/** Serializes an agent definition's attached skill names to the JSON
- * `AGENT_SKILLS_ASSET_PATH` carries in the asset tree. */
-export function serializeAgentSkills(skills: readonly string[]): string {
-  return JSON.stringify({ skills });
-}
-
-/** Parses `AGENT_SKILLS_ASSET_PATH`'s bytes back into a skill name list.
- * Fails closed on malformed content — a corrupt or hand-edited file
- * should surface as an error, not silently launch an agent with fewer
- * skills than it was given. Callers that treat "no such file" (a
- * definition created before this feature existed) as "no skills" decide
- * that at the asset-read call site, not here. */
-export function parseAgentSkills(bytes: Uint8Array): readonly string[] {
-  const text = new TextDecoder().decode(bytes);
-  const parsed: unknown = JSON.parse(text);
-  const result = SkillsFile(parsed);
-  if (result instanceof type.errors) {
-    throw new Error(
-      `${AGENT_SKILLS_ASSET_PATH} is malformed: ${result.summary}`,
-    );
-  }
-  return result.skills;
 }
 
 /** Everything a hand-authored agent definition needs baked in at
