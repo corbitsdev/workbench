@@ -1,9 +1,11 @@
-// DOM-mounted coverage for the "New routine" guided stepper: step
-// transitions, the catalog path creating with zero typing beyond picks
-// (name defaults to the workflow's friendly name), back navigation keeping
-// state, and the shared stepper chrome rendering. `CreateRoutineDialog`
-// itself stays private — exercised the same way a person would, through
-// `RoutinesListPage`'s "New routine" action.
+// DOM-mounted coverage for the "New routine" guided vertical accordion:
+// step transitions, the catalog path creating with zero typing beyond
+// picks (name defaults to the workflow's friendly name), a completed
+// step's Edit affordance jumping back in place without losing state, and
+// the accordion chrome itself — every step listed at once, a completed
+// one collapsed to a summary. `CreateRoutineDialog` itself stays private —
+// exercised the same way a person would, through `RoutinesListPage`'s
+// "New routine" action.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -121,6 +123,41 @@ function buttonWithText(text: string): HTMLButtonElement | undefined {
 function cardWithTitle(title: string): HTMLButtonElement | undefined {
   return [...document.body.querySelectorAll("button")].find((button) =>
     button.textContent?.trim().startsWith(title),
+  );
+}
+
+/** The vertical accordion's own item for a given step label — "Source",
+ * "Configure", or "Confirm" — scoping the summary/Edit lookups below to
+ * the right section rather than matching the first of several. */
+function accordionItem(label: string): Element | undefined {
+  return [
+    ...document.body.querySelectorAll(".dialog-step-accordion-item"),
+  ].find(
+    (item) =>
+      item.querySelector(".dialog-step-accordion-label")?.textContent === label,
+  );
+}
+
+function accordionItemStatus(label: string): string | null {
+  return accordionItem(label)?.getAttribute("data-status") ?? null;
+}
+
+/** The one-line recap a completed step collapses to. */
+function summaryFor(label: string): string | null {
+  return (
+    accordionItem(label)?.querySelector(".dialog-step-accordion-summary")
+      ?.textContent ?? null
+  );
+}
+
+/** A completed step's Edit affordance — present only once the step is
+ * collapsed, so this returns undefined for the current or an upcoming
+ * step. */
+function editButtonFor(label: string): HTMLButtonElement | undefined {
+  return (
+    (accordionItem(label)?.querySelector(
+      ".dialog-step-accordion-edit",
+    ) as HTMLButtonElement | null) ?? undefined
   );
 }
 
@@ -281,12 +318,20 @@ async function openDialog() {
 }
 
 describe("CreateRoutineDialog stepper", () => {
-  test("renders the shared stepper chrome, starting on Source", async () => {
+  test("renders the vertical accordion, every step visible at once, starting on Source", async () => {
     await openDialog();
 
-    expect(document.body.querySelector(".dialog-stepper")).not.toBeNull();
-    expect(document.body.textContent).toContain("Step 1 of 3");
+    expect(
+      document.body.querySelector(".dialog-step-accordion"),
+    ).not.toBeNull();
+    // The whole journey stays on screen — Source, Configure, and Confirm
+    // all render simultaneously, not one at a time.
     expect(document.body.textContent).toContain("Source");
+    expect(document.body.textContent).toContain("Configure");
+    expect(document.body.textContent).toContain("Confirm");
+    expect(accordionItemStatus("Source")).toBe("current");
+    expect(accordionItemStatus("Configure")).toBe("upcoming");
+    expect(accordionItemStatus("Confirm")).toBe("upcoming");
     expect(document.body.textContent).toContain("Researcher");
     expect(document.body.textContent).toContain("Describe it to an agent");
   });
@@ -352,7 +397,7 @@ describe("CreateRoutineDialog stepper", () => {
     expect(exampleNode?.className).not.toContain("line-clamp");
   });
 
-  test("Next advances through Configure to Confirm for a catalog pick", async () => {
+  test("Next advances through Configure to Confirm for a catalog pick, collapsing completed steps to a summary", async () => {
     await openDialog();
 
     act(() => {
@@ -362,14 +407,17 @@ describe("CreateRoutineDialog stepper", () => {
       buttonWithText("Next")?.click();
     });
     await settle();
-    expect(document.body.textContent).toContain("Step 2 of 3");
+    expect(accordionItemStatus("Source")).toBe("completed");
+    expect(summaryFor("Source")).toBe("Researcher");
+    expect(accordionItemStatus("Configure")).toBe("current");
     expect(document.body.textContent).toContain("When");
 
     act(() => {
       buttonWithText("Next")?.click();
     });
     await settle();
-    expect(document.body.textContent).toContain("Step 3 of 3");
+    expect(accordionItemStatus("Configure")).toBe("completed");
+    expect(accordionItemStatus("Confirm")).toBe("current");
     expect(document.body.textContent).toContain("Name (optional)");
   });
 
@@ -414,7 +462,7 @@ describe("CreateRoutineDialog stepper", () => {
     expect((created as CreateRoutineInput | null)?.runOnceNow).toBe(true);
   });
 
-  test("Back returns to Source without losing the picked workflow", async () => {
+  test("Edit jumps back to Source in place, without losing the picked workflow", async () => {
     await openDialog();
 
     act(() => {
@@ -424,14 +472,14 @@ describe("CreateRoutineDialog stepper", () => {
       buttonWithText("Next")?.click();
     });
     await settle();
-    expect(document.body.textContent).toContain("Step 2 of 3");
+    expect(accordionItemStatus("Configure")).toBe("current");
 
     act(() => {
-      buttonWithText("Back")?.click();
+      editButtonFor("Source")?.click();
     });
     await settle();
 
-    expect(document.body.textContent).toContain("Step 1 of 3");
+    expect(accordionItemStatus("Source")).toBe("current");
     expect(cardWithTitle("Summarizer")?.getAttribute("aria-pressed")).toBe(
       "true",
     );
@@ -440,7 +488,7 @@ describe("CreateRoutineDialog stepper", () => {
       buttonWithText("Next")?.click();
     });
     await settle();
-    expect(document.body.textContent).toContain("Step 2 of 3");
+    expect(accordionItemStatus("Configure")).toBe("current");
   });
 
   test("the describe path drafts, reviews, and approves", async () => {
@@ -505,7 +553,8 @@ describe("CreateRoutineDialog stepper", () => {
       buttonWithText("Next")?.click();
     });
     await settle();
-    expect(document.body.textContent).toContain("Step 3 of 3");
+    expect(accordionItemStatus("Confirm")).toBe("current");
+    expect(summaryFor("Configure")).toBe("1 step proposed");
     expect(document.body.textContent).toContain("Daily signups");
 
     act(() => {
@@ -577,7 +626,7 @@ describe("CreateRoutineDialog stepper", () => {
     });
     await settle();
 
-    expect(document.body.textContent).toContain("Step 3 of 3");
+    expect(accordionItemStatus("Confirm")).toBe("current");
     expect(document.body.textContent).toContain(
       "Myra didn't pin a workflow — pick one.",
     );
@@ -900,7 +949,7 @@ describe("'Make this a routine' prefill", () => {
     mount(baseProps({}));
     await settle();
 
-    expect(document.body.textContent).toContain("Step 1 of 3");
+    expect(accordionItemStatus("Source")).toBe("current");
     expect(cardWithTitle("Recurring task")?.getAttribute("aria-pressed")).toBe(
       "true",
     );
@@ -1013,7 +1062,7 @@ describe("'Make this a routine' prefill", () => {
     await settle();
 
     expect(createCalls).toBe(0);
-    expect(document.body.querySelector(".dialog-stepper")).toBeNull();
+    expect(document.body.querySelector(".dialog-step-accordion")).toBeNull();
 
     // Re-opening blank afterward must not still carry the cancelled prefill.
     act(() => {
@@ -1068,9 +1117,7 @@ describe("routine destination (CL-6073)", () => {
     });
     await settle();
 
-    expect(document.body.textContent).not.toContain(
-      "create a channel first",
-    );
+    expect(document.body.textContent).not.toContain("create a channel first");
     expect(document.body.textContent).toContain(
       "New workbench for this routine",
     );
@@ -1172,7 +1219,7 @@ describe("routine destination (CL-6073)", () => {
     mount(baseProps({}));
     await settle();
 
-    expect(document.body.textContent).toContain("Step 1 of 3");
+    expect(accordionItemStatus("Source")).toBe("current");
     act(() => {
       cardWithTitle("Researcher")?.click();
     });
@@ -1181,7 +1228,7 @@ describe("routine destination (CL-6073)", () => {
     });
     await settle();
 
-    expect(document.body.textContent).toContain("Step 2 of 3");
+    expect(accordionItemStatus("Configure")).toBe("current");
     const destinationTrigger = document.getElementById("routine-delivery");
     // Pre-bound, not committed: the picker shows the space selected, and
     // nothing here has prevented picking something else instead.

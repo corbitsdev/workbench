@@ -32,8 +32,12 @@ export { renamePayload, rowMenuLabels } from "./sidebar";
 
 export { NewChannelDialog } from "./new-channel-dialog";
 export { InviteAgentDialog } from "./invite-agent-dialog";
-export { DialogStepper } from "./dialog-stepper";
-export type { DialogStepperStep } from "./dialog-stepper";
+export { DialogStepper, DialogStepAccordion } from "./dialog-stepper";
+export type {
+  DialogStepperStep,
+  DialogStepStatus,
+  DialogStepAccordionStep,
+} from "./dialog-stepper";
 
 export { useChannelStream } from "./use-channel-stream";
 export type { ChannelStreamState } from "./use-channel-stream";
