@@ -8,18 +8,16 @@
 
 import { getBenchChatSettings, patchBenchChatSettings } from "@corbits/chat-ui";
 import type { BenchChatSettings } from "@corbits/chat-ui";
-import {
-  EmptyState,
-  Input,
-  SettingsPanel,
-  Skeleton,
-  toast,
-} from "@corbits/react-ui";
-import { CircleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { EmptyState, Input, SettingsPanel, toast } from "@corbits/react-ui";
+import { useCallback, useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import { contextWindowLabel, parseContextWindowInput } from "./context-window";
-import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 
 /**
@@ -81,7 +79,7 @@ export function ChatSection({
 }: {
   readonly tenantId: string | null;
 }) {
-  const [state, setState] = useState<LoadState<BenchChatSettings>>({
+  const [query, setQuery] = useState<APIQuery<BenchChatSettings>>({
     kind: "loading",
   });
   const [contextWindowInput, setContextWindowInput] = useState("");
@@ -89,25 +87,34 @@ export function ChatSection({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (tenantId === null) return;
+  const load = useCallback(() => {
+    if (tenantId === null) return undefined;
     let cancelled = false;
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     getBenchChatSettings(tenantId)
       .then((settings) => {
         if (cancelled) return;
         setContextWindowInput(String(settings.contextWindow));
-        setState({ kind: "ready", data: settings });
+        setQuery({ kind: "ready", data: settings });
       })
       .catch((cause: unknown) => {
-        if (!cancelled) {
-          setState({ kind: "error", message: errorMessage(cause) });
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
         }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: load,
+        });
       });
     return () => {
       cancelled = true;
     };
   }, [tenantId]);
+
+  useEffect(() => load(), [load]);
 
   if (tenantId === null) {
     return (
@@ -118,23 +125,8 @@ export function ChatSection({
     );
   }
 
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title={`Couldn't load ${SETTINGS_STRINGS.chatLoadError}`}
-        description={state.message}
-      />
-    );
-  }
-
-  const parsedContextWindow = parseContextWindowInput(contextWindowInput);
-  const contextWindowValid = parsedContextWindow !== null;
-  const dirty =
-    contextWindowValid && parsedContextWindow !== state.data.contextWindow;
-
   function handleSave() {
+    const parsedContextWindow = parseContextWindowInput(contextWindowInput);
     if (parsedContextWindow === null) return;
     setSaving(true);
     setSaveError(null);
@@ -142,7 +134,7 @@ export function ChatSection({
       "chat/contextWindow": parsedContextWindow,
     })
       .then((updated) => {
-        setState({ kind: "ready", data: updated });
+        setQuery({ kind: "ready", data: updated });
         setContextWindowInput(String(updated.contextWindow));
         setSavedAt(new Date().toLocaleTimeString());
         toast(SETTINGS_STRINGS.settingsSavedToast);
@@ -152,23 +144,35 @@ export function ChatSection({
   }
 
   return (
-    <ChatSectionView
-      contextWindowInput={contextWindowInput}
-      contextWindowLabel={
-        contextWindowValid
-          ? contextWindowLabel(parsedContextWindow)
-          : SETTINGS_STRINGS.chatContextWindowInvalidLabel
-      }
-      dirty={dirty}
-      saving={saving}
-      error={
-        saveError ??
-        (contextWindowValid ? null : SETTINGS_STRINGS.chatContextWindowInvalid)
-      }
-      savedAt={savedAt}
-      onContextWindowChange={setContextWindowInput}
-      onSave={handleSave}
-      onReset={() => setContextWindowInput(String(state.data.contextWindow))}
-    />
+    <QueryView query={query} label={SETTINGS_STRINGS.chatLoadError}>
+      {(current) => {
+        const parsedContextWindow = parseContextWindowInput(contextWindowInput);
+        const contextWindowValid = parsedContextWindow !== null;
+        const dirty =
+          contextWindowValid && parsedContextWindow !== current.contextWindow;
+        return (
+          <ChatSectionView
+            contextWindowInput={contextWindowInput}
+            contextWindowLabel={
+              contextWindowValid
+                ? contextWindowLabel(parsedContextWindow)
+                : SETTINGS_STRINGS.chatContextWindowInvalidLabel
+            }
+            dirty={dirty}
+            saving={saving}
+            error={
+              saveError ??
+              (contextWindowValid
+                ? null
+                : SETTINGS_STRINGS.chatContextWindowInvalid)
+            }
+            savedAt={savedAt}
+            onContextWindowChange={setContextWindowInput}
+            onSave={handleSave}
+            onReset={() => setContextWindowInput(String(current.contextWindow))}
+          />
+        );
+      }}
+    </QueryView>
   );
 }

@@ -19,7 +19,6 @@ import {
   InfoTooltip,
   Input,
   SettingsPanel,
-  Skeleton,
   toast,
 } from "@corbits/react-ui";
 import {
@@ -28,9 +27,15 @@ import {
   type ConnectorDescriptor,
 } from "@workbench/connections/registry";
 import { workflowDisplayName } from "@corbits/workflow-catalog";
-import { ChevronRight, CircleAlert } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import {
   completeConnectorCredential,
   fetchOAuthConfigured,
@@ -55,7 +60,6 @@ import {
   CredentialsTable,
 } from "./credentials-section";
 import { GranolaWebhookCard } from "./granola-webhook-card";
-import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 
 // `@workbench/connections/registry` is the only subpath this browser
@@ -194,7 +198,7 @@ export function ConnectionsSection({
 }: {
   readonly tenantId: string | null;
 }) {
-  const [state, setState] = useState<LoadState<ConnectionsData>>({
+  const [query, setQuery] = useState<APIQuery<ConnectionsData>>({
     kind: "loading",
   });
   const [reloadKey, setReloadKey] = useState(0);
@@ -203,10 +207,14 @@ export function ConnectionsSection({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  function reload() {
+    setReloadKey((value) => value + 1);
+  }
+
   useEffect(() => {
     if (tenantId === null) return;
     let cancelled = false;
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     Promise.all([
       listCredentials(tenantId),
       listProviders(tenantId),
@@ -214,18 +222,27 @@ export function ConnectionsSection({
     ])
       .then(([credentials, providers, oauthConfigured]) => {
         if (!cancelled)
-          setState({
+          setQuery({
             kind: "ready",
             data: { credentials, providers, oauthConfigured },
           });
       })
       .catch((cause: unknown) => {
-        if (!cancelled)
-          setState({ kind: "error", message: errorMessage(cause) });
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
+        }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: reload,
+        });
       });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
   if (tenantId === null) {
@@ -236,22 +253,8 @@ export function ConnectionsSection({
       />
     );
   }
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title={`Couldn't load ${SETTINGS_STRINGS.connectionsLoadError}`}
-        description={state.message}
-      />
-    );
-  }
 
   const currentTenantId = tenantId;
-
-  function reload() {
-    setReloadKey((value) => value + 1);
-  }
 
   function handleDisconnect(credential: Credential) {
     setRowError(null);
@@ -293,86 +296,91 @@ export function ConnectionsSection({
       .finally(() => setCreating(false));
   }
 
-  const providerNameById = new Map(
-    state.data.providers.map((provider) => [provider.id, provider.name]),
-  );
-
   return (
-    <SettingsPanel
-      title={SETTINGS_STRINGS.connectionsSectionTitle}
-      description={SETTINGS_STRINGS.connectionsSectionDescription}
-    >
-      {rowError !== null && (
-        <p className="settings-inline-error" role="alert">
-          {rowError}
-        </p>
-      )}
-      <div className="settings-connections-grid">
-        <ConnectorCardGrid
-          tenantId={currentTenantId}
-          credentials={state.data.credentials}
-          providers={state.data.providers}
-          onReload={reload}
-          onError={setRowError}
-        />
-        {OAUTH_CARDS.map((card) => (
-          <OAuthConnectorCardView
-            key={card.id}
-            card={card}
-            statusResult={connectorStatus(
-              card.displayName,
-              state.data.credentials,
-              state.data.providers,
+    <QueryView query={query} label={SETTINGS_STRINGS.connectionsLoadError}>
+      {({ credentials, providers, oauthConfigured }) => {
+        const providerNameById = new Map(
+          providers.map((provider) => [provider.id, provider.name]),
+        );
+        return (
+          <SettingsPanel
+            title={SETTINGS_STRINGS.connectionsSectionTitle}
+            description={SETTINGS_STRINGS.connectionsSectionDescription}
+          >
+            {rowError !== null && (
+              <p className="settings-inline-error" role="alert">
+                {rowError}
+              </p>
             )}
-            // Absent from the map reads as "not configured" — the
-            // conservative default: never render a live Connect button
-            // on data this section failed to positively confirm.
-            configured={state.data.oauthConfigured[card.id] ?? false}
-            onDisconnect={handleDisconnect}
-          />
-        ))}
-        {(() => {
-          const granolaWebhookDescriptor =
-            CONNECTOR_REGISTRY["granola-webhook"];
-          return granolaWebhookDescriptor === undefined ? null : (
-            <GranolaWebhookCard
-              tenantId={currentTenantId}
-              descriptor={granolaWebhookDescriptor}
-            />
-          );
-        })()}
-      </div>
-      <details className="settings-advanced-disclosure">
-        <summary>
-          <ChevronRight
-            size={14}
-            aria-hidden
-            className="settings-advanced-disclosure-chevron"
-          />
-          {SETTINGS_STRINGS.connectionsAdvancedSummary}
-        </summary>
-        <div className="settings-advanced-disclosure-body">
-          <div className="settings-section-toolbar">
-            <Button variant="primary" onClick={() => setCreateOpen(true)}>
-              {SETTINGS_STRINGS.credentialsCreateAction}
-            </Button>
-          </div>
-          <CredentialsTable
-            credentials={state.data.credentials}
-            providerNameById={providerNameById}
-            onDelete={handleDisconnect}
-          />
-          <CreateCredentialDialog
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            providers={state.data.providers}
-            onCreate={handleCreate}
-            submitting={creating}
-            error={createError}
-          />
-        </div>
-      </details>
-    </SettingsPanel>
+            <div className="settings-connections-grid">
+              <ConnectorCardGrid
+                tenantId={currentTenantId}
+                credentials={credentials}
+                providers={providers}
+                onReload={reload}
+                onError={setRowError}
+              />
+              {OAUTH_CARDS.map((card) => (
+                <OAuthConnectorCardView
+                  key={card.id}
+                  card={card}
+                  statusResult={connectorStatus(
+                    card.displayName,
+                    credentials,
+                    providers,
+                  )}
+                  // Absent from the map reads as "not configured" — the
+                  // conservative default: never render a live Connect button
+                  // on data this section failed to positively confirm.
+                  configured={oauthConfigured[card.id] ?? false}
+                  onDisconnect={handleDisconnect}
+                />
+              ))}
+              {(() => {
+                const granolaWebhookDescriptor =
+                  CONNECTOR_REGISTRY["granola-webhook"];
+                return granolaWebhookDescriptor === undefined ? null : (
+                  <GranolaWebhookCard
+                    tenantId={currentTenantId}
+                    descriptor={granolaWebhookDescriptor}
+                  />
+                );
+              })()}
+            </div>
+            <details className="settings-advanced-disclosure">
+              <summary>
+                <ChevronRight
+                  size={14}
+                  aria-hidden
+                  className="settings-advanced-disclosure-chevron"
+                />
+                {SETTINGS_STRINGS.connectionsAdvancedSummary}
+              </summary>
+              <div className="settings-advanced-disclosure-body">
+                <div className="settings-section-toolbar">
+                  <Button variant="primary" onClick={() => setCreateOpen(true)}>
+                    {SETTINGS_STRINGS.credentialsCreateAction}
+                  </Button>
+                </div>
+                <CredentialsTable
+                  credentials={credentials}
+                  providerNameById={providerNameById}
+                  onDelete={handleDisconnect}
+                />
+                <CreateCredentialDialog
+                  open={createOpen}
+                  onOpenChange={setCreateOpen}
+                  providers={providers}
+                  onCreate={handleCreate}
+                  submitting={creating}
+                  error={createError}
+                />
+              </div>
+            </details>
+          </SettingsPanel>
+        );
+      }}
+    </QueryView>
   );
 }
 
@@ -592,7 +600,7 @@ export function ConnectorCredentialDialog({
           onConnected();
         });
       })
-      .catch((cause: unknown) => setSubmitError(errorMessage(cause)))
+      .catch((cause: unknown) => setSubmitError(describeQueryError(cause)))
       .finally(() => setSubmitting(false));
   }
 

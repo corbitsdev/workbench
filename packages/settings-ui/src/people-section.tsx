@@ -20,7 +20,6 @@ import {
   EmptyState,
   Input,
   SettingsPanel,
-  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -28,12 +27,16 @@ import {
   TableHeader,
   TableRow,
 } from "@corbits/react-ui";
-import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import { PRINCIPAL_KIND_LABEL, principalLabel } from "./identity";
 import { AccessPolicyBlock } from "./access-policy";
-import { errorMessage, type LoadState } from "./load-state";
 
 import { SETTINGS_STRINGS } from "./strings";
 import {
@@ -60,7 +63,7 @@ export function PeopleSection({
 }: {
   readonly tenantId: string | null;
 }) {
-  const [state, setState] = useState<LoadState<readonly Principal[]>>({
+  const [query, setQuery] = useState<APIQuery<readonly Principal[]>>({
     kind: "loading",
   });
   const [reloadKey, setReloadKey] = useState(0);
@@ -69,25 +72,38 @@ export function PeopleSection({
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
+  function reload() {
+    setReloadKey((value) => value + 1);
+  }
+
   useEffect(() => {
     if (tenantId === null) return;
     let cancelled = false;
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     listPrincipals(tenantId)
       .then((principals) => {
         if (!cancelled)
-          setState({
+          setQuery({
             kind: "ready",
             data: principals.filter((p) => p.kind === "user"),
           });
       })
       .catch((cause: unknown) => {
-        if (!cancelled)
-          setState({ kind: "error", message: errorMessage(cause) });
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
+        }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: reload,
+        });
       });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
   if (tenantId === null) {
@@ -97,21 +113,6 @@ export function PeopleSection({
         description={SETTINGS_STRINGS.benchNoneSelectedDescription}
       />
     );
-  }
-
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title={`Couldn't load ${SETTINGS_STRINGS.peopleLoadError}`}
-        description={state.message}
-      />
-    );
-  }
-
-  function reload() {
-    setReloadKey((value) => value + 1);
   }
 
   function handleInvite(email: string) {
@@ -153,35 +154,39 @@ export function PeopleSection({
   }
 
   return (
-    <SettingsPanel
-      title={SETTINGS_STRINGS.peopleSectionTitle}
-      description={SETTINGS_STRINGS.peopleSectionDescription}
-    >
-      <div className="settings-section-toolbar">
-        <Button variant="primary" onClick={() => setInviteOpen(true)}>
-          {SETTINGS_STRINGS.peopleInviteAction}
-        </Button>
-      </div>
-      {rowError !== null && (
-        <p className="settings-inline-error" role="alert">
-          {rowError}
-        </p>
+    <QueryView query={query} label={SETTINGS_STRINGS.peopleLoadError}>
+      {(people) => (
+        <SettingsPanel
+          title={SETTINGS_STRINGS.peopleSectionTitle}
+          description={SETTINGS_STRINGS.peopleSectionDescription}
+        >
+          <div className="settings-section-toolbar">
+            <Button variant="primary" onClick={() => setInviteOpen(true)}>
+              {SETTINGS_STRINGS.peopleInviteAction}
+            </Button>
+          </div>
+          {rowError !== null && (
+            <p className="settings-inline-error" role="alert">
+              {rowError}
+            </p>
+          )}
+          <PeopleTable
+            people={people}
+            onSuspend={(p) => handleStatusChange(p, "suspended")}
+            onReactivate={(p) => handleStatusChange(p, "active")}
+            onRemove={handleRemove}
+          />
+          <AccessPolicyBlock tenantId={tenantId} />
+          <InvitePersonDialog
+            open={inviteOpen}
+            onOpenChange={setInviteOpen}
+            onInvite={handleInvite}
+            submitting={inviting}
+            error={inviteError}
+          />
+        </SettingsPanel>
       )}
-      <PeopleTable
-        people={state.data}
-        onSuspend={(p) => handleStatusChange(p, "suspended")}
-        onReactivate={(p) => handleStatusChange(p, "active")}
-        onRemove={handleRemove}
-      />
-      <AccessPolicyBlock tenantId={tenantId} />
-      <InvitePersonDialog
-        open={inviteOpen}
-        onOpenChange={setInviteOpen}
-        onInvite={handleInvite}
-        submitting={inviting}
-        error={inviteError}
-      />
-    </SettingsPanel>
+    </QueryView>
   );
 }
 

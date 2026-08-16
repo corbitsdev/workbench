@@ -4,21 +4,26 @@
 // default — an absent row reads exactly like an explicit "off" / "owners
 // only" row; see that package's `resolveAccessPolicy`.
 
-import { Badge, Button, EmptyState, Input, Skeleton } from "@corbits/react-ui";
-import { CircleAlert, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Badge, Button, Input } from "@corbits/react-ui";
+import { X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import { getAuthConfig } from "./api";
 import {
   getAccessPolicy,
   updateAccessPolicy,
   type AccessPolicy,
 } from "./access-policy-api";
-import { errorMessage, type LoadState } from "./load-state";
 import { SETTINGS_STRINGS } from "./strings";
 
 export function AccessPolicyBlock({ tenantId }: { readonly tenantId: string }) {
-  const [state, setState] = useState<LoadState<AccessPolicy>>({
+  const [query, setQuery] = useState<APIQuery<AccessPolicy>>({
     kind: "loading",
   });
   // Whether the operator's own env-level signup switch is still closed —
@@ -32,17 +37,24 @@ export function AccessPolicyBlock({ tenantId }: { readonly tenantId: string }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     let cancelled = false;
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     getAccessPolicy(tenantId)
       .then((policy) => {
-        if (!cancelled) setState({ kind: "ready", data: policy });
+        if (!cancelled) setQuery({ kind: "ready", data: policy });
       })
       .catch((cause: unknown) => {
-        if (!cancelled) {
-          setState({ kind: "error", message: errorMessage(cause) });
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
         }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: load,
+        });
       });
     getAuthConfig()
       .then((config) => {
@@ -56,34 +68,29 @@ export function AccessPolicyBlock({ tenantId }: { readonly tenantId: string }) {
     };
   }, [tenantId]);
 
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title={`Couldn't load ${SETTINGS_STRINGS.accessPolicyLoadError}`}
-        description={state.message}
-      />
-    );
-  }
+  useEffect(() => load(), [load]);
 
   function save(patch: Partial<AccessPolicy>) {
     setSaving(true);
     setSaveError(null);
     updateAccessPolicy(tenantId, patch)
-      .then((policy) => setState({ kind: "ready", data: policy }))
+      .then((policy) => setQuery({ kind: "ready", data: policy }))
       .catch(() => setSaveError(SETTINGS_STRINGS.accessPolicySaveError))
       .finally(() => setSaving(false));
   }
 
   return (
-    <AccessPolicyEditor
-      policy={state.data}
-      saving={saving}
-      error={saveError}
-      envSignupClosed={envSignupClosed === true}
-      onChange={save}
-    />
+    <QueryView query={query} label={SETTINGS_STRINGS.accessPolicyLoadError}>
+      {(policy) => (
+        <AccessPolicyEditor
+          policy={policy}
+          saving={saving}
+          error={saveError}
+          envSignupClosed={envSignupClosed === true}
+          onChange={save}
+        />
+      )}
+    </QueryView>
   );
 }
 

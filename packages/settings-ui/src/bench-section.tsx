@@ -20,15 +20,19 @@ import {
   EmptyState,
   Input,
   SettingsPanel,
-  Skeleton,
   Switch,
   toast,
 } from "@corbits/react-ui";
-import { ChevronRight, CircleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
+import type { APIQuery } from "@corbits/api-query";
+import {
+  QueryView,
+  UnauthenticatedError,
+  describeQueryError,
+} from "@corbits/api-query";
 import { renameBench } from "./api";
-import { errorMessage, type LoadState } from "./load-state";
 import {
   getSidecarPlacement,
   setSidecarPlacement,
@@ -55,7 +59,7 @@ export function BenchSection({
 }: {
   readonly tenantId: string | null;
 }) {
-  const [state, setState] = useState<LoadState<BenchMembership>>({
+  const [query, setQuery] = useState<APIQuery<BenchMembership>>({
     kind: "loading",
   });
   const [name, setName] = useState("");
@@ -73,10 +77,10 @@ export function BenchSection({
     string | null
   >(null);
 
-  useEffect(() => {
-    if (tenantId === null) return;
+  const load = useCallback(() => {
+    if (tenantId === null) return undefined;
     let cancelled = false;
-    setState({ kind: "loading" });
+    setQuery({ kind: "loading" });
     Promise.all([
       listMyMemberships(),
       getBenchSettings(tenantId),
@@ -86,9 +90,10 @@ export function BenchSection({
         if (cancelled) return;
         const current = memberships.find((m) => m.tenantId === tenantId);
         if (current === undefined) {
-          setState({
+          setQuery({
             kind: "error",
             message: "This workbench is no longer one you belong to.",
+            retry: load,
           });
           return;
         }
@@ -97,17 +102,26 @@ export function BenchSection({
         setSavedPurpose(settings.purpose ?? "");
         setSidecarPlacementEnabled(sidecarPlacement.enabled);
         setSidecarPlacementAvailable(sidecarPlacement.provisionerAvailable);
-        setState({ kind: "ready", data: current });
+        setQuery({ kind: "ready", data: current });
       })
       .catch((cause: unknown) => {
-        if (!cancelled) {
-          setState({ kind: "error", message: errorMessage(cause) });
+        if (cancelled) return;
+        if (cause instanceof UnauthenticatedError) {
+          setQuery({ kind: "unauthenticated" });
+          return;
         }
+        setQuery({
+          kind: "error",
+          message: describeQueryError(cause),
+          retry: load,
+        });
       });
     return () => {
       cancelled = true;
     };
   }, [tenantId]);
+
+  useEffect(() => load(), [load]);
 
   function handleSidecarPlacementChange(enabled: boolean) {
     if (tenantId === null) return;
@@ -141,32 +155,20 @@ export function BenchSection({
     );
   }
 
-  if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
-  if (state.kind === "error") {
-    return (
-      <EmptyState
-        icon={<CircleAlert />}
-        title={`Couldn't load ${SETTINGS_STRINGS.benchLoadError}`}
-        description={state.message}
-      />
-    );
-  }
-
-  const nameDirty =
-    name.trim().length > 0 && name.trim() !== state.data.tenantName;
+  const nameDirty = (current: BenchMembership) =>
+    name.trim().length > 0 && name.trim() !== current.tenantName;
   const purposeDirty = purpose !== savedPurpose;
-  const dirty = nameDirty || purposeDirty;
 
-  function handleSave() {
+  function handleSave(current: BenchMembership) {
     const trimmedName = name.trim();
     if (trimmedName.length === 0) return;
     setSaving(true);
     setSaveError(null);
     const tasks: Promise<unknown>[] = [];
-    if (nameDirty) {
+    if (nameDirty(current)) {
       tasks.push(
         renameBench(tenantId as string, trimmedName).then((bench) => {
-          setState((previous) =>
+          setQuery((previous) =>
             previous.kind === "ready"
               ? {
                   kind: "ready",
@@ -196,32 +198,36 @@ export function BenchSection({
   }
 
   return (
-    <>
-      <BenchSectionView
-        name={name}
-        purpose={purpose}
-        slug={state.data.tenantSlug}
-        iconColor={iconColor}
-        dirty={dirty}
-        saving={saving}
-        error={saveError}
-        savedAt={savedAt}
-        onNameChange={setName}
-        onPurposeChange={setPurpose}
-        onIconColorChange={setIconColor}
-        onSave={handleSave}
-        onReset={() => {
-          setName(state.data.tenantName);
-          setPurpose(savedPurpose);
-        }}
-        sidecarPlacementEnabled={sidecarPlacementEnabled}
-        sidecarPlacementAvailable={sidecarPlacementAvailable}
-        sidecarPlacementSaving={sidecarPlacementSaving}
-        sidecarPlacementError={sidecarPlacementError}
-        onSidecarPlacementChange={handleSidecarPlacementChange}
-      />
-      <MembersPanel tenantId={tenantId} />
-    </>
+    <QueryView query={query} label={SETTINGS_STRINGS.benchLoadError}>
+      {(current) => (
+        <>
+          <BenchSectionView
+            name={name}
+            purpose={purpose}
+            slug={current.tenantSlug}
+            iconColor={iconColor}
+            dirty={nameDirty(current) || purposeDirty}
+            saving={saving}
+            error={saveError}
+            savedAt={savedAt}
+            onNameChange={setName}
+            onPurposeChange={setPurpose}
+            onIconColorChange={setIconColor}
+            onSave={() => handleSave(current)}
+            onReset={() => {
+              setName(current.tenantName);
+              setPurpose(savedPurpose);
+            }}
+            sidecarPlacementEnabled={sidecarPlacementEnabled}
+            sidecarPlacementAvailable={sidecarPlacementAvailable}
+            sidecarPlacementSaving={sidecarPlacementSaving}
+            sidecarPlacementError={sidecarPlacementError}
+            onSidecarPlacementChange={handleSidecarPlacementChange}
+          />
+          <MembersPanel tenantId={tenantId as string} />
+        </>
+      )}
+    </QueryView>
   );
 }
 
