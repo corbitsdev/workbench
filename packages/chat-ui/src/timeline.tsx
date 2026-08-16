@@ -242,8 +242,12 @@ function senderDisplay(
       senderName !== null && senderName.trim().length > 0
         ? senderName
         : undefined;
+    // An agent whose wire message carries no display name still gets a
+    // human one derived from its handle ("myra" -> "Myra") — the raw
+    // @handle is a wire identifier, kept to the tooltip only.
     const label =
-      displayName ?? (isAgent ? `@${matched.handle}` : matched.handle);
+      displayName ??
+      (isAgent ? displayNameFromHandle(matched.handle) : matched.handle);
     return {
       label,
       handle: matched.handle,
