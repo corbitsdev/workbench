@@ -36,6 +36,7 @@ import {
   forkThread,
   inviteAgent,
   listChannels,
+  listInvitableDefinitions,
   listMessages,
   listPinnedMessages,
   listThreadMessages,
@@ -68,6 +69,7 @@ import type {
 } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { mentionCandidatesFromParticipants } from "./mentions";
+import type { MentionInviteIntent } from "./mentions";
 import { NewChannelDialog } from "./new-channel-dialog";
 import type { PersonOption } from "./new-channel-dialog";
 import { PinnedStrip } from "./pinned-strip";
@@ -268,6 +270,10 @@ export type PendingSend = {
   readonly attachments: readonly ComposerAttachment[];
   readonly createdAt: string;
   readonly status: PendingMessageStatus;
+  /** The "Bring in…" picks this submit carried — kept on the pending
+   * entry so a Retry re-runs the same pre-invite step the original
+   * submit did. */
+  readonly invite?: readonly MentionInviteIntent[];
 };
 
 let pendingSendSeq = 0;
@@ -1014,30 +1020,37 @@ function ChatWorkspaceInner({
     nonce: string,
     text: string,
     attachments: readonly ComposerAttachment[],
+    invite?: readonly MentionInviteIntent[],
   ): Promise<void> {
     if (activeChannelId === null) return;
     const parts = partsForSend(text, attachments);
     if (parts.length === 0) return;
+    const inviteOption = invite !== undefined ? { invite } : {};
     try {
       if (openThreadId !== null) {
         await sendMessage(tenantId, activeChannelId, parts, {
           threadId: openThreadId,
+          ...inviteOption,
         });
       } else if (pendingParentMessageId !== null) {
         const sent = await sendMessage(tenantId, activeChannelId, parts, {
           inReplyToMessageId: pendingParentMessageId,
+          ...inviteOption,
         });
         if (sent.threadId !== undefined) {
           setOpenThreadId(sent.threadId);
           setPendingParentMessageId(null);
         }
       } else {
-        await sendMessage(tenantId, activeChannelId, parts);
+        await sendMessage(tenantId, activeChannelId, parts, inviteOption);
       }
       setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
       await loadThreads(activeChannelId);
       await loadMessages(activeChannelId, { background: true });
-    } catch {
+    } catch (cause) {
+      if (cause instanceof ChatApiError && cause.status === 403) {
+        toast(CHAT_STRINGS.mentionForbidden);
+      }
       setPendingSends((current) =>
         current.map((p) =>
           p.nonce === nonce ? { ...p, status: "failed" } : p,
@@ -1059,9 +1072,10 @@ function ChatWorkspaceInner({
         attachments: payload.attachments,
         createdAt: new Date().toISOString(),
         status: "sending",
+        ...(payload.invite !== undefined ? { invite: payload.invite } : {}),
       },
     ]);
-    await sendPending(nonce, payload.text, payload.attachments);
+    await sendPending(nonce, payload.text, payload.attachments, payload.invite);
     return true;
   }
 
@@ -1071,7 +1085,7 @@ function ChatWorkspaceInner({
     setPendingSends((current) =>
       current.map((p) => (p.nonce === nonce ? { ...p, status: "sending" } : p)),
     );
-    void sendPending(nonce, pending.text, pending.attachments);
+    void sendPending(nonce, pending.text, pending.attachments, pending.invite);
   }
 
   /** Drops the failed pending bubble and hands its text back to the
@@ -1147,6 +1161,31 @@ function ChatWorkspaceInner({
         isAgentAddress(participant.address),
       )
     : undefined;
+
+  // The mention popover's "Bring in…" group: only a `channel` grows its
+  // participants after creation (a chat's counterpart is fixed at
+  // creation — see `channel-service.ts`'s `joinHumanParticipant`/
+  // `launchAndJoinAgent` doc comments), so these only fetch for that
+  // kind, and never before a channel is actually selected.
+  const bringInEnabled =
+    activeChannelId !== null &&
+    activeChannel !== undefined &&
+    isKnownChannelKind(activeChannel.kind) &&
+    activeChannel.kind === "channel";
+  const invitableAgentsQuery = useQuery({
+    queryKey: ["tenant", tenantId, "chat", "invitable", activeChannelId],
+    queryFn: () =>
+      activeChannelId !== null
+        ? listInvitableDefinitions(tenantId, activeChannelId)
+        : Promise.resolve([]),
+    enabled: bringInEnabled,
+  });
+  const bringInMembersQuery = useQuery({
+    queryKey: ["tenant", tenantId, "chat", "bring-in-members"],
+    queryFn: () =>
+      listMembers !== undefined ? listMembers(tenantId) : Promise.resolve([]),
+    enabled: bringInEnabled && listMembers !== undefined,
+  });
 
   // A settings URL for a channel id that resolved channels don't contain
   // (deleted, mistyped, cross-tenant) would otherwise leave the surface
@@ -1600,6 +1639,9 @@ function ChatWorkspaceInner({
                     agents={mentionCandidatesFromParticipants(
                       activeChannel?.participants ?? [],
                     )}
+                    participants={activeChannel?.participants ?? []}
+                    members={bringInMembersQuery.data ?? []}
+                    invitableAgents={invitableAgentsQuery.data ?? []}
                     placeholder={composerPlaceholderFor(activeChannel)}
                     onSend={handleSend}
                     onInviteAgent={() => setInviteDialogOpen(true)}

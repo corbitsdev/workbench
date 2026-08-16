@@ -54,11 +54,21 @@ export type { ChannelStreamState } from "./use-channel-stream";
 
 export {
   activeMentionQuery,
+  bringInOptionsFromMembersAndAgents,
   filterMentionCandidates,
+  filterMentionOptions,
   insertMention,
   mentionCandidatesFromParticipants,
+  mentionOptionsFromChannel,
 } from "./mentions";
-export type { MentionCandidate, MentionQuery } from "./mentions";
+export type {
+  BringInAgentDefinition,
+  BringInMember,
+  MentionCandidate,
+  MentionInviteIntent,
+  MentionOption,
+  MentionQuery,
+} from "./mentions";
 
 export {
   SLASH_COMMANDS,

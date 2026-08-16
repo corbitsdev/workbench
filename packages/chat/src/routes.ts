@@ -16,6 +16,7 @@ import type { InferencePreference } from "@intx/agent";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { type } from "arktype";
 
@@ -290,6 +291,29 @@ const InviteAgentBody = type({
   definitionId: "string",
 });
 
+/**
+ * A message-send's optional pre-invite: the mention popover's "Bring
+ * in…" group (see `mentions.ts`) lets a sender mention a workspace
+ * member or invitable agent who isn't a participant yet, and this is
+ * how that intent reaches the server. `POST .../messages` invites every
+ * entry here — the same core `POST .../invite` and chat creation's
+ * person path already use (`launchAndJoinAgent`/`joinHumanParticipant`)
+ * — before sending, so the mention fans out normally the moment the
+ * message itself is sent. A person entry carries the sender's chosen
+ * display name the same way chat creation's `name` field does: a human
+ * has no settings-held name a handle can be derived from.
+ */
+const MessageInviteEntry = type({
+  kind: "'agent'",
+  definitionId: "string",
+}).or(
+  type({
+    kind: "'person'",
+    principalId: "string",
+    "name?": "string",
+  }),
+);
+
 const RefreshAgentBody = type({
   address: "string",
 });
@@ -405,6 +429,23 @@ async function channelInTenant(
  * own tenant's rules; it only widens which channel those rules apply to.
  * No grant-widening code exists anywhere in this router, deliberately.
  */
+/**
+ * Runs a `requireGrant` check outside its ordinary place as route
+ * middleware — the message-send pre-invite step needs the exact same
+ * authorization `POST .../invite` runs, but only conditionally (when
+ * the body actually carries an `invite` entry), which route-level
+ * middleware can't express. Returns the deny `Response` `requireGrant`
+ * would otherwise have sent, or `undefined` when the grant is allowed.
+ */
+async function checkGrant(
+  requireGrant: RequireGrant,
+  resource: string,
+  action: string,
+  c: Context<TenantEnv>,
+): Promise<Response | undefined> {
+  return (await requireGrant(resource, action)(c, async () => {})) ?? undefined;
+}
+
 async function resolveChannelAccess(
   deps: CreateChatRoutesDeps,
   actingTenantId: string,
@@ -1548,6 +1589,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         parts: Part.array(),
         "threadId?": "string",
         "inReplyToMessageId?": "string",
+        "invite?": MessageInviteEntry.array(),
       });
       const parsed = PostMessageBody(raw);
       if (parsed instanceof type.errors) {
@@ -1575,6 +1617,128 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
       }
       const ownerTenantId = access.ownerTenantId;
+
+      // The mention popover's "Bring in…" group lets a sender mention a
+      // not-yet-participant; `invite` carries that intent here. Every
+      // entry is invited BEFORE the message itself sends, through the
+      // exact same core `POST .../invite` and chat creation's person
+      // path already use, so the mention fans out normally the instant
+      // the send below runs — never a second round trip. Permission
+      // honesty: this requires the same grant `POST .../invite` itself
+      // requires, checked once for the whole batch (a batch mixing an
+      // allowed and a disallowed invite is not a case chat-ui's
+      // popover — which only ever offers grant-eligible invites in the
+      // one popover session — produces), and a denial leaves the
+      // channel and the draft untouched.
+      if (parsed.invite !== undefined && parsed.invite.length > 0) {
+        const denied = await checkGrant(
+          deps.requireGrant,
+          idResource(
+            "workflow-run",
+            "id",
+          )({ param: (name) => c.req.param(name) }),
+          "create",
+          c,
+        );
+        if (denied !== undefined) {
+          return c.json(
+            ErrorEnvelope(
+              "forbidden",
+              "You can't add people to this workbench",
+            ),
+            403,
+          );
+        }
+
+        const existing = await deps.store.getChannelSettings(
+          ownerTenantId,
+          channelId,
+        );
+        if (existing === undefined) {
+          return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+        }
+        if (kindOf(existing.settings) === "chat") {
+          return c.json(
+            ErrorEnvelope(
+              "conflict",
+              "a chat has exactly one agent, fixed at creation; invite is " +
+                "only for channels",
+            ),
+            409,
+          );
+        }
+
+        let currentSettings = existing.settings;
+        const invitable =
+          await deps.platform.listInvitableDefinitions(ownerTenantId);
+        for (const entry of parsed.invite) {
+          const participants = participantsOf(currentSettings);
+          if (
+            entry.kind === "person" &&
+            participants.some(
+              (participant) => participant.address === entry.principalId,
+            )
+          ) {
+            continue;
+          }
+
+          if (entry.kind === "agent") {
+            try {
+              const joined = await launchAndJoinAgent(
+                { store: deps.store, platform: deps.platform, publish },
+                {
+                  tenantId: ownerTenantId,
+                  principalId: principal.id,
+                  channelId,
+                  definitionId: entry.definitionId,
+                  existingSettings: currentSettings,
+                  invitable,
+                },
+              );
+              currentSettings = joined.settings;
+            } catch (err) {
+              if (err instanceof InferenceResolutionError) {
+                return c.json(
+                  ErrorEnvelope("not_launchable", err.resolutionMessage),
+                  409,
+                );
+              }
+              throw err;
+            }
+            continue;
+          }
+
+          const target = await deps.tenancy.getTenantPrincipal(
+            ownerTenantId,
+            entry.principalId,
+          );
+          if (
+            target === undefined ||
+            target.kind !== "user" ||
+            target.status !== "active"
+          ) {
+            return c.json(
+              ErrorEnvelope(
+                "bad_request",
+                "principalId does not name an active member of this bench",
+              ),
+              400,
+            );
+          }
+          const joined = await joinHumanParticipant(
+            { store: deps.store, platform: deps.platform, publish },
+            {
+              tenantId: ownerTenantId,
+              principalId: principal.id,
+              channelId,
+              memberPrincipalId: entry.principalId,
+              memberHandle: handleFromName(entry.name ?? "", entry.principalId),
+              existingSettings: currentSettings,
+            },
+          );
+          currentSettings = joined.settings;
+        }
+      }
 
       // Slash messages, and `@name` messages whose name resolves to a
       // command rather than an already-invited agent participant, are

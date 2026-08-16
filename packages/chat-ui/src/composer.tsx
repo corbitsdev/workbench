@@ -17,13 +17,21 @@ import {
 } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 
-import type { Part } from "./api";
+import type { Part, ParticipantRecord } from "./api";
 import {
   activeMentionQuery,
-  filterMentionCandidates,
+  filterMentionOptions,
   insertMention,
+  mentionOptionsFromChannel,
 } from "./mentions";
-import type { MentionCandidate, MentionQuery } from "./mentions";
+import type {
+  BringInAgentDefinition,
+  BringInMember,
+  MentionCandidate,
+  MentionInviteIntent,
+  MentionOption,
+  MentionQuery,
+} from "./mentions";
 import {
   SLASH_COMMANDS,
   activeSlashQuery,
@@ -43,6 +51,11 @@ export type ComposerAttachment = {
 export type ComposerSendPayload = {
   readonly text: string;
   readonly attachments: readonly ComposerAttachment[];
+  /** Every "Bring in…" candidate picked since the draft was last sent —
+   * the send path invites each one before posting the message itself
+   * (see `packages/chat/src/routes.ts`'s `MessageInviteEntry`). Omitted
+   * (or empty) when nothing was picked from that group. */
+  readonly invite?: readonly MentionInviteIntent[];
 };
 
 /** Imperative seam a host can grab a ref to, so content from outside the
@@ -292,6 +305,16 @@ export const Composer = forwardRef<
   ComposerHandle,
   {
     readonly agents: readonly MentionCandidate[];
+    /** Every participant record (agent or human) the mention popover's
+     * "Bring in…" group de-dupes against — omitted candidates are
+     * already in the channel. Defaults to empty. */
+    readonly participants?: readonly ParticipantRecord[];
+    /** Workspace members not yet in this workbench — the "Bring in…"
+     * group's person half. Defaults to empty (no group rendered). */
+    readonly members?: readonly BringInMember[];
+    /** Invitable agent definitions — the "Bring in…" group's agent
+     * half. Defaults to empty (no group rendered). */
+    readonly invitableAgents?: readonly BringInAgentDefinition[];
     /** Resolves to whether the send succeeded; the composer decides draft/attachment cleanup from that. */
     readonly onSend: (payload: ComposerSendPayload) => Promise<boolean>;
     /** `/invite` — opens the invite-agent dialog. */
@@ -309,6 +332,9 @@ export const Composer = forwardRef<
 >(function Composer(
   {
     agents,
+    participants = [],
+    members = [],
+    invitableAgents = [],
     onSend,
     onInviteAgent,
     onOpenAgentsSettings,
@@ -322,6 +348,9 @@ export const Composer = forwardRef<
   const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>(
     [],
   );
+  const [pendingInvites, setPendingInvites] = useState<
+    readonly MentionInviteIntent[]
+  >([]);
   const [mention, setMention] = useState<MentionQuery | null>(null);
   const [highlight, setHighlight] = useState(0);
   const [slash, setSlash] = useState<SlashQuery | null>(null);
@@ -363,8 +392,13 @@ export const Composer = forwardRef<
     [value],
   );
 
-  const candidates =
-    mention !== null ? filterMentionCandidates(agents, mention.query) : [];
+  const mentionOptions: readonly MentionOption[] =
+    mention !== null
+      ? filterMentionOptions(
+          mentionOptionsFromChannel(participants, members, invitableAgents),
+          mention.query,
+        )
+      : [];
   const slashCandidates =
     slash !== null ? filterSlashCommands(slash.query) : [];
   const busy = { sending, preparing };
@@ -450,13 +484,39 @@ export const Composer = forwardRef<
     });
   }
 
-  function pickMention(candidate: MentionCandidate) {
+  /**
+   * Splices the picked candidate's handle into the draft exactly as
+   * before; a "bring in" pick additionally records its invite intent
+   * (de-duplicated by kind+id) so `send()` carries it through to the
+   * server's pre-invite step.
+   */
+  function pickMention(option: MentionOption) {
     const textarea = textareaRef.current;
     if (mention === null || textarea === null) return;
     const caret = textarea.selectionStart;
-    const result = insertMention(value, caret, mention, candidate.handle);
+    const result = insertMention(
+      value,
+      caret,
+      mention,
+      option.candidate.handle,
+    );
     setValue(result.text);
     setMention(null);
+    if (option.group === "bring-in") {
+      setPendingInvites((current) => {
+        const key =
+          option.invite.kind === "agent"
+            ? `agent:${option.invite.definitionId}`
+            : `person:${option.invite.principalId}`;
+        const alreadyPending = current.some(
+          (invite) =>
+            (invite.kind === "agent"
+              ? `agent:${invite.definitionId}`
+              : `person:${invite.principalId}`) === key,
+        );
+        return alreadyPending ? current : [...current, option.invite];
+      });
+    }
     requestAnimationFrame(() => {
       textarea.focus();
       textarea.setSelectionRange(result.caret, result.caret);
@@ -525,10 +585,14 @@ export const Composer = forwardRef<
     if (!canSendComposerAction(value, attachments, { sending, preparing })) {
       return;
     }
-    const payload: ComposerSendPayload = { text: value, attachments };
+    const payload: ComposerSendPayload =
+      pendingInvites.length > 0
+        ? { text: value, attachments, invite: pendingInvites }
+        : { text: value, attachments };
     setValue("");
     setAttachments([]);
     setMention(null);
+    setPendingInvites([]);
     await performSend(payload);
   }
 
@@ -563,22 +627,23 @@ export const Composer = forwardRef<
         return;
       }
     }
-    if (mention !== null && candidates.length > 0) {
+    if (mention !== null && mentionOptions.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setHighlight((index) => (index + 1) % candidates.length);
+        setHighlight((index) => (index + 1) % mentionOptions.length);
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
         setHighlight(
-          (index) => (index - 1 + candidates.length) % candidates.length,
+          (index) =>
+            (index - 1 + mentionOptions.length) % mentionOptions.length,
         );
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
-        const chosen = candidates[highlight];
+        const chosen = mentionOptions[highlight];
         if (chosen !== undefined) pickMention(chosen);
         return;
       }
@@ -630,29 +695,42 @@ export const Composer = forwardRef<
       )}
       {slash === null && mention !== null && (
         <div className="chat-mention-popover" role="listbox">
-          {candidates.length === 0 ? (
+          {mentionOptions.length === 0 ? (
             <div className="chat-mention-empty">
               {CHAT_STRINGS.mentionEmpty}
             </div>
           ) : (
-            candidates.map((candidate, index) => (
-              <button
-                key={candidate.id}
-                type="button"
-                role="option"
-                aria-selected={index === highlight}
-                className="chat-mention-option"
-                data-highlighted={index === highlight}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  pickMention(candidate);
-                }}
-              >
-                <span className="chat-mention-handle">@{candidate.handle}</span>
-                {candidate.label !== candidate.handle && (
-                  <span className="chat-mention-label">{candidate.label}</span>
-                )}
-              </button>
+            mentionOptions.map((option, index) => (
+              <div key={`${option.group}:${option.candidate.id}`}>
+                {(index === 0 ||
+                  mentionOptions[index - 1]?.group !== option.group) &&
+                option.group === "bring-in" ? (
+                  <div className="chat-mention-group-label">
+                    {CHAT_STRINGS.mentionBringInGroupLabel}
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={index === highlight}
+                  className="chat-mention-option"
+                  data-highlighted={index === highlight}
+                  data-mention-group={option.group}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    pickMention(option);
+                  }}
+                >
+                  <span className="chat-mention-handle">
+                    @{option.candidate.handle}
+                  </span>
+                  {option.candidate.label !== option.candidate.handle && (
+                    <span className="chat-mention-label">
+                      {option.candidate.label}
+                    </span>
+                  )}
+                </button>
+              </div>
             ))
           )}
         </div>

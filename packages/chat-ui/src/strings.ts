@@ -91,7 +91,9 @@ export const CHAT_STRINGS = {
   filePartLabel: "Attachment",
   emptyTimelineTitle: "No messages yet",
   emptyTimelineDescription: "Say something to get the conversation going.",
-  mentionEmpty: "No matching agents",
+  mentionEmpty: "No matches",
+  mentionBringInGroupLabel: "Bring in…",
+  mentionForbidden: "You can't add people to this workbench",
   composerSlashEmpty: "No matching commands",
   composerSummarizeNoAgentError:
     "No agent in this conversation to summarize for — invite one first.",
