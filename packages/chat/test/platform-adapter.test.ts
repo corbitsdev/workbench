@@ -324,10 +324,18 @@ function createFakeDb(opts: {
     delete(table: unknown) {
       return deleteOn(table);
     },
+    // The rollback path (CL-6128) runs its update/delete statements inside
+    // the transaction too, so the tx handle mirrors the outer surface.
     async transaction(fn: (tx: unknown) => Promise<void>) {
       await fn({
         insert(table: unknown) {
           return { values: (values: unknown) => insertOn(table, values) };
+        },
+        update(table: unknown) {
+          return updateOn(table);
+        },
+        delete(table: unknown) {
+          return deleteOn(table);
         },
       });
     },
