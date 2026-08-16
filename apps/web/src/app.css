@@ -34,6 +34,30 @@ kbd {
   font-family: "Space Mono", ui-monospace, monospace;
 }
 
+/* Interactive means pointer. Tailwind's preflight leaves buttons on the
+   default arrow cursor, so every clickable control in the app (react-ui
+   buttons included) needs this said once, globally. Disabled controls
+   say so with the cursor too. */
+button,
+a,
+[role="button"],
+[role="option"],
+[role="menuitem"],
+[role="tab"],
+label[for],
+select,
+summary,
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+button:disabled,
+input:disabled,
+select:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 .app-mark {
   height: 1.375rem;
   width: auto;
