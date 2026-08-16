@@ -11,7 +11,7 @@ export type {
 
 export {
   resolveSettingsSectionGroups,
-  insertWorkspaceSections,
+  insertEveryoneSections,
 } from "./section-registry";
 
 export { BenchSection, BenchSectionView } from "./bench-section";

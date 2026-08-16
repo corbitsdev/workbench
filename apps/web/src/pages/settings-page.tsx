@@ -1,5 +1,5 @@
 // Thin mount of `@corbits/settings-ui`'s shell: the package owns the section
-// registry (Personal / Workspace groups, icons, tenancy gates — see
+// registry (Account / Everyone groups, icons, tenancy gates — see
 // `resolveSettingsSectionGroups`); this file only adapts the app's
 // bench-selection state (see ../bench-context.tsx) and the URL into the
 // shape the package expects. `/settings` defaults to the first allowed

@@ -1,12 +1,17 @@
-// The Personal / Workspace registry is the single source of truth for both
-// the settings stage and a host's own section nav (col2) — these tests
-// pin its ordering and its tenancy gating so the two can never drift.
+// The Account / Everyone registry (CL-6089) is the single source of truth
+// for both the settings stage and a host's own section nav (col2) — these
+// tests pin its ordering and its tenancy gating so the two can never
+// drift. There is one workbench per account now, so "Workspace" and
+// "Personal" collapsed into "Everyone" (who else can see this account's
+// one workbench) and "Account" (only you) — Bench has no section of its
+// own anymore, since there is nothing left to name separately from the
+// account.
 
 import { describe, expect, test } from "bun:test";
 import { Bot } from "lucide-react";
 
 import {
-  insertWorkspaceSections,
+  insertEveryoneSections,
   resolveSettingsSectionGroups,
 } from "../src/section-registry";
 import type { TenancyAccess } from "../src/access";
@@ -34,27 +39,17 @@ function ids(groups: ReturnType<typeof resolveSettingsSectionGroups>) {
 }
 
 describe("resolveSettingsSectionGroups", () => {
-  test("Personal is always full; gated Workspace sections are absent, not disabled", () => {
+  test("Account's Notifications and Account sections are always full; gated Everyone sections are absent, not disabled", () => {
     expect(ids(resolveSettingsSectionGroups(denied))).toEqual([
-      { id: "personal", sections: ["chat", "account"] },
-      { id: "workspace", sections: ["bench", "audit"] },
+      { id: "account", sections: ["chat", "account"] },
+      { id: "everyone", sections: ["audit"] },
     ]);
   });
 
   test("an allowed gate adds its section in registry order", () => {
     expect(ids(resolveSettingsSectionGroups(allowed))).toEqual([
-      { id: "personal", sections: ["chat", "account"] },
-      {
-        id: "workspace",
-        sections: [
-          "bench",
-          "people",
-          "roles",
-          "grants",
-          "connections",
-          "audit",
-        ],
-      },
+      { id: "account", sections: ["chat", "account", "connections"] },
+      { id: "everyone", sections: ["people", "roles", "grants", "audit"] },
     ]);
   });
 
@@ -66,17 +61,17 @@ describe("resolveSettingsSectionGroups", () => {
       credentials: "denied",
     };
     expect(ids(resolveSettingsSectionGroups(loading))).toEqual([
-      { id: "personal", sections: ["chat", "account"] },
-      { id: "workspace", sections: ["bench", "grants", "audit"] },
+      { id: "account", sections: ["chat", "account"] },
+      { id: "everyone", sections: ["grants", "audit"] },
     ]);
   });
 
   test("never registers the personal agent section — no preference store exists to back it yet", () => {
     for (const access of [denied, allowed]) {
-      const personal = resolveSettingsSectionGroups(access).find(
-        (group) => group.id === "personal",
+      const account = resolveSettingsSectionGroups(access).find(
+        (group) => group.id === "account",
       );
-      expect(personal?.sections.map((section) => section.id)).not.toContain(
+      expect(account?.sections.map((section) => section.id)).not.toContain(
         "agent",
       );
     }
@@ -91,37 +86,38 @@ describe("resolveSettingsSectionGroups", () => {
   });
 });
 
-describe("insertWorkspaceSections", () => {
+describe("insertEveryoneSections", () => {
   const extra: readonly SettingsSection[] = [
     { id: "agents", title: "Agents", icon: Bot, render: () => <div /> },
     { id: "skills", title: "Skills", icon: Bot, render: () => <div /> },
   ];
 
-  test("splices host sections into Workspace right after bench", () => {
-    const groups = insertWorkspaceSections(
+  test("splices host sections into Everyone, at its front", () => {
+    const groups = insertEveryoneSections(
       resolveSettingsSectionGroups(denied),
       extra,
     );
     expect(ids(groups)).toEqual([
-      { id: "personal", sections: ["chat", "account"] },
-      { id: "workspace", sections: ["bench", "agents", "skills", "audit"] },
+      { id: "account", sections: ["chat", "account"] },
+      { id: "everyone", sections: ["agents", "skills", "audit"] },
     ]);
   });
 
-  test("leaves Personal untouched", () => {
-    const groups = insertWorkspaceSections(
+  test("leaves Account untouched", () => {
+    const groups = insertEveryoneSections(
       resolveSettingsSectionGroups(allowed),
       extra,
     );
-    const personal = groups.find((group) => group.id === "personal");
-    expect(personal?.sections.map((section) => section.id)).toEqual([
+    const account = groups.find((group) => group.id === "account");
+    expect(account?.sections.map((section) => section.id)).toEqual([
       "chat",
       "account",
+      "connections",
     ]);
   });
 
   test("is a no-op when there is nothing to insert", () => {
     const base = resolveSettingsSectionGroups(denied);
-    expect(insertWorkspaceSections(base, [])).toBe(base);
+    expect(insertEveryoneSections(base, [])).toBe(base);
   });
 });

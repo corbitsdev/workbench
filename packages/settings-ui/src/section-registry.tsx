@@ -1,25 +1,25 @@
-// The Personal / Workspace section registry: the grouping, ordering, icons,
-// and tenancy gates every Interchange deployment gets when it mounts this
-// package's settings surface. Consuming apps compose bench context and
-// routing around `resolveSettingsSectionGroups` — the domain model of "what
-// settings exist and who can see them" lives here, not in an app.
+// The Account / Everyone section registry (CL-6089): the grouping,
+// ordering, icons, and tenancy gates every Interchange deployment gets
+// when it mounts this package's settings surface. The single-concept
+// collapse folded Personal/Workspace into Account/Everyone — there is one
+// workbench per account now, so a "workspace-scoped" setting and an
+// "account-scoped" one are the same tenant's settings. What used to be
+// Workspace's People/Roles/Grants/Audit move here as Everyone (who else
+// can see or touch this account's one workbench); Bench dies outright —
+// there is no longer a second thing to name, distinct from the account,
+// so its rename/purpose/icon form and member list have no home to keep
+// them separate in. Conversation-scoped settings (agent, capabilities,
+// history) live on the workbench's own settings surface
+// (`@corbits/chat-ui`'s `ChannelSettingsSurface`, CL-6084) — not here.
+// Consuming apps compose bench context and routing around
+// `resolveSettingsSectionGroups` — the domain model of "what settings
+// exist and who can see them" lives here, not in an app.
 
-import {
-  Bell,
-  Home,
-  List,
-  Plug,
-  Shield,
-  Star,
-  User,
-  Users,
-} from "lucide-react";
+import { Bell, KeyRound, List, Shield, Star, User, Users } from "lucide-react";
 
 import { AccountSection } from "./account-section";
 import type { TenancyAccess } from "./access";
 import { AuditSection } from "./audit-section";
-import { BenchSection } from "./bench-section";
-import { ChatSection } from "./chat-section";
 import { ConnectionsSection } from "./connections-section";
 import { GrantsSection } from "./grants-section";
 import { NotificationsSection } from "./notifications-section";
@@ -30,7 +30,7 @@ import { SETTINGS_STRINGS } from "./strings";
 
 type GatedSettingsSection = SettingsSection & {
   /** The `TenancyAccess` field this section is gated on. Omit for a
-   * section every principal can see (Personal sections, Bench, Audit). */
+   * section every principal can see (Account sections, Audit). */
   readonly gate?: keyof TenancyAccess;
 };
 
@@ -42,8 +42,8 @@ type SettingsSectionGroupDef = {
 
 const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
   {
-    id: "personal",
-    label: SETTINGS_STRINGS.groupPersonalLabel,
+    id: "account",
+    label: SETTINGS_STRINGS.groupAccountLabel,
     // No "Your agent" section here: it has no preference store to back it —
     // see agent-section.tsx's header comment for the re-add condition.
     sections: [
@@ -59,23 +59,23 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         icon: User,
         render: () => <AccountSection />,
       },
+      {
+        // Plugins (`/plugins`) is the canonical surface for discovering
+        // and connecting a key; this section is management-only for keys
+        // that already exist (rotate, name, revoke) — see connections-
+        // section.tsx and the CL-6077 audit this reorganization follows.
+        id: "connections",
+        title: SETTINGS_STRINGS.connectionsSectionTitle,
+        icon: KeyRound,
+        gate: "credentials",
+        render: (ctx) => <ConnectionsSection tenantId={ctx.tenantId} />,
+      },
     ],
   },
   {
-    id: "workspace",
-    label: SETTINGS_STRINGS.groupWorkspaceLabel,
+    id: "everyone",
+    label: SETTINGS_STRINGS.groupEveryoneLabel,
     sections: [
-      {
-        id: "bench",
-        title: SETTINGS_STRINGS.benchSectionTitle,
-        icon: Home,
-        render: (ctx) => (
-          <>
-            <BenchSection tenantId={ctx.tenantId} />
-            <ChatSection tenantId={ctx.tenantId} />
-          </>
-        ),
-      },
       {
         id: "people",
         title: SETTINGS_STRINGS.peopleSectionTitle,
@@ -96,13 +96,6 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         icon: Shield,
         gate: "grants",
         render: (ctx) => <GrantsSection tenantId={ctx.tenantId} />,
-      },
-      {
-        id: "connections",
-        title: SETTINGS_STRINGS.connectionsSectionTitle,
-        icon: Plug,
-        gate: "credentials",
-        render: (ctx) => <ConnectionsSection tenantId={ctx.tenantId} />,
       },
       {
         id: "audit",
@@ -136,32 +129,21 @@ export function resolveSettingsSectionGroups(
 }
 
 /**
- * Splices host-supplied sections into the Workspace group, right after
- * "bench" — for domain sections that live outside this package (e.g. a
- * host app's Agents/Skills directories) but still belong in the same
- * Workspace nav. A host calling this must pass the same `extra` list to
- * every consumer (settings stage and its own section nav / col2), the same
+ * Splices host-supplied sections into the Everyone group, at its front —
+ * for domain sections that live outside this package (e.g. a host app's
+ * Agents/Skills directories) but still belong in the same account-wide
+ * nav. A host calling this must pass the same `extra` list to every
+ * consumer (settings stage and its own section nav / col2), the same
  * discipline `resolveSettingsSectionGroups` itself documents, or the two
  * surfaces drift.
  */
-export function insertWorkspaceSections(
+export function insertEveryoneSections(
   groups: readonly SettingsSectionGroup[],
   extra: readonly SettingsSection[],
 ): readonly SettingsSectionGroup[] {
   if (extra.length === 0) return groups;
   return groups.map((group) => {
-    if (group.id !== "workspace") return group;
-    const benchIndex = group.sections.findIndex(
-      (section) => section.id === "bench",
-    );
-    const insertAt = benchIndex === -1 ? 0 : benchIndex + 1;
-    return {
-      ...group,
-      sections: [
-        ...group.sections.slice(0, insertAt),
-        ...extra,
-        ...group.sections.slice(insertAt),
-      ],
-    };
+    if (group.id !== "everyone") return group;
+    return { ...group, sections: [...extra, ...group.sections] };
   });
 }

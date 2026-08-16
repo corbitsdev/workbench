@@ -259,7 +259,7 @@ function SkillDetailView({
 
 /**
  * Settings · Skills. `navigate` and `entityId` come from the settings
- * section context (see `../settings-workspace-sections.tsx`); `tenantId`
+ * section context (see `../settings-everyone-sections.tsx`); `tenantId`
  * is the registry every read and write is scoped to.
  */
 export function SkillsSettingsSection({
