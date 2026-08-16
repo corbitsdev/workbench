@@ -301,7 +301,8 @@ export const CHAT_STRINGS = {
   channelSettingsNotifyMentions: "Mentions only",
   channelSettingsNotifyMute: "Mute",
   channelSettingsNotificationsHint:
-    "Preference is local draft UI until per-conversation notification storage ships.",
+    "This choice is yours alone — it doesn't change notifications for anyone else.",
+  channelSettingsNotificationsSaveError: "Couldn't save this setting. Try again.",
   channelSettingsCapacityDescription:
     "This workbench's agents run on their own dedicated capacity.",
   channelSettingsCapacityLabel:

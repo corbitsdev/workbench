@@ -1,7 +1,16 @@
-// Notifications section: personal-only preference — local draft UI until
-// per-channel notification storage ships.
+// Notifications section: personal-only preference, persisted through
+// @corbits/preferences (per-principal, per-workbench) keyed by this
+// channel. Saves immediately on choice, the same instant-apply shape as
+// CapacitySection's switch.
+
+import { toast } from "@corbits/react-ui";
+import { useEffect, useState } from "react";
 
 import { CHAT_STRINGS } from "../strings";
+import {
+  getNotificationPreference,
+  setNotificationPreference,
+} from "./notifications-api";
 
 const NOTIFICATION_CHOICES = [
   ["all", CHAT_STRINGS.channelSettingsNotifyAll],
@@ -12,12 +21,44 @@ const NOTIFICATION_CHOICES = [
 export type NotificationPreference = (typeof NOTIFICATION_CHOICES)[number][0];
 
 export function NotificationsSection({
-  value,
-  onChange,
+  tenantId,
+  channelId,
 }: {
-  readonly value: NotificationPreference;
-  readonly onChange: (value: NotificationPreference) => void;
+  readonly tenantId: string;
+  readonly channelId: string;
 }) {
+  const [value, setValue] = useState<NotificationPreference>("all");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getNotificationPreference(tenantId, channelId).then((preference) => {
+      if (cancelled) return;
+      setValue(preference);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, channelId]);
+
+  function handleChange(next: NotificationPreference) {
+    const previous = value;
+    setValue(next);
+    setSaving(true);
+    setError(null);
+    setNotificationPreference(tenantId, channelId, next)
+      .then((saved) => {
+        setValue(saved);
+        toast(CHAT_STRINGS.channelSettingsSavedToast);
+      })
+      .catch(() => {
+        setValue(previous);
+        setError(CHAT_STRINGS.channelSettingsNotificationsSaveError);
+      })
+      .finally(() => setSaving(false));
+  }
+
   return (
     <div className="channel-settings-pane">
       <div
@@ -31,7 +72,8 @@ export function NotificationsSection({
             type="button"
             className="chat-kind-card"
             aria-pressed={value === id}
-            onClick={() => onChange(id)}
+            disabled={saving}
+            onClick={() => handleChange(id)}
           >
             <span className="chat-kind-card-title">{label}</span>
           </button>
@@ -40,6 +82,11 @@ export function NotificationsSection({
       <p className="chat-settings-field-hint">
         {CHAT_STRINGS.channelSettingsNotificationsHint}
       </p>
+      {error !== null ? (
+        <p className="chat-dialog-error" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
