@@ -55,6 +55,13 @@ export {
   type DispatchWithPlannerResult,
 } from "./routes";
 export {
+  createWorkflowDispatchRoutes,
+  type CreateWorkflowDispatchRoutesDeps,
+  type WorkflowDispatchEnv,
+  type WorkflowDispatchRunScope,
+  type WorkflowRunAuthenticator as WorkflowDispatchRunAuthenticator,
+} from "./workflow-dispatch-routes";
+export {
   createMyraAgentDefinitionDrafting,
   parseAgentDefinitionDraftReply,
   validateAgentDefinitionDraftReplyAgainstInventory,
