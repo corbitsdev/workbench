@@ -55,6 +55,7 @@ import type {
   SidecarRouter,
 } from "@intx/hub-sessions";
 import { formatRunAddress } from "@intx/types";
+import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
 import { type } from "arktype";
 import type {
   ChatChannelEvent,
@@ -335,17 +336,18 @@ export function createHubChatPlatform(
         name: channelHostAssetName(input.channelId),
         creatorPrincipalId: input.creatorPrincipalId,
       });
-      const { definitionId } = await ensureWorkflowDefinitionForAsset(
-        deps.db,
-        asset.id,
-      );
-
       let definitionJSON: unknown;
       try {
         definitionJSON = JSON.parse(input.definition);
       } catch (cause) {
         throw new Error("channel definition is not valid JSON", { cause });
       }
+      const wireHash = await computeWireDefinitionHash(definitionJSON);
+      const { definitionId } = await ensureWorkflowDefinitionForAsset(
+        deps.db,
+        { assetId: asset.id, wireHash },
+      );
+
       const foldedBody = readFoldedBody(definitionJSON);
 
       await launchFoldedRun(foldedRunsDeps, {
