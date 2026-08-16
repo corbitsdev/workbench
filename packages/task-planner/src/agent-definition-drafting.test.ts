@@ -260,11 +260,7 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).not.toContain("undefined");
   });
 
-<<<<<<< HEAD
   test("the drafting brief instructs the drafted agent to greet, introduce itself, and ask what it's for on its first reply", async () => {
-=======
-  test("the prompt says nothing about request_capability when @corbits/capability-tools isn't in the inventory", async () => {
->>>>>>> origin/cl-6084-request-capability
     let sentPrompt = "";
     const drafting = createMyraAgentDefinitionDrafting(
       buildDeps({
@@ -280,7 +276,6 @@ describe("createMyraAgentDefinitionDrafting", () => {
       }),
     );
     await drafting.propose(INPUT);
-<<<<<<< HEAD
 
     expect(sentPrompt).toContain("first reply");
     expect(sentPrompt).toContain("greet the person by name");
@@ -288,7 +283,6 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).toContain("fresh start");
     expect(sentPrompt).toContain("standing job");
     expect(sentPrompt).toContain("one-off task");
-=======
     expect(sentPrompt).not.toContain("request_capability");
   });
 
@@ -324,7 +318,6 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).toContain("@corbits/capability-tools");
     expect(sentPrompt).toContain("request_capability");
     expect(sentPrompt).toContain("a human has to approve");
->>>>>>> origin/cl-6084-request-capability
   });
 
   test("an unresolvable Myra definition surfaces as MyraAgentDefinitionDraftingUnavailableError", async () => {
