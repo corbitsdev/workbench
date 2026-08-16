@@ -252,32 +252,6 @@ async function startWebDevServer(options: {
 
 // --- small DOM helpers -------------------------------------------------
 
-/** Clicks the first element matching `selector` whose trimmed text content
- * equals `text` — puppeteer-core has no built-in text selector, and every
- * control this walkthrough drives is identified by its real UI label. */
-async function clickByText(
-  page: Page,
-  selector: string,
-  text: string,
-): Promise<void> {
-  const clicked = await page.evaluate(
-    (sel: string, wanted: string) => {
-      const nodes = Array.from(document.querySelectorAll(sel));
-      const match = nodes.find(
-        (node) => (node.textContent ?? "").trim() === wanted,
-      );
-      if (match === undefined) return false;
-      (match as HTMLElement).click();
-      return true;
-    },
-    selector,
-    text,
-  );
-  if (!clicked) {
-    throw new Error(`no element matching ${selector} with text "${text}"`);
-  }
-}
-
 /**
  * Clicks `selector` by resolving and clicking it in one browser-side turn,
  * with a few short retries — `page.click()` resolves the element handle
