@@ -1305,6 +1305,100 @@ describe("seedCatalog", () => {
     expect(patchCalls).toBe(0);
   });
 
+  // A regenerated OpenRouter key, or a retry after a bad paste, reconnects
+  // under the same stable credential name — the caller has already proven
+  // the fresh key against the provider's own probe (`credentialVerified:
+  // true`), so the name conflict must rotate the stored secret rather
+  // than silently keeping the stale one while claiming connected.
+  test("a name conflict on a verified api_key reconnect rotates the stored secret", async () => {
+    const { lines, log } = collector();
+    let patchCalls = 0;
+    let patchBody: unknown;
+
+    const activeCredentialRow = () => ({
+      id: "cre_active",
+      tenantId: TENANT_ID,
+      providerId: "prv_1",
+      name: "openrouter-default",
+      type: "api_key",
+      status: "active",
+      createdAt: TIMESTAMP,
+      updatedAt: TIMESTAMP,
+    });
+
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "openrouter") };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return { status: 409, data: { error: "name taken" } };
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 200,
+          data: { data: [activeCredentialRow()], nextCursor: null },
+        };
+      if (
+        method === "PATCH" &&
+        path === `/api/tenants/${TENANT_ID}/credentials/cre_active`
+      ) {
+        patchCalls += 1;
+        patchBody = body;
+        return { status: 200, data: { ...activeCredentialRow() } };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "anthropic/claude-sonnet-5"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "openrouter",
+            "cre_active",
+            "openai-compatible",
+            "https://openrouter.ai/api/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "openrouter",
+      apiKey: "sk-or-freshly-regenerated",
+      credentialName: "openrouter-default",
+      credentialVerified: true,
+      log,
+    });
+
+    expect(patchCalls).toBe(1);
+    expect(patchBody).toEqual({
+      secret: "sk-or-freshly-regenerated",
+      status: "active",
+      metadata: undefined,
+    });
+    expect(lines.some((line) => line.includes("rotated credential"))).toBe(
+      true,
+    );
+  });
+
   test("re-run finds every step already seeded and creates nothing twice", async () => {
     const { lines, log } = collector();
     let providerPosts = 0;

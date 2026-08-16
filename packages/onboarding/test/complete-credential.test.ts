@@ -630,6 +630,7 @@ describe("completeCredentialSetup", () => {
     let catalogProviderCreatePosts = 0;
     let catalogOfferingCreatePosts = 0;
     let credentialCreatePosts = 0;
+    let credentialRotatePatches = 0;
 
     const api: ApiCall = async (method, path, body) => {
       if (method === "GET" && path === "/api/me/principals") {
@@ -844,6 +845,34 @@ describe("completeCredentialSetup", () => {
         };
       }
       if (
+        method === "PATCH" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/credentials/`)
+      ) {
+        // The second `completeCredentialSetup` call reproves the same
+        // key (`testAndPersistCredential` always probes first), so
+        // `ensureCredential` rotates the existing api_key row instead
+        // of leaving it untouched — this is the fix under test here,
+        // not a duplicate creation, so `credentialCreatePosts` still
+        // stays at 1.
+        credentialRotatePatches += 1;
+        const id = path.split("/").pop() as string;
+        return {
+          status: 200,
+          data: {
+            id,
+            tenantId: TENANT_ID,
+            providerId: "prv_anthropic",
+            name: "Anthropic",
+            type: "api_key",
+            status: "active",
+            metadata: null,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/catalog/models`
       ) {
@@ -996,6 +1025,9 @@ describe("completeCredentialSetup", () => {
     expect(catalogProviderCreatePosts).toBe(1);
     expect(catalogOfferingCreatePosts).toBe(1);
     expect(credentialCreatePosts).toBe(1);
+    // The second pass reproves the key and rotates the existing row
+    // rather than leaving it untouched (the CL-6103 fix).
+    expect(credentialRotatePatches).toBe(1);
     expect(assets.length).toBe(4);
     expect(deployments.length).toBe(4);
   });
