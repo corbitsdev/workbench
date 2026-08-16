@@ -43,7 +43,7 @@ function mount(initialPath: string) {
         setPath(path);
       }),
     getScrollTop: () => scrollEl?.scrollTop ?? -1,
-    unmount: () => root.unmount(),
+    unmount: () => act(() => root.unmount()),
   };
 }
 

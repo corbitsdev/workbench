@@ -15,6 +15,5 @@ export function useScrollReset<T extends Element>(
   useEffect(() => {
     if (ref.current !== null) ref.current.scrollTop = 0;
     // `ref` is a stable identity; `dep` is what actually triggers a reset.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dep]);
 }
