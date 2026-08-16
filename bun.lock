@@ -455,6 +455,7 @@
         "@corbits/inference-settings": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "workspace:*",
+        "@workbench/hub-client": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",

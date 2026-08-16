@@ -20,7 +20,7 @@ import {
   OneShotDefinitionNotFoundError,
 } from "@corbits/folded-runs";
 
-import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
+import { RoutineTrigger, minuteKey, type RoutineTriggerT } from "./trigger";
 import type {
   RoutineRow,
   RoutineRunRow,
@@ -327,8 +327,10 @@ async function launchAndCorrelate(
     input.deliveryChannelId !== "" &&
     deps.deliveryThreads !== undefined
   ) {
-    // runRef is stable per fire attempt: routine id + triggeredBy + time bucket
-    const runRef = `${input.routineId}:${input.triggeredBy}:${Date.now()}`;
+    // runRef is stable per fire attempt: routine id + triggeredBy + time
+    // bucket — a retry of the same fire within the same minute reuses the
+    // ref instead of minting a new delivery thread.
+    const runRef = `${input.routineId}:${input.triggeredBy}:${minuteKey(new Date())}`;
     const createDeliveryThreadInput = {
       tenantId: input.tenantId,
       channelId: input.deliveryChannelId,
@@ -417,7 +419,9 @@ export function createRoutineRoutes(
   // guard exactly: a plain-language 409 rejection of a same-principal
   // concurrent second request, released in a `finally` once the first
   // settles. Single-principal-in-flight only; broader per-tenant rate
-  // limiting is tracked separately as CL-5285.
+  // limiting is tracked separately as CL-5285. This Set is in-memory and
+  // resets on process restart — it guards within a single running
+  // instance only, never cluster-wide across replicas.
   const inFlightDraftingPrincipals = new Set<string>();
 
   app.post(
@@ -452,7 +456,7 @@ export function createRoutineRoutes(
         !(await webhookTriggerValid(
           deps,
           tenant.id,
-          body.trigger as RoutineTriggerT,
+          body.trigger,
           body.definitionId,
         ))
       ) {
@@ -520,7 +524,7 @@ export function createRoutineRoutes(
           tenantId: tenant.id,
           name: body.name,
           definitionId: body.definitionId,
-          trigger: body.trigger as RoutineTriggerT,
+          trigger: body.trigger,
           scope: body.scope,
           input: body.input ?? {},
           deliveryChannelId,
@@ -621,7 +625,7 @@ export function createRoutineRoutes(
         !(await webhookTriggerValid(
           deps,
           tenant.id,
-          body.trigger as RoutineTriggerT,
+          body.trigger,
           existing.definitionId,
         ))
       ) {
@@ -634,7 +638,7 @@ export function createRoutineRoutes(
       let patch: UpdateRoutineInput = {};
       if (body.name !== undefined) patch = { ...patch, name: body.name };
       if (body.trigger !== undefined) {
-        patch = { ...patch, trigger: body.trigger as RoutineTriggerT };
+        patch = { ...patch, trigger: body.trigger };
       }
       if (body.input !== undefined) patch = { ...patch, input: body.input };
       if (body.enabled !== undefined) {

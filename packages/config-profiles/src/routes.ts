@@ -20,6 +20,7 @@ import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
 import type { FetchImpl } from "@corbits/inference-settings/api";
+import { cookiesFromHeader } from "@workbench/hub-client";
 
 import {
   applyProfile,
@@ -78,14 +79,6 @@ function profileView(row: ConfigProfileRow) {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-function cookiesFromHeader(header: string | undefined): string[] {
-  if (!header) return [];
-  return header
-    .split(";")
-    .map((pair) => pair.trim())
-    .filter((pair) => pair.length > 0);
 }
 
 /**

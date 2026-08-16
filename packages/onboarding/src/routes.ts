@@ -9,6 +9,7 @@ import { createNoopCredentialCipher } from "@intx/crypto";
 import { CredentialResponse, paginatedSchema } from "@intx/types";
 import type { CredentialCipher } from "@intx/types";
 import {
+  cookiesFromHeader,
   createHubAPI,
   DEFAULT_WORKFLOWS,
   inferenceCredentialName,
@@ -50,13 +51,17 @@ import { exchangeCodeForKey } from "./openrouter-connect";
 import { exchangeCodeForToken as exchangeHuggingFaceCodeForToken } from "./huggingface-connect";
 import type { ProviderHealthStore } from "@workbench/connections/provider-health";
 
-const PROVIDER_IDS = supportedCredentialProviders().map((p) => p.id) as [
-  SupportedCredentialProvider,
-  ...SupportedCredentialProvider[],
-];
+function assertNonEmpty<T>(arr: T[]): asserts arr is [T, ...T[]] {
+  if (arr.length === 0) {
+    throw new Error("expected a non-empty array");
+  }
+}
+
+const providerIds = supportedCredentialProviders().map((p) => p.id);
+assertNonEmpty(providerIds);
 
 const SubmitCredential = type({
-  provider: type.enumerated(...PROVIDER_IDS),
+  provider: type.enumerated(...providerIds),
   apiKey: "string > 0",
 });
 
@@ -133,14 +138,6 @@ export type CreateOnboardingRoutesDeps = {
    * a real deployment. */
   credentialCipher?: CredentialCipher;
 };
-
-function cookiesFromHeader(header: string | undefined): string[] {
-  if (!header) return [];
-  return header
-    .split(";")
-    .map((pair) => pair.trim())
-    .filter((pair) => pair.length > 0);
-}
 
 /**
  * The idempotent-duplicate-callback recovery: when a callback's own

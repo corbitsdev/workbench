@@ -149,7 +149,8 @@ export function createPlannerRoutes(
   // plain-language 409-ish rejection of a same-principal concurrent
   // second request, released in a `finally` once the first settles.
   // This is single-principal-in-flight only; broader per-tenant rate
-  // limiting is tracked separately as CL-5285.
+  // limiting is tracked separately as CL-5285. In-memory only: a
+  // process restart or a second replica resets/bypasses this guard.
   const inFlightPrincipals = new Set<string>();
 
   app.post("/", deps.requireGrant("task:*", "create"), async (c) => {
