@@ -229,6 +229,49 @@ describe("PluginsRoute", () => {
     expect(dialog?.textContent).toContain("GitHub");
   });
 
+  // CL-6105: the OAuth connect round-trip (OpenRouter/Hugging Face) lands
+  // back on `/plugins?connect=<id>&outcome=connected&tenantSlug=...` once
+  // the hub has durably stored the credential — this is a full browser
+  // navigation (the connect panel's own `<a href>`, not a client route),
+  // so the gallery mounts fresh and its unconditional load-on-mount is
+  // the only thing that has to see the freshly stored credential. Stubs
+  // the resolver to answer "connected" for OpenRouter exactly as the hub
+  // would right after `testAndPersistCredential` stores it under the
+  // connector's own display name.
+  test("a fresh mount on the OAuth connect return shows the card as connected", async () => {
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/api/me/principals"))
+        return Promise.resolve(json(membership));
+      if (path.includes("/api/channel-tenancies/kinds"))
+        return Promise.resolve(json({ channelTenantIds: [] }));
+      if (path.includes("/credentials/resolve/OpenRouter")) {
+        return Promise.resolve(
+          json({
+            id: "cred_or_1",
+            tenantId: "tnt_1",
+            name: "OpenRouter",
+            status: "active",
+          }),
+        );
+      }
+      if (path.includes("/connections/provider-health"))
+        return Promise.resolve(
+          json({ providers: {}, connectedProviderCount: 1 }),
+        );
+      if (path.includes("/credentials/resolve/"))
+        return Promise.resolve(json(null, 404));
+      if (path.includes("/api/tenants/tnt_1/skills"))
+        return Promise.resolve(json({ skills: [] }));
+      return Promise.resolve(json({ data: [], nextCursor: null }));
+    }) as typeof fetch;
+
+    const el = await mount();
+
+    expect(el.textContent).toContain("OpenRouter");
+    expect(el.textContent).toContain("Connected");
+  });
+
   // CL-6092: a deep link naming a provider with no matching gallery card
   // (a stale or misconfigured provider id) used to silently no-op — the
   // gallery should say something instead of nothing.

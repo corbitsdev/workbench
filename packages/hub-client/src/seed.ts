@@ -1130,6 +1130,17 @@ export type SeedCatalogArgs = {
    */
   credentialType?: "api_key" | "oauth_token";
   /**
+   * Overrides the seeded credential row's name — defaults to
+   * `inferenceCredentialName(seed.provider.name)`. A caller whose
+   * credential must also resolve by name elsewhere (the Plugins
+   * gallery's `GET .../credentials/resolve/:name`, which looks up a
+   * connector's `descriptor.displayName`) passes that same name here,
+   * so the one row satisfies both readers instead of leaving a
+   * connect flow's credential invisible to a reader that expects the
+   * other naming convention.
+   */
+  credentialName?: string;
+  /**
    * Free-form data attached to the seeded credential's `metadata`
    * field — the extension point a token's expiry timestamp lives in
    * (see `complete-credential.ts`), never interpreted by this function.
@@ -1185,7 +1196,7 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
   const baseCredentialArgs = {
     tenantId,
     providerId,
-    name: inferenceCredentialName(seed.provider.name),
+    name: args.credentialName ?? inferenceCredentialName(seed.provider.name),
     secret: credentialSecret,
     type: args.credentialType ?? ("api_key" as const),
   };

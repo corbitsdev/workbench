@@ -326,7 +326,7 @@ describe("completeCredentialSetup", () => {
       id: "cre_old",
       tenantId: TENANT_ID,
       providerId: "prv_1",
-      name: "huggingface-default",
+      name: "Hugging Face",
       type: "oauth_token",
       status: "expired",
       metadata: { expiresAt: "2026-01-01T00:00:00.000Z" },
@@ -1111,6 +1111,49 @@ describe("testAndPersistCredential (the fast half)", () => {
       message: "invalid x-api-key",
     });
     expect(apiCalls).toBe(0);
+  });
+
+  // CL-6105: the Plugins gallery resolves a connector's connection status
+  // by `GET .../credentials/resolve/:name`, looking that credential up by
+  // the connector's own `descriptor.displayName` ("OpenRouter"). Seeding
+  // it under the catalog-seed convention (`openrouter-default`) instead
+  // — as `seedCatalog` does by default — left a freshly connected
+  // OpenRouter credential permanently invisible to that gallery: the
+  // callback redirected back with `outcome=connected`, but the card kept
+  // reading "not connected" because the two write/read paths disagreed
+  // on the row's name.
+  test("seeds the OAuth connect flow's credential under the Plugins gallery's own lookup name", async () => {
+    const seedCatalogCalls: { credentialName?: string }[] = [];
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await testAndPersistCredential({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "openrouter",
+      apiKey: "sk-or-good",
+      pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
+      log: collector().log,
+      testCredential: async () => ({ ok: true }),
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+      },
+    });
+
+    expect(result.kind).toBe("connected");
+    expect(seedCatalogCalls).toHaveLength(1);
+    expect(seedCatalogCalls[0]?.credentialName).toBe("OpenRouter");
   });
 
   test("a valid key with no personal bench yet is reported, not guessed at", async () => {

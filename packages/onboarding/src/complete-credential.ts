@@ -48,6 +48,7 @@ import {
   parseAs,
   seedCatalog,
   seedTenant,
+  supportedCredentialProviders,
   testProviderCredential,
   type ApiCall,
   type ModelSource,
@@ -134,6 +135,24 @@ export type CompleteCredentialArgs = CommonArgs & {
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
   seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
 };
+
+/**
+ * The exact name the Plugins gallery's resolver
+ * (`@workbench/connections/plugins`'s `resolveOne`) looks a credential up
+ * by: a connector's `descriptor.displayName`, itself sourced from this
+ * same `PROVIDER_TEST_CONFIG` table (see `packages/connections/src/
+ * registry.ts`). Seeding the credential under any other name — the
+ * catalog-seed convention `inferenceCredentialName` still uses for the
+ * hub-owned CLI seed and the env-key auto-plant — leaves a self-served
+ * connect flow's credential invisible to that gallery.
+ */
+function credentialDisplayName(provider: SupportedCredentialProvider): string {
+  const match = supportedCredentialProviders().find((p) => p.id === provider);
+  if (match === undefined) {
+    throw new Error(`No display name registered for provider ${provider}`);
+  }
+  return match.displayName;
+}
 
 export async function findPersonalTenant(
   api: ApiCall,
@@ -224,6 +243,7 @@ export async function testAndPersistCredential(
     provider: args.provider,
     apiKey: args.apiKey,
     log: args.log,
+    credentialName: credentialDisplayName(args.provider),
     credentialType:
       args.credentialMetadata !== undefined
         ? ("oauth_token" as const)
