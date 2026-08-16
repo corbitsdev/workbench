@@ -9,7 +9,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { Composer } from "../src/composer";
-import type { ComposerHandle } from "../src/composer";
+import type { ComposerHandle, ComposerSendPayload } from "../src/composer";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -124,6 +124,130 @@ function typeInto(element: HTMLTextAreaElement, text: string) {
     element.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+
+function mountWithMentions(onSend: (payload: ComposerSendPayload) => Promise<boolean>) {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  const ref = createRef<ComposerHandle>();
+  act(() => {
+    root?.render(
+      createElement(Composer, {
+        ref,
+        agents: [],
+        participants: [
+          { address: "researcher@agents.example", handle: "researcher" },
+        ],
+        members: [{ id: "prn_bob", displayName: "Bob" }],
+        invitableAgents: [
+          { id: "wfd_echo", name: "echo", description: "Echo" },
+        ],
+        onSend,
+        onInviteAgent: () => undefined,
+        onOpenAgentsSettings: () => undefined,
+        onOpenRoutines: () => undefined,
+        onCreateRoutineInSpace: () => undefined,
+      }),
+    );
+  });
+  return container;
+}
+
+describe("Composer mention popover — bring-in group (CL-5879 mention-pulls-in)", () => {
+  test("renders the existing-participant group and a separate Bring in… group", async () => {
+    mountWithMentions(() => Promise.resolve(true));
+    typeInto(textarea(), "@");
+    await settle();
+
+    const options = Array.from(
+      container?.querySelectorAll(".chat-mention-option") ?? [],
+    );
+    const handles = options.map((option) => option.textContent);
+    expect(handles).toEqual([
+      "@researcherResearcher",
+      "@bobBob",
+      "@echoEcho",
+    ]);
+
+    const groupLabels = container?.querySelectorAll(
+      ".chat-mention-group-label",
+    );
+    expect(groupLabels?.length).toBe(1);
+    expect(groupLabels?.[0]?.textContent).toBe("Bring in…");
+  });
+
+  test("picking a not-yet-participant candidate inserts the mention and marks invite intent on send", async () => {
+    const sent: { payload: ComposerSendPayload | null } = { payload: null };
+    mountWithMentions((payload) => {
+      sent.payload = payload;
+      return Promise.resolve(true);
+    });
+    typeInto(textarea(), "@bo");
+    await settle();
+
+    const options = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ??
+        [],
+    );
+    const bobOption = options.find((option) =>
+      option.textContent?.startsWith("@bob"),
+    );
+    if (bobOption === undefined) throw new Error("bob option not found");
+    act(() => {
+      bobOption.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+      );
+    });
+    await settle();
+
+    expect(textarea().value).toBe("@bob ");
+
+    act(() => {
+      sendButton().click();
+    });
+    await settle();
+
+    if (sent.payload === null) throw new Error("payload not sent");
+    expect(sent.payload.invite).toEqual([
+      { kind: "person", principalId: "prn_bob", name: "Bob" },
+    ]);
+  });
+
+  test("picking an existing-participant candidate marks no invite intent", async () => {
+    const sent: { payload: ComposerSendPayload | null } = { payload: null };
+    mountWithMentions((payload) => {
+      sent.payload = payload;
+      return Promise.resolve(true);
+    });
+    typeInto(textarea(), "@res");
+    await settle();
+
+    const options = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ??
+        [],
+    );
+    const researcherOption = options.find((option) =>
+      option.textContent?.startsWith("@researcher"),
+    );
+    if (researcherOption === undefined) {
+      throw new Error("researcher option not found");
+    }
+    act(() => {
+      researcherOption.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+      );
+    });
+    await settle();
+
+    act(() => {
+      sendButton().click();
+    });
+    await settle();
+
+    if (sent.payload === null) throw new Error("payload not sent");
+    expect(sent.payload.invite).toBeUndefined();
+  });
+});
 
 describe("Composer keyboard hint", () => {
   test("stays hidden until the textarea is focused with a non-empty draft", async () => {

@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import {
   activeMentionQuery,
+  bringInOptionsFromMembersAndAgents,
   filterMentionCandidates,
+  filterMentionOptions,
   insertMention,
   mentionCandidatesFromParticipants,
+  mentionOptionsFromChannel,
 } from "../src/mentions";
 
 describe("activeMentionQuery", () => {
@@ -89,6 +92,79 @@ describe("filterMentionCandidates", () => {
 
   test("no match returns an empty list", () => {
     expect(filterMentionCandidates(agents, "zzz")).toEqual([]);
+  });
+});
+
+describe("bringInOptionsFromMembersAndAgents (CL-5879 mention-pulls-in)", () => {
+  const participants = [
+    { address: "researcher@agents.example", handle: "researcher" },
+    { address: "prn_alice", handle: "alice" },
+  ];
+
+  test("a workspace member already in the channel is excluded", () => {
+    const options = bringInOptionsFromMembersAndAgents(
+      [
+        { id: "prn_alice", displayName: "Alice" },
+        { id: "prn_bob", displayName: "Bob" },
+      ],
+      [],
+      participants,
+    );
+    expect(options).toEqual([
+      {
+        group: "bring-in",
+        candidate: { id: "prn_bob", handle: "bob", label: "Bob" },
+        invite: { kind: "person", principalId: "prn_bob", name: "Bob" },
+      },
+    ]);
+  });
+
+  test("an invitable agent definition becomes a bring-in candidate with an agent invite intent", () => {
+    const options = bringInOptionsFromMembersAndAgents(
+      [],
+      [{ id: "wfd_echo", name: "echo", description: "Echo" }],
+      participants,
+    );
+    expect(options).toEqual([
+      {
+        group: "bring-in",
+        candidate: { id: "wfd_echo", handle: "echo", label: "Echo" },
+        invite: { kind: "agent", definitionId: "wfd_echo" },
+      },
+    ]);
+  });
+});
+
+describe("mentionOptionsFromChannel and filterMentionOptions (CL-5879 mention-pulls-in)", () => {
+  test("lists existing participants first, then the bring-in group", () => {
+    const options = mentionOptionsFromChannel(
+      [{ address: "researcher@agents.example", handle: "researcher" }],
+      [{ id: "prn_bob", displayName: "Bob" }],
+      [{ id: "wfd_echo", name: "echo", description: "Echo" }],
+    );
+    expect(options.map((option) => option.group)).toEqual([
+      "participant",
+      "bring-in",
+      "bring-in",
+    ]);
+    expect(options.map((option) => option.candidate.handle)).toEqual([
+      "researcher",
+      "bob",
+      "echo",
+    ]);
+  });
+
+  test("filterMentionOptions narrows both groups by the same prefix rule", () => {
+    const options = mentionOptionsFromChannel(
+      [{ address: "researcher@agents.example", handle: "researcher" }],
+      [{ id: "prn_reed", displayName: "Reed" }],
+      [{ id: "wfd_echo", name: "echo", description: "Echo" }],
+    );
+    const filtered = filterMentionOptions(options, "re");
+    expect(filtered.map((option) => option.candidate.handle)).toEqual([
+      "researcher",
+      "reed",
+    ]);
   });
 });
 
