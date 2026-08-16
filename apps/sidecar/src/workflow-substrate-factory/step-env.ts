@@ -10,7 +10,10 @@ import path from "node:path";
 import { createDefaultDirectorRegistry } from "@intx/agent";
 import type { RepoId } from "@intx/hub-sessions/substrate";
 import { createDependencies, type AdapterRegistry } from "@intx/inference";
-import { createIsogitStore } from "@intx/storage-isogit";
+import {
+  createIsogitStorage,
+  createNodeIsogitRuntime,
+} from "@intx/storage-isogit/node";
 import type { RegistryConfig } from "@intx/tool-packaging";
 import type {
   AuditStore,
@@ -36,6 +39,8 @@ import {
 } from "../step-agent-tools";
 import { createStepInferenceSourceResolver } from "./config";
 import { stepStorageRoot, warmStepStorageRoot } from "./storage-paths";
+
+const isogitStorage = createIsogitStorage(createNodeIsogitRuntime());
 
 export interface SidecarStepBuildEnvDeps {
   dataDir: string;
@@ -253,7 +258,7 @@ export function createSidecarStepBuildEnv(
     const storage: ContextStore & AuditStore =
       deps.durableConversation !== undefined
         ? (await deps.durableConversation.acquire(stepId)).storage
-        : await createIsogitStore(storeDir, deps.signer);
+        : await isogitStorage.createIsogitStore(storeDir, deps.signer);
     const workdir = path.join(storeDir, "workspace");
     await fs.promises.mkdir(workdir, { recursive: true });
 

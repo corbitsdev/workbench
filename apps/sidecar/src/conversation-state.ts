@@ -128,7 +128,10 @@ import { type } from "arktype";
 
 import { getLogger } from "@intx/log";
 import { createConnectorRouter } from "@intx/harness";
-import { createIsogitStore } from "@intx/storage-isogit";
+import {
+  createIsogitStorage,
+  createNodeIsogitRuntime,
+} from "@intx/storage-isogit/node";
 import type {
   Principal,
   RepoId,
@@ -145,6 +148,8 @@ import {
 } from "@intx/types/runtime";
 
 const logger = getLogger(["sidecar", "workflow-child", "conversation-state"]);
+
+const isogitStorage = createIsogitStorage(createNodeIsogitRuntime());
 
 const CHECKPOINT_FILE = "checkpoint.json";
 const CHECKPOINT_META_FILE = "checkpoint.meta.json";
@@ -309,7 +314,10 @@ export async function createDurableConversationStore(
   opts: DurableConversationStoreOpts,
 ): Promise<DurableConversationStore> {
   await fs.promises.mkdir(opts.localStoreDir, { recursive: true });
-  const baseStorage = await createIsogitStore(opts.localStoreDir, opts.signer);
+  const baseStorage = await isogitStorage.createIsogitStore(
+    opts.localStoreDir,
+    opts.signer,
+  );
 
   // Reuse the connector router + the harness storage-override seam. The
   // router's `onStateChanged` is the change-driven commit hook the design
