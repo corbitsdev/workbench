@@ -6,7 +6,11 @@
 // dialog for create/edit — without depending on that package directly, so
 // this stays a plain domain package a host app composes in via
 // `insertEveryoneSections`, the same way it already composes Agents and
-// Skills (see `apps/web/src/settings-everyone-sections.tsx`).
+// Skills (see `apps/web/src/settings-everyone-sections.tsx`). `tenantId`
+// here is the bench selected in the app's chrome — the same tenant a
+// captured/applied profile's `targetTenantId` is filled in with today,
+// since this workstream has no separate workbench picker yet (see
+// `apply-profile-panel.tsx`'s own module doc).
 import {
   Button,
   ConfirmButton,
@@ -40,6 +44,7 @@ import {
   type ConfigProfile,
   type ConfigProfileEntry,
 } from "./api";
+import { CONFIG_PROFILES_STRINGS } from "./strings";
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -69,7 +74,7 @@ export function ProfilesSettingsSection({
       .catch((cause: unknown) =>
         setState({
           kind: "error",
-          message: errorMessage(cause, "Couldn't load profiles."),
+          message: errorMessage(cause, CONFIG_PROFILES_STRINGS.loadError),
         }),
       );
   }, [tenantId, reloadKey]);
@@ -77,15 +82,18 @@ export function ProfilesSettingsSection({
   if (tenantId === null) {
     return (
       <EmptyState
-        title="No workbench selected"
-        description="Select a workbench to manage its profiles."
+        title={CONFIG_PROFILES_STRINGS.benchNoneSelectedTitle}
+        description={CONFIG_PROFILES_STRINGS.benchNoneSelectedDescription}
       />
     );
   }
   if (state.kind === "loading") return <Skeleton className="query-skeleton" />;
   if (state.kind === "error") {
     return (
-      <EmptyState title="Couldn't load profiles" description={state.message} />
+      <EmptyState
+        title={CONFIG_PROFILES_STRINGS.loadError}
+        description={state.message}
+      />
     );
   }
 
@@ -99,40 +107,40 @@ export function ProfilesSettingsSection({
     deleteProfile(tenantId, profile.id)
       .then(() => {
         reload();
-        toast(`Deleted ${profile.name}.`);
+        toast(CONFIG_PROFILES_STRINGS.deletedToast(profile.name));
       })
       .catch((cause: unknown) =>
-        setRowError(errorMessage(cause, "Couldn't delete that profile.")),
+        setRowError(errorMessage(cause, CONFIG_PROFILES_STRINGS.deleteError)),
       );
   }
 
   return (
-    <div className="channel-settings-pane">
-      <div className="settings-section-toolbar">
+    <div className="config-profiles-pane">
+      <div className="config-profiles-toolbar">
         <Button variant="primary" onClick={() => setEditing("new")}>
-          Create a profile
+          {CONFIG_PROFILES_STRINGS.createButton}
         </Button>
         <Button variant="outline" onClick={() => setCaptureOpen(true)}>
-          Save current setup as a profile
+          {CONFIG_PROFILES_STRINGS.captureButton}
         </Button>
       </div>
       {rowError !== null ? (
-        <p className="settings-inline-error" role="alert">
+        <p className="config-profiles-error" role="alert">
           {rowError}
         </p>
       ) : null}
       {state.profiles.length === 0 ? (
         <EmptyState
-          title="No profiles yet"
-          description="Create a profile from scratch, or save a workbench's current setup as one."
+          title={CONFIG_PROFILES_STRINGS.emptyTitle}
+          description={CONFIG_PROFILES_STRINGS.emptyDescription}
         />
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Providers</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead>{CONFIG_PROFILES_STRINGS.columnName}</TableHead>
+              <TableHead>{CONFIG_PROFILES_STRINGS.columnProviders}</TableHead>
+              <TableHead>{CONFIG_PROFILES_STRINGS.columnActions}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -141,28 +149,28 @@ export function ProfilesSettingsSection({
                 <TableCell>
                   <strong>{profile.name}</strong>
                   {profile.description !== null ? (
-                    <p className="chat-settings-field-hint">
+                    <p className="config-profiles-field-hint">
                       {profile.description}
                     </p>
                   ) : null}
                 </TableCell>
                 <TableCell>{profile.entries.length}</TableCell>
                 <TableCell>
-                  <div className="settings-connection-card-actions">
+                  <div className="config-profiles-row-actions">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setEditing(profile)}
                     >
-                      Edit
+                      {CONFIG_PROFILES_STRINGS.editButton}
                     </Button>
                     <ConfirmButton
                       variant="destructive"
                       size="sm"
-                      confirmLabel="Workbenches keep their current setup; this only removes the preset. Delete?"
+                      confirmLabel={CONFIG_PROFILES_STRINGS.deleteConfirm}
                       onConfirm={() => handleDelete(profile)}
                     >
-                      Delete
+                      {CONFIG_PROFILES_STRINGS.deleteButton}
                     </ConfirmButton>
                   </div>
                 </TableCell>
@@ -263,10 +271,14 @@ function EditProfileDialog({
     request
       .then(() => {
         onSaved();
-        toast(profile === "new" ? "Profile created." : "Profile saved.");
+        toast(
+          profile === "new"
+            ? CONFIG_PROFILES_STRINGS.createdToast
+            : CONFIG_PROFILES_STRINGS.savedToast,
+        );
       })
       .catch((cause: unknown) =>
-        setError(errorMessage(cause, "Couldn't save that profile.")),
+        setError(errorMessage(cause, CONFIG_PROFILES_STRINGS.saveError)),
       )
       .finally(() => setSubmitting(false));
   }
@@ -276,33 +288,34 @@ function EditProfileDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {profile === "new" ? "Create a profile" : "Edit profile"}
+            {profile === "new"
+              ? CONFIG_PROFILES_STRINGS.createProfileTitle
+              : CONFIG_PROFILES_STRINGS.editProfileTitle}
           </DialogTitle>
           <DialogDescription>
-            An ordered provider/model fallback list a workbench can apply in one
-            action.
+            {CONFIG_PROFILES_STRINGS.profileDialogDescription}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <div className="settings-form-field">
-            <label className="settings-form-field">
-              <span>Name</span>
+          <div className="config-profiles-field">
+            <label className="config-profiles-field">
+              <span>{CONFIG_PROFILES_STRINGS.nameLabel}</span>
               <Input value={name} onChange={(e) => setName(e.target.value)} />
             </label>
-            <label className="settings-form-field">
-              <span>Description (optional)</span>
+            <label className="config-profiles-field">
+              <span>{CONFIG_PROFILES_STRINGS.descriptionLabel}</span>
               <Input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
             </label>
-            <div className="settings-form-field">
-              <span>Fallback order</span>
+            <div className="config-profiles-field">
+              <span>{CONFIG_PROFILES_STRINGS.fallbackOrderLabel}</span>
               {entries.map((entry, index) => (
-                <div key={index} className="settings-connection-card-actions">
+                <div key={index} className="config-profiles-row-actions">
                   <Input
                     value={entry.provider}
-                    placeholder="Provider"
+                    placeholder={CONFIG_PROFILES_STRINGS.providerPlaceholder}
                     onChange={(e) => {
                       const next = [...entries];
                       next[index] = { ...entry, provider: e.target.value };
@@ -311,13 +324,25 @@ function EditProfileDialog({
                   />
                   <Input
                     value={entry.model}
-                    placeholder="Model"
+                    placeholder={CONFIG_PROFILES_STRINGS.modelPlaceholder}
                     onChange={(e) => {
                       const next = [...entries];
                       next[index] = { ...entry, model: e.target.value };
                       setEntries(next);
                     }}
                   />
+                  <label className="config-profiles-disabled-toggle">
+                    <input
+                      type="checkbox"
+                      checked={entry.disabled ?? false}
+                      onChange={(e) => {
+                        const next = [...entries];
+                        next[index] = { ...entry, disabled: e.target.checked };
+                        setEntries(next);
+                      }}
+                    />
+                    {CONFIG_PROFILES_STRINGS.disabledEntryLabel}
+                  </label>
                   <Button
                     variant="outline"
                     size="sm"
@@ -325,7 +350,7 @@ function EditProfileDialog({
                       setEntries(entries.filter((_, i) => i !== index))
                     }
                   >
-                    Remove
+                    {CONFIG_PROFILES_STRINGS.removeEntryButton}
                   </Button>
                 </div>
               ))}
@@ -334,11 +359,11 @@ function EditProfileDialog({
                 size="sm"
                 onClick={() => setEntries([...entries, emptyEntryRow()])}
               >
-                Add a provider
+                {CONFIG_PROFILES_STRINGS.addEntryButton}
               </Button>
             </div>
             {error !== null ? (
-              <p className="settings-inline-error" role="alert">
+              <p className="config-profiles-error" role="alert">
                 {error}
               </p>
             ) : null}
@@ -346,14 +371,16 @@ function EditProfileDialog({
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {CONFIG_PROFILES_STRINGS.cancelButton}
           </Button>
           <Button
             variant="primary"
             disabled={!canSubmit || submitting}
             onClick={handleSubmit}
           >
-            {submitting ? "Saving…" : "Save"}
+            {submitting
+              ? CONFIG_PROFILES_STRINGS.savingButton
+              : CONFIG_PROFILES_STRINGS.saveButton}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -390,15 +417,15 @@ function CaptureProfileDialog({
     setSubmitting(true);
     setError(null);
     captureProfile(tenantId, {
-      workbenchTenantId: tenantId,
+      targetTenantId: tenantId,
       name: name.trim(),
     })
       .then(() => {
         onSaved();
-        toast("Saved this workbench's setup as a profile.");
+        toast(CONFIG_PROFILES_STRINGS.capturedToast);
       })
       .catch((cause: unknown) =>
-        setError(errorMessage(cause, "Couldn't save the current setup.")),
+        setError(errorMessage(cause, CONFIG_PROFILES_STRINGS.captureError)),
       )
       .finally(() => setSubmitting(false));
   }
@@ -407,15 +434,16 @@ function CaptureProfileDialog({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Save current setup as a profile</DialogTitle>
+          <DialogTitle>
+            {CONFIG_PROFILES_STRINGS.captureDialogTitle}
+          </DialogTitle>
           <DialogDescription>
-            Captures this workbench's fallback order as a new profile, so it can
-            be applied to any workbench in one action.
+            {CONFIG_PROFILES_STRINGS.captureDialogDescription}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <label className="settings-form-field">
-            <span>Name</span>
+          <label className="config-profiles-field">
+            <span>{CONFIG_PROFILES_STRINGS.captureNameLabel}</span>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -423,21 +451,23 @@ function CaptureProfileDialog({
             />
           </label>
           {error !== null ? (
-            <p className="settings-inline-error" role="alert">
+            <p className="config-profiles-error" role="alert">
               {error}
             </p>
           ) : null}
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {CONFIG_PROFILES_STRINGS.cancelButton}
           </Button>
           <Button
             variant="primary"
             disabled={name.trim() === "" || submitting}
             onClick={handleSubmit}
           >
-            {submitting ? "Saving…" : "Save"}
+            {submitting
+              ? CONFIG_PROFILES_STRINGS.savingButton
+              : CONFIG_PROFILES_STRINGS.saveButton}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -15,6 +15,7 @@ import { buildEffectiveInferenceRows } from "@corbits/inference-settings/effecti
 import type { FetchImpl, ModelInfo } from "@corbits/inference-settings/api";
 import {
   getResolvedCatalog,
+  InferenceSettingsApiError,
   listOwnOfferings,
 } from "@corbits/inference-settings/api";
 
@@ -23,6 +24,12 @@ import type {
   ConfigProfileRow,
   ConfigProfileStore,
 } from "./store";
+
+/** Thrown when the target tenant's native catalog routes answer 403 to
+ * `captureProfileFromWorkbench`'s own resolve reads — mirrors `apply.ts`'s
+ * `ConfigProfileForbiddenError`, mapped to a plain 403 by the route layer,
+ * never a bare 500. */
+export class ConfigProfileCaptureForbiddenError extends Error {}
 
 /**
  * Pure derivation of a profile's entries from a workbench's resolved
@@ -45,7 +52,8 @@ export function buildProfileEntriesFromWorkbench(
 export interface CaptureProfileInput {
   /** The workspace tenant the new profile is created under. */
   readonly tenantId: string;
-  readonly workbenchTenantId: string;
+  /** The tenant this profile's entries are captured from. */
+  readonly targetTenantId: string;
   readonly name: string;
   readonly description?: string | null;
   readonly createdBy: string;
@@ -57,10 +65,19 @@ export async function captureProfileFromWorkbench(
   input: CaptureProfileInput,
 ): Promise<ConfigProfileRow> {
   const fetchImpl = input.fetchImpl ?? fetch;
-  const [models, ownOfferings] = await Promise.all([
-    getResolvedCatalog(input.workbenchTenantId, fetchImpl),
-    listOwnOfferings(input.workbenchTenantId, fetchImpl),
-  ]);
+  let models: readonly ModelInfo[];
+  let ownOfferings: Awaited<ReturnType<typeof listOwnOfferings>>;
+  try {
+    [models, ownOfferings] = await Promise.all([
+      getResolvedCatalog(input.targetTenantId, fetchImpl),
+      listOwnOfferings(input.targetTenantId, fetchImpl),
+    ]);
+  } catch (cause) {
+    if (cause instanceof InferenceSettingsApiError && cause.status === 403) {
+      throw new ConfigProfileCaptureForbiddenError(cause.message);
+    }
+    throw cause;
+  }
   const entries = buildProfileEntriesFromWorkbench(
     models,
     new Set(ownOfferings.map((offering) => offering.id)),

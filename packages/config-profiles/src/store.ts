@@ -5,6 +5,7 @@
 // is its one production implementation, over the table in `./schema.ts`.
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { type } from "arktype";
 import { generateId } from "@intx/hub-common";
 
 import { configProfile } from "./schema";
@@ -23,6 +24,28 @@ export type ConfigProfileEntry = {
   readonly model: string;
   readonly disabled?: boolean;
 };
+
+/** Parses `entries` jsonb read back out of the `config_profiles.profile`
+ * table (see `./schema.ts`) — the DB is untrusted the same as any other
+ * external boundary, so a row's `entries` column is arktype-parsed on the
+ * way out rather than `as`-cast, and a malformed row fails loud instead of
+ * silently masquerading as a well-formed `ConfigProfileEntry[]`. */
+export const ConfigProfileEntrySchema = type({
+  provider: "string",
+  model: "string",
+  "disabled?": "boolean",
+});
+const ConfigProfileEntriesSchema = ConfigProfileEntrySchema.array();
+
+function parseEntries(raw: unknown): ConfigProfileEntry[] {
+  const parsed = ConfigProfileEntriesSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `config profile row has malformed entries: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
 
 export interface ConfigProfileRow {
   readonly id: string;
@@ -70,7 +93,7 @@ function mapRow(row: typeof configProfile.$inferSelect): ConfigProfileRow {
     tenantId: row.tenantId,
     name: row.name,
     description: row.description,
-    entries: row.entries as ConfigProfileEntry[],
+    entries: parseEntries(row.entries),
     createdBy: row.createdBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

@@ -33,14 +33,19 @@ export {
 export {
   applyProfile,
   planApply,
+  planApplyProfile,
+  ConfigProfileForbiddenError,
   ConfigProfileNotFoundError,
   type ApplyEntryResult,
   type ApplyProfileInput,
   type ApplyProfileResult,
+  type PlanApplyProfileInput,
+  type PlanApplyProfileResult,
 } from "./apply";
 export {
   buildProfileEntriesFromWorkbench,
   captureProfileFromWorkbench,
+  ConfigProfileCaptureForbiddenError,
   type CaptureProfileInput,
 } from "./capture";
 export {

@@ -33,19 +33,30 @@ export type ConfigProfile = typeof ConfigProfileView.infer;
 const ApplyEntryResult = type({
   provider: "string",
   model: "string",
-  action: "'reordered' | 'skipped-inherited' | 'skipped-unavailable'",
+  action:
+    "'reordered' | 'skipped-inherited' | 'skipped-unavailable' | 'failed' | 'not-attempted'",
   "offeringId?": "string",
   "priority?": "number",
   "disabled?": "boolean",
+  "message?": "string",
+  "status?": "number",
 });
 export type ApplyEntryResult = typeof ApplyEntryResult.infer;
 
 const ApplyProfileResponse = type({
   profileId: "string",
   profileName: "string",
+  ok: "boolean",
   results: ApplyEntryResult.array(),
 });
 export type ApplyProfileResponse = typeof ApplyProfileResponse.infer;
+
+const PlanProfileResponse = type({
+  profileId: "string",
+  profileName: "string",
+  results: ApplyEntryResult.array(),
+});
+export type PlanProfileResponse = typeof PlanProfileResponse.infer;
 
 type Validator<T> = (data: unknown) => T | type.errors;
 
@@ -150,7 +161,7 @@ export function deleteProfile(
 export function captureProfile(
   tenantId: string,
   input: {
-    readonly workbenchTenantId: string;
+    readonly targetTenantId: string;
     readonly name: string;
     readonly description?: string;
   },
@@ -163,14 +174,57 @@ export function captureProfile(
   );
 }
 
-export function applyProfile(
+/** Read-only dry run of `applyProfile`: the same per-entry plan, no write
+ * ever issued. Backs `ApplyProfilePanel`'s honest, per-entry preview. */
+export function planProfile(
   tenantId: string,
-  input: { readonly profileId: string; readonly workbenchTenantId: string },
-): Promise<ApplyProfileResponse> {
+  profileId: string,
+  input: { readonly targetTenantId: string },
+): Promise<PlanProfileResponse> {
   return request(
-    `/api/tenants/${tenantId}/config-profiles/apply`,
-    ApplyProfileResponse,
-    "applying that profile",
+    `/api/tenants/${tenantId}/config-profiles/${profileId}/plan`,
+    PlanProfileResponse,
+    "loading that profile's plan",
     { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+/**
+ * Applying a profile can partially fail: the server stops issuing writes
+ * the moment one PATCH fails, and reports every entry's own outcome —
+ * `"reordered"` for what already succeeded, `"failed"` for the one that
+ * broke, `"not-attempted"` for what never got a turn. That response comes
+ * back with a non-2xx status (502) precisely when `ok` is `false`, so this
+ * bypasses the generic `request` helper (which treats any non-2xx as an
+ * opaque error with no body) and parses the response body first — only
+ * falling back to the error envelope shape when the body isn't a
+ * recognizable apply result at all (e.g. the 403/404 this route can also
+ * answer with).
+ */
+export async function applyProfile(
+  tenantId: string,
+  input: { readonly profileId: string; readonly targetTenantId: string },
+): Promise<ApplyProfileResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/tenants/${tenantId}/config-profiles/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  } catch (cause) {
+    throw new ConfigProfilesApiError(
+      cause instanceof Error ? cause.message : String(cause),
+    );
+  }
+  const body: unknown = await response.json().catch(() => undefined);
+  const parsed = ApplyProfileResponse(body);
+  if (!(parsed instanceof type.errors)) return parsed;
+  const envelope = type({ error: { message: "string" } })(body);
+  throw new ConfigProfilesApiError(
+    envelope instanceof type.errors
+      ? `The server answered ${response.status} while applying that profile.`
+      : envelope.error.message,
+    response.status,
   );
 }
