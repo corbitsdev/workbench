@@ -486,6 +486,15 @@ export function createSidecarDeployRouter(deps: {
      * records no head key.
      */
     hubPublicKey: string | undefined;
+    /**
+     * Hub-approved wire hash per referenced onTrigger body id, sourced from
+     * the deploy frame's `referencedDefinitions[*].approvedWireHash`. Threaded
+     * to the spawned child as `REFERENCED_DEFINITION_HASHES` so a body spawn
+     * can re-verify against the parent's approval
+     * (`WorkflowSpawnSuspendableChildOpts.referencedDefinitionHashes`).
+     * Undefined for a deployment with no referenced bodies.
+     */
+    referencedDefinitionHashes: Record<string, string> | undefined;
   }
 
   /**
@@ -509,9 +518,47 @@ export function createSidecarDeployRouter(deps: {
       spec.sessionId !== undefined
         ? { ...recordBase, sessionId: spec.sessionId }
         : recordBase;
-    return spec.hubPublicKey !== undefined
-      ? { ...recordWithSessionId, hubPublicKey: spec.hubPublicKey }
-      : recordWithSessionId;
+    const recordWithHubPublicKey =
+      spec.hubPublicKey !== undefined
+        ? { ...recordWithSessionId, hubPublicKey: spec.hubPublicKey }
+        : recordWithSessionId;
+    return spec.referencedDefinitionHashes !== undefined
+      ? {
+          ...recordWithHubPublicKey,
+          referencedDefinitionHashes: spec.referencedDefinitionHashes,
+        }
+      : recordWithHubPublicKey;
+  }
+
+  /**
+   * Derive the `bodyId -> approvedWireHash` map the spawn core threads to the
+   * child from the deploy frame's `referencedDefinitions`. Only a body whose
+   * entry actually carries `approvedWireHash` contributes -- the wire schema
+   * makes it optional for a frame built before the source-ref hand-off, and
+   * an unhashed body is exactly the misconfigured-deploy case the spawn-child
+   * adapter's `resolveVerifiedBody` fails closed on, so this must not paper
+   * over a missing hash with a fabricated one. Returns `undefined` for a
+   * deployment with no referenced bodies at all, matching the field's
+   * optional-when-absent shape on both the spec and the durable record.
+   */
+  function deriveReferencedDefinitionHashes(
+    referencedDefinitions: NonNullable<
+      AgentDeployFrame["workflow"]
+    >["referencedDefinitions"],
+  ): Record<string, string> | undefined {
+    if (
+      referencedDefinitions === undefined ||
+      referencedDefinitions.length === 0
+    ) {
+      return undefined;
+    }
+    const hashes: Record<string, string> = {};
+    for (const referenced of referencedDefinitions) {
+      if (referenced.approvedWireHash !== undefined) {
+        hashes[referenced.definition.id] = referenced.approvedWireHash;
+      }
+    }
+    return hashes;
   }
 
   /**
@@ -584,6 +631,15 @@ export function createSidecarDeployRouter(deps: {
         WORKFLOW_DEFINITION_REF: "refs/heads/main",
         WORKFLOW_RUN_REPO_ID: deploymentId,
         WORKFLOW_RUN_REF: "refs/heads/main",
+        // Frozen for the deployment's lifetime, matching STEP_INFERENCE_SOURCES'
+        // sibling constants above -- unlike sources, a referenced body's
+        // approved hash never rotates independently of a redeploy. The
+        // workflow-host child parser (`parseSpawnTimeEnv`) treats an absent key
+        // as "no referenced bodies"; serializing `{}` here is equivalent and
+        // keeps this producer unconditional like its neighbors.
+        REFERENCED_DEFINITION_HASHES: JSON.stringify(
+          spec.referencedDefinitionHashes ?? {},
+        ),
       };
       // Live-rotatable per-step inference sources. Seeded from the deploy
       // spec, then revised in place by the single-step sources-rotation
@@ -1054,7 +1110,8 @@ export function createSidecarDeployRouter(deps: {
     // The spec the shared spawn core consumes, and the durable record that
     // lets a boot-time restore rebuild the SAME spec (definition re-read from
     // workflow.json by id, grants from the step repos, and the record's
-    // frame/in-memory-only inputs: sources, session id, single-step hub key).
+    // frame/in-memory-only inputs: sources, session id, single-step hub key,
+    // referenced-body hashes).
     const spec: WorkflowDeploySpec = {
       agentAddress: frame.agentAddress,
       definition: projection.definition,
@@ -1064,6 +1121,9 @@ export function createSidecarDeployRouter(deps: {
         projection.definition.stepOrder.length === 1
           ? frame.hubPublicKey
           : undefined,
+      referencedDefinitionHashes: deriveReferencedDefinitionHashes(
+        projection.referencedDefinitions,
+      ),
     };
     const record = buildDeploymentRecord(spec, spec.sources);
 
@@ -1311,6 +1371,7 @@ export function createSidecarDeployRouter(deps: {
             sources: projection.sources,
             sessionId: record.sessionId,
             hubPublicKey: record.hubPublicKey,
+            referencedDefinitionHashes: record.referencedDefinitionHashes,
           };
 
           // The slug is the caller's, matching `deployMultiStep`: claim before
