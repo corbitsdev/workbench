@@ -456,7 +456,7 @@ function TriggerPicker({
 }
 
 /** Sentinel `deliveryDestination` value meaning "provision a brand-new
- * space named after this routine" — the default, always-available
+ * workbench named after this routine" — the default, always-available
  * choice, distinct from any real channel id. */
 export const NEW_SPACE_DESTINATION = "__new_space__";
 
@@ -479,7 +479,7 @@ function DeliveryDestinationPicker({
   const selected = channels.find((c) => c.id === value);
   const label =
     value === NEW_SPACE_DESTINATION || selected === undefined
-      ? "New chat for this routine"
+      ? "New workbench for this routine"
       : selected.title;
   return (
     <div className="flex flex-col gap-1.5">
@@ -497,7 +497,7 @@ function DeliveryDestinationPicker({
         </MenuTrigger>
         <MenuContent>
           <MenuItem onSelect={() => onChange(NEW_SPACE_DESTINATION)}>
-            New chat for this routine
+            New workbench for this routine
           </MenuItem>
           {channels.map((channel) => (
             <MenuItem key={channel.id} onSelect={() => onChange(channel.id)}>
@@ -508,7 +508,7 @@ function DeliveryDestinationPicker({
       </Menu>
       {value === NEW_SPACE_DESTINATION ? (
         <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-          Reports land in a new chat named after this routine.
+          Reports land in a new workbench named after this routine.
         </p>
       ) : null}
     </div>
@@ -1286,7 +1286,7 @@ function CreateRoutineDialog({
   const channelTitle = !deliversToChannel
     ? null
     : deliveryDestination === NEW_SPACE_DESTINATION
-      ? "a new space named after this routine"
+      ? "a new workbench named after this routine"
       : (channels.find((c) => c.id === deliveryDestination)?.title ?? null);
 
   return (
@@ -1532,8 +1532,8 @@ function CreateRoutineDialog({
                       className="text-xs text-[var(--ui-fg-muted)]"
                       role="status"
                     >
-                      Results land in your Inbox — this workflow never posts to
-                      a space.
+                      Results land in your Inbox — this workflow never posts
+                      to a workbench.
                     </p>
                   </div>
                 )}
@@ -2321,7 +2321,7 @@ export function RoutineDetailPage({
                           }
                         >
                           {channels.find((c) => c.id === data.deliveryChannelId)
-                            ?.title ?? "Open chat"}
+                            ?.title ?? "Open workbench"}
                         </Button>
                       </dd>
                     </>

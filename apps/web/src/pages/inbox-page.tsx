@@ -72,7 +72,7 @@ import {
   type InboxItem,
   type InboxItemDetail,
 } from "../inbox-api";
-import { inboxFilterFromPath } from "../shell/panel-contributions";
+import { inboxFilterFromPath } from "../inbox-api";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 function formatWhen(iso: string): string {

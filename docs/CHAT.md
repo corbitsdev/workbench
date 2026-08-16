@@ -157,9 +157,7 @@ everywhere it matters — `kind === "chat"` plus the absence of an
 agent-shaped participant address (`isAgentAddress` in
 `packages/chat/src/mentions.ts`, which is simply "does this participant's
 address contain `@`" — a human participant's address is its bare principal
-id). The host app's sidebar buckets a DM this way already
-(`assignChannelBucket` in `apps/web/src/shell/panel-contributions.tsx`), and
-`@corbits/chat-ui`'s channel-settings surface trims its Agents section the
+id). `@corbits/chat-ui`'s channel-settings surface trims its Agents section the
 same way (`channelSettingsSections(kind, isDm)` in
 `packages/chat-ui/src/channel-settings/model.ts` — a DM has no agent to
 invite, so the section has nothing to show; Members and Danger zone are

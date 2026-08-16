@@ -1,8 +1,8 @@
 // Every stage surface renders the same top bar: title · dot · subtitle,
 // then right-aligned per-page actions. Breadcrumb trails (channel / thread /
 // run) render in the title slot via StageCrumbs so back affordances stay
-// top-left. Col2's collapse control lives on col2 itself (see
-// contextual-panel.tsx) — this bar carries no toggle of its own.
+// top-left. The sidebar is always present — this bar carries no sidebar
+// toggle of any kind.
 
 import { Button } from "@corbits/react-ui";
 import { Fragment, type ReactNode } from "react";

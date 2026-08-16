@@ -852,7 +852,7 @@ describe("a channel-level 404 offers a way out instead of retrying forever", () 
   // a Recents entry that outlived it), not a transient load failure — a
   // dead-end "Try again" button would just re-request the same gone
   // channel forever. The workspace tells the host (so it can drop the
-  // stale Recents entry) and offers "Back to Chats" instead of retry.
+  // stale Recents entry) and offers "Back to workbenches" instead of retry.
   function stubFetchWithMissingChannel() {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -895,7 +895,7 @@ describe("a channel-level 404 offers a way out instead of retrying forever", () 
     }) as typeof fetch;
   }
 
-  test("reports the dead id to the host and renders Back to Chats instead of Try again", async () => {
+  test("reports the dead id to the host and renders Back to workbenches instead of Try again", async () => {
     stubFetchWithMissingChannel();
     const notFoundIds: string[] = [];
     let backToSpacesClicks = 0;
@@ -915,11 +915,11 @@ describe("a channel-level 404 offers a way out instead of retrying forever", () 
     expect(notFoundIds.length).toBeGreaterThan(0);
     expect(new Set(notFoundIds)).toEqual(new Set(["ch_1"]));
     expect(harness.container.textContent).not.toContain("Try again");
-    expect(harness.container.textContent).toContain("Back to Chats");
+    expect(harness.container.textContent).toContain("Back to workbenches");
 
     const backButton = Array.from(
       harness.container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("Back to Chats"));
+    ).find((button) => button.textContent?.includes("Back to workbenches"));
     expect(backButton).toBeDefined();
     act(() => {
       backButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

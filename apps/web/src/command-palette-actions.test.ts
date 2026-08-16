@@ -27,7 +27,6 @@ function context(overrides: {
   const dispatched: string[] = [];
   let themeCycled = false;
   let canvasClosed = false;
-  let col2Toggled = false;
   const listener = (event: Event) => dispatched.push(event.type);
   for (const type of [
     "workbench:chat:new-channel",
@@ -48,9 +47,6 @@ function context(overrides: {
     closeCanvas: () => {
       canvasClosed = true;
     },
-    toggleCol2: () => {
-      col2Toggled = true;
-    },
   };
   return {
     ctx,
@@ -58,7 +54,6 @@ function context(overrides: {
     dispatched,
     themeCycled: () => themeCycled,
     canvasClosed: () => canvasClosed,
-    col2Toggled: () => col2Toggled,
   };
 }
 
@@ -166,12 +161,6 @@ describe("runActionCommand", () => {
     const { ctx, canvasClosed } = context({ path: "/" });
     await runActionCommand("close-canvas", ctx);
     expect(canvasClosed()).toBe(true);
-  });
-
-  test("toggle-sidebar calls toggleCol2", async () => {
-    const { ctx, col2Toggled } = context({ path: "/" });
-    await runActionCommand("toggle-sidebar", ctx);
-    expect(col2Toggled()).toBe(true);
   });
 
   test("go-channels navigates to /c", async () => {

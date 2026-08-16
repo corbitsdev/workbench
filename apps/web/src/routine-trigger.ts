@@ -3,7 +3,7 @@
 // a plain-language cadence and a best-effort next-run estimate.
 //
 // The cadence line itself is `routineCadenceLabel` from
-// `@corbits/routines/trigger` — the same subpath `routines-feed-band.tsx`
+// `@corbits/routines/trigger` — the same subpath `routines-page.tsx`
 // pulls `routineMatchesModeFilter` from, and for the same reason: a
 // product rule about how a cadence reads belongs with the routines
 // domain, not this app. `nextCronFireAfter` from `@corbits/routines/cron`

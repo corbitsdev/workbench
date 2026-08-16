@@ -1,11 +1,10 @@
 // CL-6045: the shell used to fire the same listing 4-5x per navigation
 // because independent components each fetched independently instead of
-// sharing a cache. `ChannelsBand` and `LiveActivityBand` (both in
-// `../src/shell/panel-contributions.tsx`) each call `useBenchActivity`,
-// which used to run its own raw `useEffect` fetch per mount; now both
-// mounts subscribe to the same TanStack Query keys (`tenantKeys.channels`,
-// `.tasks`, `.topLevelRuns` — see `../src/query-client.ts`) under one
-// `QueryClient`, so the pair fetches each listing exactly once.
+// sharing a cache. Every mount of `useBenchActivity` (the sidebar's
+// `WorkbenchList`, and any second subscriber) shares the same TanStack
+// Query keys (`tenantKeys.channels`, `.tasks`, `.topLevelRuns` — see
+// `../src/query-client.ts`) under one `QueryClient`, so two mounts fetch
+// each listing exactly once.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -13,10 +12,7 @@ import type { Root } from "react-dom/client";
 
 import { BenchProvider } from "../src/bench-context";
 import { requestChannelRename } from "../src/channel-rename-events";
-import {
-  ChannelsBand,
-  LiveActivityBand,
-} from "../src/shell/panel-contributions";
+import { WorkbenchList } from "../src/shell/workbench-list";
 import {
   createTestQueryClient,
   TestQueryProvider,
@@ -90,7 +86,7 @@ function countsByMatch(
 }
 
 describe("shell listing dedupe (CL-6045)", () => {
-  test("ChannelsBand and LiveActivityBand mounted together fetch each listing exactly once", async () => {
+  test("two WorkbenchList mounts together fetch each listing exactly once", async () => {
     const calls: string[] = [];
     stubFetch(calls);
     const queryClient = createTestQueryClient();
@@ -102,8 +98,8 @@ describe("shell listing dedupe (CL-6045)", () => {
       root?.render(
         <TestQueryProvider client={queryClient}>
           <BenchProvider>
-            <ChannelsBand path="/channels" onNavigate={() => undefined} />
-            <LiveActivityBand path="/channels" onNavigate={() => undefined} />
+            <WorkbenchList path="/c" onNavigate={() => undefined} />
+            <WorkbenchList path="/c" onNavigate={() => undefined} />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -119,7 +115,7 @@ describe("shell listing dedupe (CL-6045)", () => {
     expect(countsByMatch(calls, (p) => p.includes("/tasks"))).toBe(1);
   });
 
-  test("renaming a channel invalidates the shared channels query, triggering exactly one refetch", async () => {
+  test("a rename invalidates the shared listing query, triggering exactly one refetch", async () => {
     const calls: string[] = [];
     const channel = {
       id: "ch_1",
@@ -159,7 +155,7 @@ describe("shell listing dedupe (CL-6045)", () => {
       root?.render(
         <TestQueryProvider client={queryClient}>
           <BenchProvider>
-            <ChannelsBand path="/channels" onNavigate={() => undefined} />
+            <WorkbenchList path="/c" onNavigate={() => undefined} />
           </BenchProvider>
         </TestQueryProvider>,
       );

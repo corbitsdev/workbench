@@ -10,8 +10,7 @@
 // mount. Agents and Skills moved from their own routes into Settings
 // sections (CL-5990) — "New agent"/"New skill" now land on
 // `/settings/agents` / `/settings/skills`. "New thread" is out of scope
-// (killed by owner decision); "Toggle sidebar" drives the same `toggleCol2`
-// col2's own control uses (see `stage-chrome.ts`).
+// (killed by owner decision).
 
 import { createPendingDialogRequest } from "@corbits/shell-layout";
 import {
@@ -41,6 +40,23 @@ const newTaskRequest = createPendingDialogRequest();
 
 /** Consumed by chat-page.tsx on mount. */
 export const consumePendingNewChannel = newChannelRequest.consumePending;
+
+/**
+ * Requests the new-workbench picker — the same off-route-safe hop
+ * `runActionCommand("new-channel", …)` uses, pulled out so the sidebar's
+ * own "+ New workbench" control (rendered on every route) can request it
+ * too.
+ */
+export function requestNewWorkbench(args: {
+  readonly alreadyOnConversation: boolean;
+  readonly navigateToConversations: () => void;
+}): void {
+  newChannelRequest.request({
+    alreadyOnTargetRoute: args.alreadyOnConversation,
+    navigateToTargetRoute: args.navigateToConversations,
+    dispatch: () => window.dispatchEvent(new CustomEvent(NEW_CHANNEL_EVENT)),
+  });
+}
 /** Consumed by agents-settings-section.tsx on mount. */
 export const consumePendingNewAgent = newAgentRequest.consumePending;
 /** Consumed by routines-page.tsx on mount. */
@@ -142,7 +158,6 @@ export type ActionCommandId =
   | "upload-artifact"
   | "toggle-theme"
   | "close-canvas"
-  | "toggle-sidebar"
   | "talk-to-myra"
   | "go-channels"
   | "go-insights";
@@ -160,7 +175,7 @@ export type ActionCommand = {
 export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "new-channel",
-    title: "New chat",
+    title: "New workbench",
     subtitle: "Search or create an agent",
   },
   { id: "new-agent", title: "New agent", subtitle: "Create with v1" },
@@ -187,18 +202,13 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
     subtitle: "Full-width stage",
   },
   {
-    id: "toggle-sidebar",
-    title: "Toggle sidebar",
-    subtitle: "Show or hide context column",
-  },
-  {
     id: "talk-to-myra",
     title: "Talk to Myra",
-    subtitle: "Open personal agent chat",
+    subtitle: "Open your personal agent",
   },
   {
     id: "go-channels",
-    title: "Go to chats",
+    title: "Go to workbenches",
     subtitle: "Home · conversation list",
   },
   {
@@ -214,7 +224,6 @@ export type ActionCommandContext = {
   readonly tenantId: string | null;
   readonly cycleTheme: () => void;
   readonly closeCanvas: () => void;
-  readonly toggleCol2: () => void;
 };
 
 /**
@@ -229,11 +238,9 @@ export async function runActionCommand(
 ): Promise<void> {
   switch (id) {
     case "new-channel": {
-      newChannelRequest.request({
-        alreadyOnTargetRoute: isChannelPath(ctx.path),
-        navigateToTargetRoute: () => ctx.navigate(channelPath(null)),
-        dispatch: () =>
-          window.dispatchEvent(new CustomEvent(NEW_CHANNEL_EVENT)),
+      requestNewWorkbench({
+        alreadyOnConversation: isChannelPath(ctx.path),
+        navigateToConversations: () => ctx.navigate(channelPath(null)),
       });
       return;
     }
@@ -287,10 +294,6 @@ export async function runActionCommand(
     }
     case "close-canvas": {
       ctx.closeCanvas();
-      return;
-    }
-    case "toggle-sidebar": {
-      ctx.toggleCol2();
       return;
     }
     case "talk-to-myra": {

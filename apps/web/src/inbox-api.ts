@@ -34,6 +34,20 @@ export type InboxList = typeof InboxListSchema.infer;
 
 export type InboxFilterGroup = "all" | InboxGroup;
 
+/** The filter group a `/inbox[/...]` path selects. */
+export function inboxFilterFromPath(path: string): InboxFilterGroup {
+  const segment = path.replace(/^\/inbox\/?/, "").split("/")[0] ?? "";
+  if (segment === "action" || segment === "mention" || segment === "delivery") {
+    return segment;
+  }
+  return "all";
+}
+
+/** The path that selects a filter group. */
+export function inboxPathForFilter(group: InboxFilterGroup): string {
+  return group === "all" ? "/inbox" : `/inbox/${group}`;
+}
+
 export function inboxListPath(
   tenantId: string,
   group: InboxFilterGroup,

@@ -4,8 +4,8 @@
 // bench-selection state (see ../bench-context.tsx) and the URL into the
 // shape the package expects. `/settings` defaults to the first allowed
 // section; `/settings/:section` deep-links directly to it. The section nav
-// itself lives in col2 (see ../shell/settings-nav-band.tsx) — master-detail,
-// the list is never repeated in the stage.
+// renders here in the stage, beside the active section (`settings-nav.tsx`)
+// — master-detail, the list is never repeated in the section panel.
 
 import {
   flattenSettingsSections,
@@ -22,6 +22,7 @@ import {
   settingsSectionIdFromPath,
 } from "../path-ids";
 import { resolveAppSettingsSectionGroups } from "../settings-groups";
+import { SettingsNav } from "./settings-nav";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { useSettingsAccess } from "../settings-access";
 
@@ -60,7 +61,7 @@ export function SettingsRoute({
 
   // Bare /settings, and an unknown or gate-denied /settings/:section, both
   // correct to the first allowed section's own URL — never a fallback
-  // rendered under a URL the col2 nav disagrees with. Depends on
+  // rendered under a URL the section nav disagrees with. Depends on
   // `activeSectionId` (a primitive), not `activeSection` (a fresh object
   // every render, since `resolveSettingsSectionGroups` isn't memoized) —
   // otherwise an unrelated re-render (e.g. BenchProvider persisting the
@@ -87,19 +88,22 @@ export function SettingsRoute({
             : `Settings · ${activeSection.title}`
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <PageShell width="full" className="page-fill">
-          <SettingsShell
-            sections={sections}
-            activeId={activeSection?.id ?? null}
-            context={{
-              tenantId: selectedTenantId,
-              principalId: selectedPrincipalId,
-              navigate,
-              entityId,
-            }}
-          />
-        </PageShell>
+      <div className="settings-layout min-h-0 flex-1">
+        <SettingsNav path={path} onNavigate={navigate} />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <PageShell width="full" className="page-fill">
+            <SettingsShell
+              sections={sections}
+              activeId={activeSection?.id ?? null}
+              context={{
+                tenantId: selectedTenantId,
+                principalId: selectedPrincipalId,
+                navigate,
+                entityId,
+              }}
+            />
+          </PageShell>
+        </div>
       </div>
     </div>
   );

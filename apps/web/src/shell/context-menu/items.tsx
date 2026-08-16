@@ -31,7 +31,7 @@ import { requestChannelRename } from "../../channel-rename-events";
 import { requestOpenCommandPalette } from "../../command-palette-events";
 import { runRoutineNow } from "../../routines-api";
 import { SETTINGS_PATH } from "../../routes";
-import { inboxPathForFilter } from "../panel-contributions";
+import { inboxPathForFilter } from "../../inbox-api";
 import type { ShellContextMenuTarget } from "./targets";
 
 export type ShellContextMenuActions = {
@@ -231,7 +231,7 @@ function shellMenu(actions: ShellContextMenuActions): ContextMenu {
       }),
       contextMenuItem({
         id: "channels",
-        label: "Go to chats",
+        label: "Go to workbenches",
         icon: <Hash />,
         onSelect: () => actions.navigate(channelPath(null)),
       }),

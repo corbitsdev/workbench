@@ -1,27 +1,25 @@
 // Regression test for the context-tree bug the coordinator caught in review:
 // app.tsx's Shell mounts CommandPaletteProvider and AppShell as siblings, so
-// a hook CommandPaletteProvider called (useStageChrome, useCloseCanvas) only
-// saw a real value if the provider supplying it wrapped BOTH siblings —
-// providers that wrapped AppShell's own subtree handed CommandPaletteProvider
-// nothing but the context's no-op default. That made the palette's
-// "Close canvas" and "Toggle sidebar" actions silent no-ops against the real
-// shell, even though their unit tests (command-palette-actions.test.ts) pass,
-// because those tests mock the action context directly rather than mounting
-// the provider tree.
+// a hook CommandPaletteProvider called (useCloseCanvas) only saw a real
+// value if the provider supplying it wrapped BOTH siblings — providers that
+// wrapped AppShell's own subtree handed CommandPaletteProvider nothing but
+// the context's no-op default. That made the palette's "Close canvas"
+// action a silent no-op against the real shell, even though its unit tests
+// (command-palette-actions.test.ts) pass, because those tests mock the
+// action context directly rather than mounting the provider tree.
 //
-// ShellChromeProvider now owns col2 and canvas state above both siblings.
-// This test mounts that real tree — no mocked context — and drives the
-// actions the same way CommandPaletteProvider's handleSelect does: through
-// the real `runActionCommand`, sourcing `toggleCol2`/`closeCanvas` from a
-// sibling of AppShell via the exact hooks CommandPaletteProvider uses. It
-// does not re-test the palette's own UI (react-ui's CommandPalette,
-// exercised elsewhere) — the bug was in the context tree, not the widget.
+// ShellChromeProvider owns canvas state above both siblings. This test
+// mounts that real tree — no mocked context — and drives the action the
+// same way CommandPaletteProvider's handleSelect does: through the real
+// `runActionCommand`, sourcing `closeCanvas` from a sibling of AppShell via
+// the exact hook CommandPaletteProvider uses. It does not re-test the
+// palette's own UI (react-ui's CommandPalette, exercised elsewhere) — the
+// bug was in the context tree, not the widget.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-import { useStageChrome } from "@corbits/shell-layout";
 import { AppShell } from "../src/shell/app-shell";
 import { BenchProvider } from "../src/bench-context";
 import { runActionCommand } from "../src/command-palette-actions";
@@ -74,7 +72,6 @@ const sampleProfile = {
  * CommandPaletteProvider does, and fires real actions through the real
  * `runActionCommand`. */
 function PaletteActionsProbe() {
-  const { toggleCol2 } = useStageChrome();
   const closeCanvas = useCloseCanvas();
   const openProfile = useOpenProfileInCanvas();
 
@@ -84,7 +81,6 @@ function PaletteActionsProbe() {
     tenantId: null,
     cycleTheme: noop,
     closeCanvas,
-    toggleCol2,
   };
 
   return (
@@ -102,13 +98,6 @@ function PaletteActionsProbe() {
         onClick={() => void runActionCommand("close-canvas", ctx)}
       >
         Close canvas
-      </button>
-      <button
-        type="button"
-        data-testid="probe-toggle-sidebar"
-        onClick={() => void runActionCommand("toggle-sidebar", ctx)}
-      >
-        Toggle sidebar
       </button>
     </div>
   );
@@ -156,29 +145,6 @@ describe("palette actions reach the real shell state (CL-5936 sibling-context re
     if (button === null) throw new Error(`${testId} not rendered`);
     button.click();
   }
-
-  test("toggle-sidebar fired from a sibling of AppShell collapses and restores col2", async () => {
-    await act(async () => {
-      root.render(<Harness />);
-    });
-    expect(
-      container.querySelector('[data-testid="shell-contextual-panel"]'),
-    ).not.toBeNull();
-
-    await act(async () => {
-      click("probe-toggle-sidebar");
-    });
-    expect(
-      container.querySelector('[data-testid="shell-contextual-panel"]'),
-    ).toBeNull();
-
-    await act(async () => {
-      click("probe-toggle-sidebar");
-    });
-    expect(
-      container.querySelector('[data-testid="shell-contextual-panel"]'),
-    ).not.toBeNull();
-  });
 
   test("close-canvas fired from a sibling of AppShell closes a canvas AppShell is showing", async () => {
     await act(async () => {

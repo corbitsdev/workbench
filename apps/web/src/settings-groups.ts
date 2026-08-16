@@ -1,7 +1,7 @@
 // One resolver for the settings section groups this app actually shows —
 // the package's own Personal/Workspace registry plus this app's Agents and
 // Skills sections spliced into Workspace. Both `settings-page.tsx` (stage)
-// and `settings-nav-band.tsx` (col2) call this, never the package's bare
+// and `pages/settings-nav.tsx` call this, never the package's bare
 // `resolveSettingsSectionGroups`, so the two can never disagree about what
 // Workspace contains.
 

@@ -124,7 +124,7 @@ export function createDefaultAgentChannel(config: DefaultAgentChannelConfig) {
     } catch (cause) {
       return {
         kind: "error",
-        message: describeChatError(cause, "Couldn't open this chat."),
+        message: describeChatError(cause, "Couldn't open this workbench."),
       };
     }
   }
