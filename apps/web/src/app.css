@@ -2426,3 +2426,17 @@ tr.insights-row-clickable:hover {
   flex-direction: column;
   gap: 1rem;
 }
+
+/* CL-6104: the in-shell first-workbench describe screen — a calm centered
+   column; the stage owns the full width, no decorative panel. */
+.describe-first-workbench {
+  display: flex;
+  justify-content: center;
+  padding: 4rem 2rem;
+  overflow-y: auto;
+  height: 100%;
+}
+.describe-first-workbench .onboarding-phase {
+  max-width: 34rem;
+  width: 100%;
+}

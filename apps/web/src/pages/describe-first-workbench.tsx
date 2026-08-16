@@ -27,7 +27,6 @@ import { ApiQueryError } from "@corbits/api-query";
 
 import { launchAgentChat } from "../agent-chat-launch";
 import { createAgentDefinition, draftAgentDefinition } from "../agents-api";
-import { OnboardingLayout } from "../onboarding/onboarding-layout";
 import { slugify } from "./create-agent-panel";
 
 const MAX_NAME_WORDS = 5;
@@ -103,7 +102,10 @@ export function DescribeFirstWorkbench({
   const submitting = state.kind === "submitting";
 
   return (
-    <OnboardingLayout>
+    // Inside the signed-in shell already — no brand split-panel here, just
+    // the calm centered column. The full OnboardingLayout belongs to the
+    // pre-shell wizard pages only.
+    <div className="describe-first-workbench">
       <div className="onboarding-phase" key="describe-first-workbench">
         <h1 className="onboarding-title">What should your first agent do?</h1>
         <p className="onboarding-subtitle">
@@ -144,6 +146,6 @@ export function DescribeFirstWorkbench({
           </form>
         </div>
       </div>
-    </OnboardingLayout>
+    </div>
   );
 }

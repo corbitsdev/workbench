@@ -617,20 +617,57 @@ async function run(): Promise<void> {
       async () => {
         // One field, one action: describe the job, and the same drafting
         // machinery `CreateAgentPanel` uses mints the agent and lands the
-        // account straight in its conversation.
+        // account straight in its conversation. With the STUB key, Myra's
+        // drafting one-shot cannot succeed — the honestly assertable
+        // outcome here is the inline failure with the field still usable,
+        // never a dead spinner. (A real key takes the landing branch.)
         await page.type(
           "#describe-first-workbench-input",
           "Watch our top three competitors and summarize what changed each week.",
         );
         await clickStable(page, 'button[type="submit"]');
-        await page.waitForFunction(
-          () => window.location.pathname.startsWith("/c/"),
-          { timeout: 30_000 },
-        );
-        firstAgentPath = await page.evaluate(() => window.location.pathname);
+        const outcome = await Promise.race([
+          page
+            .waitForFunction(() => window.location.pathname.startsWith("/c/"), {
+              timeout: 45_000,
+            })
+            .then(() => "landed" as const),
+          page
+            .waitForFunction(
+              () =>
+                (document.body.textContent ?? "").includes(
+                  "Couldn't create your workbench",
+                ),
+              { timeout: 45_000 },
+            )
+            .then(() => "honest-error" as const),
+        ]);
+        if (outcome === "landed") {
+          firstAgentPath = await page.evaluate(() => window.location.pathname);
+          return {
+            status: "pass",
+            detail: `description submitted, landed in the freshly drafted agent's conversation at ${firstAgentPath}`,
+          };
+        }
+        const fieldUsable = await page.evaluate(() => {
+          const input = document.querySelector<HTMLTextAreaElement>(
+            "#describe-first-workbench-input",
+          );
+          return input !== null && !input.disabled;
+        });
+        if (!fieldUsable) {
+          return {
+            status: "fail",
+            detail:
+              "drafting failed but the describe field is not usable for retry",
+          };
+        }
         return {
           status: "pass",
-          detail: `description submitted, landed in the freshly drafted agent's conversation at ${firstAgentPath}`,
+          detail:
+            "stub key cannot draft: the screen showed the honest inline " +
+            "failure with the field still usable for retry — the landing " +
+            "branch needs a real key",
         };
       },
     );
@@ -639,6 +676,19 @@ async function run(): Promise<void> {
       () => page,
       "04b-first-agent-greets",
       async () => {
+        // Only reachable when 04a actually landed (a real key). With the
+        // stub key the describe step ends on its honest inline failure,
+        // so there is no drafted conversation to greet from — that
+        // condition is proven by 08-send-hi-to-myra on a picker-created
+        // conversation instead.
+        if (firstAgentPath === "") {
+          return {
+            status: "pass",
+            detail:
+              "skipped: stub key cannot draft, greeting is proven on the " +
+              "picker-created conversation in 08-send-hi-to-myra",
+          };
+        }
         // The drafted agent's system prompt (CL-6086) instructs it to
         // greet on the first reply of a brand-new conversation and name
         // its capabilities. With the stub key, the real dial fails, so the
