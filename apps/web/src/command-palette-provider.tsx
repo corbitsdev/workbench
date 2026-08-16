@@ -15,7 +15,6 @@ import {
   type PaletteSource,
   type RecentEntry,
 } from "@corbits/command-palette";
-import { useStageChrome } from "@corbits/shell-layout";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -74,7 +73,6 @@ export function CommandPaletteProvider({
   const runsQuery = useAPIQuery("/api/me/workflows/runs", RunsSchema);
   const { cycleMode } = useTheme();
   const closeCanvas = useCloseCanvas();
-  const { toggleCol2 } = useStageChrome();
 
   const recentsStore = useMemo(
     () =>
@@ -273,12 +271,11 @@ export function CommandPaletteProvider({
         tenantId: selectedTenantId,
         cycleTheme: cycleMode,
         closeCanvas,
-        toggleCol2,
       });
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [path, navigate, selectedTenantId, cycleMode, closeCanvas, toggleCol2]);
+  }, [path, navigate, selectedTenantId, cycleMode, closeCanvas]);
 
   useEffect(() => {
     function onOpenRequest() {
@@ -387,9 +384,9 @@ export function CommandPaletteProvider({
     [artifactsQuery],
   );
 
-  // Order matches the mock's buildCmdkEntries: Commands, Chats, Pages,
-  // then the unscoped catalogs (Runs, Routines, Skills, Library), with
-  // People & agents last among the palette's groups.
+  // Order matches the mock's buildCmdkEntries: Commands, Workbenches,
+  // Pages, then the unscoped catalogs (Runs, Routines, Skills, Library),
+  // with People & agents last among the palette's groups.
   const sources = useMemo<readonly PaletteSource[]>(
     () => [
       {
@@ -400,7 +397,7 @@ export function CommandPaletteProvider({
       },
       {
         id: "channels",
-        heading: "Chats",
+        heading: "Workbenches",
         kind: "channels",
         items: channelItems,
       },
@@ -466,7 +463,6 @@ export function CommandPaletteProvider({
           tenantId: selectedTenantId,
           cycleTheme: cycleMode,
           closeCanvas,
-          toggleCol2,
         });
       } else if (id.startsWith("route:")) {
         const routePath = id.slice("route:".length);
@@ -521,7 +517,6 @@ export function CommandPaletteProvider({
       selectedTenantId,
       cycleMode,
       closeCanvas,
-      toggleCol2,
       pushRecent,
       channelItems,
       runItems,
@@ -549,7 +544,7 @@ export function CommandPaletteProvider({
       error={error ? "Search failed. Try again." : undefined}
       hasMore={hasMore}
       onLoadMore={loadMore}
-      placeholder="Search or jump to… (# chats · @ people · > actions · / pages)"
+      placeholder="Search or jump to… (# workbenches · @ people · > actions · / pages)"
     />
   );
 }

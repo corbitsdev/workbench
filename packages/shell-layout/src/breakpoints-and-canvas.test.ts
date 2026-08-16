@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   canvasColumnAllowed,
-  contextualPanelVisible,
   shellLayoutModeForWidth,
   shellLayoutModeFromMatches,
 } from "./breakpoints";
@@ -47,14 +46,6 @@ describe("shellLayoutModeFromMatches", () => {
     // without also being narrower than 1100px — but the function takes two
     // independent booleans, so the narrower answer has to win regardless.
     expect(shellLayoutModeFromMatches(true, false)).toBe("narrow");
-  });
-});
-
-describe("contextualPanelVisible", () => {
-  test("shows in expanded and compact, hides in narrow", () => {
-    expect(contextualPanelVisible("expanded")).toBe(true);
-    expect(contextualPanelVisible("compact")).toBe(true);
-    expect(contextualPanelVisible("narrow")).toBe(false);
   });
 });
 

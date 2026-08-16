@@ -45,6 +45,7 @@ export {
   ConnectionsSection,
   ConnectorCardGrid,
   ConnectorCredentialDialog,
+  oauthStartHref,
 } from "./connections-section";
 
 export { GranolaWebhookCard } from "./granola-webhook-card";

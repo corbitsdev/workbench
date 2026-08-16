@@ -268,13 +268,13 @@ function useChannelLists(tenantId: string) {
     if (channels.isError) {
       return {
         kind: "error",
-        message: describeChatError(channels.error, "Couldn't load chats."),
+        message: describeChatError(channels.error, "Couldn't load workbenches."),
       };
     }
     if (chats.isError) {
       return {
         kind: "error",
-        message: describeChatError(chats.error, "Couldn't load chats."),
+        message: describeChatError(chats.error, "Couldn't load workbenches."),
       };
     }
     if (channels.data === undefined || chats.data === undefined) {
@@ -1573,7 +1573,7 @@ export function ChatWorkspace({
         <ChatWorkspaceFrame>
           <EmptyState
             icon={<MessageSquare />}
-            title="Sign in to chat"
+            title="Sign in to continue"
             description="Your conversations live on a workbench — sign in to open them."
           />
         </ChatWorkspaceFrame>
@@ -1583,7 +1583,7 @@ export function ChatWorkspace({
         <ChatWorkspaceFrame>
           <EmptyState
             icon={<CircleAlert />}
-            title="Couldn't open chat"
+            title="Couldn't open this workbench"
             description={tenant.message}
           />
         </ChatWorkspaceFrame>

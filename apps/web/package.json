@@ -23,6 +23,7 @@
     "@corbits/context-menu": "workspace:*",
     "@corbits/inbox": "workspace:*",
     "@corbits/insights": "workspace:*",
+    "@corbits/plugins-ui": "workspace:*",
     "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",
     "@corbits/routines": "workspace:*",

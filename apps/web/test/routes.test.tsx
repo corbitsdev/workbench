@@ -1,13 +1,9 @@
 // Rendering here uses react-dom/server, so effects never run and every
 // screen shows its pre-fetch state — which is exactly what these tests
-// assert: each route mounts, names itself, and rail-listed pages mark
-// themselves in the rail. Col2 is collapsed by default (the chat-first
-// shell), so the contextual panel never mounts in this render — page
-// identity lives in each stage's own `StageTopBar` (data-testid
-// "stage-top-bar") instead. The one route with no stage bar of its own
-// (`/`, see `AppRoute.hasStageTopBar`) gets one from `AppShell` itself, so
-// every route ends up titled the same way; the panel-header pattern below
-// is a defensive fallback only, never expected to fire.
+// assert: each route mounts, names itself in its stage's own `StageTopBar`,
+// and renders beside the one always-present sidebar. The one route with no
+// stage bar of its own (`/`, see `AppRoute.hasStageTopBar`) gets one from
+// `AppShell` itself, so every route ends up titled the same way.
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { describe, expect, test } from "bun:test";
@@ -44,48 +40,34 @@ function renderApp(path: string, session: SessionState = signedIn): string {
   );
 }
 
-/** Page identity: the stage's own `StageTopBar` title first (col2 is
- * collapsed by default, so the contextual panel never carries it) — falling
- * back to the panel header's `SidebarPanelHeader` h2 only for the one route
- * with no stage bar of its own (`/`, see `AppRoute.hasStageTopBar`). */
-function panelPageTitle(markup: string): string | undefined {
-  return (
-    /<div class="stage-top-bar-title">([^<]*)<\/div>/.exec(markup)?.[1] ??
-    /data-slot="sidebar-panel-header"[\s\S]*?<h2[^>]*>([^<]*)<\/h2>/.exec(
-      markup,
-    )?.[1]
-  );
+/** Page identity: every route titles its stage's own `StageTopBar` (the
+ * one bar-less route, `/`, gets one from `AppShell` itself). */
+function stagePageTitle(markup: string): string | undefined {
+  return /<div class="stage-top-bar-title">([^<]*)<\/div>/.exec(markup)?.[1];
 }
 
-/** The rail marks exactly one page active at a time. Primary destinations
- * are `SidebarRail` items (`aria-current` + `sidebar-rail-item-label` when
- * `showLabels` is on). Inbox / Settings live in the footer as icon buttons
- * with `aria-label` + `aria-current` (see `shell/rail.tsx` FooterIconButton).
- * Returns the active destination's label so tests confirm the *right* page. */
-function activeRailLabel(markup: string): string | undefined {
-  const primary =
-    /data-slot="sidebar-rail-item"[^>]*aria-current="page"[^>]*>[\s\S]*?<\/button>/.exec(
-      markup,
-    );
-  if (primary !== null) {
-    const label =
-      /data-slot="sidebar-rail-item-label"[^>]*>([^<]*)<\/span>/.exec(
-        primary[0],
-      );
-    if (label?.[1] !== undefined) return label[1];
+/** The sidebar footer marks its own destination current: Insights and
+ * Settings are icon buttons with `aria-label` + `aria-current`; the inbox
+ * bell (a react-ui NotificationsBell inside a wrapper) marks its wrapper
+ * with `data-active` instead. Returns the active destination's label so
+ * tests confirm the *right* footer affordance lights, and nothing else
+ * does. */
+function activeFooterLabel(markup: string): string | undefined {
+  if (/class="shell-sidebar-bell"[^>]*data-active="true"/.test(markup)) {
+    return "Inbox";
   }
-  // Footer utility (Inbox / Settings): aria-label is the accessible name.
-  const footer =
-    /class="shell-rail-footer-btn"[^>]*aria-label="([^"]+)"[^>]*aria-current="page"/.exec(
-      markup,
-    ) ??
-    /class="shell-rail-footer-btn"[^>]*aria-current="page"[^>]*aria-label="([^"]+)"/.exec(
-      markup,
-    );
-  return footer?.[1];
+  const match =
+    /aria-label="([^"]+)"[^>]*aria-current="page"/.exec(markup) ??
+    /aria-current="page"[^>]*aria-label="([^"]+)"/.exec(markup);
+  return match?.[1];
 }
 
-const NAV_PATHS = new Set(NAV_ROUTES.map((route) => route.path));
+const FOOTER_LABELS: Record<string, string> = {
+  "/inbox": "Inbox",
+  "/insights": "Insights",
+  "/plugins": "Plugins",
+  "/settings": "Settings",
+};
 
 describe("route table", () => {
   test("covers every screen the app can route to", () => {
@@ -98,15 +80,17 @@ describe("route table", () => {
       "/agents",
       "/skills",
       "/insights",
+      "/plugins",
       "/settings",
     ]);
   });
 
-  test("rail nav is Chats, Routines, Library, Inbox, Settings", () => {
+  test("palette pages are Workbenches, Routines, Library, Insights, Inbox, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
-      "Chats",
+      "Workbenches",
       "Routines",
       "Library",
+      "Insights",
       "Inbox",
       "Settings",
     ]);
@@ -124,7 +108,7 @@ describe("route table", () => {
     expect(matchesRoute("/settings", "/settings-lookalike")).toBe(false);
   });
 
-  test("legacy /agents and /skills stay routable (redirect-only, off the rail)", () => {
+  test("legacy /agents and /skills stay routable (redirect-only, off the palette pages)", () => {
     expect(matchesRoute("/agents", "/agents/wfd_1")).toBe(true);
     expect(matchesRoute("/skills", "/skills/skill_1")).toBe(true);
     expect(NAV_ROUTES.map((route) => route.path)).not.toContain("/agents");
@@ -137,10 +121,11 @@ describe("routes render", () => {
     if (LEGACY_REDIRECT_PATHS.has(route.path)) continue;
     test(`${route.path} renders the ${route.label} screen`, () => {
       const markup = renderApp(route.path);
-      // Myra land (`/`) lights Chats on the rail; panel title stays Myra.
+      // The one sidebar mounts on every route.
+      expect(markup).toContain('data-testid="shell-sidebar"');
+      // Myra land (`/`) titles its stage Myra.
       if (route.path === "/") {
-        expect(panelPageTitle(markup)).toBe("Myra");
-        expect(activeRailLabel(markup)).toBe("Chats");
+        expect(stagePageTitle(markup)).toBe("Myra");
         return;
       }
       // Bare /settings' own redirect-to-first-section effect never runs in
@@ -148,15 +133,15 @@ describe("routes render", () => {
       // it's actually resolved to (the first allowed one) rather than the
       // bare "Settings" the post-redirect URL would carry.
       if (route.path === "/settings") {
-        expect(panelPageTitle(markup)).toBe("Settings · Notifications");
-        expect(activeRailLabel(markup)).toBe(route.label);
-        return;
-      }
-      expect(panelPageTitle(markup)).toBe(route.label);
-      if (NAV_PATHS.has(route.path)) {
-        expect(activeRailLabel(markup)).toBe(route.label);
+        expect(stagePageTitle(markup)).toBe("Settings · Notifications");
       } else {
-        expect(activeRailLabel(markup)).toBeUndefined();
+        expect(stagePageTitle(markup)).toBe(route.label);
+      }
+      const footerLabel = FOOTER_LABELS[route.path];
+      if (footerLabel !== undefined) {
+        expect(activeFooterLabel(markup)).toBe(footerLabel);
+      } else {
+        expect(activeFooterLabel(markup)).toBeUndefined();
       }
     });
   }
@@ -164,7 +149,7 @@ describe("routes render", () => {
   test("an unknown path renders the not-found screen", () => {
     const markup = renderApp("/no-such-screen");
     expect(markup).toContain("Page not found");
-    expect(markup).not.toContain('aria-current="page"');
+    expect(activeFooterLabel(markup)).toBeUndefined();
   });
 
   test("a /c/:channelId deep link waits for tenant resolution", () => {

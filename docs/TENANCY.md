@@ -176,7 +176,7 @@ Creation helper: `createDmChannelSpec` in `@corbits/bench-ui`.
   `tenantId`/`tenantName`/`tenantMonogram` when it was sent by a share
   member of the "other side" — closing CL-5913 and CL-5881's tracked
   gap: the sidebar's per-row "shared" badge
-  (`apps/web/src/shell/panel-contributions.tsx`) and the timeline's
+  (`apps/web/src/shell/workbench-list.tsx`) and the timeline's
   tenant-monogram badge (`packages/chat-ui/src/timeline.tsx`) both
   render from this real signal now, never a guess from participant
   addresses.

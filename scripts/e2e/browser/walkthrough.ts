@@ -301,17 +301,18 @@ async function countMatching(page: Page, selector: string): Promise<number> {
 // --- the walkthrough -----------------------------------------------------
 
 /**
- * Opens the "+ New chat" picker and asserts its combobox dropdown offers
- * the "Create new agent" row (CL-6081: instant creation, pinned above the
- * filtered agent list — see `AgentCombobox` in
+ * Opens the "+ New workbench" picker and asserts its combobox dropdown
+ * offers the "Create new agent" row (CL-6081: instant creation, pinned
+ * above the filtered agent list — see `AgentCombobox` in
  * `packages/chat-ui/src/new-channel-dialog.tsx`) before picking an
  * existing "Myra"-ish agent. There is no kind step and no separate submit
  * click any more: `initialKind="chat"` skips straight to the combobox, and
- * clicking an agent row creates the chat immediately, closing the dialog
+ * clicking an agent row resolves the workbench immediately (find-or-create
+ * — an existing conversation with that agent reopens), closing the dialog
  * itself.
  */
 async function createMyraChat(page: Page): Promise<void> {
-  await clickStable(page, 'button[aria-label="New chat"]');
+  await clickStable(page, 'button[aria-label="New workbench"]');
   await page.waitForSelector('[role="dialog"]', { timeout: 10_000 });
   await page.waitForSelector(
     '[data-testid="new-chat-agent-combobox"] [role="option"]',
@@ -342,8 +343,9 @@ async function createMyraChat(page: Page): Promise<void> {
   if (pickedMyra === null) {
     throw new Error("new-chat agent combobox rendered no options");
   }
-  // Picking an agent creates the chat immediately (no separate submit
-  // click) — wait for the dialog to actually go away rather than assuming.
+  // Picking an agent resolves the workbench immediately (no separate
+  // submit click) — wait for the dialog to actually go away rather than
+  // assuming.
   await page.waitForSelector('[role="dialog"]', { hidden: true, timeout: 15_000 });
 }
 
@@ -514,25 +516,6 @@ async function run(): Promise<void> {
       if (connected.kind !== "connected") {
         throw new Error(`expected the key-path connect to succeed, got: ${JSON.stringify(connected)}`);
       }
-      // col2 (the contextual panel carrying every "New chat" button this
-      // walkthrough clicks) opens per-navigation but also hydrates once
-      // from the tenant's own persisted `shell.col2Collapsed` preference
-      // shortly after mount (see apps/web/src/shell/shell-chrome-provider.tsx
-      // and col2-preference.ts) — a brand-new tenant has no stored value,
-      // which reads as collapsed, and that one-time hydration can resolve
-      // after a page has already rendered col2 open, collapsing it back out
-      // from under whatever this script is mid-click on. Setting the real
-      // preference now, the same way a returning user who already opened
-      // col2 once would have it stored, makes every later page load and
-      // reload hydrate straight to open — deterministic, not a workaround
-      // around the UI, just priming the same persisted state a human would
-      // have left behind.
-      await hubApi(
-        "PATCH",
-        `/api/tenants/${connected.tenantId}/preferences`,
-        { "shell.col2Collapsed": false },
-        cookies,
-      );
       const deadline = Date.now() + 60_000;
       for (;;) {
         if (sidecar.exited()) {
@@ -573,53 +556,82 @@ async function run(): Promise<void> {
       };
     });
 
-    await step(() => page, "04b-land-in-shell-chats-band", async () => {
+    await step(() => page, "04b-workbench-sidebar", async () => {
       await page.goto(`${webBaseUrl}/c`, { waitUntil: "domcontentloaded" });
-      await page.waitForSelector('button[aria-label="New chat"]', {
+      await page.waitForSelector('button[aria-label="New workbench"]', {
         timeout: 15_000,
       });
-      const bandTitle = await page.evaluate(
+      const sidebarTitle = await page.evaluate(
         () =>
           document
             .querySelector('[data-slot="sidebar-panel-header"] h2')
             ?.textContent?.trim() ?? null,
       );
-      if (bandTitle !== "Chats") {
+      if (sidebarTitle !== "Workbenches") {
         return {
           status: "fail",
-          detail: `expected the band title "Chats", got ${JSON.stringify(bandTitle)}`,
+          detail: `expected the sidebar title "Workbenches", got ${JSON.stringify(sidebarTitle)}`,
         };
       }
-      const newChatButtons = await countMatching(page, 'button[aria-label="New chat"]');
-      if (newChatButtons !== 1) {
+      const createButtons = await countMatching(
+        page,
+        'button[aria-label="New workbench"]',
+      );
+      if (createButtons !== 1) {
         return {
           status: "fail",
-          detail: `expected exactly one "New chat" affordance, found ${newChatButtons}`,
+          detail: `expected exactly one "New workbench" affordance, found ${createButtons}`,
         };
       }
       return {
         status: "pass",
-        detail: 'landed on the Chats-only shell (/c): band titled "Chats", single "+ New chat" affordance',
+        detail:
+          'single always-visible sidebar: titled "Workbenches", one "+ New workbench" affordance',
       };
     });
 
-    // --- Step 2: CL-6070 — two manual "New chat" creations with Myra
-    await step(() => page, "05-create-first-myra-chat", async () => {
+    // --- Step 2: CL-6070 — create with Myra, then a second create that
+    // must resolve to the SAME workbench (find-or-create dedup, CL-6087).
+    let firstWorkbenchPath = "";
+    await step(() => page, "05-create-first-myra-workbench", async () => {
       await createMyraChat(page);
-      return { status: "pass", detail: "created chat #1 with Myra via the new-chat picker" };
+      await page.waitForFunction(
+        () => window.location.pathname.startsWith("/c/"),
+        { timeout: 15_000 },
+      );
+      firstWorkbenchPath = await page.evaluate(() => window.location.pathname);
+      return {
+        status: "pass",
+        detail: `created Myra's workbench via the picker, landed at ${firstWorkbenchPath}`,
+      };
     });
 
-    await step(() => page, "06-create-second-myra-chat", async () => {
-      await page.goto(`${webBaseUrl}/c`, { waitUntil: "domcontentloaded" });
-      await page.waitForSelector('button[aria-label="New chat"]', {
-        timeout: 15_000,
-      });
+    await step(() => page, "06-second-create-reopens-same-workbench", async () => {
+      // The sidebar (and its "+ New workbench" affordance) is always
+      // present — no navigation needed before opening the picker again.
       await createMyraChat(page);
-      return { status: "pass", detail: "created chat #2 with Myra via the new-chat picker" };
+      await page.waitForFunction(
+        () => window.location.pathname.startsWith("/c/"),
+        { timeout: 15_000 },
+      );
+      const secondPath = await page.evaluate(() => window.location.pathname);
+      if (secondPath !== firstWorkbenchPath) {
+        return {
+          status: "fail",
+          detail:
+            `expected the second create to reopen ${firstWorkbenchPath} ` +
+            `(find-or-create dedup), landed at ${secondPath}`,
+        };
+      }
+      return {
+        status: "pass",
+        detail: `second create reopened the same workbench (${secondPath}) — no duplicate created`,
+      };
     });
 
     await step(() => page, "07-sidebar-myra-duplicates-CL-6070", async () => {
-      await page.goto(`${webBaseUrl}/c`, { waitUntil: "domcontentloaded" });
+      // The always-visible sidebar already lists every workbench — the
+      // rows are just there, no navigation or priming needed.
       await page.waitForSelector(".shell-ch-row-wrap", { timeout: 15_000 });
       const myraRows = await countMatching(
         page,

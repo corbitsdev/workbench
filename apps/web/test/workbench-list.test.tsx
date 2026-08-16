@@ -1,7 +1,7 @@
-// The Chats band's "Working" group (`ChannelsBand` in
-// `../src/shell/panel-contributions.tsx`): a quiet list of the signed-in
+// The sidebar list's "Working" group (`WorkbenchList` in
+// `../src/shell/workbench-list.tsx`): a quiet list of the signed-in
 // user's running tasks, hidden entirely when there's nothing running,
-// dropping a task on the band's next refresh once it completes, and
+// dropping a task on the list's next refresh once it completes, and
 // opening the Inbox on click — a task is spawn-and-return, its result
 // lands there, not on a dedicated detail page (see `TaskComposerDialog`'s
 // own header comment).
@@ -11,7 +11,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { BenchProvider } from "../src/bench-context";
-import { ChannelsBand } from "../src/shell/panel-contributions";
+import { WorkbenchList } from "../src/shell/workbench-list";
 import { TestQueryProvider } from "./test-query-provider";
 
 const realFetch = globalThis.fetch;
@@ -96,7 +96,7 @@ async function mount(onNavigate: (to: string) => void = () => undefined) {
     root?.render(
       <TestQueryProvider>
         <BenchProvider>
-          <ChannelsBand path="/channels" onNavigate={onNavigate} />
+          <WorkbenchList path="/c" onNavigate={onNavigate} />
         </BenchProvider>
       </TestQueryProvider>,
     );
@@ -109,7 +109,7 @@ async function mount(onNavigate: (to: string) => void = () => undefined) {
   return container;
 }
 
-describe("ChannelsBand — Working group", () => {
+describe("WorkbenchList — Working group", () => {
   test("shows a running task with its agent's display name", async () => {
     stubFetch({ tasks: [runningTask()] });
     const el = await mount();
@@ -123,7 +123,7 @@ describe("ChannelsBand — Working group", () => {
     expect(el.textContent).not.toContain("Working");
   });
 
-  test("a completed task leaves the band", async () => {
+  test("a completed task leaves the list", async () => {
     stubFetch({
       tasks: [
         runningTask({

@@ -17,27 +17,26 @@ code and API paths keep the platform's own names.
 | **Hub**          | hub                                                | The API and coordination service a bench lives on                                                                                                                                                                                                   |
 | **Sidecar**      | sidecar                                            | The execution host that runs definitions on behalf of a hub                                                                                                                                                                                         |
 | **Extension**    | —                                                  | A route factory mounted on the hub to add product surface                                                                                                                                                                                           |
-| **Spaces**       | —                                                  | Where work happens: the collection of spaces and chats in a bench. A space is a shared conversation within it                                                                                                                                       |
-| **Space**        | channel, `kind: "channel"`                         | A pinned, broadcast-style shared conversation visible to the whole bench — a credential-free agent run whose mailbox is a shared conversation; also its own tenant, parented under the bench it was created in, so its membership and grants are its own — see [CHAT.md](CHAT.md) and [channel-tenancy.md](channel-tenancy.md) |
-| **Chat**         | channel, `kind: "chat"`                            | A direct, 1:1-style conversation with an agent or teammate — the same underlying entity as a Space, just not pinned or broadcast to the whole bench                                                                                                |
-| **Channel host** | anchor run                                         | The long-lived run backing a space or chat; holds its mailbox but never replies                                                                                                                                                                     |
+| **Workbenches**  | —                                                  | The sidebar's one list: every conversation in the selected bench, flat — no kind sections                                                                                                                                                          |
+| **Workbench**    | channel (`kind: "chat"` or `kind: "channel"`)      | The one conversation surface: an agent conversation (named by its agent) or a multi-party conversation (named by its own title) — a credential-free agent run whose mailbox is the conversation; also its own tenant, parented under the bench it was created in, so its membership and grants are its own — see [CHAT.md](CHAT.md) and [channel-tenancy.md](channel-tenancy.md) |
+| **Channel host** | anchor run                                         | The long-lived run backing a workbench; holds its mailbox but never replies                                                                                                                                                                        |
 | **Timeline**     | —                                                  | A channel's mailbox, read back in order, as the conversation record                                                                                                                                                                                 |
 | **Participant**  | —                                                  | An address (human or agent) a channel's settings list as able to post or be mentioned                                                                                                                                                               |
 | **Handle**       | —                                                  | A participant's short, unique-within-channel mention name (e.g. `echo`), distinct from its address                                                                                                                                                  |
 | **Mention**      | —                                                  | `@` plus a participant's handle in message text, triggering fan-out to that participant                                                                                                                                                             |
 | **Reply bridge** | —                                                  | The bridge that turns an invited agent's `connector.reply` events into channel timeline messages                                                                                                                                                    |
 | **Task**         | —                                                  | A spawn-and-return prompt to one agent, private to the person who started it; its result reaches the Inbox, never a live view of the run — see [`@corbits/tasks`](../packages/tasks/README.md)                                                      |
-| **Working**      | —                                                  | The Spaces band's group for the signed-in user's tasks still in progress; a task drops out on the band's next refresh after it completes or fails, once its result has moved to the Inbox                                                           |
+| **Working**      | —                                                  | The sidebar list's group for the signed-in user's tasks still in progress; a task drops out on the list's next refresh after it completes or fails, once its result has moved to the Inbox                                                          |
 
-A bench and a space or chat are both tenants underneath, which can read as
-the same thing twice. They are not: a bench is the workspace a team
-provisions and works in; a space or chat is a conversation that happens to
-be minted as a tenant too (the platform's "channel"), so it can carry its
-own membership and grants independent of the bench it lives in. Every
-space and chat is a tenant, but a tenant a person would call a "bench" is
-one nothing else is parented under as a space or chat — in practice, the
-one they signed into, not one that showed up as a conversation in their
-sidebar.
+A bench and a workbench are both tenants underneath, which can read as
+the same thing twice. They are not: a bench is the scope a team
+provisions and works in (the switcher's rows); a workbench is a
+conversation that happens to be minted as a tenant too (the platform's
+"channel"), so it can carry its own membership and grants independent of
+the bench it lives in. Every workbench is a tenant, but a tenant a person
+would call a "bench" is one nothing else is parented under as a
+workbench — in practice, the one they signed into, not one that showed up
+as a conversation in their sidebar.
 
 A **Routine** is never a second name for a **Run**, or for Interchange's
 own workflow concept — the three sit at different levels. A workflow

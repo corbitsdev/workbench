@@ -1,5 +1,5 @@
-// The second column's one data source: everything happening in the
-// currently selected bench right now. Channels and chats come from
+// The sidebar's one data source: everything happening in the currently
+// selected bench right now. Channels and chats come from
 // `@corbits/chat-ui`'s own validated fetches; running routines come through
 // the seam in `./routine-activity.ts`; the signed-in user's in-progress
 // tasks come from `@corbits/tasks-ui` (`GET /tasks` is already
@@ -13,8 +13,8 @@
 // column renders an honest empty state for that section instead of a
 // query with nowhere to point.
 //
-// `useBenchActivity` is mounted twice per navigation (`ChannelsBand` and
-// `LiveActivityBand` in `./panel-contributions.tsx`), so every listing
+// `useBenchActivity` may be mounted more than once per navigation (the
+// sidebar's `WorkbenchList` in `./workbench-list.tsx`), so every listing
 // below goes through `useQuery` keyed with the shared `tenantKeys`
 // factories — both mounts subscribe to the same cached queries instead of
 // each firing its own fetch. This uses `useQuery` directly rather than the

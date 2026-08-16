@@ -49,7 +49,6 @@ describe("runActionCommand off-route dispatch ordering", () => {
         tenantId: "tenant-1",
         cycleTheme: () => undefined,
         closeCanvas: () => undefined,
-        toggleCol2: () => undefined,
       });
     });
     expect(navigated).toEqual(["/settings/skills"]);

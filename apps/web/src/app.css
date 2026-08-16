@@ -10,6 +10,7 @@
 @import "@corbits/bench-ui/styles.css";
 @import "@corbits/settings-ui/styles.css";
 @import "@corbits/tasks-ui/styles.css";
+@import "@corbits/plugins-ui/styles.css";
 
 /* Mock chrome: 15px root so rem-based density matches the interactive mock. */
 html {
@@ -31,11 +32,9 @@ html {
   height: 100dvh;
 }
 
-/* The four-column app shell: rail, contextual panel, main pane, canvas.
-   Percentages in the comments below are against a 1440px desktop, the
-   spec's reference width — the actual columns are sized in rem/vw so they
-   hold roughly those proportions across viewports instead of clipping at a
-   fixed pixel width. */
+/* The app shell: one sidebar, the main pane, and the optional canvas.
+   Columns are sized in rem/vw so they hold their proportions across
+   viewports instead of clipping at a fixed pixel width. */
 .shell-frame {
   display: flex;
   height: 100dvh;
@@ -43,60 +42,30 @@ html {
 }
 
 /* Shell chrome only: pointer when enabled, not-allowed when disabled.
-   Scoped to rail / col2 / drawer so stage content keeps library defaults. */
-.shell-brand-rail-column button:not(:disabled):not([aria-disabled="true"]),
-.shell-brand-rail-column
-  [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
-.shell-brand-rail-column
-  [data-slot="sidebar-rail-item"]:not(:disabled):not([aria-disabled="true"]),
-.shell-contextual-panel button:not(:disabled):not([aria-disabled="true"]),
-.shell-contextual-panel
-  [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
-.shell-contextual-panel
+   Scoped to the sidebar so stage content keeps library defaults. */
+.shell-sidebar button:not(:disabled):not([aria-disabled="true"]),
+.shell-sidebar [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
+.shell-sidebar
   [data-slot="sidebar-item-row"]
   button:not(:disabled):not([aria-disabled="true"]),
-.shell-contextual-panel
-  .shell-ch-row:not(:disabled):not([aria-disabled="true"]),
-.shell-drawer button:not(:disabled):not([aria-disabled="true"]),
-.shell-drawer [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
-.shell-drawer
-  [data-slot="sidebar-item-row"]
-  button:not(:disabled):not([aria-disabled="true"]),
-.shell-drawer .shell-ch-row:not(:disabled):not([aria-disabled="true"]) {
+.shell-sidebar .shell-ch-row:not(:disabled):not([aria-disabled="true"]) {
   cursor: pointer;
 }
 
-.shell-brand-rail-column button:disabled,
-.shell-brand-rail-column button[aria-disabled="true"],
-.shell-brand-rail-column [data-slot="button"]:disabled,
-.shell-brand-rail-column [data-slot="button"][aria-disabled="true"],
-.shell-brand-rail-column [data-slot="sidebar-rail-item"]:disabled,
-.shell-brand-rail-column [data-slot="sidebar-rail-item"][aria-disabled="true"],
-.shell-contextual-panel button:disabled,
-.shell-contextual-panel button[aria-disabled="true"],
-.shell-contextual-panel [data-slot="button"]:disabled,
-.shell-contextual-panel [data-slot="button"][aria-disabled="true"],
-.shell-contextual-panel [data-slot="sidebar-item-row"] button:disabled,
-.shell-contextual-panel
-  [data-slot="sidebar-item-row"]
-  button[aria-disabled="true"],
-.shell-contextual-panel .shell-ch-row:disabled,
-.shell-contextual-panel .shell-ch-row[aria-disabled="true"],
-.shell-drawer button:disabled,
-.shell-drawer button[aria-disabled="true"],
-.shell-drawer [data-slot="button"]:disabled,
-.shell-drawer [data-slot="button"][aria-disabled="true"],
-.shell-drawer [data-slot="sidebar-item-row"] button:disabled,
-.shell-drawer [data-slot="sidebar-item-row"] button[aria-disabled="true"],
-.shell-drawer .shell-ch-row:disabled,
-.shell-drawer .shell-ch-row[aria-disabled="true"] {
+.shell-sidebar button:disabled,
+.shell-sidebar button[aria-disabled="true"],
+.shell-sidebar [data-slot="button"]:disabled,
+.shell-sidebar [data-slot="button"][aria-disabled="true"],
+.shell-sidebar [data-slot="sidebar-item-row"] button:disabled,
+.shell-sidebar [data-slot="sidebar-item-row"] button[aria-disabled="true"],
+.shell-sidebar .shell-ch-row:disabled,
+.shell-sidebar .shell-ch-row[aria-disabled="true"] {
   cursor: not-allowed;
 }
 
-/* col2 widths: the deliberate v2 iteration on tmp/shell-morph-two-col-mock.html's
-   geometry (16.5rem base), decided in Linear — canvas-on tightens to 14rem,
-   and 18.5rem is col2's Talk-to-Myra width (data-col2="wide"). Values are
-   owner-iterated; keep them unless a new Linear decision changes them. */
+/* Sidebar widths: 16.5rem base, tightening to 14rem while the canvas is
+   open. Values are owner-iterated; keep them unless a new Linear decision
+   changes them. */
 :root {
   /* Mock's zero-radius rule is app-wide, not per-component: react-ui's
      theme.css sets --radius: 0.5rem on :root, and this is the only place
@@ -106,23 +75,18 @@ html {
      component by component. */
   --radius: 0;
   /* The one non-zero radius scale in the app: dialogs/steppers stay exactly
-     zero-radius (the rule above), but chips, cards and rail affordances get
+     zero-radius (the rule above), but chips, cards and chrome affordances get
      real rounding — every rem/px radius outside that zero set should name
      one of these three instead of picking its own number. */
   --ui-radius-sm: 0.25rem;
   --ui-radius-md: 0.375rem;
   --ui-radius-lg: 0.5rem;
-  --shell-contextual-width: 16.5rem;
-  --shell-contextual-width-tight: 14rem;
-  --shell-contextual-width-wide: 18.5rem;
+  --shell-sidebar-width: 16.5rem;
+  --shell-sidebar-width-tight: 14rem;
   --shell-canvas-width: min(36rem, 42vw);
-  --shell-rail-brand: #e98428;
-  --shell-rail-brand-hover: #d47420;
   /* Mock --accent / --faint: constant across themes, like the mock's. */
   --shell-accent: #e98428;
   --shell-panel-faint: #8a8080;
-  /* Mock --on-accent: charcoal ink on brand orange (not near-black). */
-  --shell-rail-on-brand: #2b2627;
   /* Shared dialog craft tokens (react-ui data slots). */
   --dialog-content-max-width: 32rem;
   --dialog-content-max-height: min(90dvh, 42rem);
@@ -137,17 +101,9 @@ html {
   --warn: #d9a441;
 }
 
-/* Mock .app[data-col2="wide"] { grid-template-columns: ... var(--col2-w-wide) ... }.
-   Talk-to-Myra widens col2; canvas is still the only stage-width changer, so
-   the tightening rule below (later in the cascade, same specificity) wins
-   over this one whenever the canvas is also open. */
-.shell-frame[data-col2="wide"] {
-  --shell-contextual-width: var(--shell-contextual-width-wide);
-}
-
-/* Mock .app[data-canvas="on"] { --col2-w: var(--col2-w-tight) }. */
+/* Mock .app[data-canvas="on"]: an open canvas tightens the sidebar. */
 .shell-frame:has(.shell-canvas-column[data-open="true"]) {
-  --shell-contextual-width: var(--shell-contextual-width-tight);
+  --shell-sidebar-width: var(--shell-sidebar-width-tight);
 }
 
 /* Shared dialog craft — layout/scroll/chrome on react-ui data slots only.
@@ -267,10 +223,10 @@ html {
 }
 
 /* Column 2: SidebarPanel root; width overrides the library default (w-72).
-   Mock: --col2-w 18rem, pure ground, light right border. */
-.shell-contextual-panel {
-  width: var(--shell-contextual-width);
-  min-width: var(--shell-contextual-width);
+   Mock sidebar geometry: pure ground, light right border. */
+.shell-sidebar {
+  width: var(--shell-sidebar-width);
+  min-width: var(--shell-sidebar-width);
   background: var(--background, #fff);
   border-right: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
@@ -279,8 +235,8 @@ html {
     min-width 200ms ease;
 }
 
-/* Mock v2 .col2-head: padding 0.7/0.75/0.4, title 0.8125rem/600. */
-.shell-contextual-panel [data-slot="sidebar-panel-header"] {
+/* Mock v2 sidebar head: padding 0.7/0.75/0.4, title 0.8125rem/600. */
+.shell-sidebar [data-slot="sidebar-panel-header"] {
   min-height: 0;
   height: auto;
   padding: 0.7rem 0.75rem 0.4rem;
@@ -288,29 +244,29 @@ html {
   gap: 0.4rem;
 }
 
-.shell-contextual-panel [data-slot="sidebar-panel-header"] h2 {
+.shell-sidebar [data-slot="sidebar-panel-header"] h2 {
   margin: 0;
   font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
-.shell-contextual-panel [data-slot="sidebar-panel-body"] {
+.shell-sidebar [data-slot="sidebar-panel-body"] {
   padding: 0.1rem 0.55rem 0.5rem;
   scrollbar-width: thin;
 }
 
-/* Mock .col2-foot: full-width bench dock padding. */
-.shell-contextual-panel [data-slot="sidebar-panel-footer"] {
+/* Mock sidebar foot: full-width bench dock padding. */
+.shell-sidebar [data-slot="sidebar-panel-footer"] {
   padding: 0.45rem 0.7rem 0.7rem;
   border-top: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
   background: var(--background, #fff);
 }
 
-/* Mock .section labels in col2 lists — always 0.65rem / 0.07em. */
-.shell-contextual-panel .panel-band-heading,
-.shell-contextual-panel .panel-band-subheading {
+/* Mock .section labels in sidebar lists — always 0.65rem / 0.07em. */
+.shell-sidebar .panel-band-heading,
+.shell-sidebar .panel-band-subheading {
   font-size: 0.65rem;
   font-weight: 650;
   letter-spacing: 0.07em;
@@ -329,8 +285,8 @@ html {
   min-height: 0;
 }
 
-/* Kill heavy band chrome inside col2 — lists sit flush in the scroll body. */
-.shell-contextual-panel .panel-band {
+/* Kill heavy band chrome inside the sidebar — lists sit flush in the scroll body. */
+.shell-sidebar .panel-band {
   gap: 0.15rem;
   padding: 0;
   border-bottom: none;
@@ -351,7 +307,7 @@ html {
 }
 
 /* Header already prints the page title — never re-title the body band. */
-.shell-contextual-panel .panel-band-page-specific > .panel-band-heading {
+.shell-sidebar .panel-band-page-specific > .panel-band-heading {
   display: none;
 }
 
@@ -362,7 +318,7 @@ html {
   flex-shrink: 0;
 }
 
-.shell-contextual-panel .panel-band-activity {
+.shell-sidebar .panel-band-activity {
   padding: 0.5rem 0.7rem 0.6rem;
   border-top: 1px solid
     color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
@@ -395,8 +351,8 @@ html {
 }
 
 /* Mock .icon-sm: compact muted header tools (settings, canvas). */
-.shell-contextual-panel [data-slot="sidebar-panel-header"] [data-slot="button"],
-.shell-contextual-panel .panel-page-tools [data-slot="button"] {
+.shell-sidebar [data-slot="sidebar-panel-header"] [data-slot="button"],
+.shell-sidebar .panel-page-tools [data-slot="button"] {
   width: 1.8rem;
   height: 1.8rem;
   min-height: 0;
@@ -406,19 +362,14 @@ html {
   background: transparent;
 }
 
-.shell-contextual-panel
-  [data-slot="sidebar-panel-header"]
-  [data-slot="button"]:hover,
-.shell-contextual-panel .panel-page-tools [data-slot="button"]:hover {
+.shell-sidebar [data-slot="sidebar-panel-header"] [data-slot="button"]:hover,
+.shell-sidebar .panel-page-tools [data-slot="button"]:hover {
   background: color-mix(in srgb, var(--foreground, #2b2627) 5%, transparent);
   color: var(--foreground, #2b2627);
 }
 
-.shell-contextual-panel
-  [data-slot="sidebar-panel-header"]
-  [data-slot="button"]
-  svg,
-.shell-contextual-panel .panel-page-tools [data-slot="button"] svg {
+.shell-sidebar [data-slot="sidebar-panel-header"] [data-slot="button"] svg,
+.shell-sidebar .panel-page-tools [data-slot="button"] svg {
   width: 0.95rem;
   height: 0.95rem;
 }
@@ -507,7 +458,7 @@ html {
 
 /* Mock .qa-chip for FilterChip pills: square, bordered, faint; the pressed
    chip carries the accent wash instead of react-ui's card treatment. */
-.shell-contextual-panel .panel-filter-row > button {
+.shell-sidebar .panel-filter-row > button {
   height: 1.7rem;
   padding: 0 0.55rem;
   border-radius: 0;
@@ -520,13 +471,13 @@ html {
   box-shadow: none;
 }
 
-.shell-contextual-panel .panel-filter-row > button:hover {
+.shell-sidebar .panel-filter-row > button:hover {
   background: var(--background, #fff);
   border-color: color-mix(in srgb, var(--foreground, #2b2627) 16%, transparent);
   color: var(--foreground, #2b2627);
 }
 
-.shell-contextual-panel .panel-filter-row > button[aria-pressed="true"] {
+.shell-sidebar .panel-filter-row > button[aria-pressed="true"] {
   background: color-mix(in srgb, var(--shell-accent) 12%, transparent);
   border-color: transparent;
   color: var(--shell-accent);
@@ -575,11 +526,9 @@ html {
 }
 
 /* Shared stage top bar — mock `.top`: a fixed 3rem row on every stage
-   surface. Title · dot · subtitle, then per-page actions right-align. The
-   col2 collapse control lives on col2 itself, not here — see
-   .shell-contextual-panel and .shell-col2-edge-handle below. Matches
-   `.chat-channel-header` geometry so channels and pages read as one
-   chrome. */
+   surface. Title · dot · subtitle, then per-page actions right-align.
+   Matches `.chat-channel-header` geometry so conversations and pages read
+   as one chrome. */
 .stage-top-bar {
   display: flex;
   flex-shrink: 0;
@@ -670,43 +619,6 @@ html {
   color: var(--muted-foreground);
 }
 
-/* Col2's own expand affordance once it has collapsed out of the flow: a
-   slim full-height strip at the boundary where col2 used to sit, so it is
-   always reachable without floating over stage content. 12px matches the
-   mock's edge-handle sizing; the chevron only shows on hover/focus so the
-   strip reads as chrome, not another button, at rest. */
-.shell-col2-edge-handle {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 0.8rem;
-  border-right: 1px solid transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease;
-}
-
-.shell-col2-edge-handle:hover,
-.shell-col2-edge-handle:focus-visible {
-  background: color-mix(in srgb, var(--foreground, #2b2627) 5%, transparent);
-  border-right-color: var(--border);
-}
-
-.shell-col2-edge-handle svg {
-  height: 0.85rem;
-  width: 0.85rem;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.shell-col2-edge-handle:hover svg,
-.shell-col2-edge-handle:focus-visible svg {
-  opacity: 1;
-}
-
 /* Page-local toolbars replace TopBar action clusters (search, view toggle)
    that still need component state on the page. Identity lives in the panel. */
 .page-toolbar {
@@ -738,9 +650,9 @@ html {
 }
 
 /* Focus mode (mock's `data-canvas="focus"`): canvas is the only
-   stage-width changer, so widening it here — on top of col2 already
-   collapsing (`stage-chrome.ts`'s `deriveCol2Width`) — is what reads as
-   "canvas dominant, chat as slim context" without a grid rewrite. */
+   stage-width changer, so widening it here — on top of the sidebar
+   tightening — is what reads as "canvas dominant, conversation as slim
+   context" without a grid rewrite. */
 .shell-canvas-column[data-open="true"][data-focus="true"] {
   width: min(64rem, 68vw);
 }
@@ -867,286 +779,125 @@ html {
    `prefers-reduced-motion` in its theme.css), and these transitions inherit
    that like any other. */
 
-/* Narrow mode: the contextual column leaves the flow and becomes an overlay
-   drawer that slides in from the left, so it never permanently steals width
-   from the main pane. The backdrop dims and dismisses on click. The shared
-   col2 edge handle is the one control that opens it — there is no separate
-   floating trigger. */
-.shell-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  background: rgba(0, 0, 0, 0.4);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 200ms ease;
-}
-
-.shell-drawer-backdrop[data-open="true"] {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.shell-drawer {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  z-index: 40;
-  width: min(16.5rem, 85vw);
-  transform: translateX(-100%);
-  transition: transform 200ms ease;
-  overflow: hidden;
-}
-
-.shell-drawer[data-open="true"] {
-  transform: translateX(0);
-  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.2));
-}
-
-.shell-drawer .shell-contextual-panel {
-  width: 100%;
-  height: 100%;
-  border-right: none;
-}
-
-/* Column 1: brand-orange rail matching the shell mock. Mark sits above
-   SidebarRail; footer holds Search / Inbox / Settings / theme / avatar.
-   Icon-only (narrow) keeps mock 3.4rem; labeled mode widens just enough for
-   full captions (SidebarRail showLabels is 72px; root is 15px → 4.8rem). */
-.shell-brand-rail-column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  height: 100%;
-  width: 3.4rem;
-  flex-shrink: 0;
-  background: var(--shell-rail-brand);
-  color: var(--shell-rail-on-brand);
-}
-
-.shell-brand-rail-column--labels {
-  width: 4.8rem;
-}
-
-.shell-rail-mark {
-  display: grid;
-  place-items: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  margin: 0.65rem 0 0.55rem;
-  padding: 0.22rem;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--shell-rail-on-brand);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 140ms ease;
-}
-
-.shell-rail-mark:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.shell-rail-mark:focus-visible {
-  outline: 2px solid var(--shell-rail-on-brand);
-  outline-offset: 2px;
-}
-
-.shell-rail-mark-svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.shell-brand-rail[data-slot="sidebar-rail"] {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  background: transparent;
-  border-right: none;
-  color: var(--shell-rail-on-brand);
-  padding-top: 0;
-}
-
-/* Mock .rail-btn: 2.5rem hit, 1.15rem glyph, idle opacity 0.78, r 0.6rem.
-   Overrides react-ui size-10 / [&_svg]:size-5 and primary/10 active wash. */
-.shell-brand-rail [data-slot="sidebar-rail"] > ul {
-  gap: 0.15rem;
-}
-
-.shell-brand-rail [data-slot="sidebar-rail"] > div {
-  gap: 0.15rem;
-}
-
-.shell-brand-rail [data-slot="sidebar-rail-item"] {
-  width: 2.5rem;
-  height: 2.5rem;
-  min-width: 2.5rem;
-  min-height: 2.5rem;
-  border-radius: var(--ui-radius-lg);
-  color: var(--shell-rail-on-brand);
-  background: transparent;
-  opacity: 0.78;
-  transition:
-    background 140ms ease,
-    color 140ms ease,
-    opacity 140ms ease;
-}
-
-/* Labeled stack: free the square hit box so icon + caption center as a
-   column inside the wider rail. Height follows content; width fills the
-   column so every primary caption (Channels, Routines, Insights, …) fits. */
-.shell-brand-rail-column--labels
-  .shell-brand-rail
-  [data-slot="sidebar-rail-item"] {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  max-width: 4.5rem;
-  height: auto;
-  min-width: 0;
-  min-height: 2.75rem;
-  gap: 0.2rem;
-  padding: 0.3rem 0.1rem 0.35rem;
-  box-sizing: border-box;
-}
-
-.shell-brand-rail [data-slot="sidebar-rail-item"] svg {
-  width: 1.15rem;
-  height: 1.15rem;
-  flex-shrink: 0;
-}
-
-.shell-brand-rail [data-slot="sidebar-rail-item"]:hover {
-  background: rgba(0, 0, 0, 0.1);
-  color: var(--shell-rail-on-brand);
-  opacity: 1;
-}
-
-.shell-brand-rail [data-slot="sidebar-rail-item"][aria-current="page"] {
-  background: rgba(0, 0, 0, 0.16);
-  color: var(--shell-rail-on-brand);
-  opacity: 1;
-}
-
-/* Captions must never ellipsize — rail width is chosen so every label fits. */
-.shell-brand-rail [data-slot="sidebar-rail-item-label"] {
-  color: inherit;
-  max-width: none;
-  overflow: visible;
-  text-overflow: unset;
-  white-space: nowrap;
-  text-align: center;
-  line-height: 1.1;
-}
-
-/* ThemeToggle / ghost buttons and the hand-rolled FooterIconButton in the
-   brand rail footer share one visual spec — match .rail-btn. */
-.shell-rail-footer [data-slot="button"],
-.shell-brand-rail-column [data-slot="button"],
-.shell-rail-footer-btn {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: var(--ui-radius-lg);
-  color: var(--shell-rail-on-brand);
-  background: transparent;
-  opacity: 0.78;
-  transition:
-    background 140ms ease,
-    color 140ms ease,
-    opacity 140ms ease;
-}
-
-.shell-rail-footer [data-slot="button"],
-.shell-brand-rail-column [data-slot="button"] {
-  min-height: 0;
-  padding: 0;
-}
-
-.shell-rail-footer-btn {
-  display: grid;
-  place-items: center;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-}
-
-.shell-rail-footer [data-slot="button"]:hover,
-.shell-brand-rail-column [data-slot="button"]:hover,
-.shell-rail-footer-btn:hover {
-  background: rgba(0, 0, 0, 0.1);
-  color: var(--shell-rail-on-brand);
-  opacity: 1;
-}
-
-.shell-rail-footer [data-slot="button"] svg,
-.shell-brand-rail-column [data-slot="button"] svg,
-.shell-rail-footer-btn svg {
-  width: 1.15rem;
-  height: 1.15rem;
-}
-
+/* Sidebar footer: switcher dock above the utility row (insights, inbox
+   bell, settings, account). */
 .shell-bench-dock {
   width: 100%;
   padding: 0;
 }
 
-.shell-rail-footer {
+.shell-sidebar-utils {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.2rem;
+  width: 100%;
+  padding-top: 0.45rem;
+}
+
+.shell-sidebar-utils [data-slot="button"] {
+  width: 2.1rem;
+  height: 2.1rem;
+  min-height: 0;
+  padding: 0;
+  color: var(--muted-foreground);
+}
+
+.shell-sidebar-utils [data-slot="button"][aria-current="page"] {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground, #2b2627) 8%, transparent);
+}
+
+.shell-sidebar-utils [data-slot="button"] svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+/* The inbox bell (react-ui NotificationsBell) anchors its panel below the
+   trigger by default; in a footer it must open upward instead. */
+.shell-sidebar-bell [role="dialog"] {
+  top: auto;
+  bottom: 100%;
+  margin-bottom: 0.25rem;
+}
+
+.shell-sidebar-bell[data-active="true"] > div > button {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground, #2b2627) 8%, transparent);
+}
+
+.shell-sidebar-bell-panel {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-  padding-bottom: 0.35rem;
-  width: 100%;
+  gap: 0.5rem;
+  padding: 0.25rem;
 }
 
-.shell-rail-footer-btn[aria-current="page"] {
-  background: rgba(0, 0, 0, 0.16);
-  color: var(--shell-rail-on-brand);
-  opacity: 1;
-}
-
-.shell-rail-footer-btn:focus-visible {
-  outline: 2px solid var(--shell-rail-on-brand);
-  outline-offset: 2px;
-}
-
-/* Square monogram avatar — never circular on the brand rail. */
-.shell-rail-avatar-btn {
+/* Square monogram avatar — the account affordance and context-menu anchor. */
+.shell-sidebar-avatar-btn {
   display: grid;
   place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.1rem;
+  height: 2.1rem;
   padding: 0;
   border: 0;
-  background: rgba(0, 0, 0, 0.18);
+  background: color-mix(in srgb, var(--foreground, #2b2627) 10%, transparent);
   cursor: pointer;
   border-radius: 0;
-  color: var(--shell-rail-on-brand);
-  opacity: 1;
+  color: var(--foreground);
 }
 
-.shell-rail-avatar-btn [data-slot="avatar"],
-.shell-rail-avatar-btn > span {
+.shell-sidebar-avatar-btn [data-slot="avatar"],
+.shell-sidebar-avatar-btn > span {
   border-radius: 0;
   width: 100%;
   height: 100%;
   background: transparent;
   color: inherit;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 700;
 }
 
-.shell-rail-avatar-btn:focus-visible {
-  outline: 2px solid var(--shell-rail-on-brand);
+.shell-sidebar-avatar-btn:focus-visible {
+  outline: 2px solid var(--shell-accent);
   outline-offset: 2px;
 }
 
-/* Mock .ch rows in col2: pad 0.32/0.42, square. */
+/* Settings master-detail inside the stage: fixed-width section nav beside
+   the scrolling section panel. */
+.settings-layout {
+  display: flex;
+  min-height: 0;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  width: 13rem;
+  flex-shrink: 0;
+  padding: 0.75rem 0.5rem;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.settings-nav-heading {
+  margin: 0 0 0.2rem;
+  padding: 0 0.42rem;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--shell-panel-faint);
+}
+
+/* Mock .ch rows in the sidebar: pad 0.32/0.42, square. */
 .shell-ch-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -1320,8 +1071,8 @@ html {
   flex-shrink: 0;
 }
 
-/* Bare inputs in col2 body (inline rename fields). */
-.shell-contextual-panel [data-slot="sidebar-panel-body"] [data-slot="input"] {
+/* Bare inputs in the sidebar body (inline rename fields). */
+.shell-sidebar [data-slot="sidebar-panel-body"] [data-slot="input"] {
   height: 2rem;
   min-height: 2rem;
   padding: 0 0.65rem;
@@ -1335,7 +1086,7 @@ html {
   box-shadow: none;
 }
 
-.shell-contextual-panel .shell-panel-search [data-slot="input"] {
+.shell-sidebar .shell-panel-search [data-slot="input"] {
   flex: 1;
   min-width: 0;
   height: 100%;
@@ -1347,8 +1098,8 @@ html {
   font-weight: 400;
 }
 
-.shell-contextual-panel .shell-panel-search [data-slot="input"]::placeholder,
-.shell-contextual-panel
+.shell-sidebar .shell-panel-search [data-slot="input"]::placeholder,
+.shell-sidebar
   [data-slot="sidebar-panel-body"]
   [data-slot="input"]::placeholder {
   color: var(--shell-panel-faint);
@@ -1361,13 +1112,13 @@ html {
     color-mix(in srgb, var(--primary, #e98428) 22%, transparent);
 }
 
-.shell-contextual-panel .shell-panel-search [data-slot="input"]:focus-visible {
+.shell-sidebar .shell-panel-search [data-slot="input"]:focus-visible {
   outline: none;
   border: none;
   box-shadow: none;
 }
 
-.shell-contextual-panel
+.shell-sidebar
   [data-slot="sidebar-panel-body"]
   [data-slot="input"]:focus-visible {
   outline: none;
@@ -1378,11 +1129,11 @@ html {
 
 /* Mock v2 .filter-item / .list-item: square rows, pad 0.4/0.45, faint idle
    ink; hover lifts to foreground; the current row reads in accent. */
-.shell-contextual-panel [data-slot="sidebar-item-row"] {
+.shell-sidebar [data-slot="sidebar-item-row"] {
   list-style: none;
 }
 
-.shell-contextual-panel [data-slot="sidebar-item-row"] > div {
+.shell-sidebar [data-slot="sidebar-item-row"] > div {
   gap: 0.35rem;
   border-radius: 0;
   padding-right: 0.2rem;
@@ -1393,14 +1144,14 @@ html {
     color 120ms ease;
 }
 
-.shell-contextual-panel [data-slot="sidebar-item-row"] > div:hover {
+.shell-sidebar [data-slot="sidebar-item-row"] > div:hover {
   background: color-mix(in srgb, var(--foreground, #2b2627) 5%, transparent);
   color: var(--foreground, #2b2627);
 }
 
 /* Selector doubles as the kill for react-ui's bg-primary/10 selected wash. */
-.shell-contextual-panel [data-slot="sidebar-item-row"] > div.bg-primary\/10,
-.shell-contextual-panel
+.shell-sidebar [data-slot="sidebar-item-row"] > div.bg-primary\/10,
+.shell-sidebar
   [data-slot="sidebar-item-row"]
   > div:has(button[aria-current="true"]) {
   background-color: color-mix(
@@ -1412,7 +1163,7 @@ html {
   box-shadow: none;
 }
 
-.shell-contextual-panel [data-slot="sidebar-item-row"] > div > button {
+.shell-sidebar [data-slot="sidebar-item-row"] > div > button {
   gap: 0.55rem;
   padding: 0.4rem 0.45rem;
   border-radius: 0;
@@ -1424,7 +1175,7 @@ html {
 
 /* Mock v2 .list-item .ico: bordered square holding the row's lucide glyph.
    Only the decorative leading slot — a row without one leads with its name. */
-.shell-contextual-panel
+.shell-sidebar
   [data-slot="sidebar-item-row"]
   > div
   > button
@@ -1437,7 +1188,7 @@ html {
   background: transparent;
 }
 
-.shell-contextual-panel
+.shell-sidebar
   [data-slot="sidebar-item-row"]
   > div
   > button
@@ -1448,7 +1199,7 @@ html {
 }
 
 /* Mock .count: the trailing meta slot when it is plain text. */
-.shell-contextual-panel
+.shell-sidebar
   [data-slot="sidebar-item-row"]
   > div
   > button
@@ -1458,45 +1209,9 @@ html {
   color: var(--shell-panel-faint);
 }
 
-/* Square chrome everywhere in col2 — EmptyState ships a round icon bubble. */
-.shell-contextual-panel [data-slot="empty-state"] > span {
+/* Square chrome everywhere in the sidebar — EmptyState ships a round icon bubble. */
+.shell-sidebar [data-slot="empty-state"] > span {
   border-radius: 0;
-}
-
-.shell-rail-identity {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  padding-bottom: 0.25rem;
-}
-
-.shell-rail-identity-avatar {
-  display: grid;
-  height: 28px;
-  width: 28px;
-  flex-shrink: 0;
-  place-items: center;
-  border-radius: 9999px;
-  background: var(--primary);
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--primary-foreground);
-}
-
-.shell-rail-identity-settings {
-  display: grid;
-  height: 28px;
-  width: 28px;
-  place-items: center;
-  border-radius: var(--ui-radius-lg);
-  color: var(--muted-foreground);
-  transition: color 150ms;
-}
-
-.shell-rail-identity-settings:hover,
-.shell-rail-identity-settings[aria-current="page"] {
-  color: var(--foreground);
 }
 
 .shell-activity-skeleton {
@@ -1680,7 +1395,7 @@ html {
 }
 
 /* Onboarding: full-screen guided wizard, gated above the shell entirely
-   (see app.tsx) so nothing implying an existing workbench — rail, col2,
+   (see app.tsx) so nothing implying an existing workbench — sidebar,
    bench dock — is ever on screen while it runs. Same two-column shape as
    `.auth-shell` for continuity with the sign-in screen, but its own scale:
    zero border radius, brand-orange accents, generous whitespace, one large
@@ -2394,7 +2109,7 @@ tr.insights-row-clickable:hover {
 }
 
 /* The current row's copy follows the row's accent ink. */
-.shell-contextual-panel
+.shell-sidebar
   [data-slot="sidebar-item-row"]
   button[aria-current="true"]
   .panel-row-copy

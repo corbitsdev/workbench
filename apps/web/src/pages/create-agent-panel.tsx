@@ -181,14 +181,14 @@ const SUGGESTIONS: readonly Suggestion[] = [
   },
   {
     name: "Research Assistant",
-    cardDescription: "Digs into questions you drop in chat",
+    cardDescription: "Digs into questions you drop in its workbench",
     purpose:
-      "Digs into questions dropped in chat and comes back with a grounded answer.",
+      "Digs into questions dropped in its workbench and comes back with a grounded answer.",
   },
   {
-    name: "Chat Digest",
-    cardDescription: "Summarizes a chat on schedule",
-    purpose: "Summarizes recent activity in a chat on a recurring schedule.",
+    name: "Daily Digest",
+    cardDescription: "Summarizes a workbench on schedule",
+    purpose: "Summarizes recent workbench activity on a recurring schedule.",
   },
 ];
 
@@ -391,8 +391,8 @@ export function CreateAgentPanel({
         <DialogHeader>
           <DialogTitle>New agent</DialogTitle>
           <DialogDescription>
-            A name is enough to start — Myra drafts the starting instructions,
-            and you teach it the rest in chat.
+            A name is enough to start — Myra drafts the starting
+            instructions, and you teach it the rest in conversation.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -449,7 +449,7 @@ export function CreateAgentPanel({
               id="create-agent-purpose"
               value={values.purpose}
               onChange={(event) => handlePurposeChange(event.target.value)}
-              placeholder="Leave blank and teach it in chat"
+              placeholder="Leave blank and teach it in conversation"
               disabled={submitting}
               rows={2}
             />

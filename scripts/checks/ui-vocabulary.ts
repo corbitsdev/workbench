@@ -3,13 +3,20 @@
 // "tenant", "instance", "deploy(ed)", "definition", "DATABASE_URL", and
 // "asset" are all names for things from the operator/platform side of
 // the fence; the product word for a workspace is "workbench" and its
-// switching control is the "switcher". "Channel" and "space(s)" are
-// banned too — the shell is chat-first now (CL-6081): every conversation
-// a person starts reads as a "chat", never a "space" or a "channel"
-// (both stay legal only as the underlying platform/API vocabulary:
-// `kind: "channel"`, route paths, event names, and other non-prose
+// switching control is the "switcher". "Channel", "space(s)", and "chat(s)"
+// are banned too. The rule, after the single-concept collapse: a WORKBENCH
+// IS an agent conversation (each already its own tenancy under the hood),
+// so user-facing copy uses "workbench"/"workbenches" as the noun for that
+// surface — never "chat", "space", or "channel". "Conversation" stays
+// legal as the generic word for the exchange itself ("Untitled
+// conversation", "invite an agent into this conversation"), and verb-ish
+// message copy ("Send a message…", "talk to") needs no noun at all — the
+// sweep prefers rephrasing over allowlisting, so the ALLOWLIST below stays
+// empty unless a phrase genuinely cannot avoid a banned term. All banned
+// words stay legal as the underlying platform/API vocabulary:
+// `kind: "chat"`, route paths, event names, and other non-prose
 // identifiers, none of which this check's prose filter treats as copy
-// anyway) — see docs/GLOSSARY.md and the CL-6016, CL-6071, and CL-6081
+// anyway — see docs/GLOSSARY.md and the CL-6016, CL-6071, and CL-6081
 // copy sweeps this check guards.
 //
 // This scans string and template literals in apps/web/src and
@@ -53,28 +60,25 @@ const BANNED_TERMS: readonly { name: string; pattern: RegExp }[] = [
   { name: "asset", pattern: /\bassets?\b/i },
   { name: "channel", pattern: /\bchannels?\b/i },
   { name: "space", pattern: /\bspaces?\b/i },
+  { name: "chat", pattern: /\bchats?\b/i },
 ];
 
 /**
- * The nav band renamed "Channels" → "Spaces" (CL-6054), then "Spaces" →
- * "Chats" (CL-6081): the band you direct work from, not the word for a
- * single conversation. A single-word label value like `"Channels"` or
- * `"Spaces"` has no whitespace, so `isProseLiteral`'s space-heuristic
- * never even hands it to the `BANNED_TERMS` scan below — this pattern is
- * the dedicated regression guard for exactly that gap, matching the
- * shape a reintroduced label would take for either retired name: a
- * `label`/`title` object property (`title: "Spaces"`), the same as a
- * JSX attribute (`title="Channels"`), or an `aria-label` attribute set
- * to precisely one of those two words — so it never trips on legitimate
- * copy that happens to contain one: prose like "Channels and running
- * routines…" (not a bare label value), `channelsSectionLabel: "Channels"`
- * (chat-ui's pinned-vs-chat kind label, a different concept from the nav
- * band), or a command palette `heading: "Channels"` (groups search
- * results by entity kind, same pattern as its `heading: "Routines"`
- * sibling). Those all stay legal; only the band label itself is banned.
+ * The surface's label renamed "Channels" → "Spaces" (CL-6054), "Spaces" →
+ * "Chats" (CL-6081), and "Chats"/"Chat" → "Workbenches" (the
+ * single-concept collapse: the sidebar lists workbenches). A single-word
+ * label value like `"Chats"` has no whitespace, so `isProseLiteral`'s
+ * space-heuristic never even hands it to the `BANNED_TERMS` scan below —
+ * this pattern is the dedicated regression guard for exactly that gap,
+ * matching the shape a reintroduced label would take for any retired
+ * name: a `label`/`title` object property (`title: "Chats"`), the same
+ * as a JSX attribute (`title="Chat"`), or an `aria-label` attribute set
+ * to precisely one of those words — so it never trips on legitimate
+ * copy that merely contains one (prose is the term scan's job, and a
+ * palette `heading:` or a different single-word value never matches).
  */
 const BAND_LABEL_PATTERN =
-  /\b(?:label|title)\s*[:=]\s*"(?:Channels|Spaces)"|aria-label\s*=\s*"(?:Channels|Spaces)"/g;
+  /\b(?:label|title)\s*[:=]\s*"(?:Channels|Spaces|Chats|Chat)"|aria-label\s*=\s*"(?:Channels|Spaces|Chats|Chat)"/g;
 
 /**
  * Exact strings that legitimately contain a banned term as UI copy.
@@ -197,7 +201,7 @@ export function findViolations(files: readonly ScannedFile[]): Violation[] {
       violations.push({
         relPath,
         line,
-        term: "Channels/Spaces (nav band label)",
+        term: "Channels/Spaces/Chats (retired surface label)",
         literal: lines[line - 1] ?? match[0],
       });
     }

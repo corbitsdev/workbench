@@ -1,0 +1,5 @@
+/* Plugins gallery — layout glue only, same convention as
+   `@corbits/settings-ui`'s stylesheet: visual styling comes from
+   `@corbits/react-ui`'s prebuilt stylesheet and the theme's tokens. Card
+   and chip geometry live as Tailwind utility classes on the components
+   themselves; nothing here duplicates that. */

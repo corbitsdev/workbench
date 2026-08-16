@@ -1,6 +1,6 @@
 // The first tests in this package that need a live DOM: `useShellLayoutMode`
-// subscribes to media queries and `useShellFocusRescue` moves focus, and
-// neither behaviour exists under `renderToStaticMarkup` — effects never run
+// subscribes to media queries, and that behaviour does not exist under
+// `renderToStaticMarkup` — effects never run
 // there. `test/dom-setup.ts` (preloaded via bunfig.toml) supplies the DOM;
 // `window.matchMedia` is stubbed here because the point is to control when a
 // query flips, which resizing a simulated viewport cannot do
@@ -15,7 +15,6 @@ import {
   NARROW_MAX_WIDTH,
   type ShellLayoutMode,
 } from "../src/breakpoints";
-import { rescueFocusToRail } from "../src/focus-rescue";
 import { useShellLayoutMode } from "../src/use-shell-layout";
 
 type StubQuery = {
@@ -131,42 +130,5 @@ describe("useShellLayoutMode", () => {
     act(() => root.render(null));
     expect(queryFor(NARROW_MAX_WIDTH).listeners.size).toBe(0);
     expect(queryFor(COMPACT_MAX_WIDTH).listeners.size).toBe(0);
-  });
-});
-
-describe("rescueFocusToRail", () => {
-  function railFrame(): { frame: HTMLElement; railItem: HTMLElement } {
-    const frame = document.createElement("div");
-    const railItem = document.createElement("button");
-    railItem.setAttribute("data-slot", "sidebar-rail-item");
-    railItem.setAttribute("aria-current", "page");
-    frame.appendChild(railItem);
-    document.body.appendChild(frame);
-    return { frame, railItem };
-  }
-
-  test("moves focus to the active rail page when the focused element is gone", () => {
-    const { frame, railItem } = railFrame();
-    const withdrawn = document.createElement("button");
-    expect(rescueFocusToRail(frame, withdrawn)).toBe(true);
-    expect(document.activeElement).toBe(railItem);
-    frame.remove();
-  });
-
-  test("leaves focus alone while the focused element is still on the page", () => {
-    const { frame, railItem } = railFrame();
-    const stillHere = document.createElement("button");
-    frame.appendChild(stillHere);
-    stillHere.focus();
-    expect(rescueFocusToRail(frame, stillHere)).toBe(false);
-    expect(document.activeElement).toBe(stillHere);
-    expect(document.activeElement).not.toBe(railItem);
-    frame.remove();
-  });
-
-  test("does nothing when nothing was focused", () => {
-    const { frame } = railFrame();
-    expect(rescueFocusToRail(frame, null)).toBe(false);
-    frame.remove();
   });
 });
