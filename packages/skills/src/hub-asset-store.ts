@@ -23,11 +23,11 @@ import {
   type RepoStore,
 } from "@intx/hub-sessions";
 
+import { readAssetCommitHistory } from "./asset-history";
 import {
   skillMdPath,
   type SkillAssetRow,
   type SkillAssetStore,
-  type SkillCommit,
 } from "./asset-store";
 
 const SKILL_ASSET_KIND = "skill";
@@ -152,25 +152,12 @@ export function createHubSkillAssetStore(
     },
 
     async history(assetId) {
-      const dir = await repoDirFor(assetId);
-      let entries: Awaited<ReturnType<typeof git.log>>;
-      try {
-        entries = await git.log({ fs, dir, ref: DEFAULT_ASSET_REF });
-      } catch {
-        return [];
-      }
-      const commits: SkillCommit[] = [];
-      for (const entry of entries) {
-        commits.push({
-          commitSha: entry.oid,
-          message: entry.commit.message.trim(),
-          author: entry.commit.author.name,
-          committedAtIso: new Date(
-            entry.commit.author.timestamp * 1000,
-          ).toISOString(),
-        });
-      }
-      return commits;
+      return readAssetCommitHistory({
+        repoStore,
+        kind: SKILL_ASSET_KIND,
+        assetId,
+        ref: DEFAULT_ASSET_REF,
+      });
     },
   };
 }

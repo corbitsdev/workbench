@@ -1,13 +1,13 @@
-// A definition's `workflow`-kind asset carries its own git history —
-// exactly the seam `@corbits/skills`' `createHubSkillAssetStore` reads
-// commit logs through (`isomorphic-git` over `RepoStore.getRepoDir`, the
-// same handle `AssetService` resolves through). The git history IS the
-// version store here too: no separate versions table, and restoring a
-// version re-commits an older commit's blobs onto the default ref rather
-// than rewriting history.
+// A definition's `workflow`-kind asset carries its own git history, read
+// through `@corbits/skills`' shared `readAssetCommitHistory` — the same
+// commit-log walk `createHubSkillAssetStore` uses for `kind:"skill"`
+// assets. The git history IS the version store here too: no separate
+// versions table, and restoring a version re-commits an older commit's
+// blobs onto the default ref rather than rewriting history.
 import fs from "node:fs";
 import git from "isomorphic-git";
 
+import { readAssetCommitHistory } from "@corbits/skills";
 import { DEFAULT_ASSET_REF, type RepoStore } from "@intx/hub-sessions";
 
 const AGENT_DEFINITION_ASSET_KIND = "workflow";
@@ -48,25 +48,12 @@ export function createDefinitionAssetHistory(deps: {
 
   return {
     async history(assetId) {
-      const dir = await repoDirFor(assetId);
-      let entries: Awaited<ReturnType<typeof git.log>>;
-      try {
-        entries = await git.log({ fs, dir, ref: DEFAULT_ASSET_REF });
-      } catch {
-        return [];
-      }
-      const commits: DefinitionCommit[] = [];
-      for (const entry of entries) {
-        commits.push({
-          commitSha: entry.oid,
-          message: entry.commit.message.trim(),
-          author: entry.commit.author.name,
-          committedAtIso: new Date(
-            entry.commit.author.timestamp * 1000,
-          ).toISOString(),
-        });
-      }
-      return commits;
+      return readAssetCommitHistory({
+        repoStore,
+        kind: AGENT_DEFINITION_ASSET_KIND,
+        assetId,
+        ref: DEFAULT_ASSET_REF,
+      });
     },
 
     async readBlobAtCommit({ assetId, path, commitSha }) {
