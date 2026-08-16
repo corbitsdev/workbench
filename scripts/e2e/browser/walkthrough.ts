@@ -590,20 +590,20 @@ async function run(): Promise<void> {
       () => page,
       "04-bare-root-shows-describe-screen",
       async () => {
-        // CL-6104: a brand-new account has zero workbenches at this point —
-        // `testAndPersistCredential`/`ensureSeeded` above deployed the
-        // default workflows, but never created a single chat channel.
-        // `/` (bare root) is `HomeRoute`, and with zero workbenches it must
-        // render the guided first-workbench describe screen rather than
-        // auto-creating Myra's channel and stranding the account on a
-        // spinner — see `apps/web/src/pages/describe-first-workbench.tsx`.
+        // CL-6104/CL-6124: a brand-new account has zero workbenches at
+        // this point — `testAndPersistCredential`/`ensureSeeded` above
+        // deployed the default workflows, but never created a single chat
+        // channel. `/` (bare root) is `HomeRoute`, and with zero
+        // workbenches it must render the guided first-run chat rather
+        // than auto-creating Myra's channel and stranding the account on
+        // a spinner — see `apps/web/src/pages/describe-first-workbench.tsx`.
         await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
-        await page.waitForSelector("#describe-first-workbench-input", {
+        await page.waitForSelector("textarea.first-run-composer-input", {
           timeout: 15_000,
         });
         return {
           status: "pass",
-          detail: "bare root with zero workbenches shows the describe screen",
+          detail: "bare root with zero workbenches shows the first-run chat",
         };
       },
     );
@@ -613,17 +613,18 @@ async function run(): Promise<void> {
       () => page,
       "04a-describe-first-workbench",
       async () => {
-        // One field, one action: describe the job, and the same drafting
-        // machinery `CreateAgentPanel` uses mints the agent and lands the
-        // account straight in its conversation. With the STUB key, Myra's
-        // drafting one-shot cannot succeed — the honestly assertable
-        // outcome here is the inline failure with the field still usable,
-        // never a dead spinner. (A real key takes the landing branch.)
+        // One prompt box, one action: send a message, and the same
+        // drafting machinery `CreateAgentPanel` uses mints the agent and
+        // lands the account straight in its conversation. With the STUB
+        // key, Myra's drafting one-shot cannot succeed — the honestly
+        // assertable outcome here is the inline failure with the message
+        // still there, never a dead spinner. (A real key takes the
+        // landing branch.)
         await page.type(
-          "#describe-first-workbench-input",
+          "textarea.first-run-composer-input",
           "Watch our top three competitors and summarize what changed each week.",
         );
-        await clickStable(page, 'button[type="submit"]');
+        await clickStable(page, 'button[aria-label="Send"]');
         const outcome = await Promise.race([
           page
             .waitForFunction(() => window.location.pathname.startsWith("/c/"), {
@@ -649,7 +650,7 @@ async function run(): Promise<void> {
         }
         const fieldUsable = await page.evaluate(() => {
           const input = document.querySelector<HTMLTextAreaElement>(
-            "#describe-first-workbench-input",
+            "textarea.first-run-composer-input",
           );
           return input !== null && !input.disabled;
         });

@@ -1422,6 +1422,75 @@
   }
 }
 
+/* CL-6124: the first-run prompt box for a zero-workbench bench — one big
+   ChatGPT-style box with corner affordances instead of the conversation
+   composer's slim inline row, since there is no channel here to carry
+   mentions, slash commands, or a pending-bubble hand-off. */
+.first-run-composer {
+  width: 100%;
+  max-width: 40rem;
+}
+
+.first-run-composer-box {
+  border: 1px solid var(--border);
+  border-radius: var(--ui-radius-md, 0.375rem);
+  background: var(--card, var(--background));
+  padding: 0.9rem 0.9rem 0.6rem;
+  transition: border-color 120ms var(--chat-ease);
+}
+
+.first-run-composer-box:focus-within {
+  border-color: var(--primary);
+}
+
+.first-run-composer-input {
+  width: 100%;
+  min-height: 3.5rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  resize: none;
+  border: 0;
+  background: transparent;
+  padding: 0.2rem 0.2rem 0.6rem;
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--foreground);
+}
+
+.first-run-composer-input:focus {
+  outline: none;
+}
+
+.first-run-composer-input::placeholder {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
+.first-run-composer-corners {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.first-run-composer-corners-right {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Toggled on while `SpeechRecognition` is actively listening — the same
+   accent used for the active sidebar row, so "recording" reads through
+   the one house color for "live". */
+.first-run-composer-mic[data-listening="true"] {
+  color: var(--shell-accent, var(--primary));
+  background: color-mix(
+    in srgb,
+    var(--shell-accent, var(--primary)) 12%,
+    transparent
+  );
+}
+
 .chat-mention-popover {
   position: absolute;
   bottom: 100%;

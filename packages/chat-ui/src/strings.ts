@@ -86,6 +86,8 @@ export const CHAT_STRINGS = {
   composerAttachmentTotalError: (maxMiB: number) =>
     `Those files total more than ${maxMiB} MB.`,
   composerAttachmentReadError: "Couldn't read one of those files — try again.",
+  composerDictate: "Dictate",
+  composerDictateStop: "Stop dictating",
   filePartLabel: "Attachment",
   emptyTimelineTitle: "No messages yet",
   emptyTimelineDescription: "Say something to get the conversation going.",
@@ -305,7 +307,8 @@ export const CHAT_STRINGS = {
   channelSettingsNotifyMute: "Mute",
   channelSettingsNotificationsHint:
     "This choice is yours alone — it doesn't change notifications for anyone else.",
-  channelSettingsNotificationsSaveError: "Couldn't save this setting. Try again.",
+  channelSettingsNotificationsSaveError:
+    "Couldn't save this setting. Try again.",
   channelSettingsCapacityDescription:
     "This workbench's agents run on their own dedicated capacity.",
   channelSettingsCapacityLabel:

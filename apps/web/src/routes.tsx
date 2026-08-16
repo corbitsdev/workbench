@@ -88,7 +88,7 @@ export function matchesRoute(routePath: string, path: string): boolean {
 export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/",
-    label: "Myra",
+    label: "New Workbench",
     icon: <MessageSquare />,
     render: () => <HomeRoute />,
     hasStageTopBar: false,

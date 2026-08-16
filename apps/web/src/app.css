@@ -203,8 +203,7 @@ select:disabled,
   margin-top: auto;
   gap: 0.5rem;
   padding-top: 0.85rem;
-  border-top: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 /* Close control: shell-density hit area with hover/focus chrome. */
@@ -357,8 +356,7 @@ select:disabled,
   width: var(--shell-sidebar-width);
   min-width: var(--shell-sidebar-width);
   background: var(--background);
-  border-right: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   transition:
     width 200ms ease,
     min-width 200ms ease;
@@ -388,8 +386,7 @@ select:disabled,
 /* Mock sidebar foot: full-width bench dock padding. */
 .shell-sidebar [data-slot="sidebar-panel-footer"] {
   padding: 0.45rem 0.7rem 0.7rem;
-  border-top: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   background: var(--background);
 }
 
@@ -449,8 +446,7 @@ select:disabled,
 
 .shell-sidebar .panel-band-activity {
   padding: 0.5rem 0.7rem 0.6rem;
-  border-top: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .panel-page-header {
@@ -514,8 +510,7 @@ select:disabled,
   height: 1.7rem;
   min-height: 0;
   padding: 0 0.55rem;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   background: var(--background);
   color: var(--muted-foreground);
   font-size: 0.72rem;
@@ -590,8 +585,7 @@ select:disabled,
   height: 1.7rem;
   padding: 0 0.55rem;
   border-radius: 0;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   background: var(--background);
   color: var(--muted-foreground);
   font-size: 0.72rem;
@@ -1242,8 +1236,7 @@ select:disabled,
   height: 2rem;
   padding: 0 0.65rem;
   border-radius: 0;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   background: var(--background);
   color: var(--shell-panel-faint);
 }
@@ -1259,8 +1252,7 @@ select:disabled,
   height: 2rem;
   min-height: 2rem;
   padding: 0 0.65rem;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   background: var(--background);
   font-size: 0.75rem;
   font-weight: 500;
@@ -1340,10 +1332,7 @@ select:disabled,
   box-shadow: inset 2px 0 0 0 var(--shell-accent);
 }
 
-.shell-sidebar
-  [data-slot="sidebar-item-row"]
-  > div.bg-primary\/10
-  > button,
+.shell-sidebar [data-slot="sidebar-item-row"] > div.bg-primary\/10 > button,
 .shell-sidebar
   [data-slot="sidebar-item-row"]
   > div:has(button[aria-current="true"])
@@ -1370,8 +1359,7 @@ select:disabled,
   width: 1.5rem;
   height: 1.5rem;
   border-radius: 0;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   background: transparent;
 }
 
@@ -1784,16 +1772,14 @@ select:disabled,
 }
 
 .onboarding-name-form,
-.onboarding-credential-form,
-.onboarding-describe-form {
+.onboarding-credential-form {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
 }
 
 .onboarding-name-form label,
-.onboarding-credential-form label,
-.onboarding-describe-form label {
+.onboarding-credential-form label {
   font-size: 0.8125rem;
   font-weight: 600;
 }
@@ -1806,19 +1792,9 @@ select:disabled,
 }
 
 .onboarding-name-form button[type="submit"],
-.onboarding-credential-form button[type="submit"],
-.onboarding-describe-form button[type="submit"] {
+.onboarding-credential-form button[type="submit"] {
   margin-top: 0.5rem;
   align-self: flex-start;
-}
-
-.onboarding-describe-form textarea {
-  resize: vertical;
-  min-height: 6rem;
-  padding: 0.625rem 0.75rem;
-  border: 1px solid var(--border);
-  background: var(--background);
-  font: inherit;
 }
 
 .onboarding-provider-picker {
@@ -2128,8 +2104,7 @@ select:disabled,
   padding: 0.3rem 0.65rem;
   font-size: 0.75rem;
   font-weight: 600;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 14%, transparent);
   border-radius: 0;
   background: var(--card, var(--background));
   color: var(--foreground);
@@ -2150,8 +2125,7 @@ select:disabled,
 
 .insights-panel {
   padding: 0.9rem 1rem;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   background: var(--card, var(--background));
   min-width: 0;
 }
@@ -2250,8 +2224,7 @@ tr.insights-row-clickable:hover {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   border-radius: 0.375rem;
   background: var(--card, var(--background));
   font: inherit;
@@ -2371,8 +2344,7 @@ tr.insights-row-clickable:hover {
   flex-shrink: 0;
   padding: 0.15rem 0.35rem;
   border-radius: 0;
-  border: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
   background: transparent;
   font-size: 0.625rem;
   font-weight: 600;
@@ -2553,16 +2525,14 @@ tr.insights-row-clickable:hover {
   gap: 1rem;
 }
 
-/* CL-6104: the in-shell first-workbench describe screen — a calm centered
-   column; the stage owns the full width, no decorative panel. */
+/* CL-6124: the in-shell first-workbench screen — a chat, not a form. One
+   prompt box, centered both ways in the stage; the stage owns the full
+   width, no decorative panel. */
 .describe-first-workbench {
   display: flex;
+  align-items: center;
   justify-content: center;
   padding: 4rem 2rem;
   overflow-y: auto;
   height: 100%;
-}
-.describe-first-workbench .onboarding-phase {
-  max-width: 34rem;
-  width: 100%;
 }
