@@ -17,7 +17,7 @@ import {
   useContextMenuState,
 } from "@corbits/context-menu";
 import type { ContextMenu, ContextMenuEntry } from "@corbits/context-menu";
-import { Button, EmptyState, toast } from "@corbits/react-ui";
+import { Avatar, Button, EmptyState, toast } from "@corbits/react-ui";
 import {
   Clock,
   Copy,
@@ -191,8 +191,28 @@ function initialsOf(source: string): string {
   return initials.length > 0 ? initials : "?";
 }
 
+/**
+ * A friendly display name from a mention handle — "myra" -> "Myra",
+ * "echo-bot" -> "Echo Bot" — for the rare spots (like the join event
+ * line) that only have a participant's slugified handle to work with,
+ * never a `sender.name`. Never applied to a handle already shown as a
+ * literal `@mention` elsewhere.
+ */
+function displayNameFromHandle(handle: string): string {
+  return handle
+    .split(/[-_]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 type SenderDisplay = {
   readonly label: string;
+  /** The participant's mention handle, when it differs from `label` — a
+   * matched participant's `sender.name` (e.g. "Myra") is what the header
+   * shows now, with the handle (e.g. "myra") surfaced only as a tooltip
+   * rather than lost outright. */
+  readonly handle?: string;
   readonly isAgent: boolean;
   readonly initials: string;
 };
@@ -217,8 +237,19 @@ function senderDisplay(
   );
   if (matched !== undefined) {
     const isAgent = isAgentAddress(matched.address);
-    const label = isAgent ? `@${matched.handle}` : matched.handle;
-    return { label, isAgent, initials: initialsOf(matched.handle) };
+    const senderName = sender.name;
+    const displayName =
+      senderName !== null && senderName.trim().length > 0
+        ? senderName
+        : undefined;
+    const label =
+      displayName ?? (isAgent ? `@${matched.handle}` : matched.handle);
+    return {
+      label,
+      handle: matched.handle,
+      isAgent,
+      initials: initialsOf(displayName ?? matched.handle),
+    };
   }
 
   if (sender.name !== null && sender.name.trim().length > 0) {
@@ -236,20 +267,31 @@ function senderDisplay(
   };
 }
 
+/** The message header's avatar chip — the same react-ui `Avatar` (tone by
+ * agent-vs-neutral, a tooltip carrying the full name) `chat-workspace.tsx`'s
+ * member stack already uses, rather than a bespoke initials box. */
 function SenderAvatar({
   initials,
+  label,
+  isAgent,
   tenantMonogram,
   tenantName,
 }: {
   initials: string;
+  label: string;
+  isAgent: boolean;
   tenantMonogram?: string;
   tenantName?: string;
 }) {
   return (
-    <span className="chat-sender-avatar-wrap">
-      <span className="chat-sender-avatar" aria-hidden="true">
-        {initials}
-      </span>
+    <span className="chat-sender-avatar-wrap" title={label}>
+      <Avatar
+        initials={initials}
+        label={label}
+        tone={isAgent ? "agent" : "neutral"}
+        size="md"
+        className="chat-sender-avatar"
+      />
       {tenantMonogram !== undefined ? (
         <span
           className="chat-sender-tenant-badge"
@@ -329,6 +371,8 @@ function TextBubble({
         >
           <SenderAvatar
             initials={display.initials}
+            label={display.label}
+            isAgent={display.isAgent}
             {...(sender?.tenantMonogram !== undefined
               ? { tenantMonogram: sender.tenantMonogram }
               : {})}
@@ -350,7 +394,13 @@ function TextBubble({
                 }
                 onClick={handleOpenProfile}
               >
-                <span className="chat-bubble-sender">
+                <span
+                  className="chat-bubble-sender"
+                  {...(display.handle !== undefined &&
+                  display.handle !== display.label
+                    ? { title: `@${display.handle}` }
+                    : {})}
+                >
                   {display.label}
                   {display.isAgent && <AgentBadge />}
                 </span>
@@ -368,13 +418,15 @@ function TextBubble({
         <p className="chat-bubble-text">{text}</p>
         {onFixConnection !== undefined &&
           isClassifiedInferenceFailureText(text) && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               className="chat-bubble-fix-connection"
               onClick={onFixConnection}
             >
               {CHAT_STRINGS.fixConnectionAction}
-            </button>
+            </Button>
           )}
       </div>
     </div>
@@ -410,7 +462,7 @@ function friendlyEventText(
   switch (part.event) {
     case "channel.agent-joined":
       return handle !== undefined
-        ? CHAT_STRINGS.eventAgentJoined(handle)
+        ? CHAT_STRINGS.eventAgentJoined(displayNameFromHandle(handle))
         : CHAT_STRINGS.eventAgentJoinedUnknown;
     case "channel.membership-changed":
       return CHAT_STRINGS.eventMembershipChanged;
@@ -1101,7 +1153,7 @@ function ThreadAffordance({
       {initials.length > 0 ? (
         <span className="chat-thread-avatar-stack" aria-hidden="true">
           {initials.map((value, index) => (
-            <span key={`${value}-${index}`} className="chat-sender-avatar">
+            <span key={`${value}-${index}`} className="chat-thread-avatar-chip">
               {value}
             </span>
           ))}

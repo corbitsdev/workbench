@@ -448,24 +448,11 @@
   flex-direction: row;
 }
 
+/* The message header's avatar chip — sizing, tone color, and initials
+   come from react-ui's `Avatar`; this only positions it within the row. */
 .chat-sender-avatar {
-  display: grid;
-  place-items: center;
-  width: 2.15rem;
-  height: 2.15rem;
-  flex-shrink: 0;
   margin-top: 0.1rem;
   border-radius: var(--ui-radius-sm, 0.25rem);
-  /* --muted sits within ~1.2:1 of --background in dark (near-black on
-     pure black), leaving the avatar chip indistinguishable from the
-     timeline ground. A foreground tint reads at the same visible
-     strength in both themes since the page it mixes against is pure
-     white/black either way. */
-  background: color-mix(in srgb, var(--foreground) 10%, transparent);
-  color: var(--muted-foreground);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  line-height: 1;
 }
 
 /* Wraps a message sender's avatar with room for the shared-channel
@@ -581,20 +568,13 @@
   opacity: 1;
 }
 
-/* CL-6092: quiet, text-only — a classified inference failure's reply
-   already says what went wrong; this is a low-key next step, not a
-   second alert. */
+/* CL-6092: a classified inference failure's reply already says what went
+   wrong; this is a low-key next step, not a second alert — a small
+   outline button rather than a bare underlined link, matching the
+   pending-bubble's failed-state buttons. */
 .chat-bubble-fix-connection {
   margin-top: 0.375rem;
   align-self: flex-start;
-  font-size: 0.8125rem;
-  color: var(--muted-foreground);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.chat-bubble-fix-connection:hover {
-  color: var(--foreground);
 }
 
 /* Optimistic sends (CL-6103): a message the reader just sent renders
@@ -1966,15 +1946,26 @@
   align-items: center;
 }
 
-.chat-thread-avatar-stack .chat-sender-avatar {
+/* The reply-thread affordance's small overlapping initials stack — kept
+   as its own bespoke chip (not the header's react-ui `Avatar`) since it
+   only ever shows a stack of bare initials, no tone or tooltip. */
+.chat-thread-avatar-chip {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--muted-foreground);
+  font-weight: 700;
+  line-height: 1;
   margin-left: -0.3rem;
   border: 1.5px solid var(--background);
+  border-radius: var(--ui-radius-sm, 0.25rem);
   width: 1.25rem;
   height: 1.25rem;
   font-size: 0.5625rem;
 }
 
-.chat-thread-avatar-stack .chat-sender-avatar:first-child {
+.chat-thread-avatar-chip:first-child {
   margin-left: 0;
 }
 
