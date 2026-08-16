@@ -143,7 +143,7 @@ export async function runSeed(
     deps.placeholderCredential !== true
   ) {
     log(
-      "ANTHROPIC_API_KEY is not set; the tenant catalog is seeded with data only — no credential is planted, so channels and workflows cannot launch until you set it and re-run: workbench seed",
+      "ANTHROPIC_API_KEY is not set; the tenant catalog is seeded with data only — no credential is planted, so channels and workflows cannot launch until you set it, then either re-run: workbench seed, or set it in the hub's own environment and restart it (the env-key auto-plant, CL-6101, plants it with no other step)",
     );
   }
   const seedCatalogArgs: Parameters<typeof seedCatalog>[0] = {

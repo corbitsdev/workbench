@@ -5,11 +5,14 @@
 // left to name. The heavy lifting — proving the key with a real call,
 // seeding the bench, deploying and confirming every default workflow —
 // happens server-side in `@workbench/onboarding`; this page is the
-// guided shell around it. The credential step is always part of the
-// flow: when the server already has a usable seed (an
-// operator-configured key, or a returning member) it renders
-// pre-satisfied with a skip option rather than branching into a
-// different tree that hides the step entirely.
+// guided shell around it. The credential step is skipped entirely
+// (straight to the "your workbench is ready" ending) whenever the
+// server reports the default workflow set already deployed and
+// confirmed against a working credential — a hub-owned key (env-key
+// auto-plant, CL-6101, or the older ANTHROPIC_API_KEY path) for a fresh
+// bench, or a real working credential for a returning member. There is
+// nothing left to prove or connect at that point, so there is nothing
+// left to show.
 
 import {
   Button,
@@ -35,7 +38,6 @@ import {
   AtSign,
   Bot,
   CircleAlert,
-  CircleCheck,
   KeyRound,
   MessageSquare,
 } from "lucide-react";
@@ -409,11 +411,6 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   const [state, setState] = useState<WizardState>(initialWizardState);
   const [provider, setProvider] = useState<CredentialProvider>("anthropic");
   const [apiKey, setApiKey] = useState("");
-  // Whether the server already had a usable seed when we provisioned.
-  // Kept out of WizardState so a failed own-key submit doesn't wipe the
-  // skip option — the credential step stays in place either way.
-  const [preSatisfied, setPreSatisfied] = useState(false);
-  const [skipReason, setSkipReason] = useState<string | null>(null);
   // True for a returning user whose workbench already exists but is
   // still missing a working credential (`existing-member` with
   // `seeded: false`) — the copy below tells them connecting one now
@@ -437,18 +434,17 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         // yet). `undefined` (membership on some other tenant) also lands
         // here rather than guidance — there is nothing to skip ahead to.
         const unseeded = result.seeded === false;
-        setPreSatisfied(!unseeded);
-        setSkipReason(null);
         setResumingUnseeded(unseeded);
         setState({ phase: "credential", error: null });
       } else if (result.kind === "provisioned" && result.seeded) {
-        setPreSatisfied(true);
-        setSkipReason(result.seedSkipReason ?? null);
+        // A working credential already deployed and confirmed the
+        // default workflow set against this brand-new bench — a
+        // hub-owned key (the env-key auto-plant, CL-6101, or the older
+        // ANTHROPIC_API_KEY path), the same "nothing left to prove"
+        // case as a returning, fully-seeded existing member above.
         setResumingUnseeded(false);
-        setState({ phase: "credential", error: null });
+        setState({ phase: "guidance" });
       } else if (result.kind === "provisioned") {
-        setPreSatisfied(false);
-        setSkipReason(null);
         setResumingUnseeded(false);
         setState({ phase: "credential", error: null });
       } else {
@@ -490,8 +486,6 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         if (outcome.kind === "seeded") {
           setState(seededOrConnectTools(outcome));
         } else if (outcome.kind === "unseeded") {
-          setPreSatisfied(false);
-          setSkipReason(null);
           setResumingUnseeded(true);
           setState({ phase: "credential", error: null });
         } else {
@@ -515,8 +509,6 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         if (outcome.kind === "seeded") {
           setState(seededOrConnectTools(outcome));
         } else {
-          // preSatisfied is intentionally preserved: a bad own-key
-          // submit must not remove the skip path the server seed gave.
           setState({ phase: "credential", error: outcome.message });
         }
       });
@@ -679,24 +671,6 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
       <div className="onboarding-connect-divider" role="separator">
         or paste a provider API key
       </div>
-      {preSatisfied && (
-        <EmptyState
-          icon={<CircleCheck />}
-          title="A working key is already in place"
-          description={
-            skipReason ??
-            "An operator-configured credential is set, so agents and routines can run right away. Add your own key below to use it instead, or skip ahead to your workbench."
-          }
-          action={
-            <Button
-              variant="outline"
-              onClick={() => setState({ phase: "guidance" })}
-            >
-              Skip — use the default key
-            </Button>
-          }
-        />
-      )}
       <form
         onSubmit={handleSubmitCredential}
         className="onboarding-credential-form"

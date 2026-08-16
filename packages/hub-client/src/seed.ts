@@ -1171,7 +1171,7 @@ export async function seedCatalog(args: SeedCatalogArgs): Promise<void> {
   if (credentialSecret === undefined) {
     log(
       `catalog models for ${seed.provider.name} seeded without a credential; ` +
-        `no channel or workflow can launch against them until a ${seed.provider.name} API key is set and the bench is re-seeded`,
+        `no channel or workflow can launch against them until a ${seed.provider.name} API key is set — set it in the hub's own environment and restart (the env-key auto-plant, CL-6101, then plants it with no other step), or set it here and re-run: workbench seed`,
     );
     return;
   }
