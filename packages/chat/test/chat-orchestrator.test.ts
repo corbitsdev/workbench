@@ -200,6 +200,72 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  // CL-6137: a turn that never emits `connector.reply` content posts
+  // nothing to any channel by construction — the assertion here is
+  // that `message.run.ended` bookkeeping stays a no-op for delivery
+  // (only ever logging, never posting) in both directions: a reply
+  // this process already saw is not re-posted when the bracket closes,
+  // and a bracket closing with nothing seen posts nothing either.
+  test("message.run.ended never posts by itself, whether or not a reply preceded it", async () => {
+    const sentMail: unknown[] = [];
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async (input) => {
+          sentMail.push(input);
+          return { id: "mail_1", createdAt: new Date().toISOString() };
+        },
+      },
+      events,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    // Turn 1: a reply, then its own bracket close — one post, from the
+    // reply alone.
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "connector.reply", data: { content: "hi" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "message.run.ended", data: { status: "completed" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sentMail).toHaveLength(1);
+
+    // Turn 2: a silent completion — no reply this process ever saw for
+    // it — posts nothing.
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "message.run.ended", data: { status: "completed" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sentMail).toHaveLength(1);
+
+    // Turn 3: a fresh reply after the silent turn 2 still posts — the
+    // bracket-close bookkeeping never leaves stale state behind.
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "connector.reply", data: { content: "hi again" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sentMail).toHaveLength(2);
+
+    orchestrator.dispose();
+  });
+
   test("ignores non-reply events for posting but still bumps activity", async () => {
     const sentMail: unknown[] = [];
     const recordActivityCalls: string[] = [];
