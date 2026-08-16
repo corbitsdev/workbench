@@ -62,6 +62,13 @@ export function fakePlatform(
       channelId: string,
       address: string,
     ) => Promise<void>;
+    sendMail?: (input: {
+      tenantId: string;
+      channelId: string;
+      principalId?: string;
+      content: MailContent;
+      fromChannelId?: string;
+    }) => Promise<{ id: string; createdAt: string }>;
   } = {},
 ): ChatPlatform & {
   refreshCalls: { tenantId: string; channelId: string; address: string }[];
@@ -135,6 +142,7 @@ export function fakePlatform(
       }
     },
     async sendMail(input) {
+      if (opts.sendMail !== undefined) return opts.sendMail(input);
       const sentMailEntryBase = {
         channelId: input.channelId,
         content: input.content,
