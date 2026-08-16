@@ -107,15 +107,14 @@ export function createManualAgentSelectionStrategy(
             <EmptyState
               icon={<Users />}
               title="No agents yet"
-              description="Create an agent before giving it a task."
+              description="Create a workbench to run this before giving it a task."
             />
           ) : (
             // No role="radiogroup" here — the fieldset/legend "Agent" that
             // hosts this strategy in task-composer-dialog.tsx already
             // provides the group semantics; a second ARIA group nested
-            // inside it would be redundant. Mirrors new-channel-dialog.tsx's
-            // AgentPicker, which wraps nothing at all — this div exists
-            // only for the visual gap between stacked options.
+            // inside it would be redundant. This div exists only for the
+            // visual gap between stacked options.
             <div className="tasks-radio-group">
               {items.map((agent) => (
                 <label

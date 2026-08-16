@@ -7,8 +7,7 @@
 // strategy proves the agent-selection seam is real — a future
 // programmatic strategy (CL-6050) can be swapped in without touching
 // this file. Needs a real DOM (see dom-setup.ts) — Radix's
-// `Dialog.Portal` renders nothing under `renderToStaticMarkup`,
-// mirroring `packages/chat-ui/test/new-channel-dialog.test.tsx`.
+// `Dialog.Portal` renders nothing under `renderToStaticMarkup`.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";

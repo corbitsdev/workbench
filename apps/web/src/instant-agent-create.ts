@@ -1,14 +1,16 @@
-// "+ New Workbench" picker's "Create new agent…" row (CL-6089): mints a
-// fresh workbench titled "New Workbench" against the account's default
-// setup template — the same seeded `assistant` definition backing the
-// home Myra workbench, which already opens with the setup greeting
-// ("what do you want me around for?"). The conversation itself is what
-// specializes the agent into whatever the person wants; the drafting
-// and capability machinery already listens for that in-chat, so no
-// definition is drafted or created up front here. Explicitly defining
-// a brand-new agent template, with its own name/purpose/model/skills
-// chosen up front, stays `CreateAgentPanel`'s job (Settings → Agents),
-// unchanged.
+// THE one creation verb (CL-6089, retargeted CL-6138): the sidebar's "+"
+// button, the command palette's "New workbench", and every other "create
+// a workbench" affordance in the app call this directly, one click, no
+// dialog, no agent picker, no describe composer — it mints a fresh
+// workbench titled "New Workbench" against the account's default setup
+// template (the same seeded `assistant` definition backing the home Myra
+// workbench, which already opens with the setup greeting: "what do you
+// want me around for?"). The conversation itself is what specializes the
+// agent into whatever the person wants; the drafting and capability
+// machinery already listens for that in-chat, so no definition is
+// drafted or created up front here. Explicitly defining a brand-new
+// agent template, with its own name/purpose/model/skills chosen up
+// front, stays `CreateAgentPanel`'s job (Settings → Agents), unchanged.
 
 import { launchAgentChat } from "./agent-chat-launch";
 import { listAgentDefinitions } from "./agents-api";

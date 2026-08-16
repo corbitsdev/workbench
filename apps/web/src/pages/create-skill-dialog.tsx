@@ -77,8 +77,8 @@ const FIELDS: readonly IntakeField[] = [
 
 /** Every reason a submission is not yet valid, in plain language — never
  * a generic "invalid form". Exported so the create flow can be proven
- * without SSR-rendering the portal-based dialog (see chat-ui's
- * NewChannelDialog note: Radix portals yield no static markup). */
+ * without SSR-rendering the portal-based dialog (Radix portals yield no
+ * static markup). */
 export function validationIssues(values: FormValues): readonly string[] {
   const issues: string[] = [];
   const name = values.name.trim();

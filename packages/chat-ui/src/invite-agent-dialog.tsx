@@ -1,10 +1,9 @@
 // The "invite agent" affordance: a small dialog listing the tenant's
 // deployed, launchable workflow definitions (never the channel's own
 // host — the server-side list already excludes it), each with an
-// "Invite" action that launches it into the current channel. Modeled on
-// `NewChannelDialog`'s shape, but the list itself carries its own
-// loading/empty/error states since it is fetched fresh every time the
-// dialog opens.
+// "Invite" action that launches it into the current channel. The list
+// itself carries its own loading/empty/error states since it is fetched
+// fresh every time the dialog opens.
 
 import {
   Button,

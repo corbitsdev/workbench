@@ -6,10 +6,8 @@
 import { libraryArtifactPath } from "@corbits/artifact-ui";
 import { describeApiError } from "@corbits/api-query";
 import { ChatWorkspace, fetchChannelBlob, type Part } from "@corbits/chat-ui";
-import { toast } from "@corbits/react-ui";
-import { listPrincipals } from "@corbits/settings-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import { fetchArtifactDetail } from "../api";
 import { createChatApprovalActions } from "../approval-actions";
@@ -29,13 +27,8 @@ import {
   channelSettingsSectionFromPath,
   isChannelSettingsPath,
 } from "../channel-path";
-import {
-  consumePendingNewChannel,
-  NEW_CHANNEL_EVENT,
-  requestNewRoutine,
-} from "../command-palette-actions";
+import { requestNewRoutine } from "../command-palette-actions";
 import { reportChannelNotFound } from "../channel-not-found-event";
-import { createAgentAndLaunch } from "../instant-agent-create";
 import { workbenchInsightsPath } from "../insights-deeplinks";
 import { ONBOARDING_PATH } from "../routes";
 import {
@@ -92,20 +85,6 @@ export function ChatPage({
         : createChatBlockResponseActions(tenantId, channelId),
     [tenantId, channelId],
   );
-
-  // The new-chat dialog's People tab: the same bench-membership listing
-  // Settings → People renders from (`listPrincipals`), reduced to what a
-  // counterpart picker needs and restricted to active human members — an
-  // "agent" or "workflow" kind principal, or one that is suspended,
-  // invited, or deactivated, is never a valid direct-chat counterpart
-  // (the server's own `POST /channels` validation agrees; see
-  // `packages/chat/src/routes.ts`).
-  const listMembers = useCallback(async (memberTenantId: string) => {
-    const principals = await listPrincipals(memberTenantId);
-    return principals
-      .filter((p) => p.kind === "user" && p.status === "active")
-      .map((p) => ({ id: p.id, displayName: p.displayName }));
-  }, []);
 
   // The in-chat "Fix this connection" affordance's deep link (CL-6092) —
   // the exact same hop the shell banner's own "Fix it" takes, reusing
@@ -190,18 +169,6 @@ export function ChatPage({
     [navigate],
   );
 
-  // The command palette may have requested "New channel" from another
-  // page, before ChatWorkspace's own listener existed to catch the
-  // dispatch — see pending-dialog-request.ts. React commits child effects
-  // before parent effects, so by the time this runs, ChatWorkspace (a
-  // child of this component) has already registered its listener for
-  // NEW_CHANNEL_EVENT — re-dispatching here is safe.
-  useEffect(() => {
-    if (consumePendingNewChannel()) {
-      window.dispatchEvent(new CustomEvent(NEW_CHANNEL_EVENT));
-    }
-  }, []);
-
   const workspace = (
     <ChatWorkspace
       tenant={tenant}
@@ -229,7 +196,6 @@ export function ChatPage({
       onFixConnection={handleFixConnection}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       {...(blockResponses !== undefined ? { blockResponses } : {})}
-      listMembers={listMembers}
       onOpenRoutines={() =>
         requestNewRoutine({
           navigateToRoutines: () => navigate("/routines"),
@@ -244,14 +210,7 @@ export function ChatPage({
       }
       presenceMembers={presenceMembers}
       {...(tenantId !== null
-        ? {
-            onRequestNewAgent: () => {
-              createAgentAndLaunch(tenantId, navigate).catch(() => {
-                toast("Couldn't create the agent — try again.");
-              });
-            },
-            onOpenInsights: () => navigate(workbenchInsightsPath(tenantId)),
-          }
+        ? { onOpenInsights: () => navigate(workbenchInsightsPath(tenantId)) }
         : {})}
       onChannelNotFound={reportChannelNotFound}
       onBackToChannelList={() => navigate(channelPath(null))}

@@ -1,18 +1,18 @@
 // The land-hop every entry point funnels through: `/` (HomeRoute)
 // resolves to one of two places depending on whether the bench has any
-// workbenches yet (CL-6104). A bench with one or more ensures Myra's
-// channel exists and opens it — the same land-hop CL-6081 wired up.
-// A brand-new bench with zero workbenches instead renders the guided
-// first-workbench describe screen (see `describe-first-workbench.tsx`)
-// rather than auto-creating Myra's channel and stranding the person on
-// an "Opening Myra" spinner while that create-a-channel-nobody-asked-for
-// happens invisibly. All three entries CL-6081 asks for (a direct visit
-// to `/`, `main.tsx`'s post-login `navigate("/")`, and the onboarding
-// wizard's post-credential hand-off) resolve through this exact hop, so
-// proving HomeRoute itself lands correctly in both cases proves the
-// direct-`/` case fully; the other two are proven by the narrower source
-// assertions below, which pin the exact call each entry point makes onto
-// this same route.
+// workbenches yet. A bench with one or more ensures Myra's channel exists
+// and opens it — the same land-hop CL-6081 wired up. A brand-new bench
+// with zero workbenches auto-mints its first Myra workbench through the
+// exact same one-creation-verb path every "+ New workbench" control uses
+// (CL-6138, superseding CL-6104's guided describe screen) and lands
+// straight in it — no separate first-run form, no second creation path.
+// All three entries CL-6081 asks for (a direct visit to `/`, `main.tsx`'s
+// post-login `navigate("/")`, and the onboarding wizard's
+// post-credential hand-off) resolve through this exact hop, so proving
+// HomeRoute itself lands correctly in both cases proves the direct-`/`
+// case fully; the other two are proven by the narrower source assertions
+// below, which pin the exact call each entry point makes onto this same
+// route.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -157,26 +157,54 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
     expect(navigated).toEqual(["/c/chan_myra"]);
   });
 
-  test("a brand-new bench with zero workbenches renders the describe screen, never the spinner's auto-create", async () => {
+  test("a brand-new bench with zero workbenches auto-mints its first Myra workbench and lands in it", async () => {
     stubFetch((path, method) => {
       if (path === "/api/me/principals") {
         return json(PRINCIPALS_RESPONSE);
       }
       if (path.endsWith("/chat/channels") && method === "GET") {
         // listAllChannels finds nothing — this bench has no workbenches
-        // yet. HomeRoute must stop here, never call ensureMyraChannel.
+        // yet, so HomeRoute mints one via the default setup template
+        // rather than calling ensureMyraChannel (which only ever finds
+        // or reuses an existing one).
         return json({ items: [] });
+      }
+      if (path.includes("/workflows/definitions")) {
+        return json({
+          data: [
+            {
+              id: "wfd_assistant",
+              tenantId: "tnt_1",
+              name: "assistant",
+              currentVersion: "1",
+              status: "deployed",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          nextCursor: null,
+        });
+      }
+      if (path.endsWith("/chat/channels") && method === "POST") {
+        return json({
+          id: "chan_new",
+          title: "New Workbench",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        });
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
     });
 
+    const navigated: string[] = [];
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
       root?.render(
         <TestQueryProvider>
-          <NavigationProvider navigate={() => undefined}>
+          <NavigationProvider navigate={(to) => navigated.push(to)}>
             <BenchProvider>
               <HomeRoute />
             </BenchProvider>
@@ -184,12 +212,12 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
         </TestQueryProvider>,
       );
     });
-    await settle();
-    await settle();
+    for (let i = 0; i < 20; i++) {
+      await settle();
+      if (navigated.length > 0) break;
+    }
 
-    // CL-6124: the guided screen is a chat now — one prompt box, no
-    // heading — so this asserts the composer mounted, not old form copy.
-    expect(container.querySelector(".first-run-composer-input")).not.toBeNull();
+    expect(navigated).toEqual(["/c/chan_new"]);
   });
 });
 

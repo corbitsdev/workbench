@@ -47,7 +47,6 @@ import webPackage from "../../package.json";
 import { InboxCountsSchema, inboxCountsPath } from "../inbox-api";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
-import { isChannelPath } from "../channel-path";
 import { requestNewWorkbench } from "../command-palette-actions";
 import { OverallUsageSchema, insightsUsagePath } from "../insights-api";
 import { matchesRoute, SETTINGS_PATH } from "../routes";
@@ -143,10 +142,11 @@ export function Sidebar({
   readonly onNavigate: (to: string) => void;
   readonly onSignOut: () => void;
 }) {
+  const { selectedTenantId } = useBench();
   const newWorkbench = () =>
-    requestNewWorkbench({
-      alreadyOnConversation: isChannelPath(path),
-      navigateToConversations: () => onNavigate("/c"),
+    void requestNewWorkbench({
+      tenantId: selectedTenantId,
+      navigate: onNavigate,
     });
 
   return (

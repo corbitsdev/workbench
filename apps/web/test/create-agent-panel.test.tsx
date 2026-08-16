@@ -339,12 +339,22 @@ describe("CreateAgentPanel drafting failure — fails closed", () => {
 });
 
 describe("agent creation entry points", () => {
-  test("the chat page's new-chat picker skips this form for instant creation", () => {
+  test("the chat page never imports this form — agent creation lives outside it entirely (CL-6138)", () => {
     const chatPageSource = readFileSync(
       new URL("../src/pages/chat-page.tsx", import.meta.url),
       "utf8",
     );
     expect(chatPageSource).not.toContain('from "./create-agent-panel"');
-    expect(chatPageSource).toContain('from "../instant-agent-create"');
+    expect(chatPageSource).not.toContain("instant-agent-create");
+  });
+
+  test("the one creation verb mints through instant-agent-create.ts, wired from the command palette", () => {
+    const commandPaletteActionsSource = readFileSync(
+      new URL("../src/command-palette-actions.ts", import.meta.url),
+      "utf8",
+    );
+    expect(commandPaletteActionsSource).toContain(
+      'from "./instant-agent-create"',
+    );
   });
 });

@@ -288,71 +288,40 @@ async function countMatching(page: Page, selector: string): Promise<number> {
 // --- the walkthrough -----------------------------------------------------
 
 /**
- * Opens the "+ New workbench" picker and asserts its combobox dropdown
- * offers the "Create new agent" row (CL-6081: instant creation, pinned
- * above the filtered agent list — see `AgentCombobox` in
- * `packages/chat-ui/src/new-channel-dialog.tsx`) before picking an
- * existing "Myra"-ish agent. There is no kind step and no separate submit
- * click any more: `initialKind="chat"` skips straight to the combobox, and
- * clicking an agent row resolves the workbench immediately (find-or-create
- * — an existing conversation with that agent reopens), closing the dialog
- * itself.
+ * Clicks the sidebar's "+ New workbench" control — the one creation verb
+ * (CL-6138, superseding the CL-6081/CL-6089 picker-and-dialog design): one
+ * click mints a fresh Myra workbench against the account's default setup
+ * template and navigates straight into it, no dialog, no agent picker, no
+ * describe composer. Waits for the URL to actually land on a fresh
+ * `/c/:id` distinct from wherever the click started, rather than assuming
+ * a fixed delay covers the mint + navigate round trip.
  */
 async function createMyraChat(page: Page): Promise<void> {
+  const before = await page.evaluate(() => window.location.pathname);
   // A click that lands mid-re-render (the sidebar list settling right
   // after a landing) can dispatch against a node React is replacing and
   // do nothing — the same recovery a person makes is clicking again, so
   // retry the click a couple of times before calling it a failure.
-  let dialogOpen = false;
-  for (let attempt = 0; attempt < 3 && !dialogOpen; attempt += 1) {
+  let landed = false;
+  for (let attempt = 0; attempt < 3 && !landed; attempt += 1) {
     await clickStable(page, 'button[aria-label="New workbench"]');
-    dialogOpen = await page
-      .waitForSelector('[role="dialog"]', { timeout: 4_000 })
+    landed = await page
+      .waitForFunction(
+        (previous: string) => {
+          const current = window.location.pathname;
+          return current.startsWith("/c/") && current !== previous;
+        },
+        { timeout: 8_000 },
+        before,
+      )
       .then(() => true)
       .catch(() => false);
   }
-  if (!dialogOpen) {
+  if (!landed) {
     throw new Error(
-      "the new-workbench picker never opened after 3 clicks on the + button",
+      "the + control never minted a fresh workbench after 3 clicks",
     );
   }
-  await page.waitForSelector(
-    '[data-testid="new-chat-agent-combobox"] [role="option"]',
-    { timeout: 10_000 },
-  );
-  const hasCreateRow = await page.evaluate(
-    () =>
-      document.querySelector('[data-testid="new-chat-create-agent"]') !== null,
-  );
-  if (!hasCreateRow) {
-    throw new Error(
-      'new-chat combobox is missing its pinned "Create new agent" row',
-    );
-  }
-  const pickedMyra = await page.evaluate(() => {
-    const options = Array.from(
-      document.querySelectorAll(
-        '[data-testid="new-chat-agent-combobox"] [role="option"]',
-      ),
-    );
-    const myra = options.find((option) =>
-      (option.textContent ?? "").toLowerCase().includes("myra"),
-    );
-    const target = myra ?? options[0];
-    if (target === undefined) return null;
-    (target as HTMLElement).click();
-    return (target.textContent ?? "").trim();
-  });
-  if (pickedMyra === null) {
-    throw new Error("new-chat agent combobox rendered no options");
-  }
-  // Picking an agent resolves the workbench immediately (no separate
-  // submit click) — wait for the dialog to actually go away rather than
-  // assuming.
-  await page.waitForSelector('[role="dialog"]', {
-    hidden: true,
-    timeout: 15_000,
-  });
 }
 
 async function run(): Promise<void> {
@@ -586,134 +555,36 @@ async function run(): Promise<void> {
       },
     );
 
+    // --- Step 2: CL-6138 — the one creation verb. A brand-new account's
+    // bare root auto-mints its first Myra workbench and lands straight in
+    // it — no describe screen, no separate first-run form. The account's
+    // very first workbench comes from the exact same
+    // `instant-agent-create.ts` mint every later "+ New workbench" click
+    // uses (proven again below in 05-second-create-mints-new-workbench).
+    let firstWorkbenchPath = "";
     await step(
       () => page,
-      "04-bare-root-shows-describe-screen",
+      "04-bare-root-lands-in-myra-conversation",
       async () => {
-        // CL-6104/CL-6124: a brand-new account has zero workbenches at
-        // this point — `testAndPersistCredential`/`ensureSeeded` above
-        // deployed the default workflows, but never created a single chat
-        // channel. `/` (bare root) is `HomeRoute`, and with zero
-        // workbenches it must render the guided first-run chat rather
-        // than auto-creating Myra's channel and stranding the account on
-        // a spinner — see `apps/web/src/pages/describe-first-workbench.tsx`.
+        // `testAndPersistCredential`/`ensureSeeded` above deployed the
+        // default workflows but never created a single chat channel —
+        // this account has zero workbenches at this point, so `/` (bare
+        // root, `HomeRoute`) must auto-mint the first one and land in it
+        // rather than stranding the account on a spinner.
         await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
-        await page.waitForSelector("textarea.first-run-composer-input", {
+        await page.waitForFunction(
+          () => window.location.pathname.startsWith("/c/"),
+          { timeout: 45_000 },
+        );
+        firstWorkbenchPath = await page.evaluate(
+          () => window.location.pathname,
+        );
+        await page.waitForSelector("textarea.chat-composer-input", {
           timeout: 15_000,
         });
         return {
           status: "pass",
-          detail: "bare root with zero workbenches shows the first-run chat",
-        };
-      },
-    );
-
-    let firstAgentPath = "";
-    await step(
-      () => page,
-      "04a-describe-first-workbench",
-      async () => {
-        // One prompt box, one action: send a message, and the same
-        // drafting machinery `CreateAgentPanel` uses mints the agent and
-        // lands the account straight in its conversation. With the STUB
-        // key, Myra's drafting one-shot cannot succeed — the honestly
-        // assertable outcome here is the inline failure with the message
-        // still there, never a dead spinner. (A real key takes the
-        // landing branch.)
-        await page.type(
-          "textarea.first-run-composer-input",
-          "Watch our top three competitors and summarize what changed each week.",
-        );
-        await clickStable(page, 'button[aria-label="Send"]');
-        const outcome = await Promise.race([
-          page
-            .waitForFunction(() => window.location.pathname.startsWith("/c/"), {
-              timeout: 45_000,
-            })
-            .then(() => "landed" as const),
-          page
-            .waitForFunction(
-              () =>
-                (document.body.textContent ?? "").includes(
-                  "Couldn't create your workbench",
-                ),
-              { timeout: 45_000 },
-            )
-            .then(() => "honest-error" as const),
-        ]);
-        if (outcome === "landed") {
-          firstAgentPath = await page.evaluate(() => window.location.pathname);
-          return {
-            status: "pass",
-            detail: `description submitted, landed in the freshly drafted agent's conversation at ${firstAgentPath}`,
-          };
-        }
-        const fieldUsable = await page.evaluate(() => {
-          const input = document.querySelector<HTMLTextAreaElement>(
-            "textarea.first-run-composer-input",
-          );
-          return input !== null && !input.disabled;
-        });
-        if (!fieldUsable) {
-          return {
-            status: "fail",
-            detail:
-              "drafting failed but the describe field is not usable for retry",
-          };
-        }
-        return {
-          status: "pass",
-          detail:
-            "stub key cannot draft: the screen showed the honest inline " +
-            "failure with the field still usable for retry — the landing " +
-            "branch needs a real key",
-        };
-      },
-    );
-
-    await step(
-      () => page,
-      "04b-first-agent-greets",
-      async () => {
-        // Only reachable when 04a actually landed (a real key). With the
-        // stub key the describe step ends on its honest inline failure,
-        // so there is no drafted conversation to greet from — that
-        // condition is proven by 08-send-hi-to-myra on a picker-created
-        // conversation instead.
-        if (firstAgentPath === "") {
-          return {
-            status: "pass",
-            detail:
-              "skipped: stub key cannot draft, greeting is proven on the " +
-              "picker-created conversation in 08-send-hi-to-myra",
-          };
-        }
-        // The drafted agent's system prompt (CL-6086) instructs it to
-        // greet on the first reply of a brand-new conversation and name
-        // its capabilities. With the stub key, the real dial fails, so the
-        // only honestly assertable thing is that the conversation opens
-        // and an agent message actually arrives — same posture as
-        // 08-send-hi-to-myra below.
-        await page.waitForSelector("textarea.chat-composer-input", {
-          timeout: 20_000,
-        });
-        await page.type("textarea.chat-composer-input", "hi");
-        await clickStable(page, 'button[aria-label="Send"]');
-        await page.waitForSelector('div.chat-bubble-row[data-own="true"]', {
-          timeout: 10_000,
-        });
-        await page.waitForSelector('div.chat-bubble-row[data-own="false"]', {
-          timeout: 45_000,
-        });
-        const replyText = await page.evaluate(() => {
-          const bubble = document.querySelector(
-            'div.chat-bubble-row[data-own="false"] p.chat-bubble-text',
-          );
-          return bubble?.textContent ?? null;
-        });
-        return {
-          status: "pass",
-          detail: `the freshly drafted agent replied: ${JSON.stringify(replyText)}`,
+          detail: `bare root with zero workbenches auto-minted Myra's workbench and landed at ${firstWorkbenchPath}`,
         };
       },
     );
@@ -726,12 +597,26 @@ async function run(): Promise<void> {
         await page.waitForSelector('button[aria-label="New workbench"]', {
           timeout: 15_000,
         });
-        const sidebarTitle = await page.evaluate(
-          () =>
-            document
-              .querySelector('[data-slot="sidebar-panel-header"] h2')
-              ?.textContent?.trim() ?? null,
-        );
+        // A hard navigation re-mounts `BenchProvider` from scratch — the
+        // sidebar's "+" renders unconditionally, but the list's own label
+        // (and the rest of the list) only replaces its "Nothing selected"
+        // empty state once `/api/me/principals` resolves and picks a
+        // tenant. Poll rather than reading once, so this never flakes on
+        // that ordinary reload race. The owner's sidebar reshape dropped
+        // the old header-bar slot entirely (logo · search · label · rows,
+        // no separate title bar) — `.shell-panel-list-label` is the
+        // "Workbenches" text that actually renders now.
+        let sidebarTitle: string | null = null;
+        for (let attempt = 0; attempt < 15; attempt += 1) {
+          sidebarTitle = await page.evaluate(
+            () =>
+              document
+                .querySelector(".shell-panel-list-label")
+                ?.textContent?.trim() ?? null,
+          );
+          if (sidebarTitle === "Workbenches") break;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
         if (sidebarTitle !== "Workbenches") {
           return {
             status: "fail",
@@ -756,35 +641,17 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 2: CL-6089 — agents in the picker are templates: every
-    // create mints a fresh workbench. The second create must land
-    // somewhere NEW; only the initial land-hop ever reopens.
-    let firstWorkbenchPath = "";
+    // --- Step 3: CL-6138 — the sidebar's "+" is the same one creation
+    // verb the bare-root land-hop used above: every click mints a fresh
+    // Myra workbench and navigates straight into it. The second create
+    // must land somewhere NEW, distinct from the auto-minted first one;
+    // only the initial land-hop ever reopens an existing conversation.
     await step(
       () => page,
-      "05-create-first-myra-workbench",
-      async () => {
-        await createMyraChat(page);
-        await page.waitForFunction(
-          () => window.location.pathname.startsWith("/c/"),
-          { timeout: 15_000 },
-        );
-        firstWorkbenchPath = await page.evaluate(
-          () => window.location.pathname,
-        );
-        return {
-          status: "pass",
-          detail: `created Myra's workbench via the picker, landed at ${firstWorkbenchPath}`,
-        };
-      },
-    );
-
-    await step(
-      () => page,
-      "06-second-create-mints-new-workbench",
+      "05-second-create-mints-new-workbench",
       async () => {
         // The sidebar (and its "+ New workbench" affordance) is always
-        // present — no navigation needed before opening the picker again.
+        // present — no navigation needed before clicking it again.
         await createMyraChat(page);
         await page.waitForFunction(
           (previous: string) => {
@@ -804,49 +671,48 @@ async function run(): Promise<void> {
 
     await step(
       () => page,
-      "07-sidebar-lists-each-minted-workbench",
+      "06-sidebar-lists-each-minted-workbench",
       async () => {
         // The always-visible sidebar already lists every workbench — the
-        // rows are just there, no navigation or priming needed. Two Myra
-        // rows are expected here: the two template mints above (rows are
-        // named by their agent, CL-6089). There is no third, home-workbench
-        // Myra row any more (CL-6104): the land hop no longer auto-creates
-        // Myra's channel for a brand-new account — the account's real home
-        // workbench is the freshly drafted agent from the describe screen,
-        // which has its own name, not "Myra". The list is a cache
-        // invalidated by the create event, so give the refetch a bounded
-        // moment to land before judging.
+        // rows are just there, no navigation or priming needed. Two rows
+        // titled "New Workbench" are expected here: the bare-root
+        // auto-mint (04) and the "+" mint (05) — `instant-agent-create.ts`
+        // titles every mint "New Workbench" regardless of which template
+        // backs it (CL-6089/CL-6138), so this is the one creation verb's
+        // own name, not the agent's. The list is a cache invalidated by
+        // the create event, so give the refetch a bounded moment to land
+        // before judging.
         await page.waitForSelector(".shell-ch-row-wrap", { timeout: 15_000 });
-        let myraRows = 0;
+        let mintedRows = 0;
         for (let attempt = 0; attempt < 10; attempt += 1) {
-          myraRows = await countMatching(
+          mintedRows = await countMatching(
             page,
-            '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
+            '.shell-ch-row-wrap[data-ctx-channel-title="New Workbench"]',
           );
-          if (myraRows === 2) break;
+          if (mintedRows === 2) break;
           await new Promise((resolve) => setTimeout(resolve, 800));
         }
-        if (myraRows !== 2) {
+        if (mintedRows !== 2) {
           return {
             status: "fail",
-            detail: `expected 2 Myra sidebar rows (the two template mints), found ${myraRows}`,
+            detail: `expected 2 "New Workbench" sidebar rows (the two mints), found ${mintedRows}`,
           };
         }
         return {
           status: "pass",
           detail:
-            "sidebar lists 2 Myra rows — both template mints, one row per conversation",
+            'sidebar lists 2 "New Workbench" rows — both mints, one row per conversation',
         };
       },
     );
 
-    // --- Step 3: send "hi" in the Myra chat, expect *some* reply bubble
+    // --- Step 4: send "hi" in the Myra chat, expect *some* reply bubble
     await step(
       () => page,
-      "08-send-hi-to-myra",
+      "07-send-hi-to-myra",
       async () => {
         const rowSelector =
-          '.shell-ch-row-wrap[data-ctx-channel-title="Myra"] button.shell-ch-row';
+          '.shell-ch-row-wrap[data-ctx-channel-title="New Workbench"] button.shell-ch-row';
         await clickStable(page, rowSelector);
         // A freshly created channel launches its anchor instance on first
         // open (the same real hop chat.test.ts retries against a
@@ -878,7 +744,7 @@ async function run(): Promise<void> {
             timeout: 20_000,
           });
           await page.waitForSelector(
-            '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
+            '.shell-ch-row-wrap[data-ctx-channel-title="New Workbench"]',
             {
               timeout: 15_000,
             },
@@ -924,10 +790,10 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 4: CL-6066 — New task dialog styling
+    // --- Step 5: CL-6066 — New task dialog styling
     await step(
       () => page,
-      "09-new-task-dialog-CL-6066",
+      "08-new-task-dialog-CL-6066",
       async () => {
         await page.click("body");
         await page.keyboard.down("Control");
@@ -954,10 +820,10 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 5: CL-6067 / CL-6069 — hub restart, stale-thread reconnect
+    // --- Step 6: CL-6067 / CL-6069 — hub restart, stale-thread reconnect
     await step(
       () => page,
-      "10-restart-hub-same-db",
+      "09-restart-hub-same-db",
       async () => {
         await hub.stop();
         // Same port as the first boot — the already-running web dev
@@ -980,7 +846,7 @@ async function run(): Promise<void> {
 
     await step(
       () => page,
-      "11-reload-open-existing-chat-CL-6067-6069",
+      "10-reload-open-existing-chat-CL-6067-6069",
       async () => {
         await page.goto(`${webBaseUrl}/c`, {
           waitUntil: "domcontentloaded",
@@ -988,7 +854,7 @@ async function run(): Promise<void> {
         });
         const rowAppeared = await page
           .waitForSelector(
-            '.shell-ch-row-wrap[data-ctx-channel-title="Myra"]',
+            '.shell-ch-row-wrap[data-ctx-channel-title="New Workbench"]',
             {
               timeout: 15_000,
             },
@@ -1005,7 +871,7 @@ async function run(): Promise<void> {
         }
         await clickStable(
           page,
-          '.shell-ch-row-wrap[data-ctx-channel-title="Myra"] button.shell-ch-row',
+          '.shell-ch-row-wrap[data-ctx-channel-title="New Workbench"] button.shell-ch-row',
         );
         const couldNotLoad = await page
           .waitForFunction(
