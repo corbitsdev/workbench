@@ -123,6 +123,46 @@ describe("ContextMenuView focus restoration", () => {
   });
 });
 
+describe("ContextMenuView danger styling", () => {
+  test("a danger item gets destructive styling; a plain item does not", async () => {
+    const harness = mount();
+    const menu: ContextMenu = {
+      entries: [
+        contextMenuItem({
+          id: "open",
+          label: "Open",
+          onSelect: () => undefined,
+        }),
+        contextMenuItem({
+          id: "sign-out",
+          label: "Sign out",
+          onSelect: () => undefined,
+          danger: true,
+        }),
+      ],
+    };
+
+    await harness.render(
+      createElement(ContextMenuView, {
+        x: 10,
+        y: 10,
+        menu,
+        open: true,
+        onOpenChange: () => undefined,
+      }),
+    );
+    await flush();
+
+    const items = document.querySelectorAll<HTMLElement>(
+      '[data-slot="menu-item"]',
+    );
+    expect(items).toHaveLength(2);
+    expect(items[0]?.className).not.toContain("text-destructive");
+    expect(items[1]?.className).toContain("text-destructive");
+    harness.unmount();
+  });
+});
+
 describe("ContextMenuView Esc precedence", () => {
   test("Escape closes the context menu but leaves an open dialog alone", async () => {
     const harness = mount();

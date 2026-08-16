@@ -16,6 +16,25 @@ describe("contextMenuItem", () => {
     expect(item.kind).toBe("item");
     expect(item.id).toBe("open");
   });
+
+  test("carries an explicit danger flag through untouched", () => {
+    const item = contextMenuItem({
+      id: "sign-out",
+      label: "Sign out",
+      onSelect: () => undefined,
+      danger: true,
+    });
+    expect(item.danger).toBe(true);
+  });
+
+  test("danger defaults to undefined when omitted", () => {
+    const item = contextMenuItem({
+      id: "open",
+      label: "Open",
+      onSelect: () => undefined,
+    });
+    expect(item.danger).toBeUndefined();
+  });
 });
 
 describe("isContextMenuEmpty", () => {
