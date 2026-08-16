@@ -1,64 +1,47 @@
 # @corbits/skills
 
 The workbench's skill registry, over the platform's own native
-`kind:"skill"` assets. A skill is a named, reusable capability —
-instructions an agent can pin and a workbench can install.
+`kind:"skill"` hub assets. A skill is a named, reusable capability — a
+`SKILL.md` an agent can pin and a workbench can install, create, version,
+and scope access to per-principal.
 
-## Where a skill actually lives
+## Composition with @intx/*
 
-One skill is one `kind:"skill"` hub asset carrying a single
-`<name>/SKILL.md`. That is the platform's own asset kind, validated by
-the hub's native skill kind handler on every push: the frontmatter must
-carry a kebab-case `name` matching the directory and a 1–1024-character
-`description` free of HTML tags.
+A skill's storage, version history, and body are entirely the platform's
+own asset/git machinery — this package writes no versions table and no
+content cache, only reading and committing through the asset store. Routes
+are built on `@intx/hub-api`'s `TenantEnv`/`requireGrant` convention, with
+`@intx/hub-sessions` for session-authenticated calls; persistence for the
+one table this package does own goes through `@intx/db`.
 
-Nothing about a skill is duplicated into a table. In particular:
+## Key modules
 
-- **Version history is the asset's git history.** `versions` reads the
-  commit log off the asset repo; `restore` re-commits an older commit's
-  `SKILL.md` onto the default ref, so a rewind is a new commit and the
-  history is never rewritten. There is no versions table.
-- **The body is the committed blob.** `load` reads it back from the
-  asset, never from a cache.
+- `src/registry.ts` — `SkillRegistry`: create/list/get/versions/restore
+  over the `kind:"skill"` asset, with no intermediate pending/draft state.
+- `src/access.ts` / `src/access-store.ts` — the `skill_access` table and
+  visibility rules (`private` to the author, `tenant`-wide, or scoped),
+  the one thing this package persists beyond the asset itself.
+- `src/skill-md.ts` — `SKILL.md` frontmatter parsing/building and the
+  `name`/`description` validation schemas.
+- `src/hub-asset-store.ts` — the production `SkillAssetStore` binding
+  against the platform's native asset kind handler.
+- `src/routes.ts` — `createSkillRoutes`: tenant-session routes under
+  `/api/tenants/:tenantId/skills` for the Skills settings surface.
+- `src/workflow-routes.ts` — `createWorkflowSkillRoutes`: run-authenticated
+  routes under `/api/workflow-skills` for a workflow child's
+  `@corbits/tools-skills` bundle.
+- `src/prompt.ts` — `withAvailableSkills`: appends/replaces the
+  `<available_skills>` system-prompt stanza for a definition's pinned
+  skills.
+- `src/migrations.ts` — this package's own `skills_migrations` ledger,
+  covering only the `skill_access` table.
 
-The one table this package owns is `skills.skill_access` — the
-visibility verdict, and nothing else. See `src/migrations.ts` and
-[docs/package-migrations.md](../../docs/package-migrations.md).
+## Running tests
 
-A skill is created directly: `create` writes the `kind:"skill"` asset,
-commits its `SKILL.md`, and writes the `skill_access` row — no pending or
-draft state in between. A validation failure (a name or description the
-schema rejects) fails before any asset is created, so it leaves nothing
-behind. A failure between those three writes is not atomic, though:
-`create` isn't a transaction across the asset store and the access
-table, so a crash or timeout partway through can leave the asset written
-but not yet committed or accessible. That's not silent data loss —
-retrying the same create on the same name detects the caller's own
-half-written asset and finishes it (writing the missing `SKILL.md`
-commit and/or access row) instead of 409ing forever. A fully-formed
-skill, or another caller's half-written asset, still 409s as a genuine
-name conflict.
+```
+cd packages/skills && bun test
+```
 
-## Two surfaces
-
-- `createSkillRoutes` — tenant-session routes under
-  `/api/tenants/:tenantId/skills`, what the Skills settings section
-  calls. Caller identity comes from the session context, never a body.
-- `createWorkflowSkillRoutes` — run-authenticated routes under
-  `/api/workflow-skills`, what a workflow child's
-  `@corbits/tools-skills` bundle calls with the sidecar's own bearer
-  token and the run's own address. Mounted outside the tenant prefix,
-  mirroring `@corbits/memory-hub`.
-
-Both scope every read to the calling principal: a `private` skill is
-visible only to its author, a `tenant` one to every principal in its
-tenant, and nothing is ever visible across tenants.
-
-## The pinned-skills prompt index
-
-`withAvailableSkills` appends an `<available_skills>` stanza to a
-definition's system prompt — names and descriptions only, plus the
-instruction to call `load_skill` for a body. Re-pinning replaces the
-stanza rather than stacking one, and unpinning everything removes it.
-Bodies are never inlined: most turns need none of them, and the ones a
-turn does need are fetched on demand.
+No drizzle suite in this package's `test/` directory; no `DATABASE_URL`
+needed for `bun test` here (`src/migrations.ts` applies against a real
+Postgres only when a host runs it).
