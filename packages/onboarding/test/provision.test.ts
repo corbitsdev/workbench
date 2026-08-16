@@ -428,7 +428,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         return {
           status: 202,
           data: {
-            deploymentId: DEPLOYMENT_ID,
+            runId: DEPLOYMENT_ID,
             address: "echo@x",
             messageId: `m${startedRuns.length}`,
           },
@@ -619,7 +619,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         return {
           status: 202,
           data: {
-            deploymentId: DEPLOYMENT_ID,
+            runId: DEPLOYMENT_ID,
             address: "echo@x",
             messageId: `m${startedRuns.length}`,
           },
@@ -957,7 +957,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         return {
           status: 202,
           data: {
-            deploymentId: DEPLOYMENT_ID,
+            runId: DEPLOYMENT_ID,
             address: "echo@x",
             messageId: `m${startedRuns.length}`,
           },
