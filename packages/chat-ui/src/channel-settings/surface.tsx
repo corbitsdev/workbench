@@ -42,7 +42,6 @@ import { MembersSection } from "./members-section";
 import { channelSettingsSections } from "./model";
 import type { ChannelSettingsSection, ChannelSettingsSectionId } from "./model";
 import { NotificationsSection } from "./notifications-section";
-import type { NotificationPreference } from "./notifications-section";
 
 type ChannelSettingsData = {
   readonly data: ChannelSettings;
@@ -97,8 +96,6 @@ export function ChannelSettingsSurface({
   const [contextWindowMode, setContextWindowMode] =
     useState<ContextWindowMode>("inherit");
   const [contextWindowInput, setContextWindowInput] = useState("");
-  const [notificationPref, setNotificationPref] =
-    useState<NotificationPreference>("all");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -335,8 +332,8 @@ export function ChannelSettingsSurface({
 
               {activeSection.id === "notifications" ? (
                 <NotificationsSection
-                  value={notificationPref}
-                  onChange={setNotificationPref}
+                  tenantId={tenantId}
+                  channelId={channelId}
                 />
               ) : null}
 
