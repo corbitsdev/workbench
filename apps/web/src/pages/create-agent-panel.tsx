@@ -183,9 +183,9 @@ const SUGGESTIONS: readonly Suggestion[] = [
       "Digs into questions dropped in chat and comes back with a grounded answer.",
   },
   {
-    name: "Space Digest",
-    cardDescription: "Summarizes a space on schedule",
-    purpose: "Summarizes recent activity in a space on a recurring schedule.",
+    name: "Chat Digest",
+    cardDescription: "Summarizes a chat on schedule",
+    purpose: "Summarizes recent activity in a chat on a recurring schedule.",
   },
 ];
 

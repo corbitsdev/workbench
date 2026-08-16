@@ -86,7 +86,7 @@ export function Rail({
   const items = RAIL_PRIMARY_ROUTES.map(routeItem);
 
   function handleSelect(id: string) {
-    // Spaces rail lands Myra (ensure + open), not a bare /c prefix.
+    // Chats rail lands Myra (ensure + open), not a bare /c prefix.
     if (id === CHANNEL_PATH_PREFIX) {
       onNavigate("/");
       return;

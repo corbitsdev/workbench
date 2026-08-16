@@ -68,6 +68,26 @@ test("space-separated CSS class lists are not prose", () => {
   expect(report.violations).toEqual([]);
 });
 
+test("Tailwind's fractional spacing utilities (space-y-1.5) don't false-match the 'space' ban", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/pages/routines-page.tsx",
+      contents: `<ol className="list-decimal space-y-1.5 pl-5 text-sm">`,
+    },
+  ]);
+  expect(report.violations).toEqual([]);
+});
+
+test("a Tailwind arbitrary-value class alongside space-y-* doesn't false-match the 'space' ban", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/pages/routines-page.tsx",
+      contents: `<ul className="list-disc space-y-0.5 pl-5 text-sm text-[var(--ui-fg-muted)]">`,
+    },
+  ]);
+  expect(report.violations).toEqual([]);
+});
+
 test("API paths are not prose", () => {
   const report = auditUiVocabulary([
     {
@@ -190,14 +210,57 @@ test("prose mentioning Channels is now a plain banned-term violation, not just a
   expect(report.violations[0]).toContain("channel");
 });
 
-test("the current 'Spaces, chats, and running routines' copy is clean", () => {
+test("the current 'Chats and running routines' copy is clean", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/panel-contributions.tsx",
+      contents: `description="Chats and running routines for this workbench will appear here."`,
+    },
+  ]);
+  expect(report.violations).toEqual([]);
+});
+
+test("a reintroduced 'space' in user-facing prose is a violation (CL-6081: the shell is chat-first)", () => {
   const report = auditUiVocabulary([
     {
       relPath: "apps/web/src/shell/panel-contributions.tsx",
       contents: `description="Spaces, chats, and running routines for this workbench will appear here."`,
     },
   ]);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("space");
+});
+
+test("'workspace' itself never false-matches 'space'", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/pages/onboarding-page.tsx",
+      contents: `description="This workspace is ready to go."`,
+    },
+  ]);
   expect(report.violations).toEqual([]);
+});
+
+test("a reintroduced Spaces nav band label is a violation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/routes.tsx",
+      contents: `label: "Spaces",`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("apps/web/src/routes.tsx");
+  expect(report.violations[0]).toContain("Spaces");
+});
+
+test("a reintroduced Spaces page band title is a violation", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/panel-contributions.tsx",
+      contents: `title: "Spaces",`,
+    },
+  ]);
+  expect(report.violations).toHaveLength(1);
 });
 
 test("a command palette heading grouping channel search results is not a band-label violation", () => {

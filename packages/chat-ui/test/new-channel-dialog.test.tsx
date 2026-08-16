@@ -317,6 +317,94 @@ describe("NewChannelDialog guided stepper", () => {
     expect(document.body.textContent).not.toContain("assistant");
     expect(document.body.textContent).toContain("my-analyst");
   });
+
+  test("clicking an agent row creates the chat immediately, no separate submit", async () => {
+    stubInvitableDefinitions([{ id: "wfd_echo", name: "Echo" }]);
+    const created: unknown[] = [];
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: (input) => created.push(input),
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "chat",
+    });
+    await settle();
+
+    const option = [...document.body.querySelectorAll('[role="option"]')].find(
+      (node) => node.textContent === "Echo",
+    );
+    expect(option).toBeDefined();
+    act(() => {
+      (option as HTMLElement).click();
+    });
+
+    expect(created).toEqual([{ kind: "chat", definitionId: "wfd_echo" }]);
+  });
+
+  test("the combobox input narrows the agent list by typeahead", async () => {
+    stubInvitableDefinitions([
+      { id: "wfd_echo", name: "Echo" },
+      { id: "wfd_atlas", name: "Atlas" },
+    ]);
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "chat",
+    });
+    await settle();
+
+    const input = document.body.querySelector(
+      'input[placeholder="Search or create agents"]',
+    ) as HTMLInputElement;
+    expect(input).not.toBeNull();
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      setter?.call(input, "atl");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain("Atlas");
+    expect(document.body.textContent).not.toContain("Echo");
+  });
+
+  test("the Create new agent row stays pinned above the list while typing", async () => {
+    stubInvitableDefinitions([{ id: "wfd_echo", name: "Echo" }]);
+    mount({
+      open: true,
+      onOpenChange: () => undefined,
+      onCreate: () => undefined,
+      tenantId: "tnt_1",
+      submitting: false,
+      initialKind: "chat",
+      onRequestNewAgent: () => undefined,
+    });
+    await settle();
+
+    const input = document.body.querySelector(
+      'input[placeholder="Search or create agents"]',
+    ) as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      setter?.call(input, "zzz-no-match");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+
+    expect(
+      document.body.querySelector('[data-testid="new-chat-create-agent"]'),
+    ).not.toBeNull();
+  });
 });
 
 describe("NewChannelDialog counterpart picker", () => {
@@ -424,8 +512,8 @@ describe("NewChannelDialog counterpart picker", () => {
   });
 });
 
-describe("NewChannelDialog New agent… affordance", () => {
-  test("with onRequestNewAgent wired, the agent tab offers a New agent… row", async () => {
+describe("NewChannelDialog Create new agent affordance", () => {
+  test("with onRequestNewAgent wired, the agent tab offers a Create new agent row", async () => {
     stubInvitableDefinitions([{ id: "wfd_echo", name: "Echo" }]);
     let requested = false;
 
@@ -446,7 +534,7 @@ describe("NewChannelDialog New agent… affordance", () => {
       '[data-testid="new-chat-create-agent"]',
     );
     expect(row).not.toBeNull();
-    expect(row?.textContent).toContain("New agent");
+    expect(row?.textContent).toContain("Create new agent");
     act(() => {
       (row as HTMLButtonElement | null)?.click();
     });

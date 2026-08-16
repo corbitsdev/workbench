@@ -94,12 +94,11 @@ describe("route table", () => {
     ]);
   });
 
-  test("rail nav is Spaces, Routines, Library, Insights, Inbox, Settings", () => {
+  test("rail nav is Chats, Routines, Library, Inbox, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
-      "Spaces",
+      "Chats",
       "Routines",
       "Library",
-      "Insights",
       "Inbox",
       "Settings",
     ]);
@@ -130,10 +129,10 @@ describe("routes render", () => {
     if (LEGACY_REDIRECT_PATHS.has(route.path)) continue;
     test(`${route.path} renders the ${route.label} screen`, () => {
       const markup = renderApp(route.path);
-      // Myra land (`/`) lights Spaces on the rail; panel title stays Myra.
+      // Myra land (`/`) lights Chats on the rail; panel title stays Myra.
       if (route.path === "/") {
         expect(panelPageTitle(markup)).toBe("Myra");
-        expect(activeRailLabel(markup)).toBe("Spaces");
+        expect(activeRailLabel(markup)).toBe("Chats");
         return;
       }
       expect(panelPageTitle(markup)).toBe(route.label);

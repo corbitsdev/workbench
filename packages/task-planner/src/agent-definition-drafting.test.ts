@@ -260,6 +260,31 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).not.toContain("undefined");
   });
 
+  test("the drafting brief instructs the drafted agent to greet, introduce itself, and ask what it's for on its first reply", async () => {
+    let sentPrompt = "";
+    const drafting = createMyraAgentDefinitionDrafting(
+      buildDeps({
+        runner: {
+          run: async ({ prompt }) => {
+            sentPrompt = prompt;
+            return {
+              content: JSON.stringify({ systemPrompt: "You help." }),
+              runId: "wfr_draft_3",
+            };
+          },
+        },
+      }),
+    );
+    await drafting.propose(INPUT);
+
+    expect(sentPrompt).toContain("first reply");
+    expect(sentPrompt).toContain("greet the person by name");
+    expect(sentPrompt).toContain("introduce itself");
+    expect(sentPrompt).toContain("fresh start");
+    expect(sentPrompt).toContain("standing job");
+    expect(sentPrompt).toContain("one-off task");
+  });
+
   test("an unresolvable Myra definition surfaces as MyraAgentDefinitionDraftingUnavailableError", async () => {
     const drafting = createMyraAgentDefinitionDrafting(
       buildDeps({

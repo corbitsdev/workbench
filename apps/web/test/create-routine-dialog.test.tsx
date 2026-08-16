@@ -54,7 +54,7 @@ function typeInto(input: HTMLInputElement | null, value: string) {
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
-// "New space for this routine" (the default destination) mints a real
+// "New chat for this routine" (the default destination) mints a real
 // channel client-side via `@corbits/chat-ui`'s `createChannel` — stubbed
 // here the same way every other fetch-driven dialog test in this file
 // stubs its own network calls, rather than exercising real HTTP.
@@ -1052,7 +1052,7 @@ describe("'Make this a routine' prefill", () => {
 });
 
 describe("routine destination (CL-6073)", () => {
-  test("a zero-channel bench sails through — 'New space for this routine' is the default, no dead end", async () => {
+  test("a zero-channel bench sails through — 'New chat for this routine' is the default, no dead end", async () => {
     mount({ ...baseProps({}), channels: [] });
     await settle();
     act(() => {
@@ -1072,10 +1072,10 @@ describe("routine destination (CL-6073)", () => {
       "create a channel first",
     );
     expect(document.body.textContent).toContain(
-      "New space for this routine",
+      "New chat for this routine",
     );
     expect(document.body.textContent).toContain(
-      "Reports land in a new space named after this routine.",
+      "Reports land in a new chat named after this routine.",
     );
     expect(buttonWithText("Next")?.hasAttribute("disabled")).toBe(false);
   });

@@ -231,7 +231,7 @@ function shellMenu(actions: ShellContextMenuActions): ContextMenu {
       }),
       contextMenuItem({
         id: "channels",
-        label: "Go to spaces",
+        label: "Go to chats",
         icon: <Hash />,
         onSelect: () => actions.navigate(channelPath(null)),
       }),

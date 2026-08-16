@@ -132,7 +132,7 @@ describe("library panel contribution", () => {
     ).toEqual([{ id: "upload-artifact", label: "Upload" }]);
   });
 
-  test("/library pageBand exposes a Spaces/Routines quick-action strip", () => {
+  test("/library pageBand exposes a Chats/Routines quick-action strip", () => {
     ensurePanelContributions();
     const contribution = resolvePanelContribution("/library");
     if (!contribution) {
@@ -148,7 +148,7 @@ describe("library panel contribution", () => {
     expect(
       band.actions?.map((action) => ({ id: action.id, label: action.label })),
     ).toEqual([
-      { id: "library-qa-channels", label: "Spaces" },
+      { id: "library-qa-channels", label: "Chats" },
       { id: "library-qa-routines", label: "Routines" },
     ]);
     band.actions?.[0]?.onSelect();

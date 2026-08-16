@@ -1,25 +1,27 @@
 // Every user-facing word the chat surface prints, in one place. The package
 // underneath calls everything a "channel" — a `kind` string of "channel" or
-// "chat" — but the app decides what a human reads: "Spaces" for the pinned,
-// broadcast-style kind and "Chats" for everything else. Nothing in the chat/*
-// components inlines its own copy; it imports from here.
+// "chat" — but the app decides what a human reads: "Pinned" for the pinned,
+// broadcast-style kind (its own creation step is dead — see
+// `new-channel-dialog.tsx`'s module doc — but the strings still exist for a
+// future caller that reaches it) and "Chats" for everything else. Nothing
+// in the chat/* components inlines its own copy; it imports from here.
 
 export const CHAT_STRINGS = {
-  channelsSectionLabel: "Spaces",
+  channelsSectionLabel: "Pinned",
   chatsSectionLabel: "Chats",
   newChannelAction: "New conversation",
   newChannelDialogTitle: "New conversation",
   newChannelDialogDescription:
-    "Give it a name and choose whether it is a pinned space or an ordinary chat.",
+    "Give it a name and choose whether it is a pinned, shared conversation or an ordinary chat.",
   newChannelNameLabel: "Name",
   newChannelNamePlaceholder: "e.g. Launch planning",
   newChannelKindLabel: "Type",
-  newChannelKindChannel: "Space",
+  newChannelKindChannel: "Pinned",
   newChannelKindChannelDesc: "Pinned, for the whole workbench",
   newChannelKindChat: "Chat",
   newChannelKindChatDesc: "A direct conversation with an agent or teammate",
   newChannelPurposeLabel: "Purpose (optional)",
-  newChannelPurposePlaceholder: "What is this space for?",
+  newChannelPurposePlaceholder: "What is this for?",
   newChannelSubmit: "Create",
   newChannelSubmitting: "Creating…",
   newChannelCancel: "Cancel",
@@ -27,7 +29,7 @@ export const CHAT_STRINGS = {
   newChannelNext: "Next",
   newChannelStepKindLabel: "Kind",
   newChannelStepKindGuidance:
-    "Choose a pinned space for the whole workbench, or a direct chat.",
+    "Choose a pinned conversation for the whole workbench, or a direct chat.",
   newChannelStepDetailsLabel: "Details",
   newChannelStepChannelGuidance: "Name it and add an optional purpose.",
   newChannelStepChatGuidance:
@@ -39,6 +41,8 @@ export const CHAT_STRINGS = {
   newChatCounterpartTabAgent: "Agents",
   newChatCounterpartTabPerson: "People",
   newChatAgentLabel: "Agent",
+  newChatAgentComboboxPlaceholder: "Search or create agents",
+  newChatAgentComboboxEmpty: "No agents match.",
   newChatAgentLoadError: "Couldn't load agents to chat with",
   newChatAgentEmptyTitle: "No agents available",
   newChatAgentEmptyDescription:
@@ -48,24 +52,24 @@ export const CHAT_STRINGS = {
   newChatPersonEmptyTitle: "No teammates available",
   newChatPersonEmptyDescription:
     "Invite teammates to this workbench before starting a direct chat.",
-  newChatCreateAgentAffordance: "New agent…",
+  newChatCreateAgentAffordance: "Create new agent",
   newChannelMissingAgentError:
     "Choose an agent or teammate to start this chat.",
   newChannelSelfDmError: "You can't start a direct chat with yourself.",
-  noChannelsTitle: "No spaces yet",
+  noChannelsTitle: "No chats yet",
   noChannelsDescription:
-    "Create a space to start a conversation your agents and teammates can see.",
+    "Start a chat your agents and teammates can see.",
   noChatSelectedTitle: "Select a conversation",
   noChatSelectedDescription:
-    "Choose a space or chat from the sidebar, or start a new one.",
-  couldNotLoadChannels: "spaces and chats",
+    "Choose a chat from the sidebar, or start a new one.",
+  couldNotLoadChannels: "chats",
   couldNotLoadMessages: "messages",
   channelNotFoundTitle: "This chat isn't here anymore",
   channelNotFoundDescription:
     "It may have been deleted, or the link is out of date.",
-  channelNotFoundAction: "Back to Spaces",
+  channelNotFoundAction: "Back to Chats",
   composerPlaceholder:
-    "Message this space… use @ to mention an agent, / for commands",
+    "Message this chat… use @ to mention an agent, / for commands",
   composerPlaceholderChat: (name: string) => `Message ${name}… / for commands`,
   composerSend: "Send",
   composerSending: "Sending…",
@@ -225,7 +229,7 @@ export const CHAT_STRINGS = {
   channelSettingsParticipantsLabel: "Participants",
   channelSettingsPeopleLabel: "People",
   channelSettingsAgentsLabel: "Agents",
-  channelSettingsNoPeople: "No people in this space yet.",
+  channelSettingsNoPeople: "No people in this chat yet.",
   channelSettingsNoAgents: "No agents invited yet.",
   channelSettingsAutonomyTitle: "Autonomy",
   channelSettingsAutonomyBody:
@@ -276,9 +280,9 @@ export const CHAT_STRINGS = {
   channelSettingsNotifyMute: "Mute",
   channelSettingsNotificationsHint:
     "Preference is local draft UI until per-conversation notification storage ships.",
-  channelSettingsArchiveTitle: "Archive space",
+  channelSettingsArchiveTitle: "Archive chat",
   channelSettingsArchiveBody:
-    "Archiving is not available yet. Closing this space would hide it from the sidebar without deleting history once the action lands.",
+    "Archiving is not available yet. Closing this chat would hide it from the sidebar without deleting history once the action lands.",
   channelSettingsLoadError: "Couldn't load this conversation's settings",
   channelSettingsSaveError:
     "Couldn't save this conversation's settings — try again.",
@@ -289,7 +293,7 @@ export const CHAT_STRINGS = {
   profileOpenAction: "Open profile",
   profileMessageAction: "Message",
   profileViewSettingsAction: "View settings",
-  profileSharedChannels: "Shared spaces and chats",
+  profileSharedChannels: "Shared chats",
   profilePinnedSkills: "Pinned skills",
   profileAgentStatus: "Agent",
   profileMemberStatus: "Member",

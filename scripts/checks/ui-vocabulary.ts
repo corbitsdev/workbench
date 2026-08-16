@@ -3,14 +3,14 @@
 // "tenant", "instance", "deploy(ed)", "definition", "DATABASE_URL", and
 // "asset" are all names for things from the operator/platform side of
 // the fence; the product word for a workspace is "workbench" and its
-// switching control is the "switcher". "Channel" is banned too — the
-// product word for a pinned, broadcast-style conversation is "space"
-// and a direct 1:1 conversation is "chat" ("channel" stays legal only
-// as the underlying platform/API vocabulary: `kind: "channel"`, route
-// paths, event names, and other non-prose identifiers, none of which
-// this check's prose filter treats as copy anyway) — see
-// docs/GLOSSARY.md and the CL-6016 and CL-6071 copy sweeps this check
-// guards.
+// switching control is the "switcher". "Channel" and "space(s)" are
+// banned too — the shell is chat-first now (CL-6081): every conversation
+// a person starts reads as a "chat", never a "space" or a "channel"
+// (both stay legal only as the underlying platform/API vocabulary:
+// `kind: "channel"`, route paths, event names, and other non-prose
+// identifiers, none of which this check's prose filter treats as copy
+// anyway) — see docs/GLOSSARY.md and the CL-6016, CL-6071, and CL-6081
+// copy sweeps this check guards.
 //
 // This scans string and template literals in apps/web/src and
 // packages/chat-ui/src (excluding *.test.ts(x)) for the banned terms.
@@ -52,24 +52,29 @@ const BANNED_TERMS: readonly { name: string; pattern: RegExp }[] = [
   { name: "DATABASE_URL", pattern: /\bDATABASE_URL\b/ },
   { name: "asset", pattern: /\bassets?\b/i },
   { name: "channel", pattern: /\bchannels?\b/i },
+  { name: "space", pattern: /\bspaces?\b/i },
 ];
 
 /**
- * The nav band renamed "Channels" → "Spaces" (CL-6054): the band you
- * direct work from, not the word for a single channel. This matches the
- * exact shape a reintroduced band label would take — a `label`/`title`
- * object property (`title: "Channels"`), the same as a JSX attribute
- * (`title="Channels"`), or an `aria-label` attribute set to precisely
- * "Channels" — so it never trips on legitimate copy that happens to
- * contain the word: prose like "Channels and running routines…" (not a
- * bare label value), `channelsSectionLabel: "Channels"` (chat-ui's
- * pinned-vs-chat kind label, a different concept from the nav band), or
- * a command palette `heading: "Channels"` (groups search results by
- * entity kind, same pattern as its `heading: "Routines"` sibling). Those
- * all stay legal; only the band label itself is banned.
+ * The nav band renamed "Channels" → "Spaces" (CL-6054), then "Spaces" →
+ * "Chats" (CL-6081): the band you direct work from, not the word for a
+ * single conversation. A single-word label value like `"Channels"` or
+ * `"Spaces"` has no whitespace, so `isProseLiteral`'s space-heuristic
+ * never even hands it to the `BANNED_TERMS` scan below — this pattern is
+ * the dedicated regression guard for exactly that gap, matching the
+ * shape a reintroduced label would take for either retired name: a
+ * `label`/`title` object property (`title: "Spaces"`), the same as a
+ * JSX attribute (`title="Channels"`), or an `aria-label` attribute set
+ * to precisely one of those two words — so it never trips on legitimate
+ * copy that happens to contain one: prose like "Channels and running
+ * routines…" (not a bare label value), `channelsSectionLabel: "Channels"`
+ * (chat-ui's pinned-vs-chat kind label, a different concept from the nav
+ * band), or a command palette `heading: "Channels"` (groups search
+ * results by entity kind, same pattern as its `heading: "Routines"`
+ * sibling). Those all stay legal; only the band label itself is banned.
  */
 const BAND_LABEL_PATTERN =
-  /\b(?:label|title)\s*[:=]\s*"Channels"|aria-label\s*=\s*"Channels"/g;
+  /\b(?:label|title)\s*[:=]\s*"(?:Channels|Spaces)"|aria-label\s*=\s*"(?:Channels|Spaces)"/g;
 
 /**
  * Exact strings that legitimately contain a banned term as UI copy.
@@ -108,7 +113,12 @@ export function stripNonUserFacing(source: string): string {
 const STRING_LITERAL_PATTERN =
   /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
 
-const KEBAB_TOKEN = /^[a-z][a-z0-9-]*$/;
+// Allows a trailing decimal (Tailwind's fractional spacing utilities, e.g.
+// "space-y-1.5", "gap-x-2.5") and an arbitrary-value suffix in brackets
+// (e.g. "text-[var(--ui-fg-muted)]") alongside the plain kebab-case shape —
+// still never matches real prose, which has no reason to end a word in
+// digits or bracketed CSS syntax.
+const KEBAB_TOKEN = /^[a-z][a-z0-9-]*(?:\.\d+)?(?:\[[^\s"'`]*\])?$/;
 const QUOTED_UNION = /^'[\w-]*'(\s*\|\s*'[\w-]*')*$/;
 
 /** Blanks out `${...}` template-literal interpolations, keeping
@@ -187,7 +197,7 @@ export function findViolations(files: readonly ScannedFile[]): Violation[] {
       violations.push({
         relPath,
         line,
-        term: "Channels (nav band label)",
+        term: "Channels/Spaces (nav band label)",
         literal: lines[line - 1] ?? match[0],
       });
     }

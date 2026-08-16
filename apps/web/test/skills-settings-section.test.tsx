@@ -401,7 +401,7 @@ describe("CreateSkillDialog validation", () => {
         body: "do the thing",
       }),
     ).toEqual([
-      "Name must be lowercase letters, digits, and hyphens — no spaces or capitals.",
+      "Name must be lowercase letters, digits, and hyphens — no whitespace or capitals.",
     ]);
   });
 

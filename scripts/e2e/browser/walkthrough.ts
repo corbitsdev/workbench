@@ -268,35 +268,29 @@ async function clickByText(
   }
 }
 
-/** Clicks a `.chat-kind-card`/`.settings-kind-card`-style button by its
- * *title* sub-element, not the whole card's concatenated text (a card's
- * title and description live in separate spans inside one button, so the
- * button's own textContent is never an exact match for either). */
-async function clickCardByTitle(
-  page: Page,
-  cardSelector: string,
-  titleSelector: string,
-  title: string,
-): Promise<void> {
-  const clicked = await page.evaluate(
-    (cardSel: string, titleSel: string, wanted: string) => {
-      const cards = Array.from(document.querySelectorAll(cardSel));
-      const match = cards.find((card) => {
-        const el = card.querySelector(titleSel);
-        return (el?.textContent ?? "").trim() === wanted;
-      });
-      if (match === undefined) return false;
-      (match as HTMLElement).click();
+/**
+ * Clicks `selector` by resolving and clicking it in one browser-side turn,
+ * with a few short retries — `page.click()` resolves the element handle
+ * and dispatches the click as two separate round trips, so a page still
+ * settling after a navigation (a band re-render swapping the node) can
+ * detach the resolved handle in between, surfacing as "Node is detached
+ * from document." Doing both in a single `page.evaluate` call closes that
+ * window; the retry loop covers the element not existing yet.
+ */
+async function clickStable(page: Page, selector: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const clicked = await page.evaluate((sel: string) => {
+      const el = document.querySelector(sel);
+      if (el === null) return false;
+      (el as HTMLElement).click();
       return true;
-    },
-    cardSelector,
-    titleSelector,
-    title,
-  );
-  if (!clicked) {
-    throw new Error(
-      `no ${cardSelector} card with ${titleSelector} text "${title}"`,
-    );
+    }, selector);
+    if (clicked) return;
+    if (Date.now() > deadline) {
+      throw new Error(`no element matching ${selector} to click`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
   }
 }
 
@@ -306,34 +300,50 @@ async function countMatching(page: Page, selector: string): Promise<number> {
 
 // --- the walkthrough -----------------------------------------------------
 
+/**
+ * Opens the "+ New chat" picker and asserts its combobox dropdown offers
+ * the "Create new agent" row (CL-6081: instant creation, pinned above the
+ * filtered agent list — see `AgentCombobox` in
+ * `packages/chat-ui/src/new-channel-dialog.tsx`) before picking an
+ * existing "Myra"-ish agent. There is no kind step and no separate submit
+ * click any more: `initialKind="chat"` skips straight to the combobox, and
+ * clicking an agent row creates the chat immediately, closing the dialog
+ * itself.
+ */
 async function createMyraChat(page: Page): Promise<void> {
-  await page.click('button[aria-label="New channel"]');
+  await clickStable(page, 'button[aria-label="New chat"]');
   await page.waitForSelector('[role="dialog"]', { timeout: 10_000 });
-  await clickCardByTitle(page, ".chat-kind-card", ".chat-kind-card-title", "Chat");
-  await clickByText(page, 'button[type="submit"][form="new-channel-form"]', "Next");
-  await page.waitForSelector('[data-testid="new-chat-agent-option"]', {
-    timeout: 10_000,
-  });
+  await page.waitForSelector(
+    '[data-testid="new-chat-agent-combobox"] [role="option"]',
+    { timeout: 10_000 },
+  );
+  const hasCreateRow = await page.evaluate(
+    () => document.querySelector('[data-testid="new-chat-create-agent"]') !== null,
+  );
+  if (!hasCreateRow) {
+    throw new Error(
+      'new-chat combobox is missing its pinned "Create new agent" row',
+    );
+  }
   const pickedMyra = await page.evaluate(() => {
     const options = Array.from(
-      document.querySelectorAll('[data-testid="new-chat-agent-option"]'),
+      document.querySelectorAll(
+        '[data-testid="new-chat-agent-combobox"] [role="option"]',
+      ),
     );
     const myra = options.find((option) =>
       (option.textContent ?? "").toLowerCase().includes("myra"),
     );
     const target = myra ?? options[0];
     if (target === undefined) return null;
-    const input = target.querySelector('input[type="radio"]');
-    if (input === null) return null;
-    (input as HTMLInputElement).click();
+    (target as HTMLElement).click();
     return (target.textContent ?? "").trim();
   });
   if (pickedMyra === null) {
-    throw new Error("new-chat agent picker rendered no options");
+    throw new Error("new-chat agent combobox rendered no options");
   }
-  await clickByText(page, 'button[type="submit"][form="new-channel-form"]', "Create");
-  // The dialog closes once the channel is created and the sidebar gains a
-  // new row; wait for the dialog to actually go away rather than assuming.
+  // Picking an agent creates the chat immediately (no separate submit
+  // click) — wait for the dialog to actually go away rather than assuming.
   await page.waitForSelector('[role="dialog"]', { hidden: true, timeout: 15_000 });
 }
 
@@ -531,12 +541,47 @@ async function run(): Promise<void> {
       }
     });
 
-    await step(() => page, "04-land-in-shell", async () => {
-      await page.goto(`${webBaseUrl}/c`, { waitUntil: "domcontentloaded" });
-      await page.waitForSelector('button[aria-label="New channel"]', {
+    await step(() => page, "04-land-in-shell-bare-root", async () => {
+      // CL-6081: `/` (bare root, not just `/c`) is Myra's land hop too —
+      // `HomeRoute` ensures her channel and redirects straight into it.
+      await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => window.location.pathname.startsWith("/c/"), {
         timeout: 15_000,
       });
-      return { status: "pass", detail: "landed on the Spaces shell (/c)" };
+      return {
+        status: "pass",
+        detail: `bare root landed in Myra's chat at ${await page.evaluate(() => window.location.pathname)}`,
+      };
+    });
+
+    await step(() => page, "04b-land-in-shell-chats-band", async () => {
+      await page.goto(`${webBaseUrl}/c`, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector('button[aria-label="New chat"]', {
+        timeout: 15_000,
+      });
+      const bandTitle = await page.evaluate(
+        () =>
+          document
+            .querySelector('[data-slot="sidebar-panel-header"] h2')
+            ?.textContent?.trim() ?? null,
+      );
+      if (bandTitle !== "Chats") {
+        return {
+          status: "fail",
+          detail: `expected the band title "Chats", got ${JSON.stringify(bandTitle)}`,
+        };
+      }
+      const newChatButtons = await countMatching(page, 'button[aria-label="New chat"]');
+      if (newChatButtons !== 1) {
+        return {
+          status: "fail",
+          detail: `expected exactly one "New chat" affordance, found ${newChatButtons}`,
+        };
+      }
+      return {
+        status: "pass",
+        detail: 'landed on the Chats-only shell (/c): band titled "Chats", single "+ New chat" affordance',
+      };
     });
 
     // --- Step 2: CL-6070 — two manual "New chat" creations with Myra
@@ -547,7 +592,7 @@ async function run(): Promise<void> {
 
     await step(() => page, "06-create-second-myra-chat", async () => {
       await page.goto(`${webBaseUrl}/c`, { waitUntil: "domcontentloaded" });
-      await page.waitForSelector('button[aria-label="New channel"]', {
+      await page.waitForSelector('button[aria-label="New chat"]', {
         timeout: 15_000,
       });
       await createMyraChat(page);

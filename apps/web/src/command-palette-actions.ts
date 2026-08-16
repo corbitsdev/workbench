@@ -144,7 +144,8 @@ export type ActionCommandId =
   | "close-canvas"
   | "toggle-sidebar"
   | "talk-to-myra"
-  | "go-channels";
+  | "go-channels"
+  | "go-insights";
 
 export type ActionCommand = {
   readonly id: ActionCommandId;
@@ -159,8 +160,8 @@ export type ActionCommand = {
 export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "new-channel",
-    title: "New conversation",
-    subtitle: "Space or chat",
+    title: "New chat",
+    subtitle: "Search or create an agent",
   },
   { id: "new-agent", title: "New agent", subtitle: "Create with v1" },
   {
@@ -197,8 +198,13 @@ export const ACTION_COMMANDS: readonly ActionCommand[] = [
   },
   {
     id: "go-channels",
-    title: "Go to spaces",
+    title: "Go to chats",
     subtitle: "Home · conversation list",
+  },
+  {
+    id: "go-insights",
+    title: "Go to insights",
+    subtitle: "Not in the nav · still routable",
   },
 ];
 
@@ -295,6 +301,10 @@ export async function runActionCommand(
     }
     case "go-channels": {
       ctx.navigate(CHANNEL_PATH_PREFIX);
+      return;
+    }
+    case "go-insights": {
+      ctx.navigate("/insights");
       return;
     }
   }
