@@ -13,11 +13,12 @@ import {
 
 type TestProfile = { readonly id: string };
 type TestArtifact = { readonly id: string };
+type TestRoutine = { readonly id: string };
 
 const sampleProfile: TestProfile = { id: "profile-1" };
 
 function initial() {
-  return initialCanvasColumnState<TestProfile, TestArtifact>();
+  return initialCanvasColumnState<TestProfile, TestArtifact, TestRoutine>();
 }
 
 describe("shellLayoutModeForWidth", () => {

@@ -3,7 +3,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   ACTION_COMMANDS,
   consumePendingNewChannel,
-  consumePendingNewRoutine,
   consumePendingNewSkill,
   consumePendingNewTask,
   requestNewRoutine,
@@ -26,11 +25,11 @@ function context(overrides: {
   const dispatched: string[] = [];
   let themeCycled = false;
   let canvasClosed = false;
+  const openedRoutines: (string | null)[] = [];
   const listener = (event: Event) => dispatched.push(event.type);
   for (const type of [
     "workbench:chat:new-channel",
     "workbench:agents:create",
-    "workbench:routines:create",
     "workbench:skills:create",
     "workbench:tasks:create",
   ]) {
@@ -46,6 +45,9 @@ function context(overrides: {
     closeCanvas: () => {
       canvasClosed = true;
     },
+    openRoutine: (subject: { readonly routineId: string | null }) => {
+      openedRoutines.push(subject.routineId);
+    },
   };
   return {
     ctx,
@@ -53,6 +55,7 @@ function context(overrides: {
     dispatched,
     themeCycled: () => themeCycled,
     canvasClosed: () => canvasClosed,
+    openedRoutines,
   };
 }
 
@@ -106,12 +109,11 @@ describe("runActionCommand", () => {
     expect(consumePendingNewChannel()).toBe(true);
   });
 
-  test("new-routine off-route navigates and records a pending flag instead of dispatching", async () => {
-    const { ctx, navigated, dispatched } = context({ path: "/library" });
+  test("new-routine navigates to /routines and opens the routine panel synchronously — no pending flag", async () => {
+    const { ctx, navigated, openedRoutines } = context({ path: "/library" });
     await runActionCommand("new-routine", ctx);
-    expect(dispatched).toEqual([]);
     expect(navigated).toEqual(["/routines"]);
-    expect(consumePendingNewRoutine()).toBe(true);
+    expect(openedRoutines).toEqual([null]);
   });
 
   test("new-skill off-route navigates and records a pending flag instead of dispatching", async () => {
@@ -181,41 +183,45 @@ describe("runActionCommand", () => {
   });
 });
 
-// Backs the chat composer's `/run` — the same off-route-safe hop
-// `runActionCommand("new-routine", …)` uses, but callable from a caller
-// with no command-palette `ActionCommandContext` (see chat-page.tsx).
+// Backs the chat composer's `/run` and the chat header's "Routines" action
+// — a caller with no command-palette `ActionCommandContext` (see
+// chat-page.tsx). Canvas state lives above every route, so this always
+// navigates and opens the panel synchronously — no pending flag, no
+// window event, no mount race to guard against.
 describe("requestNewRoutine", () => {
-  test("dispatches immediately when already on Routines", () => {
-    const dispatched: string[] = [];
-    const listener = () => dispatched.push("workbench:routines:create");
-    window.addEventListener("workbench:routines:create", listener);
+  test("navigates to Routines and opens a fresh routine panel", () => {
     const navigated: string[] = [];
+    const openedRoutines: (string | null)[] = [];
 
     requestNewRoutine({
-      alreadyOnRoutines: true,
       navigateToRoutines: () => navigated.push("/routines"),
+      openRoutine: (subject) => openedRoutines.push(subject.routineId),
     });
 
-    window.removeEventListener("workbench:routines:create", listener);
-    expect(dispatched).toEqual(["workbench:routines:create"]);
-    expect(navigated).toEqual([]);
-    expect(consumePendingNewRoutine()).toBe(false);
+    expect(navigated).toEqual(["/routines"]);
+    expect(openedRoutines).toEqual([null]);
   });
 
-  test("off-route navigates and records a pending flag instead of dispatching", () => {
-    const dispatched: string[] = [];
-    const listener = () => dispatched.push("workbench:routines:create");
-    window.addEventListener("workbench:routines:create", listener);
-    const navigated: string[] = [];
+  test("carries an initial name and instruction through to the opened subject", () => {
+    const openedSubjects: {
+      readonly routineId: string | null;
+      readonly initialName?: string;
+      readonly initialInstruction?: string;
+    }[] = [];
 
     requestNewRoutine({
-      alreadyOnRoutines: false,
-      navigateToRoutines: () => navigated.push("/routines"),
+      navigateToRoutines: () => undefined,
+      openRoutine: (subject) => openedSubjects.push(subject),
+      initialName: "Weekly digest",
+      initialInstruction: "Summarize last week's calls",
     });
 
-    window.removeEventListener("workbench:routines:create", listener);
-    expect(dispatched).toEqual([]);
-    expect(navigated).toEqual(["/routines"]);
-    expect(consumePendingNewRoutine()).toBe(true);
+    expect(openedSubjects).toEqual([
+      {
+        routineId: null,
+        initialName: "Weekly digest",
+        initialInstruction: "Summarize last week's calls",
+      },
+    ]);
   });
 });

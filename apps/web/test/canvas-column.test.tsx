@@ -108,6 +108,7 @@ describe("canvas profile card Message action", () => {
                 open
                 profile={profile}
                 artifact={null}
+                routine={null}
                 focus={false}
                 onClose={() => {
                   closed = true;
@@ -239,6 +240,7 @@ describe("canvas artifact pane: co-editing (CL-5958 phase 2)", () => {
                 open
                 profile={null}
                 artifact={props.artifact}
+                routine={null}
                 focus={false}
                 onClose={noop}
                 onToggleFocus={noop}

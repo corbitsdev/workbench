@@ -83,6 +83,7 @@ describe("canvas artifact co-viewer cursor overlay", () => {
                 open
                 profile={null}
                 artifact={artifact}
+                routine={null}
                 focus={false}
                 onClose={noop}
                 onToggleFocus={noop}
