@@ -22,13 +22,8 @@ import type { DB } from "@intx/db";
 import { asset, workflowDefinition } from "@intx/db/schema";
 import type { TenantEnv, RequireGrant } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
-import {
-  AssetServiceError,
-  DEFAULT_ASSET_REF,
-  ensureWorkflowDefinitionForAsset,
-} from "@intx/hub-sessions";
+import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
-import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
 
 import {
   SkillRegistryError,
@@ -37,14 +32,15 @@ import {
 import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
 
 import {
-  buildAgentDefinitionWorkflow,
+  createAgentDefinitionCore,
+  DuplicateAgentHandleError,
   readAgentCapabilities,
   readAgentSystemPrompt,
   reindexPinnedSkills,
-  serializeAgentDefinitionWorkflow,
   withAgentModel,
   withAgentSystemPrompt,
   withAgentToolPackagePin,
+  type CreateAgentDefinitionCoreInput,
 } from "./agent-workflow";
 import type { DefinitionSkillsStore } from "./skills-store";
 import {
@@ -164,113 +160,39 @@ export function createAgentDefinitionRoutes({
     const principal = c.get("principal");
 
     const skills = body.skills ?? [];
-    const baseDefinitionInput = {
-      handle: body.handle,
+    // `CreateAgentDefinitionCoreInput`'s optional fields are declared
+    // under `exactOptionalPropertyTypes`, so an absent `description`/
+    // `model` must be an absent key, not a key set to `undefined` —
+    // built up mutably rather than as one literal, mirroring
+    // `apps/hub`'s own `deployAgentDefinition` caller of this same core.
+    const coreInput: {
+      -readonly [
+        K in keyof CreateAgentDefinitionCoreInput
+      ]: CreateAgentDefinitionCoreInput[K];
+    } = {
+      tenantId: tenant.id,
+      principalId: principal.id,
       tenantDomain: tenant.domain,
-      description: body.description ?? "",
+      handle: body.handle,
+      name: body.name,
       systemPrompt: body.systemPrompt,
+      skills,
     };
-    const definition = buildAgentDefinitionWorkflow(
-      body.model !== undefined
-        ? { ...baseDefinitionInput, model: body.model }
-        : baseDefinitionInput,
-    );
-    // The definition's own system prompt is what the author typed; the
-    // pinned-skills index is appended on the way to the asset so the
-    // stored prompt always describes exactly the skills the definition
-    // currently pins.
-    const workflowJson = reindexPinnedSkills(
-      serializeAgentDefinitionWorkflow(definition),
-      await skillIndex.resolve(tenant.id, principal.id, skills),
-    );
+    if (body.description !== undefined)
+      coreInput.description = body.description;
+    if (body.model !== undefined) coreInput.model = body.model;
 
-    let assetId: string;
+    let row: Awaited<ReturnType<typeof createAgentDefinitionCore>>["row"];
     try {
-      const created = await assetService.createAsset({
-        tenantId: tenant.id,
-        kind: "workflow",
-        name: body.handle,
-        displayName: body.name,
-        creatorPrincipalId: principal.id,
-      });
-      assetId = created.id;
+      ({ row } = await createAgentDefinitionCore(
+        { db, assetService, skillIndex, skillsStore },
+        coreInput,
+      ));
     } catch (cause) {
-      if (
-        cause instanceof AssetServiceError &&
-        cause.reason === "duplicate_asset"
-      ) {
-        // A previous attempt may have created the asset row but failed
-        // before populateAsset wrote workflow.json — an empty shell that
-        // blocks retries with a misleading 409. Recover: look up the
-        // existing asset and reuse it only if it has no definition yet.
-        const existing = await db.query.asset.findFirst({
-          where: and(
-            eq(asset.tenantId, tenant.id),
-            eq(asset.kind, "workflow"),
-            eq(asset.name, body.handle),
-          ),
-        });
-        if (existing) {
-          const hasDef = await db.query.workflowDefinition.findFirst({
-            where: and(
-              eq(workflowDefinition.assetId, existing.id),
-              eq(workflowDefinition.tenantId, tenant.id),
-            ),
-          });
-          if (!hasDef) {
-            assetId = existing.id;
-          } else {
-            return c.json(
-              errorEnvelope(
-                "conflict",
-                `An agent with the handle "${body.handle}" already exists`,
-              ),
-              409,
-            );
-          }
-        } else {
-          return c.json(
-            errorEnvelope(
-              "conflict",
-              `An agent with the handle "${body.handle}" already exists`,
-            ),
-            409,
-          );
-        }
-      } else {
-        throw cause;
+      if (cause instanceof DuplicateAgentHandleError) {
+        return c.json(errorEnvelope("conflict", cause.message), 409);
       }
-    }
-
-    await assetService.populateAsset({
-      assetId,
-      ref: DEFAULT_ASSET_REF,
-      principal: { kind: "hub" },
-      tree: {
-        files: {
-          [AGENT_DEFINITION_ASSET_PATH]: workflowJson,
-        },
-        message: `Define agent ${body.name}`,
-      },
-    });
-    await skillsStore.setSkills(assetId, skills);
-
-    const wireHash = await computeWireDefinitionHash(JSON.parse(workflowJson));
-    const { definitionId } = await ensureWorkflowDefinitionForAsset(db, {
-      assetId,
-      wireHash,
-    });
-
-    const row = await db.query.workflowDefinition.findFirst({
-      where: and(
-        eq(workflowDefinition.id, definitionId),
-        eq(workflowDefinition.tenantId, tenant.id),
-      ),
-    });
-    if (row === undefined) {
-      throw new Error(
-        `agent definition "${definitionId}" was created but is not readable back`,
-      );
+      throw cause;
     }
 
     return c.json(

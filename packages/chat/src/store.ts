@@ -13,6 +13,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
+import { participantsOf } from "./channel-settings";
 import {
   channelLaunch,
   channelReadState,
@@ -82,6 +83,14 @@ export interface PutReadStateInput {
   readonly lastSeenId: string;
 }
 
+/** A channel resolved by `findChannelByParticipantAddress` — just
+ * enough to feed `launchAndJoinAgent`'s `existingSettings` without a
+ * second `getChannelSettings` round trip. */
+export interface ChannelByParticipantAddress {
+  readonly channelId: string;
+  readonly settings: Record<string, unknown>;
+}
+
 export interface ChatStore {
   createChannelSettings(
     input: CreateChannelSettingsInput,
@@ -133,6 +142,30 @@ export interface ChatStore {
    * message routes must consult this as well as `getChannelSettings`.
    */
   hasLaunchedInstance(tenantId: string, instanceId: string): Promise<boolean>;
+  /**
+   * Resolves a workflow run's own mail address back to the channel it
+   * is a participant of — a real lookup over EXISTING data (each
+   * channel's own `chat/participants` list, the same list
+   * `launchAndJoinAgent`/`removeChannelParticipant` already read and
+   * write), never new state of its own.
+   *
+   * [Intx/repo gap]: there is no direct run-address -> channel index
+   * anywhere in this schema, so this scans every channel in the
+   * tenant and parses each one's participants looking for a match —
+   * O(channels-in-tenant) per call. Fine at today's per-tenant channel
+   * counts (the same order `listChannelSettings` callers already pay),
+   * but a tenant with very many channels would want a proper index
+   * (e.g. a `channel_participants` join table keyed by address) rather
+   * than this scan. Tracked as a follow-up, not fixed here.
+   *
+   * Returns `undefined` when `address` is not a participant of any
+   * channel in `tenantId` — a human's bare-principal-id address, a
+   * stale/removed agent, or simply not this tenant's run at all.
+   */
+  findChannelByParticipantAddress(
+    tenantId: string,
+    address: string,
+  ): Promise<ChannelByParticipantAddress | undefined>;
 }
 
 /**
@@ -317,6 +350,23 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
         .limit(1);
       return row !== undefined;
     },
+
+    async findChannelByParticipantAddress(tenantId, address) {
+      const rows = await db
+        .select()
+        .from(channelSettings)
+        .where(eq(channelSettings.tenantId, tenantId));
+      for (const row of rows as ChannelSettingsRow[]) {
+        if (
+          participantsOf(row.settings).some(
+            (participant) => participant.address === address,
+          )
+        ) {
+          return { channelId: row.channelId, settings: row.settings };
+        }
+      }
+      return undefined;
+    },
   };
 }
 
@@ -426,6 +476,20 @@ export function createInMemoryChatStore(): ChatStore {
 
     async hasLaunchedInstance(tenantId, instanceId) {
       return launchedByKey.has(`${tenantId}:${instanceId}`);
+    },
+
+    async findChannelByParticipantAddress(tenantId, address) {
+      for (const row of settingsByKey.values()) {
+        if (row.tenantId !== tenantId) continue;
+        if (
+          participantsOf(row.settings).some(
+            (participant) => participant.address === address,
+          )
+        ) {
+          return { channelId: row.channelId, settings: row.settings };
+        }
+      }
+      return undefined;
     },
   };
 }
