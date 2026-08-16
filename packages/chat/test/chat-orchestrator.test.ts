@@ -906,6 +906,158 @@ describe("createArtifactDeliveryHandler", () => {
   });
 });
 
+// CL-6092: a finalized turn's classified inference failure — never any
+// other error — reported to `providerHealth` when exactly one provider
+// is connected.
+describe("createArtifactDeliveryHandler provider health signal (CL-6092)", () => {
+  function baseDeps(overrides?: {
+    providerHealth?: { reportInferenceFailure: (args: unknown) => void };
+    listConnectedProviders?: (
+      tenantId: string,
+    ) => Promise<readonly string[]>;
+  }) {
+    return {
+      approvals: { findByCorrelationId: async () => null },
+      db: createFakeDb({ id: "run_1", tenantId: "ten_1" }) as never,
+      store: {
+        listChannelSettings: async () => [
+          channelRow("ins_channel1", ["run_1@ten1.workbench.test"]),
+        ],
+      },
+      platform: {
+        sendMail: async () => ({
+          id: "mail_1",
+          createdAt: new Date().toISOString(),
+        }),
+      },
+      events: createSidecarEmitter(),
+      claims: fakeClaims(),
+      ...overrides,
+    };
+  }
+
+  test("reports a credential_failure error when exactly one provider is connected", async () => {
+    const reported: unknown[] = [];
+    const handler = createArtifactDeliveryHandler(
+      baseDeps({
+        providerHealth: {
+          reportInferenceFailure: (args) => reported.push(args),
+        },
+        listConnectedProviders: async () => ["anthropic"],
+      }),
+    );
+
+    handler("run_1@ten1.workbench.test", {
+      turnId: "turn_1",
+      toolCalls: [],
+      errors: [{ category: "credential_failure", message: "bad api key" }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reported).toEqual([
+      {
+        tenantId: "ten_1",
+        provider: "anthropic",
+        reason: "bad api key",
+      },
+    ]);
+  });
+
+  test("reports a quota_exhausted error the same way", async () => {
+    const reported: unknown[] = [];
+    const handler = createArtifactDeliveryHandler(
+      baseDeps({
+        providerHealth: {
+          reportInferenceFailure: (args) => reported.push(args),
+        },
+        listConnectedProviders: async () => ["openai"],
+      }),
+    );
+
+    handler("run_1@ten1.workbench.test", {
+      turnId: "turn_1",
+      toolCalls: [],
+      errors: [{ category: "quota_exhausted", message: "quota exhausted" }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reported).toHaveLength(1);
+  });
+
+  test("does not report an ordinary (non-classified) inference error", async () => {
+    const reported: unknown[] = [];
+    const handler = createArtifactDeliveryHandler(
+      baseDeps({
+        providerHealth: {
+          reportInferenceFailure: (args) => reported.push(args),
+        },
+        listConnectedProviders: async () => ["anthropic"],
+      }),
+    );
+
+    handler("run_1@ten1.workbench.test", {
+      turnId: "turn_1",
+      toolCalls: [],
+      errors: [{ category: "retryable", message: "temporary blip" }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reported).toHaveLength(0);
+  });
+
+  test("does not report when the turn has no errors at all", async () => {
+    const reported: unknown[] = [];
+    const handler = createArtifactDeliveryHandler(
+      baseDeps({
+        providerHealth: {
+          reportInferenceFailure: (args) => reported.push(args),
+        },
+        listConnectedProviders: async () => ["anthropic"],
+      }),
+    );
+
+    handler("run_1@ten1.workbench.test", { turnId: "turn_1", toolCalls: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reported).toHaveLength(0);
+  });
+
+  test("never guesses a provider when more than one is connected", async () => {
+    const reported: unknown[] = [];
+    const handler = createArtifactDeliveryHandler(
+      baseDeps({
+        providerHealth: {
+          reportInferenceFailure: (args) => reported.push(args),
+        },
+        listConnectedProviders: async () => ["anthropic", "openai"],
+      }),
+    );
+
+    handler("run_1@ten1.workbench.test", {
+      turnId: "turn_1",
+      toolCalls: [],
+      errors: [{ category: "credential_failure", message: "bad api key" }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reported).toHaveLength(0);
+  });
+
+  test("does nothing when no providerHealth port is configured", async () => {
+    const handler = createArtifactDeliveryHandler(
+      baseDeps({ listConnectedProviders: async () => ["anthropic"] }),
+    );
+
+    expect(() =>
+      handler("run_1@ten1.workbench.test", {
+        turnId: "turn_1",
+        toolCalls: [],
+        errors: [{ category: "credential_failure", message: "bad api key" }],
+      }),
+    ).not.toThrow();
+  });
+});
+
 describe("createChatOrchestrator daily transcript digest (CL-5852 M3b)", () => {
   test("records at most one memory entry per channel per day for a connector.reply", async () => {
     const { memory, added } = fakeMemory();
