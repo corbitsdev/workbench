@@ -1,0 +1,160 @@
+import { expect, test } from "bun:test";
+
+import { defineEval } from "./define-eval.ts";
+import { runEval, runMatrix } from "./runner.ts";
+import type { ScorerResult, Target, Turn } from "./types.ts";
+
+function fakeTarget(configName: string, replies: Record<string, Turn>): Target {
+  const sent: string[] = [];
+  return {
+    configName,
+    async sendTurn(human) {
+      sent.push(human);
+      const turn = replies[human];
+      if (turn === undefined) {
+        throw new Error(`fakeTarget: no scripted reply for "${human}"`);
+      }
+      return turn;
+    },
+    async close() {
+      // no-op
+    },
+  };
+}
+
+function pass(name: string): ScorerResult {
+  return { name, score: 1, pass: true, reason: "ok" };
+}
+
+function fail(name: string): ScorerResult {
+  return { name, score: 0, pass: false, reason: "nope" };
+}
+
+test("runEval plays every step in order and grades against the growing transcript", async () => {
+  const evalDef = defineEval({
+    name: "two-step",
+    description: "test",
+    steps: [
+      {
+        human: "hello",
+        expect: [
+          (ctx) => {
+            expect(ctx.turnIndex).toBe(0);
+            expect(ctx.transcript).toHaveLength(1);
+            return pass("greeted");
+          },
+        ],
+      },
+      {
+        human: "second",
+        expect: [
+          (ctx) => {
+            expect(ctx.turnIndex).toBe(1);
+            expect(ctx.transcript).toHaveLength(2);
+            return pass("followed-up");
+          },
+        ],
+      },
+    ],
+  });
+
+  const target = fakeTarget("default", {
+    hello: { human: "hello", replyText: "hi there", toolCalls: [] },
+    second: { human: "second", replyText: "sure", toolCalls: [] },
+  });
+
+  const result = await runEval(evalDef, target);
+  expect(result.evalName).toBe("two-step");
+  expect(result.configName).toBe("default");
+  expect(result.steps).toHaveLength(2);
+  expect(result.steps[0]?.scorerReports[0]).toMatchObject({
+    name: "greeted",
+    pass: true,
+    stepIndex: 0,
+  });
+  expect(result.steps[1]?.scorerReports[0]).toMatchObject({
+    name: "followed-up",
+    pass: true,
+    stepIndex: 1,
+  });
+});
+
+test("runEval plays memorySeed turns before the scripted steps, ungraded", async () => {
+  const evalDef = defineEval({
+    name: "with-seed",
+    description: "test",
+    memorySeed: ["the sky is blue"],
+    steps: [
+      {
+        human: "go",
+        expect: [() => pass("only-scorer")],
+      },
+    ],
+  });
+  const seen: string[] = [];
+  const target: Target = {
+    configName: "default",
+    async sendTurn(human) {
+      seen.push(human);
+      return { human, replyText: "ok", toolCalls: [] };
+    },
+    async close() {},
+  };
+  const result = await runEval(evalDef, target);
+  expect(seen).toEqual(["Please remember: the sky is blue", "go"]);
+  // Only the scripted step produces a scored EvalStepRecord.
+  expect(result.steps).toHaveLength(1);
+});
+
+test("runMatrix runs every eval against every config and always closes the target", async () => {
+  const evalA = defineEval({
+    name: "a",
+    description: "test",
+    steps: [{ human: "hi", expect: [() => pass("p")] }],
+  });
+  const evalB = defineEval({
+    name: "b",
+    description: "test",
+    steps: [{ human: "hi", expect: [() => fail("f")] }],
+  });
+  const closed: string[] = [];
+  const results = await runMatrix(
+    [evalA, evalB],
+    [{ name: "cfg1" }, { name: "cfg2" }],
+    async (configName) => ({
+      configName,
+      async sendTurn(human) {
+        return { human, replyText: "ok", toolCalls: [] };
+      },
+      async close() {
+        closed.push(configName);
+      },
+    }),
+  );
+  expect(results).toHaveLength(4);
+  expect(closed).toEqual(["cfg1", "cfg2"]);
+  expect(results.map((r) => `${r.evalName}/${r.configName}`).sort()).toEqual(
+    ["a/cfg1", "a/cfg2", "b/cfg1", "b/cfg2"].sort(),
+  );
+});
+
+test("runMatrix still closes the target when a run throws", async () => {
+  const evalDef = defineEval({
+    name: "boom",
+    description: "test",
+    steps: [{ human: "hi", expect: [] }],
+  });
+  let closed = false;
+  await expect(
+    runMatrix([evalDef], [{ name: "cfg" }], async (configName) => ({
+      configName,
+      async sendTurn() {
+        throw new Error("target failed");
+      },
+      async close() {
+        closed = true;
+      },
+    })),
+  ).rejects.toThrow("target failed");
+  expect(closed).toBe(true);
+});

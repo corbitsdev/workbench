@@ -585,6 +585,30 @@
         "typescript": "catalog:",
       },
     },
+    "packages/evals": {
+      "name": "@corbits/evals",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/assistant-workflow": "workspace:*",
+        "@intx/agent": "workspace:*",
+        "@intx/db": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/hub-client": "workspace:*",
+        "@workbench/onboarding": "workspace:*",
+        "drizzle-orm": "catalog:",
+        "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@corbits/agent-directory-tools": "workspace:*",
+        "@corbits/connections-tools": "workspace:*",
+        "@corbits/memory-tools": "workspace:*",
+        "@corbits/routines-tools": "workspace:*",
+        "@corbits/task-dispatch-tools": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/folded-runs": {
       "name": "@corbits/folded-runs",
       "version": "0.0.1",
@@ -1767,6 +1791,8 @@
     "@corbits/docker-provisioner": ["@corbits/docker-provisioner@workspace:packages/docker-provisioner"],
 
     "@corbits/echo-workflow": ["@corbits/echo-workflow@workspace:workflows/echo"],
+
+    "@corbits/evals": ["@corbits/evals@workspace:packages/evals"],
 
     "@corbits/folded-runs": ["@corbits/folded-runs@workspace:packages/folded-runs"],
 
