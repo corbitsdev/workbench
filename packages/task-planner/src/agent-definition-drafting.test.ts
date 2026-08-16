@@ -173,6 +173,47 @@ describe("validateAgentDefinitionDraftReplyAgainstInventory", () => {
       skills: [],
     });
   });
+
+  test("@corbits/capability-tools is pinned by default when the inventory offers it, even though Myra never chose it", () => {
+    const inventoryWithCapabilityTools: PlannerInventory = {
+      ...INVENTORY,
+      toolPackages: [
+        ...INVENTORY.toolPackages,
+        { name: "@corbits/capability-tools", connectorId: "capability", credentialBinding: null },
+      ],
+    };
+    const draft = validateAgentDefinitionDraftReplyAgainstInventory(
+      { systemPrompt: "You help." },
+      inventoryWithCapabilityTools,
+    );
+    expect(draft.toolPackagePins).toEqual(["@corbits/capability-tools"]);
+  });
+
+  test("the default capability-tools pin is never duplicated when Myra already chose it", () => {
+    const inventoryWithCapabilityTools: PlannerInventory = {
+      ...INVENTORY,
+      toolPackages: [
+        ...INVENTORY.toolPackages,
+        { name: "@corbits/capability-tools", connectorId: "capability", credentialBinding: null },
+      ],
+    };
+    const draft = validateAgentDefinitionDraftReplyAgainstInventory(
+      {
+        systemPrompt: "You help.",
+        toolPackagePins: ["@corbits/capability-tools"],
+      },
+      inventoryWithCapabilityTools,
+    );
+    expect(draft.toolPackagePins).toEqual(["@corbits/capability-tools"]);
+  });
+
+  test("no capability-tools pin is added when the tenant's inventory never offers it", () => {
+    const draft = validateAgentDefinitionDraftReplyAgainstInventory(
+      { systemPrompt: "You help." },
+      INVENTORY,
+    );
+    expect(draft.toolPackagePins).not.toContain("@corbits/capability-tools");
+  });
 });
 
 describe("createMyraAgentDefinitionDrafting", () => {
@@ -286,7 +327,7 @@ describe("createMyraAgentDefinitionDrafting", () => {
     expect(sentPrompt).not.toContain("request_capability");
   });
 
-  test("the prompt tells the model to mention request_capability only when @corbits/capability-tools is offered", async () => {
+  test("the prompt tells the model request_capability is pinned automatically, only when @corbits/capability-tools is offered", async () => {
     let sentPrompt = "";
     const drafting = createMyraAgentDefinitionDrafting(
       buildDeps({
