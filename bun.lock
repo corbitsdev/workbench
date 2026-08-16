@@ -296,6 +296,7 @@
       "name": "@corbits/bench",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/api-query": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
@@ -311,6 +312,7 @@
       "name": "@corbits/bench-ui",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/api-query": "workspace:*",
         "@corbits/bench": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#e93005c3a64416cb5dfa8342007c7fe3b52b84fe",
         "@intx/types": "workspace:*",
@@ -320,6 +322,7 @@
         "react-dom": "^19.2.0",
       },
       "devDependencies": {
+        "@happy-dom/global-registrator": "^20.11.2",
         "@types/bun": "catalog:",
         "@types/react": "^19.2.2",
         "@types/react-dom": "^19.2.1",
@@ -377,6 +380,7 @@
       "name": "@corbits/chat-ui",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/api-query": "workspace:*",
         "@corbits/chat": "workspace:*",
         "@corbits/config-profiles-ui": "workspace:*",
         "@corbits/context-menu": "workspace:*",
@@ -462,6 +466,7 @@
       "name": "@corbits/config-profiles-ui",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/api-query": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#e93005c3a64416cb5dfa8342007c7fe3b52b84fe",
         "arktype": "catalog:",
         "react": "^19.2.0",
@@ -781,6 +786,7 @@
       "name": "@corbits/preferences",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/api-query": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
@@ -844,6 +850,7 @@
       "name": "@corbits/settings-ui",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/api-query": "workspace:*",
         "@corbits/bench-ui": "workspace:*",
         "@corbits/chat-ui": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#e93005c3a64416cb5dfa8342007c7fe3b52b84fe",
@@ -991,6 +998,7 @@
       "name": "@corbits/tasks-ui",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/api-query": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#4c1214298e6f7005da01918c7d5a68230f7109cc",
         "arktype": "catalog:",
         "lucide-react": "^1.27.0",

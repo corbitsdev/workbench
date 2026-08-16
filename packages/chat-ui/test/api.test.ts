@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { UnauthenticatedError } from "@corbits/api-query";
 import {
   ChatApiError,
   createChannel,
@@ -89,10 +90,10 @@ describe("listChannels", () => {
     );
   });
 
-  test("throws a ChatApiError on 401", async () => {
+  test("throws an UnauthenticatedError on 401", async () => {
     stubFetch(() => json(null, 401));
-    await expect(listChannels("tenant_1", "chat")).rejects.toThrow(
-      /Not signed in/,
+    await expect(listChannels("tenant_1", "chat")).rejects.toBeInstanceOf(
+      UnauthenticatedError,
     );
   });
 });
@@ -529,6 +530,13 @@ describe("pinMessage / unpinMessage", () => {
     stubFetch(() => new Response(null, { status: 404 }));
     await expect(unpinMessage("tenant_1", "c1", "m1")).rejects.toBeInstanceOf(
       ChatApiError,
+    );
+  });
+
+  test("unpinMessage throws an UnauthenticatedError on 401", async () => {
+    stubFetch(() => new Response(null, { status: 401 }));
+    await expect(unpinMessage("tenant_1", "c1", "m1")).rejects.toBeInstanceOf(
+      UnauthenticatedError,
     );
   });
 });

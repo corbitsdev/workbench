@@ -12,7 +12,7 @@
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
-import { ApiQueryError } from "@corbits/api-query";
+import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
 
 export const WebhookTrigger = type({
   id: "string",
@@ -55,7 +55,7 @@ async function request<T>(
     );
   }
   if (response.status === 401) {
-    throw new ApiQueryError(`Not signed in for ${path}.`, 401);
+    throw new UnauthenticatedError();
   }
   if (!response.ok) {
     const detail = await response

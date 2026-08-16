@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { UnauthenticatedError } from "@corbits/api-query";
 import {
   TenancyApiError,
   assignRole,
@@ -72,6 +73,20 @@ describe("listPrincipals", () => {
     const principals = await listPrincipals("tnt_1");
     expect(calls[0]?.path).toBe("/api/tenants/tnt_1/principals");
     expect(principals).toHaveLength(1);
+  });
+
+  test("throws an UnauthenticatedError on 401", async () => {
+    stubFetch(() => json(undefined, 401));
+    await expect(listPrincipals("tnt_1")).rejects.toBeInstanceOf(
+      UnauthenticatedError,
+    );
+  });
+
+  test("throws a TenancyApiError on 403", async () => {
+    stubFetch(() => json(undefined, 403));
+    await expect(listPrincipals("tnt_1")).rejects.toBeInstanceOf(
+      TenancyApiError,
+    );
   });
 });
 
