@@ -504,7 +504,7 @@ describe("the OpenRouter connect card", () => {
     );
 
     expect(markup).toContain("Setting up your workbench");
-    expect(markup).not.toContain("Your first routines are running");
+    expect(markup).not.toContain("Your workbench is ready");
   });
 
   test("a connected return finishes setup and lands on the running-routines ending once completeSetup reports seeded", async () => {
@@ -545,7 +545,7 @@ describe("the OpenRouter connect card", () => {
       });
 
       expect(container.textContent).toContain(
-        "Your first routines are running",
+        "Your workbench is ready",
       );
       expect(container.textContent).toContain("Echo routine");
       expect(container.textContent).toContain("Myra routine");
@@ -602,7 +602,7 @@ describe("the OpenRouter connect card", () => {
 
       expect(container.textContent).toContain("Connect your tools");
       expect(container.textContent).not.toContain(
-        "Your first routines are running",
+        "Your workbench is ready",
       );
 
       const skipButton = Array.from(container.querySelectorAll("button")).find(
@@ -614,7 +614,7 @@ describe("the OpenRouter connect card", () => {
       });
 
       expect(container.textContent).toContain(
-        "Your first routines are running",
+        "Your workbench is ready",
       );
     } finally {
       act(() => root.unmount());
@@ -846,7 +846,7 @@ describe("the Hugging Face connect card", () => {
     );
 
     expect(markup).toContain("Setting up your workbench");
-    expect(markup).not.toContain("Your first routines are running");
+    expect(markup).not.toContain("Your workbench is ready");
   });
 
   test("a connected return finishes setup and lands on the running-routines ending once completeSetup reports seeded", async () => {
@@ -887,7 +887,7 @@ describe("the Hugging Face connect card", () => {
       });
 
       expect(container.textContent).toContain(
-        "Your first routines are running",
+        "Your workbench is ready",
       );
       expect(container.textContent).toContain("Echo routine");
       expect(container.textContent).toContain("Myra routine");

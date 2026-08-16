@@ -71,6 +71,10 @@ export type CreateOnboardingRoutesDeps = {
   seedModel?: ModelSource;
   pushWorkflow: WorkflowPusher;
   log: (line: string) => void;
+  /** Error-level sibling of `log`: every server-side failure path in
+   * these routes reports here so the hub's global logger records it at
+   * error severity, not as an info line that vanishes under filtering. */
+  logError?: (line: string) => void;
   openrouterConnect?: {
     exchange?: typeof exchangeCodeForKey;
     /** The fast half only — proves the code-exchanged key and persists
@@ -664,7 +668,9 @@ export function createOnboardingRoutes(
       return c.json(result, 200);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(`credential setup failed for user ${user.id}: ${message}`);
+      (deps.logError ?? deps.log)(
+        `credential setup failed for user ${user.id}: ${message}`,
+      );
       // ProvisionError messages are written to be shown (they name the
       // actual step that failed); anything else stays behind the generic
       // sentence rather than leaking an internal error shape at a user.
@@ -781,7 +787,9 @@ export function createOnboardingRoutes(
       );
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      deps.log(`complete-setup failed for user ${user.id}: ${message}`);
+      (deps.logError ?? deps.log)(
+        `complete-setup failed for user ${user.id}: ${message}`,
+      );
       return c.json(
         {
           error: {

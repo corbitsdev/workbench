@@ -2028,6 +2028,7 @@ export async function createHub(config: HubConfig) {
     hubUrl: config.baseUrl,
     pushWorkflow: createGitWorkflowPusher(),
     log: (line) => log.info`${line}`,
+    logError: (line) => log.error`${line}`,
     credentialCipher,
     pendingSeedStore: createDrizzlePendingSeedStore(db, credentialCipher),
     accessPolicy: {
