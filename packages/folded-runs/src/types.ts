@@ -4,6 +4,7 @@
 // registry — arrives as an injected port; this package never imports
 // a hub or a host-specific package such as `@corbits/chat`.
 import type { DB } from "@intx/db";
+import type { CredentialCipher } from "@intx/types";
 import type {
   AssetService,
   EventCollectorRegistry,
@@ -17,6 +18,18 @@ export type FoldedRunsDeps = {
   assetService: AssetService;
   sidecarRouter: SidecarRouter;
   eventCollectors: EventCollectorRegistry;
+  /**
+   * Decrypts credential secrets when a launch resolves inference sources
+   * against the tenant catalog (`resolveDefinitionSources`, called from
+   * `deployAtHead`). Optional: omitted, `resolveDefinitionSources` falls
+   * back to a noop cipher that returns a stored secret unchanged — correct
+   * only when the secret was itself written unencrypted. The composition
+   * root (`apps/hub`) must supply the same real cipher its credential
+   * write route encrypts with, or every folded-run launch (channel hosts,
+   * invited agents, routines, tasks) decrypts nothing and hands the raw
+   * ciphertext to the provider as its API key.
+   */
+  credentialCipher?: CredentialCipher;
 };
 
 export type SentFoldedMail = {
