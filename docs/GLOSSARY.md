@@ -49,12 +49,14 @@ routine.
 
 Naming conventions for this repository's packages:
 
-- Local packages are `@workbench/*`, with a kebab-case kind suffix where
-  the package is one of a family — `-agent`, `-tool`.
-- Deployable definition packages are `@corbits/*` with a kind suffix
-  naming what they are — `@corbits/<name>-agent` for agents,
-  `@corbits/<name>-workflow` for plain workflows (e.g.
-  `@corbits/echo-workflow`). They are portable artifacts that deploy on
-  any Interchange instance and carry no reference to the host application.
-- Packages destined to graduate into their own repositories are also
-  `@corbits/*` (e.g. [`@corbits/react-ui`](https://github.com/corbitsdev/react-ui)).
+- `@corbits/*` is the default scope for every package under `packages/`,
+  whether it deploys as a portable artifact (e.g.
+  `@corbits/<name>-agent`, `@corbits/<name>-workflow`), graduates into its
+  own repository (e.g.
+  [`@corbits/react-ui`](https://github.com/corbitsdev/react-ui)), or is
+  plain local domain code — with a kebab-case kind suffix where the
+  package is one of a family (`-agent`, `-tool`).
+- `@workbench/*` is a legacy scope being migrated to `@corbits/*` package
+  by package; a handful of packages still carry it (`access-policy`,
+  `cli`, `connections`, `echo`, `hub-client`, `onboarding`). New packages
+  never use it.

@@ -1,4 +1,4 @@
-// The fourth of onboarding's four steps (CL-6104), reached from `/` the
+// The third of onboarding's four steps (CL-6104), reached from `/` the
 // moment a brand-new account's bench has zero workbenches — see
 // `home-page.tsx`'s `HomeRoute`, which renders this in place of the
 // auto land-hop for exactly that case. One prompt box, no other chrome

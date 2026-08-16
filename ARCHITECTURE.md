@@ -9,13 +9,17 @@ for the concrete stack.
 | Layer         | What lives here                                                         |
 | ------------- | ----------------------------------------------------------------------- |
 | `apps/`       | Deployable services: hub (API), sidecar (execution host), web (UI)      |
-| `packages/`   | Domain packages — all product logic; the only place product rules live  |
+| `packages/`   | Domain packages — where product rules live                              |
 | `workflows/`  | Workflow definition packages, deployed as assets                        |
 | `vendor/intx` | Hand-copied, ledgered `@intx/*` source — see [VENDORED.md](VENDORED.md) |
 
-Apps stay generic: a product rule that lives inside `apps/*` is a defect —
-it belongs in a package. Deployable services compose packages; they do not
-own domain logic themselves.
+Packages own product rules. Apps stay generic — they compose packages
+rather than own domain logic — with one tracked exception: `apps/hub`
+carries a small, explicitly-listed set of mounts (`artifacts-mount.ts`,
+`memory-mount.ts`, `skills-mount.ts`, `slack-tag-mount.ts`,
+`tenant-create-guard.ts`) pending extraction into packages (tracked as
+CL-6127). Outside that list, a product rule that lives inside `apps/*` is
+a defect — it belongs in a package.
 
 ## Interchange is the platform
 
@@ -80,12 +84,38 @@ replies by emitting `connector.reply` events on its own stream; a reply
 bridge turns those events into timeline messages, mirroring how an
 `@mention` fans a message out to an agent participant. See
 [docs/CHAT.md](docs/CHAT.md) for the full message, thread, and
-participant model built on top of this run.
+participant model built on top of this run. Per-workbench settings (name,
+participants, capacity, connector overrides, notification prefs — see
+PRODUCT.md's "Workbench settings") are composition on top of this same
+run and its tenant, not a separate object; the surface lives in
+`packages/chat-ui`'s `channel-settings`.
 
 **Direction (CL-6093):** today a workbench's run is "settle-and-wake" —
 the anchor run settles between deliveries and wakes on the next mail
 event. This is the current mechanism, not a permanent constraint; see
 CL-6093 for where the self-anchored run model is headed next.
+
+**Streaming a reply.** An agent's live reply reaches the timeline through
+one path, deltas to pixels:
+
+1. Inference emits `inference.text.delta` events (vendored, `@intx/inference`)
+   as an agent generates a reply, each carrying the cumulative text so far.
+2. The sidecar's per-agent event stream (`SidecarRouter.subscribeAgent`,
+   `vendor/intx/hub-sessions/src/ws/sidecar-handler.ts`) carries those
+   events out of the run.
+3. `packages/chat/src/platform-adapter.ts` subscribes to that stream and
+   wraps each event as a `chat.agent` payload; `packages/chat/src/channel-events.ts`
+   merges it with in-process ephemeral events (typing, settings changes)
+   onto one SSE stream, served from `GET /channels/:id/stream`
+   (`packages/chat/src/routes.ts`), re-checking access on every delivered
+   event.
+4. On the web, `packages/chat-ui/src/use-channel-stream.ts` holds the
+   `EventSource` (with backoff reconnect and a polling fallback), and
+   `packages/chat-ui/src/streaming-reply.ts` narrows `chat.agent` payloads
+   to `inference.text.delta` and reduces them into one growing string.
+5. `packages/chat-ui/src/timeline.tsx` renders that growing string as a
+   synthetic in-progress message alongside the persisted timeline, until
+   the real message lands and replaces it.
 
 ## Capability growth and approval gates
 

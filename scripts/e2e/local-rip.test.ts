@@ -121,10 +121,7 @@ import {
   ensureSeeded,
   modelSourceFor,
 } from "../../packages/onboarding/src/complete-credential.ts";
-import {
-  CredentialResponse,
-  paginatedSchema,
-} from "../../vendor/intx/types/src/index.ts";
+import { CredentialResponse, paginatedSchema } from "@intx/types";
 import {
   api,
   createCleanupHarness,
