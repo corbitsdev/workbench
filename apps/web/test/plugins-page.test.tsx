@@ -225,4 +225,30 @@ describe("PluginsRoute", () => {
     expect(dialog).not.toBeNull();
     expect(dialog?.textContent).toContain("GitHub");
   });
+
+  // CL-6092: a deep link naming a provider with no matching gallery card
+  // (a stale or misconfigured provider id) used to silently no-op — the
+  // gallery should say something instead of nothing.
+  test("a pending connect deep link with no matching gallery card renders a visible notice", async () => {
+    stubFetch();
+    const el = await mountWithDeepLink("not-a-real-connector");
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    const probeButton =
+      el.querySelector<HTMLButtonElement>('[data-testid="probe-request-connect"]');
+    await act(async () => {
+      probeButton?.click();
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(el.textContent).toContain(
+      "Couldn't find that connection — pick it below.",
+    );
+  });
 });

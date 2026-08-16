@@ -75,6 +75,12 @@ async function flush(times = 3): Promise<void> {
   }
 }
 
+function findByText(container: HTMLElement, text: string): HTMLElement | undefined {
+  return Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent === text,
+  );
+}
+
 describe("ProviderHealthBanner (CL-6092)", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -93,12 +99,12 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     container.remove();
   });
 
-  test("renders the provider's own reason and links Fix it to Plugins", async () => {
+  test("renders fixed guided copy for a credential_failure and links Fix it to Plugins", async () => {
     stubFetch({
       providers: {
         anthropic: {
           status: "needs_attention",
-          reason: "the key was rejected",
+          category: "credential_failure",
           at: "2026-08-15T00:00:00.000Z",
         },
       },
@@ -109,11 +115,11 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     await flush();
 
     expect(container.textContent).toContain("Anthropic");
-    expect(container.textContent).toContain("the key was rejected");
-
-    const fixButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Fix it",
+    expect(container.textContent).toContain(
+      "rejected this key. Reconnect it in Plugins.",
     );
+
+    const fixButton = findByText(container, "Fix it");
     expect(fixButton).not.toBeUndefined();
 
     await act(async () => {
@@ -122,12 +128,53 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     expect(navigated).toEqual(["/plugins"]);
   });
 
+  test("renders fixed guided copy for a quota_exhausted incident", async () => {
+    stubFetch({
+      providers: {
+        openai: {
+          status: "needs_attention",
+          category: "quota_exhausted",
+          at: "2026-08-15T00:00:00.000Z",
+        },
+      },
+      connectedProviderCount: 1,
+    });
+    await mount(() => undefined);
+    await flush();
+
+    expect(container.textContent).toContain("OpenAI");
+    expect(container.textContent).toContain("reports this key's quota is used up.");
+  });
+
+  // CL-6092: the record only ever carries a closed category, so there is
+  // no provider prose left to leak through this render layer at all — but
+  // this still proves it end to end, from a stubbed HTTP response through
+  // to what actually lands in the DOM, in case a future category ever
+  // regresses back to interpolating something provider-supplied.
+  test("never renders a provider's own raw error text, only the fixed per-category copy", async () => {
+    stubFetch({
+      providers: {
+        anthropic: {
+          status: "needs_attention",
+          category: "credential_failure",
+          at: "2026-08-15T00:00:00.000Z",
+        },
+      },
+      connectedProviderCount: 1,
+    });
+    await mount(() => undefined);
+    await flush();
+
+    expect(container.textContent).not.toContain("https://");
+    expect(container.textContent).not.toContain("sk-");
+  });
+
   test("routes to onboarding instead of Plugins when there are zero working providers", async () => {
     stubFetch({
       providers: {
         anthropic: {
           status: "needs_attention",
-          reason: "the key was rejected",
+          category: "credential_failure",
           at: "2026-08-15T00:00:00.000Z",
         },
       },
@@ -137,9 +184,7 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     await mount((to) => navigated.push(to));
     await flush();
 
-    const fixButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Fix it",
-    );
+    const fixButton = findByText(container, "Fix it");
     await act(async () => {
       fixButton?.click();
     });
@@ -151,7 +196,7 @@ describe("ProviderHealthBanner (CL-6092)", () => {
       providers: {
         anthropic: {
           status: "needs_attention",
-          reason: "the key was rejected",
+          category: "credential_failure",
           at: "2026-08-15T00:00:00.000Z",
         },
       },
@@ -163,7 +208,7 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
 
     const dismissButton = container.querySelector<HTMLButtonElement>(
-      ".provider-health-banner-dismiss",
+      'button[aria-label="Dismiss"]',
     );
     await act(async () => {
       dismissButton?.click();

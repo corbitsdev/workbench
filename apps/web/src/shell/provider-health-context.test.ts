@@ -2,14 +2,17 @@ import { describe, expect, test } from "bun:test";
 
 import { deriveProviderHealthBanner } from "./provider-health-context";
 
-const RECORD = { status: "needs_attention" as const, reason: "bad api key" };
+const RECORD = {
+  status: "needs_attention" as const,
+  category: "credential_failure" as const,
+};
 
 describe("deriveProviderHealthBanner", () => {
   test("returns null when nothing is unhealthy", () => {
     expect(deriveProviderHealthBanner({}, {}, undefined)).toBeNull();
   });
 
-  test("surfaces an unhealthy provider's own reason", () => {
+  test("surfaces an unhealthy provider's own category", () => {
     const banner = deriveProviderHealthBanner(
       { anthropic: { ...RECORD, at: "2026-08-15T00:00:00.000Z" } },
       {},
@@ -17,7 +20,7 @@ describe("deriveProviderHealthBanner", () => {
     );
     expect(banner).toEqual({
       provider: "anthropic",
-      reason: "bad api key",
+      category: "credential_failure",
       zeroWorkingProviders: false,
     });
   });
@@ -61,8 +64,12 @@ describe("deriveProviderHealthBanner", () => {
 
   test("with more than one unhealthy provider, the most recently reported one wins", () => {
     const providers = {
-      anthropic: { ...RECORD, reason: "older", at: "2026-08-15T00:00:00.000Z" },
-      openai: { ...RECORD, reason: "newer", at: "2026-08-15T01:00:00.000Z" },
+      anthropic: {
+        ...RECORD,
+        category: "quota_exhausted" as const,
+        at: "2026-08-15T00:00:00.000Z",
+      },
+      openai: { ...RECORD, at: "2026-08-15T01:00:00.000Z" },
     };
     expect(deriveProviderHealthBanner(providers, {}, 2)?.provider).toBe("openai");
   });

@@ -26,6 +26,7 @@ import {
 
 import {
   fetchProviderHealth,
+  type ClassifiedInferenceFailureCategory,
   type ProviderHealthRecord,
 } from "@workbench/connections/provider-health";
 
@@ -35,7 +36,7 @@ const POLL_INTERVAL_MS = 30_000;
 
 export type ProviderHealthBannerState = {
   readonly provider: string;
-  readonly reason: string;
+  readonly category: ClassifiedInferenceFailureCategory;
   /** True when the tenant has no working provider at all — the banner's
    * fix action routes to onboarding's credential step instead of
    * Plugins in this case. */
@@ -87,7 +88,7 @@ export function deriveProviderHealthBanner(
   if (dismissedAt[unhealthy.provider] === unhealthy.record.at) return null;
   return {
     provider: unhealthy.provider,
-    reason: unhealthy.record.reason,
+    category: unhealthy.record.category,
     zeroWorkingProviders: connectedProviderCount === 0,
   };
 }
@@ -128,7 +129,7 @@ export function ProviderHealthProvider({
       fetchProviderHealth(selectedTenantId)
         .then((snapshot) => {
           if (cancelled || tenantIdRef.current !== selectedTenantId) return;
-          setProviders(snapshot.providers ?? {});
+          setProviders(snapshot.providers);
           setConnectedProviderCount(snapshot.connectedProviderCount);
         })
         .catch(() => {
