@@ -389,7 +389,7 @@ export function CreateAgentPanel({
           <DialogTitle>New agent</DialogTitle>
           <DialogDescription>
             A name is enough to start — Myra drafts the starting
-            instructions, and you teach it the rest in chat.
+            instructions, and you teach it the rest in conversation.
           </DialogDescription>
         </DialogHeader>
         <DialogBody>

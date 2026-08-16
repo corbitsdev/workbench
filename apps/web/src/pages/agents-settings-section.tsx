@@ -327,7 +327,7 @@ function AgentDetailPanel({
             onClick={handleOpenInChannel}
             aria-label="Open its workbench"
           >
-            <Users /> Open in chat
+            <Users /> Open workbench
           </Button>
         </div>
         {error !== null && (
@@ -350,7 +350,7 @@ function AgentDetailPanel({
         </h3>
         {instances.length === 0 ? (
           <span className="text-sm text-muted-foreground">
-            No active agents. Use Start chat to launch one.
+            No active agents. Open its workbench to launch one.
           </span>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-3">
