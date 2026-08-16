@@ -267,6 +267,30 @@ describe("readHubConfig", () => {
     });
   });
 
+  describe("sidecarWebSocketUrl", () => {
+    test("is undefined when HUB_SIDECAR_WEBSOCKET_URL is unset", () => {
+      expect(readHubConfig(validEnv).sidecarWebSocketUrl).toBeUndefined();
+    });
+
+    test("is read from HUB_SIDECAR_WEBSOCKET_URL when set", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        HUB_SIDECAR_WEBSOCKET_URL: "ws://sidecar-host.internal:3000/api/sidecars/ws",
+      });
+      expect(config.sidecarWebSocketUrl).toBe(
+        "ws://sidecar-host.internal:3000/api/sidecars/ws",
+      );
+    });
+
+    test("rejects a value that is not a ws(s):// URL", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        HUB_SIDECAR_WEBSOCKET_URL: "http://not-a-websocket-url",
+      });
+      expect(message).toContain("HUB_SIDECAR_WEBSOCKET_URL");
+    });
+  });
+
   test("an empty environment reports every variable in one error", () => {
     const message = readExpectingError({});
     for (const name of [

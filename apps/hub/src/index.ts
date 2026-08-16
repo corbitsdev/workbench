@@ -516,7 +516,9 @@ export async function createHub(config: HubConfig) {
       return row?.address ?? null;
     },
   });
-  const hubWebSocketUrl = `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
+  const hubWebSocketUrl =
+    config.sidecarWebSocketUrl ??
+    `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
   const sidecarAllocationReconciler = createSidecarAllocationReconciler({
     allocationStore: sidecarAllocationStore,
     plugins: sidecarPlugins,
@@ -550,12 +552,14 @@ export async function createHub(config: HubConfig) {
   let nextAllocationConnectionRepairAt =
     Date.now() + ALLOCATION_CONNECTION_REPAIR_INTERVAL_MS;
   let sidecarAllocationReconciliationStopped = false;
+  let sidecarAllocationReconciliationTimer: ReturnType<typeof setTimeout> | undefined;
   function scheduleAllocationReconciliation(delayMs: number): void {
     if (sidecarAllocationReconciliationStopped) return;
     const timer = setTimeout(() => {
       void reconcileSidecarAllocations();
     }, delayMs);
     timer.unref?.();
+    sidecarAllocationReconciliationTimer = timer;
   }
   async function reconcileSidecarAllocations(): Promise<void> {
     try {
@@ -992,6 +996,7 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/sidecar-placement`,
     createSidecarPlacementRoutes({
       store: createDrizzleSidecarPlacementStore(db),
+      hasProvisioner: config.sidecarProvisioner.kind !== "none",
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
@@ -2151,6 +2156,9 @@ export async function createHub(config: HubConfig) {
     db,
     close: async () => {
       sidecarAllocationReconciliationStopped = true;
+      if (sidecarAllocationReconciliationTimer !== undefined) {
+        clearTimeout(sidecarAllocationReconciliationTimer);
+      }
       chatOrchestrator.dispose();
       taskOrchestrator.dispose();
       taskLifecycle.stop();

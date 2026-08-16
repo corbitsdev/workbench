@@ -96,6 +96,9 @@ const HubEnv = type({
   "DOCKER_PROVISIONER_IMAGE?": type("string > 0").describe(
     "the container image the docker sidecar provisioner runs for each exclusive allocation; required when SIDECAR_PROVISIONER=docker",
   ),
+  "HUB_SIDECAR_WEBSOCKET_URL?": type(/^wss?:\/\/.+$/).describe(
+    "the ws(s):// URL a provisioned sidecar container dials back to reach this hub; unset (default) derives it from BASE_URL, which is wrong for a docker sidecar provisioner — that container's own localhost is itself, not the hub host — so set this whenever SIDECAR_PROVISIONER=docker",
+  ),
 });
 
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
@@ -151,6 +154,9 @@ export type HubConfig = {
    * verification requirement. */
   readonly allowUnverifiedEmails: boolean;
   readonly sidecarProvisioner: SidecarProvisionerConfig;
+  /** Overrides the ws(s):// URL a provisioned sidecar dials back to reach
+   * this hub. Unset derives it from baseUrl instead. */
+  readonly sidecarWebSocketUrl?: string;
 };
 
 type ParsedHubEnv = typeof HubEnv.infer;
@@ -295,5 +301,7 @@ export function readHubConfig(
     hubConfig.huggingfaceOAuthClientId = parsed.HUGGINGFACE_OAUTH_CLIENT_ID;
   if (parsed.CREDENTIAL_ENCRYPTION_KEY !== undefined)
     hubConfig.credentialEncryptionKeyHex = parsed.CREDENTIAL_ENCRYPTION_KEY;
+  if (parsed.HUB_SIDECAR_WEBSOCKET_URL !== undefined)
+    hubConfig.sidecarWebSocketUrl = parsed.HUB_SIDECAR_WEBSOCKET_URL;
   return hubConfig;
 }

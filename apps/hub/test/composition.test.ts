@@ -5,7 +5,7 @@
 // needs a database: every asserted path fails or answers before a query
 // would run.
 
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -74,6 +74,34 @@ describe("boot", () => {
     // Static serving never swallows the API prefix.
     const unknownApi = await hub.app.request("/api/no-such-route");
     expect(unknownApi.status).toBe(404);
+  });
+});
+
+describe("shutdown", () => {
+  test("close() cancels the pending sidecar allocation reconciliation timer", async () => {
+    const setTimeoutSpy = spyOn(global, "setTimeout");
+    const clearTimeoutSpy = spyOn(global, "clearTimeout");
+
+    const hub = await createHub(config);
+    // index.ts schedules its reconciliation loop with setTimeout(fn,
+    // 1000) — the one 1000ms setTimeout call site in the module — so
+    // this is the pending timer close() must cancel.
+    const reconciliationCallIndex = setTimeoutSpy.mock.calls.findIndex(
+      (call) => call[1] === 1000,
+    );
+    expect(reconciliationCallIndex).toBeGreaterThanOrEqual(0);
+    const reconciliationTimerId = setTimeoutSpy.mock.results[
+      reconciliationCallIndex
+    ]?.value as ReturnType<typeof setTimeout>;
+
+    await hub.close();
+
+    expect(
+      clearTimeoutSpy.mock.calls.map((call) => call[0]),
+    ).toContain(reconciliationTimerId);
+
+    setTimeoutSpy.mockRestore();
+    clearTimeoutSpy.mockRestore();
   });
 });
 
