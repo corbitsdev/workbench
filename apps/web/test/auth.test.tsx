@@ -215,10 +215,11 @@ describe("the gate", () => {
 
   test("signed in renders the shell with the sidebar and the avatar's account menu trigger", () => {
     const markup = renderApp({ kind: "signed-in", user });
-    // The one sidebar plus the account affordance — a menu (Settings, Sign
-    // out), not a plain link straight to settings (CL-6105).
+    // The one sidebar plus the account affordance — a menu (weekly usage,
+    // Settings, feedback, Log out), not a plain link straight to settings
+    // (CL-6105, grown to the reference shape in CL-6132).
     expect(markup).toContain('data-testid="shell-sidebar"');
-    expect(markup).toContain("shell-sidebar-avatar-btn");
+    expect(markup).toContain("shell-sidebar-account-btn");
     expect(markup).toContain('aria-label="ada · Account menu"');
     expect(markup).not.toContain("user_1");
   });
