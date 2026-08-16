@@ -164,6 +164,27 @@ describe("ChannelTimeline", () => {
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
+  test("shows a matching participant's display name over its slugified handle", () => {
+    const withSender: MessageItem[] = [
+      {
+        id: "m6b",
+        createdAt: "2026-01-01T00:05:30.000Z",
+        parts: [{ kind: "text", text: "hi" }],
+        sender: { name: "Myra", address: "ins_myra1@agents.example" },
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline
+        items={withSender}
+        participants={[{ address: "ins_myra1@agents.example", handle: "myra" }]}
+      />,
+    );
+    expect(markup).toContain(">Myra<");
+    expect(markup).not.toContain(">@myra<");
+    expect(markup).toContain('title="@myra"');
+    expect(markup).not.toMatch(RAW_ID_PATTERN);
+  });
+
   test("renders the signed-in user's own message as 'You'", () => {
     const withSender: MessageItem[] = [
       {
@@ -328,7 +349,7 @@ describe("ChannelTimeline", () => {
     expect(markup).toContain("chat-day-divider");
   });
 
-  test("renders an agent-joined event by the joining agent's handle, never its address", () => {
+  test("renders an agent-joined event by the joining agent's display name, never its address or bare handle", () => {
     const joinItems: MessageItem[] = [
       {
         id: "m8",
@@ -355,7 +376,8 @@ describe("ChannelTimeline", () => {
         ]}
       />,
     );
-    expect(markup).toContain("@echo joined");
+    expect(markup).toContain("Echo joined");
+    expect(markup).not.toContain("@echo");
     expect(markup).not.toMatch(RAW_ID_PATTERN);
   });
 
@@ -396,6 +418,21 @@ describe("ChannelTimeline", () => {
       />,
     );
     expect(markup).toContain("Fix this connection");
+  });
+
+  test("renders Fix this connection as a react-ui outline button, not a bare link", () => {
+    const markup = renderToStaticMarkup(
+      <ChannelTimeline
+        items={classifiedFailureItems}
+        onFixConnection={() => {}}
+      />,
+    );
+    const fixConnectionButton = markup.match(
+      /<button[^>]*chat-bubble-fix-connection[^>]*>/,
+    )?.[0];
+    expect(fixConnectionButton).toBeDefined();
+    expect(fixConnectionButton).toContain('data-slot="button"');
+    expect(fixConnectionButton).toMatch(/\bborder\b/);
   });
 
   test("offers nothing when no onFixConnection handler is wired, even on a classified reply", () => {
@@ -591,7 +628,7 @@ describe("no raw identifiers on screen", () => {
     ].join("\n");
 
     expect(markup).not.toMatch(RAW_ID_PATTERN);
-    expect(markup).toContain("@echo joined");
+    expect(markup).toContain("Echo joined");
   });
 });
 
