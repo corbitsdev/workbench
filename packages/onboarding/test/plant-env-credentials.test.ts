@@ -17,28 +17,69 @@ function collector() {
  * and 404s everything else — `plantEnvProviderCredentials` never calls
  * anything else through `api` itself (the plant/probe indirections are
  * always passed as fakes in these tests). */
-function credentialsApi(activeNames: Set<string>): ApiCall {
+function credentialsApi(activeNames: Set<string>, revokedNames: Set<string> = new Set()): ApiCall {
   return async (method, path) => {
-    if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`) {
+    if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)) {
+      const active = [...activeNames].map((name) => ({
+        id: `cred_${name}`,
+        tenantId: TENANT_ID,
+        providerId: `prov_${name}`,
+        name,
+        type: "api_key",
+        status: "active",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }));
+      const revoked = [...revokedNames].map((name) => ({
+        id: `cred_revoked_${name}`,
+        tenantId: TENANT_ID,
+        providerId: `prov_${name}`,
+        name,
+        type: "api_key",
+        status: "revoked",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }));
       return {
         status: 200,
-        data: {
-          data: [...activeNames].map((name) => ({
-            id: `cred_${name}`,
-            tenantId: TENANT_ID,
-            providerId: `prov_${name}`,
-            name,
-            type: "api_key",
-            status: "active",
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          })),
-          nextCursor: null,
-        },
+        data: { data: [...active, ...revoked], nextCursor: null },
         cookies: [],
       };
     }
     throw new Error(`unexpected call: ${method} ${path}`);
+  };
+}
+
+/** A paginated credentials-list ApiCall for the follow-nextCursor test:
+ * the target row lives on page two, so a caller that only reads page
+ * one would never see it. */
+function paginatedCredentialsApi(pages: string[][]): ApiCall {
+  return async (method, path) => {
+    if (!(method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/credentials`))) {
+      throw new Error(`unexpected call: ${method} ${path}`);
+    }
+    const url = new URL(path, "http://hub.test");
+    const cursor = url.searchParams.get("cursor");
+    const pageIndex = cursor === null ? 0 : Number(cursor);
+    const names = pages[pageIndex] ?? [];
+    const nextCursor = pageIndex + 1 < pages.length ? String(pageIndex + 1) : null;
+    return {
+      status: 200,
+      data: {
+        data: names.map((name) => ({
+          id: `cred_${name}`,
+          tenantId: TENANT_ID,
+          providerId: `prov_${name}`,
+          name,
+          type: "api_key",
+          status: "active",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        })),
+        nextCursor,
+      },
+      cookies: [],
+    };
   };
 }
 
@@ -92,9 +133,10 @@ describe("plantEnvProviderCredentials", () => {
 
   test("plants a fresh provider: probes then seeds the catalog", async () => {
     const { log, lines } = collector();
+    const active = new Set<string>();
     const seedCatalogCalls: SeedCatalogArgs[] = [];
     const outcomes = await plantEnvProviderCredentials({
-      api: credentialsApi(new Set()),
+      api: credentialsApi(active),
       cookies: ["session=abc"],
       tenantId: TENANT_ID,
       envProviderKeys: { anthropic: "sk-ant-real" },
@@ -106,6 +148,9 @@ describe("plantEnvProviderCredentials", () => {
       },
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
+        // Mirrors the real `seedCatalog`'s side effect: a fresh plant
+        // actually stores an active credential under this name.
+        active.add("anthropic-default");
       },
     });
 
@@ -145,6 +190,11 @@ describe("plantEnvProviderCredentials", () => {
     expect(seeded).toBe(false);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("skipped");
+    // The rotated env key was never planted, and the message says where
+    // to fix that.
+    expect(lines[0]).toContain("was not planted");
+    expect(lines[0]).toContain("rotate");
+    expect(lines[0]).toContain("Plugins");
     expect(lines[0]).not.toContain("sk-ant-rotated");
   });
 
@@ -181,9 +231,10 @@ describe("plantEnvProviderCredentials", () => {
 
   test("one provider's failed probe never blocks another provider's plant", async () => {
     const { log } = collector();
+    const active = new Set<string>();
     const planted: string[] = [];
     const outcomes = await plantEnvProviderCredentials({
-      api: credentialsApi(new Set()),
+      api: credentialsApi(active),
       cookies: [],
       tenantId: TENANT_ID,
       envProviderKeys: { anthropic: "sk-ant-bad", openai: "sk-oai-good" },
@@ -194,6 +245,7 @@ describe("plantEnvProviderCredentials", () => {
       }),
       seedCatalogFn: async (args) => {
         planted.push(args.provider ?? "unknown");
+        active.add("openai-default");
       },
     });
 
@@ -236,5 +288,77 @@ describe("plantEnvProviderCredentials", () => {
     expect(second).toEqual([{ provider: "anthropic", status: "skipped" }]);
     expect(probeCount).toBe(1);
     expect(seedCount).toBe(1);
+  });
+
+  test("a revoked existing credential of the same name blocks the plant instead of being reported as planted", async () => {
+    const { log, lines } = collector();
+    // No active row (so the pre-check probes), but a revoked row with
+    // the same name already exists — `seedCatalog`'s `ensureCredential`
+    // 409-skips an `api_key` row it does not own the rotation of, so the
+    // proven env key is never actually stored.
+    const outcomes = await plantEnvProviderCredentials({
+      api: credentialsApi(new Set(), new Set(["anthropic-default"])),
+      cookies: [],
+      tenantId: TENANT_ID,
+      envProviderKeys: { anthropic: "sk-ant-real" },
+      log,
+      testCredential: async () => ({ ok: true as const }),
+      seedCatalogFn: async () => {
+        // Mirrors the real `ensureCredential`'s 409-skip: the revoked
+        // row is left untouched, so the credentials list still shows no
+        // active row for this provider.
+      },
+    });
+
+    expect(outcomes).toEqual([{ provider: "anthropic", status: "blocked" }]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("anthropic-default");
+    expect(lines[0]).toContain("not active");
+    expect(lines[0]).toContain("not stored");
+    expect(lines[0]).not.toContain("planted (catalog ready)");
+    expect(lines[0]).not.toContain("sk-ant-real");
+  });
+
+  test("a probe-failure message with a token-shaped substring is redacted before logging", async () => {
+    const { log, lines } = collector();
+    const outcomes = await plantEnvProviderCredentials({
+      api: credentialsApi(new Set()),
+      cookies: [],
+      tenantId: TENANT_ID,
+      envProviderKeys: { openai: "sk-oai-real-secret-value" },
+      log,
+      testCredential: async () => ({
+        ok: false,
+        message:
+          "OpenAI rejected key sk-oai-real-secret-value-echoed-back: invalid_api_key",
+      }),
+    });
+
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]?.status).toBe("failed");
+    expect(outcomes[0]?.message).not.toContain("sk-oai-real-secret-value");
+    expect(outcomes[0]?.message).toContain("[redacted]");
+    expect(lines[0]).not.toContain("sk-oai-real-secret-value");
+    expect(lines[0]).toContain("[redacted]");
+  });
+
+  test("findActiveCredential follows nextCursor instead of reading only page one", async () => {
+    const { log } = collector();
+    let probed = false;
+    const outcomes = await plantEnvProviderCredentials({
+      // The active "anthropic-default" row lives on page two only.
+      api: paginatedCredentialsApi([["other-provider-default"], ["anthropic-default"]]),
+      cookies: [],
+      tenantId: TENANT_ID,
+      envProviderKeys: { anthropic: "sk-ant-real" },
+      log,
+      testCredential: async () => {
+        probed = true;
+        return { ok: true as const };
+      },
+    });
+
+    expect(outcomes).toEqual([{ provider: "anthropic", status: "skipped" }]);
+    expect(probed).toBe(false);
   });
 });

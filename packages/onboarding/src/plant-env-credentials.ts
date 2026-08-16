@@ -84,10 +84,24 @@ export function envProviderKeysFrom(
 
 export type PlantEnvProviderCredentialsOutcome = {
   readonly provider: SupportedCredentialProvider;
-  readonly status: "planted" | "skipped" | "failed";
+  readonly status: "planted" | "skipped" | "failed" | "blocked";
   /** A probe-error summary on `failed`; never the key itself. */
   readonly message?: string;
 };
+
+/**
+ * Strips token-shaped substrings (`sk-…`, `hf_…`, and similar
+ * provider-key prefixes) out of a probe error message before it is
+ * logged. Providers sometimes echo a truncated form of the rejected key
+ * back in their error body (OpenAI does this); this must never reach a
+ * log line.
+ */
+function sanitizeProviderMessage(message: string): string {
+  return message.replace(
+    /\b(sk|pk|xai|gsk|hf|or)[-_][A-Za-z0-9_-]{6,}\b/g,
+    "[redacted]",
+  );
+}
 
 export type PlantEnvProviderCredentialsArgs = {
   api: ApiCall;
@@ -110,19 +124,24 @@ async function findActiveCredential(
   tenantId: string,
   provider: SupportedCredentialProvider,
 ): Promise<boolean> {
-  const listed = await api(
-    "GET",
-    `/api/tenants/${tenantId}/credentials`,
-    undefined,
-    cookies,
-  );
-  const credentials = parseAs(
-    paginatedSchema(CredentialResponse),
-    listed.data,
-    "credentials response",
-  ).data;
   const name = inferenceCredentialName(provider);
-  return credentials.some((c) => c.name === name && c.status === "active");
+  let cursor: string | undefined;
+  do {
+    const path =
+      cursor === undefined
+        ? `/api/tenants/${tenantId}/credentials`
+        : `/api/tenants/${tenantId}/credentials?cursor=${encodeURIComponent(cursor)}`;
+    const listed = await api("GET", path, undefined, cookies);
+    const page = parseAs(
+      paginatedSchema(CredentialResponse),
+      listed.data,
+      "credentials response",
+    );
+    if (page.data.some((c) => c.name === name && c.status === "active"))
+      return true;
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  return false;
 }
 
 /**
@@ -140,7 +159,11 @@ async function findActiveCredential(
  *   hub itself) from starting.
  * - A proven key is planted through `seedCatalog` — the same function
  *   `workbench seed` and onboarding's own guided step use — so a
- *   channel or workflow can launch against it immediately.
+ *   channel or workflow can launch against it immediately. `seedCatalog`
+ *   is re-verified afterward: if a same-named but non-active credential
+ *   already existed, `seedCatalog` 409-skips it rather than storing the
+ *   proven key, and this is reported honestly as `"blocked"` — never
+ *   logged as planted.
  *
  * Calling this twice with the same env plants nothing the second time:
  * every provider it planted on the first call now has an active
@@ -165,8 +188,9 @@ export async function plantEnvProviderCredentials(
       provider,
     );
     if (alreadyActive) {
+      const name = inferenceCredentialName(provider);
       args.log(
-        `env credential plant: ${provider} already has an active credential (skipped)`,
+        `env credential plant: ${provider} already has an active credential named ${name} (skipped) — the env key was not planted; rotate the existing ${name} credential in Plugins if you meant to replace it`,
       );
       outcomes.push({ provider, status: "skipped" });
       continue;
@@ -174,8 +198,9 @@ export async function plantEnvProviderCredentials(
 
     const probe = await testCredential({ provider, apiKey });
     if (!probe.ok) {
-      args.log(`env credential plant: ${provider} probe failed: ${probe.message}`);
-      outcomes.push({ provider, status: "failed", message: probe.message });
+      const sanitized = sanitizeProviderMessage(probe.message);
+      args.log(`env credential plant: ${provider} probe failed: ${sanitized}`);
+      outcomes.push({ provider, status: "failed", message: sanitized });
       continue;
     }
 
@@ -197,6 +222,28 @@ export async function plantEnvProviderCredentials(
       const message = cause instanceof Error ? cause.message : String(cause);
       args.log(`env credential plant: ${provider} failed to plant: ${message}`);
       outcomes.push({ provider, status: "failed", message });
+      continue;
+    }
+
+    // `seedCatalog`'s `ensureCredential` treats a same-named existing
+    // credential as a 409 conflict and, for `api_key` rows, never
+    // rotates it — so a revoked/expired credential left over under the
+    // same name silently blocks the proven env key from ever being
+    // stored. `findActiveCredential` already ruled out an *active*
+    // credential before the probe; re-checking now is the only way to
+    // tell "planted" apart from "409-skipped against a dead row".
+    const nowActive = await findActiveCredential(
+      args.api,
+      args.cookies,
+      args.tenantId,
+      provider,
+    );
+    if (!nowActive) {
+      const name = inferenceCredentialName(provider);
+      args.log(
+        `env credential plant: ${provider} was NOT planted — a credential named ${name} already exists but is not active; your proven env key was not stored. Remove or rotate the existing ${name} credential in Plugins, then restart the hub.`,
+      );
+      outcomes.push({ provider, status: "blocked" });
       continue;
     }
 
