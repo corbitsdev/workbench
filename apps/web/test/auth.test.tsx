@@ -142,13 +142,12 @@ describe("the gate", () => {
     expect(markup).not.toContain("Sign out");
   });
 
-  test("signed in renders the shell with rail screens and avatar settings control", () => {
+  test("signed in renders the shell with the sidebar and avatar settings control", () => {
     const markup = renderApp({ kind: "signed-in", user });
-    // Brand rail: product destinations + avatar → settings (sign-out is
+    // The one sidebar plus the account affordance → settings (sign-out is
     // context-menu only — no visible "Sign out" chrome in the mock).
-    expect(markup).toContain('data-slot="sidebar-rail"');
-    expect(markup).toContain('data-slot="sidebar-rail-item"');
-    expect(markup).toContain("shell-rail-avatar-btn");
+    expect(markup).toContain('data-testid="shell-sidebar"');
+    expect(markup).toContain("shell-sidebar-avatar-btn");
     expect(markup).toContain('aria-label="ada · Settings"');
     expect(markup).not.toContain("user_1");
   });
