@@ -1,10 +1,23 @@
-// The "Account" settings section: name and email as the hub's authentication
-// API knows them. Read-only — there is no native profile-update route (see
-// `vendor/intx/hub-api/src/routes` — only tenants and principals carry a
-// PATCH); this section renders whatever `GET /api/me` returns and says so.
+// Personal Settings' opening section: a glanceable Account card (avatar,
+// name, email — copyable — and Sign out), the same name/email/verified
+// readout as before tucked below as a quieter subsection (still read-only —
+// there is no native profile-update route; see `vendor/intx/hub-api/src/
+// routes` — only tenants and principals carry a PATCH), an Appearance card
+// wired to `@corbits/react-ui`'s three-state ThemeProvider, and an Agent
+// card whose Timezone row is display-only until a hub preference store
+// exists to write it to.
 
-import { Badge, Button, SettingsPanel } from "@corbits/react-ui";
-import { LogOut } from "lucide-react";
+import {
+  Avatar,
+  Badge,
+  Button,
+  SettingsPanel,
+  isThemeMode,
+  toast,
+  useTheme,
+} from "@corbits/react-ui";
+import { Select } from "@corbits/react-ui/ui/select";
+import { Copy, LogOut } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -50,17 +63,41 @@ export function AccountSection({
   useEffect(() => load(), [load]);
 
   return (
-    <QueryView query={query} label={SETTINGS_STRINGS.accountLoadError}>
-      {(account) => (
-        <AccountSectionView
-          name={account.name}
-          email={account.email}
-          emailVerified={account.emailVerified}
-          {...(onSignOut !== undefined ? { onSignOut } : {})}
-        />
-      )}
-    </QueryView>
+    <>
+      <QueryView query={query} label={SETTINGS_STRINGS.accountLoadError}>
+        {(account) => (
+          <AccountSectionView
+            name={account.name}
+            email={account.email}
+            emailVerified={account.emailVerified}
+            {...(onSignOut !== undefined ? { onSignOut } : {})}
+          />
+        )}
+      </QueryView>
+      <AppearanceSection />
+      <AgentGeneralSection />
+    </>
   );
+}
+
+/** First and (if present) second-word initials, upper-cased. Falls back to
+ * "?" for an empty name rather than rendering a blank avatar. */
+function initialsOf(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  const first = words[0]?.charAt(0) ?? "";
+  const second = words.length > 1 ? (words[1]?.charAt(0) ?? "") : "";
+  const initials = `${first}${second}`.toUpperCase();
+  return initials.length > 0 ? initials : "?";
+}
+
+async function copyEmail(email: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(email);
+    toast(SETTINGS_STRINGS.accountEmailCopiedToast);
+  } catch {
+    toast(SETTINGS_STRINGS.accountEmailCopyError);
+  }
 }
 
 /**
@@ -80,26 +117,100 @@ export function AccountSectionView({
   readonly onSignOut?: () => void;
 }) {
   return (
-    <SettingsPanel
-      title={SETTINGS_STRINGS.accountSectionTitle}
-      description={SETTINGS_STRINGS.accountReadOnlyNote}
-    >
-      <dl className="settings-detail-list">
-        <dt>{SETTINGS_STRINGS.accountNameLabel}</dt>
-        <dd>{name}</dd>
-        <dt>{SETTINGS_STRINGS.accountEmailLabel}</dt>
-        <dd>
-          {email}{" "}
-          <Badge tone={emailVerified ? "success" : "neutral"}>
-            {emailVerified ? "verified" : "unverified"}
-          </Badge>
-        </dd>
-      </dl>
-      {onSignOut !== undefined ? (
-        <Button variant="outline" onClick={onSignOut}>
-          <LogOut /> {SETTINGS_STRINGS.accountSignOutAction}
-        </Button>
-      ) : null}
+    <SettingsPanel title={SETTINGS_STRINGS.accountSectionTitle}>
+      <div className="settings-account-card">
+        <div className="settings-account-identity">
+          <Avatar initials={initialsOf(name)} label={name} size="lg" />
+          <div className="settings-account-identity-text">
+            <span className="settings-account-name">{name}</span>
+            <span className="settings-account-email">
+              {email}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={SETTINGS_STRINGS.accountCopyEmailAction}
+                title={SETTINGS_STRINGS.accountCopyEmailAction}
+                onClick={() => void copyEmail(email)}
+              >
+                <Copy />
+              </Button>
+            </span>
+          </div>
+        </div>
+        {onSignOut !== undefined ? (
+          <Button
+            variant="outline"
+            className="settings-account-signout"
+            onClick={onSignOut}
+          >
+            <LogOut /> {SETTINGS_STRINGS.accountSignOutAction}
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="settings-account-details">
+        <h3 className="settings-subhead settings-subhead-quiet">
+          {SETTINGS_STRINGS.accountDetailsHeading}
+        </h3>
+        <dl className="settings-detail-list">
+          <dt>{SETTINGS_STRINGS.accountNameLabel}</dt>
+          <dd>{name}</dd>
+          <dt>{SETTINGS_STRINGS.accountEmailLabel}</dt>
+          <dd>
+            {email}{" "}
+            <Badge tone={emailVerified ? "success" : "neutral"}>
+              {emailVerified ? "verified" : "unverified"}
+            </Badge>
+          </dd>
+        </dl>
+        <p className="settings-field-hint">
+          {SETTINGS_STRINGS.accountReadOnlyNote}
+        </p>
+      </div>
+    </SettingsPanel>
+  );
+}
+
+/** Theme row, wired to `ThemeProvider`'s three-state mode contract — the
+ * host mounts `ThemeProvider` once near the app root, so `setMode` here
+ * both applies and persists the choice with no storage code of our own. */
+export function AppearanceSection() {
+  const { mode, setMode } = useTheme();
+  return (
+    <SettingsPanel title={SETTINGS_STRINGS.appearanceSectionTitle}>
+      <label className="settings-form-field settings-form-field-inline">
+        <span>{SETTINGS_STRINGS.appearanceThemeLabel}</span>
+        <Select
+          className="settings-appearance-select"
+          value={mode}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (isThemeMode(next)) setMode(next);
+          }}
+        >
+          <option value="system">{SETTINGS_STRINGS.themeFollowSystem}</option>
+          <option value="light">{SETTINGS_STRINGS.themeLight}</option>
+          <option value="dark">{SETTINGS_STRINGS.themeDark}</option>
+        </Select>
+      </label>
+    </SettingsPanel>
+  );
+}
+
+/** Timezone row: display-only, derived from the browser — there is no hub
+ * preference store yet for a per-user timezone override, so this shows the
+ * auto-detected zone honestly instead of a dropdown that saves nothing. */
+export function AgentGeneralSection() {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return (
+    <SettingsPanel title={SETTINGS_STRINGS.generalAgentGroupTitle}>
+      <div className="settings-form-field settings-form-field-inline">
+        <span>{SETTINGS_STRINGS.agentTimezoneLabel}</span>
+        <span className="settings-static-value">
+          {SETTINGS_STRINGS.agentTimezoneAutoDetect(timezone)}
+        </span>
+      </div>
     </SettingsPanel>
   );
 }
