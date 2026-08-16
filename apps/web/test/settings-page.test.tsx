@@ -85,13 +85,13 @@ describe("SettingsRoute section-id redirect", () => {
   test("an unknown section id redirects to the first allowed section", async () => {
     const navigated: string[] = [];
     await mount("/settings/no-such-section", navigated);
-    expect(navigated).toEqual(["/settings/agent"]);
+    expect(navigated).toEqual(["/settings/chat"]);
   });
 
   test("a gate-denied section id redirects to the first allowed section", async () => {
     const navigated: string[] = [];
     await mount("/settings/people", navigated);
-    expect(navigated).toEqual(["/settings/agent"]);
+    expect(navigated).toEqual(["/settings/chat"]);
   });
 
   test("an always-allowed section id does not redirect", async () => {
