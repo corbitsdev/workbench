@@ -503,26 +503,25 @@ async function run(): Promise<void> {
       () => page,
       "03-connect-provider-stub-key",
       async () => {
-        // Every UI path that accepts a pasted key — onboarding's credential
-        // step, and Settings > Connections' connector cards — performs a
-        // real, synchronous network probe of the key before storing it (see
-        // packages/onboarding/src/complete-credential.ts and
-        // packages/connections/src/routes.ts): a stub key is rejected right
-        // there, by design. `local-rip.test.ts` (CL-6055) already
-        // establishes the honest way to drive a stub key past exactly that
-        // gate: call the same two halves the onboarding route itself calls
+        // Onboarding's own credential step (CL-6123) stores a pasted key
+        // immediately, with no live probe of the provider gating it —
+        // unlike Settings > Connections' connector cards
+        // (packages/connections/src/routes.ts), which still probe a
+        // pasted key for real before storing it. This step drives the
+        // same two halves the onboarding route itself calls
         // (`testAndPersistCredential` / `ensureSeeded`, from
-        // `@workbench/onboarding`) directly, stubbing only the one
-        // `testCredential` network boundary those functions expose
-        // precisely so this is possible — everything else (persisting the
-        // credential, publishing the tool registry, pushing and deploying
-        // every default workflow including "assistant"/Myra) runs for
-        // real, against the real spawned hub, using the real session
-        // cookie this browser just signed in with. The stub key itself is
-        // never sent anywhere here — it is stored as an unproven model
-        // source, exactly as onboarding's own key path would store it, so
-        // the later chat message is the first time it is ever dialed for
-        // real.
+        // `@workbench/onboarding`) directly rather than through HTTP —
+        // matching `local-rip.test.ts` (CL-6055)'s pattern of calling a
+        // package's own functions rather than round-tripping through a
+        // browser for a step already covered elsewhere — so everything
+        // (persisting the credential, publishing the tool registry,
+        // pushing and deploying every default workflow including
+        // "assistant"/Myra) runs for real, against the real spawned hub,
+        // using the real session cookie this browser just signed in
+        // with. The stub key itself is never sent anywhere here — it is
+        // stored as an unproven model source, exactly as onboarding's
+        // own key path would store it, so the later chat message is the
+        // first time it is ever dialed for real.
         const cookies = (await page.cookies()).map(
           (c) => `${c.name}=${c.value}`,
         );
@@ -551,7 +550,6 @@ async function run(): Promise<void> {
           apiKey: stubApiKey,
           pushWorkflow,
           log: () => undefined,
-          testCredential: async () => ({ ok: true }),
         });
         if (connected.kind !== "connected") {
           throw new Error(
@@ -592,20 +590,20 @@ async function run(): Promise<void> {
       () => page,
       "04-bare-root-shows-describe-screen",
       async () => {
-        // CL-6104: a brand-new account has zero workbenches at this point —
-        // `testAndPersistCredential`/`ensureSeeded` above deployed the
-        // default workflows, but never created a single chat channel.
-        // `/` (bare root) is `HomeRoute`, and with zero workbenches it must
-        // render the guided first-workbench describe screen rather than
-        // auto-creating Myra's channel and stranding the account on a
-        // spinner — see `apps/web/src/pages/describe-first-workbench.tsx`.
+        // CL-6104/CL-6124: a brand-new account has zero workbenches at
+        // this point — `testAndPersistCredential`/`ensureSeeded` above
+        // deployed the default workflows, but never created a single chat
+        // channel. `/` (bare root) is `HomeRoute`, and with zero
+        // workbenches it must render the guided first-run chat rather
+        // than auto-creating Myra's channel and stranding the account on
+        // a spinner — see `apps/web/src/pages/describe-first-workbench.tsx`.
         await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
-        await page.waitForSelector("#describe-first-workbench-input", {
+        await page.waitForSelector("textarea.first-run-composer-input", {
           timeout: 15_000,
         });
         return {
           status: "pass",
-          detail: "bare root with zero workbenches shows the describe screen",
+          detail: "bare root with zero workbenches shows the first-run chat",
         };
       },
     );
@@ -615,17 +613,18 @@ async function run(): Promise<void> {
       () => page,
       "04a-describe-first-workbench",
       async () => {
-        // One field, one action: describe the job, and the same drafting
-        // machinery `CreateAgentPanel` uses mints the agent and lands the
-        // account straight in its conversation. With the STUB key, Myra's
-        // drafting one-shot cannot succeed — the honestly assertable
-        // outcome here is the inline failure with the field still usable,
-        // never a dead spinner. (A real key takes the landing branch.)
+        // One prompt box, one action: send a message, and the same
+        // drafting machinery `CreateAgentPanel` uses mints the agent and
+        // lands the account straight in its conversation. With the STUB
+        // key, Myra's drafting one-shot cannot succeed — the honestly
+        // assertable outcome here is the inline failure with the message
+        // still there, never a dead spinner. (A real key takes the
+        // landing branch.)
         await page.type(
-          "#describe-first-workbench-input",
+          "textarea.first-run-composer-input",
           "Watch our top three competitors and summarize what changed each week.",
         );
-        await clickStable(page, 'button[type="submit"]');
+        await clickStable(page, 'button[aria-label="Send"]');
         const outcome = await Promise.race([
           page
             .waitForFunction(() => window.location.pathname.startsWith("/c/"), {
@@ -651,7 +650,7 @@ async function run(): Promise<void> {
         }
         const fieldUsable = await page.evaluate(() => {
           const input = document.querySelector<HTMLTextAreaElement>(
-            "#describe-first-workbench-input",
+            "textarea.first-run-composer-input",
           );
           return input !== null && !input.disabled;
         });

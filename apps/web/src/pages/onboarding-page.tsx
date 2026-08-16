@@ -2,10 +2,11 @@
 // default name derived from the account, then add an inference
 // credential. There is no naming step — CL-6089 collapsed the
 // multi-bench model down to one workbench per account, so nothing is
-// left to name. The heavy lifting — proving the key with a real call,
-// seeding the bench, deploying and confirming every default workflow —
-// happens server-side in `@workbench/onboarding`; this page is the
-// guided shell around it. The credential step is skipped entirely
+// left to name. The heavy lifting — storing the key immediately (no
+// probe gates this, CL-6123), seeding the bench, and deploying every
+// default workflow — happens server-side in `@workbench/onboarding`;
+// this page is the guided shell around it. The credential step is
+// skipped entirely
 // (straight to `navigate("/")`) only once this page has independently
 // confirmed (`hasActiveCredential`, a cheap credentials read) that the
 // bench actually has a working credential — a hub-owned key (env-key
@@ -151,9 +152,9 @@ function ProviderPicker({
 
 /** Where the wizard starts: at the top, unless the URL carries a connect
  * round-trip's outcome (OpenRouter or Hugging Face) — a fresh connect
- * lands on the finishing-setup phase (the OAuth callback only proved
- * and stored the key; this page's own follow-up call is what actually
- * deploys the default routines), and a failed round trip lands on the
+ * lands on the finishing-setup phase (the OAuth callback only stored
+ * the key; this page's own follow-up call is what actually deploys the
+ * default routines), and a failed round trip lands on the
  * credential step with the failure spelled out. Either way, the mount
  * effect below re-checks the account's real state before trusting a
  * connect outcome carried in the URL — see its own comment. */
@@ -317,7 +318,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         <div className="onboarding-phase" key="finishing-setup">
           <h1 className="onboarding-title">Setting up your workbench…</h1>
           <p className="onboarding-subtitle">
-            Your key checked out — getting your workbench ready.
+            Key added — setting up your workbench.
           </p>
           <div className="onboarding-content">
             <div className="onboarding-spinner" aria-hidden="true" />
@@ -359,7 +360,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   return (
     <OnboardingLayout>
       <div
-        className="onboarding-phase"
+        className="onboarding-phase onboarding-phase--credential"
         key={resumingUnseeded ? "resuming" : "credential"}
       >
         <h1 className="onboarding-title">
@@ -369,46 +370,36 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         </h1>
         <p className="onboarding-subtitle">
           {resumingUnseeded
-            ? "Your workbench is ready, but it still needs a working inference credential before any agent or routine can run. Connect one below to finish setup."
-            : "Your workbench needs an inference credential before any agent or routine can run. Connect OpenRouter in one click, or pick a provider and paste your own key — either way it's used only for this workbench."}
+            ? "Connect a provider below to finish setup."
+            : "Connect OpenRouter in one click, or pick a provider and paste your own key."}
         </p>
         <div className="onboarding-content">
-          <section
-            className="onboarding-connect-card"
-            aria-label="Connect with OpenRouter"
-          >
-            <div>
-              <h2>Connect with OpenRouter</h2>
-              <p>
-                The easiest path: one click, ~50 models, pay-as-you-go. Approve
-                access on OpenRouter and your workbench comes back with a
-                working key — nothing to copy.
-              </p>
-            </div>
-            <Button asChild>
-              <a href={OPENROUTER_CONNECT_START_PATH}>
-                Connect with OpenRouter
-              </a>
-            </Button>
-          </section>
-          <section
-            className="onboarding-connect-card"
-            aria-label="Sign in with Hugging Face"
-          >
-            <div>
-              <h2>Sign in with Hugging Face</h2>
-              <p>
-                Pay-as-you-go across Groq, Together, Fireworks &amp; more,
-                billed to your HF account — approve access and your workbench
-                comes back with a working connection.
-              </p>
-            </div>
-            <Button asChild>
-              <a href={HUGGINGFACE_CONNECT_START_PATH}>
-                Sign in with Hugging Face
-              </a>
-            </Button>
-          </section>
+          <div className="onboarding-connect-row">
+            <section
+              className="onboarding-connect-card"
+              aria-label="Connect with OpenRouter"
+            >
+              <div>
+                <h2>OpenRouter</h2>
+                <p>One click, ~50 models, pay-as-you-go.</p>
+              </div>
+              <Button asChild>
+                <a href={OPENROUTER_CONNECT_START_PATH}>Connect</a>
+              </Button>
+            </section>
+            <section
+              className="onboarding-connect-card"
+              aria-label="Sign in with Hugging Face"
+            >
+              <div>
+                <h2>Hugging Face</h2>
+                <p>Groq, Together, Fireworks &amp; more, one sign-in.</p>
+              </div>
+              <Button asChild>
+                <a href={HUGGINGFACE_CONNECT_START_PATH}>Connect</a>
+              </Button>
+            </section>
+          </div>
           <div className="onboarding-connect-divider" role="separator">
             or paste a provider API key
           </div>
@@ -468,7 +459,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
               />
             )}
             <Button type="submit" disabled={submitting || apiKey.length === 0}>
-              {submitting ? "Testing your key…" : "Connect this key"}
+              {submitting ? "Adding your key…" : "Connect this key"}
             </Button>
           </form>
         </div>

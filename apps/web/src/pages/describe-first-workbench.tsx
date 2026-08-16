@@ -1,29 +1,28 @@
-// The fourth of onboarding's four steps (CL-6104), reached from `/` the
+// The third of onboarding's four steps (CL-6104), reached from `/` the
 // moment a brand-new account's bench has zero workbenches — see
 // `home-page.tsx`'s `HomeRoute`, which renders this in place of the
-// auto land-hop for exactly that case. One field, one action: describe
-// the job, and the same drafting machinery `CreateAgentPanel` uses
-// (`draftAgentDefinition` → `createAgentDefinition`, CL-6074/CL-6086)
-// turns that description into a drafted agent, deployed and opened —
-// the same `launchAgentChat` hop an explicitly-defined new agent gets.
-// The drafted system prompt itself carries the instruction that the
-// agent's first reply greets the person and names what it can do (see
-// `packages/task-planner/src/agent-definition-drafting.ts`), so landing
-// in the fresh conversation is step four: the greeting arrives on its
-// own, no extra wiring here.
+// auto land-hop for exactly that case. One prompt box, no other chrome
+// (CL-6124): the owner's reference for this screen is a chat, not a form,
+// so it reuses `FirstRunComposer` — the same drafting machinery
+// `CreateAgentPanel` uses (`draftAgentDefinition` → `createAgentDefinition`,
+// CL-6074/CL-6086) turns the typed message into a drafted agent, deployed
+// and opened — the same `launchAgentChat` hop an explicitly-defined new
+// agent gets. The drafted system prompt itself carries the instruction
+// that the agent's first reply greets the person and names what it can do
+// (see `packages/task-planner/src/agent-definition-drafting.ts`), so
+// landing in the fresh conversation is step four: the greeting arrives on
+// its own, no extra wiring here.
 //
-// No name field, no template picker, no options beyond the one action —
-// a name and a handle are derived from the description so the person
-// never has to answer two questions to ask for one thing. Drafting
-// fails closed, same as `CreateAgentPanel`: a failure here shows the
-// real reason inline with a retry, never a dead spinner.
+// No name field, no template picker — a name and a handle are derived
+// from the message so the person never has to answer two questions to ask
+// for one thing. Drafting fails closed, same as `CreateAgentPanel`: a
+// failure here shows the real reason inline with the message preserved
+// for a straight retry, never a dead spinner.
 
-import { Button, EmptyState } from "@corbits/react-ui";
-import { CircleAlert } from "lucide-react";
 import { useState } from "react";
-import type { FormEvent } from "react";
 
 import { ApiQueryError } from "@corbits/api-query";
+import { FirstRunComposer } from "@corbits/chat-ui";
 
 import { launchAgentChat } from "../agent-chat-launch";
 import { createAgentDefinition, draftAgentDefinition } from "../agents-api";
@@ -60,92 +59,53 @@ export function DescribeFirstWorkbench({
   readonly tenantId: string;
   readonly navigate: (to: string) => void;
 }) {
-  const [description, setDescription] = useState("");
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = description.trim();
-    if (trimmed === "" || state.kind === "submitting") return;
-
+  async function handleSend(text: string): Promise<boolean> {
+    if (state.kind === "submitting") return false;
     setState({ kind: "submitting" });
-    const name = deriveWorkbenchName(trimmed);
+    const name = deriveWorkbenchName(text);
     const handle = slugify(name) || "my-agent";
     try {
       const draft = await draftAgentDefinition(tenantId, {
         name,
-        purpose: trimmed,
+        purpose: text,
       });
       const created = await createAgentDefinition(tenantId, {
         name,
         handle,
         systemPrompt: draft.systemPrompt,
-        description: draft.description ?? trimmed,
+        description: draft.description ?? text,
         ...(draft.modelPreference !== undefined
           ? { model: draft.modelPreference }
           : {}),
         ...(draft.skills !== undefined ? { skills: draft.skills } : {}),
       });
       await launchAgentChat(tenantId, created.id, navigate);
+      return true;
     } catch (cause) {
       setState({
         kind: "error",
         message:
           cause instanceof ApiQueryError
-            ? cause.message
+            ? `Couldn't create your workbench: ${cause.message}`
             : "Couldn't create your workbench. Try again.",
       });
-      return;
+      return false;
     }
   }
 
-  const submitting = state.kind === "submitting";
-
   return (
     // Inside the signed-in shell already — no brand split-panel here, just
-    // the calm centered column. The full OnboardingLayout belongs to the
-    // pre-shell wizard pages only.
+    // the calm centered prompt box. The full OnboardingLayout belongs to
+    // the pre-shell wizard pages only.
     <div className="describe-first-workbench">
-      <div className="onboarding-phase" key="describe-first-workbench">
-        <h1 className="onboarding-title">What should your first agent do?</h1>
-        <p className="onboarding-subtitle">
-          Describe the job in a sentence — Myra drafts an agent built for it,
-          and you land straight in the conversation.
-        </p>
-        <div className="onboarding-content">
-          <form
-            className="onboarding-describe-form"
-            onSubmit={(e) => void submit(e)}
-          >
-            <label htmlFor="describe-first-workbench-input">
-              What do you want to work on?
-            </label>
-            <textarea
-              id="describe-first-workbench-input"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="A weekly digest of competitor moves, or someone to draft replies to support tickets…"
-              disabled={submitting}
-              required
-              rows={4}
-              autoFocus
-            />
-            {state.kind === "error" && (
-              <EmptyState
-                icon={<CircleAlert />}
-                title="Couldn't create your workbench"
-                description={state.message}
-              />
-            )}
-            <Button
-              type="submit"
-              disabled={submitting || description.trim() === ""}
-            >
-              {submitting ? "Creating your workbench…" : "Create my workbench"}
-            </Button>
-          </form>
-        </div>
-      </div>
+      <FirstRunComposer
+        placeholder="Message New Workbench…"
+        sending={state.kind === "submitting"}
+        error={state.kind === "error" ? state.message : null}
+        onSend={handleSend}
+      />
     </div>
   );
 }

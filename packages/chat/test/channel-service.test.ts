@@ -8,6 +8,7 @@ import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createInMemoryChannelTenancyStore } from "../src/channel-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
+import { dispatchGreetingKickoff } from "../src/channel-service";
 import {
   buildDeps,
   createChannel,
@@ -15,6 +16,48 @@ import {
   mountAs,
   TENANT,
 } from "./test-support";
+
+describe("dispatchGreetingKickoff (CL-6126)", () => {
+  test("sends a kickoff mail straight to the agent's own mailbox, not the chat's", async () => {
+    const platform = fakePlatform();
+
+    await dispatchGreetingKickoff(
+      { platform },
+      {
+        tenantId: TENANT.id,
+        principalId: "prn_alice",
+        channelId: "chan_1",
+        agentAddress: "ins_agent1@acme.example",
+      },
+    );
+
+    expect(platform.sentMail).toHaveLength(1);
+    const kickoff = platform.sentMail[0];
+    expect(kickoff?.channelId).toBe("ins_agent1");
+    expect(kickoff?.fromChannelId).toBe("chan_1");
+    expect(kickoff?.content).toEqual({ content: "Continue." });
+  });
+
+  test("a dispatch failure is swallowed, never thrown", async () => {
+    const platform = fakePlatform({
+      sendMail: async () => {
+        throw new Error("agent unreachable");
+      },
+    });
+
+    await expect(
+      dispatchGreetingKickoff(
+        { platform },
+        {
+          tenantId: TENANT.id,
+          principalId: "prn_alice",
+          channelId: "chan_1",
+          agentAddress: "ins_agent1@acme.example",
+        },
+      ),
+    ).resolves.toBeUndefined();
+  });
+});
 
 describe("message fan-out", () => {
   test("fan-out copies to mentioned agents are sent from the channel", async () => {

@@ -48,6 +48,7 @@ import type { ChatStore } from "./store";
 const contextLog = getLogger(["chat", "context"]);
 const provisionLog = getLogger(["chat", "provision-space"]);
 const removeLog = getLogger(["chat", "remove-participant"]);
+const greetingLog = getLogger(["chat", "greeting-kickoff"]);
 
 export type ProvisionSpaceChannelDeps = {
   readonly tenancy: Pick<
@@ -274,6 +275,55 @@ export async function launchAndJoinAgent(
     handle: desiredHandle,
     settings: row.settings,
   };
+}
+
+export type DispatchGreetingKickoffDeps = {
+  readonly platform: Pick<ChannelMail, "sendMail">;
+};
+
+export type DispatchGreetingKickoffInput = {
+  readonly tenantId: string;
+  readonly principalId: string;
+  readonly channelId: string;
+  readonly agentAddress: string;
+};
+
+/**
+ * Fires a newly-minted chat's one agent's very first turn the moment
+ * it joins, so a fresh room is never silent until a human speaks
+ * first. Sends a kickoff mail straight to the agent's own mailbox —
+ * never the chat's own channel id — the exact opening-mail pattern
+ * `startWorkflowCommand` already uses; only mail sent to the chat's
+ * own channel id is ever rendered onto its timeline, so this
+ * structurally cannot appear as a human bubble. The visible greeting
+ * text itself comes entirely from the agent's own system prompt (the
+ * assistant workflow and task-planner drafting both already carry a
+ * greet-first instruction) — this call only supplies the trigger.
+ *
+ * Errors are logged, never thrown: the caller fires this after the
+ * chat has already been minted successfully, and a greeting that
+ * fails to dispatch must never fail — or roll back — the mint itself.
+ */
+export async function dispatchGreetingKickoff(
+  deps: DispatchGreetingKickoffDeps,
+  input: DispatchGreetingKickoffInput,
+): Promise<void> {
+  try {
+    await deps.platform.sendMail({
+      tenantId: input.tenantId,
+      channelId: localPartOf(input.agentAddress),
+      principalId: input.principalId,
+      content: encodeParts([{ kind: "text", text: "Continue." }]),
+      fromChannelId: input.channelId,
+    });
+  } catch (err) {
+    greetingLog.error(
+      "Greeting kickoff dispatch failed for channel {channelId}'s agent " +
+        "{agentAddress}; the chat was minted successfully but its agent " +
+        "will only speak once a human sends the first message",
+      { channelId: input.channelId, agentAddress: input.agentAddress, err },
+    );
+  }
 }
 
 export type JoinHumanParticipantDeps = {

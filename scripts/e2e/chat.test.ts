@@ -29,7 +29,7 @@
 
 import { beforeAll, describe, expect, test } from "bun:test";
 
-import { formatRunAddress } from "../../vendor/intx/types/src/index.ts";
+import { formatRunAddress } from "@intx/types";
 import {
   createHubAPI,
   seedCatalog,

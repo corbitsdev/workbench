@@ -187,10 +187,9 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
     await settle();
     await settle();
 
-    expect(container.textContent).toContain("What should your first agent do?");
-    expect(
-      container.querySelector("#describe-first-workbench-input"),
-    ).not.toBeNull();
+    // CL-6124: the guided screen is a chat now — one prompt box, no
+    // heading — so this asserts the composer mounted, not old form copy.
+    expect(container.querySelector(".first-run-composer-input")).not.toBeNull();
   });
 });
 

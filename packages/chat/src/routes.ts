@@ -67,6 +67,7 @@ import {
 } from "./channel-settings";
 import { isRecentlyActive } from "./channel-activity";
 import {
+  dispatchGreetingKickoff,
   joinHumanParticipant,
   launchAndJoinAgent,
   removeChannelParticipant,
@@ -1040,6 +1041,20 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             definitionId: body.definitionId,
             existingSettings: row.settings,
             invitable,
+          },
+        );
+
+        // The room is never silent until a human speaks: the agent's
+        // own first turn fires right here, on mint, never waiting on a
+        // reply. See `dispatchGreetingKickoff`'s own doc comment for
+        // why this can never fail — or roll back — the mint itself.
+        void dispatchGreetingKickoff(
+          { platform: deps.platform },
+          {
+            tenantId: tenant.id,
+            principalId: principal.id,
+            channelId,
+            agentAddress: joined.address,
           },
         );
 

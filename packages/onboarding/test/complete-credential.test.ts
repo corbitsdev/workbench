@@ -10,10 +10,11 @@ import {
   testAndPersistCredential,
 } from "../src/complete-credential";
 
-// A key that clears the free probe never needs to prove itself again
-// with a billed call: seedTenant must run with confirmDeployments:
-// false so a valid, credit-less account is not turned into a false
-// "setup failed" by a workflow trigger it never asked for.
+// A key that was never probed (CL-6123 dropped the onboarding probe)
+// must not be proven with a billed call either: seedTenant runs with
+// confirmDeployments: false so a valid, credit-less account is not
+// turned into a false "setup failed" by a workflow trigger it never
+// asked for.
 function expectNoConfirmation(
   seedTenantCalls: { confirmDeployments?: boolean }[],
 ) {
@@ -71,11 +72,21 @@ function tenantResponse() {
 }
 
 describe("completeCredentialSetup", () => {
-  test("an invalid key never touches the tenant", async () => {
-    let apiCalls = 0;
-    const api: ApiCall = async () => {
-      apiCalls += 1;
-      throw new Error("unexpected call with an invalid credential");
+  // CL-6123: onboarding no longer probes a submitted key before storing
+  // it — any key, wrong or right, is stored and seeded immediately. A
+  // wrong key is caught later, the first time it's actually dialed, and
+  // surfaces in-chat through the credential-error + "Fix this
+  // connection" flow (CL-6092), not here.
+  test("an unproven key is stored and seeded immediately, with no probe call", async () => {
+    const seedCatalogCalls: unknown[] = [];
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
     };
 
     const result = await completeCredentialSetup({
@@ -85,27 +96,18 @@ describe("completeCredentialSetup", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       provider: "anthropic",
-      apiKey: "sk-ant-bad",
+      apiKey: "sk-ant-never-probed",
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({
-        ok: false,
-        message: "invalid x-api-key",
-      }),
-      seedCatalogFn: async () => {
-        throw new Error("seedCatalog must not run for an invalid credential");
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
       },
-      seedTenantFn: async () => {
-        throw new Error("seedTenant must not run for an invalid credential");
-      },
+      seedTenantFn: async () => {},
     });
 
-    expect(result).toEqual({
-      kind: "invalid-credential",
-      message: "invalid x-api-key",
-    });
-    expect(apiCalls).toBe(0);
+    expect(result.kind).toBe("seeded");
+    expect(seedCatalogCalls).toHaveLength(1);
   });
 
   test("a valid key with no personal bench yet is reported, not guessed at", async () => {
@@ -131,7 +133,6 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
     });
 
     expect(result).toEqual({ kind: "no-personal-bench" });
@@ -164,7 +165,6 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
       },
@@ -209,7 +209,6 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
       },
@@ -254,7 +253,6 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args as never);
       },
@@ -303,7 +301,6 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args as never);
       },
@@ -463,7 +460,6 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
       // The real seedCatalog runs here (not mocked) so the rotation
       // actually happens through ensureCredential; only the workflow
       // deploy side is stubbed, since it is not this defect's concern.
@@ -565,7 +561,7 @@ describe("completeCredentialSetup", () => {
         path.endsWith("/runs")
       ) {
         throw new Error(
-          `unexpected run-listing call for a probe-verified key: ${method} ${path}`,
+          `unexpected run-listing call for an unproven, never-triggered key: ${method} ${path}`,
         );
       }
       if (
@@ -574,7 +570,7 @@ describe("completeCredentialSetup", () => {
         path.endsWith("/mail")
       ) {
         throw new Error(
-          `unexpected workflow trigger call for a probe-verified key: ${method} ${path}`,
+          `unexpected workflow trigger call for an unproven, never-triggered key: ${method} ${path}`,
         );
       }
       throw new Error(`unexpected call: ${method} ${path}`);
@@ -591,7 +587,6 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
       seedCatalogFn: async () => {},
     });
 
@@ -848,9 +843,10 @@ describe("completeCredentialSetup", () => {
         method === "PATCH" &&
         path.startsWith(`/api/tenants/${TENANT_ID}/credentials/`)
       ) {
-        // The second `completeCredentialSetup` call reproves the same
-        // key (`testAndPersistCredential` always probes first), so
-        // `ensureCredential` rotates the existing api_key row instead
+        // The second `completeCredentialSetup` call is itself an
+        // explicit user submission (`testAndPersistCredential` always
+        // sets `credentialVerified: true`, no probe required — CL-6123),
+        // so `ensureCredential` rotates the existing api_key row instead
         // of leaving it untouched — this is the fix under test here,
         // not a duplicate creation, so `credentialCreatePosts` still
         // stays at 1.
@@ -1008,7 +1004,6 @@ describe("completeCredentialSetup", () => {
         pushWorkflow: noopPush,
         publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
-        testCredential: async () => ({ ok: true }),
       });
 
     const first = await submitCredential();
@@ -1025,8 +1020,9 @@ describe("completeCredentialSetup", () => {
     expect(catalogProviderCreatePosts).toBe(1);
     expect(catalogOfferingCreatePosts).toBe(1);
     expect(credentialCreatePosts).toBe(1);
-    // The second pass reproves the key and rotates the existing row
-    // rather than leaving it untouched (the CL-6103 fix).
+    // The second pass is itself an explicit submission and rotates the
+    // existing row rather than leaving it untouched (the CL-6103 fix,
+    // updated by CL-6123 to no longer require a probe first).
     expect(credentialRotatePatches).toBe(1);
     expect(assets.length).toBe(4);
     expect(deployments.length).toBe(4);
@@ -1055,7 +1051,6 @@ describe("completeCredentialSetup", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args as never);
       },
@@ -1100,7 +1095,6 @@ describe("testAndPersistCredential (the fast half)", () => {
         return "pushed";
       },
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
       },
@@ -1117,11 +1111,16 @@ describe("testAndPersistCredential (the fast half)", () => {
     expect(seedTenantCalled).toBe(false);
   });
 
-  test("an invalid key never touches the tenant", async () => {
-    let apiCalls = 0;
-    const api: ApiCall = async () => {
-      apiCalls += 1;
-      throw new Error("unexpected call with an invalid credential");
+  test("an unproven key still reaches and persists on the tenant — no probe gates this", async () => {
+    const seedCatalogCalls: unknown[] = [];
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
     };
 
     const result = await testAndPersistCredential({
@@ -1131,18 +1130,17 @@ describe("testAndPersistCredential (the fast half)", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       provider: "anthropic",
-      apiKey: "sk-ant-bad",
+      apiKey: "sk-ant-never-probed",
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: false, message: "invalid x-api-key" }),
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+      },
     });
 
-    expect(result).toEqual({
-      kind: "invalid-credential",
-      message: "invalid x-api-key",
-    });
-    expect(apiCalls).toBe(0);
+    expect(result.kind).toBe("connected");
+    expect(seedCatalogCalls).toHaveLength(1);
   });
 
   // CL-6105: the Plugins gallery resolves a connector's connection status
@@ -1177,7 +1175,6 @@ describe("testAndPersistCredential (the fast half)", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
       seedCatalogFn: async (args) => {
         seedCatalogCalls.push(args);
       },
@@ -1211,7 +1208,6 @@ describe("testAndPersistCredential (the fast half)", () => {
       pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
-      testCredential: async () => ({ ok: true }),
     });
 
     expect(result).toEqual({ kind: "no-personal-bench" });

@@ -855,14 +855,18 @@ export type EnsureCredentialArgs = {
   type: "api_key" | "oauth_token";
   metadata?: Record<string, unknown>;
   /**
-   * Set by a caller that already proved `secret` against the provider's
-   * own probe before reaching `ensureCredential` — never inferred here.
-   * Gates whether an `api_key` name conflict rotates the stored secret
-   * (see the 409 branch below); an `oauth_token` conflict decides
-   * rotation from the stored row's `status` instead and ignores this
-   * flag. Left unset by a plain `workbench seed` (the hub-owned key
-   * comes straight from env, never probed), so a routine re-seed with
-   * an unchanged key still just skips.
+   * Set by a caller that received `secret` as an explicit user
+   * submission through a connect UI (a pasted key, a completed OAuth
+   * exchange) before reaching `ensureCredential` — never inferred here,
+   * and never conditioned on a probe (CL-6123 dropped the onboarding
+   * probe that used to gate this). Gates whether an `api_key` name
+   * conflict rotates the stored secret (see the 409 branch below); an
+   * `oauth_token` conflict decides rotation from the stored row's
+   * `status` instead and ignores this flag. Left unset by a plain
+   * `workbench seed` or the hub-owned env auto-plant (CL-6101's
+   * `plantEnvProviderCredentials`, which keeps its own boot-time probe
+   * but never sets this — its rule is never-overwrite, not rotate), so
+   * a routine re-seed with an unchanged key still just skips.
    */
   verified?: boolean;
 };
@@ -935,15 +939,17 @@ export async function ensureCredential(
   // the person reconnecting regenerated the key or is retrying after a
   // bad paste — so `status` can't gate it the way it gates `oauth_token`.
   // It rotates on a name conflict only when `args.verified` is set,
-  // which a caller sets only after proving `args.secret` against the
-  // provider's own probe: `testAndPersistCredential`
-  // (`@workbench/onboarding`'s `complete-credential.ts`) calls
-  // `testProviderCredential` first, and `connections`' `POST
-  // /:connectorId/complete` (`routes.ts`) calls `descriptor.probe` first,
-  // so neither ever hands a stale or unverified secret to a rotation. A
-  // plain `workbench seed` never sets `verified` — its key comes straight
-  // from env with no probe of its own — so that idempotent re-seed still
-  // just skips, exactly as before.
+  // which a caller sets only for an explicit user submission through a
+  // connect UI: `testAndPersistCredential`
+  // (`@workbench/onboarding`'s `complete-credential.ts`) sets it
+  // unconditionally for a pasted key or a completed OAuth exchange
+  // (CL-6123 dropped the probe that used to gate this), and
+  // `connections`' `POST /:connectorId/complete` (`routes.ts`) still
+  // sets it only after `descriptor.probe` passes, since that surface
+  // (Settings > Connections) is allowed to block on a real check. A
+  // plain `workbench seed` never sets `verified` — its key comes
+  // straight from env with no probe of its own — so that idempotent
+  // re-seed still just skips, exactly as before.
   const shouldRotate =
     args.type === "oauth_token"
       ? existing.status !== "active"

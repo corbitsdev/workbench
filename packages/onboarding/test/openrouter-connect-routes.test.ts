@@ -157,17 +157,14 @@ function mockHub() {
   return hub;
 }
 
-/** The fast half, run for real, with only the credential test itself
- * stubbed out — there is no real OpenRouter account to probe in a test. */
+/** The fast half, run for real — CL-6123 dropped the probe that used to
+ * need stubbing out here, so this now just forwards to the real
+ * `testAndPersistCredential` unchanged. */
 const connectCredentialAgainstMockHub: NonNullable<
   NonNullable<
     CreateOnboardingRoutesDeps["openrouterConnect"]
   >["connectCredential"]
-> = (args) =>
-  testAndPersistCredential({
-    ...args,
-    testCredential: async () => ({ ok: true }),
-  });
+> = (args) => testAndPersistCredential(args);
 
 // Stands in for a stable `CREDENTIAL_ENCRYPTION_KEY`: a fresh cipher
 // built from these same bytes is indistinguishable, to the state store,
