@@ -1,6 +1,8 @@
 export {
   InferenceSettingsApiError,
   getResolvedCatalog,
+  listOwnModelProviders,
+  listOwnModels,
   listOwnOfferings,
   shadowOffering,
   updateOwnOffering,
@@ -8,9 +10,10 @@ export {
 export type { ModelInfo, ModelOfferingInfo, ShadowOfferingInput } from "./api";
 export {
   buildEffectiveInferenceRows,
+  computeReorderPatches,
   restrictedOfferings,
   rowsByModel,
-  swapPriority,
 } from "./effective-list";
-export type { EffectiveInferenceRow } from "./effective-list";
+export type { EffectiveInferenceRow, PriorityPatch } from "./effective-list";
 export { InferenceSection } from "./inference-section";
+export { INFERENCE_STRINGS } from "./strings";
