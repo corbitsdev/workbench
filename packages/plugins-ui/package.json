@@ -1,0 +1,34 @@
+{
+  "name": "@corbits/plugins-ui",
+  "private": true,
+  "description": "The Plugins gallery: connector and skill cards, search, the installed strip, and the one-flow connect panel — composed from the connections registry and skill registry the Settings surfaces already read.",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/react-ui": "github:corbitsdev/react-ui#e93005c3a64416cb5dfa8342007c7fe3b52b84fe",
+    "@corbits/settings-ui": "workspace:*",
+    "@corbits/workflow-catalog": "workspace:*",
+    "@workbench/connections": "workspace:*",
+    "arktype": "catalog:",
+    "lucide-react": "^1.27.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.2",
+    "@types/bun": "catalog:",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "react-dom": "^19.2.0",
+    "typescript": "catalog:"
+  }
+}
