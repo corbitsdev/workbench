@@ -12,7 +12,7 @@ export const SETTINGS_STRINGS = {
 
   agentSectionTitle: "Your agent",
   agentSectionDescription:
-    "How your default agent works for you on this bench.",
+    "How your default agent works for you on this workbench.",
   agentAutonomyHeading: "Autonomy",
   agentAutonomyLabel: "Default behavior",
   agentAutonomyPrepare: "Prepare only — draft, never send",
@@ -84,14 +84,14 @@ export const SETTINGS_STRINGS = {
     "Managed through the authentication API; editing from this screen has not been built yet.",
 
   peopleSectionTitle: "People",
-  peopleSectionDescription: "Everyone with a seat on this bench.",
-  peopleLoadError: "this bench's people",
+  peopleSectionDescription: "Everyone with a seat on this workbench.",
+  peopleLoadError: "this workbench's people",
   peopleEmptyTitle: "No people yet",
-  peopleEmptyDescription: "Invite someone to get this bench started.",
+  peopleEmptyDescription: "Invite someone to get this workbench started.",
   peopleInviteAction: "Invite member",
   peopleInviteDialogTitle: "Invite a member",
   peopleInviteDialogDescription:
-    "Invite an existing account to this bench by email. There is no way to invite someone who doesn't have an account yet.",
+    "Invite an existing account to this workbench by email. There is no way to invite someone who doesn't have an account yet.",
   peopleInviteEmailLabel: "Email",
   peopleInviteEmailPlaceholder: "person@example.com",
   peopleInviteSubmit: "Invite",
@@ -137,8 +137,9 @@ export const SETTINGS_STRINGS = {
     "The operator has sign-up switched off at the server level, so people still can't create an account yet — even though this setting would otherwise allow it. Ask whoever manages this deployment to enable self-signup.",
 
   rolesSectionTitle: "Roles",
-  rolesSectionDescription: "This bench's roles and who they're assigned to.",
-  rolesLoadError: "this bench's roles",
+  rolesSectionDescription:
+    "This workbench's roles and who they're assigned to.",
+  rolesLoadError: "this workbench's roles",
   rolesEmptyTitle: "No roles yet",
   rolesEmptyDescription: "Create a custom role to get started.",
   rolesCreateAction: "New role",
@@ -174,7 +175,7 @@ export const SETTINGS_STRINGS = {
   grantsSectionTitle: "Grants",
   grantsSectionDescription:
     "What each role or person is allowed, denied, or asked about, and on what.",
-  grantsLoadError: "this bench's grants",
+  grantsLoadError: "this workbench's grants",
   grantsEmptyTitle: "No grants match these filters",
   grantsEmptyDescription: "Try clearing a filter, or create a new grant.",
   grantsCreateAction: "New grant",
@@ -210,8 +211,8 @@ export const SETTINGS_STRINGS = {
 
   credentialsSectionTitle: "Credentials",
   credentialsSectionDescription:
-    "API keys and tokens this bench stores for providers. Secrets are write-only — they are never shown again after create.",
-  credentialsLoadError: "this bench's credentials",
+    "API keys and tokens this workbench stores for providers. Secrets are write-only — they are never shown again after create.",
+  credentialsLoadError: "this workbench's credentials",
   credentialsEmptyTitle: "No credentials yet",
   credentialsEmptyDescription:
     "Add a provider credential so agents and tools can authenticate.",
@@ -238,7 +239,7 @@ export const SETTINGS_STRINGS = {
 
   connectionsSectionTitle: "Connections",
   connectionsSectionDescription:
-    "Connect the providers and tools this bench's agents can use.",
+    "Connect the providers and tools this workbench's agents can use.",
   connectionsLoadError: "connections",
   connectionsStatusNotConnected: "Not connected",
   connectionsStatusConnected: "Connected",

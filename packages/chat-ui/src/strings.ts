@@ -210,6 +210,8 @@ export const CHAT_STRINGS = {
   channelSettingsSectionMembers: "Members",
   channelSettingsSectionAgents: "Agents",
   channelSettingsSectionAssistant: "Assistant",
+  channelSettingsSectionKeysPlugins: "Keys & plugins",
+  channelSettingsSectionInference: "Inference",
   channelSettingsSectionAccess: "Access",
   channelSettingsSectionNotifications: "Notifications",
   channelSettingsSectionDanger: "Danger zone",

@@ -31,6 +31,8 @@ import {
 import type { ContextWindowMode } from "./context-window";
 import { DangerSection } from "./danger-section";
 import { GeneralSection } from "./general-section";
+import { InferenceSection } from "@corbits/inference-settings";
+import { KeysPluginsSection } from "./keys-plugins-section";
 import { MembersSection } from "./members-section";
 import { channelSettingsSections } from "./model";
 import type { ChannelSettingsSection, ChannelSettingsSectionId } from "./model";
@@ -308,6 +310,14 @@ export function ChannelSettingsSurface({
 
             {activeSection.id === "assistant" ? (
               <AssistantSection tenantId={tenantId} channelId={channelId} />
+            ) : null}
+
+            {activeSection.id === "keys-plugins" ? (
+              <KeysPluginsSection tenantId={tenantId} />
+            ) : null}
+
+            {activeSection.id === "inference" ? (
+              <InferenceSection tenantId={tenantId} />
             ) : null}
 
             {activeSection.id === "access" ? <AccessSection /> : null}

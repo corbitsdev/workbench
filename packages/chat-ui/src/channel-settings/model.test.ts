@@ -8,6 +8,8 @@ describe("channelSettingsSections", () => {
       "general",
       "members",
       "agents",
+      "keys-plugins",
+      "inference",
       "access",
       "notifications",
       "danger",
@@ -18,6 +20,8 @@ describe("channelSettingsSections", () => {
     expect(channelSettingsSections("chat").map((s) => s.id)).toEqual([
       "general",
       "agents",
+      "keys-plugins",
+      "inference",
       "access",
       "notifications",
     ]);
@@ -26,6 +30,8 @@ describe("channelSettingsSections", () => {
   test("a DM chat additionally trims Agents — no agent participant, nothing to invite", () => {
     expect(channelSettingsSections("chat", true).map((s) => s.id)).toEqual([
       "general",
+      "keys-plugins",
+      "inference",
       "access",
       "notifications",
     ]);
@@ -35,6 +41,8 @@ describe("channelSettingsSections", () => {
     expect(channelSettingsSections("chat", false).map((s) => s.id)).toEqual([
       "general",
       "agents",
+      "keys-plugins",
+      "inference",
       "access",
       "notifications",
     ]);
@@ -45,6 +53,8 @@ describe("channelSettingsSections", () => {
       "general",
       "members",
       "agents",
+      "keys-plugins",
+      "inference",
       "access",
       "notifications",
       "danger",
@@ -68,6 +78,8 @@ describe("channelSettingsSections", () => {
       "members",
       "agents",
       "assistant",
+      "keys-plugins",
+      "inference",
       "access",
       "notifications",
       "danger",
@@ -77,12 +89,37 @@ describe("channelSettingsSections", () => {
   test("an agent chat with hasAgent shows Assistant even though Members is trimmed", () => {
     expect(
       channelSettingsSections("chat", false, true).map((s) => s.id),
-    ).toEqual(["general", "agents", "assistant", "access", "notifications"]);
+    ).toEqual([
+      "general",
+      "agents",
+      "assistant",
+      "keys-plugins",
+      "inference",
+      "access",
+      "notifications",
+    ]);
+  });
+
+  test("Keys & plugins and Inference are always present, regardless of channel kind", () => {
+    expect(channelSettingsSections("channel").map((s) => s.id)).toContain(
+      "keys-plugins",
+    );
+    expect(channelSettingsSections("channel").map((s) => s.id)).toContain(
+      "inference",
+    );
+    expect(channelSettingsSections("chat", true).map((s) => s.id)).toContain(
+      "keys-plugins",
+    );
+    expect(channelSettingsSections("chat", true).map((s) => s.id)).toContain(
+      "inference",
+    );
   });
 
   test("groups sections Shared / Personal / Danger for the nav", () => {
     const groups = channelSettingsSections("channel").map((s) => s.group);
     expect(groups).toEqual([
+      "shared",
+      "shared",
       "shared",
       "shared",
       "shared",

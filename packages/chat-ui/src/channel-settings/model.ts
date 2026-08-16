@@ -9,6 +9,8 @@ export type ChannelSettingsSectionId =
   | "members"
   | "agents"
   | "assistant"
+  | "keys-plugins"
+  | "inference"
   | "access"
   | "notifications"
   | "danger";
@@ -77,6 +79,16 @@ export function channelSettingsSections(
     });
   }
   sections.push(
+    {
+      id: "keys-plugins",
+      label: CHAT_STRINGS.channelSettingsSectionKeysPlugins,
+      group: "shared",
+    },
+    {
+      id: "inference",
+      label: CHAT_STRINGS.channelSettingsSectionInference,
+      group: "shared",
+    },
     {
       id: "access",
       label: CHAT_STRINGS.channelSettingsSectionAccess,

@@ -1,25 +1,21 @@
 {
-  "name": "@corbits/chat-ui",
+  "name": "@corbits/inference-settings",
   "private": true,
-  "description": "The chat surface's UI: the workspace, timeline, composer, and sidebar composed from the published component library",
+  "description": "Per-workbench inference settings: the effective ordered model/provider catalog with inherited-vs-set-here provenance, and the native catalog writes (priority reorder, restrict, bring-your-own-key shadowing) a workbench tenant can make against it.",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./styles.css": "./src/styles.css"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/chat": "workspace:*",
-    "@corbits/context-menu": "workspace:*",
-    "@corbits/inference-settings": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#e93005c3a64416cb5dfa8342007c7fe3b52b84fe",
-    "@tanstack/react-query": "catalog:",
-    "@workbench/connections": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
     "lucide-react": "^1.27.0",
     "react": "^19.2.0",
