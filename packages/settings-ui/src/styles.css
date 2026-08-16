@@ -451,3 +451,67 @@
   align-items: center;
   gap: 0.5rem;
 }
+
+.settings-account-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-account-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.settings-account-identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.settings-account-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.settings-account-email {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.settings-account-signout {
+  flex-shrink: 0;
+}
+
+.settings-account-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.settings-subhead-quiet {
+  margin-top: 0;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.settings-static-value {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.settings-appearance-select {
+  width: auto;
+  min-width: 10rem;
+}

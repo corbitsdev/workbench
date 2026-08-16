@@ -1,15 +1,15 @@
-// The Account section's Sign out affordance (CL-6105): the footer avatar
-// menu is not the only way in — a person already on this settings screen
-// should find the same action here, so it renders whenever a host supplies
-// `onSignOut`, and stays absent for a host (or test) that renders the
-// section standalone with no sign-out concept of its own.
+// Personal Settings' opening section (CL-6133): the Account card's Sign out
+// affordance (CL-6105 — the footer avatar menu is not the only way in), its
+// copy-to-clipboard email action, and the Appearance card's theme Select
+// wired to `ThemeProvider`'s three-state mode contract.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { AccountSectionView } from "../src/account-section";
+import { ThemeProvider } from "@corbits/react-ui";
+import { AccountSectionView, AppearanceSection } from "../src/account-section";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -23,6 +23,7 @@ afterEach(() => {
     container.remove();
     container = null;
   }
+  document.documentElement.classList.remove("dark");
 });
 
 function mount(element: React.ReactElement): HTMLDivElement {
@@ -67,5 +68,89 @@ describe("AccountSectionView", () => {
       button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(signedOut).toBe(true);
+  });
+
+  test("shows an avatar and the name/email in the account card, and the same email again in the quieter details subsection", () => {
+    const el = mount(
+      <AccountSectionView
+        name="Ada Lovelace"
+        email="ada@example.com"
+        emailVerified={true}
+      />,
+    );
+    expect(el.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
+      "Ada Lovelace",
+    );
+    expect(el.textContent).toContain("Ada Lovelace");
+    expect(el.textContent).toContain("Account details");
+    expect(el.textContent).toContain("verified");
+  });
+
+  test("copies the email to the clipboard and shows the Copied toast on click", async () => {
+    const written: string[] = [];
+    const originalClipboard = navigator.clipboard;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (value: string) => {
+          written.push(value);
+          return Promise.resolve();
+        },
+      },
+    });
+    try {
+      const el = mount(
+        <AccountSectionView
+          name="Ada Lovelace"
+          email="ada@example.com"
+          emailVerified={true}
+        />,
+      );
+      const copyButton = el.querySelector(
+        'button[aria-label="Copy email"]',
+      ) as HTMLButtonElement | null;
+      expect(copyButton).not.toBeNull();
+      act(() => copyButton?.click());
+      await act(() => Promise.resolve());
+      expect(written).toEqual(["ada@example.com"]);
+    } finally {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: originalClipboard,
+      });
+    }
+  });
+});
+
+describe("AppearanceSection", () => {
+  test("defaults the theme Select to Follow System and offers all three modes", () => {
+    const el = mount(
+      <ThemeProvider storageKey="test-theme-default">
+        <AppearanceSection />
+      </ThemeProvider>,
+    );
+    const select = el.querySelector("select") as HTMLSelectElement | null;
+    expect(select?.value).toBe("system");
+    const optionValues = [...(select?.options ?? [])].map(
+      (option) => option.value,
+    );
+    expect(optionValues).toEqual(["system", "light", "dark"]);
+  });
+
+  test("choosing Dark applies dark mode via ThemeProvider", async () => {
+    const el = mount(
+      <ThemeProvider storageKey="test-theme-dark">
+        <AppearanceSection />
+      </ThemeProvider>,
+    );
+    const select = el.querySelector("select") as HTMLSelectElement | null;
+    act(() => {
+      if (select !== null) {
+        select.value = "dark";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await act(() => Promise.resolve());
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 });

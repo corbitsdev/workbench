@@ -14,7 +14,12 @@ export {
   insertEveryoneSections,
 } from "./section-registry";
 
-export { AccountSection, AccountSectionView } from "./account-section";
+export {
+  AccountSection,
+  AccountSectionView,
+  AppearanceSection,
+  AgentGeneralSection,
+} from "./account-section";
 export { NotificationsSection } from "./notifications-section";
 export { AuditSection } from "./audit-section";
 export { AccessPolicyBlock, AccessPolicyEditor } from "./access-policy";

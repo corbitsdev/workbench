@@ -60,6 +60,20 @@ export const SETTINGS_STRINGS = {
   accountReadOnlyNote:
     "Managed through the authentication API; editing from this screen has not been built yet.",
   accountSignOutAction: "Sign out",
+  accountDetailsHeading: "Account details",
+  accountCopyEmailAction: "Copy email",
+  accountEmailCopiedToast: "Copied",
+  accountEmailCopyError: "Couldn't copy the email",
+
+  appearanceSectionTitle: "Appearance",
+  appearanceThemeLabel: "Theme",
+  themeFollowSystem: "Follow System",
+  themeLight: "Light",
+  themeDark: "Dark",
+
+  generalAgentGroupTitle: "Agent",
+  agentTimezoneLabel: "Timezone",
+  agentTimezoneAutoDetect: (timezone: string) => `Auto-detect (${timezone})`,
 
   peopleSectionTitle: "People",
   peopleSectionDescription: "Everyone with a seat on this workbench.",
