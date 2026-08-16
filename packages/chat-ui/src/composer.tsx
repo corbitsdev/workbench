@@ -8,7 +8,13 @@
 
 import { Button } from "@corbits/react-ui";
 import { Loader2, Paperclip, Send, X } from "lucide-react";
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 
 import type { Part } from "./api";
@@ -324,8 +330,21 @@ export const Composer = forwardRef<
   const [sending, setSending] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /** Auto-grow: the textarea reports its own content height, so the
+   * measurement resets to the CSS-declared min-height before reading
+   * `scrollHeight` — otherwise a shrinking draft would get stuck at its
+   * tallest-ever height. Growth caps out at the CSS max-height, where
+   * `overflow-y` takes over for scrolling. */
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea === null) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [value]);
 
   useImperativeHandle(
     ref,
@@ -719,6 +738,8 @@ export const Composer = forwardRef<
             );
           }}
           onKeyDown={handleKeyDown}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           rows={1}
         />
         <Button
@@ -745,6 +766,11 @@ export const Composer = forwardRef<
           )}
         </Button>
       </div>
+      {focused && value.trim().length > 0 && (
+        <div className="chat-composer-hint">
+          {CHAT_STRINGS.composerKeyboardHint}
+        </div>
+      )}
       <div
         className="chat-composer-status"
         aria-live="polite"

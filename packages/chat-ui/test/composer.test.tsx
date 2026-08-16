@@ -101,3 +101,63 @@ describe("Composer send button", () => {
     expect(sendButton().getAttribute("aria-label")).toBe("Send");
   });
 });
+
+function hint(): Element | null {
+  return container?.querySelector(".chat-composer-hint") ?? null;
+}
+
+function textarea(): HTMLTextAreaElement {
+  const element = container?.querySelector("textarea");
+  if (element === null || element === undefined) {
+    throw new Error("composer textarea not found");
+  }
+  return element;
+}
+
+function typeInto(element: HTMLTextAreaElement, text: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    globalThis.HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
+  act(() => {
+    setter?.call(element, text);
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+describe("Composer keyboard hint", () => {
+  test("stays hidden until the textarea is focused with a non-empty draft", async () => {
+    mount(() => Promise.resolve(true));
+    expect(hint()).toBeNull();
+
+    act(() => {
+      textarea().focus();
+    });
+    await settle();
+    expect(hint()).toBeNull();
+
+    typeInto(textarea(), "hello");
+    await settle();
+    expect(hint()?.textContent).toBe("Enter to send");
+
+    act(() => {
+      textarea().blur();
+    });
+    await settle();
+    expect(hint()).toBeNull();
+  });
+
+  test("hides again once the draft is cleared while still focused", async () => {
+    mount(() => Promise.resolve(true));
+    act(() => {
+      textarea().focus();
+    });
+    typeInto(textarea(), "hi");
+    await settle();
+    expect(hint()).not.toBeNull();
+
+    typeInto(textarea(), "");
+    await settle();
+    expect(hint()).toBeNull();
+  });
+});
