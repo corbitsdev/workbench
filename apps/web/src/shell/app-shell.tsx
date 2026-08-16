@@ -18,7 +18,9 @@ import type { ArtifactSaveState } from "@corbits/artifact-ui";
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
 import { usePresenceRoom } from "../presence/use-presence-room";
+import { APP_ROUTES, matchesRoute } from "../routes";
 import type { SessionUser } from "../session";
+import { StageTopBar } from "./stage-top-bar";
 import {
   COL2_ID,
   Col2EdgeHandle,
@@ -43,6 +45,23 @@ import { CanvasColumn } from "./canvas-column";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
 import { ContextualPanel } from "./contextual-panel";
 import { Rail } from "./rail";
+
+/** True only for the one route that never renders its own `StageTopBar`
+ * (see `AppRoute.hasStageTopBar`'s doc) — everything else titles its own
+ * stage, so this stays false for the rest. */
+function routeHasNoStageTopBar(path: string): boolean {
+  const route = APP_ROUTES.find((candidate) =>
+    matchesRoute(candidate.path, path),
+  );
+  return route?.hasStageTopBar === false;
+}
+
+function routeLabel(path: string): string {
+  const route = APP_ROUTES.find((candidate) =>
+    matchesRoute(candidate.path, path),
+  );
+  return route?.label ?? "Workbench";
+}
 
 export function AppShell({
   path,
@@ -151,7 +170,12 @@ export function AppShell({
       )}
       {col2Collapsed && <Col2EdgeHandle />}
       <div className="shell-main" ref={mainRef}>
-        <div className="shell-main-content">{children}</div>
+        <div className="shell-main-content">
+          {routeHasNoStageTopBar(path) ? (
+            <StageTopBar title={routeLabel(path)} />
+          ) : null}
+          {children}
+        </div>
       </div>
       {canvasAllowed && (
         <CanvasColumn

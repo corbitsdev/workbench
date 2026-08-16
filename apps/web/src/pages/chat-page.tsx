@@ -41,6 +41,7 @@ import {
   useOpenProfileInCanvas,
 } from "../shell/canvas-availability";
 import { useRegisterComposerInsert } from "../shell/composer-insertion";
+import { StageTopBar } from "../shell/stage-top-bar";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
 import { usePresenceRoom } from "../presence/use-presence-room";
 
@@ -224,5 +225,13 @@ export function ChatPage({
     />
   );
 
-  return workspace;
+  // The conversation itself carries the open channel's own name inline
+  // (see ChatWorkspace's `chat-channel-header`) — this bar is what survives
+  // when col2 is collapsed and nothing else on the page says "Chats".
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar title="Chats" />
+      {workspace}
+    </div>
+  );
 }

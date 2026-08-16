@@ -71,12 +71,15 @@ describe("settings top bar", () => {
       <TestQueryProvider>
         <NavigationProvider navigate={() => undefined}>
           <BenchProvider>
-            <SettingsRoute path="/settings/agent" navigate={() => undefined} />
+            <SettingsRoute
+              path="/settings/account"
+              navigate={() => undefined}
+            />
           </BenchProvider>
         </NavigationProvider>
       </TestQueryProvider>,
     );
     expect(markup).toContain('data-testid="stage-top-bar"');
-    expect(markup).toContain("Settings · Your agent");
+    expect(markup).toContain("Settings · Account");
   });
 });

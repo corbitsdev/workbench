@@ -64,6 +64,13 @@ export type AppRoute = {
     path: string,
     navigate: (to: string) => void,
   ) => ReactElement;
+  /** False only for the one screen with no `StageTopBar` of its own — Myra
+   * land (`/`) is a bare ensure+redirect hop (see `pages/home-page.tsx`)
+   * with nothing in the stage to title itself while it resolves. `AppShell`
+   * covers that gap generically (`shell/app-shell.tsx`) rather than home-page
+   * inventing chrome for a screen that's never meant to linger. Every other
+   * route titles its own stage. */
+  readonly hasStageTopBar?: boolean;
 };
 
 /**
@@ -95,6 +102,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
     label: "Myra",
     icon: <MessageSquare />,
     render: () => <HomeRoute />,
+    hasStageTopBar: false,
   },
   {
     path: CHANNEL_PATH_PREFIX,

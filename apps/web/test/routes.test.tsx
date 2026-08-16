@@ -1,8 +1,13 @@
 // Rendering here uses react-dom/server, so effects never run and every
 // screen shows its pre-fetch state — which is exactly what these tests
-// assert: each route mounts, names itself in the contextual panel, and
-// rail-listed pages mark themselves in the rail. Page identity lives in the
-// panel page band (h2.panel-page-title), not a per-page TopBar.
+// assert: each route mounts, names itself, and rail-listed pages mark
+// themselves in the rail. Col2 is collapsed by default (the chat-first
+// shell), so the contextual panel never mounts in this render — page
+// identity lives in each stage's own `StageTopBar` (data-testid
+// "stage-top-bar") instead. The one route with no stage bar of its own
+// (`/`, see `AppRoute.hasStageTopBar`) gets one from `AppShell` itself, so
+// every route ends up titled the same way; the panel-header pattern below
+// is a defensive fallback only, never expected to fire.
 
 import { ThemeProvider } from "@corbits/react-ui";
 import { describe, expect, test } from "bun:test";
@@ -39,13 +44,16 @@ function renderApp(path: string, session: SessionState = signedIn): string {
   );
 }
 
-/** Page name from the contextual panel header (SidebarPanelHeader h2). */
+/** Page identity: the stage's own `StageTopBar` title first (col2 is
+ * collapsed by default, so the contextual panel never carries it) — falling
+ * back to the panel header's `SidebarPanelHeader` h2 only for the one route
+ * with no stage bar of its own (`/`, see `AppRoute.hasStageTopBar`). */
 function panelPageTitle(markup: string): string | undefined {
   return (
+    /<div class="stage-top-bar-title">([^<]*)<\/div>/.exec(markup)?.[1] ??
     /data-slot="sidebar-panel-header"[\s\S]*?<h2[^>]*>([^<]*)<\/h2>/.exec(
       markup,
-    )?.[1] ??
-    /class="panel-page-title"[^>]*>(.*?)<\/(?:span|h2)>/.exec(markup)?.[1]
+    )?.[1]
   );
 }
 
@@ -133,6 +141,15 @@ describe("routes render", () => {
       if (route.path === "/") {
         expect(panelPageTitle(markup)).toBe("Myra");
         expect(activeRailLabel(markup)).toBe("Chats");
+        return;
+      }
+      // Bare /settings' own redirect-to-first-section effect never runs in
+      // this static render, so the stage bar honestly shows the section
+      // it's actually resolved to (the first allowed one) rather than the
+      // bare "Settings" the post-redirect URL would carry.
+      if (route.path === "/settings") {
+        expect(panelPageTitle(markup)).toBe("Settings · Notifications");
+        expect(activeRailLabel(markup)).toBe(route.label);
         return;
       }
       expect(panelPageTitle(markup)).toBe(route.label);
