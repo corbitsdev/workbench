@@ -116,7 +116,8 @@ export function createPostgresUsageStore(databaseUrl: string): {
       }
     },
 
-    async listUsageByTenant(tenantId, opts) {
+    async listUsageByTenants(tenantIds, opts) {
+      if (tenantIds.length === 0) return [];
       const from = opts?.from;
       const to = opts?.to;
       const rows = await sql<
@@ -135,7 +136,7 @@ export function createPostgresUsageStore(databaseUrl: string): {
         }[]
       >`
         SELECT * FROM insights.usage_turn
-        WHERE tenant_id = ${tenantId}
+        WHERE tenant_id = ANY(${[...tenantIds]})
           AND (${from ?? null}::timestamptz IS NULL OR recorded_at >= ${from ?? null})
           AND (${to ?? null}::timestamptz IS NULL OR recorded_at <= ${to ?? null})
         ORDER BY recorded_at ASC

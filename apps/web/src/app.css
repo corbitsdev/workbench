@@ -1982,6 +1982,33 @@ html {
   color: var(--muted-foreground, #8a8080);
 }
 
+/* Insights landing scope switcher: "All workbenches" vs one pill per
+   sibling workbench. Hidden entirely (renders nothing) when the current
+   workbench has no parent — see InsightsScopeSwitcher. */
+.insights-scope-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.insights-scope-switcher-option {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid
+    color-mix(in srgb, var(--foreground, #2b2627) 14%, transparent);
+  border-radius: 0;
+  background: var(--card, var(--background, #fff));
+  color: var(--foreground, #2b2627);
+  cursor: pointer;
+}
+
+.insights-scope-switcher-option[data-active="true"] {
+  border-color: var(--primary, #e98428);
+  background: color-mix(in srgb, var(--primary, #e98428) 14%, transparent);
+  color: var(--foreground, #2b2627);
+}
+
 .insights-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));

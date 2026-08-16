@@ -5,6 +5,7 @@ import {
   INSIGHTS_RUNS_PATH,
   runDeepLinkTarget,
   runDetailPath,
+  workbenchInsightsPath,
 } from "./insights-deeplinks";
 
 function run(id: string): WorkflowRun {
@@ -39,5 +40,19 @@ describe("runDeepLinkTarget", () => {
 
   test("is stable across two runs that differ only by id", () => {
     expect(runDeepLinkTarget(run("a"))).not.toBe(runDeepLinkTarget(run("b")));
+  });
+});
+
+describe("workbenchInsightsPath", () => {
+  test("builds the /insights/workbench/:tenantId path", () => {
+    expect(workbenchInsightsPath("tnt_42")).toBe(
+      "/insights/workbench/tnt_42",
+    );
+  });
+
+  test("encodes a tenant id so a slash or space cannot break out of the segment", () => {
+    expect(workbenchInsightsPath("a/b c")).toBe(
+      "/insights/workbench/a%2Fb%20c",
+    );
   });
 });

@@ -28,8 +28,14 @@ export type InsertUsageInput = {
 export type UsageStore = {
   /** Insert a turn. Returns the row, or null if turnId already exists (idempotent). */
   insertUsage(input: InsertUsageInput): Promise<UsageTurnRecord | null>;
-  listUsageByTenant(
-    tenantId: string,
+  /**
+   * Rows for every tenant in `tenantIds` — the DB-layer aggregation seam a
+   * multi-tenant scope (a workspace parent plus its child workbenches)
+   * sums over, so a query never has to fan out into one browser fetch per
+   * tenant. A single-element array is the plain single-tenant read.
+   */
+  listUsageByTenants(
+    tenantIds: readonly string[],
     opts?: { from?: Date; to?: Date },
   ): Promise<readonly UsageTurnRecord[]>;
   getPrice(model: string): Promise<ModelPriceRecord | null>;
@@ -66,9 +72,10 @@ export function createMemoryUsageStore(
       byTurnId.set(record.turnId, record.id);
       return record;
     },
-    async listUsageByTenant(tenantId, opts) {
+    async listUsageByTenants(tenantIds, opts) {
+      const scope = new Set(tenantIds);
       return [...turns.values()]
-        .filter((t) => t.tenantId === tenantId)
+        .filter((t) => scope.has(t.tenantId))
         .filter((t) =>
           opts?.from === undefined ? true : t.recordedAt >= opts.from,
         )

@@ -1,9 +1,20 @@
 // Tenant-scoped Insights read API. Mounted under the platform's native
 // tenant middleware; every number that cannot be known is returned as
-// null, never a fabricated zero.
+// null, never a fabricated zero. usage/activity/tools roll up the
+// requested tenant's whole descendant subtree when `deps.db` is wired
+// (see resolveScope) — the same route serves a single workbench's own
+// numbers (leaf, no descendants) and a workspace's cross-workbench
+// aggregate (parent, its child workbenches). `/scope` is the read-only
+// counterpart a caller uses to discover that shape: its own name, its
+// parent (if any), and the sibling workbenches to switch between —
+// filtered to tenants the caller holds an active principal in (see
+// callerTenantIds), never a sibling or parent name the caller has no
+// membership in.
 import { Hono } from "hono";
 import { type } from "arktype";
+import { eq, and } from "drizzle-orm";
 
+import { getDescendantTenants, schema, type DB } from "@intx/db";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
 import {
@@ -53,7 +64,50 @@ export type CreateInsightsRoutesDeps = {
   requireGrant: RequireGrant;
   runTraceReader?: RunTraceReader;
   toolCallReader?: ToolCallReader;
+  /**
+   * Tenant-hierarchy handle for scope resolution. usage/activity/tools
+   * aggregate over the requested tenant plus every descendant it has
+   * (see getDescendantTenants) — no separate "aggregate" flag or route:
+   * calling with a workbench's own id stays a single-tenant view (it has
+   * no descendants), calling with its workspace parent rolls up every
+   * child workbench, at this query layer rather than one fetch per
+   * tenant. Omitted, every query stays scoped to exactly the requested
+   * tenant (no hierarchy lookup, same behavior as before this scope
+   * existed).
+   */
+  db?: DB["db"];
 };
+
+async function resolveScope(
+  db: DB["db"] | undefined,
+  tenantId: string,
+): Promise<readonly string[]> {
+  if (db === undefined) return [tenantId];
+  return getDescendantTenants(db, tenantId);
+}
+
+/**
+ * The set of tenant ids the calling user holds an active principal in —
+ * the same `principal.kind === "user" && principal.refId === user.id`
+ * lookup `/api/me/principals` (vendor's `routes/me.ts`) uses to derive a
+ * user's cross-tenant memberships. `/scope` intersects this against a
+ * tenant's siblings/parent so it can never name a tenant the caller has
+ * no membership in, regardless of which tenant they asked about.
+ */
+async function callerTenantIds(
+  db: DB["db"],
+  userId: string,
+): Promise<ReadonlySet<string>> {
+  const rows = await db.query.principal.findMany({
+    where: and(
+      eq(schema.principal.kind, "user"),
+      eq(schema.principal.refId, userId),
+      eq(schema.principal.status, "active"),
+    ),
+    columns: { tenantId: true },
+  });
+  return new Set(rows.map((r) => r.tenantId));
+}
 
 export function createInsightsRoutes(
   deps: CreateInsightsRoutesDeps,
@@ -77,7 +131,8 @@ export function createInsightsRoutes(
       );
     }
     const tenant = c.get("tenant");
-    const summary = await summarizeUsage(deps.store, tenant.id, range);
+    const scope = await resolveScope(deps.db, tenant.id);
+    const summary = await summarizeUsage(deps.store, scope, range);
     return c.json(summary);
   });
 
@@ -97,7 +152,8 @@ export function createInsightsRoutes(
       );
     }
     const tenant = c.get("tenant");
-    const days = await activityByDay(deps.store, tenant.id, range);
+    const scope = await resolveScope(deps.db, tenant.id);
+    const days = await activityByDay(deps.store, scope, range);
     return c.json({ days });
   });
 
@@ -117,8 +173,60 @@ export function createInsightsRoutes(
       );
     }
     const tenant = c.get("tenant");
-    const toolsSummary = await tools.summarize(tenant.id, range);
+    const scope = await resolveScope(deps.db, tenant.id);
+    const toolsSummary = await tools.summarize(scope, range);
     return c.json({ tools: toolsSummary });
+  });
+
+  app.get("/scope", deps.requireGrant("insights:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const self = { tenantId: tenant.id, name: tenant.name };
+    const selfOnly = () =>
+      c.json({
+        tenantId: tenant.id,
+        name: tenant.name,
+        parent: null,
+        workbenches: [self],
+      });
+    const user = c.get("user");
+    if (deps.db === undefined || tenant.parentId === null || user === null) {
+      return selfOnly();
+    }
+    const memberTenantIds = await callerTenantIds(deps.db, user.id);
+    const siblings = await deps.db.query.tenant.findMany({
+      where: eq(schema.tenant.parentId, tenant.parentId),
+      columns: { id: true, name: true },
+    });
+    // Only siblings (and self) the caller actually holds a principal in —
+    // never a name or tenantId belonging to a tenant they aren't a member
+    // of, no matter what the requested tenant's own membership allows.
+    const workbenches = siblings.filter((s) => memberTenantIds.has(s.id));
+    if (!memberTenantIds.has(tenant.parentId)) {
+      return c.json({
+        tenantId: tenant.id,
+        name: tenant.name,
+        parent: null,
+        workbenches: workbenches.map((s) => ({ tenantId: s.id, name: s.name })),
+      });
+    }
+    const parentRow = await deps.db.query.tenant.findFirst({
+      where: eq(schema.tenant.id, tenant.parentId),
+      columns: { id: true, name: true },
+    });
+    if (parentRow === undefined) {
+      return c.json({
+        tenantId: tenant.id,
+        name: tenant.name,
+        parent: null,
+        workbenches: workbenches.map((s) => ({ tenantId: s.id, name: s.name })),
+      });
+    }
+    return c.json({
+      tenantId: tenant.id,
+      name: tenant.name,
+      parent: { tenantId: parentRow.id, name: parentRow.name },
+      workbenches: workbenches.map((s) => ({ tenantId: s.id, name: s.name })),
+    });
   });
 
   app.get(

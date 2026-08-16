@@ -50,6 +50,7 @@ import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import {
   ActivityResponseSchema,
+  InsightsScopeSchema,
   OverallUsageSchema,
   RunTraceSchema,
   TaskLegsResponseSchema,
@@ -58,12 +59,14 @@ import {
   TopLevelRunsSchema,
   insightsActivityPath,
   insightsRunTracePath,
+  insightsScopePath,
   insightsTaskByRunPath,
   insightsTaskLegsPath,
   insightsToolsPath,
   insightsTopLevelRunsPath,
   insightsUsagePath,
   type InsightsRun,
+  type InsightsScope,
   type RunTrace,
   type TaskLeg,
   type ToolCall,
@@ -829,21 +832,145 @@ export function InsightsRunDetail({
   );
 }
 
+/**
+ * `/insights/workbench/:tenantId` deep-links the landing view to exactly
+ * that workbench — the entry point a conversation's action bar offers
+ * (see chat-workspace.tsx's onOpenInsights). Every other landing path
+ * stays the cross-workbench default: no per-mode branch needed, since
+ * scoping happens in InsightsRoute (which tenantId every query below
+ * targets), not here.
+ */
 function parseInsightsPath(path: string): {
   mode: "landing" | "runs" | "run";
   runId: string | null;
+  workbenchId: string | null;
 } {
+  const workbenchMatch = /^\/insights\/workbench\/([^/]+)\/?$/.exec(path);
+  if (workbenchMatch !== null && workbenchMatch[1] !== undefined) {
+    return {
+      mode: "landing",
+      runId: null,
+      workbenchId: decodeURIComponent(workbenchMatch[1]),
+    };
+  }
   if (path === "/insights" || path === "/insights/") {
-    return { mode: "landing", runId: null };
+    return { mode: "landing", runId: null, workbenchId: null };
   }
   if (path === "/insights/runs" || path === "/insights/runs/") {
-    return { mode: "runs", runId: null };
+    return { mode: "runs", runId: null, workbenchId: null };
   }
   const match = /^\/insights\/runs\/([^/]+)\/?$/.exec(path);
   if (match !== null && match[1] !== undefined) {
-    return { mode: "run", runId: decodeURIComponent(match[1]) };
+    return {
+      mode: "run",
+      runId: decodeURIComponent(match[1]),
+      workbenchId: null,
+    };
   }
-  return { mode: "landing", runId: null };
+  return { mode: "landing", runId: null, workbenchId: null };
+}
+
+/**
+ * The landing view's default scope, and every non-landing mode's scope,
+ * as one pure decision so it can be unit-tested without mounting the
+ * route. `/scope` (packages/insights/src/routes.ts) only ever reports a
+ * `parent` when the caller holds an active principal in it — a present
+ * parent means "caller is a workspace member" and the default becomes
+ * the cross-workbench aggregate ("All workbenches"); otherwise the
+ * default is the caller's own current workbench, labeled with its name.
+ * Either way the result is always a tenant `/scope` itself vouches the
+ * caller can see — there is no default that can 403.
+ *
+ * An explicit `/insights/workbench/:id` deep link overrides the default
+ * outright (and every non-landing mode stays tied to the current
+ * workbench, unaffected by scope).
+ */
+export function resolveInsightsScope({
+  mode,
+  workbenchId,
+  selectedTenantId,
+  scopeData,
+}: {
+  readonly mode: "landing" | "runs" | "run";
+  readonly workbenchId: string | null;
+  readonly selectedTenantId: string | null;
+  readonly scopeData: InsightsScope | null;
+}): { effectiveTenantId: string | null; scopeLabel: string } {
+  if (mode !== "landing") {
+    return {
+      effectiveTenantId: selectedTenantId,
+      scopeLabel: selectedTenantId ?? "",
+    };
+  }
+  if (workbenchId !== null) {
+    const label =
+      scopeData?.workbenches.find((w) => w.tenantId === workbenchId)?.name ??
+      (scopeData?.tenantId === workbenchId ? scopeData.name : workbenchId);
+    return { effectiveTenantId: workbenchId, scopeLabel: label };
+  }
+  if (scopeData?.parent) {
+    return {
+      effectiveTenantId: scopeData.parent.tenantId,
+      scopeLabel: "All workbenches",
+    };
+  }
+  // Not a workspace member (or `/scope` hasn't resolved yet): default to
+  // the caller's own current workbench, never an aggregate they cannot
+  // see. Before `/scope` resolves this falls back to the raw tenant id
+  // so the dashboard never blocks on it.
+  return {
+    effectiveTenantId: scopeData?.tenantId ?? selectedTenantId,
+    scopeLabel: scopeData?.name ?? selectedTenantId ?? "",
+  };
+}
+
+/**
+ * Landing-view scope switcher: "All workbenches" (the cross-workbench
+ * aggregate) versus each sibling workbench by name — the labeling this
+ * feature asks for, so the dashboard never leaves it ambiguous whether a
+ * number is one workbench's or the whole workspace's. Hidden entirely
+ * when `/scope` reports no parent — a root workbench with no siblings
+ * has nothing to switch between.
+ */
+function InsightsScopeSwitcher({
+  scope,
+  activeWorkbenchId,
+  onSelect,
+}: {
+  readonly scope: InsightsScope | null;
+  readonly activeWorkbenchId: string | null;
+  readonly onSelect: (workbenchId: string | null) => void;
+}) {
+  if (scope === null || scope.parent === null) return null;
+  return (
+    <div
+      className="insights-scope-switcher"
+      role="group"
+      aria-label="Insights scope"
+    >
+      <button
+        type="button"
+        aria-pressed={activeWorkbenchId === null}
+        data-active={activeWorkbenchId === null}
+        className="insights-scope-switcher-option"
+        onClick={() => onSelect(null)}
+      >
+        All workbenches
+      </button>
+      {scope.workbenches.map((workbench) => (
+        <button
+          key={workbench.tenantId}
+          type="button"
+          aria-pressed={activeWorkbenchId === workbench.tenantId}
+          data-active={activeWorkbenchId === workbench.tenantId}
+          className="insights-scope-switcher-option"
+          onClick={() => onSelect(workbench.tenantId)}
+        >
+          {workbench.name}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export function InsightsPage({
@@ -854,6 +981,9 @@ export function InsightsPage({
   runs,
   routines,
   range,
+  scope,
+  activeWorkbenchId,
+  scopeLabel,
 }: {
   readonly path: string;
   readonly summary: APIQuery<OverallUsage>;
@@ -866,6 +996,16 @@ export function InsightsPage({
   readonly routines: APIQuery<readonly Routine[]>;
   /** Stable 7-day window created once per route mount. */
   readonly range: InsightsRange;
+  /** `/scope` result — own identity, parent (if any), sibling
+   * workbenches. Null while loading/absent; the switcher hides itself. */
+  readonly scope: InsightsScope | null;
+  /** The workbench the landing view is scoped to (from the
+   * `/insights/workbench/:tenantId` deep link), or null for the default
+   * cross-workbench aggregate. */
+  readonly activeWorkbenchId: string | null;
+  /** "All workbenches" or the specific workbench's name — always known
+   * even before `/scope` resolves (falls back to the raw id). */
+  readonly scopeLabel: string;
 }) {
   const navigate = useNavigate();
   const { mode, runId } = parseInsightsPath(path);
@@ -959,7 +1099,20 @@ export function InsightsPage({
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
         title="Insights"
-        subtitle={`Last ${INSIGHTS_WINDOW_DAYS} days`}
+        subtitle={`${scopeLabel} · Last ${INSIGHTS_WINDOW_DAYS} days`}
+        actions={
+          <InsightsScopeSwitcher
+            scope={scope}
+            activeWorkbenchId={activeWorkbenchId}
+            onSelect={(workbenchId) =>
+              navigate(
+                workbenchId === null
+                  ? "/insights"
+                  : `/insights/workbench/${encodeURIComponent(workbenchId)}`,
+              )
+            }
+          />
+        }
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageShell width="full" className="page-fill">
@@ -1043,27 +1196,51 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
   const currentPath =
     path ??
     (typeof window !== "undefined" ? window.location.pathname : "/insights");
+  const { mode, workbenchId } = parseInsightsPath(currentPath);
 
   // One window per mount — shared by usage/activity/tools query keys and
   // the landing run KPI/recent filter so labels stay honest and stable.
   const range = useMemo(() => createInsightsWindow(), []);
 
+  // Own identity, parent (a workspace, if this workbench has one), and
+  // sibling workbenches — read once off the current workbench regardless
+  // of scope, since it describes the switcher options, not the data
+  // itself. See @corbits/insights' routes.ts `/scope`.
+  const scope = useAPIQuery(
+    selectedTenantId === null ? "" : insightsScopePath(selectedTenantId),
+    InsightsScopeSchema,
+  );
+  const scopeData = scope.kind === "ready" ? scope.data : null;
+
+  const { effectiveTenantId, scopeLabel } = resolveInsightsScope({
+    mode,
+    workbenchId,
+    selectedTenantId,
+    scopeData,
+  });
+
   const summary = useAPIQuery(
-    selectedTenantId === null ? "" : insightsUsagePath(selectedTenantId, range),
+    effectiveTenantId === null
+      ? ""
+      : insightsUsagePath(effectiveTenantId, range),
     OverallUsageSchema,
   );
   const activityRaw = useAPIQuery(
-    selectedTenantId === null
+    effectiveTenantId === null
       ? ""
-      : insightsActivityPath(selectedTenantId, range),
+      : insightsActivityPath(effectiveTenantId, range),
     ActivityResponseSchema,
   );
   const toolsRaw = useAPIQuery(
-    selectedTenantId === null ? "" : insightsToolsPath(selectedTenantId, range),
+    effectiveTenantId === null
+      ? ""
+      : insightsToolsPath(effectiveTenantId, range),
     ToolsResponseSchema,
   );
   const runs = useAPIQuery(
-    selectedTenantId === null ? "" : insightsTopLevelRunsPath(selectedTenantId),
+    effectiveTenantId === null
+      ? ""
+      : insightsTopLevelRunsPath(effectiveTenantId),
     TopLevelRunsSchema,
   );
   const routines = useTenantQuery(
@@ -1087,21 +1264,21 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       ? { kind: "ready", data: toolsRaw.data.tools }
       : toolsRaw;
 
-  // No tenant: zero usage/run defaults so the page shows an honest empty
-  // state without inventing nonzero bench usage or runs.
+  // No tenant in scope: zero usage/run defaults so the page shows an
+  // honest empty state without inventing nonzero workbench usage or runs.
   const emptySummary: APIQuery<OverallUsage> =
-    selectedTenantId === null
+    effectiveTenantId === null
       ? { kind: "ready", data: EMPTY_OVERALL_USAGE }
       : summary;
   const emptyList = <T,>(q: APIQuery<T>): APIQuery<T> =>
-    selectedTenantId === null
+    effectiveTenantId === null
       ? ({ kind: "ready", data: [] as unknown as T } as APIQuery<T>)
       : q;
   const runsForPage: APIQuery<{
     data: readonly InsightsRun[];
     nextCursor: string | null;
   }> =
-    selectedTenantId === null
+    effectiveTenantId === null
       ? { kind: "ready", data: { data: [], nextCursor: null } }
       : runs;
 
@@ -1114,6 +1291,9 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       runs={runsForPage}
       routines={routinesForPage}
       range={range}
+      scope={scopeData}
+      activeWorkbenchId={workbenchId}
+      scopeLabel={scopeLabel}
     />
   );
 }
