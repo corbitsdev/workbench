@@ -440,7 +440,7 @@ export async function createHub(config: HubConfig) {
       turn: {
         turnId: string;
         toolCalls: FinalizedTurnToolCall[];
-        errors?: readonly { category: string; message: string }[];
+        errors: readonly { category: string; message: string }[];
       },
     ) => void;
   } = {};
@@ -1867,6 +1867,11 @@ export async function createHub(config: HubConfig) {
       envAllowedDomains: config.allowedEmailDomains,
       allowUnverifiedEmails: config.allowUnverifiedEmails,
     },
+    // Same provider-health store `@workbench/connections`' own routes
+    // report to and clear (CL-6092) — a successful `/complete` here must
+    // clear the same record the shell banner's zero-provider "Fix it"
+    // routed someone to onboarding to fix.
+    providerHealth: providerHealthStore,
   };
   if (config.operatorTenantId !== undefined)
     onboardingDeps.operatorTenantId = config.operatorTenantId;

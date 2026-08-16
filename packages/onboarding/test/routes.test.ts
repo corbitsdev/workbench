@@ -11,6 +11,7 @@ import { Hono } from "hono";
 import { createNoopCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import { createInMemoryPendingSeedStore } from "../src/pending-seed";
+import { createProviderHealthStore } from "@workbench/connections/provider-health";
 
 // None of these tests exercise the pending-seed store — it is required
 // wiring for `createOnboardingRoutes` (see `./complete-setup-routes.test.ts`
@@ -399,5 +400,66 @@ describe("POST /complete", () => {
       error: { code: string; message: string };
     };
     expect(body.error.code).toBe("invalid_request");
+  });
+
+  // CL-6092: onboarding's own credential flow is the zero-provider fix
+  // path the shell banner routes to ("Fix it" → onboarding when nothing
+  // is connected yet). Without this wiring, a successful connect through
+  // *this* route left the stale needs-attention record standing, so the
+  // banner never went away even though the fix worked.
+  test("a successful connect clears a stale needs_attention record for the connected provider", async () => {
+    const providerHealth = createProviderHealthStore();
+    providerHealth.report("tnt_own", "anthropic", "credential_failure");
+    const routes = createOnboardingRoutes({
+      hubUrl: "http://127.0.0.1:0",
+      pushWorkflow: async () => "pushed",
+      log: () => undefined,
+      pendingSeedStore,
+      providerHealth,
+      completeCredentialSetupFn: async () => ({
+        kind: "seeded",
+        tenantId: "tnt_own",
+        tenantSlug: "alice",
+        workflows: [],
+      }),
+    });
+    const app = mountAuthenticated(routes);
+
+    const response = await app.request("/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "anthropic", apiKey: "sk-ant-good" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(providerHealth.get("tnt_own", "anthropic")).toBeUndefined();
+  });
+
+  test("an invalid credential never clears the needs_attention record", async () => {
+    const providerHealth = createProviderHealthStore();
+    providerHealth.report("tnt_own", "anthropic", "credential_failure");
+    const routes = createOnboardingRoutes({
+      hubUrl: "http://127.0.0.1:0",
+      pushWorkflow: async () => "pushed",
+      log: () => undefined,
+      pendingSeedStore,
+      providerHealth,
+      completeCredentialSetupFn: async () => ({
+        kind: "invalid-credential",
+        message: "the key was rejected",
+      }),
+    });
+    const app = mountAuthenticated(routes);
+
+    const response = await app.request("/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "anthropic", apiKey: "sk-ant-bad" }),
+    });
+
+    expect(response.status).toBe(422);
+    expect(providerHealth.get("tnt_own", "anthropic")?.status).toBe(
+      "needs_attention",
+    );
   });
 });

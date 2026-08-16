@@ -49,6 +49,7 @@ import {
 import type { PendingSeedStore } from "./pending-seed";
 import { exchangeCodeForKey } from "./openrouter-connect";
 import { exchangeCodeForToken as exchangeHuggingFaceCodeForToken } from "./huggingface-connect";
+import type { ProviderHealthStore } from "@workbench/connections/provider-health";
 
 const PROVIDER_IDS = supportedCredentialProviders().map((p) => p.id) as [
   SupportedCredentialProvider,
@@ -89,6 +90,19 @@ export type CreateOnboardingRoutesDeps = {
   };
   /** Test seam for `POST /complete-setup`'s slow-path deploy step. */
   ensureSeededFn?: typeof ensureSeeded;
+  /** Test seam for `POST /complete`'s own success path — defaults to the
+   * real `completeCredentialSetup`. */
+  completeCredentialSetupFn?: typeof completeCredentialSetup;
+  /**
+   * The same provider-health signal `@workbench/connections`' own routes
+   * write to (CL-6092): a successful `POST /complete` clears any stale
+   * needs-attention record for the connected provider, so the shell
+   * banner's onboarding-routed "Fix it" (the zero-working-providers case)
+   * doesn't survive the very fix it sent someone to make. Absent means no
+   * health store is wired in — the clear is a no-op, matching every other
+   * optional dep here.
+   */
+  providerHealth?: ProviderHealthStore;
   /** Server-side custody for a just-connected credential's plaintext
    * key between the OAuth callback and this package's own
    * `/complete-setup` follow-up — see `./pending-seed.ts`'s module
@@ -610,8 +624,10 @@ export function createOnboardingRoutes(
     }
 
     const cookies = cookiesFromHeader(c.req.header("cookie"));
+    const runCompleteCredentialSetup =
+      deps.completeCredentialSetupFn ?? completeCredentialSetup;
     try {
-      const result = await completeCredentialSetup({
+      const result = await runCompleteCredentialSetup({
         api,
         cookies,
         hubUrl: deps.hubUrl,
@@ -641,6 +657,10 @@ export function createOnboardingRoutes(
           409,
         );
       }
+      // The credential is durably seeded — clear any stale needs-attention
+      // record for this provider (CL-6092), the same clear-on-success rule
+      // `@workbench/connections`' own routes follow.
+      deps.providerHealth?.clear(result.tenantId, parsed.provider);
       return c.json(result, 200);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
