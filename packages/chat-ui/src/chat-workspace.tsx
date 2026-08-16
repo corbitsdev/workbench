@@ -258,22 +258,37 @@ function useChannelLists(tenantId: string) {
     await Promise.all([channels.refetch(), chats.refetch()]);
   }, [channels.refetch, chats.refetch]);
 
-  let state: ChannelsState;
-  if (channels.isError) {
-    state = {
-      kind: "error",
-      message: describeChatError(channels.error, "Couldn't load chats."),
-    };
-  } else if (chats.isError) {
-    state = {
-      kind: "error",
-      message: describeChatError(chats.error, "Couldn't load chats."),
-    };
-  } else if (channels.data === undefined || chats.data === undefined) {
-    state = { kind: "loading" };
-  } else {
-    state = { kind: "ready", channels: channels.data, chats: chats.data };
-  }
+  // Referentially stable across renders that don't actually change the
+  // underlying data — a fresh object literal here every render would make
+  // `channelsState` look "changed" to every effect that depends on it
+  // (the auto-select-first-channel effect below included), firing them on
+  // every unrelated re-render rather than only when channels/chats data
+  // itself moves.
+  const state: ChannelsState = useMemo(() => {
+    if (channels.isError) {
+      return {
+        kind: "error",
+        message: describeChatError(channels.error, "Couldn't load chats."),
+      };
+    }
+    if (chats.isError) {
+      return {
+        kind: "error",
+        message: describeChatError(chats.error, "Couldn't load chats."),
+      };
+    }
+    if (channels.data === undefined || chats.data === undefined) {
+      return { kind: "loading" };
+    }
+    return { kind: "ready", channels: channels.data, chats: chats.data };
+  }, [
+    channels.isError,
+    channels.error,
+    channels.data,
+    chats.isError,
+    chats.error,
+    chats.data,
+  ]);
 
   return { state, reload };
 }
@@ -649,12 +664,22 @@ function ChatWorkspaceInner({
     ],
   );
 
+  // Picking a default channel is this component's own fallback for "no
+  // channel named in the URL yet" — it must never fire while the New
+  // Channel dialog is open. That dialog's own submit is the user
+  // explicitly picking a channel; letting this effect's own
+  // `setActiveChannelId`/`onChannelChange` (and therefore `navigate`) fire
+  // concurrently with the dialog's in-flight create raced the two against
+  // each other over the same `activeChannelId`/URL (CL-6087). Once the
+  // dialog closes (submitted or cancelled) this re-evaluates and still
+  // covers the plain "no channel in the URL, nothing else going on" case.
   useEffect(() => {
     if (channelsState.kind !== "ready") return;
     if (activeChannelId !== null) return;
+    if (dialogOpen) return;
     const first = channelsState.channels[0] ?? channelsState.chats[0];
     if (first !== undefined) setActiveChannelId(first.id);
-  }, [channelsState, activeChannelId]);
+  }, [channelsState, activeChannelId, dialogOpen]);
 
   useEffect(() => {
     unauthorizedRef.current = false;

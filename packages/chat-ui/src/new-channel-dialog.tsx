@@ -221,6 +221,20 @@ export function NewChannelDialog({
     setPersonId(null);
   }
 
+  // A close the host drives itself — e.g. `ChatWorkspace` setting its own
+  // `dialogOpen` state to `false` once a create succeeds — never runs
+  // through this component's own `onOpenChange` wrapper below (that only
+  // fires for a close Radix itself originates: Escape, the backdrop, the
+  // close button). Resetting only there left every field — the picked
+  // agent/person, the typed name, which tab was active — carried into the
+  // next session for any host-driven close, this one included (CL-6087).
+  // Keying the reset off `open` itself instead covers every close, no
+  // matter which side drove it.
+  useEffect(() => {
+    if (!open) reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset() closes over startStep/resolvedInitialKind, both derived from the initialKind prop, not state that would need to retrigger this
+  }, [open]);
+
   useEffect(() => {
     if (!open || kind !== "chat" || counterpartTab !== "agent") return;
     let cancelled = false;
@@ -346,10 +360,7 @@ export function NewChannelDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) reset();
-      }}
+      onOpenChange={onOpenChange}
     >
       <DialogContent side="right">
         <DialogHeader>
