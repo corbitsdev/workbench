@@ -6,13 +6,19 @@
 // seeding the bench, deploying and confirming every default workflow —
 // happens server-side in `@workbench/onboarding`; this page is the
 // guided shell around it. The credential step is skipped entirely
-// (straight to the "your workbench is ready" ending) whenever the
-// server reports the default workflow set already deployed and
-// confirmed against a working credential — a hub-owned key (env-key
-// auto-plant, CL-6101, or the older ANTHROPIC_API_KEY path) for a fresh
-// bench, or a real working credential for a returning member. There is
-// nothing left to prove or connect at that point, so there is nothing
-// left to show.
+// (straight to the "your workbench is ready" ending) only once this
+// page has independently confirmed (`hasActiveCredential`, a cheap
+// credentials read) that the bench actually has a working credential —
+// a hub-owned key (env-key auto-plant, CL-6101, or the older
+// ANTHROPIC_API_KEY path) for a fresh bench, or a real working
+// credential for a returning member. The server's own `seeded: true` is
+// not enough on its own to hard-skip on: for an existing member it means
+// every default workflow has an active deployment, never that a
+// credential was checked; for a freshly provisioned bench it means the
+// seed run's validation trigger started a workflow run, never that the
+// run actually succeeded against a real credential. Either shape with no
+// confirmed credential falls through to the credential step, same as an
+// unseeded bench.
 
 import {
   Button,
@@ -48,6 +54,7 @@ import { Link, useNavigate } from "../navigation";
 import {
   completeSetup,
   CREDENTIAL_PROVIDERS,
+  hasActiveCredential,
   HUGGINGFACE_CONNECT_START_PATH,
   OPENROUTER_CONNECT_START_PATH,
   PRIMARY_CREDENTIAL_PROVIDERS,
@@ -419,14 +426,24 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
 
   const runProvisioning = useCallback((name: string) => {
     setState({ phase: "provisioning" });
-    void triggerFirstLoginProvisioning(name).then((result) => {
+    void triggerFirstLoginProvisioning(name).then(async (result) => {
       if (result.kind === "error") {
         setState({ phase: "provisioning-error", message: result.message });
       } else if (result.kind === "existing-member" && result.seeded === true) {
-        // Fully set up already (the common repeat-landing case now that
-        // provisioning runs automatically every time, not just after an
-        // explicit name submit): skip the credential step entirely.
-        setState({ phase: "guidance" });
+        // `seeded: true` only means every default workflow has an active
+        // deployment — never that a credential was checked. Confirm one
+        // independently (a cheap credentials read) before skipping the
+        // credential step; no tenantId (should not happen alongside
+        // seeded: true) falls through to the credential step too.
+        const confirmed =
+          result.tenantId !== undefined &&
+          (await hasActiveCredential(result.tenantId));
+        if (confirmed) {
+          setState({ phase: "guidance" });
+        } else {
+          setResumingUnseeded(false);
+          setState({ phase: "credential", error: null });
+        }
       } else if (result.kind === "existing-member") {
         // `seeded === false` is the bench_unseeded condition: this
         // account's own workbench exists but never got a working
@@ -437,13 +454,17 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         setResumingUnseeded(unseeded);
         setState({ phase: "credential", error: null });
       } else if (result.kind === "provisioned" && result.seeded) {
-        // A working credential already deployed and confirmed the
-        // default workflow set against this brand-new bench — a
-        // hub-owned key (the env-key auto-plant, CL-6101, or the older
-        // ANTHROPIC_API_KEY path), the same "nothing left to prove"
-        // case as a returning, fully-seeded existing member above.
-        setResumingUnseeded(false);
-        setState({ phase: "guidance" });
+        // The seed run's validation trigger only proves a workflow run
+        // started, never that it succeeded against a real credential.
+        // Confirm one independently before skipping the credential step.
+        const confirmed = await hasActiveCredential(result.tenantId);
+        if (confirmed) {
+          setResumingUnseeded(false);
+          setState({ phase: "guidance" });
+        } else {
+          setResumingUnseeded(false);
+          setState({ phase: "credential", error: null });
+        }
       } else if (result.kind === "provisioned") {
         setResumingUnseeded(false);
         setState({ phase: "credential", error: null });

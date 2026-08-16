@@ -42,8 +42,22 @@ export type ProvisionResult =
        * setup finished). Absent when membership belongs to some other
        * tenant this hook does not own — its seed state is none of this
        * hook's business.
+       *
+       * `seeded: true` here means every default workflow has an active
+       * deployment (`isFullySeeded`'s own check) — it is not, by itself,
+       * proof of a working inference credential. The onboarding UI must
+       * not hard-skip the credential step on this flag alone; see
+       * `tenantId` below.
        */
       readonly seeded?: boolean;
+      /**
+       * Present under the same condition as `seeded`: the caller's own
+       * personal bench. Lets the onboarding UI independently confirm a
+       * working inference credential exists (a cheap credentials read)
+       * before trusting `seeded: true` enough to skip the credential
+       * step entirely.
+       */
+      readonly tenantId?: string;
     }
   | { readonly kind: "needs-onboarding" }
   | {
@@ -223,7 +237,8 @@ export async function provisionPersonalTenantIfNeeded(
       args.cookies,
       own.tenantId,
     );
-    if (fullySeeded) return { kind: "existing-member", seeded: true };
+    if (fullySeeded)
+      return { kind: "existing-member", seeded: true, tenantId: own.tenantId };
 
     // Own bench exists but is not fully seeded. With a hub-owned seed
     // model we can re-seed right here to recover. Without one there is
@@ -237,7 +252,7 @@ export async function provisionPersonalTenantIfNeeded(
       args.log(
         `personal bench ${own.tenantId} exists but is not fully seeded, and no seed model is configured; returning as existing-member without re-seeding`,
       );
-      return { kind: "existing-member", seeded: false };
+      return { kind: "existing-member", seeded: false, tenantId: own.tenantId };
     }
 
     const tenantResponse = await args.api(
@@ -273,7 +288,7 @@ export async function provisionPersonalTenantIfNeeded(
           }
         : existingMemberSeedArgs,
     );
-    return { kind: "existing-member", seeded: true };
+    return { kind: "existing-member", seeded: true, tenantId: own.tenantId };
   }
 
   // No membership yet. Before any signup decision, check whether this

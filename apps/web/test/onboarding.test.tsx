@@ -374,6 +374,16 @@ describe("App landing fresh on a hub-seeded workbench", () => {
           seeded: true,
         });
       }
+      // The page independently confirms `seeded: true` against a real
+      // stored credential (CL-6101 review) before hard-skipping — this
+      // scenario's premise (a hub-owned key already deployed) means that
+      // confirmation succeeds.
+      if (url === "/api/tenants/ten_1/credentials") {
+        return json({
+          data: [{ id: "cred_1", status: "active" }],
+          nextCursor: null,
+        });
+      }
       throw new Error(`unexpected fetch: ${url}`);
     }) as unknown as typeof fetch;
 
@@ -400,6 +410,103 @@ describe("App landing fresh on a hub-seeded workbench", () => {
       expect(container.textContent).toContain("Your workbench is ready");
       expect(container.textContent).toContain("Meet Myra");
       expect(container.textContent).not.toContain("Add an inference credential");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("provisioned, seeded: true does NOT hard-skip when no active credential is confirmed (CL-6101 review)", async () => {
+    // `seeded: true` here only means the seed run's validation trigger
+    // started a workflow run — never that it succeeded against a real
+    // credential. With the credentials read confirming nothing active,
+    // the page must fall through to the credential step, not the
+    // finished ending.
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/provision") {
+        return json({
+          kind: "provisioned",
+          tenantId: "ten_1",
+          tenantSlug: "ada-user1",
+          seeded: true,
+        });
+      }
+      if (url === "/api/tenants/ten_1/credentials") {
+        return json({ data: [], nextCursor: null });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={noop}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      expect(container.textContent).toContain("Add an inference credential");
+      expect(container.textContent).not.toContain("Your workbench is ready");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("existing-member, seeded: true does NOT hard-skip when no active credential is confirmed (CL-6101 review)", async () => {
+    // `seeded: true` for an existing member means every default workflow
+    // has an active deployment (`isFullySeeded`'s own check) — never
+    // that a credential was checked. With the credentials read
+    // confirming nothing active, the page must fall through to the
+    // credential step.
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/provision") {
+        return json({
+          kind: "existing-member",
+          seeded: true,
+          tenantId: "ten_1",
+        });
+      }
+      if (url === "/api/tenants/ten_1/credentials") {
+        return json({ data: [], nextCursor: null });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={noop}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      expect(container.textContent).toContain("Add an inference credential");
+      expect(container.textContent).not.toContain("Your workbench is ready");
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -786,7 +893,21 @@ describe("the OpenRouter connect card", () => {
     // as a fresh connect would.
     globalThis.fetch = (async (url: string) => {
       if (url === "/api/onboarding/provision") {
-        return json({ kind: "existing-member", seeded: true });
+        return json({
+          kind: "existing-member",
+          seeded: true,
+          tenantId: "ten_1",
+        });
+      }
+      // The page independently confirms `seeded: true` against a real
+      // stored credential (CL-6101 review) before hard-skipping — this
+      // scenario's premise (a real check shows the connect succeeded)
+      // means that confirmation succeeds.
+      if (url === "/api/tenants/ten_1/credentials") {
+        return json({
+          data: [{ id: "cred_1", status: "active" }],
+          nextCursor: null,
+        });
       }
       throw new Error(`unexpected fetch: ${url}`);
     }) as unknown as typeof fetch;

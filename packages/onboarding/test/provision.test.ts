@@ -659,7 +659,11 @@ describe("provisionPersonalTenantIfNeeded", () => {
       log,
     });
 
-    expect(retry).toEqual({ kind: "existing-member", seeded: true });
+    expect(retry).toEqual({
+      kind: "existing-member",
+      seeded: true,
+      tenantId: "ten_new",
+    });
     // Attempt 1 fails creating the echo asset. The retry re-runs from
     // scratch: one create call per default workflow — echo, assistant,
     // channel-digest, recurring-task — on top of the one failed attempt.
@@ -742,7 +746,11 @@ describe("provisionPersonalTenantIfNeeded", () => {
       log: collector().log,
     });
 
-    expect(result).toEqual({ kind: "existing-member", seeded: true });
+    expect(result).toEqual({
+      kind: "existing-member",
+      seeded: true,
+      tenantId: "ten_new",
+    });
   });
 
   test("half-provisioned personal bench without a seed model returns existing-member (not stuck)", async () => {
@@ -806,7 +814,11 @@ describe("provisionPersonalTenantIfNeeded", () => {
     // seeded: false is the typed bench_unseeded condition — the caller
     // has a real membership, but the onboarding UI must keep the
     // credential step open rather than read this as finished setup.
-    expect(result).toEqual({ kind: "existing-member", seeded: false });
+    expect(result).toEqual({
+      kind: "existing-member",
+      seeded: false,
+      tenantId: "ten_new",
+    });
     // Completeness was checked (tenant-local assets listed) even without a
     // seed model — membership recovery does not short-circuit before that.
     expect(assetListCalls).toBe(1);
@@ -984,7 +996,11 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(listedInherited).toBe(false);
     // Empty tenant-local assets must re-seed, not claim "already seeded"
     // from an ancestor's inherited catalog.
-    expect(result).toEqual({ kind: "existing-member", seeded: true });
+    expect(result).toEqual({
+      kind: "existing-member",
+      seeded: true,
+      tenantId: "ten_new",
+    });
     expect(assetCreateCount).toBeGreaterThan(0);
   });
 });
