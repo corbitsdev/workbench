@@ -71,3 +71,12 @@ pattern).
 CanvasArtifactContent>` as `AppCanvasColumnState` — the one place workbench
 policy meets this package's generic mechanism. A different host defines
 its own equivalent file with its own types.
+
+## Running tests
+
+```
+cd packages/shell-layout && bun test
+```
+
+Some suites mount into a real DOM (see `test/dom-setup.ts`); running from
+the package directory picks up `bunfig.toml`'s preload.

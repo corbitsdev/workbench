@@ -35,3 +35,11 @@ const agent = defineAgent({
   tools: [githubTools],
 });
 ```
+
+## Running tests
+
+```
+cd packages/github-tools && bun test
+```
+
+No live database or real credentials required.

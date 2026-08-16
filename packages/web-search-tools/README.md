@@ -31,3 +31,11 @@ const agent = defineAgent({
   tools: [webSearchTools],
 });
 ```
+
+## Running tests
+
+```
+cd packages/web-search-tools && bun test
+```
+
+No live database required.

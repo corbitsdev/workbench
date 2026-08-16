@@ -33,3 +33,31 @@ A tenant's Linear credential's `provider` row must set `plugin:
 "http-raw-authorization"` (not `"http"`) for its bindings to send the
 header Linear's API actually expects. Every other provider row that
 authenticates with a bearer token keeps `plugin: "http"`.
+
+## `http-x-api-key`
+
+Neither vendored plugin fits Exa or ScrapeCreators: both authenticate via
+an `x-api-key` header, not `authorization` in any shape.
+`createHttpXApiKeyCredentialProvider` (key `http-x-api-key`) mirrors the
+same origin-pinning and `redirect: "manual"` protections; only the
+injected header name differs. A tenant's Exa or ScrapeCreators provider
+row must set `plugin: "http-x-api-key"`.
+
+## `resolved-bindings`
+
+`deriveResolvedBindings` reshapes a launch-time `CredentialDelivery`
+(`@intx/types/sidecar`) into the `ResolvedCredentialBinding` map
+`@intx/harness`'s `createCredentialCapability` consumes for one consumer.
+It is the package-side twin of the sidecar app's own
+`consumerBindings` derivation (`apps/sidecar/src/step-agent-tools.ts`) —
+apps stay generic, so any tool package or test that needs the same
+delivery-to-bindings shape depends on this rather than hand-copying the
+loop.
+
+## Running tests
+
+```
+cd packages/credential-providers && bun test
+```
+
+No live database or external credentials required.

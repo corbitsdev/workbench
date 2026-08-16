@@ -4,6 +4,10 @@ The shared hub-query envelope — `loading` / `unauthenticated` / `error` /
 `ready` — and `QueryView`, the one component that renders those four
 outcomes. Every page that fetches from a hub route reports through this
 contract instead of inventing its own loading state or error copy.
+`QueryView`'s non-`ready` states render with `@corbits/react-ui`
+([corbitsdev/react-ui](https://github.com/corbitsdev/react-ui)) primitives
+(`Button`, `EmptyState`, `Skeleton`); this package holds the workbench
+composition and the envelope logic around them.
 
 ## Contract
 
@@ -46,3 +50,12 @@ contract instead of inventing its own loading state or error copy.
 - No workbench-specific state (`bench-context`, `query-client`'s tenant
   keys, etc.) — this package has no notion of a tenant, a bench, or a
   session beyond "authenticated or not."
+
+## Running tests
+
+```
+cd packages/api-query && bun test
+```
+
+Suites render with `react-dom/server`'s `renderToStaticMarkup` rather than
+a mounted DOM, so no `bunfig.toml` preload is needed here.

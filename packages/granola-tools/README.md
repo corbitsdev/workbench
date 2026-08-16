@@ -52,3 +52,13 @@ const agent = defineAgent({
   tools: [granolaTools],
 });
 ```
+
+## Running tests
+
+```
+cd packages/granola-tools && bun test
+```
+
+`test/credential-delivery.drizzle.test.ts` and
+`test/credential-wiring-e2e.drizzle.test.ts` need a live Postgres:
+`DATABASE_URL=postgres://localhost:5432/workbench_e2e`.

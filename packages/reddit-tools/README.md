@@ -44,3 +44,11 @@ const agent = defineAgent({
   tools: [redditTools],
 });
 ```
+
+## Running tests
+
+```
+cd packages/reddit-tools && bun test
+```
+
+No live database required.
