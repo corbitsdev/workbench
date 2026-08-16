@@ -31,3 +31,26 @@ tenant.
 `collector.ts` / `pg-store.ts` / `routes.ts`); no app-specific fetch client
 or `apps/web` state — a host's `insights-api.ts` imports from here, never
 the reverse.
+
+## Key modules
+
+- `collector.ts` — persists per-turn token classes from the live
+  inference event stream into `pg-store.ts`.
+- `queries.ts` — cost/token/activity/run-trace queries a hub route
+  serves.
+- `trace-reader.ts` — reconstructs a single run's trace for the
+  run-detail view.
+- `pricing.ts` — model rate lookups; a missing rate stays an explicit
+  absence, never a fabricated zero.
+- `routes.ts` — the tenant-scoped Hono routes wrapping the above.
+- `schema.ts` / `migrations.ts` — the usage-sink tables, siloed in their
+  own Postgres schema with a package-owned migration ledger.
+
+## Tests
+
+```
+cd packages/insights && bun test
+```
+
+`test/migrations.test.ts` and the run-trace suites need a real database:
+`DATABASE_URL=postgres://localhost:5432/workbench_e2e bun test`.

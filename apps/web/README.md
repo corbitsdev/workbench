@@ -1,9 +1,14 @@
 # `@workbench/web`
 
 The workbench's single-page interface: every screen and route lives here,
-composed from `@corbits/react-ui`, and builds to a static bundle the hub
-serves from its own origin (`vite build`, then point `HUB_STATIC_DIR` at
-`apps/web/dist`).
+composed from the published `@corbits/react-ui` component library, and
+builds to a static bundle the hub serves from its own origin (`vite
+build`, then point `HUB_STATIC_DIR` at `apps/web/dist`). It is a Vite SPA
+over the hub's `/api` — every product rule (what a screen may show, how
+data is shaped) lives in a package; this app stays a generic composition
+of package UI and routing, per [AGENTS.md](../../AGENTS.md). In dev,
+`vite dev` proxies `/api` to a locally running hub so the interface is
+developed against real data without a build step.
 
 ## Layout
 
@@ -74,13 +79,12 @@ open, inline in that channel). The `/approvals` route is gone.
 ## Library
 
 `/library` (`src/pages/library-page.tsx`) is the artifact gallery: search,
-sort, a grid/rows view toggle, and kind-colored cards, built against the
-`ArtifactSummary` type from `@corbits/artifact-ui`. The presentation layer is
-fully wired and tested — what isn't real yet is the data underneath it: the
-hub does not expose a cross-tenant artifact store, so `LibraryRoute` passes
-an honestly empty list rather than fetching a route that doesn't exist. Once
-a `/api/.../artifacts` endpoint lands, only `LibraryRoute` needs to change;
-`LibraryPage` needs nothing.
+sort, a grid/rows view toggle, kind-colored cards, and upload, built
+against the `ArtifactSummary` type from `@corbits/artifact-ui`.
+`LibraryRoute` reads and searches the tenant's artifacts from the real
+`/api/tenants/:id/artifacts` (list/detail) endpoint; a chat artifact
+chip's "Open in Library" link (`/library/a/:id`) deep-links into the same
+route.
 
 ## Agents
 
