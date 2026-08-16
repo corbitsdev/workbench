@@ -118,6 +118,8 @@ export const tenantKeys = {
   channels: (tenantId: string, kind: ChannelKind) =>
     channelsQueryKey(tenantId, kind),
   tasks: (tenantId: string) => ["tenant", tenantId, "tasks"] as const,
+  task: (tenantId: string, taskId: string) =>
+    ["tenant", tenantId, "tasks", taskId] as const,
   taskLegs: (tenantId: string, taskId: string) =>
     ["tenant", tenantId, "tasks", taskId, "legs"] as const,
   taskByRun: (tenantId: string, runId: string) =>

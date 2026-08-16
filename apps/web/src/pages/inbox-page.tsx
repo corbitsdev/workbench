@@ -11,7 +11,7 @@ import {
   TriageListItem,
   TriagePane,
 } from "@corbits/react-ui";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -44,7 +44,9 @@ import {
 import {
   listWorkflowDefinitions,
   suggestRoutineNameFromPrompt,
+  useTenantQuery,
 } from "../routines-api";
+import { tenantKeys } from "../query-client";
 import { RECURRING_TASK_ASSET_NAME } from "@corbits/workflow-catalog";
 import {
   loadMostRecentTaskAgent,
@@ -194,12 +196,14 @@ function InboxDetail({
   // a routine" resolves the full record before it can gate on
   // `status === "done"`.
   const taskRef = detail.kind === "ready" ? taskRefFromItem(detail.data) : null;
-  const taskQuery = useQuery({
-    queryKey: ["task-for-inbox-item", tenantId, taskRef?.id ?? null],
-    enabled: tenantId !== null && taskRef !== null,
-    queryFn: () => getTask(tenantId ?? "", taskRef?.id ?? ""),
-  });
-  const task = taskQuery.data ?? null;
+  const taskQuery = useTenantQuery(
+    tenantId === null || taskRef === null
+      ? (["tenant", "none", "tasks", "none"] as const)
+      : tenantKeys.task(tenantId, taskRef.id),
+    tenantId !== null && taskRef !== null,
+    () => getTask(tenantId ?? "", taskRef?.id ?? ""),
+  );
+  const task = taskQuery.kind === "ready" ? taskQuery.data : null;
 
   if (detail.kind === "loading") {
     return (
@@ -393,15 +397,19 @@ export function InboxPage({
   // bridge workflow id (see apps/hub/src/routine-launcher.ts) — a
   // task's own agent is conversational and never resolves in the
   // Routines picker itself.
-  const workflowDefinitionsQuery = useQuery({
-    queryKey: ["workflow-definitions-for-inbox", selectedTenantId],
-    enabled: selectedTenantId !== null,
-    queryFn: () => listWorkflowDefinitions(selectedTenantId ?? ""),
-  });
+  const workflowDefinitionsQuery = useTenantQuery(
+    selectedTenantId === null
+      ? (["tenant", "none", "definitions"] as const)
+      : tenantKeys.definitions(selectedTenantId),
+    selectedTenantId !== null,
+    () => listWorkflowDefinitions(selectedTenantId ?? ""),
+  );
   const recurringTaskDefinitionId =
-    workflowDefinitionsQuery.data?.find(
-      (definition) => definition.assetName === RECURRING_TASK_ASSET_NAME,
-    )?.id ?? null;
+    (workflowDefinitionsQuery.kind === "ready"
+      ? workflowDefinitionsQuery.data
+      : []
+    ).find((definition) => definition.assetName === RECURRING_TASK_ASSET_NAME)
+      ?.id ?? null;
 
   const items = useMemo(() => {
     if (listQuery.kind !== "ready") return [] as InboxItem[];
