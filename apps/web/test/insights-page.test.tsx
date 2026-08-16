@@ -16,6 +16,7 @@ import type { APIQuery } from "@corbits/api-query";
 import { BenchProvider } from "../src/bench-context";
 import {
   type InsightsRun,
+  type InsightsScope,
   type RunTrace,
   type TaskLeg,
   type ToolCall,
@@ -67,6 +68,9 @@ function renderLanding(args: {
             runs={emptyRuns}
             routines={emptyRoutines}
             range={range}
+            scope={null}
+            activeWorkbenchId={null}
+            scopeLabel="All workbenches"
           />
         </BenchProvider>
       </NavigationProvider>
@@ -157,12 +161,108 @@ function renderAtPath(path: string): string {
             }}
             routines={emptyRoutines}
             range={range}
+            scope={null}
+            activeWorkbenchId={null}
+            scopeLabel="All workbenches"
           />
         </BenchProvider>
       </NavigationProvider>
     </TestQueryProvider>,
   );
 }
+
+function renderLandingWithScope(args: {
+  readonly scope: InsightsScope | null;
+  readonly activeWorkbenchId: string | null;
+  readonly scopeLabel: string;
+}): string {
+  return renderToStaticMarkup(
+    <TestQueryProvider>
+      <NavigationProvider navigate={() => undefined}>
+        <BenchProvider>
+          <InsightsPage
+            path="/insights"
+            summary={{ kind: "ready", data: EMPTY_OVERALL_USAGE }}
+            activity={{ kind: "ready", data: [] }}
+            byTool={{ kind: "ready", data: [] }}
+            runs={emptyRuns}
+            routines={emptyRoutines}
+            range={range}
+            scope={args.scope}
+            activeWorkbenchId={args.activeWorkbenchId}
+            scopeLabel={args.scopeLabel}
+          />
+        </BenchProvider>
+      </NavigationProvider>
+    </TestQueryProvider>,
+  );
+}
+
+describe("InsightsPage scope switcher", () => {
+  const scopeWithSiblings = {
+    tenantId: "tnt_a",
+    name: "Support",
+    parent: { tenantId: "tnt_workspace", name: "Acme" },
+    workbenches: [
+      { tenantId: "tnt_a", name: "Support" },
+      { tenantId: "tnt_b", name: "Sales" },
+    ],
+  };
+
+  test("renders an All workbenches option plus one per sibling when the workbench has a parent", () => {
+    const markup = renderLandingWithScope({
+      scope: scopeWithSiblings,
+      activeWorkbenchId: null,
+      scopeLabel: "All workbenches",
+    });
+    expect(markup).toContain("All workbenches");
+    expect(markup).toContain(">Support<");
+    expect(markup).toContain(">Sales<");
+  });
+
+  test("marks the All workbenches option active by default", () => {
+    const markup = renderLandingWithScope({
+      scope: scopeWithSiblings,
+      activeWorkbenchId: null,
+      scopeLabel: "All workbenches",
+    });
+    expect(markup).toContain(
+      'aria-pressed="true" data-active="true" class="insights-scope-switcher-option">All workbenches</button>',
+    );
+  });
+
+  test("marks a specific workbench option active when scoped to it", () => {
+    const markup = renderLandingWithScope({
+      scope: scopeWithSiblings,
+      activeWorkbenchId: "tnt_b",
+      scopeLabel: "Sales",
+    });
+    expect(markup).toContain(
+      'aria-pressed="true" data-active="true" class="insights-scope-switcher-option">Sales</button>',
+    );
+    expect(markup).toContain(
+      'aria-pressed="false" data-active="false" class="insights-scope-switcher-option">All workbenches</button>',
+    );
+  });
+
+  test("hides the switcher entirely for a workbench with no parent (nothing to switch to)", () => {
+    const markup = renderLandingWithScope({
+      scope: { tenantId: "tnt_a", name: "Solo", parent: null, workbenches: [] },
+      activeWorkbenchId: null,
+      scopeLabel: "All workbenches",
+    });
+    expect(markup).not.toContain("insights-scope-switcher");
+  });
+
+  test("hides the switcher while scope has not resolved yet", () => {
+    const markup = renderLandingWithScope({
+      scope: null,
+      activeWorkbenchId: null,
+      scopeLabel: "All workbenches",
+    });
+    expect(markup).not.toContain("insights-scope-switcher");
+  });
+});
 
 describe("InsightsPage breadcrumbs", () => {
   test("runs history puts an Insights / Run history trail in the top bar", () => {

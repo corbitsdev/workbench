@@ -674,6 +674,46 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
+  test("'Insights' header button calls the host's onOpenInsights hop", async () => {
+    stubFetch();
+    let opened = 0;
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      onOpenInsights: () => {
+        opened += 1;
+      },
+    });
+    await harness.settle();
+
+    const button = [...harness.container.querySelectorAll("button")].find(
+      (element) => element.textContent?.trim() === "Insights",
+    );
+    expect(button).not.toBeUndefined();
+    act(() => {
+      button?.click();
+    });
+    await harness.settle();
+
+    expect(opened).toBe(1);
+    harness.unmount();
+  });
+
+  test("the 'Insights' header button is hidden when the host has not wired the hop", async () => {
+    stubFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    const button = [...harness.container.querySelectorAll("button")].find(
+      (element) => element.textContent?.trim() === "Insights",
+    );
+    expect(button).toBeUndefined();
+    harness.unmount();
+  });
+
   test("/summarize addresses the channel's actual first agent participant and sends", async () => {
     const sentMessages: unknown[] = [];
     stubFetch(sentMessages, CHANNEL_WITH_AGENT_WIRE);

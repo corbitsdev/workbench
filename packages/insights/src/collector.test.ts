@@ -27,7 +27,7 @@ describe("createUsageSink", () => {
     });
 
     expect(status).toBe("inserted");
-    const rows = await store.listUsageByTenant("tenant-acme");
+    const rows = await store.listUsageByTenants(["tenant-acme"]);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.turnId).toBe("turn-1");
     expect(rows[0]?.tokens.input).toBe(100);
@@ -57,7 +57,7 @@ describe("createUsageSink", () => {
 
     expect(await sink.handle(event)).toBe("inserted");
     expect(await sink.handle(event)).toBe("duplicate");
-    const rows = await store.listUsageByTenant("tenant-acme");
+    const rows = await store.listUsageByTenants(["tenant-acme"]);
     expect(rows).toHaveLength(1);
   });
 });
