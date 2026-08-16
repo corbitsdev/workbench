@@ -851,6 +851,11 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       runTraceReader: createDrizzleRunTraceReader(db),
+      // Same `db` handle every other platform-table reader in this file
+      // uses — lets /usage, /activity, /tools, and /scope roll up a
+      // workspace parent's child workbenches (see resolveScope in
+      // @corbits/insights' routes.ts).
+      db,
     }),
   );
   // Preferences: a single per-(tenant, principal) JSONB bag for small UI

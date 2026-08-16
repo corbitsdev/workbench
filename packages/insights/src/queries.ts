@@ -66,16 +66,20 @@ export function emptyOverallUsageSummary(): OverallUsageSummary {
 }
 
 /**
- * Aggregate usage by model and overall for a tenant. Empty sink → zeros
- * (see emptyOverallUsageSummary). Cost is null when any contributing class
- * lacks a rate — never a fabricated cost for unknown rates.
+ * Aggregate usage by model and overall for a tenant scope. `tenantIds`
+ * is one tenant for a single-workbench view, or a workspace parent plus
+ * its child workbenches for the cross-workbench rollup — the sum happens
+ * here, at the DB-query layer, not by the caller fetching per tenant and
+ * adding client-side. Empty sink → zeros (see emptyOverallUsageSummary).
+ * Cost is null when any contributing class lacks a rate — never a
+ * fabricated cost for unknown rates.
  */
 export async function summarizeUsage(
   store: UsageStore,
-  tenantId: string,
+  tenantIds: readonly string[],
   opts?: { from?: Date; to?: Date },
 ): Promise<OverallUsageSummary> {
-  const rows = await store.listUsageByTenant(tenantId, opts);
+  const rows = await store.listUsageByTenants(tenantIds, opts);
   if (rows.length === 0) return emptyOverallUsageSummary();
 
   const byModel = new Map<string, { turns: number; tokens: TokenClasses }>();
@@ -134,15 +138,16 @@ export async function summarizeUsage(
 }
 
 /**
- * Activity histogram by UTC day. Token totals are always known for
- * recorded turns; pre-sink history simply does not appear.
+ * Activity histogram by UTC day across a tenant scope (see summarizeUsage
+ * for what `tenantIds` means). Token totals are always known for recorded
+ * turns; pre-sink history simply does not appear.
  */
 export async function activityByDay(
   store: UsageStore,
-  tenantId: string,
+  tenantIds: readonly string[],
   opts?: { from?: Date; to?: Date },
 ): Promise<readonly DayActivity[]> {
-  const rows = await store.listUsageByTenant(tenantId, opts);
+  const rows = await store.listUsageByTenants(tenantIds, opts);
   const days = new Map<string, { turns: number; tokens: number }>();
 
   for (const row of rows) {
@@ -223,10 +228,13 @@ export type ToolCallSummary = {
 /**
  * Calls-by-tool requires turn_part access. When no reader is mounted,
  * return an empty list (no fabricated tools) and document the gap.
+ * `tenantIds` carries the same single-tenant-or-scope contract as
+ * summarizeUsage/activityByDay — a real reader owns merging across the
+ * scope itself, at its own query layer.
  */
 export type ToolCallReader = {
   summarize(
-    tenantId: string,
+    tenantIds: readonly string[],
     opts?: { from?: Date; to?: Date },
   ): Promise<readonly ToolCallSummary[]>;
 };

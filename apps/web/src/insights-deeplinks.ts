@@ -14,3 +14,9 @@ export function runDetailPath(runId: string): string {
 export function runDeepLinkTarget(run: { readonly id: string }): string {
   return runDetailPath(run.id);
 }
+
+/** Insights scoped to one workbench (CL-6099) — the target for the
+ * conversation action bar's "Insights for this workbench" entry point. */
+export function workbenchInsightsPath(tenantId: string): string {
+  return `${INSIGHTS_PATH_PREFIX}/workbench/${encodeURIComponent(tenantId)}`;
+}
