@@ -1,0 +1,23 @@
+{
+  "name": "@corbits/docker-provisioner",
+  "private": true,
+  "description": "SidecarProvisioner plugin that runs sidecar containers with the local Docker CLI",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/crypto": "workspace:*",
+    "@intx/hub-sessions": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

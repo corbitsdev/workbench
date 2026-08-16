@@ -36,6 +36,7 @@ import {
 } from "../command-palette-actions";
 import { reportChannelNotFound } from "../channel-not-found-event";
 import { createAgentAndLaunch } from "../instant-agent-create";
+import { workbenchInsightsPath } from "../insights-deeplinks";
 import { ONBOARDING_PATH } from "../routes";
 import {
   useProviderHealthBanner,
@@ -247,6 +248,7 @@ export function ChatPage({
                 toast("Couldn't create the agent — try again.");
               });
             },
+            onOpenInsights: () => navigate(workbenchInsightsPath(tenantId)),
           }
         : {})}
       onChannelNotFound={reportChannelNotFound}

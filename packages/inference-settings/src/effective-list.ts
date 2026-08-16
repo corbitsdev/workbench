@@ -67,27 +67,83 @@ export function restrictedOfferings(
   return ownOfferings.filter((offering) => offering.disabled);
 }
 
+export type PriorityPatch = {
+  readonly offeringId: string;
+  readonly priority: number;
+};
+
 /**
  * The two `updateOwnOffering` priority patches a "move up"/"move down"
- * reorder sends: swapping `moved` past its neighbor swaps their
- * priorities, the plain way `byPriority`
- * (`vendor/intx/db/src/model-source-resolution.ts`) is defined to read
- * order — never a fractional insert, so every offering in a model's
- * fallback list keeps a small integer priority. Both rows must already be
- * `"set-here"`; an inherited row cannot be PATCHed until it is shadowed,
- * so a caller filters the reorderable set to `"set-here"` rows before
- * ever computing a swap.
+ * reorder sends. A plain swap of the two rows' existing priorities
+ * (`byPriority`'s ordering rule, `vendor/intx/db/src/model-source-resolution.ts`)
+ * is a no-op whenever they tie — which every seed-created or
+ * priority-omitted offering does, since the route defaults `priority` to
+ * `0` — so this always assigns two *distinct* integers instead, using the
+ * fixed neighbors just outside the swapped pair (if any) as bounds so the
+ * pair's new priorities cannot cross into a row this call did not touch.
+ * `model` is the full per-model row list in current resolution order
+ * (`rowsByModel`'s value); `index`/`direction` name which adjacent pair to
+ * swap. Returns `null` when there is no row to swap into (`index` is
+ * already at that edge) or either side of the pair is `"inherited"` — an
+ * inherited row cannot be PATCHed until it is shadowed
+ * (`shadowOffering`), so a caller never sends a patch for one.
  */
-export function swapPriority(
-  moved: EffectiveInferenceRow,
-  neighbor: EffectiveInferenceRow,
-): readonly [
-  { readonly offeringId: string; readonly priority: number },
-  { readonly offeringId: string; readonly priority: number },
-] {
+export function computeReorderPatches(
+  model: readonly EffectiveInferenceRow[],
+  index: number,
+  direction: "up" | "down",
+): readonly [PriorityPatch, PriorityPatch] | null {
+  const otherIndex = direction === "up" ? index - 1 : index + 1;
+  const moved = model[index];
+  const neighbor = model[otherIndex];
+  if (moved === undefined || neighbor === undefined) return null;
+  if (moved.provenance !== "set-here" || neighbor.provenance !== "set-here") {
+    return null;
+  }
+
+  const lowIndex = Math.min(index, otherIndex);
+  const highIndex = Math.max(index, otherIndex);
+  const lowerBound = model[lowIndex - 1]?.priority;
+  const upperBound = model[highIndex + 1]?.priority;
+
+  // After the swap, whichever row now sits in the earlier position needs
+  // the smaller priority; the other, the larger one.
+  const [earlier, later] =
+    direction === "up" ? [moved, neighbor] : [neighbor, moved];
+
+  let earlierPriority: number;
+  let laterPriority: number;
+  if (lowerBound !== undefined && upperBound !== undefined) {
+    const gap = upperBound - lowerBound;
+    if (gap >= 3) {
+      earlierPriority = lowerBound + 1;
+      laterPriority = upperBound - 1;
+    } else if (gap >= 1) {
+      // Not enough integer room to stay strictly inside the fixed
+      // neighbors' priorities — sit on the boundary values themselves
+      // (tying with a fixed neighbor id-tiebreaks, same as today) rather
+      // than spill past them.
+      earlierPriority = lowerBound;
+      laterPriority = upperBound;
+    } else {
+      earlierPriority = lowerBound;
+      laterPriority = lowerBound + 1;
+    }
+  } else if (lowerBound !== undefined) {
+    earlierPriority = lowerBound + 1;
+    laterPriority = lowerBound + 2;
+  } else if (upperBound !== undefined) {
+    laterPriority = upperBound - 1;
+    earlierPriority = upperBound - 2;
+  } else {
+    const base = Math.min(moved.priority, neighbor.priority);
+    earlierPriority = base;
+    laterPriority = base + 1;
+  }
+
   return [
-    { offeringId: moved.offeringId, priority: neighbor.priority },
-    { offeringId: neighbor.offeringId, priority: moved.priority },
+    { offeringId: earlier.offeringId, priority: earlierPriority },
+    { offeringId: later.offeringId, priority: laterPriority },
   ];
 }
 

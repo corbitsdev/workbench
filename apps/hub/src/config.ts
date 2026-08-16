@@ -90,6 +90,15 @@ const HubEnv = type({
   "ALLOW_UNVERIFIED_EMAILS?": type("'1' | 'true'").describe(
     "dev/test-only opt-in to let @workbench/access-policy trust an email that better-auth has not verified — self-signup domain checks and pending-invite redemption normally require emailVerified; never set this for a real deployment",
   ),
+  "SIDECAR_PROVISIONER?": type("'docker'").describe(
+    "the sidecar-allocation backend for workbenches placed on their own exclusive sidecar; unset (default) keeps the hub on its current single shared sidecar with no exclusive-placement backend available, 'docker' provisions one container per allocation via @corbits/docker-provisioner",
+  ),
+  "DOCKER_PROVISIONER_IMAGE?": type("string > 0").describe(
+    "the container image the docker sidecar provisioner runs for each exclusive allocation; required when SIDECAR_PROVISIONER=docker",
+  ),
+  "HUB_SIDECAR_WEBSOCKET_URL?": type(/^wss?:\/\/.+$/).describe(
+    "the ws(s):// URL a provisioned sidecar container dials back to reach this hub; unset (default) derives it from BASE_URL, which is wrong for a docker sidecar provisioner — that container's own localhost is itself, not the hub host — so set this whenever SIDECAR_PROVISIONER=docker",
+  ),
 });
 
 const DEFAULT_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
@@ -105,6 +114,10 @@ export type ModelSource = {
   readonly baseURL: string;
   readonly apiKey: string;
 };
+
+export type SidecarProvisionerConfig =
+  | { readonly kind: "none" }
+  | { readonly kind: "docker"; readonly image: string };
 
 export type SocialProviderId = "google" | "github";
 
@@ -140,6 +153,10 @@ export type HubConfig = {
   /** Dev/test-only opt-in to skip @workbench/access-policy's email-
    * verification requirement. */
   readonly allowUnverifiedEmails: boolean;
+  readonly sidecarProvisioner: SidecarProvisionerConfig;
+  /** Overrides the ws(s):// URL a provisioned sidecar dials back to reach
+   * this hub. Unset derives it from baseUrl instead. */
+  readonly sidecarWebSocketUrl?: string;
 };
 
 type ParsedHubEnv = typeof HubEnv.infer;
@@ -191,6 +208,26 @@ function socialProvidersFrom(
     );
   }
   return providers;
+}
+
+/**
+ * Resolves the sidecar-provisioner backend. `SIDECAR_PROVISIONER=docker`
+ * requires `DOCKER_PROVISIONER_IMAGE`; a half-configured pair fails boot
+ * loudly rather than silently falling back to the no-provisioner default.
+ */
+function sidecarProvisionerFrom(
+  parsed: ParsedHubEnv,
+): SidecarProvisionerConfig {
+  if (parsed.SIDECAR_PROVISIONER === undefined) return { kind: "none" };
+  if (parsed.DOCKER_PROVISIONER_IMAGE === undefined) {
+    throw new Error(
+      [
+        "invalid hub environment: DOCKER_PROVISIONER_IMAGE must be set when SIDECAR_PROVISIONER=docker",
+        "Set DOCKER_PROVISIONER_IMAGE in .env, or unset SIDECAR_PROVISIONER to leave exclusive sidecar placement disabled; see .env.example.",
+      ].join("\n"),
+    );
+  }
+  return { kind: "docker", image: parsed.DOCKER_PROVISIONER_IMAGE };
 }
 
 function seedModelFrom(parsed: ParsedHubEnv): ModelSource | undefined {
@@ -246,6 +283,7 @@ export function readHubConfig(
     allowedEmailDomains,
     allowPlaintextSecrets: parsed.ALLOW_PLAINTEXT_SECRETS !== undefined,
     allowUnverifiedEmails: parsed.ALLOW_UNVERIFIED_EMAILS !== undefined,
+    sidecarProvisioner: sidecarProvisionerFrom(parsed),
     signupRateLimit: {
       windowSeconds: parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS
         ? Number(parsed.SIGNUP_RATE_LIMIT_WINDOW_SECONDS)
@@ -263,5 +301,7 @@ export function readHubConfig(
     hubConfig.huggingfaceOAuthClientId = parsed.HUGGINGFACE_OAUTH_CLIENT_ID;
   if (parsed.CREDENTIAL_ENCRYPTION_KEY !== undefined)
     hubConfig.credentialEncryptionKeyHex = parsed.CREDENTIAL_ENCRYPTION_KEY;
+  if (parsed.HUB_SIDECAR_WEBSOCKET_URL !== undefined)
+    hubConfig.sidecarWebSocketUrl = parsed.HUB_SIDECAR_WEBSOCKET_URL;
   return hubConfig;
 }

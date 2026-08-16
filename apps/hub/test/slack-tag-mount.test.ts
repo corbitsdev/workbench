@@ -39,6 +39,7 @@ const config: HubConfig = {
   signupRateLimit: { windowSeconds: 60, max: 5 },
   socialProviders: {},
   allowUnverifiedEmails: true,
+  sidecarProvisioner: { kind: "none" },
   signupMode: "closed",
   allowedEmailDomains: [],
   allowPlaintextSecrets: true,

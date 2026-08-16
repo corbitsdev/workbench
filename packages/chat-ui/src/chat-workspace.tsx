@@ -14,6 +14,7 @@
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { Button, EmptyState, Skeleton, toast } from "@corbits/react-ui";
 import {
+  ChartColumn,
   ChevronDown,
   CircleAlert,
   MessageSquare,
@@ -317,6 +318,7 @@ function ChatWorkspaceInner({
   onOpenRoutines,
   onRequestNewAgent,
   onCreateRoutineInSpace,
+  onOpenInsights,
   presenceMembers,
   onChannelNotFound,
   onBackToChannelList,
@@ -395,6 +397,15 @@ function ChatWorkspaceInner({
    * "no dead promise" contract `onOpenRoutines` follows.
    */
   readonly onCreateRoutineInSpace?: (channelId: string) => void;
+  /**
+   * "Insights for this workbench" — the header button that deep-links to
+   * this tenant's own Insights scope (CL-6099). Host-supplied so the
+   * Insights route (and its tenant-scope resolution) stays owned by the
+   * host, the same way `onOpenRoutines` is. Omitted, the button is
+   * hidden — the same "no dead promise" contract as the other optional
+   * header actions here.
+   */
+  readonly onOpenInsights?: () => void;
   /** See `ChatWorkspace`'s prop of the same name. */
   readonly presenceMembers?: readonly PresenceMember[];
   /** Fired when the routed channel 404s — a deleted channel, or a stale
@@ -1255,6 +1266,16 @@ function ChatWorkspaceInner({
                       New routine
                     </Button>
                   ) : null}
+                  {onOpenInsights !== undefined ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onOpenInsights()}
+                    >
+                      <ChartColumn />
+                      Insights
+                    </Button>
+                  ) : null}
                   <Button
                     variant="outline"
                     size="sm"
@@ -1446,6 +1467,7 @@ export function ChatWorkspace({
   onOpenRoutines,
   onRequestNewAgent,
   onCreateRoutineInSpace,
+  onOpenInsights,
   presenceMembers,
   onChannelNotFound,
   onBackToChannelList,
@@ -1518,6 +1540,15 @@ export function ChatWorkspace({
   /** "New routine in this space" — see `ChatWorkspaceInner`'s prop note. */
   readonly onCreateRoutineInSpace?: (channelId: string) => void;
   /**
+   * "Insights for this workbench" — the header button that deep-links to
+   * this tenant's own Insights scope (CL-6099). Host-supplied so the
+   * Insights route (and its tenant-scope resolution) stays owned by the
+   * host, the same way `onOpenRoutines` is. Omitted, the button is
+   * hidden — the same "no dead promise" contract as the other optional
+   * header actions here.
+   */
+  readonly onOpenInsights?: () => void;
+  /**
    * Who's live in the active channel right now, beyond the static
    * participants list — the host's `@corbits/presence/client` connection,
    * handed down as data. Omitted entirely, no presence stack renders (the
@@ -1565,6 +1596,7 @@ export function ChatWorkspace({
           {...(onCreateRoutineInSpace !== undefined
             ? { onCreateRoutineInSpace }
             : {})}
+          {...(onOpenInsights !== undefined ? { onOpenInsights } : {})}
           {...(presenceMembers !== undefined ? { presenceMembers } : {})}
           {...(onChannelNotFound !== undefined ? { onChannelNotFound } : {})}
           {...(onBackToChannelList !== undefined

@@ -38,7 +38,7 @@ export type GrantResource = (typeof GRANT_RESOURCES)[number];
  * still survives as a title/tooltip; it is never the visible text.
  */
 export const GRANT_RESOURCE_LABEL: Record<GrantResource, string> = {
-  principal: "accounts on this bench",
+  principal: "accounts on this workbench",
   role: "roles",
   grant: "grants",
   wallet: "wallets",

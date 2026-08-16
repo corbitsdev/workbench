@@ -8,6 +8,10 @@
 //   GET /activity → { days: DayActivity[] }
 //   GET /tools → { tools: ToolCallSummary[] }
 //   GET /runs/:runId/trace → RunTrace | { runId, spans: null, absent }
+//   GET /scope → InsightsScope — own identity, parent (if any), sibling
+//     workbenches. usage/activity/tools roll up automatically when called
+//     with a parent's tenantId (see @corbits/insights' resolveScope) —
+//     /scope is how a page discovers that shape to build a switcher.
 // Plus two tenant-scoped routes outside `/insights`, reused for chain
 // context on a run's detail view (packages/tasks/src/routes.ts):
 //   GET /tasks/by-run/:runId → { item: Task } | 404 (run has no owning task)
@@ -138,6 +142,30 @@ export function insightsToolsPath(
 
 export function insightsRunTracePath(tenantId: string, runId: string): string {
   return `/api/tenants/${tenantId}/insights/runs/${encodeURIComponent(runId)}/trace`;
+}
+
+export const InsightsScopeTenantSchema = type({
+  tenantId: "string",
+  name: "string",
+});
+
+/**
+ * GET /scope body — the current workbench's own identity, its parent (a
+ * workspace, when this workbench was created under one — null for a
+ * root workbench with no parent), and the sibling workbenches to switch
+ * between (just itself when there is no parent).
+ */
+export const InsightsScopeSchema = type({
+  tenantId: "string",
+  name: "string",
+  parent: InsightsScopeTenantSchema.or(type("null")),
+  workbenches: InsightsScopeTenantSchema.array(),
+});
+
+export type InsightsScope = typeof InsightsScopeSchema.infer;
+
+export function insightsScopePath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/insights/scope`;
 }
 
 /** GET /tasks/:id/legs item — one step of a chained task. */

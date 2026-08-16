@@ -10,7 +10,7 @@ import {
 describe("summarizeUsage", () => {
   test("empty sink returns zero metrics, not null cost or NaN", async () => {
     const store = createMemoryUsageStore();
-    const summary = await summarizeUsage(store, "tenant-acme");
+    const summary = await summarizeUsage(store, ["tenant-acme"]);
     expect(summary).toEqual(emptyOverallUsageSummary());
     expect(summary.turns).toBe(0);
     expect(summary.costUsd).toBe(0);
@@ -64,7 +64,7 @@ describe("summarizeUsage", () => {
       recordedAt: new Date("2026-08-01T13:00:00Z"),
     });
 
-    const summary = await summarizeUsage(store, "tenant-acme");
+    const summary = await summarizeUsage(store, ["tenant-acme"]);
     expect(summary.turns).toBe(2);
     expect(summary.tokens.input).toBe(1_000_000);
     expect(summary.tokens.output).toBe(1_000_000);
@@ -90,7 +90,7 @@ describe("summarizeUsage", () => {
       },
     });
 
-    const summary = await summarizeUsage(store, "tenant-acme");
+    const summary = await summarizeUsage(store, ["tenant-acme"]);
     expect(summary.costUsd).toBeNull();
     expect(summary.byModel[0]?.costUsd).toBeNull();
     expect(summary.tokens.input).toBe(100);
@@ -121,16 +121,66 @@ describe("summarizeUsage", () => {
       },
     });
 
-    const summary = await summarizeUsage(store, "tenant-acme");
+    const summary = await summarizeUsage(store, ["tenant-acme"]);
     expect(summary.turns).toBe(1);
     expect(summary.tokens.input).toBe(1);
+  });
+
+  test("multi-tenant scope aggregates equal the sum of each tenant alone", async () => {
+    const store = createMemoryUsageStore([
+      {
+        model: "claude-sonnet",
+        rates: {
+          inputPerMTok: 3,
+          outputPerMTok: 15,
+          cacheReadPerMTok: 0.3,
+          cacheWritePerMTok: 3.75,
+          thinkingPerMTok: 15,
+        },
+      },
+    ]);
+    await store.insertUsage({
+      id: "u1",
+      tenantId: "workbench-a",
+      sessionId: "s1",
+      turnId: "t1",
+      model: "claude-sonnet",
+      tokens: { input: 100, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+    });
+    await store.insertUsage({
+      id: "u2",
+      tenantId: "workbench-b",
+      sessionId: "s2",
+      turnId: "t2",
+      model: "claude-sonnet",
+      tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 200, thinking: 0 },
+    });
+    await store.insertUsage({
+      id: "u3",
+      tenantId: "workbench-unrelated",
+      sessionId: "s3",
+      turnId: "t3",
+      model: "claude-sonnet",
+      tokens: { input: 9999, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+    });
+
+    const aggregate = await summarizeUsage(store, ["workbench-a", "workbench-b"]);
+    const a = await summarizeUsage(store, ["workbench-a"]);
+    const b = await summarizeUsage(store, ["workbench-b"]);
+
+    expect(aggregate.turns).toBe(a.turns + b.turns);
+    expect(aggregate.tokens.input).toBe(a.tokens.input + b.tokens.input);
+    expect(aggregate.tokens.output).toBe(a.tokens.output + b.tokens.output);
+    expect(aggregate.costUsd).toBe((a.costUsd ?? 0) + (b.costUsd ?? 0));
+    // The unrelated third tenant never leaks into a two-tenant scope.
+    expect(aggregate.tokens.input).toBe(100);
   });
 });
 
 describe("activityByDay", () => {
   test("empty sink returns empty series (no fabricated peaks)", async () => {
     const store = createMemoryUsageStore();
-    const days = await activityByDay(store, "tenant-acme");
+    const days = await activityByDay(store, ["tenant-acme"]);
     expect(days).toEqual([]);
   });
 
@@ -161,10 +211,35 @@ describe("activityByDay", () => {
       recordedAt: new Date("2026-08-02T01:00:00Z"),
     });
 
-    const days = await activityByDay(store, "tenant-acme");
+    const days = await activityByDay(store, ["tenant-acme"]);
     expect(days).toEqual([
       { day: "2026-08-01", turns: 1, tokens: 10 },
       { day: "2026-08-02", turns: 1, tokens: 5 },
     ]);
+  });
+
+  test("multi-tenant scope buckets across all tenants in scope", async () => {
+    const store = createMemoryUsageStore();
+    await store.insertUsage({
+      id: "u1",
+      tenantId: "workbench-a",
+      sessionId: "s1",
+      turnId: "t1",
+      model: "m",
+      tokens: { input: 10, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+      recordedAt: new Date("2026-08-01T10:00:00Z"),
+    });
+    await store.insertUsage({
+      id: "u2",
+      tenantId: "workbench-b",
+      sessionId: "s2",
+      turnId: "t2",
+      model: "m",
+      tokens: { input: 5, cacheRead: 0, cacheWrite: 0, output: 0, thinking: 0 },
+      recordedAt: new Date("2026-08-01T11:00:00Z"),
+    });
+
+    const days = await activityByDay(store, ["workbench-a", "workbench-b"]);
+    expect(days).toEqual([{ day: "2026-08-01", turns: 2, tokens: 15 }]);
   });
 });
