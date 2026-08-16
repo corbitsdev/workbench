@@ -1,8 +1,9 @@
 // Screens without live backing must say so: every list renders an honest
 // empty state from real (empty) hub responses, never placeholder rows.
-// Agents/Skills coverage moved to `agents-settings-section.test.tsx` /
-// `skills-settings-section.test.tsx` (CL-5990 — they became Settings
-// sections, not stage-only pages with an injectable directory prop).
+// Skills coverage moved to `skills-settings-section.test.tsx` (CL-5990 —
+// it became a Settings section, not a stage-only page with an injectable
+// directory prop). Agents' Settings section was cut in CL-6121 — agent
+// configuration lives per-workbench now, not as a global tab.
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
