@@ -18,11 +18,53 @@ import type { DB } from "@intx/db";
 import { SkillRegistryError } from "@corbits/skills";
 
 import {
+  AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
 } from "../src/agent-workflow";
 import { createAgentDefinitionRoutes } from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
+import type { DefinitionAssetHistory } from "../src/definition-history";
+import type { CapabilityInventoryProvider } from "../src/capability-inventory";
+
+/** A `readAssetBlob` that answers `workflow.json` with `workflowBytes` and
+ * `skills.json` with `skillsBytes` when given, or a `not_found`
+ * `AssetServiceError` otherwise — the shape `readDefinitionSkills`
+ * (this package's own "no skills.json reads as no skills" convention)
+ * expects for a definition that has never attached any skills. */
+function readAssetBlobFor(
+  workflowBytes: Uint8Array,
+  skillsBytes?: Uint8Array,
+): AssetService["readAssetBlob"] {
+  return ({ path }) => {
+    if (path === AGENT_SKILLS_ASSET_PATH) {
+      if (skillsBytes !== undefined) return Promise.resolve(skillsBytes);
+      return Promise.reject(
+        new AssetServiceError("not_found", "no skills.json"),
+      );
+    }
+    return Promise.resolve(workflowBytes);
+  };
+}
+
+const fakeCapabilityInventory: CapabilityInventoryProvider = {
+  resolve: () =>
+    Promise.resolve({
+      toolPackages: [{ name: "@corbits/github-tools" }],
+      skills: [{ name: "research" }],
+      models: [{ canonicalName: "anthropic/claude-sonnet" }],
+    }),
+};
+
+function fakeHistory(
+  overrides: Partial<DefinitionAssetHistory> = {},
+): DefinitionAssetHistory {
+  return {
+    history: () => Promise.resolve([]),
+    readBlobAtCommit: () => Promise.resolve(null),
+    ...overrides,
+  };
+}
 
 /** Resolves every pinned name to a one-line description, so a route test
  * can assert on the stanza without standing up the registry. */
@@ -192,11 +234,15 @@ function buildApp(
   assetService: AssetService,
   db: DB["db"] = fakeDb(),
   requireGrant: RequireGrant = allowAllRequireGrant,
+  history: DefinitionAssetHistory = fakeHistory(),
+  capabilityInventory: CapabilityInventoryProvider = fakeCapabilityInventory,
 ): Hono<TenantEnv> {
   const routes = createAgentDefinitionRoutes({
     db,
     assetService,
     skillIndex: fakeSkillIndex,
+    history,
+    capabilityInventory,
     requireGrant,
   });
   const asPrincipal: MiddlewareHandler<TenantEnv> = async (c, next) => {
@@ -212,6 +258,18 @@ function buildApp(
 
 async function post(app: Hono<TenantEnv>, body: unknown): Promise<Response> {
   return app.request("/", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function postTo(
+  app: Hono<TenantEnv>,
+  path: string,
+  body: unknown,
+): Promise<Response> {
+  return app.request(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -647,10 +705,9 @@ function fakeInstructionsDb(
 test("GET /:definitionId returns the agent's display name and system prompt", async () => {
   const app = buildApp(
     fakeAssetService({
-      readAssetBlob: () =>
-        Promise.resolve(
-          storedDefinitionBytes("You are a careful research assistant."),
-        ),
+      readAssetBlob: readAssetBlobFor(
+        storedDefinitionBytes("You are a careful research assistant."),
+      ),
     }),
     fakeInstructionsDb({
       id: "def_1",
@@ -783,7 +840,7 @@ test("GET /:definitionId scopes its grant check to this definition, not the tena
   const requireGrant = capturingRequireGrant();
   const app = buildApp(
     fakeAssetService({
-      readAssetBlob: () => Promise.resolve(storedDefinitionBytes()),
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
     }),
     fakeInstructionsDb({
       id: "def_1",
@@ -935,6 +992,8 @@ test("pinning a skill the registry cannot resolve is a 400, not a 500", async ()
           new SkillRegistryError("not_found", 'cannot pin skill "ghost"'),
         ),
     },
+    history: fakeHistory(),
+    capabilityInventory: fakeCapabilityInventory,
     requireGrant: () => async (_c, next) => {
       await next();
     },
@@ -989,4 +1048,362 @@ test("a create request with no pinned skills stores the author's prompt verbatim
     "You are a careful research assistant.",
   );
   expect(pinsFrom(workflowJson)).toEqual([]);
+});
+
+// --- GET /:definitionId/versions ---
+
+test("GET /:definitionId/versions lists the asset's commit log, newest marked current", async () => {
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    allowAllRequireGrant,
+    fakeHistory({
+      history: () =>
+        Promise.resolve([
+          {
+            commitSha: "sha2",
+            message: "Update agent instructions for research-buddy",
+            author: "Ada",
+            committedAtIso: "2024-02-01T00:00:00.000Z",
+          },
+          {
+            commitSha: "sha1",
+            message: "Define agent Research Buddy",
+            author: "Ada",
+            committedAtIso: "2024-01-01T00:00:00.000Z",
+          },
+        ]),
+    }),
+  );
+  const response = await app.request("/def_1/versions");
+  expect(response.status).toBe(200);
+  const body = (await response.json()) as {
+    versions: { commitSha: string; current: boolean }[];
+  };
+  expect(body.versions).toEqual([
+    expect.objectContaining({ commitSha: "sha2", current: true }),
+    expect.objectContaining({ commitSha: "sha1", current: false }),
+  ]);
+});
+
+test("GET /:definitionId/versions 404s for an unknown definition", async () => {
+  const app = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  const response = await app.request("/def_missing/versions");
+  expect(response.status).toBe(404);
+});
+
+test("GET /:definitionId/versions scopes its grant check per definition id", async () => {
+  const requireGrant = capturingRequireGrant();
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    requireGrant,
+  );
+  await app.request("/def_1/versions");
+  expect(requireGrant.calls).toEqual([
+    { resource: "workflow-definition:def_1", action: "read" },
+  ]);
+});
+
+// --- POST /:definitionId/restore ---
+
+test("restore writes the old commit's blobs as a new, human-named commit — never a git reset", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  let writtenMessage: string | undefined;
+  const oldWorkflow = storedDefinitionBytes("You were once blunt.");
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(
+        storedDefinitionBytes("You are now polite."),
+      ),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        writtenMessage = params.tree.message;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    allowAllRequireGrant,
+    fakeHistory({
+      readBlobAtCommit: ({ path }) =>
+        path === AGENT_SKILLS_ASSET_PATH
+          ? Promise.resolve(null)
+          : Promise.resolve(oldWorkflow),
+    }),
+  );
+  const response = await postTo(app, "/def_1/restore", {
+    commitSha: "sha1old",
+  });
+  expect(response.status).toBe(200);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(promptFrom(writtenFiles?.["workflow.json"] as string)).toBe(
+    "You were once blunt.",
+  );
+  expect(writtenMessage).toBe("Restore agent research-buddy to sha1old");
+  const body = (await response.json()) as { systemPrompt: string };
+  expect(body.systemPrompt).toBe("You are now polite.");
+});
+
+test("restore 404s when the target commit never carried a workflow.json", async () => {
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    allowAllRequireGrant,
+    fakeHistory({ readBlobAtCommit: () => Promise.resolve(null) }),
+  );
+  const response = await postTo(app, "/def_1/restore", { commitSha: "sha1" });
+  expect(response.status).toBe(404);
+});
+
+test("restore rejects a blank commitSha with a 400", async () => {
+  const app = buildApp(
+    fakeAssetService(),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await postTo(app, "/def_1/restore", { commitSha: "" });
+  expect(response.status).toBe(400);
+});
+
+test("restore scopes its grant check per definition id and requires update", async () => {
+  const requireGrant = capturingRequireGrant();
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    requireGrant,
+    fakeHistory({
+      readBlobAtCommit: () => Promise.resolve(storedDefinitionBytes()),
+    }),
+  );
+  await postTo(app, "/def_1/restore", { commitSha: "sha1" });
+  expect(requireGrant.calls).toEqual([
+    { resource: "workflow-definition:def_1", action: "update" },
+  ]);
+});
+
+// --- POST /:definitionId/capabilities ---
+
+test("adding a tool package pin merges it into the definition in one commit, named for a person", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  let writtenMessage: string | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        writtenMessage = params.tree.message;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await postTo(app, "/def_1/capabilities", {
+    kind: "toolPackage",
+    name: "@corbits/github-tools",
+  });
+  expect(response.status).toBe(200);
+  expect(Object.keys(writtenFiles ?? {})).toEqual(["workflow.json"]);
+  expect(pinsFrom(writtenFiles?.["workflow.json"] as string)).toEqual([
+    { name: "@corbits/github-tools", version: "*" },
+  ]);
+  expect(writtenMessage).toBe("Add @corbits/github-tools to research-buddy");
+  const body = (await response.json()) as {
+    toolPackagePins: { name: string; version: string }[];
+  };
+  expect(body.toolPackagePins).toEqual([
+    { name: "@corbits/github-tools", version: "*" },
+  ]);
+});
+
+test("adding a tool package pin the tenant's inventory doesn't offer is a 400, never written", async () => {
+  let populateCalled = false;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
+      populateAsset: () => {
+        populateCalled = true;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await postTo(app, "/def_1/capabilities", {
+    kind: "toolPackage",
+    name: "@corbits/nonexistent-tools",
+  });
+  expect(response.status).toBe(400);
+  expect(populateCalled).toBe(false);
+  const body = (await response.json()) as { error: { message: string } };
+  expect(body.error.message).toContain("@corbits/nonexistent-tools");
+});
+
+test("adding a skill the inventory doesn't offer is a 400, never written", async () => {
+  let populateCalled = false;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
+      populateAsset: () => {
+        populateCalled = true;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await postTo(app, "/def_1/capabilities", {
+    kind: "skill",
+    name: "ghost-skill",
+  });
+  expect(response.status).toBe(400);
+  expect(populateCalled).toBe(false);
+});
+
+test("adding a skill merges it additively into skills.json and re-indexes the prompt", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await postTo(app, "/def_1/capabilities", {
+    kind: "skill",
+    name: "research",
+  });
+  expect(response.status).toBe(200);
+  expect(writtenFiles?.["skills.json"]).toBe(
+    JSON.stringify({ skills: ["research"] }),
+  );
+  expect((writtenFiles?.["workflow.json"] as string).includes("research")).toBe(
+    true,
+  );
+  const body = (await response.json()) as { skills: string[] };
+  expect(body.skills).toEqual(["research"]);
+});
+
+test("adding a model out of the tenant's catalog is a 400, never written", async () => {
+  let populateCalled = false;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
+      populateAsset: () => {
+        populateCalled = true;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await postTo(app, "/def_1/capabilities", {
+    kind: "model",
+    canonicalName: "openai/gpt-ghost",
+  });
+  expect(response.status).toBe(400);
+  expect(populateCalled).toBe(false);
+});
+
+test("setting a model in the tenant's catalog writes a single named commit", async () => {
+  let writtenMessage: string | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
+      populateAsset: (params) => {
+        writtenMessage = params.tree.message;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await postTo(app, "/def_1/capabilities", {
+    kind: "model",
+    canonicalName: "anthropic/claude-sonnet",
+  });
+  expect(response.status).toBe(200);
+  expect(writtenMessage).toBe(
+    "Set research-buddy's model to anthropic/claude-sonnet",
+  );
+  const body = (await response.json()) as { model?: string };
+  expect(body.model).toBe("anthropic/claude-sonnet");
+});
+
+test("capabilities route scopes its grant check per definition id and requires update", async () => {
+  const requireGrant = capturingRequireGrant();
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    requireGrant,
+  );
+  await postTo(app, "/def_1/capabilities", {
+    kind: "model",
+    canonicalName: "anthropic/claude-sonnet",
+  });
+  expect(requireGrant.calls).toEqual([
+    { resource: "workflow-definition:def_1", action: "update" },
+  ]);
+});
+
+test("capabilities route 404s for an unknown definition", async () => {
+  const app = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
+  const response = await postTo(app, "/def_missing/capabilities", {
+    kind: "model",
+    canonicalName: "anthropic/claude-sonnet",
+  });
+  expect(response.status).toBe(404);
 });
