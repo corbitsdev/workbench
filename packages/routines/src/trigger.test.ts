@@ -5,6 +5,8 @@ import {
   ROUTINE_WEEKDAY_NAMES,
   RoutineTrigger,
   RoutineTriggerWire,
+  cronExpressionForTrigger,
+  cronTriggerForWeekdays,
   routineCadenceLabel,
   routineCadenceSummary,
 } from "./trigger";
@@ -170,5 +172,69 @@ describe("routineCadenceSummary", () => {
     expect(
       routineCadenceSummary({ kind: "cron", expression: "0 9 * * 1-5" }),
     ).toBe("Cron 0 9 * * 1-5");
+  });
+});
+
+describe("interval trigger 'days' unit", () => {
+  test("is accepted by the strict RoutineTrigger schema", () => {
+    const out = RoutineTrigger({ kind: "interval", unit: "days", every: 3 });
+    expect(out instanceof type.errors).toBe(false);
+  });
+
+  test("renders to a day-of-month step cron expression", () => {
+    expect(
+      cronExpressionForTrigger({ kind: "interval", unit: "days", every: 3 }),
+    ).toBe("0 0 */3 * *");
+  });
+
+  test("cadence label singularizes 'Every 1 days' to 'Every day'", () => {
+    expect(
+      routineCadenceLabel({ kind: "interval", unit: "days", every: 1 }),
+    ).toBe("Every day");
+    expect(
+      routineCadenceLabel({ kind: "interval", unit: "days", every: 3 }),
+    ).toBe("Every 3 days");
+  });
+
+  test("cadence summary singularizes the unit for every === 1", () => {
+    expect(
+      routineCadenceSummary({ kind: "interval", unit: "days", every: 1 }),
+    ).toBe("Every 1 day");
+  });
+});
+
+describe("cronTriggerForWeekdays", () => {
+  test("renders a single day the same as multiple", () => {
+    expect(cronTriggerForWeekdays([1], 9, 0)).toEqual({
+      kind: "cron",
+      expression: "0 9 * * 1",
+    });
+  });
+
+  test("sorts and de-dupes days into one comma-joined field", () => {
+    expect(cronTriggerForWeekdays([5, 1, 3, 1], 9, 0)).toEqual({
+      kind: "cron",
+      expression: "0 9 * * 1,3,5",
+    });
+  });
+
+  test("carries an optional timezone", () => {
+    expect(
+      cronTriggerForWeekdays([1, 2, 3, 4, 5], 9, 0, "America/Los_Angeles"),
+    ).toEqual({
+      kind: "cron",
+      expression: "0 9 * * 1,2,3,4,5",
+      timezone: "America/Los_Angeles",
+    });
+  });
+
+  test("rejects an empty day list", () => {
+    expect(() => cronTriggerForWeekdays([], 9, 0)).toThrow();
+  });
+
+  test("the resulting cron trigger passes strict RoutineTrigger validation", () => {
+    const trigger = cronTriggerForWeekdays([1, 2, 3, 4, 5], 9, 0);
+    const out = RoutineTrigger(trigger);
+    expect(out instanceof type.errors).toBe(false);
   });
 });

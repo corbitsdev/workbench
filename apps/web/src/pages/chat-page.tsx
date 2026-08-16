@@ -28,7 +28,6 @@ import {
   channelSettingsSectionFromPath,
   isChannelSettingsPath,
 } from "../channel-path";
-import { requestNewRoutine } from "../command-palette-actions";
 import { reportChannelNotFound } from "../channel-not-found-event";
 import { workbenchInsightsPath } from "../insights-deeplinks";
 import { ONBOARDING_PATH } from "../routes";
@@ -205,17 +204,20 @@ export function ChatPage({
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       {...(blockResponses !== undefined ? { blockResponses } : {})}
       listMembers={listMembers}
+      // The header's Routines affordance and `/run`: the panel's default
+      // list view, beside this conversation — never a `/routines` hop
+      // (CL-6139). Bound to this channel so the list's own "New routine"
+      // row still targets this conversation's agent/channel.
       onOpenRoutines={() =>
-        requestNewRoutine({
-          navigateToRoutines: () => navigate("/routines"),
-          openRoutine,
+        openRoutine({
+          view: "list",
+          ...(channelId !== null ? { channelId } : {}),
         })
       }
-      onCreateRoutineInSpace={() =>
-        requestNewRoutine({
-          navigateToRoutines: () => navigate("/routines"),
-          openRoutine,
-        })
+      // `/routine`: opens the editor directly on a brand-new routine
+      // bound to this channel.
+      onCreateRoutineInSpace={(inSpaceChannelId) =>
+        openRoutine({ routineId: null, channelId: inSpaceChannelId })
       }
       presenceMembers={presenceMembers}
       {...(tenantId !== null

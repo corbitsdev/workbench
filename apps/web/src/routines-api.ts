@@ -271,26 +271,6 @@ export async function listWorkflowDefinitions(
 }
 
 /**
- * The tenant's deployed "assistant" (Myra) workflow definition id — the
- * routine panel's backing definition for every routine it creates, since
- * the panel collects only a name, a free-text instruction, and a trigger,
- * never a workflow pick. `"assistant"` is excluded from the automatable
- * catalog picker (`isAutomatableWorkflowName` — it is the conversational
- * default, not a multi-step automation), but nothing on the create route
- * itself requires an automatable definition, and its whole purpose — do
- * whatever the instruction says — is the honest backing for a routine
- * whose only input is that instruction. `null` when the tenant has no
- * deployed "assistant" definition yet (should not happen once a workbench
- * has ever talked to Myra, but this is never assumed).
- */
-export async function getAssistantDefinitionId(
-  tenantId: string,
-): Promise<string | null> {
-  const definitions = await listAllDefinitions(tenantId);
-  return definitions.find((d) => d.name === "assistant")?.id ?? null;
-}
-
-/**
  * Tenant-scoped query via TanStack Query. Keys must be stable arrays that
  * already include the tenant id under the `["tenant", tenantId, ...]`
  * convention so a bench switch can `removeQueries` the whole prefix.

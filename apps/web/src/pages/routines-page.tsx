@@ -9,11 +9,6 @@ import {
   Button,
   EmptyState,
   formatRelativeTime,
-  Input,
-  Menu,
-  MenuContent,
-  MenuItem,
-  MenuTrigger,
   RichEmptyState,
   RunNowButton,
   Switch,
@@ -56,7 +51,6 @@ import {
 import type {
   Routine,
   RoutineRun,
-  RoutineTrigger,
   WorkflowDefinitionSummary,
 } from "../routines-api";
 import {
@@ -237,187 +231,6 @@ export function WebhookTriggerPanel({
   );
 }
 
-type TriggerKind =
-  "manual" | "interval" | "daily" | "weekly" | "cron" | "webhook";
-
-export function TriggerPicker({
-  value,
-  onChange,
-}: {
-  readonly value: RoutineTrigger;
-  readonly onChange: (next: RoutineTrigger) => void;
-}) {
-  const kind: TriggerKind = value === null ? "manual" : value.kind;
-
-  const setKind = (next: Exclude<TriggerKind, "webhook">) => {
-    switch (next) {
-      case "manual":
-        onChange(null);
-        return;
-      case "interval":
-        onChange({ kind: "interval", unit: "minutes", every: 15 });
-        return;
-      case "daily":
-        onChange({ kind: "daily", hour: 9, minute: 0 });
-        return;
-      case "weekly":
-        onChange({ kind: "weekly", dayOfWeek: 1, hour: 9, minute: 0 });
-        return;
-      case "cron":
-        onChange({ kind: "cron", expression: "0 9 * * *" });
-    }
-  };
-
-  // A webhook-bound routine has no cadence to edit here — the binding
-  // (hook URL, secret, rotate) lives on the routine's detail page, not
-  // this picker. Recreating the routine is the only way to leave webhook
-  // mode, the same way catalog vs. describe-to-agent is a create-time,
-  // not edit-time, choice.
-  if (kind === "webhook") {
-    return (
-      <div className="flex flex-col gap-2">
-        <span className="text-xs font-medium">Cadence</span>
-        <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-          On webhook — manage the hook URL and secret from this routine's detail
-          page.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <span id="routine-cadence-label" className="text-xs font-medium">
-        Cadence
-      </span>
-      <Menu>
-        <MenuTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            id="routine-cadence"
-            aria-labelledby="routine-cadence-label"
-          >
-            {
-              {
-                manual: "Manual (run only when triggered)",
-                interval: "Every N minutes/hours",
-                daily: "Daily",
-                weekly: "Weekly",
-                cron: "Raw cron expression",
-              }[kind]
-            }
-          </Button>
-        </MenuTrigger>
-        <MenuContent>
-          {(
-            [
-              ["manual", "Manual (run only when triggered)"],
-              ["interval", "Every N minutes/hours"],
-              ["daily", "Daily"],
-              ["weekly", "Weekly"],
-              ["cron", "Raw cron expression"],
-            ] as const
-          ).map(([option, label]) => (
-            <MenuItem key={option} onSelect={() => setKind(option)}>
-              {label}
-            </MenuItem>
-          ))}
-        </MenuContent>
-      </Menu>
-
-      {value !== null && value.kind === "interval" ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[var(--ui-fg-muted)]">Every</span>
-          <Input
-            type="number"
-            min={1}
-            value={value.every}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                every: Math.max(1, Math.trunc(event.target.valueAsNumber) || 1),
-              })
-            }
-          />
-          <Menu>
-            <MenuTrigger asChild>
-              <Button type="button" variant="outline" size="sm">
-                {value.unit}
-              </Button>
-            </MenuTrigger>
-            <MenuContent>
-              <MenuItem
-                onSelect={() => onChange({ ...value, unit: "minutes" })}
-              >
-                minutes
-              </MenuItem>
-              <MenuItem onSelect={() => onChange({ ...value, unit: "hours" })}>
-                hours
-              </MenuItem>
-            </MenuContent>
-          </Menu>
-        </div>
-      ) : null}
-
-      {value !== null && (value.kind === "daily" || value.kind === "weekly") ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {value.kind === "weekly" ? (
-            <Menu>
-              <MenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                  {
-                    ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
-                      value.dayOfWeek
-                    ]
-                  }
-                </Button>
-              </MenuTrigger>
-              <MenuContent>
-                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
-                  (label, index) => (
-                    <MenuItem
-                      key={label}
-                      onSelect={() => onChange({ ...value, dayOfWeek: index })}
-                    >
-                      {label}
-                    </MenuItem>
-                  ),
-                )}
-              </MenuContent>
-            </Menu>
-          ) : null}
-          <span className="text-xs text-[var(--ui-fg-muted)]">At</span>
-          <Input
-            type="time"
-            value={`${value.hour.toString().padStart(2, "0")}:${value.minute.toString().padStart(2, "0")}`}
-            onChange={(event) => {
-              const [hour, minute] = event.target.value.split(":").map(Number);
-              onChange({
-                ...value,
-                hour: hour ?? 0,
-                minute: minute ?? 0,
-              });
-            }}
-          />
-          <span className="text-xs text-[var(--ui-fg-muted)]">UTC</span>
-        </div>
-      ) : null}
-
-      {value !== null && value.kind === "cron" ? (
-        <Input
-          value={value.expression}
-          placeholder="0 9 * * *"
-          onChange={(event) =>
-            onChange({ kind: "cron", expression: event.target.value })
-          }
-        />
-      ) : null}
-    </div>
-  );
-}
-
 /**
  * Recent-run rows deep-link to the channel the routine delivers to — a
  * routine has one `deliveryChannelId`, not a per-run one, so every row in
@@ -567,10 +380,7 @@ export function RoutinesListPage({
         }
         actions={
           selected === null ? (
-            <Button
-              size="sm"
-              onClick={() => openRoutine({ routineId: null })}
-            >
+            <Button size="sm" onClick={() => openRoutine({ routineId: null })}>
               <Plus /> New routine
             </Button>
           ) : (

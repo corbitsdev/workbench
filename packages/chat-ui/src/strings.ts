@@ -68,7 +68,7 @@ export const CHAT_STRINGS = {
   eventBlockResponseForm: "A form was submitted",
   eventGeneric: (event: string) => event.replace(/[.\-_]+/g, " "),
   inviteAgentAction: "Invite agent",
-  newRoutineAction: "New routine",
+  routinesAction: "Routines",
   insightsAction: "Insights",
   channelMembersLabel: "Members",
   threadsMenuCount: (count: number) =>

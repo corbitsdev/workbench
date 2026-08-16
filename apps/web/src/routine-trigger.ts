@@ -9,40 +9,24 @@
 // domain, not this app. `nextCronFireAfter` from `@corbits/routines/cron`
 // is the exact same minute-by-minute search the hub's scheduler runs
 // against the exact same rendered cron expression — never a second,
-// hand-rolled matcher that could drift from what actually fires. Neither
-// subpath (not the package's default export) pulls in `drizzle-orm` and
-// `postgres` through `store.ts`, which have no business in a browser
-// bundle.
-//
-// An interval preset fires on a wall-clock-aligned cadence
-// (`*/N * * * *`), not N minutes after whatever moment a viewer happens
-// to load the page — "every 10 minutes" viewed at :07 fires at :10.
+// hand-rolled matcher that could drift from what actually fires.
+// `cronExpressionForTrigger`/`timezoneForTrigger` are the same package's
+// own preset-to-cron renderer — this module used to hand-roll a second
+// copy of that switch; it now reuses the one the scheduler and the
+// schedule editor both already depend on. Neither subpath (not the
+// package's default export) pulls in `drizzle-orm` and `postgres` through
+// `store.ts`, which have no business in a browser bundle.
 import { nextCronFireAfter } from "@corbits/routines/cron";
-import { routineCadenceLabel } from "@corbits/routines/trigger";
+import {
+  cronExpressionForTrigger,
+  routineCadenceLabel,
+  routineCadenceSummary,
+  timezoneForTrigger,
+} from "@corbits/routines/trigger";
 import type { RoutineTrigger } from "./routines-api";
 
 export const cadenceLabel = routineCadenceLabel;
-
-/** Renders the closed-form presets to the same cron shape the scheduler fires against. */
-function cronExpressionForPreset(
-  trigger: Exclude<RoutineTrigger, null | { kind: "cron" | "webhook" }>,
-): string {
-  switch (trigger.kind) {
-    case "interval":
-      return trigger.unit === "minutes"
-        ? `*/${trigger.every} * * * *`
-        : `0 */${trigger.every} * * *`;
-    case "daily":
-      return `${trigger.minute} ${trigger.hour} * * *`;
-    case "weekly":
-      return `${trigger.minute} ${trigger.hour} * * ${trigger.dayOfWeek}`;
-  }
-}
-
-function timezoneFor(trigger: Exclude<RoutineTrigger, null>): string {
-  if (trigger.kind === "interval" || trigger.kind === "webhook") return "UTC";
-  return trigger.timezone ?? "UTC";
-}
+export const cadenceSummary = routineCadenceSummary;
 
 /**
  * A best-effort next-fire estimate for display only — never fed back
@@ -60,11 +44,11 @@ export function approximateNextRun(
 ): Date | null {
   if (trigger === null || trigger.kind === "webhook") return null;
   try {
-    const expression =
-      trigger.kind === "cron"
-        ? trigger.expression
-        : cronExpressionForPreset(trigger);
-    return nextCronFireAfter(expression, now, timezoneFor(trigger));
+    return nextCronFireAfter(
+      cronExpressionForTrigger(trigger),
+      now,
+      timezoneForTrigger(trigger),
+    );
   } catch {
     return null;
   }
