@@ -12,7 +12,7 @@
 // narrow-port shape `@corbits/chat`'s `routes.ts` uses for `ChatPlatform`.
 
 import { isAgentAddress } from "@corbits/chat/mentions";
-import { Button, EmptyState, Skeleton, toast } from "@corbits/react-ui";
+import { Avatar, Button, EmptyState, Skeleton, toast } from "@corbits/react-ui";
 import {
   ChartColumn,
   ChevronDown,
@@ -1288,19 +1288,14 @@ function ChatWorkspaceInner({
                   </div>
                 )}
                 <div className="chat-channel-actions">
-                  <details className="chat-threads-menu">
-                    <summary className="chat-threads-menu-trigger">
-                      {depth1Threads.length}{" "}
-                      {depth1Threads.length === 1 ? "thread" : "threads"}
-                      <ChevronDown className="size-3.5 opacity-70" />
-                    </summary>
-                    <div className="chat-threads-menu-panel" role="menu">
-                      {depth1Threads.length === 0 ? (
-                        <div className="chat-threads-menu-empty">
-                          No threads yet
-                        </div>
-                      ) : (
-                        depth1Threads.map((thread) => (
+                  {depth1Threads.length > 0 ? (
+                    <details className="chat-threads-menu">
+                      <summary className="chat-threads-menu-trigger">
+                        {CHAT_STRINGS.threadsMenuCount(depth1Threads.length)}
+                        <ChevronDown className="size-3.5 opacity-70" />
+                      </summary>
+                      <div className="chat-threads-menu-panel" role="menu">
+                        {depth1Threads.map((thread) => (
                           <div
                             key={thread.id}
                             className="chat-threads-menu-group"
@@ -1339,19 +1334,31 @@ function ChatWorkspaceInner({
                               ),
                             )}
                           </div>
-                        ))
-                      )}
-                    </div>
-                  </details>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
                   {memberStack.length > 0 ? (
-                    <div className="chat-member-stack" aria-label="Members">
+                    <div
+                      className="chat-member-stack"
+                      aria-label={CHAT_STRINGS.channelMembersLabel}
+                    >
                       {memberStack.map((participant) => (
                         <span
                           key={participant.address}
-                          className="chat-sender-avatar"
+                          className="chat-member-avatar"
                           title={participant.handle}
                         >
-                          {participant.handle.slice(0, 1).toUpperCase()}
+                          <Avatar
+                            initials={participant.handle}
+                            label={participant.handle}
+                            tone={
+                              isAgentAddress(participant.address)
+                                ? "agent"
+                                : "neutral"
+                            }
+                            size="sm"
+                          />
                         </span>
                       ))}
                     </div>
@@ -1384,32 +1391,35 @@ function ChatWorkspaceInner({
                   {onCreateRoutineInSpace !== undefined &&
                   activeChannelId !== null ? (
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       onClick={() => onCreateRoutineInSpace(activeChannelId)}
                     >
                       <Repeat />
-                      New routine
+                      {CHAT_STRINGS.newRoutineAction}
                     </Button>
                   ) : null}
                   {onOpenInsights !== undefined ? (
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       onClick={() => onOpenInsights()}
                     >
                       <ChartColumn />
-                      Insights
+                      {CHAT_STRINGS.insightsAction}
                     </Button>
                   ) : null}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    aria-label={CHAT_STRINGS.channelSettingsAction}
-                    onClick={() => openChannelSettings()}
-                  >
-                    <SlidersHorizontal />
-                  </Button>
+                  <div className="chat-channel-settings-slot">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={CHAT_STRINGS.channelSettingsAction}
+                      title={CHAT_STRINGS.channelSettingsAction}
+                      onClick={() => openChannelSettings()}
+                    >
+                      <SlidersHorizontal />
+                    </Button>
+                  </div>
                 </div>
               </div>
               {messagesState.kind === "loading" ? (

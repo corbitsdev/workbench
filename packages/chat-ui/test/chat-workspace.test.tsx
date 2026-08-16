@@ -1283,3 +1283,92 @@ describe("optimistic send (CL-6103)", () => {
     harness.unmount();
   });
 });
+
+describe("Channel header polish (CL-6106)", () => {
+  test("the threads dropdown is hidden entirely when the channel has no threads yet", async () => {
+    stubFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    expect(harness.container.querySelector(".chat-threads-menu")).toBeNull();
+    harness.unmount();
+  });
+
+  test("the threads dropdown appears once the channel has a thread", async () => {
+    stubThreadedFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    const trigger = harness.container.querySelector(
+      ".chat-threads-menu-trigger",
+    );
+    expect(trigger).not.toBeNull();
+    expect(trigger?.textContent).toContain("1 thread");
+    harness.unmount();
+  });
+
+  test("participant chips render as react-ui Avatar primitives, each carrying its handle as a hover tooltip", async () => {
+    stubFetch(undefined, CHANNEL_WITH_AGENT_WIRE);
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    const chip = harness.container.querySelector(".chat-member-avatar");
+    expect(chip).not.toBeNull();
+    expect((chip as HTMLElement).title).toBe("researcher");
+    const avatar = chip?.querySelector('[role="img"]');
+    expect(avatar).not.toBeNull();
+    expect(avatar?.getAttribute("aria-label")).toBe("researcher");
+    harness.unmount();
+  });
+
+  test("'New routine' and 'Insights' render as quiet ghost buttons, not outlined controls", async () => {
+    stubFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+      onCreateRoutineInSpace: () => {},
+      onOpenInsights: () => {},
+    });
+    await harness.settle();
+
+    const buttons = [...harness.container.querySelectorAll("button")];
+    const newRoutine = buttons.find(
+      (element) => element.textContent?.trim() === "New routine",
+    );
+    const insights = buttons.find(
+      (element) => element.textContent?.trim() === "Insights",
+    );
+    expect(newRoutine?.className).not.toContain("border-input");
+    expect(insights?.className).not.toContain("border-input");
+    harness.unmount();
+  });
+
+  test("the settings control is icon-only, at the far right, with a tooltip", async () => {
+    stubFetch();
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      channelId: "ch_1",
+    });
+    await harness.settle();
+
+    const button = harness.container.querySelector(
+      'button[aria-label="Settings"]',
+    ) as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    expect(button.textContent?.trim()).toBe("");
+    expect(button.title).toBe("Settings");
+
+    const actions = harness.container.querySelector(".chat-channel-actions");
+    expect(actions?.lastElementChild?.contains(button)).toBe(true);
+    harness.unmount();
+  });
+});

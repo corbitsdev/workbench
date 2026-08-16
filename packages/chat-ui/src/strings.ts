@@ -112,6 +112,11 @@ export const CHAT_STRINGS = {
   eventBlockResponseForm: "A form was submitted",
   eventGeneric: (event: string) => event.replace(/[.\-_]+/g, " "),
   inviteAgentAction: "Invite agent",
+  newRoutineAction: "New routine",
+  insightsAction: "Insights",
+  channelMembersLabel: "Members",
+  threadsMenuCount: (count: number) =>
+    `${count} ${count === 1 ? "thread" : "threads"}`,
   inviteAgentDialogTitle: "Invite an agent",
   inviteAgentDialogDescription:
     "Launch one of your workbench's agents into this conversation.",
