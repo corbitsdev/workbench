@@ -91,13 +91,13 @@ kbd {
      (Dialog, Button, Input, …) instead of chasing rounded corners
      component by component. */
   --radius: 0;
-  /* The one non-zero radius scale in the app: dialogs/steppers stay exactly
-     zero-radius (the rule above), but chips, cards and chrome affordances get
-     real rounding — every rem/px radius outside that zero set should name
-     one of these three instead of picking its own number. */
-  --ui-radius-sm: 0.25rem;
-  --ui-radius-md: 0.375rem;
-  --ui-radius-lg: 0.5rem;
+  /* Brand rule: zero radius everywhere, not just on --radius consumers.
+     --ui-radius-* is workbench's own token family (dialog close button,
+     header tool buttons, the artifact cursor label) — zeroed here so
+     nothing outside react-ui's --radius cascade can still render rounded. */
+  --ui-radius-sm: 0;
+  --ui-radius-md: 0;
+  --ui-radius-lg: 0;
   --shell-sidebar-width: 16.5rem;
   --shell-sidebar-width-tight: 14rem;
   --shell-canvas-width: min(36rem, 42vw);
@@ -211,8 +211,7 @@ kbd {
 
 [data-slot="dialog-content"] > button[aria-label="Close"]:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--primary) 22%, transparent);
+  box-shadow: 0 0 0 1px var(--foreground);
   color: var(--foreground);
 }
 
@@ -491,7 +490,6 @@ kbd {
   height: 1.7rem;
   min-height: 0;
   padding: 0 0.55rem;
-  border-radius: 0;
   border: 1px solid
     color-mix(in srgb, var(--foreground) 10%, transparent);
   background: var(--background);
@@ -977,7 +975,7 @@ kbd {
 }
 
 .shell-sidebar-avatar-btn:focus-visible {
-  outline: 2px solid var(--shell-accent);
+  outline: 1px solid var(--foreground);
   outline-offset: 2px;
 }
 
@@ -1039,22 +1037,25 @@ kbd {
   color: var(--foreground, var(--ui-fg));
 }
 
+/* Brand rule: grey is for text/structure, not container fills — the active
+   row stays on ground and reads through a 2px orange left edge instead of a
+   band. */
 .shell-ch-row[aria-current="true"],
 .shell-ch-row[data-active="true"] {
-  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  background: var(--background);
   color: var(--shell-accent);
-  box-shadow: none;
+  box-shadow: inset 2px 0 0 0 var(--shell-accent);
+}
+
+.shell-ch-row[aria-current="true"] .shell-ch-name,
+.shell-ch-row[data-active="true"] .shell-ch-name {
+  font-weight: 650;
 }
 
 /* A 5% foreground tint is a much quieter cue on a near-black row than the
    same percentage on a near-white one perceptually, so dark mode's hover
-   and active rows get a stronger mix to read at the same visible weight. */
+   gets a stronger mix to read at the same visible weight. */
 .dark .shell-ch-row:hover {
-  background: color-mix(in srgb, var(--foreground) 9%, transparent);
-}
-
-.dark .shell-ch-row[aria-current="true"],
-.dark .shell-ch-row[data-active="true"] {
   background: color-mix(in srgb, var(--foreground) 9%, transparent);
 }
 
@@ -1210,7 +1211,6 @@ kbd {
   height: 2rem;
   min-height: 2rem;
   padding: 0 0.65rem;
-  border-radius: 0;
   border: 1px solid
     color-mix(in srgb, var(--foreground) 10%, transparent);
   background: var(--background);
@@ -1241,9 +1241,8 @@ kbd {
 
 .shell-panel-search:focus-within {
   outline: none;
-  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
-  box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--primary) 22%, transparent);
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--foreground);
 }
 
 .shell-sidebar .shell-panel-search [data-slot="input"]:focus-visible {
@@ -1256,9 +1255,8 @@ kbd {
   [data-slot="sidebar-panel-body"]
   [data-slot="input"]:focus-visible {
   outline: none;
-  border-color: color-mix(in srgb, var(--foreground) 16%, transparent);
-  box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--primary) 22%, transparent);
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--foreground);
 }
 
 /* Mock v2 .filter-item / .list-item: square rows, pad 0.4/0.45, faint idle
@@ -1269,7 +1267,6 @@ kbd {
 
 .shell-sidebar [data-slot="sidebar-item-row"] > div {
   gap: 0.35rem;
-  border-radius: 0;
   padding-right: 0.2rem;
   color: var(--muted-foreground);
   background: transparent;
@@ -1283,24 +1280,32 @@ kbd {
   color: var(--foreground);
 }
 
-/* Selector doubles as the kill for react-ui's bg-primary/10 selected wash. */
+/* Brand rule: no grey band on the selected row — ground plus a 2px orange
+   left edge. Selector doubles as the kill for react-ui's bg-primary/10
+   selected wash. */
 .shell-sidebar [data-slot="sidebar-item-row"] > div.bg-primary\/10,
 .shell-sidebar
   [data-slot="sidebar-item-row"]
   > div:has(button[aria-current="true"]) {
-  background-color: color-mix(
-    in srgb,
-    var(--foreground) 5%,
-    transparent
-  );
+  background-color: var(--background);
   color: var(--shell-accent);
-  box-shadow: none;
+  box-shadow: inset 2px 0 0 0 var(--shell-accent);
+}
+
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  > div.bg-primary\/10
+  > button,
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  > div:has(button[aria-current="true"])
+  > button {
+  font-weight: 600;
 }
 
 .shell-sidebar [data-slot="sidebar-item-row"] > div > button {
   gap: 0.55rem;
   padding: 0.4rem 0.45rem;
-  border-radius: 0;
   font-size: 1rem;
   font-weight: 400;
   line-height: 1.45;
