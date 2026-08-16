@@ -32,6 +32,7 @@ import type { ContextWindowMode } from "./context-window";
 import { DangerSection } from "./danger-section";
 import { GeneralSection } from "./general-section";
 import { InferenceSection } from "@corbits/inference-settings";
+import { ApplyProfilePanel } from "@corbits/config-profiles-ui";
 import { KeysPluginsSection } from "./keys-plugins-section";
 import { MembersSection } from "./members-section";
 import { channelSettingsSections } from "./model";
@@ -317,7 +318,10 @@ export function ChannelSettingsSurface({
             ) : null}
 
             {activeSection.id === "inference" ? (
-              <InferenceSection tenantId={tenantId} />
+              <>
+                <InferenceSection tenantId={tenantId} />
+                <ApplyProfilePanel tenantId={tenantId} />
+              </>
             ) : null}
 
             {activeSection.id === "access" ? <AccessSection /> : null}
