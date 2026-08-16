@@ -1,19 +1,12 @@
 // Routines: named automations over workflow runs.
 // Layout matches the shell mock — col2 search + simple list (name, when,
 // ON/OFF); detail is calm (steps, three recent runs, All runs & traces).
-// New routine is two-path: from catalog (immediate) or describe-to-agent
-// (draft → review → approve). Delivery channel is required on create.
+// Creating and editing a routine happens in the canvas column's routine
+// panel now (CL-6125, see shell/routine-panel.tsx) — this page only lists
+// and links to it via `useOpenRoutineInCanvas`.
 import {
   Badge,
   Button,
-  Dialog,
-  DialogBody,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   EmptyState,
   formatRelativeTime,
   Input,
@@ -33,23 +26,9 @@ import {
   toast,
 } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
-import type { Channel, DialogStepAccordionStep } from "@corbits/chat-ui";
-import {
-  createChannel,
-  DialogStepAccordion,
-  listChannels,
-  listTenantInvitableDefinitions,
-} from "@corbits/chat-ui";
-import {
-  connectorStatus,
-  CopyButton,
-  listCredentials,
-  listProviders,
-  WebhookSecretPanel,
-} from "@corbits/settings-ui";
-import type { Credential, Provider } from "@corbits/settings-ui";
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
-import type { WorkflowTriggerField } from "@corbits/workflow-catalog";
+import type { Channel } from "@corbits/chat-ui";
+import { listChannels } from "@corbits/chat-ui";
+import { CopyButton, WebhookSecretPanel } from "@corbits/settings-ui";
 import { Clock, Plus, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
@@ -60,43 +39,27 @@ import { QueryView } from "@corbits/api-query";
 import { useAPIQuery, RunsSchema } from "../api";
 import type { WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
-import { channelPath, isChannelPath } from "../channel-path";
-import {
-  consumePendingNewRoutine,
-  requestNewWorkbench,
-} from "../command-palette-actions";
-import { consumePendingRoutinePrefill } from "../routine-prefill";
-import type { RoutinePrefill } from "../routine-prefill";
+import { channelPath } from "../channel-path";
 import { tenantKeys } from "../query-client";
 import { cadenceLabel } from "../routine-trigger";
+import { useOpenRoutineInCanvas } from "../shell/canvas-availability";
 import { StageCrumbs, StageTopBar } from "../shell/stage-top-bar";
 import {
-  approveRoutineDraft,
-  createRoutine,
-  createRoutineDraft,
-  discardRoutineDraft,
   listRoutineRuns,
   listRoutines,
   listWorkflowDefinitions,
-  routineCreatedToast,
   routineRunStartedToast,
   runRoutineNow,
   updateRoutine,
   useTenantQuery,
 } from "../routines-api";
 import type {
-  CreateDraftInput,
-  CreateRoutineInput,
   Routine,
-  RoutineDraft,
   RoutineRun,
   RoutineTrigger,
-  UpdateRoutineInput,
   WorkflowDefinitionSummary,
 } from "../routines-api";
 import {
-  createWebhookTrigger,
-  DEFAULT_WEBHOOK_INPUT_TEMPLATE,
   getWebhookTrigger,
   rotateWebhookTriggerSecret,
   sampleWebhookPayload,
@@ -180,7 +143,7 @@ function draftedStepsFromInput(
  * rotates the panel shows the URL and payload sample with the secret row
  * masked, exactly like a freshly-loaded page that has never seen it.
  */
-function WebhookTriggerPanel({
+export function WebhookTriggerPanel({
   webhookTrigger,
   onRotate,
 }: {
@@ -277,7 +240,7 @@ function WebhookTriggerPanel({
 type TriggerKind =
   "manual" | "interval" | "daily" | "weekly" | "cron" | "webhook";
 
-function TriggerPicker({
+export function TriggerPicker({
   value,
   onChange,
 }: {
@@ -455,1408 +418,6 @@ function TriggerPicker({
   );
 }
 
-/** Sentinel `deliveryDestination` value meaning "provision a brand-new
- * workbench named after this routine" — the default, always-available
- * choice, distinct from any real channel id. */
-export const NEW_SPACE_DESTINATION = "__new_space__";
-
-/**
- * A routine's destination: a new space named after it (the default,
- * always offered — a zero-channel bench never dead-ends) or any
- * existing space on the bench.
- */
-function DeliveryDestinationPicker({
-  channels,
-  value,
-  onChange,
-  disabled,
-}: {
-  readonly channels: readonly Channel[];
-  readonly value: string;
-  readonly onChange: (id: string) => void;
-  readonly disabled?: boolean;
-}) {
-  const selected = channels.find((c) => c.id === value);
-  const label =
-    value === NEW_SPACE_DESTINATION || selected === undefined
-      ? "New workbench for this routine"
-      : selected.title;
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Menu>
-        <MenuTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={disabled}
-            id="routine-delivery"
-          >
-            {label}
-          </Button>
-        </MenuTrigger>
-        <MenuContent>
-          <MenuItem onSelect={() => onChange(NEW_SPACE_DESTINATION)}>
-            New workbench for this routine
-          </MenuItem>
-          {channels.map((channel) => (
-            <MenuItem key={channel.id} onSelect={() => onChange(channel.id)}>
-              {channel.title}
-            </MenuItem>
-          ))}
-        </MenuContent>
-      </Menu>
-      {value === NEW_SPACE_DESTINATION ? (
-        <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-          Reports land in a new workbench named after this routine.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * An `"agent"`-kind trigger field (see `@corbits/workflow-catalog`'s
- * `WorkflowTriggerField.kind`) renders as a picker of taskable agent
- * definitions, never a raw-id text box — the same listing the task
- * composer's own agent picker reads (`listTenantInvitableDefinitions`),
- * so "the agent this recurring task runs" is chosen the identical way
- * "New task" chooses one.
- */
-function AgentTriggerFieldPicker({
-  agents,
-  value,
-  onChange,
-  disabled,
-  onCreateAgent,
-}: {
-  readonly agents: readonly { readonly id: string; readonly name: string }[];
-  readonly value: string;
-  readonly onChange: (id: string) => void;
-  readonly disabled?: boolean;
-  /** The host's off-route-safe hop to agent creation (see
-   * `requestNewWorkbench`) — omitted, the empty state stays plain text
-   * rather than a dead promise. */
-  readonly onCreateAgent?: () => void;
-}) {
-  const selected = agents.find((a) => a.id === value);
-  if (agents.length === 0) {
-    return (
-      <div className="flex flex-col gap-1.5">
-        <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-          No taskable agents on this workbench yet.
-        </p>
-        {onCreateAgent !== undefined ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onCreateAgent}
-          >
-            Create an agent to run this
-          </Button>
-        ) : null}
-      </div>
-    );
-  }
-  return (
-    <Menu>
-      <MenuTrigger asChild>
-        <Button type="button" variant="outline" size="sm" disabled={disabled}>
-          {selected?.name ?? "Choose agent"}
-        </Button>
-      </MenuTrigger>
-      <MenuContent>
-        {agents.map((agent) => (
-          <MenuItem key={agent.id} onSelect={() => onChange(agent.id)}>
-            {agent.name}
-          </MenuItem>
-        ))}
-      </MenuContent>
-    </Menu>
-  );
-}
-
-/**
- * Who can see and edit this routine: just its creator (the default,
- * safer blast radius) or everyone on the bench. A quiet two-button
- * choice, not a menu — there are only ever two options.
- */
-function RoutineScopePicker({
-  value,
-  onChange,
-  disabled,
-}: {
-  readonly value: "personal" | "bench";
-  readonly onChange: (scope: "personal" | "bench") => void;
-  readonly disabled?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium">Who can see this</span>
-      <div className="flex gap-1.5" role="group" aria-label="Who can see this">
-        <Button
-          type="button"
-          variant={value === "personal" ? "primary" : "outline"}
-          size="sm"
-          disabled={disabled}
-          aria-pressed={value === "personal"}
-          onClick={() => onChange("personal")}
-        >
-          Just for you
-        </Button>
-        <Button
-          type="button"
-          variant={value === "bench" ? "primary" : "outline"}
-          size="sm"
-          disabled={disabled}
-          aria-pressed={value === "bench"}
-          onClick={() => onChange("bench")}
-        >
-          Everyone in this workbench
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-type CreatePath = "catalog" | "describe";
-type CreateStep = 1 | 2 | 3;
-
-/**
- * Whether every required triggerFields entry has a non-blank value —
- * gates advancing past Configure the same way an empty delivery channel
- * already does.
- */
-export function triggerFieldsSatisfied(
-  fields: readonly WorkflowTriggerField[],
-  values: Readonly<Record<string, string>>,
-): boolean {
-  return fields.every(
-    (field) => !field.required || (values[field.key] ?? "").trim() !== "",
-  );
-}
-
-/**
- * Builds the `input` record a catalog routine fires with, from a
- * workflow's declared triggerFields and whatever a person typed into the
- * Configure step. A field left blank is omitted entirely (falling back to
- * its `default` when one is declared) rather than sent as an empty
- * string — the same "blank counts as absent" contract
- * `workflows/pain-point-collateral/src/intake-tool.ts`'s `resolveIntake`
- * already applies on the receiving end.
- */
-export function triggerFieldsInput(
-  fields: readonly WorkflowTriggerField[],
-  values: Readonly<Record<string, string>>,
-): Record<string, string> {
-  const input: Record<string, string> = {};
-  for (const field of fields) {
-    const typed = (values[field.key] ?? "").trim();
-    if (typed !== "") {
-      input[field.key] = typed;
-    } else if (field.default !== undefined) {
-      input[field.key] = field.default;
-    }
-  }
-  return input;
-}
-
-/** Readable autonomy lines for the draft review panel (pure for tests). */
-export function autonomyReviewLines(
-  autonomy: Record<string, unknown> | null,
-): readonly string[] {
-  if (autonomy === null) return [];
-  const lines: string[] = [];
-  for (const [key, value] of Object.entries(autonomy)) {
-    if (value === null || value === undefined) continue;
-    if (
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
-      lines.push(`${key}: ${String(value)}`);
-    }
-  }
-  return lines;
-}
-
-/** The routine's summary sentence at the confirm step — one calm line, no
- * raw identifiers, matching `routineDetailSentence`'s tone for a routine
- * that does not exist yet. */
-export function catalogConfirmSentence(
-  runMode: "once" | "schedule" | "webhook",
-  trigger: RoutineTrigger,
-  channelTitle: string | null,
-): string {
-  const when =
-    runMode === "once"
-      ? "Runs once, right after you create it"
-      : runMode === "webhook"
-        ? "Fires on webhook delivery"
-        : cadenceLabel(trigger);
-  if (channelTitle === null) return `${when}.`;
-  return `${when}, delivers to ${channelTitle}.`;
-}
-
-/** Pulls the tenant's real credentials + providers once the dialog opens,
- * so catalog cards show actual connection state — never a fabricated
- * guess. Mirrors `ConnectionsSection`'s own fetch-on-mount pattern. */
-function useDialogConnections(tenantId: string | null, open: boolean) {
-  const [connections, setConnections] = useState<{
-    readonly credentials: readonly Credential[];
-    readonly providers: readonly Provider[];
-  } | null>(null);
-
-  useEffect(() => {
-    if (!open || tenantId === null) return;
-    let cancelled = false;
-    Promise.all([listCredentials(tenantId), listProviders(tenantId)])
-      .then(([credentials, providers]) => {
-        if (!cancelled) setConnections({ credentials, providers });
-      })
-      .catch(() => {
-        if (!cancelled) setConnections({ credentials: [], providers: [] });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, open]);
-
-  return connections;
-}
-
-/** Taskable agent definitions for an `"agent"`-kind trigger field's
- * picker — reuses the exact listing the task composer's own agent
- * picker fetches (`listTenantInvitableDefinitions`). Mirrors
- * `useDialogConnections` above: only fetches once the dialog is open,
- * a plain effect rather than `useQuery` so this dialog never requires
- * a `QueryClientProvider` ancestor. */
-function useTaskableAgents(
-  tenantId: string | null,
-  open: boolean,
-): readonly { readonly id: string; readonly name: string }[] {
-  const [agents, setAgents] = useState<
-    readonly { readonly id: string; readonly name: string }[]
-  >([]);
-
-  useEffect(() => {
-    if (!open || tenantId === null) return;
-    let cancelled = false;
-    listTenantInvitableDefinitions(tenantId)
-      .then((definitions) => {
-        if (!cancelled) setAgents(definitions);
-      })
-      .catch(() => {
-        if (!cancelled) setAgents([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, open]);
-
-  return agents;
-}
-
-export function connectorBadgeLabel(connectorId: string): string {
-  const entry = CONNECTOR_REGISTRY[connectorId];
-  if (entry === undefined) {
-    // A catalog entry's requiredConnections should only ever name real
-    // connector ids — this means the catalog and the registry have
-    // drifted apart. Render the raw id so the card still shows
-    // something, but flag it loudly regardless of build mode: this is a
-    // console-only log, not user-visible, so there's no cost to keeping
-    // it always on and every cost to a silent fallback hiding drift in
-    // production until someone notices a wrong-looking badge.
-    console.error(
-      `connectorBadgeLabel: "${connectorId}" is not in CONNECTOR_REGISTRY — ` +
-        "a workflow-catalog entry's requiredConnections id is out of sync " +
-        "with the connections registry.",
-    );
-    return connectorId;
-  }
-  return entry.displayName;
-}
-
-/**
- * The automatable-workflow card grid: shared by the Source step's
- * catalog picker and the describe path's review-step fallback (a draft
- * with no `definitionId` — Myra didn't pin one, a valid honest outcome
- * — must still let the person pick a workflow rather than dead-end at
- * a permanently-disabled Approve). One rendering, two call sites, so
- * the two pickers can never drift apart.
- */
-function WorkflowPickerCards({
-  definitions,
-  connections,
-  selectedId,
-  disabled,
-  onSelect,
-}: {
-  readonly definitions: readonly WorkflowDefinitionSummary[];
-  readonly connections: {
-    readonly credentials: readonly Credential[];
-    readonly providers: readonly Provider[];
-  } | null;
-  readonly selectedId: string;
-  readonly disabled: boolean;
-  readonly onSelect: (definitionId: string) => void;
-}) {
-  return (
-    <>
-      {definitions.map((definition) => (
-        <button
-          key={definition.id}
-          type="button"
-          disabled={disabled}
-          aria-pressed={selectedId === definition.id}
-          onClick={() => onSelect(definition.id)}
-          className={[
-            "flex flex-col gap-1 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
-            selectedId === definition.id
-              ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
-              : "border-[var(--ui-border)]",
-          ].join(" ")}
-        >
-          <span className="font-medium text-[var(--ui-fg)]">
-            {definition.name}
-          </span>
-          {definition.whatItDoes !== "" ? (
-            <span className="text-[var(--ui-fg-muted)]">
-              {definition.whatItDoes}
-            </span>
-          ) : null}
-          <span className="inline-flex items-center gap-1 text-[var(--ui-fg-muted)]">
-            <Clock className="size-3" />
-            {definition.typicalDuration}
-          </span>
-          {definition.requiredConnections.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {definition.requiredConnections.map((connectorId) => {
-                const result =
-                  connections === null
-                    ? { status: "not_connected" as const }
-                    : connectorStatus(
-                        connectorBadgeLabel(connectorId),
-                        connections.credentials,
-                        connections.providers,
-                      );
-                return (
-                  <Badge
-                    key={connectorId}
-                    tone={result.status === "connected" ? "success" : "neutral"}
-                  >
-                    {connectorBadgeLabel(connectorId)}
-                  </Badge>
-                );
-              })}
-            </div>
-          ) : null}
-          {definition.exampleOutput !== "" ? (
-            <span className="line-clamp-2 whitespace-pre-line text-[11px] text-[var(--ui-fg-muted)]">
-              {definition.exampleOutput}
-            </span>
-          ) : null}
-        </button>
-      ))}
-    </>
-  );
-}
-
-function CreateRoutineDialog({
-  tenantId,
-  definitions,
-  channels,
-  onCreate,
-  onCreateWebhookBinding,
-  onDescribe,
-  onApproveDraft,
-  onDiscardDraft,
-  open: openProp,
-  onOpenChange,
-  initialDefinitionId = null,
-  initialName = null,
-  initialInput = null,
-  initialDeliveryChannelId = null,
-  onCreateAgent,
-}: {
-  readonly tenantId?: string | null;
-  readonly definitions: readonly WorkflowDefinitionSummary[];
-  readonly channels: readonly Channel[];
-  readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
-  readonly onCreateWebhookBinding: (input: {
-    name: string;
-    definitionId: string;
-  }) => Promise<{ id: string; secret: string }>;
-  readonly onDescribe: (input: CreateDraftInput) => Promise<RoutineDraft>;
-  /** `definitionId` is passed only when the draft itself has none
-   * (Myra didn't pin a workflow) and the review step's own fallback
-   * picker collected one — see the "no dead end" fallback below. */
-  readonly onApproveDraft: (
-    draftId: string,
-    definitionId?: string,
-  ) => Promise<void>;
-  readonly onDiscardDraft: (draftId: string) => Promise<void>;
-  readonly open?: boolean;
-  readonly onOpenChange?: (open: boolean) => void;
-  /** "Make this a routine" seam (see inbox-page.tsx): opens the dialog
-   * already on the given catalog pick and name, its stored input carrying
-   * the source task's prompt. The person still picks cadence and confirms
-   * — nothing here creates a routine on its own. */
-  readonly initialDefinitionId?: string | null;
-  readonly initialName?: string | null;
-  readonly initialInput?: Record<string, unknown> | null;
-  /** "New routine in this space" seam (see chat-workspace's header
-   * action and the `/routine` composer command): opens the dialog with
-   * this space pre-selected as the destination — the picker still
-   * shows it selected, and the person can still change it. */
-  readonly initialDeliveryChannelId?: string | null;
-  /** The recurring-task trigger field's "no taskable agents yet" empty
-   * state — see `AgentTriggerFieldPicker`'s own prop note. */
-  readonly onCreateAgent?: () => void;
-}) {
-  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
-  const open = openProp ?? uncontrolledOpen;
-  const setOpen = onOpenChange ?? setUncontrolledOpen;
-  const connections = useDialogConnections(tenantId ?? null, open);
-  // Only matters for a workflow that declares an `"agent"`-kind trigger
-  // field (today, only the recurring-task bridge).
-  const taskableAgents = useTaskableAgents(tenantId ?? null, open);
-  const [step, setStep] = useState<CreateStep>(1);
-  const [path, setPath] = useState<CreatePath>("catalog");
-  const [name, setName] = useState("");
-  const [definitionId, setDefinitionId] = useState("");
-  const [runMode, setRunMode] = useState<"once" | "schedule" | "webhook">(
-    "once",
-  );
-  const [trigger, setTrigger] = useState<RoutineTrigger>(null);
-  const [triggerFieldValues, setTriggerFieldValues] = useState<
-    Record<string, string>
-  >({});
-  const [prompt, setPrompt] = useState("");
-  // The default destination is always a brand-new space named after
-  // the routine — an existing channel is an opt-in choice, not a
-  // precondition. A bench with zero channels sails through with no
-  // special-casing: the sentinel is valid regardless of `channels`.
-  const [deliveryDestination, setDeliveryDestination] = useState(
-    NEW_SPACE_DESTINATION,
-  );
-  // Personal is the safer default blast radius — visible and editable
-  // only by the person who made it, until they deliberately widen it to
-  // the whole bench.
-  const [scope, setScope] = useState<"personal" | "bench">("personal");
-  const [pendingDraft, setPendingDraft] = useState<RoutineDraft | null>(null);
-  // The review step's own fallback pick when the draft has no
-  // `definitionId` — Myra didn't pin a workflow, a valid honest
-  // outcome, not an error. Distinct from `definitionId` (the catalog
-  // path's own state) so the two pickers never share, and clashing,
-  // state.
-  const [draftDefinitionPick, setDraftDefinitionPick] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [webhookRevealed, setWebhookRevealed] = useState<{
-    url: string;
-    secret: string;
-  } | null>(null);
-
-  // "Make this a routine" seeds the catalog pick and name once, the
-  // instant the dialog opens with a prefill — after that the person edits
-  // freely, same as any other field in this stepper.
-  useEffect(() => {
-    if (!open) return;
-    if (initialDefinitionId !== null) {
-      setPath("catalog");
-      setDefinitionId(initialDefinitionId);
-    }
-    if (initialName !== null) setName(initialName);
-    if (initialDeliveryChannelId !== null) {
-      setDeliveryDestination(initialDeliveryChannelId);
-    }
-    if (initialInput !== null) {
-      // Seeds the Configure step's own trigger-field inputs (visibly
-      // pre-filled, and counted toward `triggerFieldsSatisfied` so a
-      // fully-specified prefill can advance without retyping) — only
-      // string values, matching what a trigger field can hold; a
-      // non-string entry still reaches the created routine's `input`
-      // via createCatalogRoutine's own merge below.
-      const stringFields = Object.fromEntries(
-        Object.entries(initialInput).filter(
-          (entry): entry is [string, string] => typeof entry[1] === "string",
-        ),
-      );
-      setTriggerFieldValues((prev) => ({ ...prev, ...stringFields }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  const selectedDefinition =
-    definitions.find((d) => d.id === definitionId) ?? null;
-  // A workflow whose result never posts to a channel (e.g. the
-  // recurring-task bridge — always delivers to its creator's Inbox)
-  // must never be forced through the channel step at all: no picker,
-  // no requirement, nothing collected to silently discard. Unresolved
-  // (no pick yet, or the "describe" path, which only learns its
-  // definitionId after drafting) defaults to requiring one — the
-  // honest, prior behavior.
-  const deliversToChannel =
-    path !== "catalog" ||
-    selectedDefinition === null ||
-    selectedDefinition.deliveryMode !== "inbox";
-
-  const reset = () => {
-    setStep(1);
-    setPath("catalog");
-    setName("");
-    setDefinitionId("");
-    setRunMode("once");
-    setTrigger(null);
-    setTriggerFieldValues({});
-    setPrompt("");
-    setDeliveryDestination(NEW_SPACE_DESTINATION);
-    setScope("personal");
-    setPendingDraft(null);
-    setDraftDefinitionPick("");
-    setError(null);
-    setWebhookRevealed(null);
-  };
-
-  const closeDialog = () => {
-    setOpen(false);
-    reset();
-  };
-
-  const discardPendingDraft = () => {
-    const draft = pendingDraft;
-    if (draft === null) return;
-    setPendingDraft(null);
-    setDraftDefinitionPick("");
-    void onDiscardDraft(draft.id).catch(() => {
-      // Discard best-effort; the draft simply stays orphaned server-side.
-    });
-  };
-
-  const handleCancel = () => {
-    discardPendingDraft();
-    closeDialog();
-  };
-
-  // Backs the accordion's per-section "Edit" affordance — jumps straight
-  // to a completed step rather than walking back one at a time. Leaving
-  // the Source step behind on the describe path discards its in-progress
-  // draft (the draft was drawn against the source now being changed),
-  // whether that's a direct jump from Confirm or a step-at-a-time return
-  // from Configure.
-  const goToStep = (target: CreateStep) => {
-    setError(null);
-    if (target === 1 && path === "describe") discardPendingDraft();
-    setStep(target);
-  };
-
-  // A non-empty definitionId that doesn't resolve in `definitions` is a
-  // dead end further down the stepper (no selectedDefinition to launch
-  // against — see the inline message above), so it must not be treated
-  // as an honest "picked" state here.
-  const canAdvanceFromSource =
-    path === "catalog" ? selectedDefinition !== null : prompt.trim().length > 0;
-
-  // Myra's drafting run needs a real channel to draft into — unlike the
-  // catalog path, this can't defer to the create route's own
-  // auto-provisioning. Picking "new space" here mints the space up
-  // front (the same `@corbits/chat-ui` client the New Channel dialog
-  // uses), then drafts against it exactly as picking an existing
-  // channel always has.
-  const draftAndAdvance = () => {
-    if (
-      deliveryDestination === "" ||
-      prompt.trim().length === 0 ||
-      (deliveryDestination === NEW_SPACE_DESTINATION &&
-        (tenantId === null || tenantId === undefined))
-    )
-      return;
-    setBusy(true);
-    setError(null);
-    const routineName = name.trim().length > 0 ? name.trim() : prompt.trim();
-    const resolvedChannelId: Promise<string> =
-      deliveryDestination === NEW_SPACE_DESTINATION
-        ? createChannel(tenantId as string, {
-            kind: "channel",
-            name: routineName,
-          }).then((channel) => {
-            setDeliveryDestination(channel.id);
-            return channel.id;
-          })
-        : Promise.resolve(deliveryDestination);
-    void resolvedChannelId
-      .then((deliveryChannelId) =>
-        onDescribe({
-          prompt: prompt.trim(),
-          deliveryChannelId,
-          scope,
-        }),
-      )
-      .then((draft) => setPendingDraft(draft))
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => setBusy(false));
-  };
-
-  const createCatalogRoutine = () => {
-    if (selectedDefinition === null) return;
-    setBusy(true);
-    setError(null);
-    const routineName =
-      name.trim().length > 0 ? name.trim() : selectedDefinition.name;
-    // A picked existing channel is sent as-is; "new space" sends no
-    // `deliveryChannelId` at all — the create route auto-provisions
-    // one named after the routine (`routineName`, above) rather than
-    // this dialog minting it up front.
-    const deliveryChannelId =
-      deliveryDestination === NEW_SPACE_DESTINATION
-        ? undefined
-        : deliveryDestination;
-    // Threads the same field values a manual "Run once now" collects into
-    // the stored routine.input record — the one seam the fire path
-    // (packages/routines' POST /routines -> RoutineLauncher.launchRoutineRun)
-    // actually reads from a create request. A "Make this a routine" prefill
-    // (initialInput — the source task's prompt) merges underneath: the
-    // picked workflow's own trigger fields, if any, take precedence over
-    // it rather than the reverse.
-    const triggerFieldInput =
-      selectedDefinition.triggerFields.length > 0
-        ? triggerFieldsInput(
-            selectedDefinition.triggerFields,
-            triggerFieldValues,
-          )
-        : undefined;
-    const triggerInput =
-      initialInput !== null || triggerFieldInput !== undefined
-        ? { ...(initialInput ?? {}), ...triggerFieldInput }
-        : undefined;
-
-    if (runMode === "webhook") {
-      void onCreateWebhookBinding({ name: routineName, definitionId })
-        .then((binding) =>
-          onCreate({
-            name: routineName,
-            definitionId,
-            scope,
-            ...(deliversToChannel && deliveryChannelId !== undefined
-              ? { deliveryChannelId }
-              : {}),
-            trigger: { kind: "webhook", webhookTriggerId: binding.id },
-            runOnceNow: false,
-            ...(triggerInput !== undefined ? { input: triggerInput } : {}),
-          }).then(() => {
-            // Stay open: the secret is shown exactly once, right now —
-            // closing immediately (the non-webhook path's behavior)
-            // would lose it before the operator can copy it.
-            setWebhookRevealed({
-              url: webhookTriggerUrl(binding.id),
-              secret: binding.secret,
-            });
-          }),
-        )
-        .catch((cause: unknown) => {
-          setError(cause instanceof Error ? cause.message : String(cause));
-        })
-        .finally(() => setBusy(false));
-      return;
-    }
-
-    void onCreate({
-      name: routineName,
-      definitionId,
-      scope,
-      ...(deliversToChannel && deliveryChannelId !== undefined
-        ? { deliveryChannelId }
-        : {}),
-      trigger: runMode === "once" ? null : trigger,
-      runOnceNow: runMode === "once",
-      ...(triggerInput !== undefined ? { input: triggerInput } : {}),
-    })
-      .then(() => closeDialog())
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => setBusy(false));
-  };
-
-  const approveDraft = () => {
-    if (pendingDraft === null) return;
-    const definitionOverride =
-      pendingDraft.definitionId === null && draftDefinitionPick !== ""
-        ? draftDefinitionPick
-        : undefined;
-    setBusy(true);
-    setError(null);
-    void onApproveDraft(pendingDraft.id, definitionOverride)
-      .then(() => closeDialog())
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => setBusy(false));
-  };
-
-  let primaryLabel = "Next";
-  let primaryDisabled = busy;
-  let primaryOnClick = () => setStep(2);
-
-  if (step === 1) {
-    primaryDisabled = busy || !canAdvanceFromSource;
-    primaryOnClick = () => setStep(2);
-  } else if (step === 2 && path === "catalog") {
-    primaryLabel = "Next";
-    primaryDisabled =
-      busy ||
-      !triggerFieldsSatisfied(
-        selectedDefinition?.triggerFields ?? [],
-        triggerFieldValues,
-      );
-    primaryOnClick = () => setStep(3);
-  } else if (step === 2 && path === "describe" && pendingDraft === null) {
-    primaryLabel = busy ? "Drafting…" : "Draft with agent";
-    primaryDisabled = busy || deliveryDestination === "";
-    primaryOnClick = draftAndAdvance;
-  } else if (step === 2 && path === "describe" && pendingDraft !== null) {
-    primaryLabel = "Next";
-    primaryDisabled = busy;
-    primaryOnClick = () => setStep(3);
-  } else if (step === 3 && path === "catalog") {
-    primaryLabel = busy
-      ? "Creating…"
-      : runMode === "once"
-        ? "Create & run now"
-        : "Create routine";
-    primaryDisabled =
-      busy ||
-      selectedDefinition === null ||
-      !triggerFieldsSatisfied(
-        selectedDefinition?.triggerFields ?? [],
-        triggerFieldValues,
-      );
-    primaryOnClick = createCatalogRoutine;
-  } else if (step === 3 && path === "describe") {
-    primaryLabel = busy ? "Approving…" : "Approve";
-    // A draft with no definitionId (Myra didn't pin a workflow) is a
-    // dead end unless the fallback picker below has collected one —
-    // Approve stays disabled until it does, never clickable into a
-    // guaranteed 400 with no recovery.
-    const needsDefinitionPick =
-      pendingDraft !== null && pendingDraft.definitionId === null;
-    primaryDisabled =
-      busy ||
-      pendingDraft === null ||
-      (needsDefinitionPick && draftDefinitionPick === "");
-    primaryOnClick = approveDraft;
-  }
-
-  const draft = pendingDraft;
-  const draftName =
-    draft !== null
-      ? draft.proposedName !== null && draft.proposedName !== ""
-        ? draft.proposedName
-        : draft.prompt.slice(0, 80)
-      : null;
-  const autonomyLines =
-    draft !== null ? autonomyReviewLines(draft.autonomy) : [];
-  const channelTitle = !deliversToChannel
-    ? null
-    : deliveryDestination === NEW_SPACE_DESTINATION
-      ? "a new workbench named after this routine"
-      : (channels.find((c) => c.id === deliveryDestination)?.title ?? null);
-
-  const runModeLabel: Record<typeof runMode, string> = {
-    once: "Run once now",
-    schedule: "On a schedule",
-    webhook: "On webhook",
-  };
-
-  // The one-line recap shown once a step collapses — "your answer so far"
-  // for Source and Configure. Confirm never collapses; it's always last.
-  const sourceSummary =
-    path === "catalog"
-      ? (selectedDefinition?.name ?? "Workflow")
-      : prompt.trim().length > 0
-        ? prompt.trim()
-        : "Describe it to an agent";
-  const configureSummary =
-    path === "catalog"
-      ? `${runModeLabel[runMode]} · ${channelTitle ?? "your Inbox"}`
-      : `${String(draft?.proposedSteps.length ?? 0)} step${draft?.proposedSteps.length === 1 ? "" : "s"} proposed`;
-
-  const stepStatus = (target: CreateStep) =>
-    target < step ? "completed" : target === step ? "current" : "upcoming";
-
-  const accordionSteps: readonly DialogStepAccordionStep[] = [
-    {
-      key: "source",
-      label: "Source",
-      status: stepStatus(1),
-      summary: sourceSummary,
-      ...(step > 1 ? { onEdit: () => goToStep(1) } : {}),
-      content:
-        step === 1 ? (
-          <>
-            <p className="dialog-step-accordion-guidance text-xs text-[var(--ui-fg-muted)]">
-              Pick a known workflow, or describe what you want automated.
-            </p>
-            <div className="flex flex-col gap-1.5">
-              <span id="routine-source-label" className="text-xs font-medium">
-                Workflow
-              </span>
-              <div
-                role="group"
-                aria-labelledby="routine-source-label"
-                className="grid grid-cols-2 gap-2"
-              >
-                <WorkflowPickerCards
-                  definitions={definitions}
-                  connections={connections}
-                  selectedId={path === "catalog" ? definitionId : ""}
-                  disabled={busy}
-                  onSelect={(id) => {
-                    setPath("catalog");
-                    setDefinitionId(id);
-                    setTriggerFieldValues({});
-                  }}
-                />
-                <button
-                  type="button"
-                  disabled={busy}
-                  aria-pressed={path === "describe"}
-                  onClick={() => setPath("describe")}
-                  className={[
-                    "flex flex-col gap-0.5 rounded-[var(--ui-radius-md)] border p-2.5 text-left text-xs",
-                    path === "describe"
-                      ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
-                      : "border-[var(--ui-border)]",
-                  ].join(" ")}
-                >
-                  <span className="font-medium text-[var(--ui-fg)]">
-                    Describe it to an agent
-                  </span>
-                  <span className="text-[var(--ui-fg-muted)]">
-                    An agent drafts the steps for you to review.
-                  </span>
-                </button>
-              </div>
-              {definitions.length === 0 ? (
-                <p className="text-xs text-[var(--ui-fg-muted)]" role="status">
-                  No automatable workflows on this workbench yet — describe it
-                  instead.
-                </p>
-              ) : null}
-              {path === "catalog" &&
-              definitionId !== "" &&
-              selectedDefinition === null ? (
-                <p className="text-xs text-destructive" role="alert">
-                  This workflow isn't in your automatable catalog, so it can't
-                  be scheduled — pick one of the cards above, or describe it
-                  instead.
-                </p>
-              ) : null}
-            </div>
-
-            {path === "describe" ? (
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="routine-prompt" className="text-xs font-medium">
-                  Describe the routine
-                </label>
-                <textarea
-                  id="routine-prompt"
-                  value={prompt}
-                  disabled={busy}
-                  rows={4}
-                  placeholder="Every weekday at 9am, pull the signups export and post a summary to #ops."
-                  onChange={(event) => setPrompt(event.target.value)}
-                  className="w-full resize-y rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg)] px-2.5 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-ring)]"
-                />
-              </div>
-            ) : null}
-          </>
-        ) : undefined,
-    },
-    {
-      key: "configure",
-      label: "Configure",
-      status: stepStatus(2),
-      summary: configureSummary,
-      ...(step > 2 ? { onEdit: () => goToStep(2) } : {}),
-      content:
-        step === 2 ? (
-          <>
-            <p className="dialog-step-accordion-guidance text-xs text-[var(--ui-fg-muted)]">
-              {path === "catalog"
-                ? "Choose when it runs and where results land."
-                : pendingDraft === null
-                  ? "Choose where results land — an agent drafts the steps next."
-                  : "Review what the agent proposes before creating it."}
-            </p>
-            {path === "catalog" ? (
-              <>
-                {selectedDefinition !== null &&
-                selectedDefinition.exampleOutput !== "" ? (
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-xs font-medium">Example output</span>
-                    <span className="whitespace-pre-line rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] bg-[var(--ui-bg-subtle)] p-2 text-xs text-[var(--ui-fg-muted)]">
-                      {selectedDefinition.exampleOutput}
-                    </span>
-                  </div>
-                ) : null}
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium">When</span>
-                  <div className="flex gap-1">
-                    {(
-                      [
-                        ["once", "Run once now"],
-                        ["schedule", "On a schedule"],
-                        ["webhook", "On webhook"],
-                      ] as const
-                    ).map(([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        disabled={busy}
-                        onClick={() => setRunMode(value)}
-                        className={[
-                          "rounded-[var(--ui-radius-sm)] border px-2 py-1 text-xs",
-                          runMode === value
-                            ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]"
-                            : "border-[var(--ui-border)]",
-                        ].join(" ")}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {runMode === "schedule" ? (
-                    <TriggerPicker value={trigger} onChange={setTrigger} />
-                  ) : null}
-                  {runMode === "webhook" ? (
-                    <p
-                      className="text-xs text-[var(--ui-fg-muted)]"
-                      role="status"
-                    >
-                      A hook URL and signing secret are generated when you
-                      create this routine — shown once, on the next step.
-                    </p>
-                  ) : null}
-                </div>
-                {selectedDefinition !== null &&
-                selectedDefinition.triggerFields.length > 0 ? (
-                  <div className="flex flex-col gap-2">
-                    <h3 className="text-xs font-semibold tracking-wide text-[var(--ui-fg-muted)] uppercase">
-                      Trigger inputs
-                    </h3>
-                    {selectedDefinition.triggerFields.map((field) => (
-                      <div key={field.key} className="flex flex-col gap-1.5">
-                        <label
-                          htmlFor={`routine-trigger-field-${field.key}`}
-                          className="text-xs font-medium"
-                        >
-                          {field.label}
-                          {field.required ? "" : " (optional)"}
-                        </label>
-                        {field.kind === "agent" ? (
-                          <AgentTriggerFieldPicker
-                            agents={taskableAgents}
-                            value={triggerFieldValues[field.key] ?? ""}
-                            disabled={busy}
-                            onChange={(id) =>
-                              setTriggerFieldValues((values) => ({
-                                ...values,
-                                [field.key]: id,
-                              }))
-                            }
-                            {...(onCreateAgent !== undefined
-                              ? { onCreateAgent }
-                              : {})}
-                          />
-                        ) : (
-                          <Input
-                            id={`routine-trigger-field-${field.key}`}
-                            value={triggerFieldValues[field.key] ?? ""}
-                            placeholder={field.placeholder}
-                            disabled={busy}
-                            onChange={(event) =>
-                              setTriggerFieldValues((values) => ({
-                                ...values,
-                                [field.key]: event.target.value,
-                              }))
-                            }
-                          />
-                        )}
-                        {field.help !== undefined ? (
-                          <p className="text-xs text-[var(--ui-fg-muted)]">
-                            {field.help}
-                          </p>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                {deliversToChannel ? (
-                  <div className="flex flex-col gap-1.5">
-                    <span
-                      id="routine-delivery-label"
-                      className="text-xs font-medium"
-                    >
-                      Deliver results to
-                    </span>
-                    <DeliveryDestinationPicker
-                      channels={channels}
-                      value={deliveryDestination}
-                      onChange={setDeliveryDestination}
-                      disabled={busy}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    <span className="text-xs font-medium">
-                      Deliver results to
-                    </span>
-                    <p
-                      className="text-xs text-[var(--ui-fg-muted)]"
-                      role="status"
-                    >
-                      Results land in your Inbox — this workflow never posts to
-                      a workbench.
-                    </p>
-                  </div>
-                )}
-                <RoutineScopePicker
-                  value={scope}
-                  onChange={setScope}
-                  disabled={busy}
-                />
-              </>
-            ) : null}
-
-            {path === "describe" && pendingDraft === null ? (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <span
-                    id="routine-delivery-label"
-                    className="text-xs font-medium"
-                  >
-                    Deliver results to
-                  </span>
-                  <DeliveryDestinationPicker
-                    channels={channels}
-                    value={deliveryDestination}
-                    onChange={setDeliveryDestination}
-                    disabled={busy}
-                  />
-                </div>
-                <RoutineScopePicker
-                  value={scope}
-                  onChange={setScope}
-                  disabled={busy}
-                />
-              </>
-            ) : null}
-
-            {path === "describe" && draft !== null ? (
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                    Proposed steps
-                  </span>
-                  {draft.proposedSteps.length === 0 ? (
-                    <p
-                      className="text-sm text-[var(--ui-fg-muted)]"
-                      role="status"
-                    >
-                      No steps proposed yet.
-                    </p>
-                  ) : (
-                    <ol className="list-decimal space-y-1.5 pl-5 text-sm">
-                      {draft.proposedSteps.map((draftStep, index) => (
-                        <li key={`${draftStep.title}-${String(index)}`}>
-                          <span className="font-medium">{draftStep.title}</span>
-                          {draftStep.detail !== undefined ? (
-                            <span className="text-[var(--ui-fg-muted)]">
-                              {" — "}
-                              {draftStep.detail}
-                            </span>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
-                {draft.proposedTrigger !== null ? (
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                      Schedule
-                    </span>
-                    <p className="text-sm">
-                      {cadenceLabel(draft.proposedTrigger)}
-                    </p>
-                  </div>
-                ) : null}
-                {autonomyLines.length > 0 ? (
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                      Autonomy
-                    </span>
-                    <ul className="list-disc space-y-0.5 pl-5 text-sm text-[var(--ui-fg-muted)]">
-                      {autonomyLines.map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </>
-        ) : undefined,
-    },
-    {
-      key: "confirm",
-      label: "Confirm",
-      status: stepStatus(3),
-      content:
-        step === 3 ? (
-          <>
-            <p className="dialog-step-accordion-guidance text-xs text-[var(--ui-fg-muted)]">
-              {path === "catalog"
-                ? "Give it a name if you like, then create it."
-                : "Check the proposed steps, then approve to create the routine."}
-            </p>
-            {path === "catalog" ? (
-              webhookRevealed !== null ? (
-                <WebhookSecretPanel
-                  url={webhookRevealed.url}
-                  secret={webhookRevealed.secret}
-                  samplePayload={sampleWebhookPayload()}
-                />
-              ) : (
-                <>
-                  <p className="text-sm text-[var(--ui-fg)]">
-                    {catalogConfirmSentence(runMode, trigger, channelTitle)}
-                  </p>
-                  <div className="flex flex-col gap-1.5">
-                    <label
-                      htmlFor="routine-name"
-                      className="text-xs font-medium"
-                    >
-                      Name (optional)
-                    </label>
-                    <Input
-                      id="routine-name"
-                      value={name}
-                      placeholder={selectedDefinition?.name ?? "Morning brief"}
-                      disabled={busy}
-                      onChange={(event) => setName(event.target.value)}
-                    />
-                  </div>
-                </>
-              )
-            ) : null}
-
-            {path === "describe" ? (
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-[var(--ui-fg-muted)]">
-                    Name
-                  </span>
-                  <p className="text-sm font-medium text-[var(--ui-fg)]">
-                    {draftName}
-                  </p>
-                </div>
-                <p className="text-xs text-[var(--ui-fg-muted)]">
-                  From: {draft?.prompt}
-                </p>
-                {draft !== null && draft.definitionId === null ? (
-                  <div className="flex flex-col gap-1.5">
-                    <span
-                      id="draft-workflow-pick-label"
-                      className="text-xs font-medium"
-                    >
-                      Workflow
-                    </span>
-                    <p className="text-xs text-[var(--ui-fg-muted)]">
-                      Myra didn't pin a workflow — pick one.
-                    </p>
-                    <div
-                      role="group"
-                      aria-labelledby="draft-workflow-pick-label"
-                      className="grid grid-cols-2 gap-2"
-                    >
-                      <WorkflowPickerCards
-                        definitions={definitions}
-                        connections={connections}
-                        selectedId={draftDefinitionPick}
-                        disabled={busy}
-                        onSelect={setDraftDefinitionPick}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </>
-        ) : undefined,
-    },
-  ];
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          handleCancel();
-          return;
-        }
-        setOpen(next);
-      }}
-    >
-      <DialogContent side="right">
-        <DialogHeader>
-          <DialogTitle>New routine</DialogTitle>
-          <DialogDescription>
-            A guided setup — from the catalog for something known, or describe
-            it to an agent.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex min-h-0 flex-1 flex-col"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!primaryDisabled) primaryOnClick();
-          }}
-        >
-          <DialogBody className="flex flex-col gap-3">
-            <DialogStepAccordion steps={accordionSteps} />
-
-            {error !== null ? (
-              <p className="text-xs text-[var(--ui-danger)]" role="alert">
-                {error}
-              </p>
-            ) : null}
-          </DialogBody>
-
-          <DialogFooter>
-            {webhookRevealed !== null ? (
-              <Button type="button" size="sm" onClick={closeDialog}>
-                Done
-              </Button>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={handleCancel}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={primaryDisabled}>
-                  {primaryLabel}
-                </Button>
-              </>
-            )}
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/**
- * Minimal edit surface: name and cadence only, over the existing `PATCH
- * /routines/:id` route (`updateRoutine`). Delivery channel and workflow
- * are set at create time and stay out of scope here.
- */
-function EditRoutineDialog({
-  routine,
-  onSave,
-  open,
-  onOpenChange,
-}: {
-  readonly routine: Routine;
-  readonly onSave: (patch: UpdateRoutineInput) => Promise<void>;
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-}) {
-  const [name, setName] = useState(routine.name);
-  const [trigger, setTrigger] = useState<RoutineTrigger>(routine.trigger);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    setName(routine.name);
-    setTrigger(routine.trigger);
-    setError(null);
-  }, [open, routine.name, routine.trigger]);
-
-  const complete = name.trim().length > 0;
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent side="right">
-        <DialogHeader>
-          <DialogTitle>Edit routine</DialogTitle>
-          <DialogDescription>Name and cadence only.</DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!complete) return;
-            setBusy(true);
-            setError(null);
-            void onSave({ name: name.trim(), trigger })
-              .then(() => onOpenChange(false))
-              .catch((cause: unknown) => {
-                setError(
-                  cause instanceof Error ? cause.message : String(cause),
-                );
-              })
-              .finally(() => setBusy(false));
-          }}
-        >
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="routine-edit-name" className="text-xs font-medium">
-              Name
-            </label>
-            <Input
-              id="routine-edit-name"
-              value={name}
-              required
-              disabled={busy}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </div>
-
-          <TriggerPicker value={trigger} onChange={setTrigger} />
-
-          {error !== null ? (
-            <p className="text-xs text-[var(--ui-danger)]" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="ghost" size="sm" disabled={busy}>
-                Cancel
-              </Button>
-            </DialogClose>
-            <Button type="submit" size="sm" disabled={busy || !complete}>
-              {busy ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 /**
  * Recent-run rows deep-link to the channel the routine delivers to — a
  * routine has one `deliveryChannelId`, not a per-run one, so every row in
@@ -1864,7 +425,7 @@ function EditRoutineDialog({
  * when there is nowhere to deep-link (`deliveryChannelId` absent or no
  * `onOpenChannel` handler wired).
  */
-function RunsTable({
+export function RunsTable({
   runs,
   now,
   emptyTitle,
@@ -1952,7 +513,6 @@ function RunsTable({
 }
 
 export function RoutinesListPage({
-  tenantId = null,
   routines,
   runHistories,
   liveRuns: _liveRuns,
@@ -1961,22 +521,13 @@ export function RoutinesListPage({
   channels,
   selectedId,
   onSelect: _onSelect,
-  onCreate,
-  onCreateWebhookBinding,
   webhookTrigger,
   onRotateWebhookSecret,
-
-  onDescribe,
-  onApproveDraft,
-  onDiscardDraft,
   onToggleEnabled,
   onRunNow,
-  onEdit,
   onOpenRuns,
   onOpenChannel,
-  onCreateAgent,
 }: {
-  readonly tenantId?: string | null;
   readonly routines: APIQuery<readonly Routine[]>;
   readonly runHistories: ReadonlyMap<string, readonly RoutineRun[]>;
   readonly liveRuns: APIQuery<readonly WorkflowRun[]>;
@@ -1985,71 +536,14 @@ export function RoutinesListPage({
   readonly channels: readonly Channel[];
   readonly selectedId: string | null;
   readonly onSelect: (routineId: string | null) => void;
-  readonly onCreate: (input: CreateRoutineInput) => Promise<void>;
-  readonly onCreateWebhookBinding: (input: {
-    name: string;
-    definitionId: string;
-  }) => Promise<{ id: string; secret: string }>;
   readonly webhookTrigger: APIQuery<WebhookTrigger> | null;
   readonly onRotateWebhookSecret: () => Promise<{ secret: string }>;
-  readonly onDescribe: (input: CreateDraftInput) => Promise<RoutineDraft>;
-  readonly onApproveDraft: (
-    draftId: string,
-    definitionId?: string,
-  ) => Promise<void>;
-  readonly onDiscardDraft: (draftId: string) => Promise<void>;
   readonly onToggleEnabled: (routine: Routine, enabled: boolean) => void;
   readonly onRunNow: (routine: Routine) => Promise<void>;
-  readonly onEdit: (
-    routine: Routine,
-    patch: UpdateRoutineInput,
-  ) => Promise<void>;
   readonly onOpenRuns: () => void;
   readonly onOpenChannel: (channelId: string) => void;
-  /** Threaded to `CreateRoutineDialog` — see its own prop note. */
-  readonly onCreateAgent?: () => void;
 }) {
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  // The centered/side-sheet Dialog overlay only dims the page (50% black,
-  // a 2px blur) rather than occluding it — nowhere near enough to hide a
-  // bordered card like RichEmptyState, whose center falls outside the
-  // dialog's own bounds because it's centered within the stage column
-  // (offset right of viewport-center by col1+col2) rather than the
-  // viewport the dialog centers on. Rather than paper over that with a
-  // heavier overlay, the stage content is taken out of the picture
-  // entirely — visually and from focus/AT — for as long as a dialog owns
-  // the page, so there is nothing left to bleed through.
-  const dialogOpen = createOpen || editOpen;
-  const [createPrefill, setCreatePrefill] = useState<RoutinePrefill | null>(
-    null,
-  );
-
-  useEffect(() => {
-    const onCreateEvent = () => {
-      setCreatePrefill(consumePendingRoutinePrefill());
-      setCreateOpen(true);
-    };
-    window.addEventListener("workbench:routines:create", onCreateEvent);
-    return () =>
-      window.removeEventListener("workbench:routines:create", onCreateEvent);
-  }, []);
-
-  // The command palette (or "Make this a routine" — see inbox-page.tsx)
-  // may have requested "New routine" from another page, before this
-  // listener existed to catch the dispatch — see pending-dialog-request.ts.
-  // Consume that flag, and any prefill stashed alongside it, now that
-  // we've mounted.
-  useEffect(() => {
-    if (consumePendingNewRoutine()) {
-      setCreatePrefill(consumePendingRoutinePrefill());
-      setCreateOpen(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    setEditOpen(false);
-  }, [selectedId]);
+  const openRoutine = useOpenRoutineInCanvas();
 
   const selected =
     routines.kind === "ready" && selectedId !== null
@@ -2073,7 +567,10 @@ export function RoutinesListPage({
         }
         actions={
           selected === null ? (
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Button
+              size="sm"
+              onClick={() => openRoutine({ routineId: null })}
+            >
               <Plus /> New routine
             </Button>
           ) : (
@@ -2081,7 +578,7 @@ export function RoutinesListPage({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCreateOpen(true)}
+                onClick={() => openRoutine({ routineId: null })}
               >
                 New routine
               </Button>
@@ -2101,7 +598,7 @@ export function RoutinesListPage({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setEditOpen(true)}
+                onClick={() => openRoutine({ routineId: selected.id })}
               >
                 Edit
               </Button>
@@ -2113,7 +610,6 @@ export function RoutinesListPage({
         <div
           className="stage-content mx-4 mt-3 flex flex-col gap-1 rounded-[var(--ui-radius-md)] border border-destructive/40 bg-destructive/10 p-3 text-sm"
           role="alert"
-          inert={dialogOpen}
         >
           <p className="m-0 font-medium text-destructive">
             {routinePausedMessage(selected)}
@@ -2125,42 +621,9 @@ export function RoutinesListPage({
           ) : null}
         </div>
       ) : null}
-      <CreateRoutineDialog
-        tenantId={tenantId}
-        definitions={definitions}
-        channels={channels}
-        onCreate={onCreate}
-        onCreateWebhookBinding={onCreateWebhookBinding}
-        onDescribe={onDescribe}
-        onApproveDraft={onApproveDraft}
-        onDiscardDraft={onDiscardDraft}
-        {...(onCreateAgent !== undefined ? { onCreateAgent } : {})}
-        open={createOpen}
-        onOpenChange={(next) => {
-          setCreateOpen(next);
-          // A cancelled or completed prefilled session must not haunt the
-          // next blank "New routine" open.
-          if (!next) setCreatePrefill(null);
-        }}
-        initialDefinitionId={createPrefill?.definitionId ?? null}
-        initialName={createPrefill?.name ?? null}
-        initialInput={createPrefill?.input ?? null}
-        initialDeliveryChannelId={createPrefill?.deliveryChannelId ?? null}
-      />
-      {selected !== null ? (
-        <EditRoutineDialog
-          routine={selected}
-          onSave={(patch) => onEdit(selected, patch)}
-          open={editOpen}
-          onOpenChange={setEditOpen}
-        />
-      ) : null}
 
       {/* List lives in shell col2; stage is detail only. */}
-      <div
-        className="stage-content flex min-h-0 flex-1 flex-col"
-        inert={dialogOpen}
-      >
+      <div className="stage-content flex min-h-0 flex-1 flex-col">
         {selected === null ? (
           <div className="flex flex-1 items-center justify-center p-6">
             {routines.kind === "ready" && routines.data.length === 0 ? (
@@ -2260,7 +723,6 @@ export function RoutineDetailPage({
   onRotateWebhookSecret,
   onOpenRuns,
   onOpenChannel,
-  onEdit,
 }: {
   readonly routine: APIQuery<Routine>;
   readonly runs: APIQuery<readonly RoutineRun[]>;
@@ -2272,24 +734,12 @@ export function RoutineDetailPage({
   readonly onRotateWebhookSecret?: () => Promise<{ secret: string }>;
   readonly onOpenRuns: () => void;
   readonly onOpenChannel: (channelId: string) => void;
-  readonly onEdit: (
-    routine: Routine,
-    patch: UpdateRoutineInput,
-  ) => Promise<void>;
 }) {
-  const [editOpen, setEditOpen] = useState(false);
+  const openRoutine = useOpenRoutineInCanvas();
   const deliveryChannelId =
     routine.kind === "ready" ? routine.data.deliveryChannelId : null;
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {routine.kind === "ready" ? (
-        <EditRoutineDialog
-          routine={routine.data}
-          onSave={(patch) => onEdit(routine.data, patch)}
-          open={editOpen}
-          onOpenChange={setEditOpen}
-        />
-      ) : null}
       <StageTopBar
         title={
           <StageCrumbs
@@ -2307,7 +757,11 @@ export function RoutineDetailPage({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setEditOpen(true)}
+              onClick={() =>
+                openRoutine({
+                  routineId: routine.kind === "ready" ? routine.data.id : null,
+                })
+              }
             >
               Edit
             </Button>
@@ -2596,20 +1050,6 @@ export function RoutinesRoute({
     () => getWebhookTrigger(tenantId ?? "", selectedWebhookTriggerId ?? ""),
   );
 
-  const onCreateWebhookBinding = async (input: {
-    name: string;
-    definitionId: string;
-  }) => {
-    if (tenantId === null)
-      throw new Error("No workbench to create this in yet");
-    const created = await createWebhookTrigger(tenantId, {
-      name: input.name,
-      workflowDefinitionId: input.definitionId,
-      inputTemplate: DEFAULT_WEBHOOK_INPUT_TEMPLATE,
-    });
-    return { id: created.id, secret: created.secret };
-  };
-
   const onRotateWebhookSecret = async () => {
     if (tenantId === null || selectedWebhookTriggerId === null) {
       throw new Error("No webhook trigger to rotate");
@@ -2643,19 +1083,12 @@ export function RoutinesRoute({
         onBack={() => navigate(ROUTINES_PATH_PREFIX)}
         onOpenRuns={() => navigate("/insights/runs")}
         onOpenChannel={(channelId) => navigate(channelPath(channelId))}
-        onEdit={async (routine, patch) => {
-          if (tenantId === null)
-            throw new Error("No workbench to edit this in yet");
-          await updateRoutine(tenantId, routine.id, patch);
-          invalidateRoutines();
-        }}
       />
     );
   }
 
   return (
     <RoutinesListPage
-      tenantId={tenantId}
       routines={
         routines.kind === "ready"
           ? { kind: "ready", data: routines.data }
@@ -2673,48 +1106,10 @@ export function RoutinesRoute({
             : `${ROUTINES_PATH_PREFIX}/${encodeURIComponent(id)}`,
         )
       }
-      onCreate={async (input) => {
-        if (tenantId === null)
-          throw new Error("No workbench to create this in yet");
-        await createRoutine(tenantId, input);
-        invalidateRoutines();
-        toast(routineCreatedToast(input.name));
-      }}
-      onCreateWebhookBinding={onCreateWebhookBinding}
       webhookTrigger={
         selectedWebhookTriggerId !== null ? webhookTriggerQuery : null
       }
       onRotateWebhookSecret={onRotateWebhookSecret}
-      onCreateAgent={() =>
-        // The global agents settings tab is gone — creating an agent means
-        // minting a fresh workbench (same hop as "New workbench").
-        requestNewWorkbench({
-          alreadyOnConversation: isChannelPath(path),
-          navigateToConversations: () => navigate(channelPath(null)),
-        })
-      }
-      onDescribe={async (input) => {
-        if (tenantId === null)
-          throw new Error("No workbench to draft this in yet");
-        return createRoutineDraft(tenantId, input);
-      }}
-      onApproveDraft={async (draftId, definitionId) => {
-        if (tenantId === null)
-          throw new Error("No workbench to approve this draft in yet");
-        const result = await approveRoutineDraft(
-          tenantId,
-          draftId,
-          definitionId,
-        );
-        invalidateRoutines();
-        navigate(
-          `${ROUTINES_PATH_PREFIX}/${encodeURIComponent(result.routine.id)}`,
-        );
-      }}
-      onDiscardDraft={async (draftId) => {
-        if (tenantId === null) return;
-        await discardRoutineDraft(tenantId, draftId);
-      }}
       onToggleEnabled={(routine, enabled) => {
         if (tenantId === null) return;
         void updateRoutine(tenantId, routine.id, { enabled }).then(
@@ -2727,12 +1122,6 @@ export function RoutinesRoute({
         await runRoutineNow(tenantId, routine.id);
         invalidateRoutines();
         toast(routineRunStartedToast(routine.name));
-      }}
-      onEdit={async (routine, patch) => {
-        if (tenantId === null)
-          throw new Error("No workbench to edit this in yet");
-        await updateRoutine(tenantId, routine.id, patch);
-        invalidateRoutines();
       }}
       onOpenRuns={() => navigate("/insights/runs")}
       onOpenChannel={(channelId) => navigate(channelPath(channelId))}

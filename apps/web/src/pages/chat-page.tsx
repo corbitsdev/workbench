@@ -33,7 +33,6 @@ import {
   consumePendingNewChannel,
   NEW_CHANNEL_EVENT,
   requestNewRoutine,
-  requestNewRoutineInSpace,
 } from "../command-palette-actions";
 import { reportChannelNotFound } from "../channel-not-found-event";
 import { createAgentAndLaunch } from "../instant-agent-create";
@@ -46,6 +45,7 @@ import {
 import {
   useOpenArtifactInCanvas,
   useOpenProfileInCanvas,
+  useOpenRoutineInCanvas,
 } from "../shell/canvas-availability";
 import { useRegisterComposerInsert } from "../shell/composer-insertion";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
@@ -66,6 +66,7 @@ export function ChatPage({
   const openProfile = useOpenProfileInCanvas();
   const registerComposerInsert = useRegisterComposerInsert();
   const openArtifactInCanvas = useOpenArtifactInCanvas();
+  const openRoutine = useOpenRoutineInCanvas();
   const tenant = tenantResolutionFromBench(bench);
   const principalId = bench.selectedPrincipalId ?? undefined;
   const queryClient = useQueryClient();
@@ -231,15 +232,14 @@ export function ChatPage({
       listMembers={listMembers}
       onOpenRoutines={() =>
         requestNewRoutine({
-          alreadyOnRoutines: false,
           navigateToRoutines: () => navigate("/routines"),
+          openRoutine,
         })
       }
-      onCreateRoutineInSpace={(spaceChannelId) =>
-        requestNewRoutineInSpace({
-          alreadyOnRoutines: false,
+      onCreateRoutineInSpace={() =>
+        requestNewRoutine({
           navigateToRoutines: () => navigate("/routines"),
-          deliveryChannelId: spaceChannelId,
+          openRoutine,
         })
       }
       presenceMembers={presenceMembers}

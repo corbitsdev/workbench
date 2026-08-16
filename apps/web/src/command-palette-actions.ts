@@ -1,16 +1,22 @@
 // The command palette's `>` action commands: everything the shell mock's
 // `buildCmdkEntries` lists under "Commands" that this app can actually wire
-// today. Each create command uses the same off-route-safe pending-flag
-// pattern `library-upload.ts` already established: the palette can fire
-// from any page, before the target page (and its window-event listener) has
-// mounted, so a same-tick `dispatchEvent` would be a race the listener
-// always loses. `pending-dialog-request.ts` generalizes that pattern; the
-// target pages/sections (routines-page.tsx, skills-settings-section.tsx,
-// chat-page.tsx) consume the pending flag on mount. Skills moved from its
-// own route into a Settings section (CL-5990) — "New skill" lands on
-// `/settings/skills`. The global agents settings tab was later removed
-// (CL-6121); "New agent" now mints a fresh workbench, same as "New
-// workbench". "New thread" is out of scope (killed by owner decision).
+// today. Most create commands use the off-route-safe pending-flag pattern
+// `library-upload.ts` established: the palette can fire from any page,
+// before the target page (and its window-event listener) has mounted, so a
+// same-tick `dispatchEvent` would be a race the listener always loses.
+// `pending-dialog-request.ts` generalizes that pattern; the target
+// pages/sections (skills-settings-section.tsx, chat-page.tsx) consume the
+// pending flag on mount. Skills moved from its own route into a Settings
+// section (CL-5990) — "New skill" lands on `/settings/skills`. The global
+// agents settings tab was later removed (CL-6121); "New agent" now mints a
+// fresh workbench, same as "New workbench". "New thread" is out of scope
+// (killed by owner decision).
+//
+// "New routine" (CL-6125) needs none of that: it opens the canvas column's
+// routine pane, and canvas state lives in `ShellChromeProvider` above every
+// route, not inside a page that has to mount first — so `requestNewRoutine`
+// just calls the caller's own `openRoutine` (from `useOpenRoutineInCanvas`)
+// synchronously, no pending flag, no window event.
 
 import { createPendingDialogRequest } from "@corbits/shell-layout";
 import {
@@ -20,19 +26,13 @@ import {
 } from "./channel-path";
 import { ensureMyraChannel } from "./myra-channel";
 import { requestLibraryUpload } from "./library-upload";
-import {
-  resetPendingRoutinePrefill,
-  setPendingRoutinePrefill,
-} from "./routine-prefill";
-import type { RoutinePrefill } from "./routine-prefill";
+import type { RoutinePanelSubject } from "./shell/canvas-availability";
 
 export const NEW_CHANNEL_EVENT = "workbench:chat:new-channel";
-export const NEW_ROUTINE_EVENT = "workbench:routines:create";
 export const NEW_SKILL_EVENT = "workbench:skills:create";
 export const NEW_TASK_EVENT = "workbench:tasks:create";
 
 const newChannelRequest = createPendingDialogRequest();
-const newRoutineRequest = createPendingDialogRequest();
 const newSkillRequest = createPendingDialogRequest();
 const newTaskRequest = createPendingDialogRequest();
 
@@ -58,8 +58,6 @@ export function requestNewWorkbench(args: {
     dispatch: () => window.dispatchEvent(new CustomEvent(NEW_CHANNEL_EVENT)),
   });
 }
-/** Consumed by routines-page.tsx on mount. */
-export const consumePendingNewRoutine = newRoutineRequest.consumePending;
 /** Consumed by skills-settings-section.tsx on mount. */
 export const consumePendingNewSkill = newSkillRequest.consumePending;
 /** Consumed by inbox-page.tsx on mount — the task composer opens there
@@ -68,66 +66,33 @@ export const consumePendingNewSkill = newSkillRequest.consumePending;
 export const consumePendingNewTask = newTaskRequest.consumePending;
 
 /**
- * Requests the routine create/run affordance — the same off-route-safe hop
- * `runActionCommand("new-routine", …)` uses, pulled out so a caller with no
- * command-palette context (the chat composer's `/run`) can request it too.
+ * Opens the routine panel, navigating to `/routines` first so the list is
+ * visible behind the canvas — the same landing spot the old dialog's
+ * "New routine" always opened onto. Every "start a routine" affordance in
+ * the app (the command palette, the chat header, "Make this a routine")
+ * funnels through this one function.
  */
 export function requestNewRoutine(args: {
-  readonly alreadyOnRoutines: boolean;
   readonly navigateToRoutines: () => void;
+  readonly openRoutine: (subject: RoutinePanelSubject) => void;
+  readonly initialName?: string;
+  readonly initialInstruction?: string;
 }): void {
-  newRoutineRequest.request({
-    alreadyOnTargetRoute: args.alreadyOnRoutines,
-    navigateToTargetRoute: args.navigateToRoutines,
-    dispatch: () => window.dispatchEvent(new CustomEvent(NEW_ROUTINE_EVENT)),
-  });
-}
-
-/**
- * Requests the routine create flow pre-filled from a completed task result
- * ("Make this a routine" — see inbox-page.tsx) — the same off-route-safe
- * hop `requestNewRoutine` uses, carrying the task's agent, prompt, and a
- * suggested name alongside it via routine-prefill.ts.
- */
-export function requestMakeRoutine(args: {
-  readonly alreadyOnRoutines: boolean;
-  readonly navigateToRoutines: () => void;
-  readonly prefill: RoutinePrefill;
-}): void {
-  setPendingRoutinePrefill(args.prefill);
-  requestNewRoutine({
-    alreadyOnRoutines: args.alreadyOnRoutines,
-    navigateToRoutines: args.navigateToRoutines,
-  });
-}
-
-/**
- * Requests the routine create flow with this space pre-bound as the
- * destination ("New routine in this space" — a channel header action or
- * the composer's `/routine` command). The same off-route-safe hop
- * `requestNewRoutine` uses, carrying only a `deliveryChannelId` via
- * routine-prefill.ts — the picker opens on this space selected, not
- * committed; the person can still pick something else.
- */
-export function requestNewRoutineInSpace(args: {
-  readonly alreadyOnRoutines: boolean;
-  readonly navigateToRoutines: () => void;
-  readonly deliveryChannelId: string;
-}): void {
-  setPendingRoutinePrefill({ deliveryChannelId: args.deliveryChannelId });
-  requestNewRoutine({
-    alreadyOnRoutines: args.alreadyOnRoutines,
-    navigateToRoutines: args.navigateToRoutines,
+  args.navigateToRoutines();
+  args.openRoutine({
+    routineId: null,
+    ...(args.initialName !== undefined ? { initialName: args.initialName } : {}),
+    ...(args.initialInstruction !== undefined
+      ? { initialInstruction: args.initialInstruction }
+      : {}),
   });
 }
 
 /** Test helper — drop leftover pending state between cases. */
 export function resetPendingDialogRequests(): void {
   newChannelRequest.resetPending();
-  newRoutineRequest.resetPending();
   newSkillRequest.resetPending();
   newTaskRequest.resetPending();
-  resetPendingRoutinePrefill();
 }
 
 export type ActionCommandId =
@@ -205,6 +170,7 @@ export type ActionCommandContext = {
   readonly tenantId: string | null;
   readonly cycleTheme: () => void;
   readonly closeCanvas: () => void;
+  readonly openRoutine: (subject: RoutinePanelSubject) => void;
 };
 
 /**
@@ -237,9 +203,8 @@ export async function runActionCommand(
     }
     case "new-routine": {
       requestNewRoutine({
-        alreadyOnRoutines:
-          ctx.path === "/routines" || ctx.path.startsWith("/routines/"),
         navigateToRoutines: () => ctx.navigate("/routines"),
+        openRoutine: ctx.openRoutine,
       });
       return;
     }

@@ -24,6 +24,7 @@ import {
   initialCanvasColumnState,
   openArtifactInCanvas,
   openProfileInCanvas,
+  openRoutineInCanvas,
   resolveCanvasFocus,
   resolveCanvasVisibility,
   toggleCanvasFocus,
@@ -35,6 +36,7 @@ import {
   CanvasAvailabilityProvider,
   type AppCanvasColumnState,
   type CanvasArtifactContent,
+  type RoutinePanelSubject,
 } from "./canvas-availability";
 
 export function ShellChromeProvider({
@@ -51,7 +53,11 @@ export function ShellChromeProvider({
   const canvasAllowed = canvasColumnAllowed(layoutMode);
 
   const [canvasState, setCanvasState] = useState<AppCanvasColumnState>(
-    initialCanvasColumnState<ProfileSubject, CanvasArtifactContent>,
+    initialCanvasColumnState<
+      ProfileSubject,
+      CanvasArtifactContent,
+      RoutinePanelSubject
+    >,
   );
 
   // Tracks the last workbench scope we applied so a real switch (A→B) can
@@ -87,6 +93,10 @@ export function ShellChromeProvider({
     setCanvasState((state) => openArtifactInCanvas(state, artifact));
   }, []);
 
+  const openRoutine = useCallback((subject: RoutinePanelSubject) => {
+    setCanvasState((state) => openRoutineInCanvas(state, subject));
+  }, []);
+
   const closeCanvas = useCallback(() => {
     setCanvasState((state) => closeCanvasContent(state));
   }, []);
@@ -104,9 +114,11 @@ export function ShellChromeProvider({
       open={canvasOpen}
       profile={canvasState.profile}
       artifact={canvasState.artifact}
+      routine={canvasState.routine}
       focus={canvasFocused}
       openProfile={openProfile}
       openArtifact={openArtifact}
+      openRoutine={openRoutine}
       toggleFocus={toggleFocus}
       close={closeCanvas}
     >

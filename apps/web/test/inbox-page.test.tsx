@@ -4,15 +4,48 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
+import type { ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { BenchProvider } from "../src/bench-context";
 import { resetPendingDialogRequests } from "../src/command-palette-actions";
 import { NavigationProvider } from "../src/navigation";
 import { InboxPage } from "../src/pages/inbox-page";
-import { consumePendingRoutinePrefill } from "../src/routine-prefill";
 import { suggestRoutineNameFromPrompt } from "../src/routines-api";
+import {
+  CanvasAvailabilityProvider,
+  type RoutinePanelSubject,
+} from "../src/shell/canvas-availability";
 import { TestQueryProvider } from "./test-query-provider";
+
+/** Stands in for `ShellChromeProvider`'s position above `InboxPage` — just
+ * enough of the canvas host context for `useOpenRoutineInCanvas` to resolve
+ * to a real, capturing callback instead of the no-op default. */
+function CanvasCapture({
+  onOpenRoutine,
+  children,
+}: {
+  readonly onOpenRoutine: (subject: RoutinePanelSubject) => void;
+  readonly children: ReactNode;
+}) {
+  return (
+    <CanvasAvailabilityProvider
+      allowed={false}
+      open={false}
+      profile={null}
+      artifact={null}
+      routine={null}
+      focus={false}
+      openProfile={noop}
+      openArtifact={noop}
+      openRoutine={onOpenRoutine}
+      toggleFocus={noop}
+      close={noop}
+    >
+      {children}
+    </CanvasAvailabilityProvider>
+  );
+}
 
 const noop = () => undefined;
 const realFetch = globalThis.fetch;
@@ -369,19 +402,22 @@ describe("inbox top bar", () => {
     expect(buttonWithText("Make this a routine")).toBeUndefined();
   });
 
-  test("accepting 'Make this a routine' opens the prefilled routine flow and creates nothing on its own", async () => {
+  test("accepting 'Make this a routine' opens the routine panel pre-filled from the task, and creates nothing on its own", async () => {
     const navigated: string[] = [];
+    const opened: RoutinePanelSubject[] = [];
     await act(async () => {
       root.render(
         <TestQueryProvider>
           <NavigationProvider navigate={noop}>
             <BenchProvider>
-              <InboxPage
-                path="/inbox"
-                navigate={(to) => {
-                  navigated.push(to);
-                }}
-              />
+              <CanvasCapture onOpenRoutine={(subject) => opened.push(subject)}>
+                <InboxPage
+                  path="/inbox"
+                  navigate={(to) => {
+                    navigated.push(to);
+                  }}
+                />
+              </CanvasCapture>
             </BenchProvider>
           </NavigationProvider>
         </TestQueryProvider>,
@@ -396,71 +432,16 @@ describe("inbox top bar", () => {
       button.click();
     });
 
-    // Never auto-creates — clicking only navigates to the routine-creation
-    // flow, pre-filled and awaiting the person's cadence pick and confirm.
+    // Never auto-creates — clicking only navigates to Routines and opens
+    // the panel, pre-filled and awaiting the person's own save.
     expect(navigated).toEqual(["/routines"]);
-    expect(consumePendingRoutinePrefill()).toEqual({
-      // NOT the task's own agent ("wfd_summarizer") — that id is
-      // conversational and never resolves in the Routines picker (the
-      // dead end a critique caught in this feature's first version).
-      // The recurring-task bridge workflow's id is what actually
-      // resolves; the task's agent travels as its "agent" trigger-field
-      // input instead.
-      definitionId: "wfd_recurring_task",
-      name: suggestRoutineNameFromPrompt(TASK_PROMPT),
-      input: { agent: "wfd_summarizer", prompt: TASK_PROMPT },
-    });
-  });
-
-  test("regression: a task's own (conversational) agent id is never used as the prefilled definitionId, even though the two id spaces are disjoint in production", async () => {
-    // Reproduces the critique's exact failure shape: the routine
-    // catalog response contains ONLY the recurring-task bridge
-    // workflow — the task's own agent id never appears there, exactly
-    // as in a real bench (conversational definitions are excluded from
-    // the automatable-only Routines picker by construction). If this
-    // regresses to prefilling with the task's own definitionId, the
-    // create dialog's `definitions.find` would fail to resolve it and
-    // the flow would dead-end silently.
-    const disjointDefinitions = {
-      data: [
-        {
-          id: "wfd_recurring_task",
-          name: "recurring-task",
-          status: "deployed",
-        },
-      ],
-      nextCursor: null,
-    };
-    globalThis.fetch = makeRouteFetch(
-      [taskResultItem],
-      disjointDefinitions,
-    ) as typeof fetch;
-
-    await act(async () => {
-      root.render(
-        <TestQueryProvider>
-          <NavigationProvider navigate={noop}>
-            <BenchProvider>
-              <InboxPage path="/inbox" navigate={noop} />
-            </BenchProvider>
-          </NavigationProvider>
-        </TestQueryProvider>,
-      );
-    });
-    await waitForText("All clear.");
-    await waitForText("Make this a routine");
-
-    const button = buttonWithText("Make this a routine");
-    if (button === undefined) throw new Error("affordance not rendered");
-    await act(async () => {
-      button.click();
-    });
-
-    const prefill = consumePendingRoutinePrefill();
-    expect(prefill?.definitionId).not.toBe("wfd_summarizer");
-    expect(
-      disjointDefinitions.data.some((d) => d.id === prefill?.definitionId),
-    ).toBe(true);
+    expect(opened).toEqual([
+      {
+        routineId: null,
+        initialName: suggestRoutineNameFromPrompt(TASK_PROMPT),
+        initialInstruction: TASK_PROMPT,
+      },
+    ]);
   });
 
   test("hides 'Make this a routine' when no recurring-task bridge workflow is deployed for this tenant yet", async () => {

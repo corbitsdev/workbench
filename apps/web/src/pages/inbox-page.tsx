@@ -39,8 +39,9 @@ import { channelPath } from "../channel-path";
 import {
   consumePendingNewTask,
   NEW_TASK_EVENT,
-  requestMakeRoutine,
+  requestNewRoutine,
 } from "../command-palette-actions";
+import { useOpenRoutineInCanvas } from "../shell/canvas-availability";
 import {
   listWorkflowDefinitions,
   suggestRoutineNameFromPrompt,
@@ -368,6 +369,7 @@ export function InboxPage({
   readonly navigate: (to: string) => void;
 }) {
   const { selectedTenantId } = useBench();
+  const openRoutine = useOpenRoutineInCanvas();
   const queryClient = useQueryClient();
   const group = inboxFilterFromPath(path) as InboxFilterGroup;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -644,25 +646,18 @@ export function InboxPage({
               }}
               recurringTaskDefinitionId={recurringTaskDefinitionId}
               onMakeRoutine={(task) => {
-                // Never the task's own definitionId: a task's agent is
-                // conversational, so it can never resolve in the Routines
-                // picker (automatable-only) — the recurring-task bridge
-                // workflow is the one definitionId that both schedules
-                // and, on fire, dispatches this exact agent+prompt as a
-                // task (see apps/hub/src/routine-launcher.ts). The button
-                // itself only renders once recurringTaskDefinitionId has
-                // resolved, so this is never null here.
-                if (recurringTaskDefinitionId === null) return;
-                requestMakeRoutine({
-                  // This callback only ever fires from the Inbox page, so
-                  // the hop to Routines is always off-route.
-                  alreadyOnRoutines: false,
+                // The routine panel (CL-6125) collects a name, a free-text
+                // instruction, and a trigger — never a workflow/agent pick
+                // — so a task's own conversational agent (never
+                // automatable) is no longer threaded through here the way
+                // the old stepper's recurring-task bridge required. The
+                // task's prompt seeds the instruction field directly; the
+                // person can still edit it before the routine is saved.
+                requestNewRoutine({
                   navigateToRoutines: () => navigate("/routines"),
-                  prefill: {
-                    definitionId: recurringTaskDefinitionId,
-                    name: suggestRoutineNameFromPrompt(task.prompt),
-                    input: { agent: task.definitionId, prompt: task.prompt },
-                  },
+                  openRoutine,
+                  initialName: suggestRoutineNameFromPrompt(task.prompt),
+                  initialInstruction: task.prompt,
                 });
               }}
             />

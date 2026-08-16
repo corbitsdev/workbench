@@ -9,13 +9,44 @@ import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { APIQuery } from "@corbits/api-query";
-import {
-  RoutineDetailPage,
-  RoutinesListPage,
-  connectorBadgeLabel,
-} from "../src/pages/routines-page";
+import { RoutineDetailPage, RoutinesListPage } from "../src/pages/routines-page";
 import type { Routine, RoutineRun } from "../src/routines-api";
+import {
+  CanvasAvailabilityProvider,
+  type RoutinePanelSubject,
+} from "../src/shell/canvas-availability";
 import type { WebhookTrigger } from "../src/webhook-triggers-api";
+
+const noop = () => undefined;
+
+/** Stands in for `ShellChromeProvider`'s position above these pages — just
+ * enough of the canvas host context for `useOpenRoutineInCanvas` to resolve
+ * to a real, capturing callback instead of the no-op default. */
+function CanvasCapture({
+  onOpenRoutine,
+  children,
+}: {
+  readonly onOpenRoutine: (subject: RoutinePanelSubject) => void;
+  readonly children: import("react").ReactNode;
+}) {
+  return (
+    <CanvasAvailabilityProvider
+      allowed={false}
+      open={false}
+      profile={null}
+      artifact={null}
+      routine={null}
+      focus={false}
+      openProfile={noop}
+      openArtifact={noop}
+      openRoutine={onOpenRoutine}
+      toggleFocus={noop}
+      close={noop}
+    >
+      {children}
+    </CanvasAvailabilityProvider>
+  );
+}
 
 function ready<T>(data: T): APIQuery<T> {
   return { kind: "ready", data };
@@ -58,32 +89,10 @@ const listProps = {
   channels: [] as const,
   selectedId: null as string | null,
   onSelect: (_id: string | null) => {},
-  onCreate: () => Promise.resolve(),
-  onCreateWebhookBinding: () =>
-    Promise.resolve({ id: "wht_1", secret: "test-secret" }),
   webhookTrigger: null,
   onRotateWebhookSecret: () => Promise.resolve({ secret: "rotated-secret" }),
-  onDescribe: () =>
-    Promise.resolve({
-      id: "draft_test",
-      prompt: "test",
-      status: "draft" as const,
-      proposedSteps: [],
-      proposedTrigger: null,
-      proposedName: null,
-      definitionId: null,
-      deliveryChannelId: "ch_1",
-      scope: "bench" as const,
-      autonomy: null,
-      approvedRoutineId: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    }),
-  onApproveDraft: () => Promise.resolve(),
-  onDiscardDraft: () => Promise.resolve(),
   onToggleEnabled: () => {},
   onRunNow: () => Promise.resolve(),
-  onEdit: () => Promise.resolve(),
   onOpenRuns: () => {},
   onOpenChannel: (_channelId: string) => {},
 };
@@ -235,7 +244,6 @@ describe("RoutineDetailPage", () => {
         onBack={() => {}}
         onOpenRuns={() => {}}
         onOpenChannel={(_channelId: string) => {}}
-        onEdit={() => Promise.resolve()}
       />,
     );
     expect(markup).toContain("Morning brief");
@@ -258,7 +266,6 @@ describe("RoutineDetailPage", () => {
         onBack={() => {}}
         onOpenRuns={() => {}}
         onOpenChannel={(_channelId: string) => {}}
-        onEdit={() => Promise.resolve()}
       />,
     );
     expect(markup).toContain("manual");
@@ -284,7 +291,6 @@ describe("RoutineDetailPage", () => {
         onBack={() => {}}
         onOpenRuns={() => {}}
         onOpenChannel={(_channelId: string) => {}}
-        onEdit={() => Promise.resolve()}
       />,
     );
     expect(markup).toContain("Paused after 5 failed attempts");
@@ -302,7 +308,6 @@ describe("RoutineDetailPage", () => {
         onBack={() => {}}
         onOpenRuns={() => {}}
         onOpenChannel={(_channelId: string) => {}}
-        onEdit={() => Promise.resolve()}
       />,
     );
     expect(markup).not.toContain("Paused after");
@@ -368,7 +373,6 @@ describe("webhook trigger panel", () => {
         onBack={() => {}}
         onOpenRuns={() => {}}
         onOpenChannel={(_channelId: string) => {}}
-        onEdit={() => Promise.resolve()}
       />,
     );
     expect(markup).toContain("/api/webhooks/wht_1");
@@ -412,18 +416,21 @@ describe("webhook trigger panel", () => {
     }
   });
 
-  test("Edit routine docks right, like New routine — not a centered modal", async () => {
+  test("Edit opens the routine panel scoped to this routine, not a dialog (CL-6125)", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root: Root = createRoot(container);
+    const opened: RoutinePanelSubject[] = [];
     act(() => {
       root.render(
-        createElement(RoutinesListPage, {
-          ...listProps,
-          routines: ready([routine]),
-          selectedId: routine.id,
-          definitions: [researcherDefinition],
-        }),
+        <CanvasCapture onOpenRoutine={(subject) => opened.push(subject)}>
+          {createElement(RoutinesListPage, {
+            ...listProps,
+            routines: ready([routine]),
+            selectedId: routine.id,
+            definitions: [researcherDefinition],
+          })}
+        </CanvasCapture>,
       );
     });
     try {
@@ -434,10 +441,10 @@ describe("webhook trigger panel", () => {
       act(() => {
         editButton?.click();
       });
-      const content = document.body.querySelector(
-        '[data-slot="dialog-content"]',
+      expect(opened).toEqual([{ routineId: routine.id }]);
+      expect(document.body.querySelector('[data-slot="dialog-content"]')).toBe(
+        null,
       );
-      expect(content?.getAttribute("data-side")).toBe("right");
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -468,7 +475,6 @@ describe("webhook trigger panel", () => {
           onOpenChannel: (channelId: string) => {
             openedChannelId = channelId;
           },
-          onEdit: () => Promise.resolve(),
         }),
       );
     });
@@ -485,22 +491,6 @@ describe("webhook trigger panel", () => {
     } finally {
       act(() => root.unmount());
       container.remove();
-    }
-  });
-});
-
-describe("connectorBadgeLabel registry-drift logging", () => {
-  test("logs a catalog/registry drift unconditionally, not only in dev builds", () => {
-    const calls: unknown[][] = [];
-    const original = console.error;
-    console.error = (...args: unknown[]) => calls.push(args);
-    try {
-      const label = connectorBadgeLabel("not-a-real-connector-id");
-      expect(label).toBe("not-a-real-connector-id");
-      expect(calls.length).toBe(1);
-      expect(String(calls[0]?.[0])).toContain("not-a-real-connector-id");
-    } finally {
-      console.error = original;
     }
   });
 });

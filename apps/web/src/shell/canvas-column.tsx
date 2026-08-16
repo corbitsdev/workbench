@@ -44,8 +44,12 @@ import type * as Y from "yjs";
 import { useBench } from "../bench-context";
 import { channelPath } from "../channel-path";
 import { ensureProfileDm, loadSharedChannels } from "../profile-relations";
-import type { CanvasArtifactContent } from "./canvas-availability";
+import type {
+  CanvasArtifactContent,
+  RoutinePanelSubject,
+} from "./canvas-availability";
 import { useInsertIntoComposer } from "./composer-insertion";
+import { RoutinePanel } from "./routine-panel";
 
 /**
  * One co-viewer's cursor, in the artifact pane's own fractional coordinate
@@ -66,6 +70,7 @@ export function CanvasColumn({
   open,
   profile,
   artifact,
+  routine,
   focus,
   onClose,
   onToggleFocus,
@@ -79,6 +84,7 @@ export function CanvasColumn({
   readonly open: boolean;
   readonly profile: ProfileSubject | null;
   readonly artifact: CanvasArtifactContent | null;
+  readonly routine: RoutinePanelSubject | null;
   readonly focus: boolean;
   readonly onClose: () => void;
   readonly onToggleFocus: () => void;
@@ -135,6 +141,8 @@ export function CanvasColumn({
             {...(artifactSaveState !== undefined ? { artifactSaveState } : {})}
             {...(onArtifactTyping !== undefined ? { onArtifactTyping } : {})}
           />
+        ) : routine !== null ? (
+          <RoutinePanel />
         ) : (
           <EmptyState
             icon={<UserRound />}

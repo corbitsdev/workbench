@@ -236,14 +236,9 @@ export function discardRoutineDraft(
   });
 }
 
-/**
- * All automatable workflow definitions for the Routines create picker.
- * Walks pagination, filters via the catalog allowlist, and attaches a
- * friendly label for Menu items (never a raw id).
- */
-export async function listWorkflowDefinitions(
+async function listAllDefinitions(
   tenantId: string,
-): Promise<readonly WorkflowDefinitionSummary[]> {
+): Promise<readonly WorkflowDefinitionRecord[]> {
   const collected: WorkflowDefinitionRecord[] = [];
   let cursor: string | null = null;
   for (;;) {
@@ -257,10 +252,42 @@ export async function listWorkflowDefinitions(
     if (page.nextCursor === undefined || page.nextCursor === null) break;
     cursor = page.nextCursor;
   }
+  return collected;
+}
+
+/**
+ * All automatable workflow definitions for the Routines create picker.
+ * Walks pagination, filters via the catalog allowlist, and attaches a
+ * friendly label for Menu items (never a raw id).
+ */
+export async function listWorkflowDefinitions(
+  tenantId: string,
+): Promise<readonly WorkflowDefinitionSummary[]> {
+  const collected = await listAllDefinitions(tenantId);
   return withCatalogFields(purposeDefinitions(collected)).map((definition) => ({
     ...definition,
     name: workflowDisplayName(definition.name, definition.description),
   }));
+}
+
+/**
+ * The tenant's deployed "assistant" (Myra) workflow definition id — the
+ * routine panel's backing definition for every routine it creates, since
+ * the panel collects only a name, a free-text instruction, and a trigger,
+ * never a workflow pick. `"assistant"` is excluded from the automatable
+ * catalog picker (`isAutomatableWorkflowName` — it is the conversational
+ * default, not a multi-step automation), but nothing on the create route
+ * itself requires an automatable definition, and its whole purpose — do
+ * whatever the instruction says — is the honest backing for a routine
+ * whose only input is that instruction. `null` when the tenant has no
+ * deployed "assistant" definition yet (should not happen once a workbench
+ * has ever talked to Myra, but this is never assumed).
+ */
+export async function getAssistantDefinitionId(
+  tenantId: string,
+): Promise<string | null> {
+  const definitions = await listAllDefinitions(tenantId);
+  return definitions.find((d) => d.name === "assistant")?.id ?? null;
 }
 
 /**
