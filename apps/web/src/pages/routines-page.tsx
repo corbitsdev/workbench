@@ -60,10 +60,10 @@ import { QueryView } from "@corbits/api-query";
 import { useAPIQuery, RunsSchema } from "../api";
 import type { WorkflowRun } from "../api";
 import { useBench } from "../bench-context";
-import { channelPath } from "../channel-path";
+import { channelPath, isChannelPath } from "../channel-path";
 import {
   consumePendingNewRoutine,
-  requestNewAgent,
+  requestNewWorkbench,
 } from "../command-palette-actions";
 import { consumePendingRoutinePrefill } from "../routine-prefill";
 import type { RoutinePrefill } from "../routine-prefill";
@@ -535,7 +535,7 @@ function AgentTriggerFieldPicker({
   readonly onChange: (id: string) => void;
   readonly disabled?: boolean;
   /** The host's off-route-safe hop to agent creation (see
-   * `requestNewAgent`) — omitted, the empty state stays plain text
+   * `requestNewWorkbench`) — omitted, the empty state stays plain text
    * rather than a dead promise. */
   readonly onCreateAgent?: () => void;
 }) {
@@ -553,7 +553,7 @@ function AgentTriggerFieldPicker({
             size="sm"
             onClick={onCreateAgent}
           >
-            Create an agent
+            Create an agent to run this
           </Button>
         ) : null}
       </div>
@@ -2686,9 +2686,11 @@ export function RoutinesRoute({
       }
       onRotateWebhookSecret={onRotateWebhookSecret}
       onCreateAgent={() =>
-        requestNewAgent({
-          alreadyOnAgentsSettings: path === "/settings/agents",
-          navigateToAgentsSettings: () => navigate("/settings/agents"),
+        // The global agents settings tab is gone — creating an agent means
+        // minting a fresh workbench (same hop as "New workbench").
+        requestNewWorkbench({
+          alreadyOnConversation: isChannelPath(path),
+          navigateToConversations: () => navigate(channelPath(null)),
         })
       }
       onDescribe={async (input) => {
