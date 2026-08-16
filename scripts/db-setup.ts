@@ -45,6 +45,7 @@ import { applyPreferencesMigrations } from "../packages/preferences/src/migratio
 import { applyConfigProfilesMigrations } from "../packages/config-profiles/src/migrations";
 import { applyBenchMigrations } from "../packages/bench/src/migrations";
 import { applySkillsMigrations } from "../packages/skills/src/migrations";
+import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 import { applyAccessPolicyMigrations } from "../packages/access-policy/src/migrations";
 import {
@@ -82,6 +83,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/config-profiles", apply: applyConfigProfilesMigrations },
   { name: "@corbits/bench", apply: applyBenchMigrations },
   { name: "@corbits/skills", apply: applySkillsMigrations },
+  { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
   { name: "@workbench/access-policy", apply: applyAccessPolicyMigrations },
   { name: "@corbits/tasks", apply: applyTasksMigrations },
@@ -581,6 +583,7 @@ const PACKAGE_SCHEMAS = [
   "skills",
   "slack_tag",
   "tasks",
+  "agent_directory",
 ] as const;
 
 /**

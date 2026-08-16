@@ -1,21 +1,16 @@
 // Composition for `@corbits/skills`: the registry itself plus the two
 // adapters that only this composition root can supply — "which agent
-// definitions pin this skill" (read from each definition asset's
-// `skills.json`) and "what index does a definition's pinned names
-// resolve to" (read from the registry, on behalf of the pushing
-// principal).
+// definitions pin this skill" (read from `@corbits/agent-directory`'s
+// own `definition_skills` table, keyed by each definition's asset id)
+// and "what index does a definition's pinned names resolve to" (read
+// from the registry, on behalf of the pushing principal).
 import { and, eq } from "drizzle-orm";
 
 import type { DB } from "@intx/db";
 import { workflowDefinition } from "@intx/db/schema";
+import { type AssetService, type RepoStore } from "@intx/hub-sessions";
 import {
-  AssetServiceError,
-  type AssetService,
-  type RepoStore,
-} from "@intx/hub-sessions";
-import {
-  AGENT_SKILLS_ASSET_PATH,
-  parseAgentSkills,
+  createDrizzleDefinitionSkillsStore,
   type PinnedSkillIndexResolver,
 } from "@corbits/agent-directory";
 import {
@@ -33,25 +28,6 @@ export type SkillsMount = {
   skillIndex: PinnedSkillIndexResolver;
 };
 
-async function readDefinitionSkills(
-  assetService: AssetService,
-  assetId: string,
-): Promise<readonly string[]> {
-  try {
-    return parseAgentSkills(
-      await assetService.readAssetBlob({
-        assetId,
-        path: AGENT_SKILLS_ASSET_PATH,
-      }),
-    );
-  } catch (cause) {
-    if (cause instanceof AssetServiceError && cause.reason === "not_found") {
-      return [];
-    }
-    throw cause;
-  }
-}
-
 export function mountSkills(deps: {
   db: DB["db"];
   assetService: AssetService;
@@ -66,6 +42,8 @@ export function mountSkills(deps: {
     access: createDrizzleSkillAccessStore(deps.db),
   });
 
+  const definitionSkills = createDrizzleDefinitionSkillsStore(deps.db);
+
   const pinnedBy: PinnedByResolver = {
     async resolve(tenantId, skillName) {
       const rows = await deps.db.query.workflowDefinition.findMany({
@@ -74,10 +52,7 @@ export function mountSkills(deps: {
       const pinning: { definitionId: string; name: string }[] = [];
       for (const row of rows) {
         if (row.assetId === null) continue;
-        const skills = await readDefinitionSkills(
-          deps.assetService,
-          row.assetId,
-        );
+        const skills = await definitionSkills.getSkills(row.assetId);
         if (skills.includes(skillName)) {
           pinning.push({ definitionId: row.id, name: row.name });
         }

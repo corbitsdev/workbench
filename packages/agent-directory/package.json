@@ -25,9 +25,11 @@
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",
-    "isomorphic-git": "catalog:"
+    "isomorphic-git": "catalog:",
+    "postgres": "catalog:"
   },
   "devDependencies": {
+    "@intx/crypto": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

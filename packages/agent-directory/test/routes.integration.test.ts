@@ -1,0 +1,205 @@
+// Real-stack coverage for the create → skills round-trip. The bug this
+// guards against (CL-6135) only shows up through the real
+// `AssetService`'s `populateAsset`, which runs
+// vendor/intx/hub-sessions' `workflow-kind.ts` tree validator against
+// an actual git commit — `routes.test.ts`'s hand-rolled fake
+// `AssetService` never exercises that validator, so it could not have
+// caught this. A definition created WITH skills used to write
+// `skills.json` alongside `workflow.json` into the asset tree; that
+// validator's hard allowlist (`workflow.json`,
+// `capability-declarations.json`, `.gitignore`) rejects any other
+// top-level entry with a `path_violation` 500. Pinned skills now live
+// in this package's own `agent_directory.definition_skills` table (see
+// `../src/skills-store.ts`), so the asset tree only ever carries
+// `workflow.json`.
+//
+// DB-gated: skipped when DATABASE_URL is unset, so a fresh checkout
+// still runs the unit gates. Run with e.g.
+// `DATABASE_URL=postgres://localhost:5432/workbench_e2e bun test`.
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { eq, inArray } from "drizzle-orm";
+import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
+
+import { createDB } from "@intx/db";
+import {
+  asset as assetTable,
+  principal as principalTable,
+  tenant as tenantTable,
+} from "@intx/db/schema";
+import { createAgentRepoStore, createAssetService } from "@intx/hub-sessions";
+import { generateKeyPair } from "@intx/crypto";
+import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+
+import { dbTargetFromUrl } from "../../../scripts/db-setup";
+import { applyAgentDirectoryMigrations } from "../src/migrations";
+import { definitionSkills } from "../src/schema";
+import { createAgentDefinitionRoutes } from "../src/routes";
+import type { PinnedSkillIndexResolver } from "../src/routes";
+import { createDrizzleDefinitionSkillsStore } from "../src/skills-store";
+import type { DefinitionAssetHistory } from "../src/definition-history";
+import type { CapabilityInventoryProvider } from "../src/capability-inventory";
+
+const databaseUrl = process.env["DATABASE_URL"];
+const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+
+const suffix = randomUUID().slice(0, 8);
+const TENANT = {
+  id: `tnt_agtdir_it_${suffix}`,
+  name: "Agent Directory IT",
+  slug: `agent-directory-it-${suffix}`,
+  domain: `agent-directory-it-${suffix}.example`,
+  parentId: null,
+  config: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const PRINCIPAL = {
+  id: `prn_agtdir_it_${suffix}`,
+  tenantId: TENANT.id,
+  kind: "user" as const,
+  refId: `usr_agtdir_it_${suffix}`,
+  status: "active" as const,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const fakeCapabilityInventory: CapabilityInventoryProvider = {
+  resolve: () =>
+    Promise.resolve({
+      toolPackages: [],
+      skills: [{ name: "research" }],
+      models: [],
+    }),
+};
+
+const fakeSkillIndex: PinnedSkillIndexResolver = {
+  resolve: (_tenantId, _principalId, names) =>
+    Promise.resolve(
+      names.map((name) => ({ name, description: `What ${name} does.` })),
+    ),
+};
+
+const fakeHistory: DefinitionAssetHistory = {
+  history: () => Promise.resolve([]),
+  readBlobAtCommit: () => Promise.resolve(null),
+};
+
+const allowAllRequireGrant: RequireGrant = () => async (_c, next) => {
+  await next();
+};
+
+async function post(app: Hono<TenantEnv>, body: unknown): Promise<Response> {
+  return app.request("/", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+describeIfDb("agent-directory routes against a real assetService", () => {
+  let dataDir: string;
+  let db: ReturnType<typeof createDB>["db"];
+  let close: () => Promise<void>;
+  let app: Hono<TenantEnv>;
+
+  beforeAll(async () => {
+    await applyAgentDirectoryMigrations(databaseUrl!);
+
+    const handle = createDB(dbTargetFromUrl(databaseUrl!));
+    db = handle.db;
+    close = handle.close;
+
+    await db.insert(tenantTable).values(TENANT).onConflictDoNothing();
+    await db.insert(principalTable).values(PRINCIPAL).onConflictDoNothing();
+
+    dataDir = await mkdtemp(path.join(tmpdir(), "agent-directory-it-"));
+    const signingKey = await generateKeyPair();
+    const agentRepoStore = createAgentRepoStore({ dataDir, signingKey });
+    const assetService = createAssetService({
+      db,
+      repoStore: agentRepoStore.repoStore,
+    });
+    const skillsStore = createDrizzleDefinitionSkillsStore(db);
+
+    const routes = createAgentDefinitionRoutes({
+      db,
+      assetService,
+      skillIndex: fakeSkillIndex,
+      skillsStore,
+      history: fakeHistory,
+      capabilityInventory: fakeCapabilityInventory,
+      requireGrant: allowAllRequireGrant,
+    });
+    const asPrincipal: MiddlewareHandler<TenantEnv> = async (c, next) => {
+      c.set("tenant", TENANT);
+      c.set("principal", PRINCIPAL);
+      await next();
+    };
+    app = new Hono<TenantEnv>();
+    app.use("*", asPrincipal);
+    app.route("/", routes);
+  }, 30000);
+
+  afterAll(async () => {
+    const assetRows = await db
+      .select({ id: assetTable.id })
+      .from(assetTable)
+      .where(eq(assetTable.tenantId, TENANT.id));
+    const assetIds = assetRows.map((row) => row.id);
+    if (assetIds.length > 0) {
+      await db
+        .delete(definitionSkills)
+        .where(inArray(definitionSkills.assetId, assetIds));
+    }
+    await db.delete(tenantTable).where(eq(tenantTable.id, TENANT.id));
+    await close();
+    await rm(dataDir, { recursive: true, force: true });
+  }, 30000);
+
+  test("creating a definition with skills no longer 500s with a path_violation", async () => {
+    const response = await post(app, {
+      name: "Research Buddy",
+      handle: `research-buddy-${suffix}`,
+      systemPrompt: "You are a careful research assistant.",
+      skills: ["research"],
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { skills: string[] };
+    expect(body.skills).toEqual(["research"]);
+  });
+
+  test("skills round-trip: create with skills, GET reflects them, PUT updates, GET reflects the update", async () => {
+    const handle = `round-trip-${suffix}`;
+    const created = await post(app, {
+      name: "Round Trip",
+      handle,
+      systemPrompt: "You help with round trips.",
+      skills: ["research"],
+    });
+    expect(created.status).toBe(201);
+    const createdBody = (await created.json()) as { id: string };
+    const definitionId = createdBody.id;
+
+    const got = await app.request(`/${definitionId}`);
+    expect(got.status).toBe(200);
+    const gotBody = (await got.json()) as { skills: string[] };
+    expect(gotBody.skills).toEqual(["research"]);
+
+    const updated = await app.request(`/${definitionId}/skills`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ skills: [] }),
+    });
+    expect(updated.status).toBe(200);
+
+    const gotAfter = await app.request(`/${definitionId}`);
+    const gotAfterBody = (await gotAfter.json()) as { skills: string[] };
+    expect(gotAfterBody.skills).toEqual([]);
+  });
+});

@@ -44,16 +44,13 @@ import { Hono } from "hono";
 
 import type { DB } from "@intx/db";
 import { workflowDefinition, workflowRun } from "@intx/db/schema";
-import { AssetServiceError, DEFAULT_ASSET_REF } from "@intx/hub-sessions";
+import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
 import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
 
 import {
-  AGENT_SKILLS_ASSET_PATH,
-  parseAgentSkills,
   reindexPinnedSkills,
-  serializeAgentSkills,
   withAgentModel,
   withAgentToolPackagePin,
   readAgentCapabilities,
@@ -65,6 +62,7 @@ import {
   type CapabilityInventoryProvider,
 } from "./capability-inventory";
 import type { PinnedSkillIndexResolver } from "./routes";
+import type { DefinitionSkillsStore } from "./skills-store";
 
 /** Where a definition's serialized `WorkflowDefinition` lives in its
  * asset tree — same path `./routes.ts` reads/writes. */
@@ -107,29 +105,6 @@ function definitionNotFound(definitionId: string) {
   );
 }
 
-/** Reads a definition's attached skills back from its asset tree —
- * mirrors `./routes.ts`'s private `readDefinitionSkills`. A definition
- * with no `skills.json` yet reads as "no skills attached", not an
- * error; any other asset-service failure propagates. */
-async function readDefinitionSkills(
-  assetService: AssetService,
-  assetId: string,
-): Promise<readonly string[]> {
-  let bytes: Uint8Array;
-  try {
-    bytes = await assetService.readAssetBlob({
-      assetId,
-      path: AGENT_SKILLS_ASSET_PATH,
-    });
-  } catch (cause) {
-    if (cause instanceof AssetServiceError && cause.reason === "not_found") {
-      return [];
-    }
-    throw cause;
-  }
-  return parseAgentSkills(bytes);
-}
-
 /** Same host-guard `./routes.ts` applies: a channel host is never a
  * target a workflow run may mutate through this surface either. */
 function hostGuardedRow(
@@ -146,6 +121,7 @@ export type CreateWorkflowCapabilityRoutesDeps = {
   db: DB["db"];
   assetService: AssetService;
   skillIndex: PinnedSkillIndexResolver;
+  skillsStore: DefinitionSkillsStore;
   capabilityInventory: CapabilityInventoryProvider;
   authenticator: WorkflowRunAuthenticator;
 };
@@ -250,8 +226,8 @@ export function createWorkflowCapabilityRoutes(
 
     let nextWorkflowJson: string;
     let message: string;
-    let skills = await readDefinitionSkills(deps.assetService, row.assetId);
-    const files: Record<string, string> = {};
+    let skills = await deps.skillsStore.getSkills(row.assetId);
+    let nextSkills: readonly string[] | null = null;
 
     switch (body.kind) {
       case "toolPackage": {
@@ -263,7 +239,7 @@ export function createWorkflowCapabilityRoutes(
         break;
       }
       case "skill": {
-        const nextSkills = skills.includes(body.name)
+        nextSkills = skills.includes(body.name)
           ? skills
           : [...skills, body.name];
         nextWorkflowJson = reindexPinnedSkills(
@@ -274,7 +250,6 @@ export function createWorkflowCapabilityRoutes(
             nextSkills,
           ),
         );
-        files[AGENT_SKILLS_ASSET_PATH] = serializeAgentSkills(nextSkills);
         skills = nextSkills;
         message = `Add ${body.name} skill to ${row.name}`;
         break;
@@ -291,10 +266,13 @@ export function createWorkflowCapabilityRoutes(
       ref: DEFAULT_ASSET_REF,
       principal: { kind: "hub" },
       tree: {
-        files: { [AGENT_DEFINITION_ASSET_PATH]: nextWorkflowJson, ...files },
+        files: { [AGENT_DEFINITION_ASSET_PATH]: nextWorkflowJson },
         message,
       },
     });
+    if (nextSkills !== null) {
+      await deps.skillsStore.setSkills(row.assetId, nextSkills);
+    }
 
     const capabilities = readAgentCapabilities(nextWorkflowJson);
     return c.json({

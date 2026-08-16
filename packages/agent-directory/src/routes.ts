@@ -37,18 +37,16 @@ import {
 import { isChannelHostDefinitionName } from "@corbits/chat/channel-host-naming";
 
 import {
-  AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
-  parseAgentSkills,
   readAgentCapabilities,
   readAgentSystemPrompt,
   reindexPinnedSkills,
   serializeAgentDefinitionWorkflow,
-  serializeAgentSkills,
   withAgentModel,
   withAgentSystemPrompt,
   withAgentToolPackagePin,
 } from "./agent-workflow";
+import type { DefinitionSkillsStore } from "./skills-store";
 import {
   CreateAgentDefinitionInput,
   RestoreDefinitionInput,
@@ -62,30 +60,6 @@ import {
   type CapabilityInventoryProvider,
 } from "./capability-inventory";
 import type { DefinitionAssetHistory } from "./definition-history";
-
-/** Reads a definition's attached skills back from its asset tree.
- * A definition created before this feature existed (or one that has
- * never had skills attached) has no `skills.json` at all — that reads
- * as "no skills attached", not an error. Any other asset-service failure
- * propagates. */
-async function readDefinitionSkills(
-  assetService: AssetService,
-  assetId: string,
-): Promise<readonly string[]> {
-  let bytes: Uint8Array;
-  try {
-    bytes = await assetService.readAssetBlob({
-      assetId,
-      path: AGENT_SKILLS_ASSET_PATH,
-    });
-  } catch (cause) {
-    if (cause instanceof AssetServiceError && cause.reason === "not_found") {
-      return [];
-    }
-    throw cause;
-  }
-  return parseAgentSkills(bytes);
-}
 
 /**
  * Resolves the pinned skill names a definition carries into the
@@ -105,6 +79,7 @@ export type CreateAgentDefinitionRoutesDeps = {
   db: DB["db"];
   assetService: AssetService;
   skillIndex: PinnedSkillIndexResolver;
+  skillsStore: DefinitionSkillsStore;
   history: DefinitionAssetHistory;
   capabilityInventory: CapabilityInventoryProvider;
   requireGrant: RequireGrant;
@@ -150,6 +125,7 @@ export function createAgentDefinitionRoutes({
   db,
   assetService,
   skillIndex,
+  skillsStore,
   history,
   capabilityInventory,
   requireGrant,
@@ -207,7 +183,6 @@ export function createAgentDefinitionRoutes({
       serializeAgentDefinitionWorkflow(definition),
       await skillIndex.resolve(tenant.id, principal.id, skills),
     );
-    const skillsJson = serializeAgentSkills(skills);
 
     let assetId: string;
     try {
@@ -274,11 +249,11 @@ export function createAgentDefinitionRoutes({
       tree: {
         files: {
           [AGENT_DEFINITION_ASSET_PATH]: workflowJson,
-          [AGENT_SKILLS_ASSET_PATH]: skillsJson,
         },
         message: `Define agent ${body.name}`,
       },
     });
+    await skillsStore.setSkills(assetId, skills);
 
     const wireHash = await computeWireDefinitionHash(JSON.parse(workflowJson));
     const { definitionId } = await ensureWorkflowDefinitionForAsset(db, {
@@ -338,7 +313,7 @@ export function createAgentDefinitionRoutes({
             ),
           });
           if (row === undefined || row.assetId === null) return null;
-          const skills = await readDefinitionSkills(assetService, row.assetId);
+          const skills = await skillsStore.getSkills(row.assetId);
           return [definitionId, skills] as const;
         }),
       );
@@ -392,7 +367,7 @@ export function createAgentDefinitionRoutes({
         }),
       );
       const capabilities = readAgentCapabilities(workflowJson);
-      const skills = await readDefinitionSkills(assetService, row.assetId);
+      const skills = await skillsStore.getSkills(row.assetId);
 
       return c.json({
         id: row.id,
@@ -470,30 +445,21 @@ export function createAgentDefinitionRoutes({
           404,
         );
       }
-      const skillsBytes = await history.readBlobAtCommit({
-        assetId: row.assetId,
-        path: AGENT_SKILLS_ASSET_PATH,
-        commitSha: body.commitSha,
-      });
-
       const decoder = new TextDecoder();
-      const files: Record<string, string> = {
-        [AGENT_DEFINITION_ASSET_PATH]: decoder.decode(workflowBytes),
-      };
-      // A commit from before this definition ever attached skills has no
-      // `skills.json` at all — leave the current sidecar untouched rather
-      // than writing an empty one over it, mirroring how `readDefinitionSkills`
-      // treats "no file" as "no skills" rather than an error.
-      if (skillsBytes !== null) {
-        files[AGENT_SKILLS_ASSET_PATH] = decoder.decode(skillsBytes);
-      }
 
+      // Pinned skills live outside the asset tree (see
+      // `DefinitionSkillsStore`), so restoring a prior commit only ever
+      // rewrites `workflow.json` — the definition's currently pinned
+      // skills are untouched by restoring an earlier instructions
+      // revision.
       await assetService.populateAsset({
         assetId: row.assetId,
         ref: DEFAULT_ASSET_REF,
         principal: { kind: "hub" },
         tree: {
-          files,
+          files: {
+            [AGENT_DEFINITION_ASSET_PATH]: decoder.decode(workflowBytes),
+          },
           message: `Restore agent ${row.name} to ${body.commitSha.slice(0, 8)}`,
         },
       });
@@ -505,7 +471,7 @@ export function createAgentDefinitionRoutes({
         }),
       );
       const capabilities = readAgentCapabilities(restoredWorkflowJson);
-      const skills = await readDefinitionSkills(assetService, row.assetId);
+      const skills = await skillsStore.getSkills(row.assetId);
 
       return c.json({
         id: row.id,
@@ -563,8 +529,8 @@ export function createAgentDefinitionRoutes({
 
       let nextWorkflowJson: string;
       let message: string;
-      let skills = await readDefinitionSkills(assetService, row.assetId);
-      const files: Record<string, string> = {};
+      let skills = await skillsStore.getSkills(row.assetId);
+      let nextSkills: readonly string[] | null = null;
 
       switch (body.kind) {
         case "toolPackage": {
@@ -576,14 +542,13 @@ export function createAgentDefinitionRoutes({
           break;
         }
         case "skill": {
-          const nextSkills = skills.includes(body.name)
+          nextSkills = skills.includes(body.name)
             ? skills
             : [...skills, body.name];
           nextWorkflowJson = reindexPinnedSkills(
             workflowJson,
             await skillIndex.resolve(tenant.id, principal.id, nextSkills),
           );
-          files[AGENT_SKILLS_ASSET_PATH] = serializeAgentSkills(nextSkills);
           skills = nextSkills;
           message = `Add ${body.name} skill to ${row.name}`;
           break;
@@ -600,10 +565,13 @@ export function createAgentDefinitionRoutes({
         ref: DEFAULT_ASSET_REF,
         principal: { kind: "hub" },
         tree: {
-          files: { [AGENT_DEFINITION_ASSET_PATH]: nextWorkflowJson, ...files },
+          files: { [AGENT_DEFINITION_ASSET_PATH]: nextWorkflowJson },
           message,
         },
       });
+      if (nextSkills !== null) {
+        await skillsStore.setSkills(row.assetId, nextSkills);
+      }
 
       const capabilities = readAgentCapabilities(nextWorkflowJson);
       return c.json({
@@ -752,11 +720,11 @@ export function createAgentDefinitionRoutes({
               workflowJson,
               await skillIndex.resolve(tenant.id, principal.id, body.skills),
             ),
-            [AGENT_SKILLS_ASSET_PATH]: serializeAgentSkills(body.skills),
           },
           message: `Update agent skills for ${row.name}`,
         },
       });
+      await skillsStore.setSkills(row.assetId, body.skills);
 
       return c.json({ skills: body.skills });
     },

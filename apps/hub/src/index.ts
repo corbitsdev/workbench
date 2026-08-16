@@ -36,14 +36,13 @@ import {
 } from "@intx/hub-api";
 
 import {
-  AGENT_SKILLS_ASSET_PATH,
   buildAgentDefinitionWorkflow,
   createAgentDefinitionRoutes,
   createDefinitionAssetHistory,
+  createDrizzleDefinitionSkillsStore,
   createWorkflowCapabilityRoutes,
   reindexPinnedSkills,
   serializeAgentDefinitionWorkflow,
-  serializeAgentSkills,
   type CapabilityInventoryProvider,
 } from "@corbits/agent-directory";
 
@@ -1105,6 +1104,7 @@ export async function createHub(config: HubConfig) {
     assetService,
     repoStore: agentRepoStore.repoStore,
   });
+  const definitionSkillsStore = createDrizzleDefinitionSkillsStore(db);
   app.route(
     `${TENANT_PREFIX}/skills`,
     createSkillRoutes({
@@ -1155,6 +1155,7 @@ export async function createHub(config: HubConfig) {
       db,
       assetService,
       skillIndex: skills.skillIndex,
+      skillsStore: definitionSkillsStore,
       history: createDefinitionAssetHistory({
         repoStore: agentRepoStore.repoStore,
       }),
@@ -1179,6 +1180,7 @@ export async function createHub(config: HubConfig) {
       db,
       assetService,
       skillIndex: skills.skillIndex,
+      skillsStore: definitionSkillsStore,
       capabilityInventory,
       authenticator: createWorkflowRunAuthenticator({ db }),
     }),
@@ -1834,7 +1836,6 @@ export async function createHub(config: HubConfig) {
       serializeAgentDefinitionWorkflow(definition),
       skillEntries,
     );
-    const skillsJson = serializeAgentSkills(input.skills);
 
     const created = await assetService.createAsset({
       tenantId: input.tenantId,
@@ -1851,11 +1852,11 @@ export async function createHub(config: HubConfig) {
       tree: {
         files: {
           [PLANNER_AGENT_DEFINITION_ASSET_PATH]: workflowJson,
-          [AGENT_SKILLS_ASSET_PATH]: skillsJson,
         },
         message: `Define agent ${input.name}`,
       },
     });
+    await definitionSkillsStore.setSkills(created.id, input.skills);
 
     const wireHash = await computeWireDefinitionHash(JSON.parse(workflowJson));
     const { definitionId } = await ensureWorkflowDefinitionForAsset(db, {
