@@ -34,6 +34,7 @@ describe("readHubConfig", () => {
       signupRateLimit: { windowSeconds: 60, max: 5 },
       allowPlaintextSecrets: false,
       allowUnverifiedEmails: false,
+      sidecarProvisioner: { kind: "none" },
     });
   });
 
@@ -227,6 +228,43 @@ describe("readHubConfig", () => {
     });
     expect(config.databaseUrl).toStartWith("postgresql://");
     expect(config.baseUrl).toStartWith("https://");
+  });
+
+  describe("sidecarProvisioner", () => {
+    test("defaults to none, matching the current static-sidecar behavior", () => {
+      expect(readHubConfig(validEnv).sidecarProvisioner).toEqual({
+        kind: "none",
+      });
+    });
+
+    test("SIDECAR_PROVISIONER=docker with an image is wired", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        SIDECAR_PROVISIONER: "docker",
+        DOCKER_PROVISIONER_IMAGE: "ghcr.io/corbits/sidecar:latest",
+      });
+      expect(config.sidecarProvisioner).toEqual({
+        kind: "docker",
+        image: "ghcr.io/corbits/sidecar:latest",
+      });
+    });
+
+    test("SIDECAR_PROVISIONER=docker without DOCKER_PROVISIONER_IMAGE fails loudly at boot", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_PROVISIONER: "docker",
+      });
+      expect(message).toContain("DOCKER_PROVISIONER_IMAGE");
+      expect(message).toContain("SIDECAR_PROVISIONER=docker");
+    });
+
+    test("rejects a provisioner value other than 'docker'", () => {
+      const message = readExpectingError({
+        ...validEnv,
+        SIDECAR_PROVISIONER: "e2b",
+      });
+      expect(message).toContain("SIDECAR_PROVISIONER");
+    });
   });
 
   test("an empty environment reports every variable in one error", () => {

@@ -29,6 +29,7 @@ const config: HubConfig = {
   allowedEmailDomains: [],
   allowPlaintextSecrets: true,
   allowUnverifiedEmails: true,
+  sidecarProvisioner: { kind: "none" },
 };
 
 const closers: (() => Promise<void>)[] = [];
