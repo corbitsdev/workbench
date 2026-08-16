@@ -1,14 +1,12 @@
 {
-  "name": "@corbits/inference-settings",
+  "name": "@corbits/config-profiles-ui",
   "private": true,
-  "description": "Per-workbench inference settings: the effective ordered model/provider catalog with inherited-vs-set-here provenance, and the native catalog writes (priority reorder, restrict, bring-your-own-key shadowing) a workbench tenant can make against it.",
+  "description": "UI for @corbits/config-profiles: the workbench Inference section's 'Apply a profile' affordance, and the workspace-level profile management list in the global settings Everyone group.",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./api": "./src/api.ts",
-    "./effective-list": "./src/effective-list.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -16,10 +14,7 @@
   },
   "dependencies": {
     "@corbits/react-ui": "github:corbitsdev/react-ui#e93005c3a64416cb5dfa8342007c7fe3b52b84fe",
-    "@intx/types": "workspace:*",
-    "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
-    "lucide-react": "^1.27.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
