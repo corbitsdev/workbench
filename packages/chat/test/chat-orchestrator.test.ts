@@ -481,6 +481,7 @@ describe("createArtifactDeliveryHandler", () => {
 
     handler("run_1@ten1.workbench.test", {
       turnId: "turn_1",
+      errors: [],
       toolCalls: [
         {
           isError: false,
@@ -527,6 +528,7 @@ describe("createArtifactDeliveryHandler", () => {
 
     handler("run_1@ten1.workbench.test", {
       turnId: "turn_1",
+      errors: [],
       toolCalls: [{ isError: false, result: "{}" }],
     });
 
@@ -562,6 +564,7 @@ describe("createArtifactDeliveryHandler", () => {
 
     handler("run_1@ten1.workbench.test", {
       turnId: "turn_1",
+      errors: [],
       toolCalls: [
         {
           isError: false,
@@ -622,6 +625,7 @@ describe("createArtifactDeliveryHandler", () => {
     // No throw, no memory dependency touched — `deps.memory` is absent.
     handler("run_1@ten1.workbench.test", {
       turnId: "turn_1",
+      errors: [],
       toolCalls: [
         {
           isError: false,
@@ -666,6 +670,7 @@ describe("createArtifactDeliveryHandler", () => {
 
     handler("run_1@ten1.workbench.test", {
       turnId: "turn_1",
+      errors: [],
       toolCalls: [
         {
           isError: false,
@@ -723,6 +728,7 @@ describe("createArtifactDeliveryHandler", () => {
     };
     const turn = {
       turnId: "turn_restart_1",
+      errors: [],
       toolCalls: [
         {
           isError: false,
@@ -794,6 +800,7 @@ describe("createArtifactDeliveryHandler", () => {
     };
     const turn = {
       turnId: "turn_partial_1",
+      errors: [],
       toolCalls: [
         {
           isError: false,
@@ -872,6 +879,7 @@ describe("createArtifactDeliveryHandler", () => {
     });
     const turn = {
       turnId: "turn_partial_2",
+      errors: [],
       toolCalls: [
         {
           isError: false,
@@ -954,11 +962,13 @@ describe("createArtifactDeliveryHandler provider health signal (CL-6092)", () =>
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    // Reports the classified category, never the turn's own error message
+    // (CL-6092) — a provider's runtime error text is never stored.
     expect(reported).toEqual([
       {
         tenantId: "ten_1",
         provider: "anthropic",
-        reason: "bad api key",
+        category: "credential_failure",
       },
     ]);
   });
@@ -1016,7 +1026,11 @@ describe("createArtifactDeliveryHandler provider health signal (CL-6092)", () =>
       }),
     );
 
-    handler("run_1@ten1.workbench.test", { turnId: "turn_1", toolCalls: [] });
+    handler("run_1@ten1.workbench.test", {
+      turnId: "turn_1",
+      toolCalls: [],
+      errors: [],
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(reported).toHaveLength(0);
