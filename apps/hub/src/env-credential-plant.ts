@@ -13,8 +13,19 @@
 // dev`'s own account seeding) creates them, often as a separate
 // process, well after this hub has already started serving. Rather
 // than fail hub boot over a bench that legitimately doesn't exist yet,
-// an unresolved target is retried on a plain interval until it
-// resolves; the retry itself is logged only once, never on every tick.
+// an unresolved target is retried with backoff until it resolves; the
+// retry itself is logged only once per distinct failure reason, never
+// on every tick.
+//
+// Sign-in only, never sign-up: unlike `workbench setup`/`workbench
+// seed`, this runs unattended at every hub boot, including against a
+// virgin, open-signup database. Falling through to sign-up the way
+// those interactive commands do would let a boot-time retry tick mint
+// the default admin account (and its default password) on its own —
+// so this module authenticates with `@workbench/hub-client`'s
+// sign-in-only `signIn`, and an unresolved admin account is treated
+// exactly like an unresolved bench: retried quietly, never a reason to
+// self-provision the account.
 //
 // Runs entirely in-process against the fully composed, guarded app's
 // own `fetch` — no network hop, no dependency on `Bun.serve` already
@@ -27,10 +38,11 @@
 import { getLogger } from "@intx/log";
 import { paginatedSchema, PrincipalSummary } from "@intx/types";
 import {
-  authenticate,
+  signIn,
   createHubAPI,
   parseAs,
   type ApiCall,
+  type Session,
 } from "@workbench/hub-client";
 import {
   plantEnvProviderCredentials,
@@ -39,6 +51,8 @@ import {
 import type { HubConfig } from "./config";
 
 const DEFAULT_RETRY_INTERVAL_MS = 10_000;
+const DEFAULT_MAX_RETRY_INTERVAL_MS = 5 * 60_000;
+const DEFAULT_GIVE_UP_AFTER_MS = 24 * 60 * 60_000;
 
 const log = getLogger(["hub", "env-credential-plant"]);
 
@@ -49,6 +63,12 @@ export type EnvCredentialPlantDeps = {
   /** The fully composed, guarded app's own request entry point. */
   fetch: (request: Request) => Promise<Response>;
   retryIntervalMs?: number;
+  /** Backoff cap; the retry interval doubles each unresolved tick up to
+   * this ceiling. Defaults to 5 minutes. */
+  maxRetryIntervalMs?: number;
+  /** Total time to keep retrying an unresolved target before giving up
+   * for good. Defaults to 24 hours. */
+  giveUpAfterMs?: number;
   /** Test seam: a fake replaces the real `plantEnvProviderCredentials`
    * the same way `seedCatalogFn` replaces the real `seedCatalog`
    * elsewhere in this codebase, so this module's own retry-until-
@@ -64,59 +84,134 @@ function localFetchImpl(
     entry(new Request(input as string, init as RequestInit))) as typeof fetch;
 }
 
+type TenantLookup =
+  | { outcome: "resolved"; tenantId: string }
+  | { outcome: "unauthorized" }
+  | { outcome: "not-found" };
+
 async function resolveOperatorTenantId(
   api: ApiCall,
   cookies: string[],
   orgSlug: string,
-): Promise<string | undefined> {
+): Promise<TenantLookup> {
   const response = await api("GET", "/api/me/principals", undefined, cookies);
-  if (response.status !== 200) return undefined;
+  if (response.status === 401) return { outcome: "unauthorized" };
+  if (response.status !== 200) return { outcome: "not-found" };
   const summary = parseAs(
     paginatedSchema(PrincipalSummary),
     response.data,
     "principals response",
   );
-  return summary.data.find((p) => p.tenantSlug === orgSlug)?.tenantId;
+  const tenantId = summary.data.find((p) => p.tenantSlug === orgSlug)?.tenantId;
+  return tenantId !== undefined
+    ? { outcome: "resolved", tenantId }
+    : { outcome: "not-found" };
 }
 
-async function attemptPlant(
+type ResolveResult =
+  | { status: "resolved"; tenantId: string; session: Session }
+  /** The session used to look up the bench is still good — just no
+   * matching bench yet. Worth caching: the next tick should retry only
+   * the lookup, not re-authenticate. */
+  | { status: "unresolved"; session: Session };
+
+/**
+ * Runs one bench-resolution pass against a possibly-cached session:
+ * reuse `session` when given (retrying only the bench lookup, never
+ * re-authenticating on every tick), re-authenticating exactly once when
+ * the cached cookie has gone stale (a 401 from the bench lookup). Lets
+ * `signIn` itself throw uncaught — an admin account that does not exist
+ * yet (or a password mismatch) is a distinct, un-cacheable failure the
+ * caller must not paper over with a stale session.
+ */
+async function resolveWithSession(
+  api: ApiCall,
   deps: EnvCredentialPlantDeps,
-): Promise<readonly PlantEnvProviderCredentialsOutcome[]> {
-  const api = createHubAPI(deps.baseUrl, localFetchImpl(deps.fetch));
-  const session = await authenticate(api, {
-    email: deps.admin.email,
-    password: deps.admin.password,
-  });
-  const tenantId = await resolveOperatorTenantId(
+  cachedSession: Session | undefined,
+): Promise<ResolveResult> {
+  const session = cachedSession ?? (await signIn(api, deps.admin));
+  const lookup = await resolveOperatorTenantId(
     api,
     session.cookies,
     deps.admin.orgSlug,
   );
-  if (tenantId === undefined) {
-    throw new Error(
-      `operator bench "${deps.admin.orgSlug}" does not exist yet (or ${deps.admin.email} is not a member of it)`,
-    );
+
+  if (lookup.outcome === "resolved") {
+    return { status: "resolved", tenantId: lookup.tenantId, session };
+  }
+  if (lookup.outcome === "not-found") {
+    return { status: "unresolved", session };
+  }
+
+  // The cached cookie is stale — re-authenticate once and retry the
+  // lookup with the fresh session, rather than waiting for the next
+  // scheduled tick.
+  const freshSession = await signIn(api, deps.admin);
+  const retried = await resolveOperatorTenantId(
+    api,
+    freshSession.cookies,
+    deps.admin.orgSlug,
+  );
+  return retried.outcome === "resolved"
+    ? { status: "resolved", tenantId: retried.tenantId, session: freshSession }
+    : { status: "unresolved", session: freshSession };
+}
+
+type AttemptResult =
+  | {
+      status: "ran";
+      outcomes: readonly PlantEnvProviderCredentialsOutcome[];
+      session: Session;
+    }
+  | { status: "unresolved"; session: Session };
+
+async function attemptPlant(
+  deps: EnvCredentialPlantDeps,
+  cachedSession: Session | undefined,
+): Promise<AttemptResult> {
+  const api = createHubAPI(deps.baseUrl, localFetchImpl(deps.fetch));
+  const resolved = await resolveWithSession(api, deps, cachedSession);
+  if (resolved.status === "unresolved") {
+    return resolved;
   }
   const plant = deps.plant ?? plantEnvProviderCredentials;
-  return plant({
+  const outcomes = await plant({
     api,
-    cookies: session.cookies,
-    tenantId,
+    cookies: resolved.session.cookies,
+    tenantId: resolved.tenantId,
     envProviderKeys: deps.envProviderKeys,
     log: (line) => log.info`${line}`,
   });
+  return { status: "ran", outcomes, session: resolved.session };
+}
+
+function failureReason(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 /**
  * Fires the first plant attempt immediately (never blocking the
  * caller — the returned handle resolves independently of hub boot) and
- * keeps retrying on `retryIntervalMs` until the operator bench resolves
- * and a plant actually runs. Once `plantEnvProviderCredentials` runs at
- * all — regardless of whether it planted, skipped, or reported a probe
- * failure for any individual provider — this stops: a bad key is a
- * terminal outcome for this run, not a reason to keep polling. A no-op
- * with no scheduled retry when no provider env key is set at all, so a
- * hub boot with nothing to plant never even attempts to sign in.
+ * keeps retrying, with exponential backoff up to `maxRetryIntervalMs`,
+ * until the operator bench resolves and a plant actually runs with
+ * nothing left `"blocked"`. A blocked outcome (a proven env key that
+ * could not be stored because a stale credential of the same name is in
+ * the way) is not treated as done — a later retry, after the operator
+ * clears the stale row, can still succeed. Every other outcome —
+ * planted, skipped, or a probe failure — is terminal for this run: a bad
+ * key is not a reason to keep polling.
+ *
+ * An unresolved target that never resolves stops retrying after
+ * `giveUpAfterMs` (default 24h), logging exactly one error-level line.
+ * The authenticated session is cached across ticks and only
+ * re-established on a 401, so a long retry window does not mint a fresh
+ * session (or a fresh row) every ten seconds; the cached session is
+ * dropped once the run reaches a terminal state, letting its cookie
+ * lapse rather than keeping it alive with no further use.
+ *
+ * A no-op with no scheduled retry when no provider env key is set at
+ * all, so a hub boot with nothing to plant never even attempts to sign
+ * in.
  */
 export function scheduleEnvProviderCredentialPlant(
   deps: EnvCredentialPlantDeps,
@@ -126,26 +221,60 @@ export function scheduleEnvProviderCredentialPlant(
   }
 
   const intervalMs = deps.retryIntervalMs ?? DEFAULT_RETRY_INTERVAL_MS;
+  const maxIntervalMs = deps.maxRetryIntervalMs ?? DEFAULT_MAX_RETRY_INTERVAL_MS;
+  const giveUpAfterMs = deps.giveUpAfterMs ?? DEFAULT_GIVE_UP_AFTER_MS;
+
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let loggedUnresolved = false;
+  let currentIntervalMs = intervalMs;
+  let lastLoggedReason: string | undefined;
+  let session: Session | undefined;
+  const startedAt = Date.now();
 
   function scheduleRetry(): void {
     if (stopped) return;
-    timer = setTimeout(() => void attempt(), intervalMs);
+    if (Date.now() - startedAt >= giveUpAfterMs) {
+      log.error`env credential plant: giving up after ${Math.round(giveUpAfterMs / 3_600_000)}h with the operator bench still unresolved (last reason: ${lastLoggedReason ?? "unknown"})`;
+      session = undefined;
+      return;
+    }
+    timer = setTimeout(() => void attempt(), currentIntervalMs);
     if (typeof timer.unref === "function") timer.unref();
+    currentIntervalMs = Math.min(currentIntervalMs * 2, maxIntervalMs);
+  }
+
+  function logUnresolved(reason: string): void {
+    if (reason === lastLoggedReason) return;
+    const level = lastLoggedReason === undefined ? "info" : "error";
+    const message = `env credential plant: not ready yet (${reason}); will keep retrying with backoff up to ${Math.round(maxIntervalMs / 1000)}s`;
+    if (level === "error") log.error`${message}`;
+    else log.info`${message}`;
+    lastLoggedReason = reason;
   }
 
   async function attempt(): Promise<void> {
     if (stopped) return;
     try {
-      await attemptPlant(deps);
-      // A run happened — done, whatever its per-provider outcomes.
-    } catch (cause) {
-      if (!loggedUnresolved) {
-        log.info`env credential plant: not ready yet (${cause instanceof Error ? cause.message : String(cause)}); will keep retrying every ${Math.round(intervalMs / 1000)}s`;
-        loggedUnresolved = true;
+      const result = await attemptPlant(deps, session);
+      if (result.status === "unresolved") {
+        session = result.session;
+        logUnresolved(
+          `operator bench "${deps.admin.orgSlug}" does not exist yet (or ${deps.admin.email} is not a member of it)`,
+        );
+        scheduleRetry();
+        return;
       }
+      const stillBlocked = result.outcomes.some((o) => o.status === "blocked");
+      if (!stillBlocked) {
+        // A run happened with nothing left blocked — done.
+        session = undefined;
+        return;
+      }
+      session = result.session;
+      scheduleRetry();
+    } catch (cause) {
+      session = undefined;
+      logUnresolved(failureReason(cause));
       scheduleRetry();
     }
   }
@@ -155,6 +284,7 @@ export function scheduleEnvProviderCredentialPlant(
   return {
     stop(): void {
       stopped = true;
+      session = undefined;
       if (timer !== undefined) clearTimeout(timer);
     },
   };
