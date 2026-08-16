@@ -178,6 +178,20 @@ export interface ChannelMail {
   }): Promise<ListedMail>;
 
   /**
+   * Resolves a single message by id directly, rather than paging
+   * through `listMail` and scanning each page for it — a message
+   * older than one page back must still be findable, not silently
+   * invisible to a caller (a reaction/pin toggle, say) that only knows
+   * its id. Undefined when no message with that id exists in this
+   * channel's mailbox.
+   */
+  getMail(input: {
+    readonly tenantId: string;
+    readonly channelId: string;
+    readonly messageId: string;
+  }): Promise<ListedMailItem | undefined>;
+
+  /**
    * Bulk activity signals for a channel list — one call covering every
    * row, never one `listMail` per channel. `sinceCreatedAt` is the
    * caller's own read cursor for that channel (from

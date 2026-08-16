@@ -37,7 +37,7 @@ import {
 } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
-import { extractPartByPath } from "@intx/mime";
+import { extractPartByPath, parseMailToEmail } from "@intx/mime";
 import { channelLaunch } from "./schema";
 import { summarizeChannelActivity } from "./channel-activity";
 import {
@@ -65,6 +65,7 @@ import {
   type LaunchedChannel,
   type LaunchedInvite,
   type ListedMail,
+  type ListedMailItem,
   type SentMail,
 } from "./platform-port";
 
@@ -688,6 +689,31 @@ export function createHubChatPlatform(
           ? { ...listMailBase, cursor: input.cursor }
           : listMailBase,
       );
+    },
+
+    async getMail(input): Promise<ListedMailItem | undefined> {
+      const run = await findFoldedRunById(deps.db, input.channelId);
+      if (run === undefined) return undefined;
+      const sessionId = await resolveFoldedRunSessionId(deps.db, run);
+
+      // Same `findFirst` by id + session scope `fetchBlob` uses for its
+      // blob-owning mail row, rather than `listMail`'s keyset page: a
+      // single-message lookup by id must resolve regardless of how far
+      // back that message sits, not just when it happens to land on
+      // page one.
+      const mailRow = await deps.db.query.sessionMail.findFirst({
+        where: and(
+          eq(sessionMail.id, input.messageId),
+          eq(sessionMail.tenantId, input.tenantId),
+          eq(sessionMail.sessionId, sessionId),
+        ),
+      });
+      if (mailRow === undefined) return undefined;
+      return {
+        id: mailRow.id,
+        createdAt: mailRow.createdAt.toISOString(),
+        mail: parseMailToEmail(mailRow.raw, mailRow.id),
+      };
     },
 
     async listChannelActivity(input) {

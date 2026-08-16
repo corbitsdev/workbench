@@ -487,8 +487,9 @@ async function messageExistsInChannel(
   channelId: string,
   messageId: string,
 ): Promise<boolean> {
-  const listed = await platform.listMail({ tenantId, channelId });
-  return listed.items.some((item) => item.id === messageId);
+  return (
+    (await platform.getMail({ tenantId, channelId, messageId })) !== undefined
+  );
 }
 
 const ToggleReactionBody = type({ emoji: "string" });

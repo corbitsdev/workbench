@@ -178,6 +178,10 @@ export function fakePlatform(
       const items = mailByChannel.get(input.channelId) ?? [];
       return { items: [...items].reverse() };
     },
+    async getMail(input) {
+      const items = mailByChannel.get(input.channelId) ?? [];
+      return items.find((item) => item.id === input.messageId);
+    },
     async listChannelActivity(input) {
       const result: Record<
         string,
