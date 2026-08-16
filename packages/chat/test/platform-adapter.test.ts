@@ -959,6 +959,78 @@ describe("createHubChatPlatform", () => {
     });
   });
 
+  // An invited agent's credential secret must be decrypted with the same
+  // real cipher the composition root's credential-write route encrypts it
+  // with. `createHubChatPlatform`'s own `credentialCipher` dep must reach
+  // `resolveDefinitionSources` on every launch, or the raw stored secret
+  // (ciphertext, if it was ever encrypted) gets handed to the provider as
+  // its API key instead of the decrypted plaintext.
+  test("launchInvite threads credentialCipher through to resolveDefinitionSources", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "openai-compatible",
+          baseURL: "https://openrouter.ai/api/v1",
+          apiKey: "sk-or-v1-real-key",
+          model: "anthropic/claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "channel-1",
+        displayName: null,
+      },
+      definitionId: "wfd_channel1",
+      workflowDefinitionRow: {
+        id: "wfd_echo",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_echo",
+      },
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+    });
+    const sessionService = createFakeSessionService();
+    const assetService = createFakeAssetService({
+      assetBlob: new TextEncoder().encode(CHANNEL_WORKFLOW_JSON),
+    });
+    const sidecarRouter = createFakeSidecarRouter();
+    const eventCollectors = createFakeEventCollectors();
+    const credentialCipher = {
+      encrypt: async (plaintext: string) => plaintext,
+      decrypt: async (blob: string) => blob,
+    };
+
+    const platform = createHubChatPlatform({
+      db: db as never,
+      noopInferenceBaseUrl: "https://hub.invalid/api/chat/noop-inference",
+      sessionService,
+      assetService,
+      sidecarRouter,
+      eventCollectors,
+      credentialCipher,
+    });
+
+    await platform.launchInvite({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      definitionId: "wfd_echo",
+    });
+
+    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
+    expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
+      tenantId: "ten_1",
+      credentialCipher,
+    });
+  });
+
   test("launchInvite fails loud when the definition is not deployed", async () => {
     const db = createFakeDb({
       assetRow: {

@@ -275,6 +275,61 @@ describe("launchFoldedRun", () => {
     });
   });
 
+  // A caller-supplied `credentialCipher` must reach `resolveDefinitionSources`
+  // on every launch, or an invited agent's credential secret is decrypted
+  // (if at all) through the built-in noop fallback instead of the real
+  // cipher the composition root writes secrets with — delivering the raw
+  // stored value as the provider's API key instead of the plaintext secret.
+  test("threads a caller-supplied credentialCipher through to resolveDefinitionSources", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "openai-compatible",
+          baseURL: "https://openrouter.ai/api/v1",
+          apiKey: "sk-or-v1-real-key",
+          model: "anthropic/claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+    const credentialCipher = {
+      encrypt: async (plaintext: string) => plaintext,
+      decrypt: async (blob: string) => blob,
+    };
+
+    await launchFoldedRun(
+      {
+        db: db as never,
+        sessionService,
+        assetService: {} as never,
+        sidecarRouter: {} as never,
+        eventCollectors,
+        credentialCipher,
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_invited1",
+        triggerAddress: "ins_invited1@ten1.workbench.test",
+        definitionId: "wfd_invited1",
+        foldedBody: FOLDED_BODY,
+        launchLabel: "the invited agent",
+      },
+    );
+
+    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
+    expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
+      tenantId: "ten_1",
+      credentialCipher,
+    });
+  });
+
   test("rolls back the committed rows and abandons the collector when the deploy fails", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
