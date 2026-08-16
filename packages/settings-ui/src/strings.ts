@@ -242,8 +242,10 @@ export const SETTINGS_STRINGS = {
   credentialsCreateCancel: "Cancel",
   credentialsCreateError: "Couldn't store that credential — try again.",
   credentialsDelete: "Revoke",
+  credentialsDeleting: "Revoking…",
   credentialsDeleteConfirm: "Revoke for good?",
   credentialsDeleteError: "Couldn't revoke that credential — try again.",
+  credentialsRemovedProvider: "Removed provider",
   credentialSavedToast: "Credential saved · value hidden",
   credentialRevokedToast: "Credential revoked",
 

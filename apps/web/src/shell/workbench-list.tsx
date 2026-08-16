@@ -208,7 +208,7 @@ function WorkbenchRow({
       setPinned(next);
       toast(CHAT_STRINGS.channelPinnedToast(next, title));
     } catch {
-      // Best-effort: the list refetches on scope change and reconciles.
+      toast(CHAT_STRINGS.channelPinToggleError(next));
     }
   }
 

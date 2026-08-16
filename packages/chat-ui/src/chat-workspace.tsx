@@ -11,6 +11,7 @@
 // `TenantResolution` value rather than importing app code: the same
 // narrow-port shape `@corbits/chat`'s `routes.ts` uses for `ChatPlatform`.
 
+import { UnauthenticatedError } from "@corbits/api-query";
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { Avatar, Button, EmptyState, Skeleton, toast } from "@corbits/react-ui";
 import {
@@ -134,6 +135,10 @@ export type MessagesState =
        * same id can never succeed, so the UI trades "Try again" for an
        * honest way out instead. */
       readonly channelNotFound: boolean;
+      /** A 401 means the session itself is gone — "Try again" would hit
+       * the same 401 forever, so the UI offers a way to sign back in
+       * instead of a retry that can never succeed. */
+      readonly isUnauthorized: boolean;
     }
   | { readonly kind: "ready"; readonly items: readonly MessageItem[] };
 
@@ -143,6 +148,7 @@ export type MessagesLoadOutcome =
       readonly kind: "error";
       readonly message: string;
       readonly channelNotFound: boolean;
+      readonly isUnauthorized: boolean;
     };
 
 /**
@@ -165,6 +171,7 @@ export function nextMessagesState(
     kind: "error",
     message: outcome.message,
     channelNotFound: outcome.channelNotFound,
+    isUnauthorized: outcome.isUnauthorized,
   };
 }
 
@@ -385,6 +392,7 @@ function ChatWorkspaceInner({
   presenceMembers,
   onChannelNotFound,
   onBackToChannelList,
+  onSignIn,
 }: {
   readonly tenantId: string;
   readonly channelId?: string | null;
@@ -478,6 +486,10 @@ function ChatWorkspaceInner({
   /** The dead-channel empty state's way out — navigate to the bare channel
    * list instead of retrying an id that can never resolve. */
   readonly onBackToChannelList?: () => void;
+  /** The 401 messages-error state's way out — sign back in instead of a
+   * retry that can only ever hit the same 401. Omitted, that state falls
+   * back to no action at all (never "Try again" for a session that's gone). */
+  readonly onSignIn?: () => void;
 }) {
   const queryClient = useQueryClient();
   const refreshChannelLists = useCallback(() => {
@@ -720,7 +732,10 @@ function ChatWorkspaceInner({
         // A 401 is terminal for this session: keep polling and the app
         // would hammer the hub unauthenticated forever. Halt refreshes
         // until the user switches channels or signs back in.
-        if (cause instanceof ChatApiError && cause.status === 401) {
+        const isUnauthorized =
+          cause instanceof UnauthenticatedError ||
+          (cause instanceof ChatApiError && cause.status === 401);
+        if (isUnauthorized) {
           unauthorizedRef.current = true;
         }
         // A 404 here means the channel itself is gone (deleted, or a stale
@@ -734,7 +749,7 @@ function ChatWorkspaceInner({
         setMessagesState((current) =>
           nextMessagesState(
             current,
-            { kind: "error", message, channelNotFound },
+            { kind: "error", message, channelNotFound, isUnauthorized },
             background,
           ),
         );
@@ -1444,12 +1459,20 @@ function ChatWorkspaceInner({
                   title={`Couldn't load ${CHAT_STRINGS.couldNotLoadMessages}`}
                   description={messagesState.message}
                   action={
-                    <Button
-                      variant="outline"
-                      onClick={() => void loadMessages(activeChannelId)}
-                    >
-                      Try again
-                    </Button>
+                    messagesState.isUnauthorized ? (
+                      onSignIn !== undefined ? (
+                        <Button variant="outline" onClick={onSignIn}>
+                          Sign in
+                        </Button>
+                      ) : undefined
+                    ) : (
+                      <Button
+                        variant="outline"
+                        onClick={() => void loadMessages(activeChannelId)}
+                      >
+                        Try again
+                      </Button>
+                    )
                   }
                 />
               ) : (
@@ -1615,6 +1638,7 @@ export function ChatWorkspace({
   presenceMembers,
   onChannelNotFound,
   onBackToChannelList,
+  onSignIn,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active channel (e.g. from the app's URL); null = pick the first. */
@@ -1703,6 +1727,8 @@ export function ChatWorkspace({
   readonly onChannelNotFound?: (channelId: string) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onBackToChannelList?: () => void;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly onSignIn?: () => void;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -1746,6 +1772,7 @@ export function ChatWorkspace({
           {...(onBackToChannelList !== undefined
             ? { onBackToChannelList }
             : {})}
+          {...(onSignIn !== undefined ? { onSignIn } : {})}
         />
       );
     case "empty":

@@ -81,6 +81,9 @@ export function CredentialsSection({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
 
   function reload() {
     setReloadKey((value) => value + 1);
@@ -155,13 +158,22 @@ export function CredentialsSection({
 
   function handleDelete(credential: Credential) {
     if (tenantId === null) return;
+    if (deletingIds.has(credential.id)) return;
     setRowError(null);
+    setDeletingIds((current) => new Set(current).add(credential.id));
     deleteCredential(tenantId, credential.id)
       .then(() => {
         reload();
         toast(SETTINGS_STRINGS.credentialRevokedToast);
       })
-      .catch(() => setRowError(SETTINGS_STRINGS.credentialsDeleteError));
+      .catch(() => setRowError(SETTINGS_STRINGS.credentialsDeleteError))
+      .finally(() => {
+        setDeletingIds((current) => {
+          const next = new Set(current);
+          next.delete(credential.id);
+          return next;
+        });
+      });
   }
 
   return (
@@ -189,6 +201,7 @@ export function CredentialsSection({
               credentials={credentials}
               providerNameById={providerNameById}
               onDelete={handleDelete}
+              deletingIds={deletingIds}
             />
             <CreateCredentialDialog
               open={createOpen}
@@ -209,10 +222,12 @@ export function CredentialsTable({
   credentials,
   providerNameById,
   onDelete,
+  deletingIds = new Set(),
 }: {
   readonly credentials: readonly Credential[];
   readonly providerNameById: ReadonlyMap<string, string>;
   readonly onDelete: (credential: Credential) => void;
+  readonly deletingIds?: ReadonlySet<string>;
 }) {
   if (credentials.length === 0) {
     return (
@@ -240,7 +255,7 @@ export function CredentialsTable({
             <TableCell>{credential.name}</TableCell>
             <TableCell>
               {providerNameById.get(credential.providerId) ??
-                credential.providerId}
+                SETTINGS_STRINGS.credentialsRemovedProvider}
             </TableCell>
             <TableCell>
               <span title={credential.type}>
@@ -258,8 +273,11 @@ export function CredentialsTable({
                 size="sm"
                 confirmLabel={SETTINGS_STRINGS.credentialsDeleteConfirm}
                 onConfirm={() => onDelete(credential)}
+                disabled={deletingIds.has(credential.id)}
               >
-                {SETTINGS_STRINGS.credentialsDelete}
+                {deletingIds.has(credential.id)
+                  ? SETTINGS_STRINGS.credentialsDeleting
+                  : SETTINGS_STRINGS.credentialsDelete}
               </ConfirmButton>
             </TableCell>
           </TableRow>

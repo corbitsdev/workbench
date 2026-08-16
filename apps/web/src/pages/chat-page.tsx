@@ -15,6 +15,7 @@ import { fetchArtifactDetail } from "../api";
 import { createChatApprovalActions } from "../approval-actions";
 import { createChatBlockResponseActions } from "../block-response-actions";
 import { useBench } from "../bench-context";
+import { useSignOut } from "../navigation";
 import {
   artifactContentFromBlob,
   artifactContentFromBlobError,
@@ -58,6 +59,7 @@ export function ChatPage({
   readonly navigate: (to: string) => void;
 }) {
   const bench = useBench();
+  const onSignIn = useSignOut();
   const channelId = channelIdFromPath(path);
   const settingsOpen = isChannelSettingsPath(path);
   const settingsSection = channelSettingsSectionFromPath(path) ?? "general";
@@ -253,6 +255,7 @@ export function ChatPage({
         : {})}
       onChannelNotFound={reportChannelNotFound}
       onBackToChannelList={() => navigate(channelPath(null))}
+      {...(onSignIn !== undefined ? { onSignIn } : {})}
     />
   );
 
