@@ -159,6 +159,7 @@ describe("ensureMyraChannel", () => {
       kind: "chat",
       definitionId: "def-assistant",
       name: "Myra",
+      reuseExisting: true,
     });
     expect(isMyraChannelId("chat-1")).toBe(true);
   });
