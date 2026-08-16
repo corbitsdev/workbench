@@ -10,7 +10,11 @@
 // nothing here has to duplicate that. No new react-ui primitive was
 // needed for this composition.
 
-import { CORBITS_MARK_PATH, CORBITS_MARK_VIEWBOX, DitherBackground } from "@corbits/react-ui";
+import {
+  CORBITS_MARK_PATH,
+  CORBITS_MARK_VIEWBOX,
+  DitherBackground,
+} from "@corbits/react-ui";
 import { useMemo } from "react";
 
 const MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${CORBITS_MARK_VIEWBOX.x} ${CORBITS_MARK_VIEWBOX.y} ${CORBITS_MARK_VIEWBOX.width} ${CORBITS_MARK_VIEWBOX.height}"><path d="${CORBITS_MARK_PATH}" fill="#f4762a"/></svg>`;

@@ -492,16 +492,23 @@ async function run(): Promise<void> {
       },
     );
 
-    await step(() => page, "02-onboarding-provisioning", async () => {
-      // CL-6089 dropped the naming step: provisioning now fires
-      // automatically, under a default name derived from the account, the
-      // moment the wizard mounts. This step just waits for it to land on
-      // the credential step next — an inference-provider radiogroup.
-      await page.waitForSelector('[aria-label="Inference provider"]', {
-        timeout: 15_000,
-      });
-      return { status: "pass", detail: "workbench provisioned, reached credential step" };
-    });
+    await step(
+      () => page,
+      "02-onboarding-provisioning",
+      async () => {
+        // CL-6089 dropped the naming step: provisioning now fires
+        // automatically, under a default name derived from the account, the
+        // moment the wizard mounts. This step just waits for it to land on
+        // the credential step next — an inference-provider radiogroup.
+        await page.waitForSelector('[aria-label="Inference provider"]', {
+          timeout: 15_000,
+        });
+        return {
+          status: "pass",
+          detail: "workbench provisioned, reached credential step",
+        };
+      },
+    );
 
     await step(
       () => page,

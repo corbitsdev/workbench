@@ -5,7 +5,10 @@ import {
 } from "@corbits/react-ui";
 import type { CommandPaletteGroup } from "@corbits/react-ui";
 import { listChannels } from "@corbits/chat-ui";
-import { filterWorkbenchMemberships, listChannelTenantIds } from "@corbits/bench-ui";
+import {
+  filterWorkbenchMemberships,
+  listChannelTenantIds,
+} from "@corbits/bench-ui";
 import { useQuery } from "@tanstack/react-query";
 import {
   buildCommandPaletteGroups,

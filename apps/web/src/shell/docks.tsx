@@ -20,4 +20,3 @@ export function initialsOf(name: string, email = ""): string {
     .toUpperCase();
   return initials.length > 0 ? initials : "··";
 }
-

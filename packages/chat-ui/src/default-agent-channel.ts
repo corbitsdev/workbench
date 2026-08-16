@@ -127,10 +127,14 @@ export function createDefaultAgentChannel(config: DefaultAgentChannelConfig) {
           message: `No "${config.title}" agent found for this workbench.`,
         };
       }
+      // The home workbench is the one deliberate reopen: the server's
+      // definitionId dedup catches it even after a rename, where this
+      // module's own title lookup above would miss and mint a second.
       const created = await createChannel(tenantId, {
         kind: "chat",
         definitionId: definition.id,
         name: config.title,
+        reuseExisting: true,
       });
       cachedChannelId = created.id;
       return { kind: "ready", channelId: created.id };

@@ -1317,7 +1317,9 @@ describe("routine scope (review addendum)", () => {
     const personalButton = buttonWithText("Just for you");
     expect(personalButton?.getAttribute("aria-pressed")).toBe("true");
     expect(
-      buttonWithText("Everyone in this workbench")?.getAttribute("aria-pressed"),
+      buttonWithText("Everyone in this workbench")?.getAttribute(
+        "aria-pressed",
+      ),
     ).toBe("false");
 
     act(() => {
