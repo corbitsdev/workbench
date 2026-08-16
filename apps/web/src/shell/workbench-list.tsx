@@ -363,11 +363,29 @@ export function WorkbenchList({
     return (
       <div className="panel-stack" aria-label="Workbenches">
         {workingGroup}
-        <EmptyState
-          icon={<MessageSquare />}
-          title="No workbenches yet"
-          description="Create one to get started."
-        />
+        <div className="panel-stack-group">
+          {/* CL-6124: the first-run screen (`/`) IS the "create a
+              workbench" surface now — a chat, not a dialog — so this row
+              only names it, styled as the already-active row per house
+              rule (grey structure, orange edge for "here"). Selecting it
+              is a no-op: it names where the person already is. */}
+          <button
+            type="button"
+            className="shell-ch-row"
+            data-active="true"
+            aria-current="true"
+          >
+            <span className="shell-ch-stack" aria-hidden="true">
+              <span>N</span>
+            </span>
+            <span className="shell-ch-meta">
+              <span className="shell-ch-name-row">
+                <span className="shell-ch-name">New Workbench</span>
+              </span>
+            </span>
+            <span className="shell-ch-right" />
+          </button>
+        </div>
       </div>
     );
   }
