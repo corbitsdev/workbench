@@ -639,11 +639,31 @@ export function refreshChannelAgent(
 // "instructions"). `name` here is the display name, matching the create
 // form's own "name" field (see `CreateAgentDefinitionInput`), never the
 // definition's immutable handle.
+const AgentCapabilitiesWire = type({
+  toolPackagePins: type({ name: "string", version: "string" }).array(),
+  skills: "string[]",
+  "model?": "string",
+});
+export type AgentCapabilities = typeof AgentCapabilitiesWire.infer;
+
 const AgentInstructionsWire = type({
   name: "string",
   systemPrompt: "string",
 });
 export type AgentInstructions = typeof AgentInstructionsWire.infer;
+
+/** `GET`/`POST .../restore`'s fuller shape: the editable persona plus its
+ * current capability snapshot, in one read — the settings surface's
+ * "Capabilities" list never needs a second round trip to show what an
+ * agent already carries. */
+const AgentDetailWire = type({
+  name: "string",
+  systemPrompt: "string",
+  toolPackagePins: type({ name: "string", version: "string" }).array(),
+  skills: "string[]",
+  "model?": "string",
+});
+export type AgentDetail = typeof AgentDetailWire.infer;
 
 function agentInstructionsPath(tenantId: string, definitionId: string) {
   return `/api/tenants/${tenantId}/agent-definitions/${encodeURIComponent(definitionId)}`;
@@ -652,10 +672,10 @@ function agentInstructionsPath(tenantId: string, definitionId: string) {
 export function getAgentInstructions(
   tenantId: string,
   definitionId: string,
-): Promise<AgentInstructions> {
+): Promise<AgentDetail> {
   return request(
     agentInstructionsPath(tenantId, definitionId),
-    AgentInstructionsWire,
+    AgentDetailWire,
   );
 }
 
@@ -668,6 +688,81 @@ export function updateAgentInstructions(
     agentInstructionsPath(tenantId, definitionId),
     AgentInstructionsWire,
     { method: "PUT", body: JSON.stringify(input) },
+  );
+}
+
+// `GET /:definitionId/versions` / `POST /:definitionId/restore` (see
+// `packages/agent-directory/src/routes.ts`): the agent's own instructions/
+// capabilities history, mirroring `@corbits/skills`' version-history shape
+// exactly (`commitSha`/`message`/`author`/`committedAtIso`/`current`) — the
+// sha only ever appears in a tooltip, never in the label a person reads.
+const AgentVersionWire = type({
+  commitSha: "string",
+  message: "string",
+  author: "string",
+  committedAtIso: "string",
+  current: "boolean",
+});
+export type AgentVersion = typeof AgentVersionWire.infer;
+
+export function listAgentVersions(
+  tenantId: string,
+  definitionId: string,
+): Promise<readonly AgentVersion[]> {
+  return request(
+    `${agentInstructionsPath(tenantId, definitionId)}/versions`,
+    type({ versions: AgentVersionWire.array() }),
+  ).then((page) => page.versions);
+}
+
+export function restoreAgentVersion(
+  tenantId: string,
+  definitionId: string,
+  commitSha: string,
+): Promise<AgentDetail> {
+  return request(
+    `${agentInstructionsPath(tenantId, definitionId)}/restore`,
+    AgentDetailWire,
+    { method: "POST", body: JSON.stringify({ commitSha }) },
+  );
+}
+
+// `GET /agent-definitions/capabilities/inventory` /
+// `POST /:definitionId/capabilities` (see `packages/agent-directory/src/
+// routes.ts`): the guided capability-add surface. The inventory call feeds
+// the add picker with only what this tenant actually has — a tool package,
+// skill, or model this call doesn't list can never be added, since the
+// server re-checks the same inventory fail-closed on the add itself.
+const CapabilityInventoryWire = type({
+  toolPackages: type({ name: "string" }).array(),
+  skills: type({ name: "string" }).array(),
+  models: type({ canonicalName: "string" }).array(),
+});
+export type CapabilityInventory = typeof CapabilityInventoryWire.infer;
+
+export function listCapabilityInventory(
+  tenantId: string,
+): Promise<CapabilityInventory> {
+  return request(
+    `/api/tenants/${tenantId}/agent-definitions/capabilities/inventory`,
+    CapabilityInventoryWire,
+  );
+}
+
+export type CapabilityAddition =
+  | { readonly kind: "toolPackage"; readonly name: string }
+  | { readonly kind: "skill"; readonly name: string }
+  | { readonly kind: "model"; readonly canonicalName: string };
+
+export function addAgentCapability(
+  tenantId: string,
+  definitionId: string,
+  addition: CapabilityAddition,
+): Promise<AgentCapabilities> {
+  return request(
+    `${agentInstructionsPath(tenantId, definitionId)}/capabilities`,
+    AgentCapabilitiesWire,
+    { method: "POST", body: JSON.stringify(addition) },
   );
 }
 

@@ -317,6 +317,41 @@
   font-weight: 600;
 }
 
+.chat-settings-agent-block-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.chat-settings-agent-block-section h4 {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.chat-settings-capability-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chat-settings-capability-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.chat-settings-capability-add .chat-settings-field {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+}
+
 .chat-settings-choice-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
