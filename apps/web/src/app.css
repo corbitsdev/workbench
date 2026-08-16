@@ -967,34 +967,78 @@ select:disabled,
   padding: 0.25rem;
 }
 
-/* Square monogram avatar — the account affordance and context-menu anchor. */
-.shell-sidebar-avatar-btn {
-  display: grid;
-  place-items: center;
-  width: 2.1rem;
-  height: 2.1rem;
-  padding: 0;
+/* The account row: avatar + name, the whole row is the menu trigger — the
+   account affordance and context-menu anchor. Its menu (react-ui `Menu`)
+   pops upward on its own via `side="top"`; no positioning override needed
+   here the way the bell above needed one. */
+.shell-sidebar-account-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.35rem 0.4rem;
+  margin-top: 0.35rem;
   border: 0;
-  background: color-mix(in srgb, var(--foreground) 10%, transparent);
-  cursor: pointer;
   border-radius: 0;
+  background: transparent;
+  cursor: pointer;
   color: var(--foreground);
+  text-align: left;
 }
 
-.shell-sidebar-avatar-btn [data-slot="avatar"],
-.shell-sidebar-avatar-btn > span {
+.shell-sidebar-account-btn:hover,
+.shell-sidebar-account-btn[data-state="open"] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.shell-sidebar-account-btn:focus-visible {
+  outline: 1px solid var(--foreground);
+  outline-offset: -1px;
+}
+
+.shell-sidebar-account-btn [data-slot="avatar"] {
+  flex-shrink: 0;
+  width: 2.1rem;
+  height: 2.1rem;
   border-radius: 0;
-  width: 100%;
-  height: 100%;
-  background: transparent;
-  color: inherit;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
   font-size: 0.7rem;
   font-weight: 700;
 }
 
-.shell-sidebar-avatar-btn:focus-visible {
-  outline: 1px solid var(--foreground);
-  outline-offset: 2px;
+.shell-sidebar-account-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The "Weekly usage" menu item: label on the left, the honest summary (or
+   nothing, when there is no cheap number yet) plus a chevron on the right. */
+.shell-sidebar-account-menu-usage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.shell-sidebar-account-menu-usage-value {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.15rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.shell-sidebar-account-menu-usage-value svg {
+  width: 0.85rem;
+  height: 0.85rem;
 }
 
 /* Settings master-detail inside the stage: fixed-width section nav beside
