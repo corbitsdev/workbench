@@ -1,0 +1,421 @@
+// The `@corbits/routines-tools` bundle: `routine_list`, `routine_create`,
+// `routine_update`, and `routine_run_now` — Myra's in-chat way to manage
+// the workbench's recurring/triggered automations. Every write is
+// declared `approval: "ask"` (`@intx/agent`'s native per-invocation
+// gate): the reactor suspends the call as a pending approval BEFORE this
+// bundle's `run` ever executes, renders it in-chat as an approve/deny
+// card, and only resumes into `run` once a human allows it — the same
+// shape `@corbits/capability-tools`' `request_capability` uses.
+// `routine_list` is read-only and carries no `approval` key at all,
+// mirroring `@corbits/memory-tools`' `memory_list`.
+//
+// `definitionId` is a required input on `routine_create`, never
+// auto-resolved: Myra must name the agent definition a routine runs
+// against, typically one she already knows from a prior `list_agents` /
+// `create_agent` call — this bundle has no opinion on which definition
+// is "right" for a given routine.
+//
+// See `./client.ts` for the workflow-run-authenticated routine routes
+// (`@corbits/routines`' `createWorkflowRoutineRoutes`) this bundle's
+// execution calls.
+import { defineTool } from "@intx/agent";
+import type { BaseEnv } from "@intx/agent";
+import type { ToolCall, ToolResult } from "@intx/types/runtime";
+import { type } from "arktype";
+
+import {
+  createRoutine,
+  listRoutines,
+  runRoutineNow,
+  updateRoutine,
+  type RoutineTriggerInput,
+} from "./client";
+
+export const ROUTINE_LIST_TOOL = "routine_list";
+export const ROUTINE_CREATE_TOOL = "routine_create";
+export const ROUTINE_UPDATE_TOOL = "routine_update";
+export const ROUTINE_RUN_NOW_TOOL = "routine_run_now";
+
+/** Env this bundle needs beyond `BaseEnv`: the run's hub-reach
+ * credential, mirroring `@corbits/memory-tools`' `WorkflowMemoryEnv` —
+ * no `definitionId` env key, since this bundle is tenant-scoped, not
+ * self-definition-scoped (Myra manages routines against ANY definition
+ * in her tenant, not just her own). */
+export interface WorkflowRoutineEnv extends BaseEnv {
+  readonly hubRoutinesUrl: string;
+  readonly sidecarToken: string;
+  readonly address: string;
+}
+
+const TriggerInput = type({
+  kind: "'daily'",
+  hour: "0 <= number.integer <= 23",
+  minute: "0 <= number.integer <= 59",
+  "timezone?": "string > 0",
+})
+  .or({
+    kind: "'weekly'",
+    dayOfWeek: "0 <= number.integer <= 6",
+    hour: "0 <= number.integer <= 23",
+    minute: "0 <= number.integer <= 59",
+    "timezone?": "string > 0",
+  })
+  .or({
+    kind: "'cron'",
+    expression: "string > 0",
+    "timezone?": "string > 0",
+  })
+  .or({
+    kind: "'webhook'",
+    webhookTriggerId: "string > 0",
+  });
+
+const RoutineCreateInput = type({
+  name: "string > 0",
+  definitionId: "string > 0",
+  instruction: "string > 0",
+  trigger: TriggerInput,
+  "enabled?": "boolean",
+});
+type RoutineCreateInput = typeof RoutineCreateInput.infer;
+
+const RoutineUpdateInput = type({
+  id: "string > 0",
+  "enabled?": "boolean",
+  "name?": "string > 0",
+  "instruction?": "string > 0",
+  "trigger?": TriggerInput,
+});
+type RoutineUpdateInput = typeof RoutineUpdateInput.infer;
+
+const RoutineRunNowInput = type({
+  id: "string > 0",
+});
+
+function errorResult(callId: string, err: unknown): ToolResult {
+  return {
+    callId,
+    isError: true,
+    content: err instanceof Error ? err.message : String(err),
+  };
+}
+
+function clientConfig(env: WorkflowRoutineEnv) {
+  return {
+    hubRoutinesUrl: env.hubRoutinesUrl,
+    sidecarToken: env.sidecarToken,
+    address: env.address,
+  };
+}
+
+/**
+ * `instruction` maps to the routine's stored `input`. `@corbits/routines`'
+ * own `renderRoutineInput` (`packages/routines/src/render-input.ts`)
+ * renders any `Record<string, unknown>` as `key: value` lines a launched
+ * run reads as its first-turn message — `{instruction: <text>}` is the
+ * simplest record that survives that rendering intact, one labeled line
+ * carrying Myra's free-text instruction verbatim. A workflow definition
+ * expecting a richer input shape (multiple named fields) isn't served by
+ * this simplification; that's future scope, not something this bundle
+ * invents an opinion on today.
+ */
+function toRoutineInput(instruction: string): Record<string, unknown> {
+  return { instruction };
+}
+
+async function runRoutineList(
+  env: WorkflowRoutineEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  try {
+    const items = await listRoutines(clientConfig(env));
+    return {
+      callId: call.id,
+      isError: false,
+      content: JSON.stringify({ items }),
+    };
+  } catch (err) {
+    return errorResult(call.id, err);
+  }
+}
+
+async function runRoutineCreate(
+  env: WorkflowRoutineEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  const parsed = RoutineCreateInput(call.arguments);
+  if (parsed instanceof type.errors) {
+    return errorResult(
+      call.id,
+      new Error(`routine_create received invalid input: ${parsed.summary}`),
+    );
+  }
+  try {
+    const routine = await createRoutine(clientConfig(env), {
+      name: parsed.name,
+      definitionId: parsed.definitionId,
+      trigger: parsed.trigger as RoutineTriggerInput,
+      input: toRoutineInput(parsed.instruction),
+    });
+    if (parsed.enabled === false) {
+      await updateRoutine(clientConfig(env), routine.id, { enabled: false });
+    }
+    return {
+      callId: call.id,
+      isError: false,
+      content: `Created "${parsed.name}" (${routine.id}).`,
+    };
+  } catch (err) {
+    return errorResult(call.id, err);
+  }
+}
+
+async function runRoutineUpdate(
+  env: WorkflowRoutineEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  const parsed = RoutineUpdateInput(call.arguments);
+  if (parsed instanceof type.errors) {
+    return errorResult(
+      call.id,
+      new Error(`routine_update received invalid input: ${parsed.summary}`),
+    );
+  }
+  const patch: {
+    enabled?: boolean;
+    name?: string;
+    trigger?: RoutineTriggerInput;
+    input?: Record<string, unknown>;
+  } = {};
+  if (parsed.enabled !== undefined) patch.enabled = parsed.enabled;
+  if (parsed.name !== undefined) patch.name = parsed.name;
+  if (parsed.trigger !== undefined) {
+    patch.trigger = parsed.trigger as RoutineTriggerInput;
+  }
+  if (parsed.instruction !== undefined) {
+    patch.input = toRoutineInput(parsed.instruction);
+  }
+  try {
+    const routine = await updateRoutine(clientConfig(env), parsed.id, patch);
+    return {
+      callId: call.id,
+      isError: false,
+      content: `Updated "${routine.name}" (${routine.id}).`,
+    };
+  } catch (err) {
+    return errorResult(call.id, err);
+  }
+}
+
+async function runRoutineRunNow(
+  env: WorkflowRoutineEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  const parsed = RoutineRunNowInput(call.arguments);
+  if (parsed instanceof type.errors) {
+    return errorResult(
+      call.id,
+      new Error(`routine_run_now received invalid input: ${parsed.summary}`),
+    );
+  }
+  try {
+    const result = await runRoutineNow(clientConfig(env), parsed.id);
+    return {
+      callId: call.id,
+      isError: false,
+      content: `Started run ${result.runId}.`,
+    };
+  } catch (err) {
+    return errorResult(call.id, err);
+  }
+}
+
+const TRIGGER_SCHEMA = {
+  oneOf: [
+    {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["daily"] },
+        hour: { type: "number", description: "0-23, in the given timezone." },
+        minute: { type: "number", description: "0-59." },
+        timezone: {
+          type: "string",
+          description:
+            'IANA timezone, e.g. "America/Los_Angeles". Defaults to UTC.',
+        },
+      },
+      required: ["kind", "hour", "minute"],
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["weekly"] },
+        dayOfWeek: {
+          type: "number",
+          description: "0 (Sunday) - 6 (Saturday).",
+        },
+        hour: { type: "number", description: "0-23, in the given timezone." },
+        minute: { type: "number", description: "0-59." },
+        timezone: {
+          type: "string",
+          description:
+            'IANA timezone, e.g. "America/Los_Angeles". Defaults to UTC.',
+        },
+      },
+      required: ["kind", "dayOfWeek", "hour", "minute"],
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["cron"] },
+        expression: {
+          type: "string",
+          description:
+            "A 5-field cron expression (minute hour day-of-month month day-of-week).",
+        },
+        timezone: {
+          type: "string",
+          description: "IANA timezone. Defaults to UTC.",
+        },
+      },
+      required: ["kind", "expression"],
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["webhook"] },
+        webhookTriggerId: {
+          type: "string",
+          description:
+            "The id of an existing webhook trigger this routine fires on.",
+        },
+      },
+      required: ["kind", "webhookTriggerId"],
+    },
+  ],
+} as const;
+
+/**
+ * The `@corbits/routines-tools` bundle factory: four tools, three env
+ * keys — Myra's own routine-management surface, calling
+ * `@corbits/routines`' tenant-scoped, workflow-run-authenticated
+ * routine routes and never reimplementing any scheduling, cron, or
+ * launch logic of its own.
+ */
+export const routinesTools = defineTool<WorkflowRoutineEnv>({
+  id: "@corbits/routines-tools/routines",
+  requires: ["hubRoutinesUrl", "sidecarToken", "address"],
+  definitions: [
+    { name: ROUTINE_LIST_TOOL },
+    { name: ROUTINE_CREATE_TOOL, approval: "ask" },
+    { name: ROUTINE_UPDATE_TOOL, approval: "ask" },
+    { name: ROUTINE_RUN_NOW_TOOL, approval: "ask" },
+  ],
+  factory: (env) => ({
+    definitions: [
+      {
+        name: ROUTINE_LIST_TOOL,
+        description:
+          "List the workbench's routines (recurring or triggered " +
+          "automations) — name, trigger, target agent, and whether " +
+          "each is enabled.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: ROUTINE_CREATE_TOOL,
+        description:
+          "Create a new routine: a recurring or triggered automation " +
+          "that runs an agent definition on a schedule or webhook. A " +
+          "human must approve before it's created.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "A short, human-readable name for the routine.",
+            },
+            definitionId: {
+              type: "string",
+              description:
+                "The id of the agent definition this routine runs — " +
+                "never invented; name one already known from a prior " +
+                "list_agents or create_agent call.",
+            },
+            instruction: {
+              type: "string",
+              description:
+                "What to tell the agent to do each time this routine fires.",
+            },
+            trigger: TRIGGER_SCHEMA,
+            enabled: {
+              type: "boolean",
+              description:
+                "Whether the routine starts enabled. Defaults to true.",
+            },
+          },
+          required: ["name", "definitionId", "instruction", "trigger"],
+        },
+      },
+      {
+        name: ROUTINE_UPDATE_TOOL,
+        description:
+          "Update an existing routine's enabled state, name, " +
+          "instruction, or trigger. A human must approve before " +
+          "anything changes.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "The routine's id." },
+            enabled: {
+              type: "boolean",
+              description: "Enable or disable the routine.",
+            },
+            name: {
+              type: "string",
+              description: "A new name for the routine.",
+            },
+            instruction: {
+              type: "string",
+              description:
+                "A new instruction to tell the agent each time this routine fires.",
+            },
+            trigger: TRIGGER_SCHEMA,
+          },
+          required: ["id"],
+        },
+      },
+      {
+        name: ROUTINE_RUN_NOW_TOOL,
+        description:
+          "Run a routine immediately, outside its schedule. A human " +
+          "must approve before it runs.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "The routine's id." },
+          },
+          required: ["id"],
+        },
+      },
+    ],
+    run: (call: ToolCall, _signal: AbortSignal) => {
+      switch (call.name) {
+        case ROUTINE_LIST_TOOL:
+          return runRoutineList(env, call);
+        case ROUTINE_CREATE_TOOL:
+          return runRoutineCreate(env, call);
+        case ROUTINE_UPDATE_TOOL:
+          return runRoutineUpdate(env, call);
+        case ROUTINE_RUN_NOW_TOOL:
+          return runRoutineRunNow(env, call);
+        default:
+          return Promise.resolve(
+            errorResult(
+              call.id,
+              new Error(`@corbits/routines-tools: unknown tool "${call.name}"`),
+            ),
+          );
+      }
+    },
+  }),
+});

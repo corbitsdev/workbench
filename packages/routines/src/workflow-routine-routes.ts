@@ -1,0 +1,440 @@
+// Myra's own routine-management surface: the workflow-run-authenticated
+// counterpart to `./routes.ts`'s tenant-session `createRoutineRoutes`,
+// mirroring `@corbits/agent-directory`'s `createWorkflowCapabilityRoutes`
+// (`packages/agent-directory/src/workflow-capability-routes.ts`) for the
+// authentication shape: a workflow-process child has no browser session,
+// only its sidecar bearer token and its own run address, so it
+// authenticates through a `WorkflowRunAuthenticator` rather than the
+// tenant-session pipeline `./routes.ts` uses. Mounted OUTSIDE the tenant
+// prefix for that reason.
+//
+// Unlike `createWorkflowCapabilityRoutes` — which is scoped to a run's
+// OWN definition only — this surface is scoped to the run's own TENANT:
+// Myra may create or manage a routine targeting any workflow definition
+// in her tenant, not just her own. `POST /routines` therefore checks
+// `definitionInTenant`, never a same-definition-as-caller check.
+//
+// Authorization decision (same reasoning as `createWorkflowCapabilityRoutes`'s
+// own file-level comment): this surface never calls `requireGrant`. A
+// human is still the authorizer — but the gate is `@corbits/routines-tools`'
+// `routine_create` / `routine_update` / `routine_run_now` tools declaring
+// `approval: "ask"` (`@intx/agent`'s native per-invocation gate), which
+// suspends the call as a pending approval and renders it in-chat BEFORE
+// this route ever runs. By the time a request reaches here, a human
+// already approved the specific routine action; a grant-store check would
+// only be checking the same human's authority a second, redundant way.
+// `routine_list` is the one read-only exception, and reads need no
+// approval gate at all.
+import { Hono } from "hono";
+import { type } from "arktype";
+
+import { RoutineTrigger } from "./trigger";
+import type { RoutineRow, RoutineStore, UpdateRoutineInput } from "./store";
+import {
+  isDeliveryChannelRequired,
+  launchAndCorrelate,
+  routineView,
+  webhookTriggerValid,
+  type DeliverySpacePort,
+  type DeliveryThreadPort,
+  type RoutineLauncher,
+} from "./routes";
+
+/**
+ * The tenant + principal + run a presented sidecar token and run address
+ * resolve to. Declared structurally (mirroring
+ * `@corbits/agent-directory`'s `WorkflowCapabilityRunScope`) rather than
+ * importing a concrete authenticator's type, so this package carries no
+ * dependency on whichever plane actually resolves sidecar tokens
+ * (`@corbits/artifacts-hub`'s `createWorkflowRunAuthenticator` satisfies
+ * this shape exactly).
+ */
+export type WorkflowRoutineRunScope = {
+  readonly tenantId: string;
+  readonly principalId: string;
+  readonly runId: string;
+};
+
+export type WorkflowRunAuthenticator = {
+  resolve(
+    token: string,
+    runAddress: string,
+  ): Promise<WorkflowRoutineRunScope | null>;
+};
+
+export type WorkflowRoutinesEnv = {
+  Variables: { workflowRoutineScope: WorkflowRoutineRunScope };
+};
+
+export type CreateWorkflowRoutineRoutesDeps = {
+  store: RoutineStore;
+  launcher: RoutineLauncher;
+  authenticator: WorkflowRunAuthenticator;
+  /**
+   * When provided, `POST /routines` rejects with 404 if the definition
+   * is not in the resolved run's own tenant. Tests may omit
+   * (always-allow) — same contract as `CreateRoutineRoutesDeps`'s port
+   * of the same name.
+   */
+  definitionInTenant?: (
+    tenantId: string,
+    definitionId: string,
+  ) => Promise<boolean>;
+  /** Same contract as `CreateRoutineRoutesDeps.webhookTriggerInTenant`. */
+  webhookTriggerInTenant?: (
+    tenantId: string,
+    webhookTriggerId: string,
+    definitionId: string,
+  ) => Promise<boolean>;
+  /** Same contract as `CreateRoutineRoutesDeps.deliveryThreads`. */
+  deliveryThreads?: DeliveryThreadPort | undefined;
+  /**
+   * Same contract as `CreateRoutineRoutesDeps.deliverySpace`: provisions
+   * a brand-new space for a routine Myra creates with no
+   * `deliveryChannelId`, named after the routine. There is no "run's own
+   * channel" to fall back to instead — that channel-context plumbing
+   * doesn't exist anywhere in this codebase yet — so auto-provisioning
+   * a fresh space via this same port is the correct native fallback,
+   * identical to the tenant route's own behavior.
+   */
+  deliverySpace?: DeliverySpacePort | undefined;
+  /**
+   * Resolves the tenant's domain, needed only for the `deliverySpace`
+   * auto-provision fallback: `DeliverySpacePort.createDeliverySpace`
+   * requires `tenantDomain`, which a workflow run's authenticated scope
+   * never carries (`WorkflowRoutineRunScope` above deliberately matches
+   * `WorkflowCapabilityRunScope`'s minimal `{tenantId, principalId,
+   * runId}` shape). Omitted disables auto-provisioning even when
+   * `deliverySpace` is wired — a routine needing delivery with no
+   * channel named still 400s, exactly like a host that never wired
+   * `deliverySpace` at all.
+   */
+  resolveTenantDomain?: (tenantId: string) => Promise<string>;
+  /** Same contract as `CreateRoutineRoutesDeps.deliveryChannelRequired`. */
+  deliveryChannelRequired?: (
+    tenantId: string,
+    definitionId: string,
+  ) => Promise<boolean>;
+  /** Same contract as `CreateRoutineRoutesDeps.validateRoutineInput`. */
+  validateRoutineInput?: (
+    tenantId: string,
+    definitionId: string,
+    input: Record<string, unknown>,
+  ) => Promise<
+    { readonly ok: true } | { readonly ok: false; readonly message: string }
+  >;
+};
+
+const ErrorEnvelope = (code: string, message: string) => ({
+  error: { code, message },
+});
+
+// `scope` is always `"bench"` — Myra always creates for the shared
+// workbench, never a personal routine on someone else's behalf — so
+// unlike `CreateRoutineBody` in `./routes.ts`, this body carries no
+// `scope` field at all.
+const CreateWorkflowRoutineBody = type({
+  name: "string",
+  definitionId: "string",
+  trigger: RoutineTrigger,
+  "input?": "Record<string, unknown>",
+  "deliveryChannelId?": "string",
+  "runOnceNow?": "boolean",
+});
+
+const UpdateWorkflowRoutineBody = type({
+  "enabled?": "boolean",
+  "name?": "string",
+  "trigger?": RoutineTrigger,
+  "input?": "Record<string, unknown>",
+});
+
+const RunNowBody = type({
+  "input?": "Record<string, unknown>",
+});
+
+export function createWorkflowRoutineRoutes(
+  deps: CreateWorkflowRoutineRoutesDeps,
+): Hono<WorkflowRoutinesEnv> {
+  const app = new Hono<WorkflowRoutinesEnv>();
+
+  app.use("*", async (c, next) => {
+    const authHeader = c.req.header("authorization") ?? "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length)
+      : "";
+    const address = c.req.header("x-workflow-run-address") ?? "";
+    const scope = await deps.authenticator.resolve(token, address);
+    if (scope === null) {
+      return c.json(
+        ErrorEnvelope(
+          "unauthorized",
+          "Missing or unrecognized sidecar bearer token / run address",
+        ),
+        401,
+      );
+    }
+    c.set("workflowRoutineScope", scope);
+    await next();
+  });
+
+  app.get("/routines", async (c) => {
+    const scope = c.get("workflowRoutineScope");
+    const rows = await deps.store.listRoutines(scope.tenantId);
+    return c.json({ items: rows.map(routineView) });
+  });
+
+  app.post("/routines", async (c) => {
+    const scope = c.get("workflowRoutineScope");
+    const body = CreateWorkflowRoutineBody(
+      await c.req.json().catch(() => undefined),
+    );
+    if (body instanceof type.errors) {
+      return c.json(
+        ErrorEnvelope("bad_request", `invalid routine body: ${body.summary}`),
+        400,
+      );
+    }
+
+    if (deps.definitionInTenant !== undefined) {
+      const owned = await deps.definitionInTenant(
+        scope.tenantId,
+        body.definitionId,
+      );
+      if (!owned) {
+        return c.json(ErrorEnvelope("not_found", "definition not found"), 404);
+      }
+    }
+
+    if (
+      !(await webhookTriggerValid(
+        deps,
+        scope.tenantId,
+        body.trigger,
+        body.definitionId,
+      ))
+    ) {
+      return c.json(
+        ErrorEnvelope("not_found", "webhook trigger not found"),
+        404,
+      );
+    }
+
+    const needsDelivery =
+      (await isDeliveryChannelRequired(
+        deps,
+        scope.tenantId,
+        body.definitionId,
+      )) &&
+      (body.deliveryChannelId === undefined || body.deliveryChannelId === "");
+
+    if (
+      needsDelivery &&
+      (deps.deliverySpace === undefined ||
+        deps.resolveTenantDomain === undefined)
+    ) {
+      return c.json(
+        ErrorEnvelope(
+          "bad_request",
+          "deliveryChannelId is required for this workflow",
+        ),
+        400,
+      );
+    }
+
+    if (deps.validateRoutineInput !== undefined) {
+      const validated = await deps.validateRoutineInput(
+        scope.tenantId,
+        body.definitionId,
+        body.input ?? {},
+      );
+      if (!validated.ok) {
+        return c.json(ErrorEnvelope("bad_request", validated.message), 400);
+      }
+    }
+
+    // The space is provisioned before the routine row, and compensated
+    // (deleted) if the row then fails to write — the same mint-then-
+    // compensate shape `./routes.ts`'s own `POST /routines` uses.
+    let provisionedSpace:
+      { channelId: string; compensate: () => Promise<void> } | undefined;
+    if (
+      needsDelivery &&
+      deps.deliverySpace !== undefined &&
+      deps.resolveTenantDomain !== undefined
+    ) {
+      const tenantDomain = await deps.resolveTenantDomain(scope.tenantId);
+      provisionedSpace = await deps.deliverySpace.createDeliverySpace({
+        tenantId: scope.tenantId,
+        tenantDomain,
+        creatorPrincipalId: scope.principalId,
+        // A workflow-run principal has no separate "user" id the way a
+        // human tenant-session principal's `refId` names the underlying
+        // user — its own run IS the acting identity, mirroring the
+        // `refId = runId` convention `vendor/intx/hub-api`'s own grant
+        // materialization uses for a workflow-kind principal.
+        creatorUserId: scope.runId,
+        name: body.name,
+      });
+    }
+    const deliveryChannelId =
+      body.deliveryChannelId ?? provisionedSpace?.channelId ?? null;
+
+    let row: RoutineRow;
+    try {
+      row = await deps.store.createRoutine({
+        tenantId: scope.tenantId,
+        name: body.name,
+        definitionId: body.definitionId,
+        trigger: body.trigger,
+        scope: "bench",
+        input: body.input ?? {},
+        deliveryChannelId,
+        createdBy: scope.principalId,
+      });
+    } catch (err) {
+      if (provisionedSpace !== undefined) {
+        try {
+          await provisionedSpace.compensate();
+        } catch {
+          // Best-effort: an orphaned space now requires manual cleanup,
+          // same fallback `./routes.ts`'s own compensation failure takes.
+        }
+      }
+      throw err;
+    }
+
+    if (body.runOnceNow === true) {
+      await launchAndCorrelate(
+        {
+          store: deps.store,
+          launcher: deps.launcher,
+          deliveryThreads: deps.deliveryThreads,
+        },
+        {
+          tenantId: scope.tenantId,
+          principalId: scope.principalId,
+          definitionId: row.definitionId,
+          input: row.input,
+          routineId: row.id,
+          triggeredBy: "manual",
+          deliveryChannelId: row.deliveryChannelId,
+          routineName: row.name,
+        },
+      );
+    }
+
+    return c.json(routineView(row), 201);
+  });
+
+  app.patch("/routines/:id", async (c) => {
+    const scope = c.get("workflowRoutineScope");
+    const body = UpdateWorkflowRoutineBody(
+      await c.req.json().catch(() => undefined),
+    );
+    if (body instanceof type.errors) {
+      return c.json(
+        ErrorEnvelope("bad_request", `invalid routine patch: ${body.summary}`),
+        400,
+      );
+    }
+
+    const routineId = c.req.param("id");
+    const existing = await deps.store.getRoutine(scope.tenantId, routineId);
+    if (existing === undefined) {
+      return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
+    }
+
+    if (
+      body.trigger !== undefined &&
+      !(await webhookTriggerValid(
+        deps,
+        scope.tenantId,
+        body.trigger,
+        existing.definitionId,
+      ))
+    ) {
+      return c.json(
+        ErrorEnvelope("not_found", "webhook trigger not found"),
+        404,
+      );
+    }
+
+    let patch: UpdateRoutineInput = {};
+    if (body.name !== undefined) patch = { ...patch, name: body.name };
+    if (body.trigger !== undefined) patch = { ...patch, trigger: body.trigger };
+    if (body.input !== undefined) patch = { ...patch, input: body.input };
+    if (body.enabled !== undefined) patch = { ...patch, enabled: body.enabled };
+
+    const row = await deps.store.updateRoutine(
+      scope.tenantId,
+      routineId,
+      patch,
+    );
+    return c.json(routineView(row));
+  });
+
+  app.post("/routines/:id/run", async (c) => {
+    const scope = c.get("workflowRoutineScope");
+    const body = RunNowBody(await c.req.json().catch(() => ({})));
+    if (body instanceof type.errors) {
+      return c.json(
+        ErrorEnvelope("bad_request", `invalid run body: ${body.summary}`),
+        400,
+      );
+    }
+
+    const routineId = c.req.param("id");
+    const existing = await deps.store.getRoutine(scope.tenantId, routineId);
+    if (existing === undefined) {
+      return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
+    }
+
+    // "Run now" is an unscheduled fire of the exact launcher a scheduled
+    // trigger would call — see `launchAndCorrelate`'s own doc comment;
+    // never a second launch code path for Myra's own surface either.
+    if (
+      (await isDeliveryChannelRequired(
+        deps,
+        scope.tenantId,
+        existing.definitionId,
+      )) &&
+      (existing.deliveryChannelId === null || existing.deliveryChannelId === "")
+    ) {
+      return c.json(
+        ErrorEnvelope(
+          "bad_request",
+          "routine has no deliveryChannelId; set one before running",
+        ),
+        400,
+      );
+    }
+
+    const launched = await launchAndCorrelate(
+      {
+        store: deps.store,
+        launcher: deps.launcher,
+        deliveryThreads: deps.deliveryThreads,
+      },
+      {
+        tenantId: scope.tenantId,
+        principalId: scope.principalId,
+        definitionId: existing.definitionId,
+        input: body.input ?? existing.input,
+        routineId,
+        triggeredBy: "manual",
+        deliveryChannelId: existing.deliveryChannelId,
+        routineName: existing.name,
+      },
+    );
+
+    return c.json(
+      launched.deliveryThreadId !== undefined
+        ? { runId: launched.runId, deliveryThreadId: launched.deliveryThreadId }
+        : { runId: launched.runId },
+      201,
+    );
+  });
+
+  return app;
+}
