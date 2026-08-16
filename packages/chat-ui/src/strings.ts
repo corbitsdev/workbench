@@ -215,10 +215,10 @@ export const CHAT_STRINGS = {
   renameCancel: "Escape to cancel",
   channelSettingsAction: "Settings",
   channelSettingsBreadcrumbLabel: "Settings breadcrumb",
-  channelSettingsBreadcrumbCurrent: "Settings",
+  channelSettingsBreadcrumbCurrent: "Workbench Settings",
   channelSettingsNavLabel: "Settings sections",
-  channelSettingsGroupShared: "Shared · everyone",
-  channelSettingsGroupPersonal: "Personal · only you",
+  channelSettingsGroupShared: "Shared",
+  channelSettingsGroupPersonal: "Personal",
   channelSettingsSectionGeneral: "General",
   channelSettingsSectionMembers: "Members",
   channelSettingsSectionAgents: "Agents",
@@ -294,7 +294,7 @@ export const CHAT_STRINGS = {
   channelSettingsAssistantHistoryRestoreError:
     "Couldn't restore that version — try again.",
   channelSettingsAccessBody:
-    "Access follows workbench grants and membership. Manage role and member grants under Settings → Everyone.",
+    "Access follows workbench grants and membership. Manage role and member grants under Shared Settings.",
   channelSettingsNotificationsLabel: "Notifications",
   channelSettingsNotifyAll: "All messages",
   channelSettingsNotifyMentions: "Mentions only",

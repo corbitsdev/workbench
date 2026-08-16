@@ -1,14 +1,17 @@
-// The Account / Everyone section registry (CL-6089): the grouping,
-// ordering, icons, and tenancy gates every Interchange deployment gets
-// when it mounts this package's settings surface. The single-concept
-// collapse folded Personal/Workspace into Account/Everyone — there is one
-// workbench per account now, so a "workspace-scoped" setting and an
-// "account-scoped" one are the same tenant's settings. What used to be
-// Workspace's People/Roles/Grants/Audit move here as Everyone (who else
-// can see or touch this account's one workbench); Bench dies outright —
-// there is no longer a second thing to name, distinct from the account,
-// so its rename/purpose/icon form and member list have no home to keep
-// them separate in. Conversation-scoped settings (agent, capabilities,
+// The Personal Settings / Shared Settings section registry (CL-6089, CL-
+// 6116): the grouping, ordering, icons, and tenancy gates every Interchange
+// deployment gets when it mounts this package's settings surface. The
+// single-concept collapse folded Personal/Workspace into one account-scoped
+// group and one shared group — there is one workbench per account now, so
+// a "workspace-scoped" setting and an "account-scoped" one are the same
+// tenant's settings. Shared Settings is the multiplayer-sharing surface:
+// it leads with what everyone inherits (shared keys/connections, then
+// People), and tucks the access-control mechanics (Roles, Grants, Audit)
+// under a collapsed Advanced disclosure — nobody should have to parse
+// grants and roles just to find where a shared API key lives. Bench dies
+// outright — there is no longer a second thing to name, distinct from the
+// account, so its rename/purpose/icon form and member list have no home to
+// keep them separate in. Conversation-scoped settings (agent, capabilities,
 // history) live on the workbench's own settings surface
 // (`@corbits/chat-ui`'s `ChannelSettingsSurface`, CL-6084) — not here.
 // Consuming apps compose bench context and routing around
@@ -65,23 +68,25 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
           />
         ),
       },
-      {
-        // Plugins (`/plugins`) is the canonical surface for discovering
-        // and connecting a key; this section is management-only for keys
-        // that already exist (rotate, name, revoke) — see connections-
-        // section.tsx and the CL-6077 audit this reorganization follows.
-        id: "connections",
-        title: SETTINGS_STRINGS.connectionsSectionTitle,
-        icon: KeyRound,
-        gate: "credentials",
-        render: (ctx) => <ConnectionsSection tenantId={ctx.tenantId} />,
-      },
     ],
   },
   {
     id: "everyone",
     label: SETTINGS_STRINGS.groupEveryoneLabel,
     sections: [
+      {
+        // Plugins (`/plugins`) is the canonical surface for discovering
+        // and connecting a key; this section is management-only for keys
+        // that already exist (rotate, name, revoke) — see connections-
+        // section.tsx and the CL-6077 audit this reorganization follows.
+        // Leads Shared Settings: a key added here is the thing everyone
+        // creating workbenches in this tenancy inherits.
+        id: "connections",
+        title: SETTINGS_STRINGS.connectionsSectionTitle,
+        icon: KeyRound,
+        gate: "credentials",
+        render: (ctx) => <ConnectionsSection tenantId={ctx.tenantId} />,
+      },
       {
         id: "people",
         title: SETTINGS_STRINGS.peopleSectionTitle,
@@ -94,6 +99,7 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         title: SETTINGS_STRINGS.rolesSectionTitle,
         icon: Star,
         gate: "roles",
+        advanced: true,
         render: (ctx) => <RolesSection tenantId={ctx.tenantId} />,
       },
       {
@@ -101,12 +107,14 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
         title: SETTINGS_STRINGS.grantsSectionTitle,
         icon: Shield,
         gate: "grants",
+        advanced: true,
         render: (ctx) => <GrantsSection tenantId={ctx.tenantId} />,
       },
       {
         id: "audit",
         title: SETTINGS_STRINGS.auditSectionTitle,
         icon: List,
+        advanced: true,
         render: () => <AuditSection />,
       },
     ],
@@ -114,7 +122,7 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
 ];
 
 /**
- * The Personal / Workspace groups, with a section dropped entirely — never
+ * The Personal Settings / Shared Settings groups, with a section dropped entirely — never
  * rendered disabled — until its `access[gate]` probe resolves `allowed`.
  * Both the settings stage and a host's own section nav (e.g. col2) should
  * read from this single registry so they can never drift.

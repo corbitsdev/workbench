@@ -3,12 +3,14 @@
 
 export const SETTINGS_STRINGS = {
   pageTitle: "Settings",
-  pageSubtitle: "Your account and everyone on your workbench",
+  pageSubtitle: "Personal settings and settings shared across your workbench",
   sectionsNavLabel: "Settings sections",
   emptySectionsTitle: "Nothing to show",
   emptySectionsDescription: "No settings sections are available right now.",
-  groupAccountLabel: "Account · only you",
-  groupEveryoneLabel: "Everyone · shared",
+  groupAccountLabel: "Personal Settings",
+  groupEveryoneLabel: "Shared Settings",
+  advancedSectionsSummary: "Advanced",
+  advancedSectionsHint: "Roles, granular permissions, and activity history.",
 
   agentSectionTitle: "Your agent",
   agentSectionDescription:
@@ -251,7 +253,7 @@ export const SETTINGS_STRINGS = {
 
   connectionsSectionTitle: "Connections",
   connectionsSectionDescription:
-    "Connect the providers and tools this workbench's agents can use.",
+    "Keys added here work in every workbench, for everyone.",
   connectionsLoadError: "connections",
   connectionsStatusNotConnected: "Not connected",
   connectionsStatusConnected: "Connected",

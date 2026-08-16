@@ -38,9 +38,14 @@ export type SettingsSection = {
   /** Leading icon for a host's own section nav (col2). */
   readonly icon: LucideIcon;
   readonly render: (ctx: SettingsContext) => ReactElement;
+  /** Tucks this section under a collapsed "Advanced" disclosure at the
+   * bottom of its group's nav, instead of listing it as a peer section —
+   * for sections whose mechanics (roles, grants, audit) nobody should have
+   * to parse just to find the thing they actually came for. */
+  readonly advanced?: boolean;
 };
 
-/** A labeled group of sections (Personal · only you / Workspace · shared). */
+/** A labeled group of sections (Personal Settings / Shared Settings). */
 export type SettingsSectionGroup = {
   readonly id: string;
   readonly label: string;

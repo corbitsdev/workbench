@@ -1037,6 +1037,30 @@ select:disabled,
   color: var(--shell-panel-faint);
 }
 
+.settings-nav-advanced {
+  margin-top: 0.15rem;
+}
+
+.settings-nav-advanced > summary {
+  padding: 0 0.42rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--shell-panel-faint);
+  list-style: none;
+}
+
+.settings-nav-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-nav-advanced-hint {
+  margin: 0.2rem 0 0.3rem;
+  padding: 0 0.42rem;
+  font-size: 0.6875rem;
+  color: var(--shell-panel-faint);
+}
+
 /* Mock .ch rows in the sidebar: pad 0.32/0.42, square. */
 .shell-ch-row {
   display: grid;

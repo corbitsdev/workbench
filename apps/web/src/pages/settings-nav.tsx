@@ -30,25 +30,58 @@ export function SettingsNav({
       className="settings-nav"
       aria-label={SETTINGS_STRINGS.sectionsNavLabel}
     >
-      {groups.map((group) => (
-        <div key={group.id} className="settings-nav-group">
-          <p className="settings-nav-heading">{group.label}</p>
-          {group.sections.map((section) => {
-            const Icon = section.icon;
-            return (
-              <SidebarItemRow
-                key={section.id}
-                name={section.title}
-                leading={<Icon aria-hidden="true" />}
-                selected={section.id === activeId}
-                onSelect={() =>
-                  onNavigate(`${SETTINGS_PATH_PREFIX}/${section.id}`)
-                }
-              />
-            );
-          })}
-        </div>
-      ))}
+      {groups.map((group) => {
+        const primary = group.sections.filter(
+          (section) => section.advanced !== true,
+        );
+        const advanced = group.sections.filter(
+          (section) => section.advanced === true,
+        );
+        return (
+          <div key={group.id} className="settings-nav-group">
+            <p className="settings-nav-heading">{group.label}</p>
+            {primary.map((section) => {
+              const Icon = section.icon;
+              return (
+                <SidebarItemRow
+                  key={section.id}
+                  name={section.title}
+                  leading={<Icon aria-hidden="true" />}
+                  selected={section.id === activeId}
+                  onSelect={() =>
+                    onNavigate(`${SETTINGS_PATH_PREFIX}/${section.id}`)
+                  }
+                />
+              );
+            })}
+            {advanced.length > 0 && (
+              <details
+                className="settings-nav-advanced"
+                open={advanced.some((section) => section.id === activeId)}
+              >
+                <summary>{SETTINGS_STRINGS.advancedSectionsSummary}</summary>
+                <p className="settings-nav-advanced-hint">
+                  {SETTINGS_STRINGS.advancedSectionsHint}
+                </p>
+                {advanced.map((section) => {
+                  const Icon = section.icon;
+                  return (
+                    <SidebarItemRow
+                      key={section.id}
+                      name={section.title}
+                      leading={<Icon aria-hidden="true" />}
+                      selected={section.id === activeId}
+                      onSelect={() =>
+                        onNavigate(`${SETTINGS_PATH_PREFIX}/${section.id}`)
+                      }
+                    />
+                  );
+                })}
+              </details>
+            )}
+          </div>
+        );
+      })}
     </nav>
   );
 }

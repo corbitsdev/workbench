@@ -49,12 +49,12 @@ describe("flattenSettingsSections", () => {
     const groups: SettingsSectionGroup[] = [
       {
         id: "personal",
-        label: "Personal · only you",
+        label: "Personal Settings",
         sections: [section("agent"), section("account")],
       },
       {
         id: "workspace",
-        label: "Workspace · shared",
+        label: "Shared Settings",
         sections: [section("bench"), section("audit")],
       },
     ];

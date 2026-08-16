@@ -1,10 +1,11 @@
-// The Account / Everyone registry (CL-6089) is the single source of truth
-// for both the settings stage and a host's own section nav (col2) — these
-// tests pin its ordering and its tenancy gating so the two can never
+// The Personal Settings / Shared Settings registry (CL-6089, CL-6116) is the
+// single source of truth for both the settings stage and a host's own
+// section nav (col2) — these tests pin its ordering, its tenancy gating,
+// and which sections are tucked under Advanced, so the two can never
 // drift. There is one workbench per account now, so "Workspace" and
-// "Personal" collapsed into "Everyone" (who else can see this account's
-// one workbench) and "Account" (only you) — Bench has no section of its
-// own anymore, since there is nothing left to name separately from the
+// "Personal" collapsed into Shared Settings (who else can see this
+// account's one workbench) and Personal Settings — Bench has no section of
+// its own anymore, since there is nothing left to name separately from the
 // account.
 
 import { describe, expect, test } from "bun:test";
@@ -48,8 +49,11 @@ describe("resolveSettingsSectionGroups", () => {
 
   test("an allowed gate adds its section in registry order", () => {
     expect(ids(resolveSettingsSectionGroups(allowed))).toEqual([
-      { id: "account", sections: ["chat", "account", "connections"] },
-      { id: "everyone", sections: ["people", "roles", "grants", "audit"] },
+      { id: "account", sections: ["chat", "account"] },
+      {
+        id: "everyone",
+        sections: ["connections", "people", "roles", "grants", "audit"],
+      },
     ]);
   });
 
@@ -64,6 +68,18 @@ describe("resolveSettingsSectionGroups", () => {
       { id: "account", sections: ["chat", "account"] },
       { id: "everyone", sections: ["grants", "audit"] },
     ]);
+  });
+
+  test("Roles, Grants, and Audit are tucked under Advanced; Connections and People are not", () => {
+    const sections = resolveSettingsSectionGroups(allowed).find(
+      (group) => group.id === "everyone",
+    )?.sections;
+    expect(
+      sections?.filter((section) => section.advanced === true).map((s) => s.id),
+    ).toEqual(["roles", "grants", "audit"]);
+    expect(
+      sections?.filter((section) => section.advanced !== true).map((s) => s.id),
+    ).toEqual(["connections", "people"]);
   });
 
   test("never registers the personal agent section — no preference store exists to back it yet", () => {
@@ -112,7 +128,6 @@ describe("insertEveryoneSections", () => {
     expect(account?.sections.map((section) => section.id)).toEqual([
       "chat",
       "account",
-      "connections",
     ]);
   });
 
