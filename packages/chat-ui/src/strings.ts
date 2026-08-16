@@ -252,6 +252,12 @@ export const CHAT_STRINGS = {
   channelSettingsAgentsLabel: "Agents",
   channelSettingsNoPeople: "No people here yet.",
   channelSettingsNoAgents: "No agents invited yet.",
+  channelSettingsRemoveAction: "Remove",
+  channelSettingsRemoveConfirmLabel: "Click again to remove",
+  channelSettingsRemoveConsequence: "They lose access to this workbench.",
+  channelSettingsRemoveSelfHint: "You can't remove yourself.",
+  channelSettingsRemoveError: "Couldn't remove them — try again.",
+  channelSettingsRemoving: "Removing…",
   channelSettingsAutonomyTitle: "Autonomy",
   channelSettingsAutonomyBody:
     "Per-conversation autonomy overrides are not stored yet. Agents inherit the workbench default until that control lands.",

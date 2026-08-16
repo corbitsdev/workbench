@@ -69,6 +69,7 @@ import { isRecentlyActive } from "./channel-activity";
 import {
   joinHumanParticipant,
   launchAndJoinAgent,
+  removeChannelParticipant,
   sendChannelMessage,
 } from "./channel-service";
 import {
@@ -221,6 +222,18 @@ export type CreateChatRoutesDeps = {
     FederationTrustStore,
     "resolveSharedViaParent" | "getTenantName"
   >;
+  /**
+   * Releases an invited agent's launched instance when it is removed
+   * from a channel's participants — see `channel-service.ts`'s
+   * `removeChannelParticipant`, whose own doc explains why this is
+   * native platform machinery (`sidecarRouter.sendAgentUndeploy` in the
+   * hub's own composition), never reimplemented here. Omitted, an
+   * agent's instance keeps running after removal; the gap is logged at
+   * error level rather than silently accepted (see
+   * `removeChannelParticipant`).
+   */
+  releaseAgentInstance?:
+    ((address: string, reason: string) => Promise<void>) | undefined;
 };
 
 const log = getLogger(["chat", "routes"]);
@@ -277,6 +290,10 @@ const InviteAgentBody = type({
 
 const RefreshAgentBody = type({
   address: "string",
+});
+
+const RemoveParticipantParams = type({
+  address: "string > 0",
 });
 
 /** The message's own text, joined across every text part in send order
@@ -2161,6 +2178,80 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
         throw err;
       }
+    },
+  );
+
+  // The removal counterpart to `POST .../invite` (and to the inline
+  // join a chat's own creation runs): drops a participant record and,
+  // for an invited agent, releases its launched instance — see
+  // `channel-service.ts`'s `removeChannelParticipant`. A chat's
+  // participants are fixed at creation exactly as `POST .../invite`
+  // already refuses to grow them, so removal from a `kind: "chat"`
+  // channel is refused the same way, with the same 409 shape.
+  app.delete(
+    "/channels/:id/participants/:address",
+    deps.requireGrant(idResource("workflow-run", "id"), "manage"),
+    async (c) => {
+      const params = RemoveParticipantParams({
+        address: decodeURIComponent(c.req.param("address")),
+      });
+      if (params instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `invalid participant: ${params.summary}`,
+          ),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const channelId = c.req.param("id");
+
+      const existing = await deps.store.getChannelSettings(
+        tenant.id,
+        channelId,
+      );
+      if (existing === undefined) {
+        return c.json(ErrorEnvelope("not_found", "channel not found"), 404);
+      }
+
+      if (kindOf(existing.settings) === "chat") {
+        return c.json(
+          ErrorEnvelope(
+            "conflict",
+            "a chat's participants are fixed at creation; removal is " +
+              "only for channels",
+          ),
+          409,
+        );
+      }
+
+      const participant = participantsOf(existing.settings).find(
+        (candidate) => candidate.address === params.address,
+      );
+      if (participant === undefined) {
+        return c.json(ErrorEnvelope("not_found", "participant not found"), 404);
+      }
+
+      await removeChannelParticipant(
+        {
+          store: deps.store,
+          platform: deps.platform,
+          publish,
+          releaseAgentInstance: deps.releaseAgentInstance,
+        },
+        {
+          tenantId: tenant.id,
+          principalId: principal.id,
+          channelId,
+          existingSettings: existing.settings,
+          participant,
+        },
+      );
+
+      return c.json({ address: participant.address }, 200);
     },
   );
 

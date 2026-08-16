@@ -1188,6 +1188,9 @@ function ChatWorkspaceInner({
               setInviteDialogOpen(true);
             }}
             onSaved={refreshChannelLists}
+            {...(currentUser !== undefined
+              ? { currentUserPrincipalId: currentUser.principalId }
+              : {})}
           />
         </div>
         <NewChannelDialog
