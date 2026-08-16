@@ -3,6 +3,7 @@
 // visible list) and the hub (computing honest per-kind counts server-side)
 // share one mapping instead of two copies drifting apart.
 
+import { titleExtension } from "./title-extension";
 import type { ArtifactSummary } from "./types";
 
 const LIBRARY_PATH = "/library";
@@ -44,13 +45,6 @@ export function libraryArtifactIdFromPath(path: string): string | null {
   const rest = path.slice(prefix.length).split("/")[0];
   if (rest === undefined || rest === "") return null;
   return decodeURIComponent(rest);
-}
-
-function titleExtension(title: string): string {
-  const lower = title.trim().toLowerCase();
-  const dot = lower.lastIndexOf(".");
-  if (dot <= 0 || dot === lower.length - 1) return "";
-  return lower.slice(dot + 1);
 }
 
 /**

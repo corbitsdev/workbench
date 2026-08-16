@@ -4,6 +4,8 @@
 // the renderer itself never has to know whether it was picked by a Library
 // `kind` string or a chat `Part`'s MIME type.
 
+import { titleExtension } from "./title-extension";
+
 export const ARTIFACT_RENDERER_KINDS = [
   "doc",
   "sheet",
@@ -12,13 +14,6 @@ export const ARTIFACT_RENDERER_KINDS = [
 ] as const;
 
 export type ArtifactRendererKind = (typeof ARTIFACT_RENDERER_KINDS)[number];
-
-function titleExtension(title: string): string {
-  const lower = title.trim().toLowerCase();
-  const dot = lower.lastIndexOf(".");
-  if (dot <= 0 || dot === lower.length - 1) return "";
-  return lower.slice(dot + 1);
-}
 
 /**
  * Renderer selection for a Library artifact — reuses the same

@@ -66,7 +66,7 @@ export function ArtifactCard({
       onClick={onSelect}
       aria-current={selected ? "true" : undefined}
       className={[
-        "flex w-full flex-col gap-1.5 rounded-lg border bg-card p-3 text-left transition-colors",
+        "flex w-full flex-col gap-1.5 rounded-[var(--ui-radius-md)] border bg-card p-3 text-left transition-colors",
         selected
           ? "border-primary ring-1 ring-primary/40"
           : "border-border hover:border-primary/40",

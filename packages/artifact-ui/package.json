@@ -1,7 +1,7 @@
 {
   "name": "@corbits/artifact-ui",
   "private": true,
-  "description": "The artifact library's domain seam: the ArtifactSummary type a Library page renders, plus the sort, filter, and kind-coloring rules every artifact surface shares",
+  "description": "The artifact library's domain seam: the ArtifactSummary type a Library page renders, plus the sort and filter rules every artifact surface shares",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",

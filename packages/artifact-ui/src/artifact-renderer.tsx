@@ -112,7 +112,7 @@ function PdfRenderer({
     );
   }
   return (
-    <div className="rounded-md border border-border bg-card p-6 shadow-sm">
+    <div className="rounded-[var(--ui-radius-md)] border border-border bg-card p-6 shadow-sm">
       <h3 className="mb-3 text-sm font-semibold">{title}</h3>
       <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
         {content}
