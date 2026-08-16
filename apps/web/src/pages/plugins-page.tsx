@@ -22,6 +22,10 @@ import { Blocks, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useBench } from "../bench-context";
+import {
+  useClearPendingConnectProvider,
+  usePendingConnectProvider,
+} from "../shell/provider-health-context";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { createSkill, listSkills, type SkillSummary } from "../skills-api";
 import { CreateSkillDialog, type SkillCreateInput } from "./create-skill-dialog";
@@ -57,6 +61,8 @@ export function PluginsRoute({
   const [openPlugin, setOpenPlugin] = useState<ResolvedPlugin | null>(null);
   const [openSkillName, setOpenSkillName] = useState<string | null>(null);
   const [createSkillOpen, setCreateSkillOpen] = useState(false);
+  const pendingConnectProvider = usePendingConnectProvider();
+  const clearPendingConnectProvider = useClearPendingConnectProvider();
 
   const reloadPlugins = useCallback(() => {
     if (selectedTenantId === null) return;
@@ -85,6 +91,20 @@ export function PluginsRoute({
     setSkillsState({ status: "loading" });
     reloadSkills();
   }, [reloadSkills]);
+
+  // The shell banner's "Fix it" deep link (CL-6092): once the gallery has
+  // loaded, pick up any pending provider id and open its connect panel —
+  // the same panel a gallery card click opens, so a person lands exactly
+  // where they would have clicked themselves.
+  useEffect(() => {
+    if (pluginsState.status !== "ready") return;
+    if (pendingConnectProvider === null) return;
+    const match = pluginsState.plugins.find(
+      (plugin) => plugin.descriptor.id === pendingConnectProvider,
+    );
+    if (match !== undefined) setOpenPlugin(match);
+    clearPendingConnectProvider();
+  }, [pluginsState, pendingConnectProvider, clearPendingConnectProvider]);
 
   async function handleCreateSkill(input: SkillCreateInput) {
     if (selectedTenantId === null) return;

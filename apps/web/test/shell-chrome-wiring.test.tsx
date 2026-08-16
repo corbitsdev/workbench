@@ -28,6 +28,7 @@ import {
   useCloseCanvas,
   useOpenProfileInCanvas,
 } from "../src/shell/canvas-availability";
+import { ProviderHealthProvider } from "../src/shell/provider-health-context";
 import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
 import { TestQueryProvider } from "./test-query-provider";
 
@@ -108,12 +109,14 @@ function Harness() {
     <TestQueryProvider>
       <NavigationProvider navigate={noop}>
         <BenchProvider>
-          <ShellChromeProvider path="/inbox" navigate={noop}>
-            <PaletteActionsProbe />
-            <AppShell path="/inbox" user={user} onSignOut={noop}>
-              {"Inbox"}
-            </AppShell>
-          </ShellChromeProvider>
+          <ProviderHealthProvider>
+            <ShellChromeProvider path="/inbox" navigate={noop}>
+              <PaletteActionsProbe />
+              <AppShell path="/inbox" user={user} onSignOut={noop}>
+                {"Inbox"}
+              </AppShell>
+            </ShellChromeProvider>
+          </ProviderHealthProvider>
         </BenchProvider>
       </NavigationProvider>
     </TestQueryProvider>
