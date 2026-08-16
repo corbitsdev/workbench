@@ -18,6 +18,22 @@ html {
   font-size: 15px;
 }
 
+/* Brand type: Red Hat Display is loaded in index.html but nothing applied
+   it — without this the whole app silently renders in the system fallback.
+   Space Mono covers the places code/mono content asks for monospace. */
+body {
+  font-family:
+    "Red Hat Display",
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+code,
+pre,
+kbd {
+  font-family: "Space Mono", ui-monospace, monospace;
+}
+
 .app-mark {
   height: 1.375rem;
   width: auto;
