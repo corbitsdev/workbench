@@ -141,6 +141,13 @@ const ALLOWLIST: readonly {
     maxOccurrences: 1,
     tables: ["agent_directory.definition_skills"],
   },
+  {
+    // Eval-run history (CL-6143): one row per (eval, config) scored
+    // run, product-owned scoring data, never tenancy.
+    relPath: "packages/evals/src/store/schema.ts",
+    maxOccurrences: 1,
+    tables: ["evals.run"],
+  },
 ];
 
 export async function scanFiles(

@@ -1,0 +1,11 @@
+import { aiDailyResearchEval } from "./ai-daily-research.ts";
+import { docsOnSdkChangeEval } from "./docs-on-sdk-change.ts";
+import type { EvalDefinition } from "../types.ts";
+
+export { aiDailyResearchEval } from "./ai-daily-research.ts";
+export { docsOnSdkChangeEval } from "./docs-on-sdk-change.ts";
+
+export const ALL_EVALS: readonly EvalDefinition[] = [
+  aiDailyResearchEval,
+  docsOnSdkChangeEval,
+];
