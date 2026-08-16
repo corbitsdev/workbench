@@ -513,8 +513,11 @@ export function InboxPage({
 
   if (selectedTenantId === null || listQuery.kind === "unauthenticated") {
     return (
-      <div className="flex h-full items-center justify-center p-6">
-        <SignedOutNotice />
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar title="Inbox" />
+        <div className="flex flex-1 items-center justify-center p-6">
+          <SignedOutNotice />
+        </div>
       </div>
     );
   }

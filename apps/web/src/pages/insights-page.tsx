@@ -878,9 +878,12 @@ export function InsightsPage({
 
   if (unauth) {
     return (
-      <PageShell width="full" className="page-fill">
-        <SignedOutNotice />
-      </PageShell>
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar title="Insights" />
+        <PageShell width="full" className="page-fill">
+          <SignedOutNotice />
+        </PageShell>
+      </div>
     );
   }
 

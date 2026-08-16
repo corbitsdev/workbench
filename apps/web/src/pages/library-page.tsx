@@ -35,7 +35,12 @@ import type { ArtifactSort, ArtifactSummary } from "@corbits/artifact-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownUp, FileStack, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { describeApiError, QueryView } from "@corbits/api-query";
+import {
+  describeApiError,
+  ListSkeleton,
+  QueryView,
+  SignedOutNotice,
+} from "@corbits/api-query";
 
 import {
   ArtifactDetailSchema,
@@ -447,25 +452,55 @@ export function LibraryRoute({ path }: { readonly path: string }) {
 
   if (selectedTenantId === null) {
     return (
-      <PageShell width="full" className="page-fill">
-        <RichEmptyState
-          icon={<FileStack />}
-          title="Select a workbench"
-          description="Pick a workbench from the switcher to browse the artifacts it owns."
-        />
-      </PageShell>
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar title="Library" />
+        <PageShell width="full" className="page-fill">
+          <RichEmptyState
+            icon={<FileStack />}
+            title="Select a workbench"
+            description="Pick a workbench from the switcher to browse the artifacts it owns."
+          />
+        </PageShell>
+      </div>
     );
   }
 
   if (page.kind === "error" && isArtifactsUnavailableStatus(page.status)) {
     return (
-      <PageShell width="full" className="page-fill">
-        <RichEmptyState
-          icon={<FileStack />}
-          title="Library not configured"
-          description="Library isn't set up yet. Ask your workspace admin to finish setup."
-        />
-      </PageShell>
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar title="Library" />
+        <PageShell width="full" className="page-fill">
+          <RichEmptyState
+            icon={<FileStack />}
+            title="Library not configured"
+            description="Library isn't set up yet. Ask your workspace admin to finish setup."
+          />
+        </PageShell>
+      </div>
+    );
+  }
+
+  if (page.kind !== "ready") {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <StageTopBar title="Library" />
+        <PageShell width="full" className="page-fill">
+          {page.kind === "loading" ? (
+            <ListSkeleton />
+          ) : page.kind === "unauthenticated" ? (
+            <SignedOutNotice />
+          ) : (
+            <RichEmptyState
+              icon={<FileStack />}
+              title="Couldn't load artifacts"
+              description={describeApiError(
+                { status: page.status },
+                "loading your artifacts",
+              )}
+            />
+          )}
+        </PageShell>
+      </div>
     );
   }
 
