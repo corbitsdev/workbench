@@ -24,6 +24,12 @@ const baseConfig: HubConfig = {
   allowPlaintextSecrets: false,
   allowUnverifiedEmails: false,
   sidecarProvisioner: { kind: "none" },
+  envProviderKeys: {},
+  envCredentialPlantAdmin: {
+    email: "alice@example.com",
+    password: "password123",
+    orgSlug: "workbench",
+  },
 };
 
 describe("credentialCipherFrom", () => {

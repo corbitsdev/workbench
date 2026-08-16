@@ -98,6 +98,44 @@ export type Session = {
   signedUp: boolean;
 };
 
+async function trySignIn(
+  api: ApiCall,
+  args: { email: string; password: string },
+): Promise<Session | { failedStatus: number }> {
+  const signIn = await api("POST", "/api/auth/sign-in/email", {
+    email: args.email,
+    password: args.password,
+  });
+  if (signIn.status === 200) {
+    const parsed = parseAs(AuthResponse, signIn.data, "sign-in response");
+    return {
+      cookies: signIn.cookies,
+      userId: parsed.user?.id ?? "",
+      signedUp: false,
+    };
+  }
+  return { failedStatus: signIn.status };
+}
+
+/**
+ * Sign the administrator in — sign-in only, never sign-up. For callers
+ * that must never mint an account (e.g. the env-key auto-plant, which
+ * runs unattended at boot and must not self-provision the default
+ * admin credential on a virgin, open-signup database), this is the only
+ * safe entry point.
+ */
+export async function signIn(
+  api: ApiCall,
+  args: { email: string; password: string },
+): Promise<Session> {
+  const result = await trySignIn(api, args);
+  if (!("failedStatus" in result)) return result;
+  throw new CliError(
+    `sign-in failed for ${args.email} (status ${result.failedStatus})`,
+    "verify HUB_ADMIN_EMAIL/HUB_ADMIN_PASSWORD match an existing admin account",
+  );
+}
+
 /**
  * Sign the administrator in, or sign up when the account does not exist
  * yet. Sign-in is tried first so `WORKBENCH_SIGNUP=closed` still works
@@ -111,18 +149,8 @@ export async function authenticate(
 ): Promise<Session> {
   const name = args.email.split("@")[0] ?? args.email;
 
-  const signIn = await api("POST", "/api/auth/sign-in/email", {
-    email: args.email,
-    password: args.password,
-  });
-  if (signIn.status === 200) {
-    const parsed = parseAs(AuthResponse, signIn.data, "sign-in response");
-    return {
-      cookies: signIn.cookies,
-      userId: parsed.user?.id ?? "",
-      signedUp: false,
-    };
-  }
+  const signInAttempt = await trySignIn(api, args);
+  if (!("failedStatus" in signInAttempt)) return signInAttempt;
 
   const signUp = await api("POST", "/api/auth/sign-up/email", {
     name,
@@ -142,7 +170,7 @@ export async function authenticate(
   // that means the password did not match on sign-in above.
   if (signUp.status === 422) {
     throw new CliError(
-      `${args.email} already exists on the hub but HUB_ADMIN_PASSWORD does not match it (sign-in returned ${signIn.status})`,
+      `${args.email} already exists on the hub but HUB_ADMIN_PASSWORD does not match it (sign-in returned ${signInAttempt.failedStatus})`,
       "set HUB_ADMIN_PASSWORD to the password this account was created with, or use a fresh HUB_ADMIN_EMAIL, then re-run the command",
     );
   }

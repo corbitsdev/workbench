@@ -35,6 +35,63 @@ describe("readHubConfig", () => {
       allowPlaintextSecrets: false,
       allowUnverifiedEmails: false,
       sidecarProvisioner: { kind: "none" },
+      envProviderKeys: {},
+      envCredentialPlantAdmin: {
+        email: "alice@example.com",
+        password: "password123",
+        orgSlug: "workbench",
+      },
+    });
+  });
+
+  describe("envProviderKeys", () => {
+    test("empty when no provider key env vars are set", () => {
+      expect(readHubConfig(validEnv).envProviderKeys).toEqual({});
+    });
+
+    test("collects every curated provider's key under its conventional env var", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        ANTHROPIC_API_KEY: "sk-ant-test",
+        OPENROUTER_API_KEY: "sk-or-test",
+      });
+      expect(config.envProviderKeys).toEqual({
+        anthropic: "sk-ant-test",
+        openrouter: "sk-or-test",
+      });
+    });
+
+    test("GEMINI_API_KEY wins over GOOGLE_API_KEY for google-genai", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        GEMINI_API_KEY: "gemini-key",
+        GOOGLE_API_KEY: "google-key",
+      });
+      expect(config.envProviderKeys["google-genai"]).toBe("gemini-key");
+    });
+  });
+
+  describe("envCredentialPlantAdmin", () => {
+    test("defaults to the same identity workbench setup/seed use", () => {
+      expect(readHubConfig(validEnv).envCredentialPlantAdmin).toEqual({
+        email: "alice@example.com",
+        password: "password123",
+        orgSlug: "workbench",
+      });
+    });
+
+    test("honors HUB_ADMIN_EMAIL/HUB_ADMIN_PASSWORD/ORG_SLUG when set", () => {
+      const config = readHubConfig({
+        ...validEnv,
+        HUB_ADMIN_EMAIL: "owner@acme.example",
+        HUB_ADMIN_PASSWORD: "correct-horse-battery",
+        ORG_SLUG: "acme",
+      });
+      expect(config.envCredentialPlantAdmin).toEqual({
+        email: "owner@acme.example",
+        password: "correct-horse-battery",
+        orgSlug: "acme",
+      });
     });
   });
 

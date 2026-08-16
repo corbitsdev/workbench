@@ -33,6 +33,12 @@ const config: HubConfig = {
   allowPlaintextSecrets: true,
   allowUnverifiedEmails: true,
   sidecarProvisioner: { kind: "none" },
+  envProviderKeys: {},
+  envCredentialPlantAdmin: {
+    email: "alice@example.com",
+    password: "password123",
+    orgSlug: "workbench",
+  },
 };
 
 const closers: (() => Promise<void>)[] = [];

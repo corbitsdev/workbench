@@ -31,3 +31,12 @@ export type {
   PendingSeedDb,
   PendingSeedStore,
 } from "./pending-seed";
+export {
+  envProviderKeysFrom,
+  plantEnvProviderCredentials,
+  PROVIDER_ENV_VARS,
+} from "./plant-env-credentials";
+export type {
+  PlantEnvProviderCredentialsArgs,
+  PlantEnvProviderCredentialsOutcome,
+} from "./plant-env-credentials";

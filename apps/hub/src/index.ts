@@ -241,6 +241,7 @@ import { type Context, Hono, type Next } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 import { readHubConfig, type HubConfig } from "./config";
+import { scheduleEnvProviderCredentialPlant } from "./env-credential-plant";
 import { createHubRoutineLauncher } from "./routine-launcher";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
 import { createRoutineScheduler } from "./routine-scheduler";
@@ -2210,6 +2211,17 @@ export async function createHub(config: HubConfig) {
   }
   const guardedApp = guardedHubApp(app, guardDeps);
 
+  // Env-key auto-plant (CL-6101): runs in-process against the app this
+  // function is about to return, so it needs nothing more than that
+  // app's own `fetch` — see ./env-credential-plant.ts. A no-op when no
+  // curated provider key is set in this process's environment.
+  const envCredentialPlant = scheduleEnvProviderCredentialPlant({
+    baseUrl: config.baseUrl,
+    envProviderKeys: config.envProviderKeys,
+    admin: config.envCredentialPlantAdmin,
+    fetch: (request) => Promise.resolve(guardedApp.fetch(request)),
+  });
+
   return {
     app: guardedApp,
     db,
@@ -2218,6 +2230,7 @@ export async function createHub(config: HubConfig) {
       if (sidecarAllocationReconciliationTimer !== undefined) {
         clearTimeout(sidecarAllocationReconciliationTimer);
       }
+      envCredentialPlant.stop();
       chatOrchestrator.dispose();
       taskOrchestrator.dispose();
       taskLifecycle.stop();

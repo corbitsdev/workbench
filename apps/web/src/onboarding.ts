@@ -16,6 +16,35 @@ const ProvisionResult = type({
   "seedSkipReason?": "string",
 });
 
+/** Any credential row this bench actually has stored — the cheap
+ * pre-skip read `OnboardingPage` uses to independently confirm a
+ * working inference credential exists before trusting a `seeded: true`
+ * hard-skip; see that page's own comment. */
+const CredentialsPage = type({
+  data: type({ status: "string" }).array(),
+});
+
+/**
+ * Whether `tenantId` has at least one credential in the `active`
+ * status. A cheap, single read — no provider/catalog chain resolution —
+ * so this is deliberately the weaker of the two checks the onboarding
+ * page's own comment describes; it exists to keep the hard-skip honest
+ * without adding a second round trip's worth of catalog/provider
+ * plumbing to the browser bundle.
+ */
+export async function hasActiveCredential(tenantId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/tenants/${tenantId}/credentials`);
+    if (!response.ok) return false;
+    const body: unknown = await response.json().catch(() => null);
+    const parsed = CredentialsPage(body);
+    if (parsed instanceof type.errors) return false;
+    return parsed.data.some((c) => c.status === "active");
+  } catch {
+    return false;
+  }
+}
+
 const ErrorEnvelope = type({
   error: { code: "string", message: "string" },
 });
@@ -31,6 +60,13 @@ export type ProvisionOutcome =
        * seed state this account has no say over.
        */
       readonly seeded?: boolean;
+      /**
+       * Present under the same condition as `seeded`: the caller's own
+       * personal bench. Lets the onboarding page independently confirm
+       * (`hasActiveCredential`) a working credential exists before
+       * trusting `seeded: true` enough to skip the credential step.
+       */
+      readonly tenantId?: string;
     }
   | { readonly kind: "needs-onboarding" }
   | {
@@ -74,9 +110,14 @@ export async function triggerFirstLoginProvisioning(
       };
     }
     if (parsed.kind === "existing-member") {
-      return parsed.seeded === undefined
-        ? { kind: "existing-member" }
-        : { kind: "existing-member", seeded: parsed.seeded };
+      if (parsed.seeded === undefined) return { kind: "existing-member" };
+      return parsed.tenantId === undefined
+        ? { kind: "existing-member", seeded: parsed.seeded }
+        : {
+            kind: "existing-member",
+            seeded: parsed.seeded,
+            tenantId: parsed.tenantId,
+          };
     }
     if (parsed.kind === "needs-onboarding") return { kind: "needs-onboarding" };
     if (
