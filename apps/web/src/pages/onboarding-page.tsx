@@ -1,9 +1,12 @@
-// First-run wizard in three steps: name your workbench, add an
-// inference credential, then get oriented. The heavy lifting — proving
-// the key with a real call, seeding the bench, deploying and confirming
-// every default workflow — happens server-side in `@workbench/onboarding`;
-// this page is the guided shell around it. The credential step is always
-// part of the flow: when the server already has a usable seed (an
+// First-run wizard: provision the account's one workbench under a
+// default name derived from the account, add an inference credential,
+// then get oriented. There is no naming step — CL-6089 collapsed the
+// multi-bench model down to one workbench per account, so nothing is
+// left to name. The heavy lifting — proving the key with a real call,
+// seeding the bench, deploying and confirming every default workflow —
+// happens server-side in `@workbench/onboarding`; this page is the
+// guided shell around it. The credential step is always part of the
+// flow: when the server already has a usable seed (an
 // operator-configured key, or a returning member) it renders
 // pre-satisfied with a skip option rather than branching into a
 // different tree that hides the step entirely.
@@ -54,6 +57,18 @@ import {
 } from "../onboarding";
 import type { CredentialProvider, CredentialProviderCard } from "../onboarding";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
+import type { SessionUser } from "../session";
+
+/** No naming step means provisioning always needs a name to send — this
+ * derives one from the account so `/api/onboarding/provision` never gets
+ * called bare. Prefers the account's display name; an account with no
+ * usable name falls back to the email's local part. Editable later from
+ * Settings, same as any other display name. */
+function defaultWorkbenchName(user: SessionUser): string {
+  const source =
+    user.name.trim().length > 0 ? user.name.trim() : user.email.split("@")[0];
+  return `${source || "Your"}'s workbench`;
+}
 
 const GUIDANCE_CARDS = [
   {
@@ -86,7 +101,6 @@ function routineLabel(assetName: string): string {
 }
 
 type WizardState =
-  | { readonly phase: "naming" }
   | { readonly phase: "provisioning" }
   | { readonly phase: "provisioning-error"; readonly message: string }
   | { readonly phase: "credential"; readonly error: string | null }
@@ -234,29 +248,28 @@ function GuidanceCards() {
 /** "Connect your tools" is the only step the wizard lets you skip — see
  * ConnectToolsGrid's doc comment. */
 const ONBOARDING_STEPS: readonly DialogStepperStep[] = [
-  { label: "Name your workbench" },
   { label: "Add a credential" },
   { label: "Connect your tools", optional: true },
   { label: "Run your first routine" },
 ];
 
-/** Which of the four questions a given wizard phase belongs to — the
- * progress rail's only job, decoupled from the phase's own render. */
+/** Which of the three questions a given wizard phase belongs to — the
+ * progress rail's only job, decoupled from the phase's own render.
+ * Provisioning happens automatically (there is no naming step to gate
+ * it on), so it reads as part of the credential step's setup. */
 function stepFor(phase: WizardState["phase"]): number {
   switch (phase) {
-    case "naming":
     case "provisioning":
     case "provisioning-error":
-      return 1;
     case "credential":
     case "submitting":
     case "finishing-setup":
-      return 2;
+      return 1;
     case "connect-tools":
-      return 3;
+      return 2;
     case "seeded":
     case "guidance":
-      return 4;
+      return 3;
   }
 }
 
@@ -382,19 +395,18 @@ function ProviderPicker({
  * effect below re-checks the account's real state before trusting a
  * connect outcome carried in the URL — see its own comment. */
 function initialWizardState(): WizardState {
-  if (typeof window === "undefined") return { phase: "naming" };
+  if (typeof window === "undefined") return { phase: "provisioning" };
   const returned =
     readOpenRouterConnectReturn(window.location.search) ??
     readHuggingFaceConnectReturn(window.location.search);
-  if (returned === null) return { phase: "naming" };
+  if (returned === null) return { phase: "provisioning" };
   if (returned.kind === "connected") return { phase: "finishing-setup" };
   return { phase: "credential", error: returned.message };
 }
 
-export function OnboardingPage() {
+export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   const navigate = useNavigate();
   const [state, setState] = useState<WizardState>(initialWizardState);
-  const [workbenchName, setWorkbenchName] = useState("");
   const [provider, setProvider] = useState<CredentialProvider>("anthropic");
   const [apiKey, setApiKey] = useState("");
   // Whether the server already had a usable seed when we provisioned.
@@ -408,67 +420,22 @@ export function OnboardingPage() {
   // finishes setup, instead of the first-run pitch.
   const [resumingUnseeded, setResumingUnseeded] = useState(false);
 
-  // A connect round-trip's outcome is consumed into the initial wizard
-  // state above; dropping it from the URL keeps a reload or a shared
-  // link from replaying a stale ending.
-  useEffect(() => {
-    if (
-      readOpenRouterConnectReturn(window.location.search) !== null ||
-      readHuggingFaceConnectReturn(window.location.search) !== null
-    ) {
-      window.history.replaceState(null, "", window.location.pathname);
-    }
-  }, []);
-
-  // Two jobs, split by what landed the wizard here. A fresh connect
-  // (`finishing-setup`) actually finishes the job the OAuth callback
-  // deferred: `completeSetup` runs the workflow deploy the callback
-  // never ran inline. Everything else — the naming step's default
-  // landing, or a stale connect error from a duplicate callback this
-  // page never saw resolved — gets a plain read-only check instead: if
-  // the account already has a fully set-up workbench, that always wins
-  // over a URL carrying an old failure or a first-run naming prompt
-  // that no longer applies. A genuinely new or still-unseeded account
-  // is untouched by this check and keeps whatever `initialWizardState`
-  // already chose.
-  useEffect(() => {
-    if (state.phase === "finishing-setup") {
-      void completeSetup().then((outcome) => {
-        if (outcome.kind === "seeded") {
-          setState(seededOrConnectTools(outcome));
-        } else if (outcome.kind === "unseeded") {
-          setPreSatisfied(false);
-          setSkipReason(null);
-          setResumingUnseeded(true);
-          setState({ phase: "credential", error: null });
-        } else {
-          setState({ phase: "credential", error: outcome.message });
-        }
-      });
-      return;
-    }
-    void triggerFirstLoginProvisioning().then((result) => {
-      if (result.kind === "existing-member" && result.seeded === true) {
-        setState({ phase: "guidance" });
-      }
-    });
-    // Mount-only: this reads `state.phase` exactly once, at the value
-    // `initialWizardState` produced, to decide which of the two checks
-    // above applies to this landing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const runProvisioning = useCallback((name: string) => {
     setState({ phase: "provisioning" });
     void triggerFirstLoginProvisioning(name).then((result) => {
       if (result.kind === "error") {
         setState({ phase: "provisioning-error", message: result.message });
+      } else if (result.kind === "existing-member" && result.seeded === true) {
+        // Fully set up already (the common repeat-landing case now that
+        // provisioning runs automatically every time, not just after an
+        // explicit name submit): skip the credential step entirely.
+        setState({ phase: "guidance" });
       } else if (result.kind === "existing-member") {
         // `seeded === false` is the bench_unseeded condition: this
         // account's own workbench exists but never got a working
         // credential (no operator key configured, and none connected
-        // yet). Everything else — `true`, or `undefined` for membership
-        // on some other tenant — reads as already set up.
+        // yet). `undefined` (membership on some other tenant) also lands
+        // here rather than guidance — there is nothing to skip ahead to.
         const unseeded = result.seeded === false;
         setPreSatisfied(!unseeded);
         setSkipReason(null);
@@ -485,24 +452,60 @@ export function OnboardingPage() {
         setResumingUnseeded(false);
         setState({ phase: "credential", error: null });
       } else {
-        // needs-onboarding after an explicit name should not happen; treat
-        // as a soft error so the user can retry naming.
+        // needs-onboarding after an explicit name should not happen — a
+        // default name is always sent — so this reads as a soft error.
         setState({
           phase: "provisioning-error",
-          message:
-            "Setup couldn't create your workbench. Try a different name.",
+          message: "Setup couldn't create your workbench. Try again.",
         });
       }
     });
   }, []);
 
-  const handleNameSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      runProvisioning(workbenchName);
-    },
-    [runProvisioning, workbenchName],
-  );
+  // A connect round-trip's outcome is consumed into the initial wizard
+  // state above; dropping it from the URL keeps a reload or a shared
+  // link from replaying a stale ending.
+  useEffect(() => {
+    if (
+      readOpenRouterConnectReturn(window.location.search) !== null ||
+      readHuggingFaceConnectReturn(window.location.search) !== null
+    ) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+
+  // Two jobs, split by what landed the wizard here. A fresh connect
+  // (`finishing-setup`) actually finishes the job the OAuth callback
+  // deferred: `completeSetup` runs the workflow deploy the callback
+  // never ran inline. Everything else — the ordinary first-run landing,
+  // or a stale connect error from a duplicate callback this page never
+  // saw resolved — provisions with a default name derived from the
+  // account: there is no naming step to gate this on, so it must always
+  // send a name (see `defaultWorkbenchName`). A returning member's
+  // already-provisioned workbench is unaffected — the hub route only
+  // creates one the first time an account has none.
+  useEffect(() => {
+    if (state.phase === "finishing-setup") {
+      void completeSetup().then((outcome) => {
+        if (outcome.kind === "seeded") {
+          setState(seededOrConnectTools(outcome));
+        } else if (outcome.kind === "unseeded") {
+          setPreSatisfied(false);
+          setSkipReason(null);
+          setResumingUnseeded(true);
+          setState({ phase: "credential", error: null });
+        } else {
+          setState({ phase: "credential", error: outcome.message });
+        }
+      });
+      return;
+    }
+    runProvisioning(defaultWorkbenchName(user));
+    // Mount-only: this reads `state.phase` exactly once, at the value
+    // `initialWizardState` produced, to decide which of the two checks
+    // above applies to this landing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmitCredential = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
@@ -520,36 +523,6 @@ export function OnboardingPage() {
     },
     [provider, apiKey],
   );
-
-  if (state.phase === "naming") {
-    return (
-      <OnboardingPhase
-        phase={state.phase}
-        title="Create your workbench"
-        subtitle="Give your workbench a name. This labels your personal workbench across the app — you can change it later."
-      >
-        <form onSubmit={handleNameSubmit} className="onboarding-name-form">
-          <label htmlFor="onboarding-workbench-name">Workbench name</label>
-          <Input
-            id="onboarding-workbench-name"
-            type="text"
-            placeholder="e.g. Ada's workbench"
-            value={workbenchName}
-            onChange={(event) => setWorkbenchName(event.target.value)}
-            required
-            aria-describedby="onboarding-workbench-name-help"
-            autoFocus
-          />
-          <p id="onboarding-workbench-name-help">
-            Used as your workbench's display name.
-          </p>
-          <Button type="submit" disabled={workbenchName.trim().length === 0}>
-            Continue
-          </Button>
-        </form>
-      </OnboardingPhase>
-    );
-  }
 
   if (state.phase === "provisioning") {
     return (
@@ -588,7 +561,7 @@ export function OnboardingPage() {
           action={
             <Button
               variant="outline"
-              onClick={() => runProvisioning(workbenchName)}
+              onClick={() => runProvisioning(defaultWorkbenchName(user))}
             >
               Try again
             </Button>

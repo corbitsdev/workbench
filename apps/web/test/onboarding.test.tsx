@@ -347,8 +347,10 @@ describe("App at the onboarding path", () => {
 
   test("shows the restrained step label and progress rail instead of a stepper", () => {
     const markup = renderOnboarding();
-    expect(markup).toContain("Step 1 of 4");
-    expect(markup).toContain("Name your workbench");
+    // No naming step (CL-6089): provisioning starts immediately, under a
+    // default name derived from the account, before the credential step.
+    expect(markup).toContain("Step 1 of 3");
+    expect(markup).toContain("Setting up your workbench");
     expect(markup).toContain("dialog-stepper-track");
   });
 });
@@ -898,14 +900,6 @@ describe("the Hugging Face connect card", () => {
 });
 
 describe("OnboardingPage resuming a bench_unseeded account", () => {
-  const nameInputValueSetter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    "value",
-  )?.set;
-  if (nameInputValueSetter === undefined) {
-    throw new Error("HTMLInputElement.prototype.value has no native setter");
-  }
-
   const noop = () => undefined;
   const settle = () =>
     act(async () => {
@@ -923,6 +917,8 @@ describe("OnboardingPage resuming a bench_unseeded account", () => {
   });
 
   test("an existing member with seeded: false lands on the credential step reading as unfinished, not pre-satisfied", async () => {
+    // No naming step (CL-6089) — provisioning fires automatically, under
+    // a default name, the moment the wizard mounts.
     globalThis.fetch = (async () =>
       json({
         kind: "existing-member",
@@ -936,24 +932,10 @@ describe("OnboardingPage resuming a bench_unseeded account", () => {
       root?.render(
         createElement(NavigationProvider, {
           navigate: noop,
-          children: createElement(OnboardingPage),
+          children: createElement(OnboardingPage, {
+            user: { id: "user_1", name: "Ada", email: "ada@example.com" },
+          }),
         }),
-      );
-    });
-
-    const nameInput = container.querySelector(
-      "#onboarding-workbench-name",
-    ) as HTMLInputElement | null;
-    expect(nameInput).not.toBeNull();
-    act(() => {
-      nameInputValueSetter.call(nameInput, "Ada's workbench");
-      nameInput?.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    const form = container.querySelector(".onboarding-name-form");
-    expect(form).not.toBeNull();
-    act(() => {
-      form?.dispatchEvent(
-        new Event("submit", { bubbles: true, cancelable: true }),
       );
     });
     await settle();
