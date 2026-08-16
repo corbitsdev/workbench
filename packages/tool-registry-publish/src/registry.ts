@@ -25,4 +25,9 @@ export const CORBITS_TOOLS_REGISTRY = "corbits-tools";
 export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
   new URL("../../memory-tools", import.meta.url).pathname,
   new URL("../../capability-tools", import.meta.url).pathname,
+  new URL("../../routines-tools", import.meta.url).pathname,
+  new URL("../../task-dispatch-tools", import.meta.url).pathname,
+  new URL("../../connections-tools", import.meta.url).pathname,
+  new URL("../../agent-directory-tools", import.meta.url).pathname,
+  new URL("../../skills-tools", import.meta.url).pathname,
 ];
